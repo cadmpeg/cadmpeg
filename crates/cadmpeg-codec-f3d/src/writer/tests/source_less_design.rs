@@ -22,6 +22,51 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_sketch_keeps_relation_record_indices() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let expected: Vec<_> = f3d_native(decoded.ir())
+        .sketch_relations
+        .iter()
+        .map(|relation| relation.record_index)
+        .collect();
+    assert!(!expected.is_empty());
+    let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    let actual: Vec<_> = written
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .map(|constraint| {
+            f3d_native(written.ir())
+                .sketch_relations
+                .iter()
+                .find(|relation| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
+                .unwrap()
+                .record_index
+        })
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn source_less_decal_keeps_edited_image_and_target() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_decal.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    edited.model.assets[0].content = cadmpeg_ir::assets::AssetContent::Embedded {
+        data: cadmpeg_ir::assets::AssetData::new(b"edited decal".to_vec()).unwrap(),
+    };
+    let (written, mut report) = super::source_less_analytic::synthesize_document(&edited, None);
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
+}
+
+#[test]
 fn source_less_canvas_keeps_edited_image_bytes() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_canvas.f3d");
     let decoded = F3dCodec

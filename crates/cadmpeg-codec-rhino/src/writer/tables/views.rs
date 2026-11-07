@@ -126,13 +126,7 @@ fn encode_view(
         });
     let name = view
         .and_then(|view| property(view, "name"))
-        .unwrap_or_else(|| {
-            if view.is_some() {
-                ""
-            } else {
-                text(fields, "name")
-            }
-        });
+        .unwrap_or_else(|| text(fields, "name"));
     if !name.is_empty() {
         let body = utf16(name)?;
         children.push(crc_chunk_with_direct(0x2000_8a3b, &body, &body)?);
@@ -159,13 +153,7 @@ fn encode_view(
                     "Rhino view {name} must be true or false"
                 )));
             }
-            None => {
-                if view.is_some() {
-                    true
-                } else {
-                    flag(fields, name, true)
-                }
-            }
+            None => flag(fields, name, true),
         };
         if !value
             || source_children
@@ -190,6 +178,7 @@ fn encode_view(
                 crate::presentation::parse_uuid_text(mode).and_then(|_| {
                     property(view, "rhino.legacy_display_mode")
                         .and_then(|value| value.parse::<i64>().ok())
+                        .or_else(|| fields.get("legacy_display_mode").and_then(Value::as_i64))
                 })
             })
         })

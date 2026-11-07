@@ -31,29 +31,35 @@ fn orientation(fields: &Map<String, Value>) -> Option<NonzeroVector<4>> {
 }
 
 fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
-    let sources = ir.native.namespace("rhino")
+    let sources = ir
+        .native
+        .namespace("rhino")
         .and_then(|namespace| namespace.arenas().get("views"))
-        .into_iter().flatten().map(|record| {
-            let bool_field = |key| record.field(key).and_then(|value| value.as_bool())
-                .expect("original unit input contains the declared view flag");
-            ViewProjection {
-                native_id: record.id().to_owned(),
-                name: record.field("name").and_then(|value| value.as_str().map(str::to_owned))
-                    .expect("original unit input contains the declared view name"),
-                guides: crate::views::ViewGuides {
-                    construction_grid: bool_field("show_construction_grid"),
-                    construction_axes: bool_field("show_construction_axes"),
-                    world_axes: bool_field("show_world_axes"),
-                },
-                legacy_display_mode: record.field("legacy_display_mode").and_then(|value| value.as_i64()),
-                modern_display_mode: record.field("attributes").and_then(|value| value.as_object()
+        .into_iter()
+        .flatten()
+        .map(|record| ViewProjection {
+            native_id: record.id().to_owned(),
+            legacy_display_mode: record
+                .field("legacy_display_mode")
+                .and_then(|value| value.as_i64()),
+            modern_display_mode: record.field("attributes").and_then(|value| {
+                value
+                    .as_object()
                     .and_then(|fields| fields.get("display"))
-                    .and_then(|value| value.as_str().map(str::to_owned))),
-                has_attributes: record.field("attributes").is_some_and(|value| value.is_object()),
-                camera: record.field("viewport").and_then(|value| value.as_object().map(|fields|
-                    camera(fields).expect("original unit input contains six finite three-coordinate camera vectors"))),
-            }
-        }).collect();
+                    .and_then(|value| value.as_str().map(str::to_owned))
+            }),
+            has_attributes: record
+                .field("attributes")
+                .is_some_and(|value| value.is_object()),
+            camera: record.field("viewport").and_then(|value| {
+                value.as_object().map(|fields| {
+                    camera(fields).expect(
+                        "original unit input contains six finite three-coordinate camera vectors",
+                    )
+                })
+            }),
+        })
+        .collect();
     super::project(ctx, sources, ir)
 }
 
@@ -93,14 +99,7 @@ fn admitted_source_camera_and_view_name_have_one_neutral_home() {
     assert!(losses.is_empty());
     assert_eq!(ir.model.view_presentations.len(), 1);
     let view = &ir.model.view_presentations[0];
-    assert_eq!(
-        view.properties
-            .iter()
-            .find(|(key, _)| key.as_str() == "name")
-            .unwrap()
-            .1,
-        "Perspective"
-    );
+    assert!(view.properties.is_empty());
     let document = &ir.model.presentation_documents[0];
     let PresentationStateKind::Camera(camera) = &document.states()[0].kind else {
         panic!("camera")
