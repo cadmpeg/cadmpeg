@@ -445,7 +445,15 @@ pub(crate) fn document_xml(
             result.push_str("</ObjectDeps>");
         }
     }
-    for (index, object) in objects.iter().enumerate() {
+    let mut used_ids: std::collections::HashSet<String> = objects
+        .iter()
+        .filter_map(|object| match &object.declaration_id {
+            crate::writer::xml::DeclarationId::Source(id) => id.clone(),
+            crate::writer::xml::DeclarationId::Generated => None,
+        })
+        .collect();
+    let mut next_id = 1usize;
+    for object in objects {
         result.push('<');
         result.push_str(object_tag);
         result.push_str(" name=\"");
@@ -454,7 +462,13 @@ pub(crate) fn document_xml(
         result.push_str(&crate::writer::xml::escaped(&object.kind));
         result.push('"');
         let id = match &object.declaration_id {
-            crate::writer::xml::DeclarationId::Generated => Some((index + 1).to_string()),
+            crate::writer::xml::DeclarationId::Generated => loop {
+                let candidate = next_id.to_string();
+                next_id += 1;
+                if used_ids.insert(candidate.clone()) {
+                    break Some(candidate);
+                }
+            },
             crate::writer::xml::DeclarationId::Source(id) => id.clone(),
         };
         if let Some(id) = id {
