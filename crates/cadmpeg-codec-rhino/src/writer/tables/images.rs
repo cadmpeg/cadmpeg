@@ -18,12 +18,12 @@ pub(in crate::writer) struct ImageExport {
     pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
 }
 
-fn image_length(identity: &str, native: Option<&str>, length: u64) -> Result<u32, LossNote> {
+fn image_length(identity: &str, native: Option<&str>, length: u64) -> Result<u32, Box<LossNote>> {
     u32::try_from(length).map_err(|_| {
-        RhinoLossCode::WriterImageOmitted.note(format!(
+        Box::new(RhinoLossCode::WriterImageOmitted.note(format!(
             "asset {identity} native {} omitted: image length {length} exceeds the 3DM field",
             native.unwrap_or("unlinked")
-        ))
+        )))
     })
 }
 
@@ -58,7 +58,7 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
         ) {
             Ok(length) => length,
             Err(loss) => {
-                output.losses.push(loss);
+                output.losses.push(*loss);
                 continue;
             }
         };
