@@ -6,6 +6,41 @@ use crate::native::{PropertyFamily, ValueRecord};
 use std::collections::BTreeMap;
 
 #[test]
+fn standalone_extrusion_lengths_belong_to_the_extent() {
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object name="Profile" type="Part::Feature"/><Object name="Extrusion" type="Part::Extrusion"/><Object name="Other" type="Part::Feature"/></Objects><ObjectData Count="3"><Object name="Profile"><Properties Count="0"/></Object><Object name="Extrusion"><Properties Count="4"><Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property><Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property><Property name="LengthFwd" type="App::PropertyLength"><Float value="5"/></Property><Property name="LengthRev" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object><Object name="Other"><Properties Count="1"><Property name="LengthFwd" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrusion"))
+        .unwrap();
+    assert!(matches!(
+        feature.evaluation.definition().operation(),
+        FeatureOperation::Extrude { .. }
+    ));
+    let attributes = &decoded.ir().model.attributes;
+    assert!(!attributes
+        .iter()
+        .any(
+            |attribute| attribute.native_ref.as_deref().is_some_and(|id| id
+                .contains("Extrusion:LengthFwd")
+                || id.contains("Extrusion:LengthRev"))
+        ));
+    assert!(attributes.iter().any(|attribute| attribute
+        .native_ref
+        .as_deref()
+        .is_some_and(|id| id.contains("Other:LengthFwd"))));
+}
+
+#[test]
 fn enumeration_projects_selected_index_and_preserves_native_choices() {
     let value = |tag: &str, parent, scalar: &str| ValueRecord {
         tag: tag.into(),

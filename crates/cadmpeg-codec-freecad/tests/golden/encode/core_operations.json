@@ -240,7 +240,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 148,
+        "attributes": 146,
         "bodies": 33,
         "coedges": 531,
         "colliders": 0,
@@ -307,7 +307,7 @@
         "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
         "colliders": "omitted",
@@ -388,16 +388,6 @@
         },
         "message": "feature fcstd:design:feature#Thickness source tag Part::Thickness is written as PartDesign::Thickness",
         "severity": "info"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SymmetricExtrusion:LengthFwd:property conflicts with operation property LengthFwd",
-        "severity": "warning"
       },
       {
         "code": {
