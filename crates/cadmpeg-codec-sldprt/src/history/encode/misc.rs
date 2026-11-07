@@ -46,7 +46,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         let retained_tree_node_roles = self.retained_tree_node_roles;
         Ok({
-            if existing.is_none() && role != FeatureTreeNodeRole::Equations {
+            if existing.is_none()
+                && crate::history::write::input_classes::class(feature.definition().operation())
+                    .is_none()
+            {
                 return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has no source-less keyword form for tree role {role:?}",
                     feature.id
@@ -82,23 +85,28 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         face: &FaceSelection,
         diameter: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
         extent: Option<&CosmeticThreadExtent>,
+        has_extended_fields: bool,
     ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let Some(record) =
-                existing.filter(|record| classify(record) == Some(FeatureClass::CosmeticThread))
-            else {
+            if has_extended_fields {
                 return Err(WriteError::Decline(format!(
-                    "SLDPRT feature {} adds a cosmetic thread",
+                    "SLDPRT feature {} has unsupported cosmetic-thread fields",
                     feature.id
                 )));
-            };
+            }
+            if existing.is_some_and(|record| classify(record) != Some(FeatureClass::CosmeticThread))
+            {
+                return Err(WriteError::Decline(format!(
+                    "SLDPRT feature {} changes its cosmetic-thread family",
+                    feature.id
+                )));
+            }
             let mut parameters = self.base_parameters();
             if let Some(diameter) = diameter {
-                let prefix = record
-                    .parameters
-                    .get("D2")
+                let prefix = existing
+                    .and_then(|record| record.parameters.get("D2"))
                     .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
                     .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
                 parameters.insert(
@@ -115,14 +123,29 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         cadmpeg_core::nonblank_literal!("D1"),
                         format_length_like(
                             self.dimension(length)?.into(),
-                            record.parameters.get("D1").map(String::as_str),
+                            existing
+                                .and_then(|record| record.parameters.get("D1"))
+                                .map(String::as_str),
                         ),
                     );
                 }
                 Some(CosmeticThreadExtent::Through {}) => {
                     parameters.remove("D1");
                 }
-                None => {}
+                None => {
+                    let unresolved = parameters.get("D1").is_some_and(|value| {
+                        super::super::literals::parse_positive_dimension_length_mm(value).is_none()
+                            && super::super::literals::parse_angle_rad(value).is_none()
+                            && super::super::literals::parse_dimension_display_length(value)
+                                != Some(cadmpeg_ir::scalar::Length::ZERO)
+                    });
+                    if !unresolved {
+                        return Err(WriteError::Decline(format!(
+                            "SLDPRT feature {} has an unresolved cosmetic-thread extent",
+                            feature.id
+                        )));
+                    }
+                }
             }
             let mut properties = self.base_properties();
             if let Some(value) = face_selection_value(face) {
@@ -134,7 +157,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             NeutralFeatureEncoding {
-                kind: record.kind.clone(),
+                kind: existing
+                    .map_or_else(|| "CosmeticThread".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
             }

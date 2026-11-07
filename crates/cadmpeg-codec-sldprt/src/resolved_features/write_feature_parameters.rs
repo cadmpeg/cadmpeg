@@ -142,14 +142,6 @@ pub(crate) fn synthesize_configuration_operations(
             let Some(object_id) = record.source_value() else {
                 continue;
             };
-            if matches!(operation, ConfigurationOperation::Extrusion(_))
-                && !matches!(
-                    record.input_class.as_deref(),
-                    Some("moExtrusion_c" | "moICE_c")
-                )
-            {
-                continue;
-            }
             if matches!(operation, ConfigurationOperation::Revolution(_))
                 && record
                     .input_class
@@ -159,16 +151,12 @@ pub(crate) fn synthesize_configuration_operations(
                 continue;
             }
             let class = match operation {
-                ConfigurationOperation::Extrusion(_) => record
-                    .input_class
-                    .as_deref()
-                    .filter(|class| {
-                        matches!(
-                            *class,
-                            "moExtrusion_c" | "moICE_c" | "moCut_c" | "moExtruRefSurface_c"
-                        )
-                    })
-                    .unwrap_or("moExtrusion_c"),
+                ConfigurationOperation::Extrusion(family) => {
+                    let Some(class) = extrusion_class(family, record.input_class.as_deref()) else {
+                        continue;
+                    };
+                    class
+                }
                 ConfigurationOperation::Revolution(_) => "moRevolution_c",
             };
             records.push((
@@ -269,10 +257,12 @@ pub(crate) fn synthesize_configuration_operations(
                 continue;
             };
             let class = match (operation, record.input_class.as_deref()) {
-                (
-                    ConfigurationOperation::Extrusion(_),
-                    Some(class @ ("moExtrusion_c" | "moICE_c")),
-                ) => class,
+                (ConfigurationOperation::Extrusion(family), class) => {
+                    let Some(class) = extrusion_class(family, class) else {
+                        continue;
+                    };
+                    class
+                }
                 (ConfigurationOperation::Revolution(_), Some("moRevolution_c") | None) => {
                     "moRevolution_c"
                 }
@@ -334,9 +324,12 @@ pub(crate) fn synthesize_configuration_operations(
         ) {
             (
                 FeatureDefinition::Operation(FeatureOperation::Extrude { .. }),
-                Some("moExtrusion_c" | "moICE_c"),
+                Some("moExtrusion_c" | "moICE_c" | "moCut_c"),
             ) => {
                 record.kind = "Extrusion".into();
+                if record.input_class.as_deref() == Some("moCut_c") {
+                    record.input_class = Some("moExtrusion_c".into());
+                }
                 record.properties.remove("Operation");
             }
             (
@@ -461,6 +454,16 @@ pub(crate) fn synthesize(
             )?);
     }
     Ok(())
+}
+
+fn extrusion_class(family: u16, class: Option<&str>) -> Option<&'static str> {
+    match (family, class) {
+        (0x0140, Some("moCut_c")) => Some("moExtrusion_c"),
+        (0x01ca, Some("moCut_c")) => Some("moCut_c"),
+        (0x0140 | 0x01ca, Some("moExtrusion_c")) => Some("moExtrusion_c"),
+        (0x0140 | 0x01ca, Some("moICE_c")) => Some("moICE_c"),
+        _ => None,
+    }
 }
 
 fn extrusion_family(operation: BooleanOp) -> Option<u16> {

@@ -432,6 +432,7 @@ struct NativeUse {
     property: String,
     kind: crate::brep::TextShapeKind,
     source_index: Option<usize>,
+    flags: [bool; 7],
 }
 struct CurrentNativeTopology {
     uses: HashMap<String, NativeUse>,
@@ -468,7 +469,8 @@ fn current_native_topology(
         let payload = owners[row.owner.as_str()];
         let tables = Tables::from_payload(payload, &polygons3d, &polygons_on_triangulations)?
             .ok_or_else(|| CodecError::malformed("source-use owner has no topology"))?;
-        let kind = tables.tshapes.resolve(row.key.shape)?.kind();
+        let shape = tables.tshapes.resolve(row.key.shape)?;
+        let kind = shape.kind();
         let source_index = catalog.source_index(ctx, &row.owner, kind, row.key)?;
         result.uses.insert(
             row.id,
@@ -477,6 +479,7 @@ fn current_native_topology(
                 property: working_text(ctx, &payload.property)?,
                 kind,
                 source_index,
+                flags: shape.flags,
             },
         );
     }
@@ -599,6 +602,10 @@ pub(crate) struct CurrentTopologyBindings {
 }
 
 impl CurrentTopologyBindings {
+    pub(crate) fn source_flags(&self, record: &str) -> Option<[bool; 7]> {
+        let native = self.native_for_record(record)?;
+        self.topology.get(native).map(|source| source.flags)
+    }
     pub(crate) fn source_kind(&self, native: &str) -> Option<crate::brep::TextShapeKind> {
         self.topology.get(native).map(|source| source.kind)
     }

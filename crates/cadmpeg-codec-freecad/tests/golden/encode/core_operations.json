@@ -13,72 +13,72 @@
     {
       "name": "ExtrusionProfile.Shape.brp",
       "payload_len": 652,
-      "payload_sha256": "d1a6923fd812846bb35cff9b64dc97b59da3c757cde821785a8ff2590c9cfe05"
+      "payload_sha256": "7cc070efc7cd640a61a1e31d747acb52825140865f333bbbc4702fac2198511a"
     },
     {
       "name": "LoftSectionA.Shape.brp",
       "payload_len": 428,
-      "payload_sha256": "f7568d638a5a342e991ec474f8ca57f4059204bbb28b89bec3f64e32db767721"
+      "payload_sha256": "9c3d36fc8112dac36fa2f731ec3d63afa26c7173039a1a17f3dd97f54819b884"
     },
     {
       "name": "LoftSectionB.Shape.brp",
       "payload_len": 431,
-      "payload_sha256": "6768236f4b4237ea0e2009442d3b0030bb4c8819539225e74eb88a1da2988c0e"
+      "payload_sha256": "191184c1108142f4c59f3a70003bd23c094ebb4ac90f9829abcadb48e38ece5a"
     },
     {
       "name": "SweepSection.Shape.brp",
       "payload_len": 347,
-      "payload_sha256": "fdce324f0570eb80d4728d6a7e8edea4073459d5a9d946a07e24897ecdf7ca3c"
+      "payload_sha256": "3e34037a5468505d32e2e45cba18ec178581009e33ee8dcbbb43657fb6b8658b"
     },
     {
       "name": "SweepSpine.Shape.brp",
       "payload_len": 514,
-      "payload_sha256": "c6e4839945fae5c12fd58c9d36d44419bd323aa5975b91c5adf39fd58162acd2"
+      "payload_sha256": "905dbce29623eb45861515a4c2d352d2bd65c1580e76f20c9d9539869c72dda5"
     },
     {
       "name": "DressupBase.Shape.brp",
       "payload_len": 2561,
-      "payload_sha256": "1331fb7af1f23e8868f7ae827492a64a0093e7a98d77b7c8067d84240b5787e4"
+      "payload_sha256": "a6470807fe456de1620c8c084a36f8e5f149c74aded35ab3c9bbb0caf55a5d8b"
     },
     {
       "name": "ChamferBase.Shape.brp",
       "payload_len": 2536,
-      "payload_sha256": "d68507702ef431aa59ced78f99e257c67f662ea7974eebaa99494fef3436c5ca"
+      "payload_sha256": "6729a8640038eab0f45eda6035508e10366fc3ce8fc1334f93183d8c7d1c1b21"
     },
     {
       "name": "ThicknessBase.Shape.brp",
       "payload_len": 2536,
-      "payload_sha256": "154561227b39b7698fa375dca87f5e8971a9642fba3a2173be8b6c4d96e9bb67"
+      "payload_sha256": "00d07c51e6a845dbc686e007402eada12255841434a3502f6e4dd6757b96c230"
     },
     {
       "name": "Thickness.Shape.brp",
       "payload_len": 5459,
-      "payload_sha256": "09555eddbde74295fe9fdcbae61eccb434739bb25435dae2cdcf4032cc13e349"
+      "payload_sha256": "ebfe45055cb3031c9cd28ec7d31e616231fd515e5cac091ff155f48dd1bc4baa"
     },
     {
       "name": "MirrorBase.Shape.brp",
       "payload_len": 1094,
-      "payload_sha256": "d77139c2c7b13a31b0782b0ac58aac3b01e46ad318499bf4a6a9986ab2ee3ea6"
+      "payload_sha256": "572a5ebd0c31a938a72944defcfd268d373e9692d718f60f7eda0c75677e355f"
     },
     {
       "name": "DatumPlane.Shape.brp",
       "payload_len": 238,
-      "payload_sha256": "09580cbfe6289d3dd8ed4fb22b3e1dd3086e6452814560aff8cf2905b64c2ba1"
+      "payload_sha256": "5862db26aa2a6a6f8643922c1828f3f4735cf3eb0a6720324e43251157629d8c"
     },
     {
       "name": "DatumPoint.Shape.brp",
       "payload_len": 255,
-      "payload_sha256": "375f9aaebef443078e53397eec3e32ac40e756419aef204e5589790e88878a9d"
+      "payload_sha256": "931ea939a3df9a50b2ea396cd711f3327e680100b5a17a89666c42d88c926f44"
     },
     {
       "name": "DatumCoordinateSystem.Shape.brp",
       "payload_len": 238,
-      "payload_sha256": "743dff21d422bf3cb17159e50ddf0dc07f57d83b6a86a7d0c5320edbf24e8203"
+      "payload_sha256": "95446cec6759152ff7ab663c2f75478cde5d27018bad2dfcc845f46132cb58f1"
     },
     {
       "name": "DraftBase.Shape.brp",
       "payload_len": 2561,
-      "payload_sha256": "32a28957914841cabc4b1d7c6715ecc276795030d66c9870ff2fcb26a005eda7"
+      "payload_sha256": "7314608cda7c1856294c6bcd9d883dff822341feed68168e553933d0700da4df"
     },
     {
       "name": "DraftBase.SuppressedShape.brp",
@@ -98,7 +98,7 @@
     {
       "name": "HoleBase.Shape.brp",
       "payload_len": 2561,
-      "payload_sha256": "a348c02b4bf9aa87e8a9c915ac37aecea1173dffd80528447031dcce6fdca89a"
+      "payload_sha256": "44658cfa025131477a2a917d425747644b6629b94a8858d6dcd537eddd77e51b"
     },
     {
       "name": "HoleBase.SuppressedShape.brp",
@@ -118,12 +118,12 @@
     {
       "name": "PatternBase.AddSubShape.brp",
       "payload_len": 2486,
-      "payload_sha256": "725d668a6cab0260cbf1dbd330df932891c5d77fa6b8548be15ae367467b1f1c"
+      "payload_sha256": "eb3052eda33ba990820f3415c18ea13f28de33fa7b2e00db67181298272d7f28"
     },
     {
       "name": "PatternBase.Shape.brp",
       "payload_len": 2486,
-      "payload_sha256": "725d668a6cab0260cbf1dbd330df932891c5d77fa6b8548be15ae367467b1f1c"
+      "payload_sha256": "eb3052eda33ba990820f3415c18ea13f28de33fa7b2e00db67181298272d7f28"
     },
     {
       "name": "PatternBase.SuppressedShape.brp",
@@ -138,12 +138,12 @@
     {
       "name": "Draft.brp",
       "payload_len": 5075,
-      "payload_sha256": "7a0bc8e684301e7f32744e4d13eb69e2cb446bf8b9864a6ad381b5c7e3795521"
+      "payload_sha256": "19257a67814c559c773776a56be8db64767e92e513ec59f528ff6837dc72d1e3"
     },
     {
       "name": "DraftBody.brp",
       "payload_len": 2907,
-      "payload_sha256": "38ed562ee913c95ed9298b22a9ba46069d0775fee5fded7697adbe23edd4d986"
+      "payload_sha256": "e810a0af635e3a99768113f170c8f36376c98a9d96ecdf21225bfb12c13c1324"
     },
     {
       "name": "FreeGeometry.brp",
@@ -158,62 +158,62 @@
     {
       "name": "Hole.brp",
       "payload_len": 2275,
-      "payload_sha256": "948da2ceaad7571576977fa73f8384a1c35eb9dd10647c8cd0916837595bec5c"
+      "payload_sha256": "3cb4282c37817e68bf1d50e9793b0484357ab89e049db2dce99f05f140613144"
     },
     {
       "name": "HoleBody.brp",
       "payload_len": 3981,
-      "payload_sha256": "6cabafe5a795a7c3ec2de4741ad5ab98f5c88b7cb0a14a1b51a526eddab9057c"
+      "payload_sha256": "d4c8cbd69a8baedca3b9887341632bd9c8cdfb3e1e0107a8924c1afef35bd528"
     },
     {
       "name": "HoleProfile.brp",
       "payload_len": 375,
-      "payload_sha256": "ecf62b2e0702f921bd232da49572e888673587b80df062f21fcfe741e85aa08e"
+      "payload_sha256": "c7b53393e3753b6bf7c3382f58c0331dfc5cd70c70deeb87cca0bb887f8812c9"
     },
     {
       "name": "Hole_1.brp",
       "payload_len": 4527,
-      "payload_sha256": "e3e501604a8de80b9eb9b9e3b0225b72196427bfd750d2f3570f2f9df32ae40d"
+      "payload_sha256": "09f6cd0121b4b85ea96423e6ea1f778c726a5c5dc52b69d4d13eee975e7c9dcd"
     },
     {
       "name": "LinearPattern.brp",
       "payload_len": 2302,
-      "payload_sha256": "d849c8ccdab4dc2e163a2faa6b1a699b09fc1eeabba8f04f48917d27fc890d81"
+      "payload_sha256": "658f3b5912bad4c880cc0dda92588c86960e711445157940493e7a21593dea57"
     },
     {
       "name": "Loft.brp",
       "payload_len": 1038,
-      "payload_sha256": "e48a34d7f36e8b7bf2415574ac4c661378cde20832da7890558c0d20d6b15f6d"
+      "payload_sha256": "66acf10311c5f3bdbdc335ddd9a66112c96a36088924d6748e1b16430852b62d"
     },
     {
       "name": "Mirror.brp",
       "payload_len": 1037,
-      "payload_sha256": "cdd4a0e1d7103ed47951712b7f5bfa7c4cedcfba27d79b0dcc092d54e236eaa2"
+      "payload_sha256": "d2c22a0e6e65a0a2e37fff6f81da7198a8fbf5c119e0e058fed54404ed74e753"
     },
     {
       "name": "PartChamfer.brp",
       "payload_len": 3915,
-      "payload_sha256": "9ee058aeaa9021daa9b14d2b91e9b578f3a37d87902496ba926bcbb0605a2868"
+      "payload_sha256": "523dfcf6592092de3591fdc50494d1f03e26e67d88635844010995571f8c2c21"
     },
     {
       "name": "PartFillet.brp",
       "payload_len": 3877,
-      "payload_sha256": "e7557e4e315ab24086581f8bd59d366d190fa77174f2ccffac36816a2ef3da4f"
+      "payload_sha256": "d8423b9610ced8ace4847e61e31f23a6c17a27666024c5ecc4a66b27c1406a0f"
     },
     {
       "name": "PatternBody.brp",
       "payload_len": 1919,
-      "payload_sha256": "7643102725e31625227d220c8782080b19fe32a278626dc1c7d719b034cc61f7"
+      "payload_sha256": "240e863dc3a550cbd0ea65bf432423227a633ad23762e017e46ec81bbb26f5b7"
     },
     {
       "name": "Revolution.brp",
       "payload_len": 1614,
-      "payload_sha256": "10a4ffcb6a953827b55e8ce3cabe37910c6a09e0117870d3441cb9d864544afe"
+      "payload_sha256": "b8e7675f715c64a2a601131aa2c166a601c08602ba5089a31a005ed225387d3c"
     },
     {
       "name": "RevolutionProfile.brp",
       "payload_len": 448,
-      "payload_sha256": "36f0e9b35ef14e64f1d157cca7ad4350305a759e6b27b57f070b5081f5245622"
+      "payload_sha256": "4212666dd720442cf37ac09a9e111bd69ae4daceda22a5d3f0564d5e293b22a0"
     },
     {
       "name": "StringHasher0.txt",
@@ -223,12 +223,12 @@
     {
       "name": "Sweep.brp",
       "payload_len": 1759,
-      "payload_sha256": "3ba0f43dea659a6083102cd85f09ac97d3707df9d9b48f22e4ef724d88078826"
+      "payload_sha256": "287f45d39e266aa0293a77efc1bc01a835306ca8bfbc9b5da8725685d5aa92a8"
     },
     {
       "name": "SymmetricExtrusion.brp",
       "payload_len": 5183,
-      "payload_sha256": "1a74051bd2205f5a74cf9bbcefb52cee99e26f237cdb7e959ee42f2ad36c254a"
+      "payload_sha256": "6a983877c1053880ade26ddf7947f4652e33cf6f2d8e6974c0e2c94c50cb2cdb"
     }
   ],
   "report": {
