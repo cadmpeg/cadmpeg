@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Saved views expose their names and admitted camera poses as neutral state.
+//! Saved views expose admitted camera poses as neutral state.
 
 use crate::views::{CameraProjection, ViewProjection};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
@@ -117,17 +117,6 @@ fn id(kind: &str, ordinal: usize) -> Result<PresentationId, CodecError> {
     ))
 }
 
-fn property(
-    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    name: &str,
-    value: String,
-) -> Result<(), CodecError> {
-    let name = cadmpeg_core::text::NonBlankString::new(name)
-        .ok_or_else(|| CodecError::malformed("Rhino view property name is blank"))?;
-    properties.insert(name, value);
-    Ok(())
-}
-
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sources: Vec<ViewProjection>,
@@ -147,28 +136,8 @@ pub(super) fn project(
     for (ordinal, source) in sources.into_iter().enumerate() {
         let native_id = source.native_id;
         let view_id = id("view", ordinal)?;
-        let mut properties = BTreeMap::new();
-        if !source.name.trim().is_empty() {
-            property(&mut properties, "name", source.name)?;
-        }
-        for (name, value) in [
-            ("show_construction_grid", source.guides.construction_grid),
-            ("show_construction_axes", source.guides.construction_axes),
-            ("show_world_axes", source.guides.world_axes),
-        ] {
-            property(&mut properties, name, value.to_string())?;
-        }
         let legacy_mode = source.legacy_display_mode;
         let modern_mode = source.modern_display_mode;
-        if modern_mode.is_some() {
-            if let Some(legacy) = legacy_mode {
-                property(
-                    &mut properties,
-                    "rhino.legacy_display_mode",
-                    legacy.to_string(),
-                )?;
-            }
-        }
         let display_mode = modern_mode.or_else(|| legacy_mode.map(|value| value.to_string()));
         let order = u32::try_from(ordinal).map_err(CodecError::malformed)?;
         ctx.charge_entities(1, "Rhino neutral views")?;
@@ -182,7 +151,7 @@ pub(super) fn project(
             selection_style: None,
             line_width: None,
             point_size: None,
-            properties,
+            properties: BTreeMap::new(),
             native_ref: Some(native_id.clone()),
         });
         if let Some(viewport) = source.camera {
