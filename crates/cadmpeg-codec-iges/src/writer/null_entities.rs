@@ -16,7 +16,10 @@ pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>) -> BTreeSet<String>
         let Some(fields) = record.fields().ok() else {
             continue;
         };
-        if fields.get("entity_type").and_then(|value| value.as_i64()) != Some(0)
+        if fields
+            .get("entity_type")
+            .and_then(serde_json::Value::as_i64)
+            != Some(0)
             || [
                 "form",
                 "blank_status",
@@ -33,7 +36,7 @@ pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>) -> BTreeSet<String>
                 "subscript",
             ]
             .iter()
-            .any(|key| fields.get(*key).and_then(|value| value.as_i64()) != Some(0))
+            .any(|key| fields.get(*key).and_then(serde_json::Value::as_i64) != Some(0))
             || fields
                 .get("parameters")
                 .and_then(|value| value.as_array())
