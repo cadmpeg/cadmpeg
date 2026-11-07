@@ -729,6 +729,27 @@ fn decode_container<'a>(
                 .namespace_mut("inventor")
                 .set_arena(ctx, "body_wrapper_links", &links)?;
         }
+        if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
+            let history = crate::feature::history_states::project(
+                ctx,
+                carrier,
+                &crate::feature::history_states::Inputs {
+                    features: &feature_inventory.features,
+                    model_features: &ir.model.features,
+                    kernel_links: &feature_inventory.kernel_entity_links,
+                    wrapper_links: &links,
+                    properties: &feature_inventory.properties,
+                },
+            )?;
+            if !history.records.is_empty() {
+                ir.native.namespace_mut("inventor").set_arena(
+                    ctx,
+                    "feature_history_states",
+                    &history.records,
+                )?;
+            }
+            losses.extend(crate::feature::history_states::losses(&history));
+        }
         losses.extend(crate::feature::body_selection::native_losses(
             &ir.model, &joined,
         ));

@@ -213,6 +213,7 @@ fn empty_data() -> super::NativeData {
         body_native_keys: Vec::new(),
         body_wrapper_links: Vec::new(),
         composite_member_links: Vec::new(),
+        feature_history_states: Vec::new(),
         presentation_record_issues: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),

@@ -128,6 +128,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "pm_dc_thread_definitions",
     "body_wrapper_links",
     "composite_member_links",
+    "feature_history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "drawing_records",
@@ -202,6 +203,13 @@ pub(crate) fn validate_native(
         &mut findings,
     )?;
     validate_active_carrier(&data, &mut findings);
+    for detail in crate::feature::history_states::validate(
+        &data.feature_history_states,
+        &data.pm_dc_features,
+        &data.active_carrier,
+    ) {
+        findings.push(finding(Check::NativeLinks, detail, None));
+    }
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ctx, ir, &data, &mut findings)?;
@@ -3003,6 +3011,7 @@ struct NativeData {
     body_native_keys: Vec<BodyNativeKey>,
     body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
     composite_member_links: Vec<crate::feature::composite::MemberLink>,
+    feature_history_states: Vec<crate::feature::history_states::FeatureHistoryState>,
     presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
@@ -3082,6 +3091,7 @@ impl NativeData {
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
             body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
             composite_member_links: namespace.arena_as_for_decode(ctx, "composite_member_links")?,
+            feature_history_states: namespace.arena_as_for_decode(ctx, "feature_history_states")?,
             presentation_record_issues: namespace
                 .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
