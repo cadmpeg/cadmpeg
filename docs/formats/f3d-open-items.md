@@ -1124,6 +1124,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
 
+### DR-304. Fallback faces of Extrude bounded-face operands
+
+**Question.** Which faces does an `Extrude` bounded-face operand select when its recipe nodes have no unique topology binding?
+
+**Known.** The nodes of a bounded-face recipe name, by prefix-operand ordinal, faces around the boundary of the recipe's face. Without a unique binding, the decoder selects faces with the candidate and support rules of `f3d.md` §3.1 that follow the alternate-selector proof, and tests the selection unless the grouped Design-reference intersection holds a face or the operand has alternate-selector candidates. The test takes the prefix operands that the parsed nodes name, by root, first prelude value and fan values, or every prefix operand when no node parses, as naming faces around the selected face's boundary; a node without a parsed structure, or one that names an ordinal outside the operands, names none. Such an operand supplies the preceding-topology faces that its references with a nonnegative Design reference name; it contradicts nothing when a negative reference of it names a face, when another reference names no face, when a named face lies outside the preceding topology, or when a named face has no rebuilt boundary. The selection fails when every selected face has a rebuilt boundary and the selection shares no boundary vertex with the faces of one operand. A failing selection is withdrawn. The legacy start and termination candidate rule then gives the operand only a face that is not withdrawn and shares a boundary vertex with every such operand. The profile-group carrier rule pairs each member with the face of the same position in increasing stable face-slot order; it takes no face set that holds a face withdrawn from one of its members, or that pairs a withdrawn member with a face that does not share a boundary vertex with every such operand of that member. Each refused face or face set reports `feature.face-operand-fallback-contradicted`. The sketch-plane start and termination rules of the same scope can still select any candidate face, the withdrawn one included.
+
+**Need.** The node grammar and the empty-lane binding of DR-170, so that each recipe binds its own face.
+
+**Conflict.** `f3d.md` §3.1 resolves such an operand to the sole preceding candidate, or to the sole candidate that the transition chain changes. In a cut of two split top faces, that candidate is a side face that shares no boundary vertex with the faces of the recipe's prefix operands.
+
+**Note.** A withdrawn selection reports `feature.face-operand-fallback-contradicted` with the faces of the operand that it does not touch.
+
 ### DR-171. Sketch support identity
 
 **Question.** Which placement references join a Sketch to its supporting plane or historical face and the feature that produces that support?
