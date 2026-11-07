@@ -616,6 +616,126 @@ fn source_less_feature_tree_nodes_keep_their_native_roles() {
 }
 
 #[test]
+fn source_less_cosmetic_thread_keeps_unresolved_face_and_through_extent() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{CosmeticThreadExtent, FaceSelection};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"/></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(matches!(
+        &expected,
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            face: FaceSelection::Unresolved,
+            diameter: None,
+            extent: Some(CosmeticThreadExtent::Through {}),
+            ..
+        })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_cosmetic_thread_keeps_blind_length_and_diameter() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::CosmeticThreadExtent;
+    const EPS_THREAD_LENGTH_MM: f64 = 1e-9;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"><Dimension Name="D1">4mm</Dimension><Dimension Name="D2">&lt;MOD-DIAM&gt;6</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            diameter: Some(_),
+            extent: Some(CosmeticThreadExtent::Blind { .. }),
+            ..
+        })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| {
+        match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                diameter: Some(diameter),
+                extent: Some(CosmeticThreadExtent::Blind { length }),
+                ..
+            }) => {
+                output
+                    .ir()
+                    .dimension_value(diameter)
+                    .is_some_and(|value| (value.get() - 6.0).abs() < EPS_THREAD_LENGTH_MM)
+                    && output
+                        .ir()
+                        .dimension_value(length)
+                        .is_some_and(|value| (value.get() - 4.0).abs() < EPS_THREAD_LENGTH_MM)
+            }
+            _ => false,
+        }
+    }));
+}
+
+#[test]
 fn source_less_native_spatial_relation_keeps_its_operands() {
     check_native_spatial_relation(true, ["d6", "e1"], 10);
 }
