@@ -704,8 +704,21 @@ pub(super) fn write_with_limits(
                 )
             ) {
                 partial = true;
+                let member_omitted = target
+                    .model
+                    .feature_input_topologies
+                    .iter()
+                    .any(|input| input.input_of == feature.id && input.operands.len() == 1);
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!("feature {} retains its native body group; its auxiliary construction references are regenerated", feature.id),
+                    format!(
+                        "feature {} retains its native body group; {}",
+                        feature.id,
+                        if member_omitted {
+                            "its member construction record is omitted"
+                        } else {
+                            "its auxiliary construction references are regenerated"
+                        }
+                    ),
                 ));
             }
             if timeline_ranks
@@ -769,7 +782,15 @@ pub(super) fn write_with_limits(
             {
                 dispositions.feature_input_topologies = ArenaDisposition::Reported;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!("feature input {} retains its selected group and operand with regenerated auxiliary references", input.id),
+                    format!(
+                        "feature input {} retains its selected group; {}",
+                        input.id,
+                        if input.operands.len() == 1 {
+                            "its member construction record is omitted"
+                        } else {
+                            "its operand has regenerated auxiliary references"
+                        }
+                    ),
                 ));
             }
             if written_features.contains(&input.input_of)
