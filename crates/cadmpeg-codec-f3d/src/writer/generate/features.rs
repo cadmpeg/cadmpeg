@@ -45,6 +45,242 @@ struct NativeBaseFlange {
     thickness: f64,
 }
 
+struct NativeSurfaceStitch {
+    ordinal: u64,
+    id: FeatureId,
+    member: u32,
+    state: u32,
+    gap_cm: f64,
+    opaque_index: u32,
+    opaque_scalar: f64,
+}
+
+struct NativeComponentCopy {
+    ordinal: u64,
+    id: FeatureId,
+    component: String,
+    occurrence_keys: [String; 2],
+    transforms: [[[f64; 4]; 4]; 2],
+    definition: cadmpeg_ir::ids::ProductDefinitionId,
+    occurrences: [cadmpeg_ir::ids::OccurrenceId; 2],
+}
+
+fn select_component_copies(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> Vec<NativeComponentCopy> {
+    use cadmpeg_ir::products::{OccurrenceParent, ProductDefinitionKind, PrototypeReference};
+    let copies: Vec<_> = target
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence }) =
+                feature.evaluation.definition()
+            else {
+                return None;
+            };
+            if feature.suppressed == Some(true)
+                || feature.needs_recompute
+                || feature.product_definition.is_some()
+                || !feature.dependencies.is_empty()
+                || !feature.source_properties.is_empty()
+                || feature.source_text.is_some()
+                || !feature.source_content.is_empty()
+                || !feature.evaluation.outputs().is_empty()
+                || feature
+                    .source_tag
+                    .as_deref()
+                    .is_some_and(|tag| tag != "CopyPaste")
+            {
+                return None;
+            }
+            let scope = native
+                .design_parameter_scopes
+                .iter()
+                .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))?;
+            let operation = scope.copy_paste_component_operation()?;
+            let keys = [
+                &operation.source_occurrence_guid,
+                &operation.copied_occurrence_guid,
+            ];
+            if keys.iter().any(|key| key.as_str().len() != 36)
+                || *occurrence != crate::ids::neutral_component_occurrence_id(keys[1])
+            {
+                return None;
+            }
+            let definition = crate::ids::neutral_component_id(&operation.component_guid);
+            let product = target
+                .model
+                .product_definitions
+                .iter()
+                .find(|product| product.id == definition)?;
+            if product.kind != ProductDefinitionKind::Part
+                || product.label.is_some()
+                || product.source_name.is_some()
+                || product.description.is_some()
+                || product.part_number.is_some()
+                || !product.bom_properties.is_empty()
+                || !product.bodies.is_empty()
+                || !product.sketches.is_empty()
+                || product.native_ref.is_some()
+            {
+                return None;
+            }
+            let mut transforms = [[[0.0; 4]; 4]; 2];
+            for (index, key) in keys.iter().enumerate() {
+                let id = crate::ids::neutral_component_occurrence_id(*key);
+                let placed = target
+                    .model
+                    .occurrences
+                    .iter()
+                    .find(|candidate| candidate.id == id)?;
+                if placed.prototype
+                    != (PrototypeReference::Local {
+                        definition: definition.clone(),
+                    })
+                    || !matches!(placed.parent, OccurrenceParent::Root {})
+                    || usize::try_from(placed.ordinal).ok()? != index
+                    || placed.linked_prototype.is_some()
+                    || placed.name.is_some()
+                    || placed.visible.is_some()
+                    || placed.link.is_some()
+                    || !placed.native_ref.as_deref().is_some_and(|reference| {
+                        crate::ids::native_stream(reference) == crate::ids::native_stream(&scope.id)
+                    })
+                {
+                    return None;
+                }
+                let mut rows = placed.transform?.rows();
+                if (0..3)
+                    .any(|row| (0..3).any(|col| rows[row][col] != f64::from(u8::from(row == col))))
+                {
+                    return None;
+                }
+                for row in rows.iter_mut().take(3) {
+                    row[3] /= 10.0;
+                }
+                transforms[index] = rows;
+            }
+            Some(NativeComponentCopy {
+                ordinal: feature.ordinal,
+                id: feature.id.clone(),
+                component: operation.component_guid.as_str().to_owned(),
+                occurrence_keys: keys.map(|key| key.as_str().to_owned()),
+                transforms,
+                definition,
+                occurrences: keys.map(crate::ids::neutral_component_occurrence_id),
+            })
+        })
+        .collect();
+    if copies.len() == 1 {
+        copies
+    } else {
+        Vec::new()
+    }
+}
+
+fn select_native_surface_stitches(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> Vec<NativeSurfaceStitch> {
+    use cadmpeg_ir::features::FaceSelection;
+    target
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+                faces: FaceSelection::Native(selection),
+                merge_entities: Some(true),
+                create_solid: Some(true),
+                gap_tolerance: Some(Dimension::Literal(gap)),
+            }) = feature.evaluation.definition()
+            else {
+                return None;
+            };
+            if feature.native_ref.as_deref() != Some(selection.as_str())
+                || feature
+                    .source_tag
+                    .as_deref()
+                    .is_some_and(|tag| tag != "SurfaceStitch")
+                || feature.suppressed == Some(true)
+                || feature.needs_recompute
+                || feature.product_definition.is_some()
+                || !feature.dependencies.is_empty()
+                || !feature.source_properties.is_empty()
+                || feature.source_text.is_some()
+                || !feature.source_content.is_empty()
+                || !feature.evaluation.outputs().is_empty()
+            {
+                return None;
+            }
+            let scope = native
+                .design_parameter_scopes
+                .iter()
+                .find(|scope| scope.id == *selection)?;
+            let operation = scope.surface_stitch_operation()?;
+            let mut inputs = target
+                .model
+                .feature_input_topologies
+                .iter()
+                .filter(|input| input.input_of == feature.id);
+            let input = inputs.next()?;
+            if inputs.next().is_some()
+                || !input.bodies.is_empty()
+                || !input.faces.is_empty()
+                || !input.edges.is_empty()
+                || !input.vertices.is_empty()
+                || !input.edge_geometry.is_empty()
+                || input.operands.len() != 1
+            {
+                return None;
+            }
+            let input_ref = input.operands.iter().next()?.native_ref.as_str();
+            let group = native
+                .design_construction_operand_groups
+                .iter()
+                .find(|group| group.id == input_ref)?;
+            if crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
+                || group.scope_record_index != scope.record_index
+                || group.scope_reference_ordinal != 0
+                || group.role()
+                    != crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5
+                || group.members().len() != 1
+                || !group.lost_edge_references.is_empty()
+                || group.frame.variant
+                || group.frame.closing_flag
+            {
+                return None;
+            }
+            let member = group.members()[0].value;
+            if member == 0
+                || !scope.reference_members().values().copied().eq([
+                    group.record_index,
+                    member,
+                    operation.tolerance_record_index,
+                    operation.settings_record_index,
+                ])
+            {
+                return None;
+            }
+            let gap_cm = gap.get() / 10.0;
+            if gap_cm <= 0.0 {
+                return None;
+            }
+            Some(NativeSurfaceStitch {
+                ordinal: feature.ordinal,
+                id: feature.id.clone(),
+                member,
+                state: u32::try_from(scope.history_state_id()?).ok()?,
+                gap_cm,
+                opaque_index: group.frame.opaque_index.get(),
+                opaque_scalar: group.frame.opaque_scalar().get(),
+            })
+        })
+        .collect()
+}
+
 struct NativeRemoveBody {
     ordinal: u64,
     id: FeatureId,
@@ -52,6 +288,10 @@ struct NativeRemoveBody {
     state: u32,
     opaque_index: u32,
     opaque_scalar: f64,
+    recipe: Option<NativeBodyRecipe>,
+}
+
+struct NativeBodyRecipe {
     design_reference: u64,
     asset: String,
     context: String,
@@ -83,7 +323,9 @@ fn select_native_remove_bodies(
         let input = inputs.next()?;
         if inputs.next().is_some() || !input.bodies.is_empty() || !input.faces.is_empty()
             || !input.edges.is_empty() || !input.vertices.is_empty() || !input.edge_geometry.is_empty()
-            || input.operands.len() != 2 || !input.operands.iter().any(|operand| operand.native_ref.as_str() == selection) { return None; }
+            || !input.operands.iter().any(|operand| operand.native_ref.as_str() == selection) { return None; }
+        let recipe = if input.operands.len() == 1 { None } else {
+        if input.operands.len() != 2 { return None; }
         let operand = native.design_body_recipe_operands.iter().find(|record| record.record_index() == member
             && input.operands.iter().any(|input| input.native_ref.as_str() == record.id))?;
         if operand.scope_record_index != scope.record_index
@@ -99,11 +341,13 @@ fn select_native_remove_bodies(
                 && recipe.recipe_index == 0 && recipe.record_index.as_ref().is_some_and(|index| index.value == 0)
                 && recipe.design.as_ref().is_some_and(|design| design.id.value == (member + 3).to_string()
                     && design.selector.as_ref().is_some_and(|selector| selector.value == member + 4))) { return None; }
+        Some(NativeBodyRecipe { design_reference: operand.references()[0].design_reference,
+            asset: operand.asset_id.as_str().to_owned(), context: operand.context_id.as_str().to_owned() })
+        };
         Some(NativeRemoveBody { ordinal: feature.ordinal, id: feature.id.clone(), member,
             state: u32::try_from(scope.history_state_id()?).ok()?,
             opaque_index: group.frame.opaque_index.get(), opaque_scalar: group.frame.opaque_scalar().get(),
-            design_reference: operand.references()[0].design_reference,
-            asset: operand.asset_id.as_str().to_owned(), context: operand.context_id.as_str().to_owned() })
+            recipe })
     }).collect()
 }
 
@@ -640,6 +884,8 @@ pub(super) struct EncodedFeatures {
     pub(super) parameters: Vec<ParameterId>,
     pub(super) collection_index: u32,
     pub(super) append: Option<DesignAppend>,
+    pub(super) component_definitions: Vec<cadmpeg_ir::ids::ProductDefinitionId>,
+    pub(super) component_occurrences: Vec<cadmpeg_ir::ids::OccurrenceId>,
 }
 
 pub(super) struct DesignAppend {
@@ -663,7 +909,9 @@ pub(super) fn encode(
     let mut extrusions = select_extrusions(target, native, sketch.as_deref());
     let base_features = select_empty_base_features(target, native);
     let base_flanges = select_native_base_flanges(target, native);
+    let mut stitches = select_native_surface_stitches(target, native);
     let mut removals = select_native_remove_bodies(target, native);
+    let mut component_copies = select_component_copies(target, native);
     let mut dimensions = select_sketch_dimensions(target, native, sketch.as_deref());
     extrusions.sort_by_key(|extrusion| extrusion.ordinal);
     let mut copies = select_copies(target, native, attributes)?;
@@ -686,6 +934,8 @@ pub(super) fn encode(
         && base_features.is_empty()
         && base_flanges.is_empty()
         && removals.is_empty()
+        && stitches.is_empty()
+        && component_copies.is_empty()
         && !joined
     {
         return Ok(None);
@@ -708,7 +958,10 @@ pub(super) fn encode(
     } else {
         256
     };
-    let tags = (0..16u32)
+    if type_start.checked_add(18).is_none_or(|tag| tag > 999) {
+        component_copies.clear();
+    }
+    let tags = (0..19u32)
         .map(|offset| {
             type_start
                 .checked_add(offset)
@@ -731,8 +984,10 @@ pub(super) fn encode(
         DimensionConstruction::BodyRecipe(index) => index != 0 && occupied.insert(index),
     });
     occupied.extend(base_flanges.iter().flat_map(|feature| feature.references));
+    stitches.retain(|feature| occupied.insert(feature.member));
     removals.retain(|feature| {
-        let indices = feature.member..=feature.member + 4;
+        let indices =
+            feature.member..=feature.member + if feature.recipe.is_some() { 4 } else { 0 };
         if indices.clone().any(|index| occupied.contains(&index)) {
             return false;
         }
@@ -744,6 +999,8 @@ pub(super) fn encode(
         && base_features.is_empty()
         && base_flanges.is_empty()
         && removals.is_empty()
+        && stitches.is_empty()
+        && component_copies.is_empty()
         && !joined
     {
         return Ok(None);
@@ -782,6 +1039,14 @@ pub(super) fn encode(
     let mut removal_bases = Vec::new();
     for _ in &removals {
         removal_bases.push(reserve_indices(&mut occupied, &mut next, 4)?);
+    }
+    let mut stitch_bases = Vec::new();
+    for _ in &stitches {
+        stitch_bases.push(reserve_indices(&mut occupied, &mut next, 6)?);
+    }
+    let mut component_copy_bases = Vec::new();
+    for _ in &component_copies {
+        component_copy_bases.push(reserve_indices(&mut occupied, &mut next, 5)?);
     }
     let mut dimension_bases = Vec::new();
     for _ in &dimensions {
@@ -927,10 +1192,157 @@ pub(super) fn encode(
     let mut base_feature_scopes = Vec::new();
     let mut base_flange_scopes = Vec::new();
     let mut removal_scopes = Vec::new();
+    let mut stitch_scopes = Vec::new();
     let mut extrusion_companions = Vec::new();
     let mut dimension_loci = Vec::new();
     let mut dimension_recipes = Vec::new();
     let mut copy_groups = Vec::new();
+    let mut component_sources = Vec::new();
+    let mut component_results = Vec::new();
+    for (copy, base) in component_copies.iter().zip(component_copy_bases) {
+        let relation = base + 1;
+        let sources = [base + 2, base + 3];
+        let component = u64::from(base + 4);
+        let family = family_ordinals.entry("CopyPaste").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D component copies".into()))?;
+        for (index, record) in sources.into_iter().enumerate() {
+            mark_primary(ctx, &mut primary, record, out.len())?;
+            let start = out.len();
+            header(&mut out, &tags[17 + index], record)?;
+            out.resize(start + if index == 0 { 229 } else { 357 }, 0);
+            out[start + 19] = 1;
+            out[start + 20..start + 24].copy_from_slice(&1_u32.to_le_bytes());
+            out[start + 24] = 1;
+            out[start + 25..start + 33].copy_from_slice(&component.to_le_bytes());
+            out[start + 40..start + 44].copy_from_slice(
+                &(u32::try_from(index).map_err(CodecError::malformed)? + 1).to_le_bytes(),
+            );
+            for (at, value) in [
+                (44, copy.component.as_str()),
+                (120, copy.occurrence_keys[index].as_str()),
+            ] {
+                out[start + at..start + at + 4].copy_from_slice(&36_u32.to_le_bytes());
+                for (offset, unit) in value.encode_utf16().enumerate() {
+                    out[start + at + 4 + offset * 2..start + at + 6 + offset * 2]
+                        .copy_from_slice(&unit.to_le_bytes());
+                }
+            }
+            out[start + 197] = 1;
+            out[start + 198..start + 206].copy_from_slice(&component.to_le_bytes());
+            if index == 0 {
+                out[start + 208] = 1;
+                out[start + 218] = 1;
+            } else {
+                for (offset, value) in copy.transforms[index].iter().flatten().enumerate() {
+                    out[start + 209 + offset * 8..start + 217 + offset * 8]
+                        .copy_from_slice(&value.to_le_bytes());
+                }
+                out[start + 346] = 1;
+            }
+        }
+        component_sources.push(u64::from(sources[0]));
+        component_results.push(u64::from(sources[1]));
+        mark_primary(ctx, &mut primary, relation, out.len())?;
+        header(&mut out, &tags[6], relation)?;
+        out.extend_from_slice(&[0; 10]);
+        reference(&mut out, sources[1]);
+        out.extend_from_slice(&[0; 2]);
+        reference(&mut out, sources[0]);
+        out.push(0);
+        reference(&mut out, base);
+        copy_groups.push(u64::from(relation));
+        mark(&mut secondary, relation, out.len());
+        header(&mut out, &tags[0], relation)?;
+        mark_primary(ctx, &mut primary, base, out.len())?;
+        let start = out.len();
+        header(&mut out, &tags[1], base)?;
+        out.resize(start + 529, 0);
+        for (at, matrix) in [(38, &copy.transforms[0]), (194, &copy.transforms[1])] {
+            for (offset, value) in matrix.iter().flatten().enumerate() {
+                out[start + at + offset * 8..start + at + 8 + offset * 8]
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        out[start + 378..start + 382].copy_from_slice(&1_u32.to_le_bytes());
+        out[start + 382] = 1;
+        out[start + 383..start + 391].copy_from_slice(&u64::from(relation).to_le_bytes());
+        out[start + 397..start + 401].copy_from_slice(&9_u32.to_le_bytes());
+        for (offset, unit) in "CopyPaste".encode_utf16().enumerate() {
+            out[start + 401 + offset * 2..start + 403 + offset * 2]
+                .copy_from_slice(&unit.to_le_bytes());
+        }
+        out[start + 419..start + 423].copy_from_slice(&family.to_le_bytes());
+        scopes.push(u64::from(base));
+        timeline_scopes.push((copy.ordinal, u64::from(base)));
+        mark(&mut secondary, base, out.len());
+        header(&mut out, &tags[0], base)?;
+    }
+    for (feature, index) in stitches.iter().zip(stitch_bases) {
+        let group = index + 1;
+        let tolerance = index + 4;
+        let settings = index + 5;
+        let family = family_ordinals.entry("SurfaceStitch").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D surface stitches".into()))?;
+        stitch_scopes.push(u64::from(index));
+        timeline_scopes.push((feature.ordinal, u64::from(index)));
+        mark_primary(ctx, &mut primary, index, out.len())?;
+        header(&mut out, &tags[16], index)?;
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&4u32.to_le_bytes());
+        for id in [group, feature.member, tolerance, settings] {
+            reference(&mut out, id);
+        }
+        out.extend_from_slice(&feature.state.to_le_bytes());
+        native_lp_utf16(&mut out, "SurfaceStitch")?;
+        out.extend_from_slice(&family.to_le_bytes());
+        out.extend_from_slice(&[0; 78]);
+        mark(&mut secondary, index, out.len());
+        header(&mut out, &tags[0], index)?;
+        mark_primary(ctx, &mut primary, group, out.len())?;
+        header(&mut out, &tags[6], group)?;
+        out.extend_from_slice(&[0; 9]);
+        out.push(1);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        native_lp_ascii(&mut out, "DcFeatureOperationIdFlag")?;
+        native_lp_ascii(&mut out, "IntrinsicMetaTypeuint64")?;
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut out, feature.member);
+        out.extend_from_slice(&[0; 2]);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&feature.opaque_index.to_le_bytes());
+        out.extend_from_slice(&feature.opaque_scalar.to_le_bytes());
+        out.extend_from_slice(&feature.opaque_index.to_le_bytes());
+        reference(&mut out, group + 2);
+        out.extend_from_slice(&[0; 2]);
+        reference(&mut out, group + 1);
+        out.push(0);
+        reference(&mut out, index);
+        mark(&mut secondary, group, out.len());
+        header(&mut out, &tags[0], group)?;
+        copy_groups.push(u64::from(group));
+        mark_primary(ctx, &mut primary, tolerance, out.len())?;
+        let start = out.len();
+        header(&mut out, &tags[2], tolerance)?;
+        out.resize(start + 100, 0);
+        out[start + 19..start + 24].copy_from_slice(&[1, 1, 0, 0, 0]);
+        out[start + 24] = 1;
+        out[start + 25..start + 29].copy_from_slice(&index.to_le_bytes());
+        out[start + 40..start + 48].copy_from_slice(&feature.gap_cm.to_le_bytes());
+        mark(&mut secondary, tolerance, out.len());
+        header(&mut out, &tags[2], tolerance)?;
+        owners.push(u64::from(tolerance));
+        mark_primary(ctx, &mut primary, settings, out.len())?;
+        header(&mut out, &tags[6], settings)?;
+        out.extend_from_slice(&[0; 20]);
+        copy_groups.push(u64::from(settings));
+    }
     for (feature, index) in removals.iter().zip(removal_bases) {
         let group = index + 1;
         let family = family_ordinals.entry("RemoveBody").or_default();
@@ -971,31 +1383,33 @@ pub(super) fn encode(
         mark(&mut secondary, group, out.len());
         header(&mut out, &tags[0], group)?;
         copy_groups.push(u64::from(group));
-        mark_primary(ctx, &mut primary, feature.member, out.len())?;
-        header(&mut out, &tags[15], feature.member)?;
-        out.extend_from_slice(&[0; 10]);
-        out.extend_from_slice(&1u32.to_le_bytes());
-        out.extend_from_slice(&feature.design_reference.to_le_bytes());
-        out.extend_from_slice(&3u32.to_le_bytes());
-        reference(&mut out, feature.member + 3);
-        out.extend_from_slice(&1u32.to_le_bytes());
-        native_lp_utf16(&mut out, &feature.asset)?;
-        native_lp_utf16(&mut out, &feature.context)?;
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&[0; 4]);
-        mark(&mut secondary, feature.member, out.len());
-        header(&mut out, &tags[0], feature.member)?;
-        removal_scopes.push(u64::from(feature.member));
-        for index in feature.member + 1..=feature.member + 4 {
-            mark_primary(ctx, &mut primary, index, out.len())?;
-            header(&mut out, &tags[6], index)?;
-            if index == feature.member + 3 {
-                native_lp_ascii(&mut out, &index.to_string())?;
-                out.extend_from_slice(&(feature.member + 4).to_le_bytes());
-                out.extend_from_slice(&[0; 12]);
-                native_lp_ascii(&mut out, "body_recipe_data")?;
+        if let Some(recipe) = &feature.recipe {
+            mark_primary(ctx, &mut primary, feature.member, out.len())?;
+            header(&mut out, &tags[15], feature.member)?;
+            out.extend_from_slice(&[0; 10]);
+            out.extend_from_slice(&1u32.to_le_bytes());
+            out.extend_from_slice(&recipe.design_reference.to_le_bytes());
+            out.extend_from_slice(&3u32.to_le_bytes());
+            reference(&mut out, feature.member + 3);
+            out.extend_from_slice(&1u32.to_le_bytes());
+            native_lp_utf16(&mut out, &recipe.asset)?;
+            native_lp_utf16(&mut out, &recipe.context)?;
+            out.extend_from_slice(&2u32.to_le_bytes());
+            out.extend_from_slice(&[0; 4]);
+            mark(&mut secondary, feature.member, out.len());
+            header(&mut out, &tags[0], feature.member)?;
+            removal_scopes.push(u64::from(feature.member));
+            for index in feature.member + 1..=feature.member + 4 {
+                mark_primary(ctx, &mut primary, index, out.len())?;
+                header(&mut out, &tags[6], index)?;
+                if index == feature.member + 3 {
+                    native_lp_ascii(&mut out, &index.to_string())?;
+                    out.extend_from_slice(&(feature.member + 4).to_le_bytes());
+                    out.extend_from_slice(&[0; 12]);
+                    native_lp_ascii(&mut out, "body_recipe_data")?;
+                }
+                copy_groups.push(u64::from(index));
             }
-            copy_groups.push(u64::from(index));
         }
     }
     for (feature, index) in base_flanges.iter().zip(base_flange_indices) {
@@ -1485,6 +1899,27 @@ pub(super) fn encode(
             "Fusion",
             removal_scopes,
         ),
+        (
+            "00000000-0000-0000-0000-000000001402",
+            None,
+            1,
+            "Fusion",
+            stitch_scopes,
+        ),
+        (
+            "00000000-0000-0000-0000-000000001403",
+            None,
+            1,
+            "Fusion",
+            component_sources,
+        ),
+        (
+            "00000000-0000-0000-0000-000000001404",
+            None,
+            1,
+            "Fusion",
+            component_results,
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -1575,12 +2010,24 @@ pub(super) fn encode(
     written.extend(base_features.into_iter().map(|feature| feature.id));
     written.extend(base_flanges.into_iter().map(|feature| feature.id));
     written.extend(removals.into_iter().map(|feature| feature.id));
+    written.extend(stitches.into_iter().map(|feature| feature.id));
+    let component_definitions = component_copies
+        .iter()
+        .map(|feature| feature.definition.clone())
+        .collect();
+    let component_occurrences = component_copies
+        .iter()
+        .flat_map(|feature| feature.occurrences.iter().cloned())
+        .collect();
+    written.extend(component_copies.into_iter().map(|feature| feature.id));
     Ok(Some(EncodedFeatures {
         stream,
         features: written,
         parameters: written_parameters,
         collection_index,
         append,
+        component_definitions,
+        component_occurrences,
     }))
 }
 
