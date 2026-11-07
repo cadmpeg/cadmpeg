@@ -1964,3 +1964,35 @@ fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
 mod three_point_planes;
 
 mod work_points;
+
+#[test]
+fn a_path_pattern_scope_keeps_its_kind_through_serialization() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+    let scope = |kind: DesignFeatureKind, source_kind: Option<&str>| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            kind,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.paired_byte_offset = draft.kind_offset + 22 + 72;
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope.source_kind = source_kind.map(str::to_owned);
+        scope
+    };
+    for (kind, source_kind) in [
+        (DesignFeatureKind::native("PathPattern"), None),
+        (DesignFeatureKind::PathPattern, Some("PathPattern")),
+    ] {
+        let original = scope(kind.clone(), source_kind);
+        let reloaded: DesignParameterScope =
+            serde_json::from_value(serde_json::to_value(&original).unwrap()).unwrap();
+        assert_eq!(reloaded.kind(), kind);
+        assert_eq!(reloaded.source_kind.as_deref(), source_kind);
+    }
+}

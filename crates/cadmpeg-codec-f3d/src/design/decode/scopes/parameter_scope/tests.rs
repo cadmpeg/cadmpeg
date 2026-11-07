@@ -650,3 +650,19 @@ fn a_scanned_count_whose_table_overflows_is_rejected_not_fatal() {
     let wide = usize::MAX / 11 + 1;
     assert!(!reference_table_ends_at(100, wide, 11, 126));
 }
+
+#[test]
+fn only_the_class_guid_selects_the_path_pattern_family() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    let path_pattern = super::family::from_type_guid("B0B3D9E5-1C25-47BC-ABCD-E723F193DF1B");
+    assert_eq!(path_pattern, Some(DesignFeatureKind::PathPattern));
+    assert_eq!(
+        super::scope_feature_kind("Rés. traj.", path_pattern.as_ref()),
+        Some(DesignFeatureKind::PathPattern)
+    );
+    assert_eq!(
+        super::scope_feature_kind("PathPattern", None),
+        Some(DesignFeatureKind::native("PathPattern"))
+    );
+}

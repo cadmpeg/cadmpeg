@@ -8997,6 +8997,60 @@ Unstated regions:
 - `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
 - `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
 
+## `path_pattern_settings`
+
+Spec §Assembly operands · layout: byte offsets · size: 267 B
+
+Offsets are relative to the record's indexed header; the next indexed header follows at offset 267.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 24 | `seed_reference_point` | `f64[3]` | little | spec | the seed reference point as three f64 model coordinates in centimetres at offset 55 |
+| 79 | 1 | `settings_marker` | `u8` | little | spec | u8 `1` at offset 79 · value `1` |
+| 80 | 1 | `flipped` | `u8` | little | spec | the flip flag at offset 80 |
+| 81 | 1 | `path_oriented` | `u8` | little | spec | the orientation flag at offset 81 |
+| 83 | 11 | `path_group_reference` | `bytes[11]` | little | spec | a marked reference to the path group at offset 83 |
+| 94 | 8 | `scalar_94` | `f64` | little | spec | an f64 at offset 94 |
+| 124 | 8 | `scalar_124` | `f64` | little | spec | an f64 at offset 124 |
+| 152 | 4 | `distance_type_marker` | `bytes[4]` | little | spec | bytes `ff ff ff ff` at offset 152 |
+| 156 | 1 | `distance_type` | `u8` | little | spec | the distance-type byte at offset 156 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+- `11..55` (44 B): The specification states no field in this range.
+- `82..83` (1 B): The specification states no field in this range.
+- `102..124` (22 B): The specification states no field in this range.
+- `132..152` (20 B): The specification states no field in this range.
+- `157..267` (110 B): The specification states no field in this range.
+
+## `path_pattern_start`
+
+Spec §Assembly operands · layout: byte offsets · size: 197 B
+
+Offsets are relative to the record's indexed header; the next indexed header follows at offset 197.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 8 | `start_parameter` | `f64` | little | spec | the path parameter of the pattern start point as an f64 at offset 25 |
+| 42 | 8 | `start_point_x` | `f64` | little | spec | the start point's first two model coordinates in centimetres at offsets 42 and 50 |
+| 50 | 8 | `start_point_y` | `f64` | little | spec | the start point's first two model coordinates in centimetres at offsets 42 and 50 |
+| 66 | 4 | `path_curve_kind` | `u32` | little | spec | a u32 path-curve kind at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+- `11..25` (14 B): The specification states no field in this range.
+- `33..42` (9 B): The specification states no field in this range.
+- `58..66` (8 B): The specification states no field in this range.
+- `70..197` (127 B): The specification states no field in this range.
+
 ## `surface_trim_cell_table_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 25 B
