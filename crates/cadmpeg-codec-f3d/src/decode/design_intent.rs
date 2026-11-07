@@ -1534,6 +1534,8 @@ fn extend_related_design_records(
     )?;
     design.design_body_recipe_operands =
         crate::design::decode::operands::decode_body_recipe_operands(
+            ctx,
+            design_parts,
             scan,
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
