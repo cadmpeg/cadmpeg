@@ -185,7 +185,7 @@ pub(in crate::writer) fn retain_nurbs(ir: &CadIr, id: &CurveId, entity: &mut Ent
         .map(|token| String::from_utf8_lossy(token).into_owned())
         .collect::<Vec<_>>();
     if source_plane {
-        output[2] = "1".to_owned();
+        "1".clone_into(&mut output[2]);
     }
     for index in normal_start..tokens.len() {
         let Some(value) = numeric(index) else { return };
