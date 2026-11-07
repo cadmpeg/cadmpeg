@@ -193,6 +193,8 @@ pub(crate) enum StepLossCode {
     BodyWithoutProductRepresentation,
     /// Solid and sheet shells do not retain wire members within the shell.
     SurfaceShellWireTopologyOmitted,
+    /// A mixed surface and wire region was split into separate STEP items.
+    MixedRegionSplit,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
     /// Tessellation feature-edge classification is not represented.
@@ -509,6 +511,7 @@ impl StepLossCode {
         Self::WireShellNoWritableEdges,
         Self::BodyWithoutProductRepresentation,
         Self::SurfaceShellWireTopologyOmitted,
+        Self::MixedRegionSplit,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
         Self::TessellationCornerNormals,
@@ -718,6 +721,7 @@ impl StepLossCode {
             Self::HiddenPmiVisibilityUnsupported => "pmi.hidden-visibility-unsupported",
             Self::BodyWithoutProductRepresentation => "product.body-without-representation",
             Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
+            Self::MixedRegionSplit => "topology.mixed-region-split",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::WireShellNoWritableEdges => "topology.wire-shell-no-writable-edges",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
@@ -1000,6 +1004,7 @@ impl StepLossCode {
             | Self::WireShellNoWritableEdges
             | Self::BodyWithoutProductRepresentation
             | Self::SurfaceShellWireTopologyOmitted
+            | Self::MixedRegionSplit
             | Self::TessellationBodyLinkUnwritable
             | Self::TopologyUnreachableFromRegion
             | Self::RegionNoShellList
@@ -1224,6 +1229,7 @@ mod tests {
                 "topology.wire-shell-no-writable-edges",
                 "product.body-without-representation",
                 "topology.surface-shell-wire-omitted",
+                "topology.mixed-region-split",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
                 "tessellation.corner-normals",
