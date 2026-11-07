@@ -751,6 +751,57 @@ fn source_less_cosmetic_thread_keeps_blind_length_and_diameter() {
 }
 
 #[test]
+fn source_less_cosmetic_thread_keeps_unresolved_extent() {
+    use cadmpeg_ir::codec::write::Encoder;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"><Dimension Name="D1">-4mm</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { extent: None, .. })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { extent: None, .. })
+    )));
+    assert!(output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "D1"
+            && parameter.expression == cadmpeg_ir::features::Expression::text("-4mm")));
+}
+
+#[test]
 fn source_less_native_spatial_relation_keeps_its_operands() {
     check_native_spatial_relation(true, ["d6", "e1"], 10);
 }
