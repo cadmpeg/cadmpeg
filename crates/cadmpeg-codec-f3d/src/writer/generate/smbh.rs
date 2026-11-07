@@ -64,7 +64,7 @@ pub(super) fn encode_smbh(
                 && target.model.vertices.is_empty()
                 && target.model.edges.is_empty()
             {
-                let mut bytes = native_smbh_header(target)?;
+                let mut bytes = native_smbh_header(target);
                 output.charge_entities(1, "F3D BREP record")?;
                 native_ident(&mut bytes, "asmheader")?;
                 native_string(&mut bytes, "231.6.3.65535");
@@ -593,7 +593,7 @@ fn encode_wire_body_smbh(
         output,
     )?;
     native_history_tail(&mut records, native, output)?;
-    let mut bytes = native_smbh_header(target)?;
+    let mut bytes = native_smbh_header(target);
     bytes.extend_from_slice(&records);
     Ok(bytes)
 }
@@ -1530,7 +1530,7 @@ fn encode_face_topology_smbh(
         },
     )?;
     native_history_tail(&mut records, native, output)?;
-    let mut bytes = native_smbh_header(target)?;
+    let mut bytes = native_smbh_header(target);
     bytes.extend_from_slice(&records);
     Ok(bytes)
 }
