@@ -1830,6 +1830,26 @@ fn design_projection_gaps(
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);
             }
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
+                use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+
+                for seed in seeds {
+                    match seed {
+                        PatternSeed::Faces(faces) => face_selection(faces),
+                        PatternSeed::Bodies(bodies) => {
+                            gaps.body_selections += native_body_selection_count(bodies);
+                        }
+                        PatternSeed::Feature(_) | PatternSeed::Occurrences(..) => {}
+                    }
+                }
+                match pattern.definition() {
+                    PatternTransform::MirrorReference { plane } => face_selection(plane),
+                    PatternTransform::CurveDriven {
+                        path: Some(path), ..
+                    } => gaps.path_selections += usize::from(!loft_path_is_resolved(path)),
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
