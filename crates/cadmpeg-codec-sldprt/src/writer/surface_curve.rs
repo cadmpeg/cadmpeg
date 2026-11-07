@@ -200,23 +200,23 @@ pub(super) fn write(
     next: &mut u32,
 ) -> Result<(), WriteError> {
     let (surface, nurbs, _) = supported(ir, curve).ok_or_else(|| {
-        CodecError::UnsupportedContent(
+        WriteError::Decline(
             "surface-curve construction has no supported native form".into(),
         )
     })?;
     let surface_attr = surfaces
         .get(surface)
         .copied()
-        .ok_or_else(|| CodecError::malformed("surface-curve support is not emitted"))?;
+        .ok_or_else(|| WriteError::Decline("surface-curve support is not emitted".into()))?;
     let surface_geometry = ir
         .model
         .surfaces
         .iter()
         .find(|item| &item.id == surface)
         .and_then(|item| item.geometry.solved())
-        .ok_or_else(|| CodecError::malformed("surface-curve support is missing"))?;
+        .ok_or_else(|| WriteError::Decline("surface-curve support is missing".into()))?;
     let scales = parameter_scales(surface_geometry).ok_or_else(|| {
-        CodecError::UnsupportedContent("surface-curve support parameters are unsupported".into())
+        WriteError::Decline("surface-curve support parameters are unsupported".into())
     })?;
     let wrapper = super::take_attr(next)?;
     let descriptor = super::take_attr(next)?;
@@ -280,10 +280,9 @@ pub(super) fn write(
         }
     }
     if values.iter().any(|value| !value.is_finite()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Decline(
             "surface-curve poles overflow native coordinates".into(),
-        )
-        .into());
+        ));
     }
     super::f64_array(out, 0x2d, poles, values.into_iter())?;
     super::u16_array(
