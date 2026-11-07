@@ -27,6 +27,7 @@ pub(crate) mod mirror;
 mod occurrence_transfer;
 pub(crate) mod parameter_scope;
 mod path_feature;
+mod path_pattern;
 mod pattern;
 pub(crate) mod pipe;
 pub(super) mod point_data;

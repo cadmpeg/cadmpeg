@@ -886,6 +886,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             spatial_sketch_entities: &model.spatial_sketch_entities,
         },
     );
+    crate::design::profile_select::bind_path_pattern_sketch_selections(
+        &mut model.features,
+        &crate::design::profile_select::SketchCurveSelectionResolution {
+            scopes: &design.design_parameter_scopes,
+            profile_curves: &design.design_profile_curve_selections,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_entity_selection_operands,
+            placements: &design.design_sketch_placements,
+            curve_identities: &design.sketch_curve_identities,
+            sketches: &model.sketches,
+            sketch_entities: &model.sketch_entities,
+            spatial_sketches: &model.spatial_sketches,
+            spatial_sketch_entities: &model.spatial_sketch_entities,
+        },
+    );
     crate::design::profile_select::bind_surface_trim_sketch_selections(
         &mut model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -1202,6 +1217,11 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(
+                scope
+                    .path_pattern_settings()
+                    .map(|settings| settings.settings_record_index),
+            )
             .chain(
                 scope
                     .occurrence_transfer

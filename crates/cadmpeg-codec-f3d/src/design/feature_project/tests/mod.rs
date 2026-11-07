@@ -22,6 +22,7 @@ mod mirror;
 mod native_scope_definition;
 mod parameter_cycles;
 mod parameters;
+mod path_pattern;
 mod pattern;
 mod pipe;
 mod primitives;

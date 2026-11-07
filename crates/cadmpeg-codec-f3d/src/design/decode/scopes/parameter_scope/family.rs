@@ -125,6 +125,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::OffsetFaces,
     ),
     (
+        "B0B3D9E5-1C25-47BC-ABCD-E723F193DF1B",
+        DesignFeatureKind::PathPattern,
+    ),
+    (
         "73615646-8752-4EE6-AD02-0B90804B7CD7",
         DesignFeatureKind::Pipe,
     ),
