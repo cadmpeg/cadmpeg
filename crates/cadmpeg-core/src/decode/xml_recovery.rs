@@ -413,4 +413,54 @@ mod tests {
         );
         assert_eq!(recovered.window().len(), text.len());
     }
+
+    #[test]
+    fn recovers_multiple_errors_in_a_bounded_member() {
+        let xml = "<root><first>猫</first><bad a=\"1\" a=\"2\"/>\n<middle/><bad b=\"1\" b=\"2\"/><last/></root>";
+        let source = format!("prefix{xml}suffix");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::service())
+                .expect("create decode context");
+        let start = source.find(xml).expect("member offset");
+        let member = root.child(start, start + xml.len()).expect("member view");
+        let mut damaged = Vec::new();
+        let (_, document) = parse_xml_recovering(
+            &ctx,
+            member,
+            "test XML",
+            "scan test XML",
+            "parse test XML",
+            &|detail| CodecError::malformed(detail),
+            |extent, name, _, _| {
+                damaged.push((extent.start(), extent.window().to_vec(), name.to_vec()));
+                Ok(())
+            },
+        )
+        .expect("recover XML");
+        let names: Vec<_> = document
+            .root_element()
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .map(|node| node.tag_name().name())
+            .collect();
+        assert_eq!(names, ["first", "middle", "last"]);
+        let first_bad = "<bad a=\"1\" a=\"2\"/>";
+        let second_bad = "<bad b=\"1\" b=\"2\"/>";
+        assert_eq!(
+            damaged,
+            [
+                (
+                    source.find(first_bad).expect("first element"),
+                    first_bad.as_bytes().to_vec(),
+                    b"bad".to_vec()
+                ),
+                (
+                    source.find(second_bad).expect("second element"),
+                    second_bad.as_bytes().to_vec(),
+                    b"bad".to_vec()
+                ),
+            ]
+        );
+    }
 }
