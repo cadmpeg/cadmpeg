@@ -77,7 +77,7 @@ fn dispatcher_keeps_a_negative_surface_extend_native() {
     };
     assert!(matches!(
         evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind == "SurfaceExtend"
+        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "SurfaceExtend"
     ));
 }
 
