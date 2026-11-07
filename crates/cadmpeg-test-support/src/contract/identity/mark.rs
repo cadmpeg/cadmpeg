@@ -103,6 +103,18 @@ pub(in crate::contract) fn model(ir: &CadIr) -> (Value, Value, Markers) {
                 target["definition"]["bodies"]["value"]["native"] = Value::String(mark.marker(id));
             }
             if record
+                .pointer("/definition/faces/kind")
+                .and_then(Value::as_str)
+                == Some("native")
+            {
+                let selection = record
+                    .pointer("/definition/faces/value")
+                    .and_then(Value::as_str);
+                if let Some(id) = native_ref.filter(|id| Some(*id) == selection) {
+                    target["definition"]["faces"]["value"] = Value::String(mark.marker(id));
+                }
+            }
+            if record
                 .pointer("/definition/bodies/kind")
                 .and_then(Value::as_str)
                 == Some("native")

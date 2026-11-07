@@ -1357,6 +1357,16 @@ pub(super) fn write(
         }
         order_slots(&mut objects, &roots);
     }
+    for object in &mut objects {
+        let mut originals = native_objects.iter().filter(|original| {
+            names.get(original.id().as_str()) == Some(&object.name)
+                && original.type_name == object.kind
+        });
+        if let (Some(original), None) = (originals.next(), originals.next()) {
+            object.declaration_id =
+                xml::DeclarationId::Source(original.persistent_id.map(|id| id.to_string()));
+        }
+    }
     // The document header preserves the source's producing application and
     // persistence versions, so the re-decode reproduces the document facts.
     let facts = namespace.and_then(|namespace| {
