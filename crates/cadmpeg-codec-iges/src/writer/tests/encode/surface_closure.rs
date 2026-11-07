@@ -5,6 +5,10 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
 
 fn cylinder_fixture() -> Vec<u8> {
+    fixture("analytic_cylinder_surface")
+}
+
+fn fixture(name: &str) -> Vec<u8> {
     let harness = cadmpeg_test_support::golden::Harness::new(
         env!("CARGO_MANIFEST_DIR"),
         "igs",
@@ -13,20 +17,70 @@ fn cylinder_fixture() -> Vec<u8> {
     harness
         .fixture_inputs()
         .into_iter()
-        .find(|(name, _)| name == "analytic_cylinder_surface")
-        .expect("cylinder fixture")
+        .find(|(candidate, _)| candidate == name)
+        .expect("fixture exists")
         .1
 }
 
 #[test]
 fn analytic_cylinder_synthesis_preserves_held_records() {
+    assert_synthesis_closure(cylinder_fixture());
+}
+
+#[test]
+fn nurbs_curve_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("nurbs_curve"));
+}
+
+#[test]
+fn edited_nurbs_control_point_replaces_source_curve() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(fixture("nurbs_curve")),
+            &DecodeOptions::default(),
+        )
+        .expect("NURBS fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let edited = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 2.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ],
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("edited NURBS is valid");
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(edited.clone()));
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("edited curve synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("edited curve writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("edited curve re-decodes");
+    assert!(output
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry.solved() == Some(&SolvedCurveGeometry::Nurbs(edited.clone()))));
+}
+
+fn assert_synthesis_closure(bytes: Vec<u8>) {
     let options = DecodeOptions {
         depth: IgesCodec.request(),
         ..DecodeOptions::default()
     };
     let input = IgesCodec
-        .decode(&mut Cursor::new(cylinder_fixture()), &options)
-        .expect("cylinder decodes");
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect("fixture decodes");
     let redecode = |written: &[u8]| -> Result<Redecoded, String> {
         let output = IgesCodec
             .decode(&mut Cursor::new(written), &options)

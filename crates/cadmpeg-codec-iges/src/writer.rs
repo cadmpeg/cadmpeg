@@ -7528,6 +7528,7 @@ impl CurveEntityEmitter<'_> {
                 if sense == Sense::Forward {
                     arc_curve::retain(self.ir, curve_id, geometry, span, &mut entity);
                     native_records::numeric::retain_line(self.ir, curve_id, &mut entity);
+                    native_records::numeric::retain_nurbs(self.ir, curve_id, &mut entity);
                 }
                 entity.status = status;
                 let index = self.entities.len();
