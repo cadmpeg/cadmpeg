@@ -2196,8 +2196,10 @@ mod tests {
 
     #[test]
     fn unread_linear_tolerance_round_trips_as_absent() {
-        let mut tolerances = Tolerances::default();
-        tolerances.linear = None;
+        let tolerances = Tolerances {
+            linear: None,
+            ..Tolerances::default()
+        };
         let wire = serde_json::to_value(tolerances).expect("serialize tolerances");
         assert!(wire["linear"].is_null());
         let decoded: Tolerances = serde_json::from_value(wire).expect("deserialize tolerances");
