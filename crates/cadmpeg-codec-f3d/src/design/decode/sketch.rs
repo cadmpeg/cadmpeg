@@ -1971,9 +1971,7 @@ pub(crate) fn decode_sketch_relations(
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        let Ok(frames) = design_primary_frames(bytes, &meta) else {
-            continue;
-        };
+        let frames = design_primary_frames(bytes, &meta)?;
         let frame_ends: HashMap<_, _> = frames.iter().map(|frame| (frame.start, frame)).collect();
         let mut framed_offsets = std::collections::HashSet::new();
         {
@@ -2636,9 +2634,7 @@ fn decode_sketch_texts_with_parts(
     )>,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    let Ok(frames) = design_primary_frames(bytes, meta) else {
-        return Ok(Vec::new());
-    };
+    let frames = design_primary_frames(bytes, meta)?;
     for frame in frames {
         if !SKETCH_TEXT_TYPE_GUIDS.iter().any(|type_guid| {
             frame
@@ -3961,9 +3957,7 @@ fn decode_sketch_curve_identities_with_parts(
     )>,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
-    let Ok(frames) = design_primary_frames(bytes, meta) else {
-        return Ok(Vec::new());
-    };
+    let frames = design_primary_frames(bytes, meta)?;
     for frame in frames {
         let payload = &bytes[frame.start..frame.end];
         let identity = decode_sketch_curve_identity(payload);
