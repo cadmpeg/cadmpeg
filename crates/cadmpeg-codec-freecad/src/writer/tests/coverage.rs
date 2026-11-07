@@ -370,3 +370,57 @@ fn forward_dependency_keeps_source_declaration_order() {
     };
     assert!(rank(output.ir(), "Driver") < rank(output.ir(), "Consumer"));
 }
+
+#[test]
+fn datum_placement_keeps_native_property_metadata() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="PartDesign::Plane" name="Plane" id="1"/></Objects><ObjectData Count="1"><Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement" status="128"><PropertyPlacement Px="1.0" Py="2.0" Pz="3.0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object></ObjectData></Document>"#;
+    let bytes = crate::test_support::test_archive::archive(document);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let placement = |ir: &cadmpeg_ir::CadIr| {
+        ir.native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap()
+            .into_iter()
+            .find(|property| property.name == "Placement")
+            .unwrap()
+    };
+    assert_eq!(
+        serde_json::to_value(placement(input.ir())).unwrap(),
+        serde_json::to_value(placement(output.ir())).unwrap()
+    );
+    use cadmpeg_ir::features::{FeatureDatumPlaneFrame, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let frame = FeatureDatumPlaneFrame::new(
+        Point3::new(9.0, 2.0, 3.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .unwrap();
+    let mut edited = input.ir().clone();
+    edited.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+            frame,
+        }));
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(placement(output.ir()).values()[0].attributes["Px"], "9");
+}
