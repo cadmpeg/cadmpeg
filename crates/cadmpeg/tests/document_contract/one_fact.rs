@@ -389,6 +389,81 @@ fn freecad_one_fact_updates_pad_length_expression_engine_and_touched() {
 
 #[cfg(feature = "fcstd")]
 #[test]
+fn freecad_nonliteral_pad_expression_survives_in_the_expression_engine() {
+    use cadmpeg_codec_freecad::FcstdCodec;
+    use cadmpeg_ir::features::ExpressionToken;
+
+    let bytes =
+        fs::read(workspace().join("corpus/freecad_fcstd/fixtures/design_history.FCStd")).unwrap();
+    let decoded = decode(&FcstdCodec, &bytes);
+    let mut ir = decoded.ir().clone();
+    let bound = extrusion_length(&ir);
+    let driver = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.id != bound.parameter
+                && parameter.owner.as_ref() != Some(&bound.feature)
+                && matches!(parameter.value, Some(ParameterValue::Length(_)))
+        })
+        .expect("independent length driver")
+        .clone();
+    let ParameterValue::Length(driver_value) = driver.value.unwrap() else {
+        unreachable!()
+    };
+    let expected_mm = driver_value.get() + 1.0;
+    ir.set_parameter_expression(
+        &bound.parameter,
+        Expression {
+            tokens: vec![
+                ExpressionToken::Parameter(driver.id),
+                ExpressionToken::Text(" + 1 mm".into()),
+            ],
+        },
+        Some(ParameterValue::Length(Length::new(expected_mm).unwrap())),
+    )
+    .unwrap();
+    assert_invalidated(&ir, &bound.feature);
+    let (written, report) = write_decode(&FcstdCodec, &FcstdCodec, &ir, None, None);
+    let after = written.ir();
+    let feature = after
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(&bound.feature_name))
+        .expect("written Pad");
+    let parameter = after
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner.as_ref() == Some(&feature.id) && parameter.name == bound.parameter_name
+        })
+        .expect("written Pad length");
+    assert_eq!(parameter.expression.dependencies().count(), 1);
+    assert!(
+        matches!(parameter.value, Some(ParameterValue::Length(value)) if (value.get() - expected_mm).abs() <= EPS_DIMENSION_MM)
+    );
+    assert_staleness_is_written_or_reported(&report, after, &bound.feature_name);
+    let owner = feature.native_ref.as_ref().expect("Pad native counterpart");
+    let properties = native_records(after, "fcstd", "properties");
+    let engine = properties
+        .iter()
+        .find(|property| {
+            property["owner"].as_str() == Some(owner) && property["name"] == "ExpressionEngine"
+        })
+        .expect("Pad ExpressionEngine");
+    assert!(engine["values"].as_array().unwrap().iter().any(|value| {
+        value["attributes"]["path"] == bound.parameter_name
+            && value["attributes"]["expression"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty())
+    }));
+}
+
+#[cfg(feature = "fcstd")]
+#[test]
 fn driven_dimension_edits_preserve_reference_state_and_report_formula_drivers() {
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_ir::features::ExpressionToken;
