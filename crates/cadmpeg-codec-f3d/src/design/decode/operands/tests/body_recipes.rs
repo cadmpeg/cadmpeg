@@ -439,7 +439,7 @@ fn malformed_body_recipe_is_given_up_and_sibling_survives() {
     let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
         &bytes,
         &[100, 101, 102, 103, 104, 200, 201, 202, 203, 204],
-        &[100, 200],
+        &[200],
     );
     let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
     crate::test_support::with_decode_context(|ctx| {
@@ -466,6 +466,7 @@ fn malformed_body_recipe_is_given_up_and_sibling_survives() {
             );
             assert_eq!(losses.len(), 1);
             assert_eq!(losses[0].code.local_code(), "record.unreadable");
+            assert_eq!(losses[0].provenance.as_ref().unwrap().offset, 0);
         });
     });
 }
