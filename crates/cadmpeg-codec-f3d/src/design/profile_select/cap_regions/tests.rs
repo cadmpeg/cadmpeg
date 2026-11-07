@@ -1010,3 +1010,33 @@ fn two_faces_cover_a_cap_by_their_shared_outline_and_not_their_shared_edge() {
         TOLERANCE
     ));
 }
+
+#[test]
+fn a_far_face_over_material_the_plane_already_held_selects_nothing() {
+    let window = braced_window();
+    let opening = vec![window.openings[0].clone()];
+    let after = || plane_faces(&[(3, 0.0, opening.clone()), (4, -5.0, opening.clone())]);
+    let select = |before| {
+        let history = cut_history(before, after());
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let work = crate::design::geometry::ProfileGeometryWork::new();
+        let resolution = super::super::ScopedExtrudeProfileResolution {
+            entities: &window.entities,
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            linear_tolerance: TOLERANCE,
+            angular_tolerance: 1e-9,
+            profile_work: &work,
+            ctx: &ctx,
+        };
+        super::cap_profile_selection(&window.sketch, resolution, 2, 1, None).unwrap()
+    };
+    // New material on an empty far plane is the selection.
+    assert!(select(plane_faces(&[])).is_some());
+    // The same far face over material the plane already held is what a cut left.
+    assert!(select(plane_faces(&[
+        (1, 0.0, opening.clone()),
+        (2, -5.0, opening.clone()),
+    ]))
+    .is_none());
+}

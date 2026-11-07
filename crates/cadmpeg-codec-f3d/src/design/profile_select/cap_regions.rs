@@ -381,7 +381,7 @@ pub(super) fn cap_profile_selection(
     let Some(frame) = PlaneFrame::of_sketch(sketch) else {
         return Ok(None);
     };
-    let Some(caps) = far_caps(
+    let Some((far, caps)) = far_caps(
         &frame,
         topology,
         &transition.topology.faces.inserted,
@@ -417,6 +417,31 @@ pub(super) fn cap_profile_selection(
         return Ok(None);
     }
     selected.sort_unstable();
+    // A far face over material the plane already held is what a cut left, not
+    // what the transition selected.
+    let Some((before, _)) = unique_state(histories, previous_state_id) else {
+        return Ok(None);
+    };
+    let Some(planes) = changed_planes(
+        sketch,
+        (before, topology),
+        &transition.topology.faces,
+        tolerance,
+    ) else {
+        return Ok(None);
+    };
+    if planes
+        .iter()
+        .filter(|plane| (plane.offset - far).abs() <= tolerance)
+        .flat_map(|plane| &plane.before)
+        .any(|cap| {
+            selected
+                .iter()
+                .any(|index| cap.contains(sampled[*index].point))
+        })
+    {
+        return Ok(None);
+    }
     if let Some(current) = current {
         let points: Vec<Point2> = sampled.iter().map(|region| region.point).collect();
         if let Some(covered) =
@@ -861,7 +886,7 @@ fn far_caps(
     topology: &AsmHistoricalTopology,
     inserted: &[i64],
     tolerance: f64,
-) -> Option<Vec<Cap>> {
+) -> Option<(f64, Vec<Cap>)> {
     let mut caps: Vec<(f64, Cap)> = Vec::new();
     for face in inserted {
         let origin = match parallel_plane(topology, *face, frame.normal) {
@@ -882,7 +907,7 @@ fn far_caps(
         .filter(|(height, _)| (height - far).abs() <= tolerance)
         .map(|(_, cap)| cap)
         .collect();
-    (!caps.is_empty()).then_some(caps)
+    (!caps.is_empty()).then_some((far, caps))
 }
 
 /// What the surface binding of a face states about a plane parallel to a
