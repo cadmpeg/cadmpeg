@@ -95,6 +95,7 @@ pub(super) fn valid_owner_packet(packet: &CatiaConsolidatedOwnerPacket) -> bool 
                 references,
                 reference_encodings,
                 tail,
+                numeric_bounds,
             },
             None,
         ) => {
@@ -116,6 +117,7 @@ pub(super) fn valid_owner_packet(packet: &CatiaConsolidatedOwnerPacket) -> bool 
                     })
                 })
                 && payload.get(at..) == Some(tail.as_slice())
+                && *numeric_bounds == tail.numeric_bounds(references.len())
         }
         _ => false,
     };

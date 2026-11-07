@@ -54,6 +54,8 @@ pub(crate) struct ProfileGeometryWork {
     crossing_loop_skipped_selections: Cell<usize>,
     crossing_loop_assumed: Cell<bool>,
     crossing_loop_assumed_selections: Cell<usize>,
+    cut_regions_assumed: Cell<bool>,
+    cut_regions_assumed_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -72,6 +74,8 @@ impl ProfileGeometryWork {
             crossing_loop_skipped_selections: Cell::new(0),
             crossing_loop_assumed: Cell::new(false),
             crossing_loop_assumed_selections: Cell::new(0),
+            cut_regions_assumed: Cell::new(false),
+            cut_regions_assumed_selections: Cell::new(0),
         }
     }
 
@@ -95,6 +99,10 @@ impl ProfileGeometryWork {
                 &self.crossing_loop_assumed,
                 &self.crossing_loop_assumed_selections,
             ),
+            (
+                &self.cut_regions_assumed,
+                &self.cut_regions_assumed_selections,
+            ),
         ] {
             if skipped.take() {
                 selections.set(selections.get() + 1);
@@ -106,6 +114,12 @@ impl ProfileGeometryWork {
     /// stored loop split by curve-use counts.
     pub(crate) fn note_crossing_loop_assumed(&self) {
         self.crossing_loop_assumed.set(true);
+    }
+
+    /// Record that the open selection took regions from the faces a cut
+    /// changed.
+    pub(crate) fn note_cut_regions_assumed(&self) {
+        self.cut_regions_assumed.set(true);
     }
 
     /// One loss for each cap that made a closed selection skip a search.
@@ -133,6 +147,12 @@ impl ProfileGeometryWork {
         if crossing_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCrossingLoopAssumed.note(format!(
                 "{crossing_assumed} extrude profile selection(s) split a self-crossing stored loop into atomic regions by curve-use counts; the stored curve order of the loop was not checked, and atomic faces that enclose an island were assumed not to be selected."
+            )));
+        }
+        let cut_assumed = self.cut_regions_assumed_selections.get();
+        if cut_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
+                "{cut_assumed} extrude profile selection(s) took atomic regions bounded by the stored profile's curves from the faces the cut changed on planes parallel to the Sketch: a region is selected when one interior point lay on such a face before the cut and on none after it. The region boundaries were not compared with the face boundaries."
             )));
         }
         losses

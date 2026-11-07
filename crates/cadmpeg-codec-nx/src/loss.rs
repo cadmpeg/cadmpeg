@@ -116,6 +116,8 @@ loss_codes! {
     NonParasolidStreamOmitted => ("stream.non-parasolid-omitted", Info, PassthroughRecordOmitted),
     /// Assembly `.prt` has no inline geometry; children live in external parts.
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
+    /// Recognized assembly uses or placements have no neutral occurrence graph.
+    AssemblyOccurrencesUnresolved => ("assembly.occurrences-unresolved", Blocking, AssemblyPlacementsNotTransferred),
     /// A carrier record of the right family states lanes the IR carrier refuses.
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
     /// A B-spline record stores a control-point weight that is zero or negative.
@@ -238,6 +240,7 @@ mod tests {
                 "container.stream-opaque",
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
+                "assembly.occurrences-unresolved",
                 "carrier.lanes-unpaired",
                 "carrier.spline-weight-nonpositive",
                 "carrier.spline-fields-inconsistent",
