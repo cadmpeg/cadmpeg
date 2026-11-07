@@ -1428,6 +1428,25 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     }
 }
 
+pub(crate) fn recover_xml<'a>(
+    ctx: &DecodeContext<'a>,
+    text: &'a str,
+    operation: &'static str,
+    mut damaged: impl FnMut(usize, usize, &[u8]) -> Result<(), CodecError>,
+) -> Result<roxmltree::Document<'a>, CodecError> {
+    let source = View::over_retained(text.as_bytes());
+    let (_, document) = cadmpeg_core::decode::parse_xml_recovering(
+        ctx,
+        source,
+        "SolidWorks XML",
+        "scan SolidWorks XML elements",
+        operation,
+        &CodecError::malformed,
+        |extent, name, _, _| damaged(extent.start(), extent.end(), name),
+    )?;
+    Ok(document)
+}
+
 /// Metadata from the first parsed `swSolidWorks` envelope.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SolidWorksEnvelope {
@@ -1501,11 +1520,13 @@ fn scan_solidworks_envelopes<'a>(
             continue;
         };
         let document = match admission {
-            ScanAdmission::Decode(ctx) => match ctx.parse_xml(&text, "SLDPRT envelope XML tree") {
-                Ok(tree) => tree,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => continue,
-            },
+            ScanAdmission::Decode(ctx) => {
+                match recover_xml(ctx, &text, "SLDPRT envelope XML tree", |_, _, _| Ok(())) {
+                    Ok(tree) => tree,
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => continue,
+                }
+            }
             ScanAdmission::Probe => match roxmltree::Document::parse(&text) {
                 Ok(document) => document,
                 Err(_) => continue,

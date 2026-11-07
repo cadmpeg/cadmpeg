@@ -7,6 +7,7 @@ use std::io::{Cursor, Read};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use serde::{Deserialize, Serialize};
 
 /// Neutral material and texture projection.
@@ -145,6 +146,8 @@ impl SchemaCatalog {
     pub fn load<'a>(
         ctx: &DecodeContext<'a>,
         protein: View<'a>,
+        parts: &mut PartOutput,
+        stream_prefix: &str,
     ) -> Result<Option<Self>, CodecError> {
         let archive = ArchiveSnapshot::new(ctx, protein)?;
         let mut schemas = HashMap::new();
@@ -156,7 +159,34 @@ impl SchemaCatalog {
                 return Err(schema_too_large(entry.uncompressed_size));
             }
             let xml = archive.open(ctx, &entry.name)?;
-            parse_schema_document(ctx, &entry.name, xml.window(), &mut schemas)?;
+            let stream = cadmpeg_ir::StreamName::member(&format!("{stream_prefix}/{}", entry.name))
+                .ok_or_else(|| CodecError::malformed("Protein schema stream name is empty"))?;
+            let (_, document) = cadmpeg_core::decode::parse_xml_recovering(
+                ctx,
+                xml,
+                "Protein schema XML",
+                "scan Protein schema elements",
+                "Protein schema XML tree",
+                &|detail| {
+                    CodecError::malformed(format_args!(
+                        "Protein schema {} is malformed XML: {detail}",
+                        entry.name
+                    ))
+                },
+                |extent, name, _, _| {
+                    let spec = PartSpec::new("protein.schema_element")
+                        .holding([cadmpeg_ir::ArenaClass::Model])
+                        .in_stream(stream.clone());
+                    ctx.decode_part(parts, extent, spec, |_| {
+                        Err::<(), _>(CodecError::malformed(format_args!(
+                            "damaged Protein schema element <{}>",
+                            String::from_utf8_lossy(name)
+                        )))
+                    })?;
+                    Ok(())
+                },
+            )?;
+            parse_schema_tree(&entry.name, &document, &mut schemas)?;
         }
         if schemas.is_empty() {
             return Ok(None);
@@ -293,9 +323,11 @@ pub fn decode_detailed<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
     instance: View<'a>,
+    parts: &mut PartOutput,
+    stream_prefix: &str,
 ) -> Result<DecodeOutcome, CodecError> {
-    let mut catalog =
-        SchemaCatalog::load(ctx, protein)?.unwrap_or_else(|| SchemaCatalog::new(HashMap::new()));
+    let mut catalog = SchemaCatalog::load(ctx, protein, parts, stream_prefix)?
+        .unwrap_or_else(|| SchemaCatalog::new(HashMap::new()));
     let frames = framing::record_frames(instance.window())?;
     decode_frames(ctx, &mut catalog, &frames)
 }
@@ -455,6 +487,14 @@ fn parse_schema_document(
                 "Protein schema {name} is malformed XML: {error}"
             ))
         })?;
+    parse_schema_tree(name, &document, schemas)
+}
+
+fn parse_schema_tree(
+    name: &str,
+    document: &roxmltree::Document<'_>,
+    schemas: &mut HashMap<String, Schema>,
+) -> Result<(), CodecError> {
     let root = document.root_element();
     let uid = root
         .children()
@@ -854,6 +894,15 @@ mod tests {
         STREAM_HEADER_LEN, TERMINAL_MARKER,
     };
     use crate::property::{PropertyContent, PropertyValue};
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+
+    fn load_catalog<'a>(
+        ctx: &DecodeContext<'a>,
+        root: cadmpeg_core::decode::View<'a>,
+    ) -> Result<Option<super::SchemaCatalog>, CodecError> {
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+        super::SchemaCatalog::load(ctx, root, &mut parts, "test")
+    }
 
     fn decode_fixture(protein: &[u8], instance: &[u8]) -> Result<super::DecodeOutcome, CodecError> {
         let mut bytes = protein.to_vec();
@@ -864,7 +913,8 @@ mod tests {
         let instance_view = root
             .child(protein.len(), bytes.len())
             .expect("fixture instance range");
-        super::decode_detailed(&ctx, protein_view, instance_view)
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        super::decode_detailed(&ctx, protein_view, instance_view, &mut parts, "test")
     }
 
     fn with_service_context<T>(
@@ -970,7 +1020,7 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&protein, &arena, &policy)
             .expect("ZIP fits input limit");
         assert!(matches!(
-            super::SchemaCatalog::load(&ctx, root),
+            load_catalog(&ctx, root),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::DecompressedBytes
         ));
@@ -978,7 +1028,7 @@ mod tests {
         let (ctx, root) =
             DecodeContext::from_root_bytes(&protein, &arena, &DecodePolicy::service())
                 .expect("ZIP fits service input limit");
-        assert!(super::SchemaCatalog::load(&ctx, root)
+        assert!(load_catalog(&ctx, root)
             .expect("load the schema catalog")
             .is_some());
     }
@@ -1006,7 +1056,7 @@ mod tests {
         // acknowledges it, so the session stays open.
         let allowance = ctx.per_expand_allowance();
         let part = ctx
-            .run_part(|| super::SchemaCatalog::load(&ctx, root).map(drop))
+            .run_part(|| load_catalog(&ctx, root).map(drop))
             .expect("only this part is given up");
         let Err(CodecError::ResourceLimit(limit)) = part.as_ref() else {
             panic!("a window above the allowance is a part refusal: {part:?}");
@@ -1165,9 +1215,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        let error = super::SchemaCatalog::load(&ctx, root)
-            .err()
-            .expect("local size ceiling");
+        let error = load_catalog(&ctx, root).err().expect("local size ceiling");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error:?}");
     }
 
@@ -1845,6 +1893,27 @@ mod tests {
         archive.finish().expect("finish schemas").into_inner()
     }
 
+    #[test]
+    fn damaged_schema_element_keeps_readable_properties() {
+        let xml = r#"<Schema><UID val="Simple"/><String id="first"/><Float id="broken" id="duplicate"/><String id="last"/></Schema>"#;
+        let protein = schema_archive(&[("Schemas/SimpleSchema.xml", xml)]);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&protein, &arena, &DecodePolicy::service())
+                .expect("admit synthetic archive");
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let catalog = super::SchemaCatalog::load(&ctx, root, &mut parts, "test.protein")
+            .expect("recover schema")
+            .expect("schema present");
+        let schema = &catalog.schemas["Simple"];
+        assert!(schema.properties.contains_key("first"));
+        assert!(schema.properties.contains_key("last"));
+        assert!(!schema.properties.contains_key("broken"));
+        assert_eq!(parts.losses().len(), 1);
+        assert_eq!(parts.losses()[0].code.local_code(), "record.unreadable");
+        assert!(parts.losses()[0].message.contains("<Float>"));
+    }
+
     /// Rewrites the compression method of the named stored entry, in its local
     /// header and its central-directory record, to one no `zip` build decodes.
     fn mark_entry_method_unsupported(archive: &mut [u8], name: &str) {
@@ -1896,7 +1965,7 @@ mod tests {
             DecodeContext::from_root_bytes(&protein, &arena, &DecodePolicy::service())
                 .expect("ZIP fits service input limit");
         // The decode route reads the directory through `ArchiveSnapshot`.
-        assert!(super::SchemaCatalog::load(&ctx, root)
+        assert!(load_catalog(&ctx, root)
             .expect("the schema entry is readable")
             .is_some());
         // The edit route reads it through the `zip` crate, in `schemas`.

@@ -7,6 +7,39 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn primary_empty_shape_survives_source_free_synthesis() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Owner"/></Objects><ObjectData Count="1"><Object name="Owner"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Empty.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let archive = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Empty.brp", b""),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert!(input.ir().model.bodies.is_empty());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.bodies.is_empty());
+    let namespace = output.ir().native.namespace("fcstd").unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(properties.iter().any(|property| property.name == "Shape"));
+    let payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    assert!(payloads
+        .iter()
+        .any(|payload| matches!(payload.payload, crate::brep::ShapePayload::Empty)));
+}
+
+#[test]
 fn secondary_empty_shape_survives_source_free_synthesis() {
     let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Owner"/></Objects><ObjectData Count="1"><Object name="Owner"><Properties Count="1"><Property name="BackupShape" type="Part::PropertyPartShape"><Part file="Backup.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let archive = crate::test_support::test_archive::archive_entries(&[
