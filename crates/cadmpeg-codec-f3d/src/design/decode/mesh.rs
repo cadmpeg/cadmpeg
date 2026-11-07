@@ -43,7 +43,7 @@ use crate::records::mesh::{
     DesignMeshEntryName, DesignMeshFeature, DesignMeshFixedRecord, DesignMeshGuid,
     DesignMeshPlacement, DesignMeshRecordIdentity, DesignMeshSceneBounds, DesignMeshSceneNode,
     DesignMeshSceneState, DesignMeshScope, DesignMeshTextureResource, DesignMeshTextureTable,
-    MeshAffineTransform, MeshBodyLayout,
+    MeshAffineTransform, MeshBodyLayout, MESH_COLLECTION_ENTRY_NAME,
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
@@ -96,10 +96,13 @@ const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5
 const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
-const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 5] = [15, 17, 23, 21, 22];
+const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 7] = [15, 17, 23, 21, 22, 19, 20];
 const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
+const MESH_BODY_OWNER_ALTERNATE_TYPE_GUID: &str = "3A8E00DC-E342-4C03-8521-846BD9F7513E";
+const MESH_BODY_OWNER_ALTERNATE_BASE_TYPE_GUID: &str = "A193F53F-86D7-4F45-A01C-51F5ECEEFC0E";
+const MESH_BODY_OWNER_ALTERNATE_TYPE_VERSION: u32 = 3;
 
 /// Row-major 4x4 f64 matrix byte length.
 #[cfg(test)]
@@ -1185,6 +1188,28 @@ fn parse_mesh_scope_record(
         .ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
 }
 
+fn named_collection_owner_reference(record: &[u8]) -> Option<(usize, u32)> {
+    let mut found = None;
+    for at in 0..record.len() {
+        if View::u32_le_at(record, at) != Some(17) {
+            continue;
+        }
+        let Some((name, reference_at)) = lp_utf16_bounded(record, at, 17..=17) else {
+            continue;
+        };
+        if name != MESH_COLLECTION_ENTRY_NAME {
+            continue;
+        }
+        let Some(target) = exact_local_record_index(record, reference_at) else {
+            continue;
+        };
+        if found.replace((reference_at, target)).is_some() {
+            return None;
+        }
+    }
+    found
+}
+
 fn parse_mesh_collection_owner_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
@@ -1204,6 +1229,27 @@ fn parse_mesh_collection_owner_record(
         "mesh-collection-owner",
     )?;
     let record = &bytes[frame.start..frame.end];
+    if matches!(frame.design_type.version, 19 | 20) {
+        let Some((backlink_at, collection_record_index)) = named_collection_owner_reference(record)
+        else {
+            return Ok(None);
+        };
+        let mut storage = Vec::new();
+        storage
+            .try_reserve_exact(record.len())
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        storage.extend_from_slice(record);
+        return Ok(Some(MeshCollectionOwnerRecord {
+            owner: DesignMeshCollectionOwner::new_named(
+                identity,
+                source_offset(frame.start, backlink_at)
+                    .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+                cadmpeg_ir::native::bytes::NativeBytes::new(storage),
+            )
+            .map_err(|_| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+            collection_record_index,
+        }));
+    }
     let Some((backlink_at, name_count)) = (match frame.design_type.version {
         15 => record.len().checked_sub(11).map(|at| (at, None)),
         17 if record.len() >= collection_owner_v17::LEN => {
@@ -1470,10 +1516,15 @@ where
         |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
-    let body_owner_frames = typed_frame_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
+    let mut body_owner_candidates =
+        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?;
+    body_owner_candidates.extend(typed_primary_frames(
+        bytes,
+        meta,
+        MESH_BODY_OWNER_ALTERNATE_TYPE_GUID,
         "mesh-body-owner",
-    )?;
+    )?);
+    let body_owner_frames = typed_frame_map(body_owner_candidates, "mesh-body-owner")?;
 
     let mut features = Vec::new();
     for collection in collections {
@@ -1616,11 +1667,24 @@ where
                 .get(&body.owner_record_index)
                 .copied()
                 .ok_or_else(|| stream_error("each mesh body references a typed Body owner"))?;
+            let (owner_version, owner_base) = if body_owner_frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(MESH_BODY_OWNER_ALTERNATE_TYPE_GUID)
+            {
+                (
+                    MESH_BODY_OWNER_ALTERNATE_TYPE_VERSION,
+                    MESH_BODY_OWNER_ALTERNATE_BASE_TYPE_GUID,
+                )
+            } else {
+                (MESH_BODY_OWNER_TYPE_VERSION, MESH_BODY_OWNER_BASE_TYPE_GUID)
+            };
             let body_owner = parse_typed_identity(
                 bytes,
                 body_owner_frame,
-                MESH_BODY_OWNER_TYPE_VERSION,
-                MESH_BODY_OWNER_BASE_TYPE_GUID,
+                owner_version,
+                owner_base,
                 "Body",
                 "mesh-body-owner",
             )?;
@@ -1715,6 +1779,20 @@ fn mesh_image_asset(
         asset.name.clone(),
         crate::ids::neutral_asset_id(&asset.name),
     ))
+}
+
+pub(crate) fn mesh_owner_frame_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features.iter().filter_map(|feature| {
+        feature.collection_owner.native_frame()?;
+        Some(
+            crate::loss::F3dLossCode::MeshOwnerBytesUninterpreted.note(format!(
+                "mesh collection owner {} retains its frame with uninterpreted bytes",
+                feature.collection_owner.record().record_index(),
+            )),
+        )
+    })
 }
 
 pub(crate) fn mesh_body_frame_losses(
@@ -3559,6 +3637,100 @@ mod tests {
             ),
             Err(CodecError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn mesh_graph_accepts_alternate_body_owner_registration() {
+        let mut graph = synthetic_mesh_graph(false);
+        let owner = graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|ty| {
+                ty.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(MESH_BODY_OWNER_TYPE_GUID)
+            })
+            .unwrap();
+        *owner = design_type(
+            super::MESH_BODY_OWNER_ALTERNATE_TYPE_GUID,
+            Some(super::MESH_BODY_OWNER_ALTERNATE_BASE_TYPE_GUID),
+            super::MESH_BODY_OWNER_ALTERNATE_TYPE_VERSION,
+            "Body",
+            vec![111],
+        );
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("alternate Body owner");
+        assert_eq!(features.len(), 1);
+        assert_eq!(features[0].bodies()[0].owner_record.record_index(), 111);
+    }
+
+    #[test]
+    fn named_collection_owner_keeps_its_frame() {
+        for version in [19, 20] {
+            let mut graph = synthetic_mesh_graph(false);
+            graph
+                .meta
+                .types
+                .iter_mut()
+                .find(|ty| {
+                    ty.type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+                })
+                .unwrap()
+                .version = version;
+            let frame = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID);
+            let start = frame.start;
+            let old_end = frame.end;
+            let mut owner = Vec::new();
+            push_indexed_header(&mut owner, 268, 110);
+            owner.extend_from_slice(&[0; 10]);
+            owner.extend_from_slice(&2_u32.to_le_bytes());
+            lp_utf16(&mut owner, "arrangementsContainer");
+            push_reference(&mut owner, 111);
+            lp_utf16(&mut owner, "netfabb.mesh_body");
+            push_reference(&mut owner, 100);
+            owner.extend_from_slice(&[0; 16]);
+            let expected = owner.clone();
+            let delta =
+                i64::try_from(owner.len()).unwrap() - i64::try_from(old_end - start).unwrap();
+            graph.bytes.splice(start..old_end, owner);
+            for record in &mut graph.meta.records {
+                if record.bulk_offset > u64_from_index(start) {
+                    record.bulk_offset = record.bulk_offset.checked_add_signed(delta).unwrap();
+                }
+            }
+            let features = parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_texture_asset,
+            )
+            .unwrap();
+            let [feature] = features.as_slice() else {
+                panic!("one feature")
+            };
+            let wire = serde_json::to_value(feature).unwrap();
+            let decoded: crate::records::mesh::DesignMeshFeature =
+                serde_json::from_value(wire).unwrap();
+            assert_eq!(
+                decoded.collection_owner.native_frame().unwrap().as_ref(),
+                expected.as_slice()
+            );
+            assert_eq!(decoded, *feature);
+            let losses: Vec<_> = super::mesh_owner_frame_losses(&features).collect();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code.local_code(),
+                "mesh.owner-bytes-uninterpreted"
+            );
+        }
     }
 
     #[test]

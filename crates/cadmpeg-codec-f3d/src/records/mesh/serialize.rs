@@ -256,6 +256,8 @@ impl Serialize for DesignMeshFeature {
             collection_owner_backlink_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
             collection_owner_name_count: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            collection_owner_native_frame: Option<NativeBytes<&'a [u8]>>,
             scope_owner_record_index: u32,
             #[serde(skip_serializing_if = "Option::is_none")]
             scope_flagged_word: Option<u32>,
@@ -295,6 +297,10 @@ impl Serialize for DesignMeshFeature {
             collection_owner_reference_offset: self.collection.owner_reference_offset(),
             collection_owner_backlink_offset: self.collection_owner.backlink_offset(),
             collection_owner_name_count: self.collection_owner.name_count(),
+            collection_owner_native_frame: self
+                .collection_owner
+                .native_frame()
+                .map(NativeBytes::from),
             scope_owner_record_index: self.scope.owner_record_index(),
             scope_flagged_word: self.scope.flagged_word(),
             scope_owner_reference_offset: self.scope.owner_reference_offset(),
