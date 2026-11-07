@@ -18,6 +18,69 @@ use std::ops::RangeInclusive;
 /// record of this class carries the `point3d` member sequence below.
 pub(super) const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
+pub(super) fn contain_point_data<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    records: &[crate::metastream::PrimaryRecordFrame],
+    references: impl IntoIterator<Item = &'a u32>,
+    types: &HashMap<u64, (&str, u32)>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    for index in references {
+        if !types
+            .get(&u64::from(*index))
+            .is_some_and(|(guid, _)| *guid == POINT_DATA_TYPE_GUID)
+        {
+            continue;
+        }
+        for frame in records
+            .iter()
+            .filter(|frame| frame.entity_id == u64::from(*index))
+        {
+            let start = source
+                .start()
+                .checked_add(frame.start)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("point-data start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("point-data end overflows"))?;
+            let extent = source.child(start, end).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("point-data frame exceeds its stream")
+            })?;
+            let id = cadmpeg_ir::ids::Identity::new(super::super::text::design_record_id(
+                stream,
+                ":design-record-header#",
+                cadmpeg_core::decode::u64_from_index(frame.start),
+            ))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design])
+                .record_id(id);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                );
+            }
+            let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+            if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+                continue;
+            }
+            ctx.decode_part(parts, extent, spec, |_| {
+                let bytes = source.window().get(..frame.end).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("point-data frame exceeds its stream")
+                })?;
+                exact_point_data_construction(bytes, std::slice::from_ref(frame), [index], types)
+                    .ok_or_else(|| cadmpeg_core::CodecError::malformed("invalid point-data frame"))
+            })?;
+        }
+    }
+    Ok(())
+}
+
 fn graphic_ascii_end(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<usize> {
     let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     if !bounds.contains(&length) {

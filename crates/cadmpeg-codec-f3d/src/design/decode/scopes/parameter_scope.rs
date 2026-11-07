@@ -632,6 +632,15 @@ pub(crate) fn decode_parameter_scopes(
             if let Some((scope, record_losses)) = decoded {
                 losses.extend(record_losses);
                 if let Some(mut scope) = scope {
+                    super::point_data::contain_point_data(
+                        ctx,
+                        &mut parts,
+                        source,
+                        &entry.name,
+                        &records,
+                        scope.reference_members().values(),
+                        &stream_types,
+                    )?;
                     super::super::assembly::contain_legacy_as_built_solved_frame(
                         ctx,
                         &mut parts,
