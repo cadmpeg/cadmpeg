@@ -61,12 +61,11 @@ fn unsupported_appearance_metadata_names_the_appearance() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read point");
     assert_eq!(written.ir().model.points.len(), 1);
-    assert!(written.ir().model.appearances.iter().any(|appearance| {
-        appearance
-            .properties
-            .iter()
-            .any(|(key, value)| key.as_str() == "index_of_refraction" && value.get() == 1.5)
-    }));
+    let materials = &written.ir().native.namespace("rhino").unwrap().arenas()["materials"];
+    assert!(materials.iter().any(|material| material
+        .field("index_of_refraction")
+        .and_then(|value| value.as_f64())
+        .is_some_and(|value| (value - 1.5).abs() < 1e-12)));
 }
 
 #[test]
