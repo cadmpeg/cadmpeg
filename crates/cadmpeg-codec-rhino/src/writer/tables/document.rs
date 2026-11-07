@@ -834,6 +834,7 @@ pub(in crate::writer) fn settings(
     materials: &super::materials::MaterialPlan,
     losses: &mut Vec<LossNote>,
 ) -> Result<SettingsExport, WriteError> {
+    let fonts = super::fonts::styles(ir)?;
     let mut output = SettingsExport {
         records: Vec::new(),
         regenerated: std::collections::BTreeSet::new(),
@@ -852,7 +853,7 @@ pub(in crate::writer) fn settings(
         }
         if let Some(index) = fields.get("current_font_index").and_then(Value::as_i64) {
             let target = match i32::try_from(index) {
-                Ok(source) => super::fonts::style_index(ir, source)?,
+                Ok(source) => super::fonts::style_index(ir, &fonts, source),
                 Err(_) => None,
             };
             if let Some(target) = target {
