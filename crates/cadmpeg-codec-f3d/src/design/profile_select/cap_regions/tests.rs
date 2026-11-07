@@ -407,6 +407,7 @@ fn region(entities: &[SketchEntity], ranges: &[[f64; 2]]) -> AtomicSketchRegion 
             .collect(),
         polyline: Vec::new(),
         encloses_island: false,
+        island_absence_assumed: false,
     }
 }
 
