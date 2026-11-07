@@ -663,15 +663,6 @@ fn minimal_render_settings_round_trip() {
     let decoded = crate::RhinoCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .expect("written render settings decode");
-    eprintln!(
-        "LOSSES2={:?}",
-        decoded
-            .report()
-            .losses
-            .iter()
-            .map(|l| (l.code.to_string(), l.message.clone()))
-            .collect::<Vec<_>>()
-    );
     let records = &decoded
         .ir()
         .native
@@ -745,19 +736,9 @@ fn modern_render_settings_round_trip_from_typed_fields() {
         )
         .and_then(|plan| plan.write_to(&mut written))
         .expect("render settings document writes");
-    std::fs::write("/tmp/render_test.3dm", &written).expect("dump");
     let decoded = crate::RhinoCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .expect("written render settings decode");
-    eprintln!(
-        "LOSSES2={:?}",
-        decoded
-            .report()
-            .losses
-            .iter()
-            .map(|l| (l.code.to_string(), l.message.clone()))
-            .collect::<Vec<_>>()
-    );
     let records = &decoded
         .ir()
         .native
