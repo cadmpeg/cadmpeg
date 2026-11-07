@@ -2777,6 +2777,56 @@ fn select_xml_entry<'a>(container: &'a Container<'_>, name: &str) -> SelectedXml
     }
 }
 
+fn recover_config_xml<'a>(
+    ctx: &DecodeContext<'a>,
+    xml: &'a str,
+    damaged: &mut Vec<(usize, usize, String)>,
+) -> Result<roxmltree::Document<'a>, CodecError> {
+    let view = cadmpeg_core::decode::View::over_retained(xml.as_bytes());
+    let (_, document) = cadmpeg_core::decode::parse_xml_recovering(
+        ctx,
+        view,
+        "NX XML entry",
+        "scan NX XML elements",
+        "decode NX XML tree",
+        &|detail| CodecError::malformed(detail),
+        |extent, name, _, _| {
+            damaged.push((
+                extent.start(),
+                extent.end(),
+                String::from_utf8_lossy(name).into_owned(),
+            ));
+            Ok(())
+        },
+    )?;
+    Ok(document)
+}
+
+fn element_spans<'a>(
+    ctx: &DecodeContext<'a>,
+    payload: &'a [u8],
+    entry_offset: u64,
+    spans: &mut Vec<(&'static str, u64, u64, String)>,
+) -> Result<(), CodecError> {
+    let Some(xml) = xml_stream_text(payload) else {
+        return Ok(());
+    };
+    let mut damaged = Vec::new();
+    recover_config_xml(ctx, xml, &mut damaged)?;
+    for (start, end, name) in damaged {
+        let offset = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(start))
+            .ok_or_else(|| CodecError::malformed("NX XML element offset overflows"))?;
+        spans.push((
+            "nx.xml_element",
+            offset,
+            cadmpeg_core::decode::u64_from_index(end - start),
+            name,
+        ));
+    }
+    Ok(())
+}
+
 /// Whether a structural parse failed with damage rather than a resource
 /// limit: limits propagate, every other error marks the entry unreadable.
 fn is_damage<T>(result: Result<T, CodecError>) -> Result<bool, CodecError> {
@@ -2795,12 +2845,12 @@ fn is_damage<T>(result: Result<T, CodecError>) -> Result<bool, CodecError> {
 pub(crate) fn damaged_config_xml_spans(
     ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<(&'static str, u64, u64)>, CodecError> {
+) -> Result<Vec<(&'static str, u64, u64, String)>, CodecError> {
     let mut spans = Vec::new();
     match select_xml_entry(container, "/Root/part/arrangements") {
         SelectedXmlEntry::Skip => {}
         SelectedXmlEntry::Damaged(offset, size) => {
-            spans.push(("nx.configurations", offset, size));
+            spans.push(("nx.configurations", offset, size, String::new()));
         }
         SelectedXmlEntry::Payload {
             payload,
@@ -2816,15 +2866,17 @@ pub(crate) fn damaged_config_xml_spans(
                 entry_offset,
             ))? {
                 if let Some((_, size)) = container.entries[entry_index].file_span() {
-                    spans.push(("nx.configurations", entry_offset, size));
+                    spans.push(("nx.configurations", entry_offset, size, String::new()));
                 }
+            } else {
+                element_spans(ctx, payload, entry_offset, &mut spans)?;
             }
         }
     }
     match select_xml_entry(container, "/Root/part/attrs") {
         SelectedXmlEntry::Skip => {}
         SelectedXmlEntry::Damaged(offset, size) => {
-            spans.push(("nx.part_attributes", offset, size));
+            spans.push(("nx.part_attributes", offset, size, String::new()));
         }
         SelectedXmlEntry::Payload {
             payload,
@@ -2842,15 +2894,17 @@ pub(crate) fn damaged_config_xml_spans(
                 };
             if damaged {
                 if let Some((_, size)) = container.entries[entry_index].file_span() {
-                    spans.push(("nx.part_attributes", entry_offset, size));
+                    spans.push(("nx.part_attributes", entry_offset, size, String::new()));
                 }
+            } else {
+                element_spans(ctx, payload, entry_offset, &mut spans)?;
             }
         }
     }
     match select_xml_entry(container, "/Root/qafmetadata") {
         SelectedXmlEntry::Skip => {}
         SelectedXmlEntry::Damaged(offset, size) => {
-            spans.push(("nx.material_texture_catalog", offset, size));
+            spans.push(("nx.material_texture_catalog", offset, size, String::new()));
         }
         SelectedXmlEntry::Payload {
             payload,
@@ -2876,8 +2930,15 @@ pub(crate) fn damaged_config_xml_spans(
                 &assets,
             ))? {
                 if let Some((_, size)) = container.entries[entry_index].file_span() {
-                    spans.push(("nx.material_texture_catalog", entry_offset, size));
+                    spans.push((
+                        "nx.material_texture_catalog",
+                        entry_offset,
+                        size,
+                        String::new(),
+                    ));
                 }
+            } else {
+                element_spans(ctx, payload, entry_offset, &mut spans)?;
             }
         }
     }
@@ -2914,9 +2975,9 @@ pub(super) fn material_texture_catalog_entries(
     Ok(entries)
 }
 
-fn parse_material_texture_catalog(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
+fn parse_material_texture_catalog<'a>(
+    ctx: &DecodeContext<'a>,
+    payload: &'a [u8],
     entry_index: usize,
     source_entry: &str,
     entry_offset: u64,
@@ -2932,7 +2993,7 @@ fn parse_material_texture_catalog(
     let Some(xml) = xml_stream_text(payload) else {
         return Err(damaged());
     };
-    let document = match ctx.parse_xml(xml, "decode XML tree") {
+    let document = match recover_config_xml(ctx, xml, &mut Vec::new()) {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -3373,9 +3434,9 @@ pub(super) fn configurations(
 /// Parse one available arrangement table: `None` is a valid-empty table
 /// with no arrangements, any other failure is damage the caller reports
 /// through the helper's part give-up (§4.5).
-fn parse_arrangements_payload(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
+fn parse_arrangements_payload<'a>(
+    ctx: &DecodeContext<'a>,
+    payload: &'a [u8],
     entry_index: usize,
     source_entry: &str,
     offset: u64,
@@ -3384,7 +3445,7 @@ fn parse_arrangements_payload(
     let Some(xml) = xml_stream_text(payload) else {
         return Err(damaged());
     };
-    let document = match ctx.parse_xml(xml, "decode XML tree") {
+    let document = match recover_config_xml(ctx, xml, &mut Vec::new()) {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -3500,9 +3561,9 @@ pub(super) fn part_attributes(
     )
 }
 
-fn parse_part_attributes(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
+fn parse_part_attributes<'a>(
+    ctx: &DecodeContext<'a>,
+    payload: &'a [u8],
     entry_index: usize,
     source_entry: &str,
     entry_offset: u64,
@@ -3510,7 +3571,7 @@ fn parse_part_attributes(
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(None);
     };
-    let document = match ctx.parse_xml(xml, "decode XML tree") {
+    let document = match recover_config_xml(ctx, xml, &mut Vec::new()) {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {

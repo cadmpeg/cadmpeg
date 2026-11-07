@@ -110,15 +110,16 @@ pub(crate) fn histories(
         let Some(text) = crate::container::xml_text(section.payload()) else {
             continue;
         };
-        let doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
-            Ok(tree) => tree,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(_) => {
-                // One unreadable Keywords block costs that history, not the
-                // histories from the remaining blocks (§4.5).
-                continue;
-            }
-        };
+        let doc =
+            match crate::container::recover_xml(ctx, &text, "decode XML tree", |_, _, _| Ok(())) {
+                Ok(tree) => tree,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => {
+                    // One unreadable Keywords block costs that history, not the
+                    // histories from the remaining blocks (§4.5).
+                    continue;
+                }
+            };
         let root = doc.root_element();
         if !root.tag_name().name().contains("Keywords") {
             // A non-history XML block (document metadata, envelopes)
