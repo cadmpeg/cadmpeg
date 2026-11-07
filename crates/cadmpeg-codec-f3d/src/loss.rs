@@ -326,6 +326,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftSettingsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
+    /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
+    FeatureFaceOperandFallbackContradicted,
     /// Edge-treatment selections retain native recipes; no historical edge.
     FeatureEdgeSelectionNative,
     /// Edge-treatment operands stay unresolved inside historical selections.
@@ -647,6 +649,7 @@ impl F3dLossCode {
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureFaceOperandUnresolved,
+        Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
         Self::FeatureEdgeSelectionLost,
@@ -891,6 +894,9 @@ impl F3dLossCode {
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
+            Self::FeatureFaceOperandFallbackContradicted => {
+                "feature.face-operand-fallback-contradicted"
+            }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
             Self::FeatureEdgeSelectionLost => "feature.edge-selection-lost",
@@ -1152,6 +1158,7 @@ impl F3dLossCode {
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1345,6 +1352,7 @@ impl F3dLossCode {
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1626,6 +1634,7 @@ mod tests {
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
                 "feature.face-operand-unresolved",
+                "feature.face-operand-fallback-contradicted",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
                 "feature.edge-selection-lost",
