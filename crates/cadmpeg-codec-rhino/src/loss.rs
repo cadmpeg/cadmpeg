@@ -249,6 +249,8 @@ pub(crate) enum RhinoLossCode {
     WriterMaterialUuidReassigned,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// A document setting color cannot be represented.
+    WriterSettingColorReduced,
     /// A dimension style archive index changes.
     WriterDimensionStyleIndexReassigned,
     /// A text style has no writable native record.
@@ -419,6 +421,7 @@ impl RhinoLossCode {
         Self::WriterMaterialTextureOmitted,
         Self::WriterMaterialUuidReassigned,
         Self::WriterAttributesOmitted,
+        Self::WriterSettingColorReduced,
         Self::WriterDimensionStyleIndexReassigned,
         Self::WriterTextStyleOmitted,
         Self::WriterTextStyleReferenceReduced,
@@ -525,6 +528,7 @@ impl RhinoLossCode {
             Self::WriterMaterialTextureOmitted => "writer.material-texture-omitted",
             Self::WriterMaterialUuidReassigned => "writer.material-uuid-reassigned",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterSettingColorReduced => "writer.setting-color-reduced",
             Self::WriterDimensionStyleIndexReassigned => "writer.dimension-style-index-reassigned",
             Self::WriterTextStyleOmitted => "writer.text-style-omitted",
             Self::WriterTextStyleReferenceReduced => "writer.text-style-reference-reduced",
@@ -686,6 +690,7 @@ impl RhinoLossCode {
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAttributesOmitted
+            | Self::WriterSettingColorReduced
             | Self::WriterDimensionStyleIndexReassigned
             | Self::WriterTextStyleOmitted
             | Self::WriterTextStyleReferenceReduced
