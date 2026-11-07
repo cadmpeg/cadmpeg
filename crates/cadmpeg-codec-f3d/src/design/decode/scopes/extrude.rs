@@ -74,6 +74,30 @@ pub(super) fn exact_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
+    if paired_at
+        .checked_sub(start)
+        .zip(reference_count_at.checked_sub(start))
+        .is_some_and(|(length, count_offset)| {
+            through_all::matches_frame(
+                u64_from_index(length),
+                u64_from_index(count_offset),
+                reference_members.len(),
+            )
+        })
+    {
+        use crate::layout::class_349_two_sided_through_all_extrude_frame as through_all_frame;
+        let first = start
+            .checked_add(through_all_frame::FIRST_SIDE_EXTENT)
+            .and_then(|offset| View::u32_le_at(bytes, offset));
+        let second = start
+            .checked_add(through_all_frame::SECOND_SIDE_EXTENT)
+            .and_then(|offset| View::u32_le_at(bytes, offset));
+        if (first == Some(4) && !matches!(second, Some(1..=3)))
+            || (second == Some(4) && !matches!(first, Some(1..=3)))
+        {
+            return through_all::exact(bytes, start, reference_members);
+        }
+    }
     let legacy_class_415 = paired_at
         .checked_sub(start)
         .zip(reference_count_at.checked_sub(start))
@@ -124,21 +148,6 @@ pub(super) fn exact_extrude_prologue(
     });
     if current.is_some() {
         return current;
-    }
-    if paired_at
-        .checked_sub(start)
-        .zip(reference_count_at.checked_sub(start))
-        .is_some_and(|(length, count_offset)| {
-            through_all::matches_frame(
-                class_tag,
-                paired_class_tag,
-                u64_from_index(length),
-                u64_from_index(count_offset),
-                reference_members.len(),
-            )
-        })
-    {
-        return through_all::exact(bytes, start, reference_members);
     }
     legacy_class_397::exact_symmetric_extrude_prologue(
         bytes,

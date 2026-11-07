@@ -122,7 +122,7 @@ fn class_349_through_all_refuses_changed_fields_and_foreign_references() {
         let mut changed = bytes.clone();
         changed[at] ^= 1;
         assert!(
-            parse(&changed, &references).is_none(),
+            parse(&changed, &references).is_none_or(|value| value.extent() != Some(DesignExtrudeExtent::TwoSidedThroughAll)),
             "changed field at {at}"
         );
     }
@@ -132,11 +132,23 @@ fn class_349_through_all_refuses_changed_fields_and_foreign_references() {
             .copy_from_slice(&value.to_le_bytes());
         assert!(parse(&changed, &references).is_none());
     }
-    assert!(!matches_frame("348", "262", 496, 272, 11));
-    assert!(!matches_frame("349", "263", 496, 272, 11));
-    assert!(!matches_frame("349", "262", 495, 272, 11));
-    assert!(!matches_frame("349", "262", 496, 271, 11));
-    assert!(!matches_frame("349", "262", 496, 272, 10));
+    assert!(!matches_frame(495, 272, 11));
+    assert!(!matches_frame(496, 271, 11));
+    assert!(!matches_frame(496, 272, 10));
+    let alternate = super::super::exact_extrude_prologue(
+        &bytes,
+        0,
+        layout::LEN,
+        "415",
+        "265",
+        layout::REFERENCE_COUNT,
+        &references,
+    )
+    .unwrap();
+    assert_eq!(
+        alternate.extent(),
+        Some(DesignExtrudeExtent::TwoSidedThroughAll)
+    );
 }
 
 #[test]
@@ -158,7 +170,7 @@ fn class_349_scope_validator_uses_the_decoder_extent_key() {
     assert!(!valid_prologue(&scope, wrong_extent));
     let mut other = scope;
     other.class_tag = "348".to_owned().try_into().unwrap();
-    assert!(!valid_prologue(&other, prologue));
+    assert!(valid_prologue(&other, prologue));
 }
 
 #[test]
