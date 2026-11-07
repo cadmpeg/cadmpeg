@@ -95,34 +95,42 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let faces = face_selection_value(faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+            require_same_family(existing, &feature.id, &["ExtendSurface", "SurfaceExtend"])?;
+            let mut parameters = self.base_parameters();
+            if let Some(distance) = distance {
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Distance"),
+                    format_length_mm(self.dimension(distance)?.into()),
+                );
+            } else if parameters.contains_key("Distance") || parameters.contains_key("D1") {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} has a distance parameter but no extension distance",
+                    feature.id
+                )));
+            }
+            let mut properties = self.base_properties();
+            if let Some(faces) = face_selection_value(faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
+            } else if matches!(faces, FaceSelection::Unresolved) {
+                properties.remove("Faces");
+            } else {
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no extend-surface input faces",
                     feature.id
-                ))
-            })?;
-            require_same_family(existing, &feature.id, &["ExtendSurface", "SurfaceExtend"])?;
-            let distance = distance.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved surface extension distance",
-                    feature.id
-                ))
-            })?;
-            let mut parameters = self.base_parameters();
-            parameters.insert(
-                cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(self.dimension(distance)?.into()),
-            );
-            let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
-            let method =
-                crate::feature_schema::surface_extension_token(method).ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
-                        "SLDPRT feature {} has an unsupported surface extension method",
-                        feature.id
-                    ))
-                })?;
-            properties.insert(cadmpeg_core::nonblank_literal!("Method"), method.into());
+                )));
+            }
+            if method == SurfaceExtension::Unresolved {
+                properties.remove("Method");
+            } else {
+                let method =
+                    crate::feature_schema::surface_extension_token(method).ok_or_else(|| {
+                        CodecError::UnsupportedContent(format!(
+                            "SLDPRT feature {} has an unsupported surface extension method",
+                            feature.id
+                        ))
+                    })?;
+                properties.insert(cadmpeg_core::nonblank_literal!("Method"), method.into());
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "ExtendSurface".into(), |record| record.kind.clone()),
                 parameters,
@@ -382,26 +390,30 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let selection = face_selection_value(faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+            require_same_family(existing, &feature.id, &["OffsetSurface"])?;
+            let mut parameters = self.base_parameters();
+            if let Some(distance) = distance {
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Distance"),
+                    format_length_mm(self.dimension(distance)?),
+                );
+            } else if parameters.contains_key("Distance") || parameters.contains_key("D1") {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} has a distance parameter but no surface offset",
+                    feature.id
+                )));
+            }
+            let mut properties = self.base_properties();
+            if let Some(selection) = face_selection_value(faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
+            } else if matches!(faces, FaceSelection::Unresolved) {
+                properties.remove("Faces");
+            } else {
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no offset-surface support faces",
                     feature.id
-                ))
-            })?;
-            require_same_family(existing, &feature.id, &["OffsetSurface"])?;
-            let distance = distance.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved surface offset",
-                    feature.id
-                ))
-            })?;
-            let mut parameters = self.base_parameters();
-            parameters.insert(
-                cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(self.dimension(distance)?),
-            );
-            let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
+                )));
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "OffsetSurface".into(), |record| record.kind.clone()),
                 parameters,

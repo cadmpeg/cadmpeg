@@ -1545,6 +1545,65 @@ fn semantic_writer_round_trips_trim_surface() {
 }
 
 #[test]
+fn source_less_partial_surface_operations_remain_operations() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, SurfaceExtension,
+    };
+
+    for (tag, kind, name) in [
+        ("OffsetSurface", "OffsetSurface", "Offset"),
+        ("ExtendSurface", "SurfaceExtend", "Extend"),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let xml = format!(r#"<Keywords><{tag} Name="{name}" Type="{kind}" id="38"/></Keywords>"#);
+        source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let expected = feature.evaluation.definition().clone();
+        assert!(matches!(
+            &expected,
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+                faces: FaceSelection::Unresolved,
+                distance: None
+            }) | FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+                faces: FaceSelection::Unresolved,
+                distance: None,
+                method: SurfaceExtension::Unresolved
+            })
+        ));
+        ir.native = cadmpeg_ir::Native::default();
+        ir.source = None;
+        for feature in &mut ir.model.features {
+            feature.native_ref = None;
+        }
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let written = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(written
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.name.as_deref() == Some(name)
+                && feature.evaluation.definition() == &expected));
+    }
+}
+
+#[test]
 fn semantic_writer_round_trips_extend_surface() {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceExtension,
