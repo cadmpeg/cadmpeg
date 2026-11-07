@@ -7818,6 +7818,32 @@ impl<'a> Builder<'a> {
             }
             self.loss(StepLossCode::UnknownSurfaceFaceOmitted, message);
         }
+        self.unwritten_geometry_carriers.extend(
+            self.ir
+                .model
+                .curves
+                .iter()
+                .filter(|curve| {
+                    matches!(
+                        curve.geometry.solved(),
+                        Some(SolvedCurveGeometry::Unknown { .. })
+                    ) && !self.curve_refs.contains_key(curve.id.as_str())
+                })
+                .map(|curve| curve.id.to_string()),
+        );
+        self.unwritten_geometry_carriers.extend(
+            self.ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| {
+                    matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Unknown { .. })
+                    ) && !self.surface_refs.contains_key(surface.id.as_str())
+                })
+                .map(|surface| surface.id.to_string()),
+        );
         self.unwritten_geometry_carriers.retain(|id| {
             !self.surface_refs.contains_key(id.as_str())
                 && !self.curve_refs.contains_key(id.as_str())
