@@ -216,3 +216,66 @@ fn face_source_identity_uses_registration_and_segment_instead_of_class_literals(
     );
     assert!(!matches(&types, source, "256"));
 }
+
+#[test]
+fn damaged_face_source_identity_keeps_its_indexed_sibling() {
+    fn identity(index: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        indexed_header(&mut bytes, b"290", index);
+        bytes.extend_from_slice(&586u64.to_le_bytes());
+        crate::test_support::lp_utf16(&mut bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
+        crate::test_support::lp_utf16(&mut bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 5]);
+        bytes
+    }
+    let mut bytes = identity(200);
+    bytes[11] = 1;
+    let second = bytes.len();
+    bytes.extend_from_slice(&identity(201));
+    let frames = [
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 200,
+            start: 0,
+            member_end: second,
+            end: second,
+        },
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 201,
+            start: second,
+            member_end: bytes.len(),
+            end: bytes.len(),
+        },
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let decoded: Vec<_> = frames
+        .iter()
+        .filter_map(|frame| {
+            crate::design::decode::operands::decode_face_source_identity_part(
+                &ctx,
+                &mut parts,
+                source,
+                "Design/BulkStream.dat",
+                frame,
+            )
+            .unwrap()
+        })
+        .collect();
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].local_id, 586);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
