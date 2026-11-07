@@ -241,6 +241,8 @@ pub(crate) enum RhinoLossCode {
     WriterCarrierResolved,
     /// Material records have no writer encoding.
     WriterMaterialOmitted,
+    /// A native material color cannot be represented.
+    WriterMaterialColorReduced,
     /// Material texture channels cannot be written.
     WriterMaterialTextureOmitted,
     /// A material identity is changed to keep physical components distinct.
@@ -257,6 +259,8 @@ pub(crate) enum RhinoLossCode {
     WriterProductMetadataReduced,
     /// An embedded image cannot be written.
     WriterImageOmitted,
+    /// An object display order cannot fit its native field.
+    WriterObjectDisplayOrderReduced,
     /// A native light has incomplete or unrepresentable fields.
     WriterLightOmitted,
     /// A light's stored archive index changes to its emitted table position.
@@ -411,6 +415,7 @@ impl RhinoLossCode {
         Self::WriterPcurveReversalDefaulted,
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
+        Self::WriterMaterialColorReduced,
         Self::WriterMaterialTextureOmitted,
         Self::WriterMaterialUuidReassigned,
         Self::WriterAttributesOmitted,
@@ -419,6 +424,7 @@ impl RhinoLossCode {
         Self::WriterTextStyleReferenceReduced,
         Self::WriterProductMetadataReduced,
         Self::WriterImageOmitted,
+        Self::WriterObjectDisplayOrderReduced,
         Self::WriterLightOmitted,
         Self::WriterLightIndexReassigned,
         Self::WriterLightAttributeIndexReassigned,
@@ -515,6 +521,7 @@ impl RhinoLossCode {
             Self::WriterPcurveReversalDefaulted => "writer.pcurve-reversal-defaulted",
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
+            Self::WriterMaterialColorReduced => "writer.material-color-reduced",
             Self::WriterMaterialTextureOmitted => "writer.material-texture-omitted",
             Self::WriterMaterialUuidReassigned => "writer.material-uuid-reassigned",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
@@ -523,6 +530,7 @@ impl RhinoLossCode {
             Self::WriterTextStyleReferenceReduced => "writer.text-style-reference-reduced",
             Self::WriterProductMetadataReduced => "writer.product-metadata-reduced",
             Self::WriterImageOmitted => "writer.image-omitted",
+            Self::WriterObjectDisplayOrderReduced => "writer.object-display-order-reduced",
             Self::WriterLightOmitted => "writer.light-omitted",
             Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
             Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
@@ -659,6 +667,7 @@ impl RhinoLossCode {
                 LossTaxonomy::ProceduralReduced
             }
             Self::WriterMaterialOmitted
+            | Self::WriterMaterialColorReduced
             | Self::WriterMaterialTextureOmitted
             | Self::WriterMaterialUuidReassigned
             | Self::WriterLinetypeOmitted
@@ -682,6 +691,7 @@ impl RhinoLossCode {
             | Self::WriterTextStyleReferenceReduced
             | Self::WriterProductMetadataReduced
             | Self::WriterImageOmitted
+            | Self::WriterObjectDisplayOrderReduced
             | Self::WriterLightOmitted
             | Self::WriterLightIndexReassigned
             | Self::WriterLightAttributeIndexReassigned
@@ -801,6 +811,7 @@ mod tests {
                 "writer.pcurve-reversal-defaulted",
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
+                "writer.material-color-reduced",
                 "writer.material-texture-omitted",
                 "writer.material-uuid-reassigned",
                 "writer.attributes-omitted",
@@ -809,6 +820,7 @@ mod tests {
                 "writer.text-style-reference-reduced",
                 "writer.product-metadata-reduced",
                 "writer.image-omitted",
+                "writer.object-display-order-reduced",
                 "writer.light-omitted",
                 "writer.light-index-reassigned",
                 "writer.light-attribute-index-reassigned",

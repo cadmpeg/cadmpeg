@@ -443,6 +443,30 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
 }
 
 #[test]
+fn vendor_design_passes_every_loss_rejection_mode() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("vendor.FCStd");
+    fs::write(&input, mixed(MixedKind::Vendor)).unwrap();
+    for mode in ["decode", "export", "any"] {
+        for floor in ["info", "warning", "error", "blocking"] {
+            let output = dir.path().join(format!("{mode}-{floor}.FCStd"));
+            Command::cargo_bin("cadmpeg")
+                .unwrap()
+                .args([
+                    "convert",
+                    input.to_str().unwrap(),
+                    "-o",
+                    output.to_str().unwrap(),
+                    &format!("--reject-lossy={mode}"),
+                    &format!("--reject-lossy-floor={floor}"),
+                ])
+                .assert()
+                .success();
+        }
+    }
+}
+
+#[test]
 fn partial_design_native_guard_and_synthesis_keep_objects_without_unreadable_values() {
     for kind in [MixedKind::Unreadable, MixedKind::Vendor] {
         let result = decode(&FcstdCodec, &mixed(kind));

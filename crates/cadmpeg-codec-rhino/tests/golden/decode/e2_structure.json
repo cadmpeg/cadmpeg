@@ -1,0 +1,1121 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "rhino:model:display-color#layer-1",
+          "id": "rhino:model:display-color-binding#0-0",
+          "target": {
+            "id": "rhino:object:point#51515151-5151-5151-5151-515151515151",
+            "kind": "point"
+          }
+        },
+        {
+          "appearance": "rhino:model:material#000000",
+          "id": "rhino:model:material-binding#0-0",
+          "target": {
+            "id": "rhino:object:point#51515151-5151-5151-5151-515151515151",
+            "kind": "point"
+          }
+        },
+        {
+          "appearance": "rhino:model:material#000001",
+          "id": "rhino:model:material-binding#1-0",
+          "target": {
+            "id": "rhino:model:occurrence#1",
+            "kind": "occurrence"
+          }
+        },
+        {
+          "appearance": "rhino:model:material#000000",
+          "id": "rhino:model:material-binding#2-0",
+          "target": {
+            "id": "rhino:model:occurrence#2",
+            "kind": "occurrence"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 0.0,
+            "b": 0.1568627506494522,
+            "g": 0.3137255012989044,
+            "r": 0.7058823704719543
+          },
+          "id": "rhino:model:display-color#layer-0",
+          "native_ref": "rhino:object:record#000002"
+        },
+        {
+          "base_color": {
+            "a": 0.0,
+            "b": 0.7058823704719543,
+            "g": 0.3137255012989044,
+            "r": 0.1568627506494522
+          },
+          "id": "rhino:model:display-color#layer-1",
+          "native_ref": "rhino:object:record#000000"
+        },
+        {
+          "asset_guid": "81818181-8181-8181-8181-818181818181",
+          "base_color": {
+            "a": 0.843137264251709,
+            "b": 0.11764705926179886,
+            "g": 0.0784313753247261,
+            "r": 0.03921568766236305
+          },
+          "id": "rhino:model:material#000000",
+          "name": "Copper",
+          "native_ref": "rhino:presentation:material#81818181-8181-8181-8181-818181818181",
+          "properties": {
+            "index_of_refraction": 1.25,
+            "reflectivity": 0.125,
+            "shine": 2.5,
+            "transparency": 0.25
+          },
+          "schema": "Rhino material"
+        },
+        {
+          "asset_guid": "82828282-8282-8282-8282-828282828282",
+          "base_color": {
+            "a": 0.843137264251709,
+            "b": 0.11764705926179886,
+            "g": 0.0784313753247261,
+            "r": 0.03921568766236305
+          },
+          "id": "rhino:model:material#000001",
+          "name": "Blue",
+          "native_ref": "rhino:presentation:material#82828282-8282-8282-8282-828282828282",
+          "properties": {
+            "index_of_refraction": 1.25,
+            "reflectivity": 0.125,
+            "shine": 2.5,
+            "transparency": 0.25
+          },
+          "schema": "Rhino material"
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [
+        {
+          "id": "rhino:model:object-name#0-0",
+          "name": "name",
+          "native_ref": "rhino:object:record#000000",
+          "target": {
+            "id": "rhino:object:point#51515151-5151-5151-5151-515151515151",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Member"
+            }
+          ]
+        }
+      ],
+      "bodies": [
+        {
+          "color": {
+            "a": 0.0,
+            "b": 0.7058823704719543,
+            "g": 0.3137255012989044,
+            "r": 0.1568627506494522
+          },
+          "id": "rhino:object:body#51515151-5151-5151-5151-515151515151",
+          "kind": "general",
+          "name": "Member",
+          "native_ref": "rhino:object:record#000000",
+          "regions": [
+            "rhino:object:region#51515151-5151-5151-5151-515151515151"
+          ],
+          "visible": true
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "rhino:model:occurrence#1",
+          "name": "First",
+          "native_ref": "rhino:product:occurrence#71717171-7171-7171-7171-717171717171",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "rhino:model:product#61616161-6161-6161-6161-616161616161",
+            "scope": "local"
+          },
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              10.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": true
+        },
+        {
+          "id": "rhino:model:occurrence#2",
+          "name": "Second",
+          "native_ref": "rhino:product:occurrence#72727272-7272-7272-7272-727272727272",
+          "ordinal": 1,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "rhino:model:product#61616161-6161-6161-6161-616161616161",
+            "scope": "local"
+          },
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              20.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": true
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "rhino:object:point#51515151-5151-5151-5151-515151515151",
+          "position": {
+            "x": 1.0,
+            "y": 2.0,
+            "z": 3.0
+          },
+          "source_object": {
+            "format": "rhino",
+            "object_id": "51515151-5151-5151-5151-515151515151"
+          }
+        }
+      ],
+      "presentation_documents": [
+        {
+          "id": "rhino:model:view#camera-000000",
+          "native_ref": "rhino:document:view#named-0000",
+          "states": [
+            {
+              "kind": {
+                "type": "Camera",
+                "value": {
+                  "orientation": [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "position": [
+                    1.0,
+                    2.0,
+                    3.0
+                  ]
+                }
+              },
+              "order": 0
+            }
+          ]
+        }
+      ],
+      "presentation_layers": [
+        {
+          "id": "rhino:model:layer#000000",
+          "items": [
+            {
+              "kind": "occurrence",
+              "occurrence": "rhino:model:occurrence#2"
+            }
+          ],
+          "name": "Parent",
+          "native_ref": "rhino:presentation:layer#41414141-4141-4141-4141-414141414141",
+          "visible": true
+        },
+        {
+          "id": "rhino:model:layer#000001",
+          "items": [
+            {
+              "kind": "point",
+              "point": "rhino:object:point#51515151-5151-5151-5151-515151515151"
+            },
+            {
+              "kind": "occurrence",
+              "occurrence": "rhino:model:occurrence#1"
+            }
+          ],
+          "name": "Child",
+          "native_ref": "rhino:presentation:layer#42424242-4242-4242-4242-424242424242",
+          "parent": "rhino:model:layer#000000",
+          "visible": true
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "rhino:object:body#51515151-5151-5151-5151-515151515151"
+          ],
+          "description": "description",
+          "id": "rhino:model:product#61616161-6161-6161-6161-616161616161",
+          "kind": "part",
+          "native_ref": "rhino:product:definition#61616161-6161-6161-6161-616161616161",
+          "source_name": "modern definition"
+        }
+      ],
+      "regions": [
+        {
+          "body": "rhino:object:body#51515151-5151-5151-5151-515151515151",
+          "id": "rhino:object:region#51515151-5151-5151-5151-515151515151",
+          "shells": [
+            "rhino:object:shell#51515151-5151-5151-5151-515151515151"
+          ]
+        }
+      ],
+      "semantic_annotations": [
+        {
+          "id": "rhino:model:annotation#annotations-0",
+          "kind": "text",
+          "native_ref": "rhino:document:annotation#5268696e-6f49-4400-0000-000000000003",
+          "object": "rhino:document:annotation#5268696e-6f49-4400-0000-000000000003",
+          "order": 0,
+          "position": [
+            0.0,
+            1.5,
+            0.0
+          ],
+          "runtime_type": "rhino::annotations",
+          "text": [
+            "legacy text"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "rhino:object:shell#51515151-5151-5151-5151-515151515151",
+          "members": [
+            {
+              "id": "rhino:object:vertex#51515151-5151-5151-5151-515151515151",
+              "kind": "free_vertex"
+            }
+          ],
+          "region": "rhino:object:region#51515151-5151-5151-5151-515151515151"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "rhino:object:vertex#51515151-5151-5151-5151-515151515151",
+          "point": "rhino:object:point#51515151-5151-5151-5151-515151515151"
+        }
+      ],
+      "view_presentations": [
+        {
+          "id": "rhino:model:object-view#0-0",
+          "native_ref": "rhino:object:record#000000",
+          "object": "rhino:object:point#51515151-5151-5151-5151-515151515151",
+          "order": 1,
+          "visible": true
+        },
+        {
+          "id": "rhino:model:view#view-000000",
+          "native_ref": "rhino:document:view#named-0000",
+          "order": 0,
+          "properties": {
+            "name": "Witness view",
+            "show_construction_axes": "true",
+            "show_construction_grid": "true",
+            "show_world_axes": "true"
+          }
+        }
+      ]
+    },
+    "native": {
+      "rhino": {
+        "annotation_settings": [],
+        "annotations": [
+          {
+            "allow_text_scaling": false,
+            "annotation_type": 7,
+            "dimstyle_uuid": null,
+            "horizontal_alignment": 0,
+            "horizontal_direction": [
+              1.0,
+              0.0
+            ],
+            "id": "rhino:document:annotation#5268696e-6f49-4400-0000-000000000003",
+            "kind": "text",
+            "leader_points": [],
+            "legacy_justification": 262145,
+            "legacy_style_index": 0,
+            "legacy_text_display_mode": 0,
+            "legacy_text_height": 1.5,
+            "legacy_user_positioned_text": false,
+            "legacy_user_text": "",
+            "links": [
+              "rhino:object:record#000003"
+            ],
+            "plane_equation": [
+              0.0,
+              0.0,
+              1.0,
+              -0.0
+            ],
+            "plane_origin": [
+              0.0,
+              1.5,
+              0.0
+            ],
+            "plane_x_axis": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "plane_y_axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "plane_z_axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "rich_text": "legacy text",
+            "source_uuid": "00000000-0000-0000-0000-000000000000",
+            "text_rectangle_width": 0.0,
+            "text_rotation_radians": 0.0,
+            "vertical_alignment": 0,
+            "wrapped": false
+          }
+        ],
+        "applications": [],
+        "construction_planes": [],
+        "dimension_styles": [],
+        "document_notes": [],
+        "document_settings": [
+          {
+            "archive_file_name": null,
+            "current_color": null,
+            "current_color_source": null,
+            "current_dimension_style_index": null,
+            "current_font_index": null,
+            "current_layer_index": null,
+            "current_material_index": null,
+            "current_material_source": null,
+            "current_wire_density": null,
+            "id": "rhino:document:settings#current",
+            "model_url": null
+          }
+        ],
+        "embedded_images": [],
+        "external_references": [],
+        "grid_defaults": [],
+        "groups": [
+          {
+            "archive_index": 0,
+            "id": "rhino:presentation:group#31313131-3131-3131-3131-313131313131",
+            "links": [
+              "rhino:object:record#000000",
+              "rhino:object:record#000001",
+              "rhino:object:record#000002"
+            ],
+            "name": "Witness group",
+            "source_uuid": "31313131-3131-3131-3131-313131313131"
+          }
+        ],
+        "hatch_patterns": [],
+        "history_records": [],
+        "layers": [
+          {
+            "archive_index": 0,
+            "clipping_planes_enabled": null,
+            "color": "b45028ff",
+            "display_material_uuid": null,
+            "expanded": true,
+            "id": "rhino:presentation:layer#41414141-4141-4141-4141-414141414141",
+            "iges_level": 0,
+            "linetype_index": -1,
+            "locked": false,
+            "material_index": -1,
+            "name": "Parent",
+            "parent_uuid": null,
+            "plot_color": {
+              "a": 0.0,
+              "b": 0.1568627506494522,
+              "g": 0.3137255012989044,
+              "r": 0.7058823704719543
+            },
+            "plot_weight_mm": 0.0,
+            "rendering_materials": [],
+            "source_uuid": "41414141-4141-4141-4141-414141414141",
+            "visible": true
+          },
+          {
+            "archive_index": 1,
+            "clipping_planes_enabled": null,
+            "color": "2850b4ff",
+            "display_material_uuid": null,
+            "expanded": true,
+            "id": "rhino:presentation:layer#42424242-4242-4242-4242-424242424242",
+            "iges_level": 0,
+            "linetype_index": -1,
+            "locked": false,
+            "material_index": -1,
+            "name": "Child",
+            "parent_uuid": "41414141-4141-4141-4141-414141414141",
+            "plot_color": {
+              "a": 0.0,
+              "b": 0.7058823704719543,
+              "g": 0.3137255012989044,
+              "r": 0.1568627506494522
+            },
+            "plot_weight_mm": 0.0,
+            "rendering_materials": [],
+            "source_uuid": "42424242-4242-4242-4242-424242424242",
+            "visible": true
+          }
+        ],
+        "lights": [],
+        "linetypes": [],
+        "materials": [
+          {
+            "ambient": "01020304",
+            "archive_index": 0,
+            "diffuse": "0a141e28",
+            "diffuse_texture_alpha_transparency": null,
+            "disable_lighting": false,
+            "emission": "05060708",
+            "fresnel_index_of_refraction": null,
+            "fresnel_reflections": false,
+            "id": "rhino:presentation:material#81818181-8181-8181-8181-818181818181",
+            "index_of_refraction": 1.25,
+            "name": "Copper",
+            "plugin_uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "rdk_instance_uuid": null,
+            "reflection": "0d0e0f10",
+            "reflection_glossiness": null,
+            "reflectivity": 0.125,
+            "refraction_glossiness": null,
+            "shareable": true,
+            "shine": 2.5,
+            "source_uuid": "81818181-8181-8181-8181-818181818181",
+            "specular": "090a0b0c",
+            "texture_count": 0,
+            "textures": [],
+            "transparency": 0.25,
+            "transparent": "11121314"
+          },
+          {
+            "ambient": "01020304",
+            "archive_index": 1,
+            "diffuse": "0a141e28",
+            "diffuse_texture_alpha_transparency": null,
+            "disable_lighting": false,
+            "emission": "05060708",
+            "fresnel_index_of_refraction": null,
+            "fresnel_reflections": false,
+            "id": "rhino:presentation:material#82828282-8282-8282-8282-828282828282",
+            "index_of_refraction": 1.25,
+            "name": "Blue",
+            "plugin_uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "rdk_instance_uuid": null,
+            "reflection": "0d0e0f10",
+            "reflection_glossiness": null,
+            "reflectivity": 0.125,
+            "refraction_glossiness": null,
+            "shareable": true,
+            "shine": 2.5,
+            "source_uuid": "82828282-8282-8282-8282-828282828282",
+            "specular": "090a0b0c",
+            "texture_count": 0,
+            "textures": [],
+            "transparency": 0.25,
+            "transparent": "11121314"
+          }
+        ],
+        "object_presentation": [
+          {
+            "active_space": 0,
+            "clipping_plane_label_style": 0,
+            "clipping_plane_uuids": [],
+            "clipping_proof": false,
+            "color": "00000000",
+            "color_source": 0,
+            "decoration": 0,
+            "display_materials": [],
+            "display_order": 0,
+            "group_indexes": [
+              0
+            ],
+            "hatch_background": "00000000",
+            "hatch_boundary_visible": false,
+            "hatch_pattern_index": -1,
+            "id": "rhino:presentation:object#51515151-5151-5151-5151-515151515151",
+            "layer_index": 1,
+            "linetype_index": -1,
+            "linetype_pattern_scale": 1.0,
+            "linetype_source": 0,
+            "links": [
+              "rhino:object:record#000000"
+            ],
+            "material_index": 0,
+            "material_source": 1,
+            "name": "Member",
+            "object_mode": 0,
+            "plot_color": "00000000",
+            "plot_color_source": 0,
+            "plot_weight_mm": 0.0,
+            "plot_weight_source": 0,
+            "rendering_materials": [],
+            "section_fill_rule": 0,
+            "section_hatch_rotation": 0.0,
+            "section_hatch_scale": 1.0,
+            "source_uuid": "51515151-5151-5151-5151-515151515151",
+            "url": "",
+            "viewport_uuid": null,
+            "visible": true,
+            "wire_density": 1
+          },
+          {
+            "active_space": 0,
+            "clipping_plane_label_style": 0,
+            "clipping_plane_uuids": [],
+            "clipping_proof": false,
+            "color": "00000000",
+            "color_source": 0,
+            "decoration": 0,
+            "display_materials": [],
+            "display_order": 0,
+            "group_indexes": [
+              0
+            ],
+            "hatch_background": "00000000",
+            "hatch_boundary_visible": false,
+            "hatch_pattern_index": -1,
+            "id": "rhino:presentation:object#71717171-7171-7171-7171-717171717171",
+            "layer_index": 1,
+            "linetype_index": -1,
+            "linetype_pattern_scale": 1.0,
+            "linetype_source": 0,
+            "links": [
+              "rhino:object:record#000001"
+            ],
+            "material_index": 1,
+            "material_source": 1,
+            "name": "First",
+            "object_mode": 0,
+            "plot_color": "00000000",
+            "plot_color_source": 0,
+            "plot_weight_mm": 0.0,
+            "plot_weight_source": 0,
+            "rendering_materials": [],
+            "section_fill_rule": 0,
+            "section_hatch_rotation": 0.0,
+            "section_hatch_scale": 1.0,
+            "source_uuid": "71717171-7171-7171-7171-717171717171",
+            "url": "",
+            "viewport_uuid": null,
+            "visible": true,
+            "wire_density": 1
+          },
+          {
+            "active_space": 0,
+            "clipping_plane_label_style": 0,
+            "clipping_plane_uuids": [],
+            "clipping_proof": false,
+            "color": "00000000",
+            "color_source": 0,
+            "decoration": 0,
+            "display_materials": [],
+            "display_order": 0,
+            "group_indexes": [
+              0
+            ],
+            "hatch_background": "00000000",
+            "hatch_boundary_visible": false,
+            "hatch_pattern_index": -1,
+            "id": "rhino:presentation:object#72727272-7272-7272-7272-727272727272",
+            "layer_index": 0,
+            "linetype_index": -1,
+            "linetype_pattern_scale": 1.0,
+            "linetype_source": 0,
+            "links": [
+              "rhino:object:record#000002"
+            ],
+            "material_index": 0,
+            "material_source": 1,
+            "name": "Second",
+            "object_mode": 0,
+            "plot_color": "00000000",
+            "plot_color_source": 0,
+            "plot_weight_mm": 0.0,
+            "plot_weight_source": 0,
+            "rendering_materials": [],
+            "section_fill_rule": 0,
+            "section_hatch_rotation": 0.0,
+            "section_hatch_scale": 1.0,
+            "source_uuid": "72727272-7272-7272-7272-727272727272",
+            "url": "",
+            "viewport_uuid": null,
+            "visible": true,
+            "wire_density": 1
+          }
+        ],
+        "previews": [],
+        "product_definitions": [
+          {
+            "archive_index": 17,
+            "custom_unit_name": "",
+            "description": "description",
+            "id": "rhino:product:definition#61616161-6161-6161-6161-616161616161",
+            "kind": "static",
+            "linked_component_appearance": 0,
+            "linked_depth": 0,
+            "links": [
+              "rhino:object:record#000000"
+            ],
+            "member_object_ids": [
+              "51515151-5151-5151-5151-515151515151"
+            ],
+            "meters_per_unit": 0.0254,
+            "name": "modern definition",
+            "source_uuid": "61616161-6161-6161-6161-616161616161",
+            "unit_system": 8,
+            "url": "https://example.test",
+            "url_tag": "tag"
+          }
+        ],
+        "product_occurrences": [
+          {
+            "definition_uuid": "61616161-6161-6161-6161-616161616161",
+            "id": "rhino:product:occurrence#71717171-7171-7171-7171-717171717171",
+            "links": [
+              "rhino:object:record#000001",
+              "rhino:product:definition#61616161-6161-6161-6161-616161616161"
+            ],
+            "name": "First",
+            "parent_definition_uuids": [],
+            "source_uuid": "71717171-7171-7171-7171-717171717171",
+            "transform": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                10.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ],
+            "transform_units": "millimeter",
+            "visible": true
+          },
+          {
+            "definition_uuid": "61616161-6161-6161-6161-616161616161",
+            "id": "rhino:product:occurrence#72727272-7272-7272-7272-727272727272",
+            "links": [
+              "rhino:object:record#000002",
+              "rhino:product:definition#61616161-6161-6161-6161-616161616161"
+            ],
+            "name": "Second",
+            "parent_definition_uuids": [],
+            "source_uuid": "72727272-7272-7272-7272-727272727272",
+            "transform": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                20.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ],
+            "transform_units": "millimeter",
+            "visible": true
+          }
+        ],
+        "render_settings": [],
+        "revisions": [],
+        "setting_records": [
+          {
+            "byte_len": 413,
+            "id": "rhino:document:setting#0000",
+            "sha256": "a0a9337b897fdff13df09cb5c2e063b175324f3ce0b1c3321ce1a67012d43ca2",
+            "typecode": "0x20008036"
+          }
+        ],
+        "text_dots": [],
+        "text_styles": [],
+        "texture_mappings": [],
+        "unknowns": [
+          {
+            "id": "rhino:object:record#000000"
+          },
+          {
+            "id": "rhino:object:record#000001"
+          },
+          {
+            "id": "rhino:object:record#000002"
+          },
+          {
+            "id": "rhino:object:record#000003"
+          }
+        ],
+        "views": [
+          {
+            "attributes": null,
+            "children": [
+              {
+                "byte_len": 319,
+                "kind": "viewport",
+                "typecode": "0x2000823b"
+              },
+              {
+                "byte_len": 46,
+                "kind": "name",
+                "typecode": "0x20008a3b"
+              },
+              {
+                "byte_len": 12,
+                "kind": "end",
+                "typecode": "0xffffffff"
+              }
+            ],
+            "construction_plane": null,
+            "id": "rhino:document:view#named-0000",
+            "legacy_display_mode": null,
+            "list_index": 0,
+            "list_kind": "named",
+            "name": "Witness view",
+            "parse_warnings": [],
+            "show_construction_axes": true,
+            "show_construction_grid": true,
+            "show_world_axes": true,
+            "target_millimeters": null,
+            "trace_image": null,
+            "viewport": {
+              "camera_direction": [
+                0.0,
+                0.0,
+                -1.0
+              ],
+              "camera_direction_locked": false,
+              "camera_frame_valid": true,
+              "camera_location_locked": true,
+              "camera_location_mm": [
+                1.0,
+                2.0,
+                3.0
+              ],
+              "camera_up": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "camera_up_locked": true,
+              "camera_valid": true,
+              "camera_x_axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "camera_y_axis": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "camera_z_axis": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "frustum_left_right_symmetric": false,
+              "frustum_mm": [
+                -2.0,
+                2.0,
+                -1.0,
+                1.0,
+                0.1,
+                100.0
+              ],
+              "frustum_top_bottom_symmetric": true,
+              "frustum_valid": true,
+              "port": [
+                0,
+                1920,
+                0,
+                1080,
+                1,
+                100
+              ],
+              "port_valid": true,
+              "projection": 2,
+              "source_uuid": "11111111-1111-1111-1111-111111111111",
+              "target_millimeters": [
+                4.0,
+                5.0,
+                6.0
+              ],
+              "version": "0105",
+              "view_scale": [
+                1.0,
+                2.0,
+                3.0
+              ]
+            },
+            "wallpaper": null,
+            "window_position": null
+          }
+        ],
+        "windows_bitmaps": []
+      }
+    },
+    "scope": {
+      "design": false,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "archive_version": "80",
+        "container_kind": "3dm-chunks"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "80",
+              "opennurbs_writer_version": "202608010"
+            },
+            "dialect": "rhino:archive-80"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 0.1,
+      "linear": 0.01
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "80",
+            "opennurbs_writer_version": "202608010"
+          },
+          "dialect": "rhino:archive-80"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "object.record-census",
+          "kind": "object_records_untransferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "decoded 3/4 Rhino object records",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "object.family-not-transferred",
+          "kind": "unsupported_object_family",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "retained 1 object record(s) for class 46f75541-f46b-48be-aa7e-b353bbe068a7; geometry is not decoded",
+        "provenance": {
+          "format": "rhino",
+          "offset": 3214,
+          "tag": "OBJECT_RECORD/class=46f75541-f46b-48be-aa7e-b353bbe068a7/type=0x00000020"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "object at 3214 has nil object UUID",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "parametric_record_omitted",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: design",
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "decoded 3/4 Rhino object records; retained metadata/digests for 4 records and complete bytes for 4; document cap 268435456 bytes, per-record cap 16777216 bytes"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "scope": {
+        "design": false,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "rhino:object:body#51515151-5151-5151-5151-515151515151": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "rhino:object:region#51515151-5151-5151-5151-515151515151": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "rhino:object:shell#51515151-5151-5151-5151-515151515151": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "rhino:object:vertex#51515151-5151-5151-5151-515151515151": {
+          "entity": "derived",
+          "scope": "entity"
+        }
+      }
+    },
+    "decode_digest": "98690011ff63ca460e082b88bd83b0de4d62282efb7bca71c32a9a32b7a74b07",
+    "retained_records": {
+      "rhino:object:record#000000": {
+        "bytes": {
+          "data": "cIAAIMYAAAAAAAAAcQAAggEAAAAAAAAA+n8CAFUAAAAAAAAA+/8CABQAAAAAAAAAHRoQw1fx0xG/5wAQgwEi8ExUB6T8/wIAHQAAAAAAAAAQAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhA5Qs8Sf9/AoAAAAAAAAAAAHKAAAI9AAAAAAAAACBRUVFRUVFRUVFRUVFRUVFRAQAAAAEHAAAATQBlAG0AYgBlAHIAAAAEAAAAABABEgEAAAAAAAAAANvT2OF/AACCAAAAAAAAAAAAAAAA",
+          "retention": "inline"
+        },
+        "offset": 2250,
+        "stream": "",
+        "untyped": []
+      },
+      "rhino:object:record#000001": {
+        "bytes": {
+          "data": "cIAAIGwBAAAAAAAAcQAAggAQAAAAAAAA+n8CAP0AAAAAAAAA+/8CABQAAAAAAAAAOLbP+dS5QEOH48VueGXZasKcfdT8/wIAxQAAAAAAAAAQYWFhYWFhYWFhYWFhYWFhYQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/jFeqRf9/AoAAAAAAAAAAAHKAAAI7AAAAAAAAACBxcXFxcXFxcXFxcXFxcXFxAQAAAAEGAAAARgBpAHIAcwB0AAAABAEAAAAQARIBAAAAAAAAAAAH8EehfwAAggAAAAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 2460,
+        "stream": "",
+        "untyped": []
+      },
+      "rhino:object:record#000002": {
+        "bytes": {
+          "data": "cIAAIG4BAAAAAAAAcQAAggAQAAAAAAAA+n8CAP0AAAAAAAAA+/8CABQAAAAAAAAAOLbP+dS5QEOH48VueGXZasKcfdT8/wIAxQAAAAAAAAAQYWFhYWFhYWFhYWFhYWFhYQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAADRAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/6Wr9xv9/AoAAAAAAAAAAAHKAAAI9AAAAAAAAACBycnJycnJycnJycnJycnJyAAAAAAEHAAAAUwBlAGMAbwBuAGQAAAAEAAAAABABEgEAAAAAAAAAABW2hAh/AACCAAAAAAAAAAAAAAAA",
+          "retention": "inline"
+        },
+        "offset": 2836,
+        "stream": "",
+        "untyped": []
+      },
+      "rhino:object:record#000003": {
+        "bytes": {
+          "data": "cIAAIF8BAAAAAAAAcQAAgiAAAAAAAAAA+n8CADcBAAAAAAAA+/8CABQAAAAAAAAAQVX3Rmv0vkiqfrNTu+Bop8ZClbf8/wIA/wAAAAAAAAAAgABA7wAAAAAAAAABAAAAAAAAAACAAEDXAAAAAAAAAAEAAAADAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAMAAAAbABlAGcAYQBjAHkAIAB0AGUAeAB0AAAAAAAAAAAAAAAAAAAAAAD4PwAAAAAAAQAAAAAAAAAAAP//////eHa6XatthUinp+f/fwKAAAAAAAAAAAB/AACCAAAAAAAAAAAAAAAA",
+          "retention": "inline"
+        },
+        "offset": 3214,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
+  }
+}
