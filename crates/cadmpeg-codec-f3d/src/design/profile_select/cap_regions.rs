@@ -168,6 +168,30 @@ impl Piece {
                 || near(start, other_end) && near(end, other_start))
     }
 
+    /// The points `offset` either side of the piece's middle.
+    fn sides_of_middle(&self, offset: f64) -> Option<(Point2, Point2)> {
+        let (du, dv) = match *self {
+            Piece::Line(start, end) => {
+                let length = distance(start, end);
+                (length > 0.0).then_some(())?;
+                (-(end.v - start.v) / length, (end.u - start.u) / length)
+            }
+            Piece::Arc { center, radius, .. } => {
+                (radius > 0.0).then_some(())?;
+                let [_, middle, _] = self.points();
+                (
+                    (middle.u - center.u) / radius,
+                    (middle.v - center.v) / radius,
+                )
+            }
+        };
+        let [_, middle, _] = self.points();
+        Some((
+            Point2::new(middle.u + du * offset, middle.v + dv * offset),
+            Point2::new(middle.u - du * offset, middle.v - dv * offset),
+        ))
+    }
+
     /// Whether pieces of `by` on this piece's own carrier cover its whole
     /// interval: collinear lines for a line, arcs of the same circle for an
     /// arc.
@@ -898,6 +922,40 @@ fn parallel_plane(
         }
         Ok(_) => ParallelPlane::Elsewhere,
     }
+}
+
+/// The pieces of `caps` on the outline of their union: the union holds one
+/// side of the piece's middle and not the other. `None` when a piece has no
+/// sides.
+fn union_outline(caps: &[Cap], tolerance: f64) -> Option<Vec<&Piece>> {
+    let in_union = |point: Point2| caps.iter().any(|cap| cap.contains(point));
+    let offset = SIDE_OFFSET * tolerance;
+    let mut outline = Vec::new();
+    for piece in caps.iter().flat_map(|cap| cap.pieces.iter()) {
+        let (left, right) = piece.sides_of_middle(offset)?;
+        if in_union(left) != in_union(right) {
+            outline.push(piece);
+        }
+    }
+    Some(outline)
+}
+
+/// Whether the outlines of the unions of `faces` and of `caps` cover each
+/// other, carrier by carrier over their whole intervals.
+pub(super) fn face_outlines_cover_caps(caps: &[Cap], faces: &[Cap], tolerance: f64) -> bool {
+    let (Some(boundary), Some(outline)) = (
+        union_outline(caps, tolerance),
+        union_outline(faces, tolerance),
+    ) else {
+        return false;
+    };
+    !outline.is_empty()
+        && outline
+            .iter()
+            .all(|piece| piece.covered_by(&boundary, tolerance))
+        && boundary
+            .iter()
+            .all(|piece| piece.covered_by(&outline, tolerance))
 }
 
 /// Every loop of `face` as a frame polyline drawn from its proven pieces.

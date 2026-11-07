@@ -20,8 +20,8 @@ use crate::history_records::{
 };
 
 use super::{
-    changed_planes, face_cap, face_cap_reading, outlines_agree, polygon_area, Agreement,
-    PlaneFrame, Sampled,
+    changed_planes, face_cap, face_cap_reading, face_outlines_cover_caps, outlines_agree,
+    polygon_area, Agreement, PlaneFrame, Sampled,
 };
 
 const TOLERANCE: f64 = 1e-6;
@@ -950,4 +950,62 @@ fn assumed_cap_readings_report_one_loss_per_kind_counting_selections() {
     assert!(carrier
         .message
         .starts_with("2 extrude profile selection(s)"));
+}
+
+#[test]
+fn a_face_polygon_inscribed_in_a_small_circular_cap_does_not_cover_it() {
+    let radius = 0.01;
+    let cap = face_cap(
+        &xy_frame(),
+        &circle_topology((0.0, 0.0), radius, Vector3::new(0.0, 0.0, 1.0)),
+        CAP,
+        TOLERANCE,
+    )
+    .unwrap();
+    let same = face_cap(
+        &xy_frame(),
+        &circle_topology((0.0, 0.0), radius, Vector3::new(0.0, 0.0, 1.0)),
+        CAP,
+        TOLERANCE,
+    )
+    .unwrap();
+    assert!(face_outlines_cover_caps(
+        std::slice::from_ref(&cap),
+        std::slice::from_ref(&same),
+        TOLERANCE
+    ));
+    let mut inscribed = loop_topology(
+        &[(radius, 0.0), (0.0, radius), (-radius, 0.0), (0.0, -radius)],
+        &[(0, 1), (1, 2), (2, 3), (3, 0)],
+    );
+    straight_carriers(&mut inscribed);
+    let square = face_cap(&xy_frame(), &inscribed, CAP, TOLERANCE).unwrap();
+    assert!(!face_outlines_cover_caps(
+        std::slice::from_ref(&cap),
+        std::slice::from_ref(&square),
+        TOLERANCE
+    ));
+}
+
+#[test]
+fn two_faces_cover_a_cap_by_their_shared_outline_and_not_their_shared_edge() {
+    let cap = |corners: &[(f64, f64)]| {
+        let mut topology = loop_topology(corners, &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+        straight_carriers(&mut topology);
+        face_cap(&xy_frame(), &topology, CAP, TOLERANCE).unwrap()
+    };
+    let whole = cap(&[(0.0, 0.0), (2.0, 0.0), (2.0, 1.0), (0.0, 1.0)]);
+    let left = cap(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
+    let right = cap(&[(1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (1.0, 1.0)]);
+    assert!(face_outlines_cover_caps(
+        std::slice::from_ref(&whole),
+        &[left, right],
+        TOLERANCE
+    ));
+    let left = cap(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]);
+    assert!(!face_outlines_cover_caps(
+        std::slice::from_ref(&whole),
+        std::slice::from_ref(&left),
+        TOLERANCE
+    ));
 }
