@@ -1278,11 +1278,18 @@ fn decode_reports_untransferred_assembly_placement() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+    assert!(result.ir().model.occurrences.is_empty());
+    assert!(result.ir().model.product_definitions.is_empty());
+    let namespace = result.ir().native.namespace("nx").unwrap();
+    let placements: Vec<serde_json::Value> = namespace.arena_as("assembly_placements").unwrap();
+    assert_eq!(placements.len(), 1);
+    assert!(!placements[0]["raw_frame"].as_str().unwrap().is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == NxLossCode::AssemblyPlacementFrameUnresolved.kind()
+            && loss.message.contains("assembly root frame")
+            && loss.message.contains("translation unit")
+            && loss.message.contains("placement-to-component association")
+    }));
 }
 
 #[test]
@@ -1303,6 +1310,12 @@ fn decode_reports_untransferred_repeated_component_uses() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
+    assert!(result.ir().model.occurrences.is_empty());
+    let namespace = result.ir().native.namespace("nx").unwrap();
+    let uses: Vec<serde_json::Value> = namespace
+        .arena_as("fast_load_component_occurrences")
+        .unwrap();
+    assert_eq!(uses.len(), 2);
     assert!(result
         .report()
         .losses

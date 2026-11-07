@@ -133,12 +133,12 @@
         },
         {
           "code": {
-            "code": "assembly.occurrences-unresolved",
+            "code": "assembly.placement-frame-unresolved",
             "kind": "assembly_placements_not_transferred",
             "namespace": "nx",
             "scope": "namespaced"
           },
-          "message": "The file retains 0 assembly use(s) and 1 placement frame(s), but their neutral occurrence graph is unresolved.",
+          "message": "Withheld 1 NX placement(s) and 0 FastLoad component use(s) from neutral output because the native records do not establish a general placement-to-component association, assembly root frame, or translation unit. Their placement frames and component uses remain in the NX native namespace.",
           "severity": "blocking"
         }
       ],
