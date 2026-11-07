@@ -143,21 +143,19 @@ fn generated_feature_source_ids(
         };
         let record_id = generated_feature_record_id(&feature.id);
         if existing.get(record_id.as_str()).copied() != Some(source) && !used.insert(source) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} needs reserved principal-plane identity {source}",
                 feature.id
-            ))
-            .into());
+            )));
         }
         if allocated
             .values()
             .any(|value: &FeatureSource| value.value() == Some(source))
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} repeats principal-plane identity {source}",
                 feature.id
-            ))
-            .into());
+            )));
         }
         allocated.insert(
             feature.id.clone(),
@@ -714,6 +712,7 @@ fn synchronize_features(
         let dimension_properties = parameters
             .iter()
             .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
+            .filter(|parameter| !pmi_parameters.contains(&parameter.id))
             .filter_map(|parameter| {
                 parameter_properties
                     .get(&parameter.id)
@@ -838,6 +837,9 @@ fn synchronize_features(
             else {
                 continue;
             };
+            if pmi_parameters.contains(&id) {
+                continue;
+            }
             let parameter = parameters
                 .iter()
                 .find(|parameter| parameter.id == id)

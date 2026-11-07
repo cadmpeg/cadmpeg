@@ -1531,28 +1531,6 @@ impl<'a> Builder<'a> {
                 hidden_binding_ids.contains(binding.id.as_str()),
             ));
         }
-        let bound: BTreeSet<&str> = ir
-            .model
-            .appearance_bindings
-            .iter()
-            .map(|binding| binding.appearance.as_str())
-            .collect();
-        for appearance in &ir.model.appearances {
-            let Some(color) = appearance.base_color else {
-                continue;
-            };
-            if bound.contains(appearance.id.as_str()) {
-                continue;
-            }
-            let name = appearance.name.as_deref().unwrap_or("");
-            let rgb = format!(
-                "{},{},{}",
-                self.emitter.real(f64::from(color.r())),
-                self.emitter.real(f64::from(color.g())),
-                self.emitter.real(f64::from(color.b()))
-            );
-            self.style_colour(Some(appearance.id.as_str()), name, &rgb, &mut style_refs);
-        }
         for body in &ir.model.bodies {
             let body_id = body.id.as_str();
             let Some(spec) = body_colors.get(body_id) else {
@@ -1613,6 +1591,29 @@ impl<'a> Builder<'a> {
                 self.body_level_bindings.remove(&id);
             }
             styled_bodies.insert(body_id);
+        }
+        let written_appearances: BTreeSet<&str> = ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| self.written_appearance_bindings.contains(&binding.id))
+            .map(|binding| binding.appearance.as_str())
+            .collect();
+        for appearance in &ir.model.appearances {
+            let Some(color) = appearance.base_color else {
+                continue;
+            };
+            if written_appearances.contains(appearance.id.as_str()) {
+                continue;
+            }
+            let name = appearance.name.as_deref().unwrap_or("");
+            let rgb = format!(
+                "{},{},{}",
+                self.emitter.real(f64::from(color.r())),
+                self.emitter.real(f64::from(color.g())),
+                self.emitter.real(f64::from(color.b()))
+            );
+            self.style_colour(Some(appearance.id.as_str()), name, &rgb, &mut style_refs);
         }
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
@@ -2950,6 +2951,29 @@ impl<'a> Builder<'a> {
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
         for (product, &name) in products.iter().zip(&product_names) {
+            if product
+                .source_name
+                .as_deref()
+                .is_some_and(|source| source != name)
+            {
+                let references = occurrences
+                    .iter()
+                    .filter_map(|occurrence| match &occurrence.prototype {
+                        PrototypeReference::Local { definition } if definition == &product.id => {
+                            Some(occurrence.id.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                self.loss(
+                    StepLossCode::ProductSourceNameReduced,
+                    format!(
+                        "product {} source name was reduced to its STEP name; occurrences: {}",
+                        product.id,
+                        references.join(", ")
+                    ),
+                );
+            }
             let product_id = product
                 .part_number
                 .as_deref()
@@ -3472,6 +3496,17 @@ impl<'a> Builder<'a> {
                         .insert(region.body.as_str().to_owned());
                     false
                 };
+                if wire_written && body_kind == BodyKind::General {
+                    let shells = region
+                        .shells
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>();
+                    self.loss(
+                        StepLossCode::BodyReducedToWire,
+                        format!("general body {} was written as wire geometry for region {}; shells: {}", region.body, region.id, shells.join(", ")),
+                    );
+                }
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
             }
@@ -3533,7 +3568,7 @@ impl<'a> Builder<'a> {
             if closed && !solid {
                 self.loss(
                     StepLossCode::RegionSolidReducedToSheet,
-                    format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
+                    format!("body {} region {} was written as a surface model because its solid shells are incomplete or open", region.body, region.id),
                 );
             }
             let item = if !solid {
@@ -3706,6 +3741,7 @@ impl<'a> Builder<'a> {
         items: &mut Vec<Ref>,
     ) {
         let mut missing = BTreeSet::new();
+        let mut free_vertex_order = Vec::new();
         let mut retained = BTreeSet::new();
         let mut missing_edges = BTreeSet::new();
         let mut retained_edges = BTreeSet::new();
@@ -3714,6 +3750,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             missing.extend(shell.free_vertices().iter().cloned());
+            free_vertex_order.extend(shell.free_vertices().iter().cloned());
             for edge_id in shell.wire_edges() {
                 if let Some(edge) = self.edges.get(edge_id.as_str()) {
                     let vertices = if wire_written && self.edge_refs.contains_key(edge_id.as_str())
@@ -3810,6 +3847,12 @@ impl<'a> Builder<'a> {
             );
             self.push_region_recovery_item(region, context, item, items);
         }
+        let mut seen_vertices = BTreeSet::new();
+        let ordered_missing: Vec<_> = free_vertex_order
+            .into_iter()
+            .chain(missing.difference(&retained).cloned())
+            .filter(|id| !retained.contains(id) && seen_vertices.insert(id.clone()))
+            .collect();
         if !wire_written
             && edges.is_empty()
             && !self.body_step_refs.contains_key(region.body.as_str())
@@ -3817,7 +3860,7 @@ impl<'a> Builder<'a> {
         {
             let mut loops = Vec::new();
             let mut vertices = Vec::new();
-            for vertex_id in missing.difference(&retained) {
+            for vertex_id in &ordered_missing {
                 if let Some(vertex) = self.emit_vertex(vertex_id.as_str()) {
                     loops.push(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
                     vertices.push(format!("'{vertex_id}'"));
@@ -3866,7 +3909,7 @@ impl<'a> Builder<'a> {
         let mut points = Vec::new();
         let mut point_set = std::collections::HashSet::new();
         let mut retained_vertices = Vec::new();
-        for vertex_id in missing.difference(&retained) {
+        for vertex_id in &ordered_missing {
             let Some(point) = self
                 .vertices
                 .get(vertex_id.as_str())
@@ -5790,10 +5833,24 @@ impl<'a> Builder<'a> {
             Some((first_id, first_surface))
                 if first_surface != surface && self.split_pcurves.insert(pcurve_id) =>
             {
+                let coedges = self
+                    .ir
+                    .model
+                    .coedges
+                    .iter()
+                    .filter(|coedge| {
+                        coedge
+                            .pcurves
+                            .iter()
+                            .any(|use_| use_.pcurve.as_str() == pcurve_id)
+                    })
+                    .map(|coedge| coedge.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 self.loss(
                     StepLossCode::PcurveSplitAcrossSurfaces,
                     format!(
-                        "pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"
+                        "pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}; coedges: {coedges}"
                     ),
                 );
             }

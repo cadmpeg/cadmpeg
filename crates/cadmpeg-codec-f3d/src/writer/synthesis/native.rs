@@ -147,70 +147,135 @@ pub(super) fn reconcile(
             history
         })
         .collect();
-    let mut native =
-        F3dNative {
-            act_tables: original.act_tables.clone(),
-            act_types: original.act_types.clone(),
-            act_entities: original.act_entities.clone(),
-            act_guids: original.act_guids.clone(),
-            act_registry_channels: original.act_registry_channels.clone(),
-            act_component_links: original.act_component_links.clone(),
-            act_table_references: original.act_table_references.clone(),
-            asm_histories: histories,
-            construction_recipes: original.construction_recipes.clone(),
-            persistent_references: original.persistent_references.clone(),
-            lost_edge_references: original.lost_edge_references.clone(),
-            design_body_members: original.design_body_members.clone(),
-            design_types: original.design_types.clone(),
-            design_entity_headers: original.design_entity_headers.clone(),
-            design_record_headers: original.design_record_headers.clone(),
-            design_material_assignments: original.design_material_assignments.clone(),
-            design_body_bindings: original.design_body_bindings.clone(),
-            design_parameter_scopes: original
-                .design_parameter_scopes
-                .iter()
-                .filter(|scope| {
-                    target.model.features.iter().any(|feature| {
-                        feature.native_ref.as_deref() == Some(scope.id.as_str())
-                            && match feature.evaluation.definition() {
-                                cadmpeg_ir::features::FeatureDefinition::Operation(
-                                    cadmpeg_ir::features::FeatureOperation::InsertBodies { .. },
-                                ) => scope.copy_paste_bodies_operation().is_some(),
-                                cadmpeg_ir::features::FeatureDefinition::Operation(
-                                    cadmpeg_ir::features::FeatureOperation::Extrude { .. },
-                                ) => scope.kind()
-                                    == crate::records::feature::scope::DesignFeatureKind::Extrude,
-                                _ => false,
+    let mut native = F3dNative {
+        act_tables: original.act_tables.clone(),
+        act_types: original.act_types.clone(),
+        act_entities: original.act_entities.clone(),
+        act_guids: original.act_guids.clone(),
+        act_registry_channels: original.act_registry_channels.clone(),
+        act_component_links: original.act_component_links.clone(),
+        act_table_references: original.act_table_references.clone(),
+        asm_histories: histories,
+        construction_recipes: original.construction_recipes.clone(),
+        persistent_references: original.persistent_references.clone(),
+        lost_edge_references: original.lost_edge_references.clone(),
+        design_body_members: original.design_body_members.clone(),
+        design_types: original.design_types.clone(),
+        design_entity_headers: original.design_entity_headers.clone(),
+        design_record_headers: original.design_record_headers.clone(),
+        design_material_assignments: original.design_material_assignments.clone(),
+        design_body_bindings: original.design_body_bindings.clone(),
+        design_parameter_scopes: original
+            .design_parameter_scopes
+            .iter()
+            .filter(|scope| {
+                target.model.features.iter().any(|feature| {
+                    feature.native_ref.as_deref() == Some(scope.id.as_str())
+                        && match feature.evaluation.definition() {
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::InsertBodies { .. },
+                            ) => scope.copy_paste_bodies_operation().is_some(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Extrude { .. },
+                            ) => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::Extrude
                             }
-                    })
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
+                            ) => scope.base_feature_construction().is_some(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::DeleteBody { .. },
+                            ) => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::RemoveBody
+                            }
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+                            ) if kind.as_str() == "BaseFlange" => {
+                                scope.base_flange_operation().is_some()
+                            }
+                            _ => false,
+                        }
                 })
-                .cloned()
-                .collect(),
-            design_parameters: original.design_parameters.clone(),
-            design_configurations: original.design_configurations.clone(),
-            body_native_keys: original.body_native_keys,
-            body_visibilities: original.body_visibilities,
-            edge_continuities: original.edge_continuities,
-            face_sidedness: original.face_sidedness,
-            face_native_keys: original.face_native_keys,
-            mesh_surface_sentinels: original.mesh_surface_sentinels,
-            creation_timestamps: original.creation_timestamps,
-            edge_ownerships: original.edge_ownerships,
-            vertex_ownerships: original.vertex_ownerships,
-            wire_topologies: original.wire_topologies,
-            transform_hints: original.transform_hints,
-            tolerant_edge_tails: original.tolerant_edge_tails,
-            tolerant_vertex_tails: original.tolerant_vertex_tails,
-            tolerant_coedge_parameters: original.tolerant_coedge_parameters,
-            persistent_design_links: original.persistent_design_links,
-            persistent_subentity_tags: original.persistent_subentity_tags,
-            sketch_points: original.sketch_points.clone(),
-            sketch_curve_identities: original.sketch_curve_identities.clone(),
-            sketch_curve_links: original.sketch_curve_links.clone(),
-            sketch_relations: original.sketch_relations.clone(),
-            sketch_texts: original.sketch_texts.clone(),
-            ..F3dNative::default()
-        };
+            })
+            .cloned()
+            .collect(),
+        design_parameters: original.design_parameters.clone(),
+        design_construction_operand_groups: original
+            .design_construction_operand_groups
+            .iter()
+            .filter(|group| {
+                target.model.features.iter().any(|feature| {
+                    matches!(
+                        feature.evaluation.definition(),
+                        cadmpeg_ir::features::FeatureDefinition::Operation(
+                            cadmpeg_ir::features::FeatureOperation::DeleteBody {
+                                bodies: cadmpeg_ir::features::BodySelection::Native(selection), ..
+                            }
+                        ) if selection == &group.id
+                    )
+                })
+            })
+            .cloned()
+            .collect(),
+        design_body_recipe_operands: original
+            .design_body_recipe_operands
+            .iter()
+            .filter(|record| {
+                target.model.feature_input_topologies.iter().any(|input| {
+                    input
+                        .operands
+                        .iter()
+                        .any(|operand| operand.native_ref.as_str() == record.id)
+                })
+            })
+            .cloned()
+            .collect(),
+        design_dimension_recipe_records: original
+            .design_dimension_recipe_records
+            .iter()
+            .filter(|record| {
+                target.model.sketch_constraints.iter().any(|constraint| {
+                    if let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native {
+                        operands,
+                        ..
+                    } = constraint.definition.kind()
+                    {
+                        operands.iter().any(|operand| {
+                            operand.native_ref.as_deref() == Some(record.id.as_str())
+                        })
+                    } else {
+                        false
+                    }
+                })
+            })
+            .cloned()
+            .collect(),
+        design_configurations: original.design_configurations.clone(),
+        body_native_keys: original.body_native_keys,
+        body_visibilities: original.body_visibilities,
+        edge_continuities: original.edge_continuities,
+        face_sidedness: original.face_sidedness,
+        face_native_keys: original.face_native_keys,
+        mesh_surface_sentinels: original.mesh_surface_sentinels,
+        creation_timestamps: original.creation_timestamps,
+        edge_ownerships: original.edge_ownerships,
+        vertex_ownerships: original.vertex_ownerships,
+        wire_topologies: original.wire_topologies,
+        transform_hints: original.transform_hints,
+        tolerant_edge_tails: original.tolerant_edge_tails,
+        tolerant_vertex_tails: original.tolerant_vertex_tails,
+        tolerant_coedge_parameters: original.tolerant_coedge_parameters,
+        persistent_design_links: original.persistent_design_links,
+        persistent_subentity_tags: original.persistent_subentity_tags,
+        sketch_points: original.sketch_points.clone(),
+        sketch_curve_identities: original.sketch_curve_identities.clone(),
+        sketch_curve_links: original.sketch_curve_links.clone(),
+        sketch_relations: original.sketch_relations.clone(),
+        sketch_texts: original.sketch_texts.clone(),
+        ..F3dNative::default()
+    };
     retain_mesh_sentinels(target, &mut native);
     super::streams::reconcile(&mut native, losses);
     // Native namespace storage orders every arena by record id, so the

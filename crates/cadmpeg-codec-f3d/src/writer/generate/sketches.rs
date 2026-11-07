@@ -30,6 +30,7 @@ pub(super) struct SketchStream {
     pub(super) next: u32,
     pub(super) feature_scopes: Vec<(u64, cadmpeg_ir::features::FeatureId, u32)>,
     pub(super) feature_containers: std::collections::BTreeMap<cadmpeg_ir::features::FeatureId, u32>,
+    pub(super) point_indices: std::collections::BTreeMap<SketchEntityId, u32>,
     pub(super) sketches: Vec<SketchId>,
     pub(super) renamed_sketches: Vec<SketchId>,
     pub(super) entities: Vec<SketchEntityId>,
@@ -40,6 +41,7 @@ pub(super) struct SketchStream {
 
 pub(super) fn encode(
     target: &CadIr,
+    native: &crate::native::F3dNative,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<SketchStream>, CodecError> {
     let mut bulk = Vec::new();
@@ -62,6 +64,7 @@ pub(super) fn encode(
     let mut entities = Vec::new();
     let mut feature_scopes = Vec::new();
     let mut feature_containers = std::collections::BTreeMap::new();
+    let mut point_indices = std::collections::BTreeMap::new();
     let scope_type_needed = target
         .model
         .sketches
@@ -280,6 +283,21 @@ pub(super) fn encode(
             relations.push(relation);
             relation_members.push((indices.clone(), indices, mask));
         }
+        for (ordinal, member) in members.iter().enumerate() {
+            if reserved_members.contains_key(&ordinal) {
+                continue;
+            }
+            let index = native
+                .sketch_points
+                .iter()
+                .find(|point| member.native_ref.as_deref() == Some(point.id.as_str()))
+                .and_then(crate::records::sketch_geometry::SketchPoint::persistent_id)
+                .and_then(|id| u32::try_from(id).ok())
+                .filter(|id| *id != 0);
+            if let Some(index) = index.filter(|index| occupied.insert(*index)) {
+                reserved_members.insert(ordinal, index);
+            }
+        }
         let count = u32::try_from(members.len())
             .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
         let Some(head) = allocate(&mut occupied, &mut next) else {
@@ -358,6 +376,12 @@ pub(super) fn encode(
         containers.push(u64::from(container));
         heads.push(u64::from(head));
         for (member, &(point, companion)) in members.iter().zip(&member_indices) {
+            if matches!(
+                member.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            ) {
+                point_indices.insert(member.id().clone(), point);
+            }
             if let Some(text) = neutral_text(member, point, container) {
                 mark(ctx, &mut primary, point, bulk.len())?;
                 super::records::encode_sketch_text(&mut bulk, &text)?;
@@ -691,6 +715,7 @@ pub(super) fn encode(
         next,
         feature_scopes,
         feature_containers,
+        point_indices,
         sketches,
         renamed_sketches,
         entities,

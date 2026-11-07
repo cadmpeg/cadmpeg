@@ -1323,7 +1323,7 @@ mod tests {
             "native_dispositions": {"namespaces": {}},
             "losses": [], "notes": []
         }))
-        .unwrap();
+        .expect("typed export report");
 
         let findings = super::cross_compare(&before, &after, &report, "step", &config);
         assert_eq!(

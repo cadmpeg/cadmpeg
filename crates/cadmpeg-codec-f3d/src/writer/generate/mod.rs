@@ -175,7 +175,7 @@ pub(super) fn write_with_limits(
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
     }
-    let mut written_sketches = sketches::encode(target, &output_ctx)?;
+    let mut written_sketches = sketches::encode(target, &native, &output_ctx)?;
     let mut design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     let brep_name = source_brep_name(
         &native,
@@ -590,6 +590,18 @@ pub(super) fn write_with_limits(
                         constraint.id
                     ),
                 ));
+            } else if matches!(
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::HorizontalDistance { .. }
+                    | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native {
+                        parameter: Some(_),
+                        ..
+                    }
+            ) {
+                residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                    "sketch dimension {} uses a generated companion timestamp and record frame",
+                    constraint.id
+                )));
             }
         }
         dispositions.sketch_constraints =
@@ -624,6 +636,15 @@ pub(super) fn write_with_limits(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Extrude { .. },
             ) => Some("Extrude"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
+            ) => Some("Base Feature"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::DeleteBody { .. },
+            ) => Some("RemoveBody"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+            ) if kind.as_str() == "BaseFlange" => Some("BaseFlange"),
             _ => None,
         };
         let written = written_features
@@ -664,6 +685,40 @@ pub(super) fn write_with_limits(
                 partial = true;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
                     format!("feature {} recompute state is not encoded", feature.id),
+                ));
+            }
+            if matches!(feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+                ) if kind.as_str() == "BaseFlange")
+            {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} retains its native scope references; the referenced construction records are omitted", feature.id),
+                ));
+            }
+            if matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DeleteBody { .. }
+                )
+            ) {
+                partial = true;
+                let member_omitted = target
+                    .model
+                    .feature_input_topologies
+                    .iter()
+                    .any(|input| input.input_of == feature.id && input.operands.len() == 1);
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "feature {} retains its native body group; {}",
+                        feature.id,
+                        if member_omitted {
+                            "its member construction record is omitted"
+                        } else {
+                            "its auxiliary construction references are regenerated"
+                        }
+                    ),
                 ));
             }
             if timeline_ranks
@@ -714,6 +769,30 @@ pub(super) fn write_with_limits(
             ArenaDisposition::Written
         };
         for input in &target.model.feature_input_topologies {
+            if written_features.contains(&input.input_of)
+                && target.model.features.iter().any(|feature| {
+                    feature.id == input.input_of
+                        && matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::DeleteBody { .. }
+                            )
+                        )
+                })
+            {
+                dispositions.feature_input_topologies = ArenaDisposition::Reported;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "feature input {} retains its selected group; {}",
+                        input.id,
+                        if input.operands.len() == 1 {
+                            "its member construction record is omitted"
+                        } else {
+                            "its operand has regenerated auxiliary references"
+                        }
+                    ),
+                ));
+            }
             if written_features.contains(&input.input_of)
                 && target.model.features.iter().any(|feature| {
                     feature.id == input.input_of
