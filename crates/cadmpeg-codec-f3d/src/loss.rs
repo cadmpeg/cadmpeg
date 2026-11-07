@@ -321,8 +321,17 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCrossingLoopCapped,
     /// Extrude profile selections split a self-crossing loop by curve-use counts alone.
     FeatureProfileCrossingLoopAssumed,
+    /// Extrude profile selections matched a counted member to an edge of
+    /// coincident curves by the direction of the curve it names.
+    FeatureProfileCoincidentDirectionAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
+    /// Extrude profile selections assumed that a curve outside the
+    /// arrangement makes no island in a selected face.
+    FeatureProfileIslandAbsenceAssumed,
+    /// Extrude profile selections took the polyline side of a projected point
+    /// within the tolerance of a NURBS tube of a face boundary.
+    FeatureProfilePolylineSideAssumed,
     /// Extrude profile selections compared part of a cap outline by samples alone.
     FeatureProfileCapOutlineAssumed,
     /// Extrude profile selections read a cap edge carrier from its samples alone.
@@ -700,7 +709,10 @@ impl F3dLossCode {
         Self::FeatureProfileDensificationCapped,
         Self::FeatureProfileCrossingLoopCapped,
         Self::FeatureProfileCrossingLoopAssumed,
+        Self::FeatureProfileCoincidentDirectionAssumed,
         Self::FeatureProfileCutRegionsAssumed,
+        Self::FeatureProfileIslandAbsenceAssumed,
+        Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
         Self::FeatureProfileCapCarrierAssumed,
         Self::FeaturePathSelectionNative,
@@ -977,7 +989,12 @@ impl F3dLossCode {
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
             Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
+            Self::FeatureProfileCoincidentDirectionAssumed => {
+                "feature.profile-coincident-direction-assumed"
+            }
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
+            Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
+            Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
             Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
@@ -1273,7 +1290,10 @@ impl F3dLossCode {
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
+            | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileCutRegionsAssumed
+            | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeaturePathSelectionNative
@@ -1487,7 +1507,10 @@ impl F3dLossCode {
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
+            | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileCutRegionsAssumed
+            | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeaturePathSelectionNative
@@ -1797,7 +1820,10 @@ mod tests {
                 "feature.profile-densification-capped",
                 "feature.profile-crossing-loop-capped",
                 "feature.profile-crossing-loop-assumed",
+                "feature.profile-coincident-direction-assumed",
                 "feature.profile-cut-regions-assumed",
+                "feature.profile-island-absence-assumed",
+                "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
                 "feature.profile-cap-carrier-assumed",
                 "feature.path-selection-native",
