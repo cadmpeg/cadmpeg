@@ -46,23 +46,13 @@ pub(super) fn geometry(ir: &CadIr, id: &CurveId) -> Option<CurveGeometry> {
         if range[0] != 0.0 || component.parameter.get() != 0.0 {
             return None;
         }
-        let Some(SolvedCurveGeometry::Line(line)) = child.geometry.solved() else {
-            return None;
-        };
-        let origin = line.origin().get();
-        if previous_end.is_some_and(|end| end != origin) {
-            return None;
-        }
-        let direction = *line.direction().as_raw();
-        let end = cadmpeg_ir::math::Point3::new(
-            origin.x + direction.x * range[1],
-            origin.y + direction.y * range[1],
-            origin.z + direction.z * range[1],
-        );
-        if !end.x.is_finite() || !end.y.is_finite() || !end.z.is_finite() {
+        let span = super::curve_reference_span(ir, &child.id, &child.geometry).ok()?;
+        if previous_end.is_some_and(|end| {
+            !super::close_point_with_tolerance(end, span.start, super::EPS_WRITE_POSITION)
+        }) {
             return None;
         }
-        previous_end = Some(end);
+        previous_end = Some(span.end);
         segments.push(CompositeCurveSegment {
             curve: child.id.clone(),
             same_sense: true,
