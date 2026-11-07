@@ -9,10 +9,58 @@
 use cadmpeg_core::decode::index_from_u32;
 
 use super::{
-    distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_cage_surface,
-    form_cage_surfaces, form_class_325_cage_objects, form_class_325_cage_surface,
-    form_class_328_envelope, FormCageSerializers,
+    distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_class_325_cage_objects,
+    form_class_325_cage_surface, form_class_328_envelope, FormCageSerializers,
 };
+
+fn form_cage_surface(
+    bytes: &[u8],
+    records: &[crate::metastream::PrimaryRecordFrame],
+    object: u32,
+    scope: u32,
+) -> Option<u32> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    super::form_cage_surface(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        records,
+        object,
+        scope,
+    )
+    .unwrap()
+}
+
+fn form_cage_surfaces(
+    bytes: &[u8],
+    records: &[crate::metastream::PrimaryRecordFrame],
+    objects: &[u32],
+    scope: u32,
+) -> Option<Vec<u32>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let surfaces = super::form_cage_surfaces(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        records,
+        objects,
+        scope,
+    )
+    .unwrap();
+    (!surfaces.is_empty()).then_some(surfaces)
+}
 
 fn parsed_serializers(
     bytes: &[u8],
@@ -659,4 +707,53 @@ fn class_328_form_metadata_rejects_each_duplicate_member_without_heap_growth() {
             "duplicate metadata member {ordinal}"
         );
     }
+}
+
+#[test]
+fn damaged_form_cage_object_keeps_sibling_surface() {
+    let mut broken = indexed_frame(b"301", 8000, 200);
+    broken[189] = 2;
+    let mut object = indexed_frame(b"301", 8300, 200);
+    object[189] = 1;
+    object[190..198].copy_from_slice(&8301u64.to_le_bytes());
+    let mut first = indexed_frame(b"373", 8301, 33);
+    first[21] = 1;
+    first[22..30].copy_from_slice(&8302u64.to_le_bytes());
+    let mut second = indexed_frame(b"362", 8302, 29);
+    second[21..29].copy_from_slice(&8303u64.to_le_bytes());
+    let mut carrier = indexed_frame(b"457", 8303, 665);
+    carrier[317] = 1;
+    carrier[318..326].copy_from_slice(&2190u64.to_le_bytes());
+    carrier[339] = 1;
+    carrier[340..348].copy_from_slice(&8304u64.to_le_bytes());
+    let paired = indexed_frame(b"264", 8303, 15);
+    let bytes = [broken, object, first, second, carrier, paired].concat();
+    let records = crate::design::test_support::test_primary_frames(&bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let surfaces = super::form_cage_surfaces(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &records,
+        &[8000, 8300],
+        2190,
+    )
+    .unwrap();
+    assert_eq!(surfaces, [8304]);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
 }

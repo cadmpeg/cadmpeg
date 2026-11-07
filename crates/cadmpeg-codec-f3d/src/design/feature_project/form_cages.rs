@@ -188,10 +188,18 @@ pub(crate) fn bind_form_cages(
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
-        let Some(surfaces) = form_cage_surfaces(bytes, &records, cage_objects, scope.record_index)
-        else {
+        let surfaces = form_cage_surfaces(
+            ctx,
+            parts,
+            source,
+            stream,
+            &records,
+            cage_objects,
+            scope.record_index,
+        )?;
+        if surfaces.is_empty() && !cage_objects.is_empty() {
             continue;
-        };
+        }
         let serializers = form_cage_serializers(ctx, parts, source, stream, &records)?;
         let mut resolved = Vec::new();
         for surface in &surfaces {
@@ -754,76 +762,149 @@ fn form_cage_lists(
         .collect()
 }
 
+fn form_cage_record<T>(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: &crate::metastream::PrimaryRecordFrame,
+    parse: impl FnOnce(&[u8]) -> Option<T>,
+) -> Result<Option<T>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let start = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("Form cage record start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("Form cage record end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("Form cage record exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(format!(
+        "{}:design-record-header#{}",
+        ids::native_scope(stream),
+        cadmpeg_core::decode::u64_from_index(frame.start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(None);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        let members = source
+            .window()
+            .get(frame.start..frame.member_end)
+            .ok_or_else(|| CodecError::malformed("invalid Form cage record extent"))?;
+        parse(members).ok_or_else(|| CodecError::malformed("invalid Form cage record"))
+    })
+}
+
 fn form_cage_surface(
-    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
     records: &[crate::metastream::PrimaryRecordFrame],
     object_record: u32,
     scope_record: u32,
-) -> Option<u32> {
-    let record_offsets = records.offsets(object_record);
-    let [object_at] = record_offsets.as_slice() else {
-        return None;
+) -> Result<Option<u32>, CodecError> {
+    let bytes = source.window();
+    let unique = |index, class: &[u8; 3]| {
+        let mut found = records.iter().filter(|frame| {
+            frame.entity_id == u64::from(index)
+                && bytes.get(frame.start + 4..frame.start + 7) == Some(class.as_slice())
+        });
+        let frame = found.next()?;
+        found.next().is_none().then_some(frame)
     };
-    if bytes.get(object_at + 4..object_at + 7) != Some(b"301")
-        || records.next_at_or_after(object_at + 1)? != object_at + 200
-        || bytes.get(object_at + 189) != Some(&1)
-    {
-        return None;
-    }
-    let first_wrapper = u32::try_from(View::u64_le_at(bytes, object_at + 190)?).ok()?;
-    let record_offsets = records.offsets(first_wrapper);
-    let [first_at] = record_offsets.as_slice() else {
-        return None;
+    let Some(object) = unique(object_record, b"301") else {
+        return Ok(None);
     };
-    if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
-        || records.next_at_or_after(first_at + 1)? != first_at + 33
-        || bytes.get(first_at + 11..first_at + 21)? != [0; 10]
-        || bytes.get(first_at + 21) != Some(&1)
-        || bytes.get(first_at + 30..first_at + 33)? != [0; 3]
-    {
-        return None;
-    }
-    let second_wrapper = u32::try_from(View::u64_le_at(bytes, first_at + 22)?).ok()?;
-    let record_offsets = records.offsets(second_wrapper);
-    let [second_at] = record_offsets.as_slice() else {
-        return None;
+    let Some(first_index) = form_cage_record(ctx, parts, source, stream, object, |bytes| {
+        (bytes.len() == 200 && bytes.get(189) == Some(&1))
+            .then(|| u32::try_from(View::u64_le_at(bytes, 190)?).ok())?
+    })?
+    else {
+        return Ok(None);
     };
-    if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
-        || records.next_at_or_after(second_at + 1)? != second_at + 29
-        || bytes.get(second_at + 11..second_at + 21)? != [0; 10]
-    {
-        return None;
+    let Some(first) = unique(first_index, b"373") else {
+        return Ok(None);
+    };
+    let Some(second_index) = form_cage_record(ctx, parts, source, stream, first, |bytes| {
+        (bytes.len() == 33
+            && bytes.get(11..21)? == [0; 10]
+            && bytes.get(21) == Some(&1)
+            && bytes.get(30..33)? == [0; 3])
+            .then(|| u32::try_from(View::u64_le_at(bytes, 22)?).ok())?
+    })?
+    else {
+        return Ok(None);
+    };
+    let Some(second) = unique(second_index, b"362") else {
+        return Ok(None);
+    };
+    let Some(carrier_index) = form_cage_record(ctx, parts, source, stream, second, |bytes| {
+        (bytes.len() == 29 && bytes.get(11..21)? == [0; 10])
+            .then(|| u32::try_from(View::u64_le_at(bytes, 21)?).ok())?
+    })?
+    else {
+        return Ok(None);
+    };
+    let Some(carrier) = unique(carrier_index, b"457") else {
+        return Ok(None);
+    };
+    if bytes.get(carrier.member_end + 4..carrier.member_end + 7) != Some(b"264") {
+        return Ok(None);
     }
-    let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
-    let mut carrier_frames = records.frames(carrier);
-    let (carrier_at, carrier_paired) = carrier_frames.next()?;
-    if carrier_frames.next().is_some() {
-        return None;
-    }
-    if carrier_paired.checked_sub(carrier_at)? != 665
-        || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
-        || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
-        || bytes.get(carrier_at + 317) != Some(&1)
-        || View::u64_le_at(bytes, carrier_at + 318)? != u64::from(scope_record)
-        || bytes.get(carrier_at + 339) != Some(&1)
-    {
-        return None;
-    }
-    u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()
+    let Some((owner, surface)) = form_cage_record(ctx, parts, source, stream, carrier, |bytes| {
+        if bytes.len() != 665 || bytes.get(317) != Some(&1) || bytes.get(339) != Some(&1) {
+            return None;
+        }
+        Some((
+            View::u64_le_at(bytes, 318)?,
+            u32::try_from(View::u64_le_at(bytes, 340)?).ok()?,
+        ))
+    })?
+    else {
+        return Ok(None);
+    };
+    Ok((owner == u64::from(scope_record)).then_some(surface))
 }
 
 fn form_cage_surfaces(
-    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
     records: &[crate::metastream::PrimaryRecordFrame],
     objects: &[u32],
     scope_record_index: u32,
-) -> Option<Vec<u32>> {
+) -> Result<Vec<u32>, CodecError> {
     let mut surfaces = Vec::new();
     for object in objects {
-        let surface = form_cage_surface(bytes, records, *object, scope_record_index)?;
-        surfaces.push(surface);
+        if let Some(surface) = form_cage_surface(
+            ctx,
+            parts,
+            source,
+            stream,
+            records,
+            *object,
+            scope_record_index,
+        )? {
+            surfaces.push(surface);
+        }
     }
-    Some(surfaces)
+    Ok(surfaces)
 }
 
 struct FormCageSerializers {
