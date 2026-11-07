@@ -53,7 +53,7 @@ fn form_cage_surfaces(
         cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let mut parts =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
-    let surfaces = super::form_cage_surfaces(
+    super::form_cage_surfaces(
         &ctx,
         &mut parts,
         source,
@@ -62,8 +62,7 @@ fn form_cage_surfaces(
         objects,
         scope,
     )
-    .unwrap();
-    surfaces
+    .unwrap()
 }
 
 fn parsed_serializers(
