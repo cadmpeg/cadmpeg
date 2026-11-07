@@ -326,6 +326,8 @@ Twenty typed feature-dimension property lists select 34 feature-dimension record
 
 Record 3610 has type `cf2b17de9c46a894e06459a70546aa94` and qualified `next=0x8000122f`, whose index 4655 selects label record ordinal 4654 `Planar Surface 19`; that label has qualified owner index 3611, which selects record 3610. Records 3785 and 3835 have type `c6b25a40954bd1c3e7ca9ca365917af4` and qualified third-reference words `0x80000ec9` and `0x80000efb`, whose indexes 3785 and 3835 select records 3784 and 3834. Labels `Linear Dimension 1` and `Linear Dimension 2` select those owners with qualified owner indexes 3785 and 3835.
 
+In CTC-01 FBAttribute record 3, the `Surface` header at expanded offset `0x270c` has length 160 and ends at `0x27b8`; a 32-byte descriptor starts there and stores u16 value 23 at offset 22. The later matrix headers include IDs 6 and 22. The second `Surface` header at `0x3356` has length 192 and ends at `0x3422`; a descriptor at `0x3402` stores value 29, and later matrix headers include IDs 6, 22 and 28. In CTC-02, corresponding descriptors store values 25 and 184; the same record contains no matrix headers 24 or 183. The descriptor-minus-one interpretation fits the two CTC-01 pairs and fails for both CTC-02 pairs.
+
 The outstanding witness is a typed reference path from each diameter owner (records 3575 and 3592) to a signed lower and upper tolerance operand and a native kernel face key. The face keys must resolve to the separate STEP face pairs #854/#853 and #839/#840.
 ## 5. Adjacent envelopes
 
