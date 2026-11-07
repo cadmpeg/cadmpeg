@@ -154,6 +154,12 @@ fn serde_enum(attrs: &[syn::Attribute], item: &syn::ItemEnum) -> Option<(String,
             } else if meta.path.is_ident("rename_all") {
                 let value: syn::LitStr = meta.value()?.parse()?;
                 rename = Some(value.value());
+            } else if meta.input.peek(syn::Token![=]) {
+                let _: syn::Expr = meta.value()?.parse()?;
+            } else if meta.input.peek(syn::token::Paren) {
+                let content;
+                syn::parenthesized!(content in meta.input);
+                let _: proc_macro2::TokenStream = content.parse()?;
             }
             Ok(())
         });
@@ -514,7 +520,7 @@ fn classify_use(
             arenas.push(arena.clone());
         }
     }
-    if *kind == CtorKind::Call {
+    if *kind != CtorKind::Struct {
         variants.extend(table_lookup(path, keys, table).flatten().cloned());
     }
     variants.sort();
@@ -569,7 +575,7 @@ fn classify_cached(
     let (raw_variants, raw_arenas) = classify_use(path, kind, registry, record_types, keys, table);
     variants.extend(raw_variants);
     arenas.extend(raw_arenas);
-    let raw_call_hit = *kind == CtorKind::Call
+    let raw_call_hit = *kind != CtorKind::Struct
         && path.len() >= 2
         && table_lookup(path, keys, table).next().is_some();
     if !variants.is_empty() || !arenas.is_empty() || raw_call_hit {
@@ -1144,6 +1150,23 @@ mod tests {
     }
 
     #[test]
+    fn constructor_function_values_feed_the_table() {
+        let graph = fixture(
+            r#"
+            fn decode() { let _ = Some(()).map(cadmpeg_ir::Surface::make); }
+            "#,
+        );
+        let registry = test_registry();
+        let records = test_records();
+        let table = BTreeMap::from([(
+            "cadmpeg_ir::Surface::make".into(),
+            BTreeSet::from(["Surface::Cone".into()]),
+        )]);
+        let scan = crate_scan(&graph, "fixture", &[], &registry, &table, &records);
+        assert!(scan.variants.contains("Surface::Cone"), "{scan:?}");
+    }
+
+    #[test]
     fn unit_paths_as_values_count_but_comparison_operands_do_not() {
         let scan = scan_variants(
             r#"
@@ -1383,6 +1406,13 @@ mod tests {
         assert_eq!(
             solved.variants.get("Cone").map(String::as_str),
             Some("cone")
+        );
+        let attribute = registry.enums.get("AttributeValue").expect("IR enum");
+        assert_eq!(attribute.style, TagStyle::Adjacent);
+        assert_eq!(attribute.tag.as_deref(), Some("kind"));
+        assert_eq!(
+            attribute.variants.get("Map").map(String::as_str),
+            Some("map")
         );
         assert!(registry.enums.contains_key("Sense") || !registry.enums.is_empty());
     }
