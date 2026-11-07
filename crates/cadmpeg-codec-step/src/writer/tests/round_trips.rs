@@ -1624,6 +1624,13 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
     let text = String::from_utf8(output).expect("mixed general STEP is UTF-8");
     assert!(text.contains("SHELL_BASED_SURFACE_MODEL"));
     assert!(text.contains("EDGE_BASED_WIREFRAME_MODEL"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::MixedRegionSplit.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+            && loss.message.contains(ir.model.regions[0].id.as_str())
+            && loss.message.contains(ir.model.shells[0].id.as_str())
+            && loss.message.contains(ir.model.faces[0].id.as_str())
+    }));
 }
 
 #[test]
