@@ -139,7 +139,37 @@ pub(super) fn write(
             false
         }
     });
-    names = super::names::prepare(ir, &native_objects, &native_properties);
+    let source_uses = namespace
+        .map(|namespace| {
+            namespace.arena_as::<crate::native::source_use::SourceUseSelector>("topology_uses")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let shape_payloads = namespace
+        .map(|namespace| namespace.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads"))
+        .transpose()?
+        .unwrap_or_default();
+    let body_properties: HashMap<_, _> = ir
+        .model
+        .bodies
+        .iter()
+        .filter_map(|body| {
+            let source = source_uses
+                .iter()
+                .find(|source| Some(source.id.as_str()) == body.native_ref.as_deref())?;
+            let payload = shape_payloads
+                .iter()
+                .find(|payload| payload.id == source.owner)?;
+            let property = native_properties
+                .iter()
+                .find(|property| property.id == payload.property)?;
+            Some((
+                body.id.to_string(),
+                (property.owner.clone(), property.name.clone()),
+            ))
+        })
+        .collect();
+    names = super::names::prepare(ir, &native_objects, &native_properties, &body_properties);
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
     // Replays restore the source declaration order: the re-decode derives
     // declaration indices from the emitted sequence, so emitting in arena
@@ -799,16 +829,6 @@ pub(super) fn write(
     }
     let mut body_names = HashMap::new();
     let mut emitted_topology = Vec::new();
-    let source_uses = namespace
-        .map(|namespace| {
-            namespace.arena_as::<crate::native::source_use::SourceUseSelector>("topology_uses")
-        })
-        .transpose()?
-        .unwrap_or_default();
-    let shape_payloads = namespace
-        .map(|namespace| namespace.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads"))
-        .transpose()?
-        .unwrap_or_default();
     let mut shape_groups = BTreeMap::<(String, String), Vec<&cadmpeg_ir::topology::Body>>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
         let proposed = names
@@ -821,22 +841,10 @@ pub(super) fn write(
             format!("Shape{index}")
         };
         body_names.insert(body.id.as_str().to_owned(), name.clone());
-        let property = body
-            .native_ref
-            .as_deref()
-            .and_then(|id| source_uses.iter().find(|source| source.id == id))
-            .and_then(|source| {
-                shape_payloads
-                    .iter()
-                    .find(|payload| payload.id == source.owner)
-            })
-            .and_then(|payload| {
-                native_properties
-                    .iter()
-                    .find(|property| property.id == payload.property)
-            })
-            .filter(|property| names.get(&property.owner) == Some(&name))
-            .map_or("Shape", |property| property.name.as_str());
+        let property = body_properties
+            .get(body.id.as_str())
+            .filter(|(owner, _)| names.get(owner) == Some(&name))
+            .map_or("Shape", |(_, property)| property.as_str());
         shape_groups
             .entry((name, property.to_owned()))
             .or_default()
@@ -850,6 +858,7 @@ pub(super) fn write(
             .model
             .occurrences
             .iter()
+            .filter(|_| property_name == "Shape")
             .find(|occurrence| names.get(occurrence.id.as_str()) == Some(&name))
             .and_then(|occurrence| occurrence.transform);
         let Some(serialized) =
