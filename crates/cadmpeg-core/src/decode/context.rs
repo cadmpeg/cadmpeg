@@ -124,6 +124,7 @@ impl<'a> DecodeContext<'a> {
         let session = crate::encode::EncodeSession::from_context(self)?;
         let mut sibling = DecodeContext::for_encode_session(arena, &session)?;
         sibling.depth = depth;
+        sibling.budget.inherit_input(self.budget.input_bytes());
         sibling.source_digest.set(self.source_digest.get());
         Ok(sibling)
     }
