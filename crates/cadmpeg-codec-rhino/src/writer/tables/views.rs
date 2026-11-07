@@ -115,6 +115,15 @@ fn encode_view(
     camera: Option<&PresentationDocument>,
 ) -> Result<Vec<u8>, WriteError> {
     let mut children = Vec::new();
+    let source_children = fields
+        .get("children")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.get("typecode").and_then(Value::as_str))
+                .filter_map(|value| u32::from_str_radix(value.strip_prefix("0x")?, 16).ok())
+                .collect::<Vec<_>>()
+        });
     let name = view
         .and_then(|view| property(view, "name"))
         .unwrap_or_else(|| {
@@ -158,7 +167,13 @@ fn encode_view(
                 }
             }
         };
-        children.push(short_chunk(typecode, i64::from(value)));
+        if !value
+            || source_children
+                .as_ref()
+                .is_none_or(|rows| rows.contains(&typecode))
+        {
+            children.push(short_chunk(typecode, i64::from(value)));
+        }
     }
     if let Some(target) = fields
         .get("target_millimeters")
@@ -207,6 +222,13 @@ fn encode_view(
         )?);
     }
     images::append(fields, &mut children)?;
+    if let Some(source_children) = &source_children {
+        children.sort_by_key(|child| {
+            let position = cadmpeg_core::decode::View::u32_le_at(child, 0)
+                .and_then(|code| source_children.iter().position(|source| *source == code));
+            (position.is_none(), position)
+        });
+    }
     children.push(short_chunk(TCODE_ENDOFTABLE, 0));
     Ok(crc_chunk_with_direct(0x2000_803b, &children.concat(), &[])?)
 }
