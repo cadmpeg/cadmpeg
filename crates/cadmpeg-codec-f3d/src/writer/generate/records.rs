@@ -202,6 +202,7 @@ pub(super) fn encode_design_bulkstream(
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::Extrude
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::BaseFeature
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::BaseFlange
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::RemoveBody
         })
         || !native.design_sketch_placements.is_empty()
         || native

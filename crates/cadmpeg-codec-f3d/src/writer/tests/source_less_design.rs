@@ -22,6 +22,25 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_remove_body_keeps_its_input_group() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_remove_body;
+
+    let bytes = f3d_with_smbh_and_protein_with_generated_remove_body(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let (written, mut report) =
+        super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        decoded.ir(),
+        written.ir(),
+    );
+}
+
+#[test]
 fn source_less_native_base_flange_keeps_its_references() {
     use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
     use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_base_flange;
