@@ -842,7 +842,10 @@ pub(crate) fn assumption_losses(
         .filter(|feature| {
             matches!(
                 selection(feature),
-                Some(FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. })
+                Some((
+                    _,
+                    FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. }
+                ))
             )
         })
         .count();

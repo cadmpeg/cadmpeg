@@ -1283,6 +1283,6 @@ fn assumption_losses_state_identical_owners_for_every_face_selecting_kind() {
     assert!(assumption_losses(std::slice::from_ref(&feature), &inventory).is_empty());
     project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
     let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
-    assert_eq!(notes.len(), 1);
-    assert!(notes[0].message.contains("identical surface geometry"));
+    assert_eq!(notes.len(), 2);
+    assert!(notes[1].message.contains("identical surface geometry"));
 }
