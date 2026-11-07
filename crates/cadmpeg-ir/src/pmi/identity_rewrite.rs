@@ -23,6 +23,8 @@ rewrite_enum!(DimensionKind, []; {
     Angular,
     Diameter,
     Radius,
+    SphericalDiameter,
+    SphericalRadius,
     Other(field0),
 });
 rewrite_enum!(DimensionTolerance, []; {
@@ -55,11 +57,11 @@ rewrite_enum!(PmiDefinition, []; {
     Datum {identification},
     DatumSystem {references},
     DatumTarget {form, identification, basis},
-    GeometricTolerance {tolerance, magnitude, defined_unit, defined_area_unit, defined_area_second_unit, datum_system, modifiers},
+    GeometricTolerance {tolerance, magnitude, defined_unit, defined_area_unit, defined_area_second_unit, datum_system, modifiers, constraints},
     Dimension(field0),
     Presentation {text, placement, semantics},
 });
-rewrite_record!(PmiDimension, []; {kind, nominal, tolerance});
+rewrite_record!(PmiDimension, []; {kind, nominal, tolerance, modifiers});
 rewrite_scalar!(PmiMagnitude);
 rewrite_scalar!(PmiQuantity);
 rewrite_enum!(PmiTarget, []; {

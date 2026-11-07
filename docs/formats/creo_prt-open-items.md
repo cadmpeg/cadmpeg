@@ -281,7 +281,7 @@ dimension.
 
 **Question.** Which remaining scalar and enclosing-row forms resolve a counted two-chart body when exact `4N` scalar consumption cannot be established, and which first-coordinate prefixes of a counted body read differently from the two-chart lane?
 
-**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, the signed `2d` and `46` readings, the signed first-coordinate lane, and the legacy second-coordinate forms `4f`, `50`, and `57`. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized.
+**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, the signed `2d` and `46` readings, the signed first-coordinate lane, the legacy second-coordinate forms `4f`, `50`, and `57`, and the first-chart first-coordinate form `53`. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized.
 
 **Need.** Define the missing scalar and enclosing-row productions before assigning values or selecting a suffix from incomplete or conflicting body readings.
 
@@ -435,8 +435,10 @@ carriers and wall charts outside the complete rotations and envelopes in
 `creo_prt.md` §3.2 and §3.4?
 
 **Known.** Signed-basis bend compounds define complete quarter-turn and
-positive-lower-bound envelopes. Complete angular-stream plane rotations
-supply row-major wall charts and finite signed origins. The frame, radius,
+positive-lower-bound envelopes. Bounded cylinder rotations include
+transverse-direction roundoff as defined in `creo_prt.md` §3.2. Complete
+angular-stream plane rotations supply row-major wall charts and finite signed
+origins. The frame, radius,
 parameter bounds, and XYZ extrema have separate stored fields. Other
 positional cylinder, plane-envelope, and local-system bodies retain their
 bounded scalar tokens and opaque spans.
@@ -445,6 +447,10 @@ bounded scalar tokens and opaque spans.
 productions, and independent paired chart witnesses for each additional
 carrier. Reconcile every stored parameter interval with its frame and XYZ
 extrema.
+
+**Conflict.** More than one sign assignment for an angular rotation can
+reproduce the same envelope. Those assignments need an independent chart
+witness to select a frame.
 
 ### GS-25. Post-frame linkage identity
 
@@ -554,6 +560,32 @@ literal. The source retains the complete body and both chart references.
 **Need.** Establish the signed literal lane through independent paired bytes
 and complete chart images. Bind that lane to its bounded endpoint production
 before it supplies boundary geometry.
+
+### GS-35. Other cylinder intersection carriers
+
+**Question.** Which source fields select and parameterize cylinder
+intersection branches outside the defined tangent and equal-radius cases?
+
+**Known.** `creo_prt.md` §3.4 defines the bounded rational quartic selected
+by paired chart samples and edge endpoints for perpendicular cylinders whose
+axis separation equals the difference of their radii. It also defines the
+elliptic arc for equal-radius cylinders with intersecting, nonparallel axes,
+selected by paired chart samples or bounded cylinder domains.
+
+**Need.** Establish complete carrier and branch selection for other axis
+angles, separations, and chart paths, with independent paired chart witnesses.
+
+### GS-36. Other cone boundary carriers
+
+**Question.** Which bounded native chart paths select cone boundary carriers
+outside the paired constant-angle generator case?
+
+**Known.** `creo_prt.md` §3.4 defines the straight generator selected by
+unique constant-angle paths on both incident cone charts and agreeing solved
+vertices and midpoints.
+
+**Need.** Establish carrier and branch selection for other cone chart paths
+and face pairs through independent chart and topology witnesses.
 
 ## 3. Section solving and feature placement
 
@@ -1472,6 +1504,48 @@ arrays outside the settled geometry records, the character-set selection for
 non-UTF-8 type-10 strings, type-10 continuation semantics, remaining geometry
 and design-history graph joins, and non-attribute section grammar to
 transfer the rest of legacy persistence.
+
+### PP-22. Binary geometric-tolerance array framing
+
+**Question.** Which serialized length or terminator bounds each binary
+`geom_tol_array` element and its nested fields?
+
+**Known.** The array header has an `f8` slot count and a class reference. A
+populated element contains nested `dtl_named_item`, `dtl_item`, and `tol_text`
+fields. The first nested `e3` precedes `db_type`, `gtol_place_ptr`, and datum
+reference fields. The ASCII object-array depth grammar has separate row
+boundaries.
+
+**Need.** Establish the complete binary element and array extent from their
+serialized productions. Consume nested fields and distinguish later slots
+before transferring a tolerance or its attachments.
+
+### PP-23. Geometric-tolerance datum identities
+
+**Question.** Which native records bind tolerance datum labels and frame
+references to datum identities and datum features?
+
+**Known.** A tolerance attachment can carry `datum_refs`,
+`frame_datum_refs`, and a null `datum_def_id`. Its `ref_info` identifiers can
+also occur in both vertex and feature-entity namespaces. A numeric match to
+either namespace leaves the datum reference unresolved.
+
+**Need.** Resolve the owned reference tables, ordered datum compartments, and
+their datum-feature targets before constructing a datum system.
+
+### PP-24. Geometric-tolerance attachment targets
+
+**Question.** Which pointer and nested attachment types select dimension,
+curve, surface, and bounded-face targets for a geometric tolerance?
+
+**Known.** A type-1 `gtol_place_ptr` can refer to a dimension slot that names
+the tolerance in `gtol_ids`. A type-2 placement can carry a nested attachment
+whose identifier equals the outer identifier. Dimension and geometry
+identifiers can overlap. A surface reference can resolve without a bounded
+face.
+
+**Need.** Establish each pointer's namespace and its complete owned target
+join before transferring a face or curve attachment.
 
 ## 6. Assembly component table
 

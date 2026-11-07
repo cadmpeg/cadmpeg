@@ -24,11 +24,13 @@ mod delete_face;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod face_recipe;
+mod fallback_face;
 pub(crate) mod fillet_blends;
 mod hole_support;
 mod loop_index;
 mod move_face;
 mod output_chain;
+pub(crate) mod pipe_section;
 mod recipe_index;
 mod reference_edge;
 pub(crate) mod selection;
@@ -3182,6 +3184,7 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
+                    crate::design::feature_project::list_thicken_whole_bodies(faces, scope, groups);
                     selection::bind_body_recipe_face_selection(
                         faces,
                         feature_id,
@@ -5242,9 +5245,9 @@ pub(crate) fn bind_face_operand_history_candidates(
     recipes: &[crate::records::recipes::ConstructionRecipe],
     mut histories: BindingHistories<'_>,
     scope_histories: &HashMap<String, String>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     if projection_was_finalized(histories.get()) {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let recipe_record_indices = recipes
         .iter()
@@ -5312,6 +5315,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         ));
     }
     let mut first_error = None;
+    let mut withdrawals = fallback_face::Withdrawals::default();
     visit_state_groups_oldest_first(
         histories.reborrow(),
         jobs,
@@ -5348,6 +5352,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     operand_groups,
                     &recipe_record_indices,
                     &mut caches,
+                    &mut withdrawals,
                 ) {
                     keep_first_error(&mut first_error, position, error);
                 }
@@ -5364,8 +5369,9 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand_groups,
         histories.get(),
         scope_histories,
+        &mut withdrawals,
     )?;
-    Ok(())
+    Ok(withdrawals.losses)
 }
 
 /// One face operand's scope and state pair with the previous-state topology.
@@ -5395,6 +5401,7 @@ fn bind_historical_face_operand<'a>(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut FaceOperandCaches<'a>,
+    withdrawals: &mut fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     bind_historical_face_operand_candidates(
         operand,
@@ -5402,6 +5409,7 @@ fn bind_historical_face_operand<'a>(
         operand_groups,
         recipe_record_indices,
         caches,
+        withdrawals,
     )?;
     if matches!(
         transition.scope.kind(),
@@ -5425,6 +5433,7 @@ fn bind_historical_face_operand_candidates<'a>(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut FaceOperandCaches<'a>,
+    withdrawals: &mut fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let &FaceOperandTransition {
         scope,
@@ -5662,6 +5671,7 @@ fn bind_historical_face_operand_candidates<'a>(
             }
         }
     };
+    let fallback_slots = operand.resolved_face_slots.clone();
     if let Some(candidates) = &thread_face_candidates {
         // Thread's first prefix reference is its exclusive selection lane.
         // An unresolved lane must not fall back to construction context.
@@ -5715,6 +5725,15 @@ fn bind_historical_face_operand_candidates<'a>(
             }
         }
     }
+    if recipe_face.is_none()
+        && feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
+        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+        && grouped_reference_face_candidates.is_none()
+        && operand.alternate_selector_candidate_faces.is_empty()
+        && operand.resolved_face_slots == fallback_slots
+    {
+        fallback_face::check_fallback_faces(operand, topology, topology_queries, withdrawals);
+    }
     if operand.resolved_face_slots.is_empty()
         && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Draft
     {
@@ -5733,12 +5752,24 @@ fn bind_historical_face_operand_candidates<'a>(
                 &changed_faces,
                 historical_brep_source(&history.id),
             ) {
-                Some(LegacyFaceResolution::Historical(slot)) => {
+                Some(LegacyFaceResolution::Historical(slot))
+                    if withdrawals.admits(operand, &[slot], topology, topology_queries) =>
+                {
                     operand.resolved_face_slots = vec![slot];
                 }
-                Some(LegacyFaceResolution::Active(face)) => {
+                Some(LegacyFaceResolution::Active(face)) if !withdrawals.withdrew(operand) => {
                     operand.resolved_active_face = Some(face);
                 }
+                Some(LegacyFaceResolution::Historical(slot)) => withdrawals.refuse(
+                    &format!("Extrude face operand {}", operand.id),
+                    &format!("face {slot}"),
+                    "legacy start and termination rule",
+                ),
+                Some(LegacyFaceResolution::Active(face)) => withdrawals.refuse(
+                    &format!("Extrude face operand {}", operand.id),
+                    &format!("active face {}", face.as_str()),
+                    "legacy start and termination rule",
+                ),
                 None => {}
             }
         }
@@ -6710,6 +6741,7 @@ fn bind_profile_face_group_cardinality(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
+    withdrawals: &mut fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_indexes = SnapshotCache::default();
     for scope in scopes {
@@ -6817,6 +6849,20 @@ fn bind_profile_face_group_cardinality(
             let Some(faces) = faces else {
                 continue;
             };
+            let mut topology_queries = topology_cache::TopologyQueryCache::default();
+            let pairs: Vec<_> = indices
+                .iter()
+                .map(|index| &operands[*index])
+                .zip(faces.iter().copied())
+                .collect();
+            if !withdrawals.admits_pairs(&pairs, topology, &mut topology_queries) {
+                withdrawals.refuse(
+                    &format!("Extrude profile group {}", group.id),
+                    &format!("faces {faces:?} in stable face-slot member order"),
+                    "profile-group carrier rule",
+                );
+                continue;
+            }
             for (index, face) in indices.into_iter().zip(faces) {
                 let face_id = historical_face_id(face)?;
                 let preceding_id = face_id.clone();

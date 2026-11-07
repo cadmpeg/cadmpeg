@@ -310,15 +310,13 @@ fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
                 bodies: vec![ir.model.bodies[0].id.clone()],
             }
         };
-        ir.model.declared_measures.push(DeclaredMeasure {
-            id: DeclaredMeasureId::mint("test:model:declared_measure#volume").unwrap(),
+        ir.model.declared_measures.push(DeclaredMeasure::new(
+            DeclaredMeasureId::mint("test:model:declared_measure#volume").unwrap(),
             target,
-            quantity: DeclaredQuantity::Volume {
+            DeclaredQuantity::Volume {
                 value: FiniteReal::new(value).unwrap(),
             },
-            label: None,
-            native_ref: None,
-        });
+        ));
         let path = dir.path().join("declared.cadir.json");
         std::fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
         let output = super::cadmpeg()
