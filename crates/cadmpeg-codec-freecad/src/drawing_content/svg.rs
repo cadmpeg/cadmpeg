@@ -64,7 +64,7 @@ pub(super) fn parse(
         return Err(CodecError::malformed("invalid template curve population"));
     }
     losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
-        "{owner}: SVG stroke, fill and font appearance remain in the asset; text em sizes are millimetres"
+        "{owner}: SVG stroke, fill and font appearance remain in the asset; specified text em sizes are millimetres"
     )));
     Ok(output)
 }
@@ -278,7 +278,10 @@ fn text(node: Node<'_, '_>, height: f64, editable: &BTreeMap<&str, &str>) -> Opt
     Some(TemplateText {
         text,
         position: point(number(node, "x", None)?, number(node, "y", None)?, height)?,
-        height: PositiveLength::new(number(node, "font-size", None)?)?,
+        height: match node.attribute("font-size") {
+            Some(_) => Some(PositiveLength::new(number(node, "font-size", None)?)?),
+            None => None,
+        },
     })
 }
 

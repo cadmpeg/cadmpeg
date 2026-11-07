@@ -1026,7 +1026,7 @@ pub(super) fn exact_copy_paste_component_operation(
         let relation_record_index = *scope.reference_members().values().next()?;
         // The compact frame omits one four-byte prologue field, so both placements
         // and every marked reference before them move four bytes earlier.
-        let source_at = match (scope.kind_name(), scope.frame_length()) {
+        let source_at = match (scope.source_kind_name(), scope.frame_length()) {
             ("CopyPaste", 529) => 38,
             ("CopyPaste", 525) => 34,
             _ => return None,

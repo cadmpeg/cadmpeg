@@ -53,6 +53,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 pub(crate) mod form_cages;
+mod mirror;
 mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
@@ -981,12 +982,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::Mirror) => project_mirror(
+                Some(DesignFeatureFamily::Mirror) => mirror::project_mirror(
                     scope,
                     construction_groups,
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -7217,102 +7219,6 @@ fn project_rectangular_pattern_scalars(
         count,
         second,
         omitted_instances: Vec::new(),
-    })
-    .ok()?;
-    Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds,
-        pattern,
-    }))
-}
-
-fn project_mirror(
-    scope: &DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
-    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    scopes: &[DesignParameterScope],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureOperation,
-    };
-
-    let construction = scope.mirror_construction()?;
-    let stream = native_stream(&scope.id)?;
-    let matching_groups = || {
-        groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-    };
-    let seed_group = unique_feature_match(matching_groups().filter(|group| {
-        group.record_index == construction.seed_group_record_index
-            && matches!(
-                group.role(),
-                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-            )
-            && !group.members().is_empty()
-    }));
-    let plane_group = unique_feature_match(matching_groups().filter(|group| {
-        group.record_index == construction.plane_group_record_index
-            && group.role() == DesignOperandRole::ROLE_0X5
-            && group.members().len() == 1
-    }));
-    let (Some(seed_group), Some(_plane_group)) = (seed_group, plane_group) else {
-        return None;
-    };
-    let seeds = if let Some(record_index) = construction
-        .seed_feature_scope_record_index
-        .map(|reference| reference.value)
-    {
-        let seed_scope = unique_feature_match(scopes.iter().filter(|candidate| {
-            native_stream(&candidate.id) == Some(stream) && candidate.record_index == record_index
-        }));
-        let seed_scope = seed_scope?;
-        vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
-            seed_scope,
-        ))]
-    } else {
-        pattern_group_seeds(
-            scope,
-            seed_group,
-            face_operands,
-            entity_selection_operands,
-            scopes,
-        )
-    };
-    let (plane_origin, plane_normal, scale_origin) = match construction.plane {
-        Some(plane) => (plane.origin().get(), *plane.normal().as_raw(), false),
-        None => {
-            let plane_scope_record_index = construction
-                .plane_scope_record_index
-                .map(|value| value.value)?;
-            let plane = unique_feature_match(scopes.iter().filter(|candidate| {
-                native_stream(&candidate.id) == Some(stream)
-                    && candidate.record_index == plane_scope_record_index
-                    && candidate.kind()
-                        == crate::records::feature::scope::DesignFeatureKind::WorkPlane
-                    && candidate.work_plane_transform().is_some()
-            }));
-            let plane = plane?;
-            let transform = plane.work_plane_transform()?;
-            (
-                Point3::new(transform[0][3], transform[1][3], transform[2][3]),
-                Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
-                true,
-            )
-        }
-    };
-    let origin_scale = if scale_origin { 10.0 } else { 1.0 };
-    let plane_origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-        plane_origin.x * origin_scale,
-        plane_origin.y * origin_scale,
-        plane_origin.z * origin_scale,
-    ))?;
-    let plane_normal = cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?;
-    let pattern = PatternKind::new(PatternTransform::Mirror {
-        plane_origin,
-        plane_normal,
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
