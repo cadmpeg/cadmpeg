@@ -55,6 +55,7 @@ mod surfaces;
 mod views;
 mod wire;
 mod writer;
+mod xml_recovery;
 
 #[doc(hidden)]
 pub mod fuzz;

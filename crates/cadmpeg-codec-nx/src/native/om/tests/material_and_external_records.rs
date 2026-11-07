@@ -132,6 +132,64 @@ fn decode_joins_qaf_material_names_to_texture_assets() {
 }
 
 #[test]
+fn damaged_attributes_and_catalog_elements_preserve_siblings() {
+    let texture = [b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0];
+    let attributes = br#"<UgAttributes version="4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><Attribute owner="part" title="First" value="one" pdmBased="false" version="3" xsi:type="StringAttributeType"/><Attribute owner="part" owner="duplicate" title="Bad" value="bad" pdmBased="false" version="3" xsi:type="StringAttributeType"/><Attribute owner="part" title="Last" value="two" pdmBased="false" version="3" xsi:type="StringAttributeType"/></UgAttributes>"#;
+    let catalog = br#"<folderContents><folderProperties location="materialsTif/one" unmappedLocation="materialsTif/First"><createTime>first</createTime><modifyTime>first</modifyTime></folderProperties><folderProperties location="bad" location="duplicate"/><folderProperties location="materialsTif/two" unmappedLocation="materialsTif/Last"><createTime>last</createTime><modifyTime>last</modifyTime></folderProperties></folderContents>"#;
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/materialsTif/one", texture.to_vec()),
+        ("/Root/materialsTif/two", texture.to_vec()),
+        ("/Root/part/attrs", attributes.to_vec()),
+        ("/Root/qafmetadata", catalog.to_vec()),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode readable XML siblings");
+    let namespace = result.ir().native.namespace("nx").expect("NX namespace");
+    let attributes = namespace
+        .arena_as::<super::super::PartAttribute>("part_attributes")
+        .expect("part attributes");
+    assert_eq!(
+        attributes
+            .iter()
+            .map(|attribute| attribute.title.as_str())
+            .collect::<Vec<_>>(),
+        ["First", "Last"]
+    );
+    let catalog = namespace
+        .arena_as::<super::super::MaterialTextureCatalogEntry>("material_texture_catalog_entries")
+        .expect("material catalog");
+    assert_eq!(
+        catalog
+            .iter()
+            .map(|entry| entry.material_path.as_str())
+            .collect::<Vec<_>>(),
+        ["materialsTif/First", "materialsTif/Last"]
+    );
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("<Attribute>")));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("<folderProperties>")));
+    for damaged in [
+        br#"<Attribute owner="part" owner="duplicate" title="Bad" value="bad" pdmBased="false" version="3" xsi:type="StringAttributeType"/>"#.as_slice(),
+        br#"<folderProperties location="bad" location="duplicate"/>"#.as_slice(),
+    ] {
+        assert!(result.source_fidelity().retained_records().values()
+            .any(|record| record.data() == Some(damaged)));
+    }
+}
+
+#[test]
 fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
     for arrangements in [
         br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="YES" Name="Exploded"/></Arrangements>"#.as_slice(),
