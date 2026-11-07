@@ -439,6 +439,30 @@ fn point_only_wire_body_keeps_its_vertex() {
 }
 
 #[test]
+fn general_body_with_wire_edges_reports_its_reduced_kind() {
+    let mut source = super::wire_body_ir(1.0);
+    source.model.bodies[0].kind = BodyKind::General;
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &source,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write wire body");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::BodyReducedToWire.kind()
+            && loss.message.contains(source.model.bodies[0].id.as_str())
+            && loss.message.contains(source.model.regions[0].id.as_str())
+            && loss.message.contains(source.model.shells[0].id.as_str())
+    }));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode wire body");
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
+}
+
+#[test]
 fn body_with_only_carrierless_edges_keeps_its_vertices_as_wire() {
     let source = super::super::reports::edgeless_doc();
     let mut bytes = Vec::new();
