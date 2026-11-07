@@ -37,9 +37,9 @@ use crate::layout::construction_operand_affine_transform_frame as trailing_affin
 use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
-use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
-use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
-use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
+use crate::layout::legacy_loft_body_carrier as legacy_loft;
+use crate::layout::legacy_loft_body_carrier_owner_tail as legacy_loft_tail;
+use crate::layout::legacy_loft_body_carrier_three_flag as legacy_loft_three;
 use crate::layout::marked_sketch_curve_identity as marked_curve;
 use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
 use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
@@ -924,6 +924,7 @@ pub(crate) fn decode_face_operands(
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role() == DesignOperandRole::ROLE_0X5;
+        let is_pattern_face_seed = crate::design::is_pattern_face_seed_group(&scope.kind(), group);
         let is_split_face_operand = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && group.role() == DesignOperandRole::ROLE_0X10;
@@ -973,6 +974,7 @@ pub(crate) fn decode_face_operands(
             && !is_circular_pattern_seed
             && !is_mirror_seed
             && !is_mirror_plane
+            && !is_pattern_face_seed
             && !is_split_face_operand
             && !is_delete_face_operand
             && !is_emboss_face
@@ -1050,7 +1052,12 @@ pub(crate) fn decode_face_operands(
                 },
                 recipes,
             ) {
-                out.push(operand?);
+                let operand = operand?;
+                if !is_pattern_face_seed
+                    || operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                {
+                    out.push(operand);
+                }
             }
         }
     }
@@ -1758,6 +1765,7 @@ pub(crate) fn bind_sketch_profiles(
         let Some(profile) = profiles.pop() else {
             continue;
         };
+        losses.extend(profile.flags_assumption_loss());
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
             if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
                 scope.payload_mut()
@@ -1870,6 +1878,7 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceOffset)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceTrim)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::CircularPattern)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::RectangularPattern)
@@ -2006,108 +2015,120 @@ fn push_loft_legacy_body_carrier(
     out.push(carrier);
 }
 
-/// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
+/// Parse one legacy Loft body carrier.
 fn parse_loft_legacy_body_carrier(
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
 ) -> Option<DesignLoftLegacyBodyCarrier> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
-        "322" => {
-            let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
-            let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
-            let pair_matches = |at: usize| {
-                indexed_record_header_at(bytes, at).is_some_and(|paired| {
-                    paired.record_index == header.record_index && paired.class_tag.as_str() == "262"
-                })
-            };
-            let short_pair_matches = pair_matches(short_paired_offset);
-            let long_pair_matches = pair_matches(long_paired_offset);
-            if short_pair_matches {
-                ("262", legacy_loft_322::LEN, false)
-            } else if long_pair_matches {
-                ("262", legacy_loft_322_tail::LEN, true)
-            } else {
-                return None;
-            }
-        }
-        "411" => ("266", legacy_loft_411::LEN, true),
-        _ => return None,
+    let pair_matches = |length: usize| {
+        start
+            .checked_add(length)
+            .and_then(|at| indexed_record_header_at(bytes, at))
+            .is_some_and(|paired| paired.record_index == header.record_index)
     };
-    if indexed_record_header_at(bytes, start)
+    let frame_length = [
+        legacy_loft::LEN,
+        legacy_loft_tail::LEN,
+        legacy_loft_three::LEN,
+    ]
+    .into_iter()
+    .find(|&length| pair_matches(length))?;
+    let three_flags = frame_length == legacy_loft_three::LEN;
+    let common = start
+        + if three_flags {
+            legacy_loft_three::COMMON_PREFIX
+        } else if frame_length == legacy_loft_tail::LEN {
+            legacy_loft_tail::COMMON_PREFIX
+        } else {
+            legacy_loft::INDEXED_HEADER
+        };
+    if indexed_record_header_at(bytes, common)
         .is_none_or(|parsed| parsed.record_index != header.record_index)
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10)?
-            != [0; 10]
-        || bytes.get(start + legacy_loft_322::PRESENCE)? != &1
-        || View::u32_le_at(bytes, start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?
+        || bytes.get(common + legacy_loft::ZERO_RUN_10..common + legacy_loft::PRESENCE)? != [0; 10]
+        || bytes.get(common + legacy_loft::PRESENCE)? != &1
+        || View::u32_le_at(bytes, common + legacy_loft::OWNER_SCOPE_RECORD_INDEX)?
             != scope.record_index
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6)?
+        || bytes.get(common + legacy_loft::ZERO_RUN_6..common + legacy_loft::MEMBER_COUNT)?
             != [0; 6]
-        || View::u32_le_at(bytes, start + legacy_loft_322::MEMBER_COUNT)? != 1
+        || View::u32_le_at(bytes, common + legacy_loft::MEMBER_COUNT)? != 1
     {
         return None;
     }
-    let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
+    let mut cursor = common.checked_add(legacy_loft::MEMBER_REFERENCE)?;
     let member_offset = cursor;
     let (member, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
+    if cursor != common.checked_add(legacy_loft::OPAQUE_INDEX)? {
         return None;
     }
     let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?)
         .ok()
         .and_then(std::num::NonZeroU8::new)?;
-    cursor = cursor.checked_add(4)?;
-    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, cursor)?)?;
-    cursor = cursor.checked_add(8)?;
-    let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
+    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(
+        bytes,
+        common + legacy_loft::OPAQUE_SCALAR,
+    )?)?;
+    let repeated_opaque_index =
+        View::u32_le_at(bytes, common + legacy_loft::REPEATED_OPAQUE_INDEX)?;
     if repeated_opaque_index != u32::from(opaque_index.get()) {
         return None;
     }
-    cursor = cursor.checked_add(4)?;
+    cursor = common.checked_add(legacy_loft::NEXT_NEXT_REFERENCE)?;
     let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::FLAGS)?
-        || bytes.get(cursor..cursor + 2)? != [0, 0]
+    if next_next_record_index != header.record_index.checked_add(2)?
+        || cursor != common.checked_add(legacy_loft::FLAGS)?
     {
         return None;
     }
-    cursor = cursor.checked_add(2)?;
-    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::LEN)? {
-        return None;
-    }
-    let trailing_scope_reference_offset = if has_trailing_scope {
-        if cursor != start + legacy_loft_322_tail::TAIL_ZERO || bytes.get(cursor)? != &0 {
+    let (next_offset, tail_zero, tail_reference) = if three_flags {
+        if bytes.get(start + legacy_loft_three::FLAGS..start + legacy_loft_three::NEXT_REFERENCE)?
+            != [1, 0, 0]
+        {
             return None;
         }
-        cursor = cursor.checked_add(1)?;
-        if cursor != start + legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE {
-            return None;
-        }
-        let reference_offset = cursor;
-        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
-        if record_index != scope.record_index {
-            return None;
-        }
-        Some(u64::try_from(reference_offset).ok()?)
+        (
+            start.checked_add(legacy_loft_three::NEXT_REFERENCE)?,
+            Some(legacy_loft_three::TAIL_ZERO),
+            Some(legacy_loft_three::TRAILING_SCOPE_REFERENCE),
+        )
     } else {
-        None
+        if bytes.get(common + legacy_loft::FLAGS..common + legacy_loft::NEXT_REFERENCE)? != [0, 0] {
+            return None;
+        }
+        (
+            common.checked_add(legacy_loft::NEXT_REFERENCE)?,
+            (frame_length == legacy_loft_tail::LEN).then_some(legacy_loft_tail::TAIL_ZERO),
+            (frame_length == legacy_loft_tail::LEN)
+                .then_some(legacy_loft_tail::TRAILING_SCOPE_REFERENCE),
+        )
     };
-    let paired_byte_offset = start.checked_add(frame_length)?;
-    if cursor != paired_byte_offset
-        || indexed_record_header_at(bytes, paired_byte_offset)
-            .is_none_or(|parsed| parsed.record_index != header.record_index)
-    {
+    cursor = next_offset;
+    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+    if next_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    let paired_class_tag = std::str::from_utf8(bytes.get(
-        paired_byte_offset + indexed_header::CLASS_TAG
-            ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
-    )?)
-    .ok()?;
-    if paired_class_tag != paired_class {
+    let trailing_scope_reference_offset =
+        if let (Some(zero), Some(reference)) = (tail_zero, tail_reference) {
+            if cursor != start.checked_add(zero)? || bytes.get(cursor)? != &0 {
+                return None;
+            }
+            cursor = start.checked_add(reference)?;
+            let reference_offset = cursor;
+            let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+            if record_index != scope.record_index {
+                return None;
+            }
+            Some(u64::try_from(reference_offset).ok()?)
+        } else {
+            None
+        };
+    let paired_byte_offset = start.checked_add(frame_length)?;
+    if cursor != paired_byte_offset {
+        return None;
+    }
+    let paired = indexed_record_header_at(bytes, paired_byte_offset)?;
+    if paired.record_index != header.record_index {
         return None;
     }
     Some(DesignLoftLegacyBodyCarrier {
@@ -2117,26 +2138,26 @@ fn parse_loft_legacy_body_carrier(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         owner_scope_record_index_offset: u64::try_from(
-            start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
+            common + legacy_loft::OWNER_SCOPE_RECORD_INDEX,
         )
         .ok()?,
         member,
         member_offset: u64::try_from(member_offset).ok()?,
-        member_count_offset: u64::try_from(start + legacy_loft_322::MEMBER_COUNT).ok()?,
+        member_count_offset: u64::try_from(common + legacy_loft::MEMBER_COUNT).ok()?,
         opaque_index,
-        opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
+        opaque_index_offset: u64::try_from(common + legacy_loft::OPAQUE_INDEX).ok()?,
         opaque_scalar,
-        opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
-        repeated_opaque_index_offset: u64::try_from(start + legacy_loft_322::REPEATED_OPAQUE_INDEX)
+        opaque_scalar_offset: u64::try_from(common + legacy_loft::OPAQUE_SCALAR).ok()?,
+        repeated_opaque_index_offset: u64::try_from(common + legacy_loft::REPEATED_OPAQUE_INDEX)
             .ok()?,
         next_next_record_index,
-        next_next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_NEXT_REFERENCE)
+        next_next_reference_offset: u64::try_from(common + legacy_loft::NEXT_NEXT_REFERENCE)
             .ok()?,
-        flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
+        flags_offset: u64::try_from(common + legacy_loft::FLAGS).ok()?,
         next_record_index,
-        next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
+        next_reference_offset: u64::try_from(next_offset).ok()?,
         trailing_scope_reference_offset,
-        paired_class_tag: paired_class_tag.to_owned().try_into().ok()?,
+        paired_class_tag: paired.class_tag,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
     })
 }
@@ -2675,7 +2696,9 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// prefixes the flag block with a further byte. Neither
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
-/// this record's own index.
+/// this record's own index. That paired header is the next indexed header
+/// with this record's index, and the record's fields are read from the bytes
+/// before it.
 pub(super) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -2692,18 +2715,24 @@ pub(super) fn parse_construction_operand_group(
     if bytes.get(start + 11..start + 19) != Some(&[0; 8]) {
         return NotAGroup;
     }
-    let Some(mut cursor) = payload_prologue(bytes, start + 19, bytes.len()) else {
+    // The record ends at its paired header: the next indexed header with its
+    // own index, or the end of the stream.
+    let end = next_indexed_record_offset_with_index(bytes, start + 1, header.record_index)
+        .unwrap_or(bytes.len());
+    let Some(record_bytes) = bytes.get(..end) else {
+        return NotAGroup;
+    };
+    let Some(mut cursor) = payload_prologue(record_bytes, start + 19, end) else {
         return NotAGroup;
     };
     let member_count_at = cursor;
-    let Some(member_count) = View::u32_le_at(bytes, cursor) else {
+    let Some(member_count) = View::u32_le_at(record_bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    // A reference is at least one byte, so a count the remaining bytes cannot
-    // supply is corrupt and must not reach the allocator.
-    if bytes
-        .len()
+    // A reference is at least one byte, so a count the rest of the record
+    // cannot supply is corrupt and must not reach the allocator.
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(member_count) > remaining)
     {
@@ -2711,7 +2740,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let members_at = cursor;
     for _ in 0..member_count {
-        if take_record_reference(bytes, &mut cursor).is_none() {
+        if take_record_reference(record_bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
     }
@@ -2721,12 +2750,12 @@ pub(super) fn parse_construction_operand_group(
         .iter_mut()
         .zip(&mut auxiliary_slots)
     {
-        if bytes.get(cursor) == Some(&0) {
+        if record_bytes.get(cursor) == Some(&0) {
             cursor += 1;
             continue;
         }
         *present = true;
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((record_index, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
 
@@ -2735,12 +2764,11 @@ pub(super) fn parse_construction_operand_group(
             offset,
         });
     }
-    let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
+    let Some(trailing_count) = View::u32_le_at(record_bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    if bytes
-        .len()
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(trailing_count) > remaining)
     {
@@ -2748,7 +2776,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let trailing_at = cursor;
     for _ in 0..trailing_count {
-        if take_record_reference(bytes, &mut cursor).is_none() {
+        if take_record_reference(record_bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
     }
@@ -2761,7 +2789,7 @@ pub(super) fn parse_construction_operand_group(
         })
         && trailing_count == 0;
     if legacy_move_class_328 {
-        if bytes.get(cursor) != Some(&0) {
+        if record_bytes.get(cursor) != Some(&0) {
             return NotAGroup;
         }
         cursor += 1;
@@ -2769,21 +2797,21 @@ pub(super) fn parse_construction_operand_group(
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
     let (Some(0), Some(role)) = (
-        View::u32_le_at(bytes, role_at),
-        View::u64_le_at(bytes, role_at),
+        View::u32_le_at(record_bytes, role_at),
+        View::u64_le_at(record_bytes, role_at),
     ) else {
         return NotAGroup;
     };
     let role = DesignOperandRole::from_raw(role);
     cursor += 8;
-    if bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
+    if record_bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
         return NotAGroup;
     }
     cursor += 10;
     let opaque_index_at = cursor;
     let (Some(opaque_index), Some(opaque_scalar)) = (
-        View::u32_le_at(bytes, cursor),
-        View::f64_le_at(bytes, cursor + 4),
+        View::u32_le_at(record_bytes, cursor),
+        View::f64_le_at(record_bytes, cursor + 4),
     ) else {
         return NotAGroup;
     };
@@ -2801,18 +2829,18 @@ pub(super) fn parse_construction_operand_group(
     for repeats_ordinal in [true, false] {
         let mut tail = cursor;
         if repeats_ordinal {
-            if View::u32_le_at(bytes, tail) != Some(opaque_index.get()) {
+            if View::u32_le_at(record_bytes, tail) != Some(opaque_index.get()) {
                 continue;
             }
             tail += 4;
         }
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+        if take_record_reference(record_bytes, &mut tail).map(|(index, _)| index)
             != header.record_index.checked_add(2)
         {
             continue;
         }
         for flag_bytes in [2usize, 3] {
-            let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
+            let Some(flags) = record_bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
             if flags[flag_bytes - 2] > 1 || flags[flag_bytes - 1] > 1 {
@@ -2821,22 +2849,25 @@ pub(super) fn parse_construction_operand_group(
             let variant = flags[flag_bytes - 2] != 0;
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
                 != header.record_index.checked_add(1)
             {
                 continue;
             }
-            if bytes.get(after) != Some(&0) {
+            if record_bytes.get(after) != Some(&0) {
                 continue;
             }
             after += 1;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
                 != Some(scope.record_index)
             {
                 continue;
             }
+            if after != end {
+                continue;
+            }
             let Some((paired_class_tag, after_tag)) =
-                lp_ascii_filtered_view(bytes, after, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, end, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
@@ -2888,7 +2919,7 @@ pub(super) fn parse_construction_operand_group(
     let mut members = Vec::new();
     let mut cursor = members_at;
     for _ in 0..member_count {
-        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((value, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
         members.push(crate::records::identity::Located { value, offset });
@@ -2897,7 +2928,7 @@ pub(super) fn parse_construction_operand_group(
     let mut trailing_records = Vec::new();
     let mut cursor = trailing_at;
     for _ in 0..trailing_count {
-        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((value, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
         trailing_records.push(crate::records::identity::Located { value, offset });
@@ -5394,6 +5425,7 @@ pub(in crate::design) fn parse_sketch_profile(
             return None;
         }
     }
+    let mut compact_tail_flags = None;
     if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;
         let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
@@ -5405,7 +5437,10 @@ pub(in crate::design) fn parse_sketch_profile(
             || View::u32_le_at(bytes, tail + 8) != Some(1)
             || marked_record_reference(bytes, tail + nested_two_at)
                 != header.record_index.checked_add(2)
-            || bytes.get(tail + nested_one_at - 2..tail + nested_one_at) != Some(&[0; 2])
+            || !bytes
+                .get(tail + nested_one_at - 2..tail + nested_one_at)?
+                .iter()
+                .all(|&flag| flag <= 1)
             || marked_record_reference(bytes, tail + nested_one_at)
                 != header.record_index.checked_add(1)
             || bytes.get(tail + scope_at - 1) != Some(&0)
@@ -5416,6 +5451,10 @@ pub(in crate::design) fn parse_sketch_profile(
         {
             return None;
         }
+        compact_tail_flags = Some([
+            bytes[tail + nested_one_at - 2] != 0,
+            bytes[tail + nested_one_at - 1] != 0,
+        ]);
     }
     let mut matches = entities.iter().filter(|entity| {
         native_stream(&entity.id) == Some(stream)
@@ -5439,6 +5478,7 @@ pub(in crate::design) fn parse_sketch_profile(
             asset_id_offset: u64::try_from(start + 40).ok()?,
             entity_id: crate::records::identity::DesignEntityId::try_from(entity_id_text).ok()?,
             entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
+            compact_tail_flags,
             region_selection,
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
                 .ok()?,
@@ -6968,7 +7008,7 @@ fn parse_typed_profile_curve_selection_prefix(
             ),
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
-            loop_lists: [Vec::new(), Vec::new()],
+            groups: Vec::new(),
         },
         identity_end,
     ))
@@ -6992,22 +7032,24 @@ fn parse_typed_profile_curve_selection(
     };
     let start = usize::try_from(selection.identity_record_offset)
         .map_err(|_| CodecError::malformed("profile identity offset exceeds address space"))?;
-    let Some(lists) =
-        parse_profile_loop_lists(ctx, bytes, start + typed_identity::FIRST_REGION_COUNT, end)?
+    let Some(groups) =
+        parse_profile_region_groups(ctx, bytes, start + typed_identity::REGION_GROUP_COUNT, end)?
     else {
         return Ok(None);
     };
-    selection.loop_lists = lists;
+    selection.groups = groups;
     Ok(selection.valid_layout().then_some(selection))
 }
 
-fn parse_profile_loop_lists(
+/// Smallest stored region: a loop count, an entry count, one entry and the
+/// exterior flag.
+const MIN_PROFILE_REGION_BYTES: usize = 49;
+
+fn parse_profile_region(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-    end: usize,
+    view: &mut View<'_>,
 ) -> Result<
-    Option<[Vec<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>; 2]>,
+    Option<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>,
     CodecError,
 > {
     use crate::records::topology::entity_selection::{
@@ -7021,65 +7063,95 @@ fn parse_profile_loop_lists(
             }
         };
     }
-    let mut view = field!(View::over_retained(bytes).child(start, end));
-    let mut lists = [Vec::new(), Vec::new()];
-    for (list_index, regions) in lists.iter_mut().enumerate() {
+    let count = field!(view.u32_le());
+    let count = field!(view.counted(u64::from(count), 45)).get();
+    if count == 0 {
+        return Ok(None);
+    }
+    let mut loops = ctx.alloc_filled(
+        count,
+        DesignProfileCurveLoop::default(),
+        "F3D profile loops",
+    )?;
+    for loop_ in &mut loops {
         let count = field!(view.u32_le());
-        let count = field!(view.counted(u64::from(count), 49)).get();
-        if list_index == 0 && count == 0 {
+        let count = field!(view.counted(u64::from(count), 40)).get();
+        if count == 0 {
             return Ok(None);
         }
-        *regions = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
-        for loops in regions {
-            let count = field!(view.u32_le());
-            let count = field!(view.counted(u64::from(count), 45)).get();
-            if count == 0 {
+        loop_.entries = ctx.alloc_filled(
+            count,
+            DesignProfileCurveEntry::default(),
+            "F3D profile curve entries",
+        )?;
+        for entry in &mut loop_.entries {
+            if view.u32_le() != Some(2) {
                 return Ok(None);
             }
-            *loops = ctx.alloc_filled(
-                count,
-                DesignProfileCurveLoop::default(),
-                "F3D profile loops",
-            )?;
-            for loop_ in loops {
-                let count = field!(view.u32_le());
-                let count = field!(view.counted(u64::from(count), 40)).get();
-                if count == 0 {
-                    return Ok(None);
-                }
-                loop_.entries = ctx.alloc_filled(
-                    count,
-                    DesignProfileCurveEntry::default(),
-                    "F3D profile curve entries",
-                )?;
-                for entry in &mut loop_.entries {
-                    if view.u32_le() != Some(2) {
-                        return Ok(None);
-                    }
-                    let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
-                    *entry = DesignProfileCurveEntry {
-                        primary_id: field!(view.u64_le()),
-                        primary_id_offset,
-                        secondary_id: field!(view.u64_le()),
-                        entry_fields: [
-                            field!(view.u32_le()),
-                            field!(view.u32_le()),
-                            field!(view.u32_le()),
-                        ],
-                    };
-                    if view.take(8) != Some(&[0; 8][..]) {
-                        return Ok(None);
-                    }
-                }
-                loop_.outer = match view.u8() {
-                    Some(0) => false,
-                    Some(1) => true,
-                    _ => return Ok(None),
-                };
+            let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
+            *entry = DesignProfileCurveEntry {
+                primary_id: field!(view.u64_le()),
+                primary_id_offset,
+                secondary_id: field!(view.u64_le()),
+                entry_fields: [
+                    field!(view.u32_le()),
+                    field!(view.u32_le()),
+                    field!(view.u32_le()),
+                ],
+            };
+            if view.take(8) != Some(&[0; 8][..]) {
+                return Ok(None);
             }
         }
+        loop_.outer = match view.u8() {
+            Some(0) => false,
+            Some(1) => true,
+            _ => return Ok(None),
+        };
     }
-    Ok((view.remaining() == 0).then_some(lists))
+    Ok(Some(loops))
+}
+
+fn parse_profile_region_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<
+    Option<Vec<crate::records::topology::entity_selection::DesignProfileRegionGroup>>,
+    CodecError,
+> {
+    use crate::records::topology::entity_selection::DesignProfileRegionGroup;
+    macro_rules! field {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    let mut view = field!(View::over_retained(bytes).child(start, end));
+    let count = field!(view.u32_le());
+    // A group is one region and the u32 count of its further regions.
+    let count = field!(view.counted(u64::from(count), MIN_PROFILE_REGION_BYTES + 4)).get();
+    if count == 0 {
+        return Ok(None);
+    }
+    let mut groups = ctx.alloc_filled(
+        count,
+        DesignProfileRegionGroup::default(),
+        "F3D profile region groups",
+    )?;
+    for group in &mut groups {
+        group.region = field!(parse_profile_region(ctx, &mut view)?);
+        let count = field!(view.u32_le());
+        let count = field!(view.counted(u64::from(count), MIN_PROFILE_REGION_BYTES)).get();
+        group.further = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
+        for region in &mut group.further {
+            *region = field!(parse_profile_region(ctx, &mut view)?);
+        }
+    }
+    Ok((view.remaining() == 0).then_some(groups))
 }
 
 pub(crate) fn construction_closing_flag_losses(

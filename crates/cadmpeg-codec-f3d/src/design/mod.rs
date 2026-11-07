@@ -127,12 +127,31 @@ pub(crate) fn design_feature_family(
         | Kind::JointOrigin
         | Kind::BaseFlange
         | Kind::SplitFace
+        | Kind::PathPattern
         | Kind::MoveFace
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace
         | Kind::RemoveBody
         | Kind::Face => None,
     }
+}
+
+/// Return whether `group` is the face seed group of a rectangular, circular,
+/// or Mirror pattern scope: role `0x0000001000000000` at scope-reference
+/// ordinal one.
+pub(crate) fn is_pattern_face_seed_group(
+    kind: &crate::records::feature::scope::DesignFeatureKind,
+    group: &crate::records::topology::construction::DesignConstructionOperandGroup,
+) -> bool {
+    matches!(
+        design_feature_family(kind),
+        Some(
+            DesignFeatureFamily::RectangularPattern
+                | DesignFeatureFamily::CircularPattern
+                | DesignFeatureFamily::Mirror
+        )
+    ) && group.role() == crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X10
+        && group.scope_reference_ordinal == 1
 }
 
 /// Return whether a Fillet or Chamfer scope stores a localized family name.

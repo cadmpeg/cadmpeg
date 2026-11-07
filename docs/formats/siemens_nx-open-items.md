@@ -166,26 +166,12 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 **Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
 pairing, and repeated carrier spellings cannot select an aggregate change.
 In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
-type 90 across separate PMARK and map sections. They share node ID 6712 and
-first member 2511, while their chain links differ. A lookup by stream, XMT,
+type 90 across separate PMARK and map sections. A lookup by stream, XMT,
 and type merges those revisions. The current PMARK 5892 has delta key 2481
 and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
 map after PMARK 5898 names GROUP 2562.
-That GROUP instance precedes the PMARK section. If each FACE map entry uses
-the latest matching instance before the map, the resulting 34 FACE node IDs
-equal the primary GROUP's members. The later map after PMARK 6089 names GROUP
-2437 and carries no instance offset to select one of its four revisions. The
-visible `previous` targets of all four revisions link back to XMT 2437, so
-reciprocity does not select one revision.
-
-The primary solid has 139 faces; the STEP twin has 120. GROUP 2562's 34
-members are primary-solid faces. Removing them leaves 105. Four older GROUPs
-contain 15 distinct faces outside GROUP 2562, but all 15 are already in the
-primary solid. Adding them after that removal leaves the face count at 105.
-The next serialized PMARK, 5899, is the graph predecessor of PMARK 5898. It
-has 35 deleted nodes, the sum of those 34 faces and one GROUP record. The map
-has 1090 entries, equal to PMARK 5898's new-node count. The association of that
-map with a delta edge remains unresolved.
+That GROUP instance precedes the PMARK section. The map key leaves the
+instance revision and the action on its members unresolved.
 The counts of map entries and typed PMARK-section instances can differ from
 the adjacent PMARK's new-node and deleted-node counts in closed sections.
 
@@ -885,7 +871,7 @@ member as a neutral suppression or visibility state.
 
 **Need.** Identify the child occurrence and how the placement translations obtain their unit. Compare inch and metric models against independently matching geometry.
 
-**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The first trailer byte descends from `0x3f` to `0x1c` in placement-record order. The third trailer byte is constant within each UUID group.
+**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The five-byte trailer has no established instance or unit role. The first trailer byte descends from `0x3f` to `0x1c` in placement-record order. The third trailer byte is constant within each UUID group.
 
 Within a UUID group, trailer keys and prototype indices can interleave in
 different orders. A positional join then assigns different keys to one
