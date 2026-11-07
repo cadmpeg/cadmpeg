@@ -19,6 +19,7 @@ pub mod asm_header;
 pub mod brep;
 pub mod dialect;
 pub mod edit;
+pub mod history;
 pub mod ids;
 pub mod kernel_header;
 /// Byte-offset constants generated from `docs/layouts/asm.toml`.
