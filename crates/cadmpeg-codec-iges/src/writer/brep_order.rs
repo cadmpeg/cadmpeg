@@ -138,7 +138,7 @@ pub(super) fn edge_list_source(
     let parameters = record.field("parameters")?;
     let parameters = parameters.as_array()?;
     if parameters.get(1)?.get("value")?.get("value")?.as_u64()?
-        != u64::try_from(edges.len()).ok()?
+        != cadmpeg_core::decode::u64_from_index(edges.len())
     {
         return None;
     }
