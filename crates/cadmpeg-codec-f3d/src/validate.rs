@@ -7026,6 +7026,21 @@ fn validate_operand_group_carriers<'a>(
                                 .eq([profile.record_index])
                         })
                 });
+        // A profile group of several sketch-profile operands: each member is an
+        // operand that the scope retains as a native profile.
+        let has_exact_native_profile_members = group.extrude_role()
+            == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
+            && ctx
+                .scopes_by_index
+                .get(&(native_stream, group.scope_record_index))
+                .and_then(|scope| scope.extrude_native_profiles())
+                .is_some_and(|profiles| {
+                    group
+                        .members()
+                        .iter()
+                        .map(|member| member.value)
+                        .eq(profiles.iter().map(|profile| profile.record_index))
+                });
         let has_exact_group_members = !group.members().is_empty()
             && group
                 .members()
@@ -7078,6 +7093,7 @@ fn validate_operand_group_carriers<'a>(
             || has_exact_body_recipe_members
             || has_exact_topology_recipe_members
             || has_exact_sketch_profile_member
+            || has_exact_native_profile_members
             || has_exact_group_members;
         if !has_exact_member_carrier {
             push_constant_finding(
