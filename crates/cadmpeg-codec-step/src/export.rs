@@ -2665,6 +2665,12 @@ impl<'a> Builder<'a> {
             "PROPERTY_DEFINITION_REPRESENTATION",
             &format!("{property},{representation}"),
         );
+        if matches!(attribute.target, AttributeTarget::Record { .. }) {
+            self.loss(
+                StepLossCode::SourceAttributeTargetNormalized,
+                format!("attribute {} was written with a typed target", attribute.id),
+            );
+        }
         self.consumed_attribute_ids
             .insert(attribute.id.as_str().to_owned());
     }
