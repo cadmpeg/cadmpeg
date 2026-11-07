@@ -13,8 +13,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     ) -> Result<(), WriteError> {
         let operation = self.feature.evaluation.definition().operation();
         let value = serde_json::to_value(operation).map_err(|error| {
-            CodecError::malformed(format!(
-                "serialize canonical SLDPRT dimensional roles: {error}"
+            WriteError::Decline(format!(
+                "SLDPRT feature {} cannot serialize dimensional roles: {error}",
+                self.feature.id
             ))
         })?;
         let bind = |roles: &[&str], paths: &[&str]| -> Result<(), WriteError> {
@@ -50,15 +51,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             else {
                 return Ok(());
             };
-            let id = ParameterId::mint(binding.to_owned()).map_err(CodecError::malformed)?;
+            let id = ParameterId::mint(binding.to_owned()).map_err(|error| {
+                WriteError::Decline(format!(
+                    "SLDPRT feature {} has an invalid parameter binding: {error}",
+                    self.feature.id
+                ))
+            })?;
             let parameter = self
                 .canonical_parameters
                 .iter()
                 .find(|parameter| parameter.id == id)
                 .ok_or_else(|| {
-                    CodecError::malformed(
-                        "SLDPRT dimensional role references a missing canonical parameter",
-                    )
+                    WriteError::Decline(format!(
+                        "SLDPRT feature {} references missing parameter {id}",
+                        self.feature.id
+                    ))
                 })?;
             let text = if parameter.name == role
                 && parameter.owner.as_ref() == Some(&self.feature.id)
@@ -81,7 +88,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 native_literal
                     .or_else(|| self.base_parameters().get(role).cloned())
                     .ok_or_else(|| {
-                        CodecError::malformed("SLDPRT canonical parameter expression is absent")
+                        WriteError::Decline(format!(
+                            "SLDPRT feature {} has no canonical expression for parameter {id}",
+                            self.feature.id
+                        ))
                     })?
             } else {
                 if self.canonical_parameters.iter().any(|candidate| {

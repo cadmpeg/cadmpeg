@@ -20,7 +20,6 @@ use self::surface::ShellDefinition;
 use crate::records::Feature;
 use crate::writer::write_error::WriteError;
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     DesignParameter, Dimension, DimensionValue, FeatureDefinition, FeatureId, FeatureOperation,
     FeatureTreeNodeRole, UnresolvedFamily,
@@ -87,7 +86,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .iter()
                     .find(|parameter| parameter.id == *id)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        WriteError::Decline(format!(
                             "SLDPRT feature {} references missing parameter {id}",
                             self.feature.id
                         ))
