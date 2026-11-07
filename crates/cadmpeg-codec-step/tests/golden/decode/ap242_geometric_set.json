@@ -161,6 +161,20 @@
               "value": ""
             }
           ]
+        },
+        {
+          "id": "step:data:geometry-name#11-12",
+          "name": "name",
+          "target": {
+            "id": "step:data:surface#11",
+            "kind": "surface"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "disc"
+            }
+          ]
         }
       ],
       "bodies": [
