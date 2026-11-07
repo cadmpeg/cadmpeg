@@ -3725,17 +3725,24 @@ pub(crate) fn bind_feature_path_selections(
             };
             match definition {
                 FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-                    boundary: SurfaceBoundary::Path(path),
+                    boundary,
+                    interior_constraints,
                     ..
                 }) => {
-                    bind_entity_selection_path(
-                        path,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        operands,
-                    );
+                    let boundary = match boundary {
+                        SurfaceBoundary::Path(path) => Some(path),
+                        SurfaceBoundary::Edges(_) => None,
+                    };
+                    for path in boundary.into_iter().chain(interior_constraints) {
+                        bind_entity_selection_path(
+                            path,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            operands,
+                        );
+                    }
                 }
                 FeatureDefinition::Operation(FeatureOperation::Loft { guidance, .. }) => {
                     let paths = match guidance {

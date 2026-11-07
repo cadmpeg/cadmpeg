@@ -200,6 +200,7 @@ impl Serialize for DesignParameterScope {
                 emit!("surface_patch_boundaries", &patch.boundaries);
             }
             emit_opt!("surface_patch_normal", patch.normal.as_ref());
+            emit_opt!("surface_patch_selection", patch.selection.as_ref());
         }
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());

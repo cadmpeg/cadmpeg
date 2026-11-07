@@ -283,7 +283,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 support_faces,
                 continuity,
                 merge_result,
-            }) => self.encode_filled_surface(boundary, support_faces, continuity, *merge_result),
+                interior_constraints,
+                reverse_normal,
+            }) => self.encode_filled_surface(
+                boundary,
+                support_faces,
+                continuity,
+                *merge_result,
+                !interior_constraints.is_empty() || *reverse_normal == Some(true),
+            ),
             FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: face_selection,
                 anchor,

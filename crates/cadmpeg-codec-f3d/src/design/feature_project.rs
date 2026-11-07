@@ -609,7 +609,7 @@ pub(crate) struct ProjectedParameterDesign {
     /// `BaseFlange` scopes projected with their stored thickness copy because
     /// their sheet-metal rule states no thickness.
     pub(crate) unruled_flange_thicknesses: usize,
-    pub(crate) hole_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) projection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl ProjectedParameterDesign {
@@ -661,7 +661,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         sheet_metal_settings,
         ..
     } = inputs;
-    let mut hole_losses = Vec::new();
+    let mut projection_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
@@ -835,6 +835,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     edge_operands,
                     edge_identity_operands,
                     face_boundaries,
+                    &mut projection_losses,
                 )?
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
@@ -927,7 +928,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &parameters,
                     construction_groups,
                     face_operands,
-                    &mut hole_losses,
+                    &mut projection_losses,
                 )?
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Split) => project_split(
@@ -1851,7 +1852,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         parameters,
         unordered_parameter_scopes,
         unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
-        hole_losses,
+        projection_losses,
     })
 }
 
@@ -7672,7 +7673,9 @@ fn project_surface_patch(
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+    use crate::records::feature::surface_ops::DesignSurfacePatchNormalState;
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
     };
@@ -7680,16 +7683,11 @@ fn project_surface_patch(
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
         return Ok(None);
     }
-    if scope.surface_patch_normal().is_some_and(|normal| {
-        !matches!(
-            normal,
-            crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
-                reversed: crate::records::identity::Located { value: false, .. }
-            }
-        )
-    }) {
-        return Ok(None);
-    }
+    let reverse_normal = match scope.surface_patch_normal() {
+        None => None,
+        Some(DesignSurfacePatchNormalState::Explicit { reversed }) => Some(reversed.value),
+        Some(DesignSurfacePatchNormalState::Unsupported) => return Ok(None),
+    };
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
     };
@@ -7761,24 +7759,32 @@ fn project_surface_patch(
                     cadmpeg_ir::features::SurfaceContinuity::Contact,
                 ),
                 merge_result: Some(false),
+                interior_constraints: Vec::new(),
+                reverse_normal,
             },
         )));
     }
 
-    match groups.first().map(|group| group.role()) {
-        Some(DesignOperandRole::PROFILE) => {
-            if !surface_patch_sketch_profiles(scope, &groups) {
-                return Ok(None);
+    let (boundary_groups, interior_groups) =
+        if let Some(partition) = surface_patch_interior_groups(ctx, scope, &groups)? {
+            partition
+        } else {
+            match groups.first().map(|group| group.role()) {
+                Some(DesignOperandRole::PROFILE) => {
+                    if !surface_patch_sketch_profiles(scope, &groups) {
+                        return Ok(None);
+                    }
+                }
+                Some(DesignOperandRole::BODIES_A) => {
+                    if !surface_patch_fixed_paths(ctx, scope, &groups)? {
+                        return Ok(None);
+                    }
+                }
+                _ => return Ok(None),
             }
-        }
-        Some(DesignOperandRole::BODIES_A) => {
-            if !surface_patch_fixed_paths(ctx, scope, &groups)? {
-                return Ok(None);
-            }
-        }
-        _ => return Ok(None),
-    }
-    let boundary = if let [boundary] = groups.as_slice() {
+            (groups, Vec::new())
+        };
+    let boundary = if let [boundary] = boundary_groups.as_slice() {
         resolved_loft_path(
             boundary,
             construction_groups,
@@ -7789,7 +7795,7 @@ fn project_surface_patch(
         )?
     } else {
         resolved_surface_patch_path(
-            &groups,
+            &boundary_groups,
             construction_groups,
             edge_operands,
             edge_identity_operands,
@@ -7798,6 +7804,26 @@ fn project_surface_patch(
             ctx,
         )?
     };
+    let mut interior_constraints = Vec::new();
+    for group in &interior_groups {
+        interior_constraints.push(resolved_loft_path(
+            group,
+            construction_groups,
+            edge_operands,
+            edge_identity_operands,
+            scope,
+            ctx,
+        )?);
+    }
+    if !interior_constraints.is_empty() {
+        losses.push(
+            crate::loss::F3dLossCode::SurfacePatchInteriorConstraintAssumed.note(format!(
+                "SurfacePatch {} projects its {} interior groups as interior constraints that the patch passes through.",
+                scope.id,
+                interior_constraints.len()
+            )),
+        );
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Path(boundary),
@@ -7810,8 +7836,104 @@ fn project_surface_patch(
                 cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary,
             ),
             merge_result: Some(false),
+            interior_constraints,
+            reverse_normal,
         },
     )))
+}
+
+type SurfacePatchPartition<'a> = (
+    Vec<&'a DesignConstructionOperandGroup>,
+    Vec<&'a DesignConstructionOperandGroup>,
+);
+
+fn surface_patch_interior_groups<'a>(
+    ctx: &DecodeContext<'_>,
+    scope: &DesignParameterScope,
+    groups: &[&'a DesignConstructionOperandGroup],
+) -> Result<Option<SurfacePatchPartition<'a>>, CodecError> {
+    let Some(selection) = scope.surface_patch_selection() else {
+        return Ok(None);
+    };
+    let settings = scope.surface_patch_boundaries();
+    if selection.interior_groups.is_empty()
+        || settings.is_empty()
+        || !settings
+            .iter()
+            .map(|setting| setting.record_index)
+            .eq(selection.settings.iter().copied())
+    {
+        return Ok(None);
+    }
+    let references = scope.reference_members();
+    let mut occupied = ctx.alloc_filled(
+        references.len(),
+        false,
+        "f3d surface-patch reference occupancy",
+    )?;
+    let mut claim = |ordinal: Option<usize>, record: u32| {
+        let Some(ordinal) = ordinal else {
+            return false;
+        };
+        references.values().nth(ordinal) == Some(&record)
+            && occupied
+                .get_mut(ordinal)
+                .is_some_and(|slot| !std::mem::replace(slot, true))
+    };
+    let group_named = |record: u32, role: DesignOperandRole| {
+        groups
+            .iter()
+            .copied()
+            .find(|group| group.record_index == record && group.role() == role)
+    };
+    let mut boundary_groups = Vec::new();
+    for setting in settings {
+        let Some(group) = group_named(setting.model_reference, DesignOperandRole::BODIES_A) else {
+            return Ok(None);
+        };
+        let [member] = group.members() else {
+            return Ok(None);
+        };
+        let ordinal = usize::try_from(group.scope_reference_ordinal).ok();
+        let settings_ordinal = ordinal.and_then(|ordinal| ordinal.checked_add(2));
+        if usize::try_from(setting.scope_reference_ordinal).ok() != settings_ordinal
+            || !claim(ordinal, group.record_index)
+            || !claim(
+                ordinal.and_then(|ordinal| ordinal.checked_add(1)),
+                member.value,
+            )
+            || !claim(settings_ordinal, setting.record_index)
+        {
+            return Ok(None);
+        }
+        boundary_groups.push(group);
+    }
+    let mut interior_groups = Vec::new();
+    for record in &selection.interior_groups {
+        let Some(group) = group_named(*record, DesignOperandRole::ROLE_0X21) else {
+            return Ok(None);
+        };
+        let ordinal = usize::try_from(group.scope_reference_ordinal).ok();
+        if group.members().is_empty() || !claim(ordinal, group.record_index) {
+            return Ok(None);
+        }
+        for (offset, member) in (1..).zip(group.members()) {
+            if !claim(
+                ordinal.and_then(|ordinal| ordinal.checked_add(offset)),
+                member.value,
+            ) {
+                return Ok(None);
+            }
+        }
+        interior_groups.push(group);
+    }
+    let tool_ordinal = references
+        .values()
+        .position(|record| *record == selection.tool_body);
+    if !claim(tool_ordinal, selection.tool_body) || occupied.iter().any(|slot| !slot) {
+        return Ok(None);
+    }
+    Ok(Some((boundary_groups, interior_groups)))
 }
 
 fn project_boundary_fill(

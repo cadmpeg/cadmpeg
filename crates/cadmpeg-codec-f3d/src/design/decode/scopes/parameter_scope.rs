@@ -172,13 +172,13 @@ pub(crate) fn decode_parameter_scopes(
             };
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
-            let normal = super::super::patch::surface_patch_normal(
-                bytes,
-                &scope,
-                stream_types.get(&u64::from(scope.record_index)).copied(),
-            );
+            let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            let normal = super::super::patch::surface_patch_normal(bytes, &scope, type_info);
+            let selection =
+                super::super::patch::surface_patch_selection(ctx, bytes, &scope, type_info)?;
             if let scope::DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
                 patch.normal = normal;
+                patch.selection = selection;
             }
             let emboss = exact_emboss_construction(ctx, bytes, &scope)?;
             if let scope::DesignScopePayloadMut::Emboss(slot) = scope.payload_mut() {
