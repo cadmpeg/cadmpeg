@@ -3213,8 +3213,11 @@ fn extended_construction_path_prefix(bytes: &[u8], start: usize) -> Option<bool>
             .get(zero_run..start + extended_path::PREFIX_VALUE)?
             .iter()
             .all(|byte| *byte == 0)
-            && View::u32_le_at(bytes, start + extended_path::PREFIX_VALUE)?
-                == extended_path::PREFIX_VALUE_VALUE
+            && matches!(
+                View::u32_le_at(bytes, start + extended_path::PREFIX_VALUE)?,
+                crate::layout::assembly_locator_prefix_two::WORD_VALUE
+                    | extended_path::PREFIX_VALUE_VALUE
+            )
             && bytes
                 .get(trailing_zero_run..start + extended_path::ENTITY_MARKER)?
                 .iter()

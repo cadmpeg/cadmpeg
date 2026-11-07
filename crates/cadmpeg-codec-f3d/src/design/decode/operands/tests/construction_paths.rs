@@ -287,8 +287,15 @@ fn construction_operand_auxiliary_paths_decode_the_extended_prefix() {
     let restored: DesignConstructionOperandPath = serde_json::from_value(wire).unwrap();
     assert_eq!(restored.following_byte_offset(), 225);
 
+    // Prefix word 2 reads the same way; any other word is refused.
+    assert_eq!(
+        parse_construction_operand_path(&extended_path(&[0, 0, 1, 0], 2), 2339, &header)
+            .expect("extended path with prefix word 2")
+            .entity_ref,
+        55
+    );
     assert!(
-        parse_construction_operand_path(&extended_path(&[0, 0, 1, 0], 2), 2339, &header).is_none()
+        parse_construction_operand_path(&extended_path(&[0, 0, 1, 0], 4), 2339, &header).is_none()
     );
 }
 
