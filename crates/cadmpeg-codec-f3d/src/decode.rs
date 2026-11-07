@@ -839,6 +839,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !body_selection_is_resolved(bodies)
                 || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
         }
+        FeatureDefinition::Operation(FeatureOperation::ReverseShape { source }) => {
+            !body_selection_is_resolved(source)
+        }
         FeatureDefinition::Operation(FeatureOperation::InsertComponent { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::Shell {

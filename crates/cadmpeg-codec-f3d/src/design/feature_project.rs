@@ -57,6 +57,7 @@ mod mirror;
 mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
+mod reverse_normal;
 mod surface_offset;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
@@ -1285,6 +1286,21 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         == crate::records::feature::scope::DesignFeatureKind::RemoveBody
                     {
                         project_remove_body(scope, construction_groups).unwrap_or_else(|| {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: scope.kind_name().into(),
+                                parameters: BTreeMap::new(),
+                            })
+                        })
+                    } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                    {
+                        reverse_normal::project_reverse_normal(
+                            scope,
+                            construction_groups,
+                            design_types,
+                            &mut projection_losses,
+                        )
+                        .unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),

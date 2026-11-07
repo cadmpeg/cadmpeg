@@ -27,6 +27,7 @@ mod pattern;
 mod pipe;
 mod primitives;
 mod replace_face;
+mod reverse_normal;
 mod revolve;
 mod revolve_axis_candidates;
 mod revolve_targets;
