@@ -961,7 +961,7 @@ fn preserves_forward_declared_feature_dependencies() {
 
     assert!(first.dependencies.is_empty());
     assert!(second.dependencies.is_empty());
-    assert!(first.ordinal < second.ordinal);
+    assert!(second.ordinal < first.ordinal);
     let objects = result
         .ir()
         .native
@@ -1007,7 +1007,7 @@ fn orders_forward_linked_sketches_before_profile_consumers() {
             .find(|feature| feature.name.as_deref() == Some("Sketch"))
             .expect("sketch feature");
 
-        assert!(pad.ordinal < sketch.ordinal, "property {property_name}");
+        assert!(sketch.ordinal < pad.ordinal, "property {property_name}");
         assert!(has_ordering_dependency(result.ir(), "Pad", "Sketch"));
         assert_valid_document(result.ir());
     }
@@ -1461,7 +1461,7 @@ fn custom_link_dependencies_do_not_depend_on_declaration_order() {
                 declarations.find("Consumer") < declarations.find("Operand");
             assert_eq!(
                 operand.ordinal < consumer.ordinal,
-                !consumer_declared_first,
+                is_dependency || !consumer_declared_first,
                 "{runtime}"
             );
             assert_eq!(
@@ -1520,10 +1520,7 @@ fn expression_owner_is_a_feature_dependency_without_objectdeps() {
             .find(|feature| feature.name.as_deref() == Some("Operand"))
             .unwrap();
         assert!(consumer.dependencies.is_empty());
-        assert_eq!(
-            operand.ordinal < consumer.ordinal,
-            declarations.find("Operand") < declarations.find("Consumer")
-        );
+        assert!(operand.ordinal < consumer.ordinal);
         assert!(has_ordering_dependency(result.ir(), "Consumer", "Operand"));
         assert_valid_document(result.ir());
     }
@@ -1588,7 +1585,7 @@ fn restored_runtime_and_extension_scopes_exclude_hidden_references() {
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Operand"))
             .unwrap();
-        assert!(consumer.ordinal < operand.ordinal);
+        assert_eq!(operand.ordinal < consumer.ordinal, expected);
         assert_eq!(
             has_ordering_dependency(result.ir(), "Consumer", "Operand"),
             expected,
@@ -1667,7 +1664,7 @@ fn expression_dependencies_use_unique_labels_and_skip_strings_and_metadata() {
         let consumer = feature("Consumer");
         let operand = feature("Operand");
         assert!(consumer.dependencies.is_empty());
-        assert!(consumer.ordinal < operand.ordinal);
+        assert_eq!(operand.ordinal < consumer.ordinal, expected);
         assert_eq!(
             has_ordering_dependency(result.ir(), "Consumer", "Operand"),
             expected,

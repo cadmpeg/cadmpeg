@@ -387,3 +387,253 @@ fn malformed_vertex_recipe_is_given_up_and_sibling_survives() {
         });
     });
 }
+
+#[test]
+fn work_point_gives_up_broken_vertex_and_keeps_sibling() {
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use crate::records::feature::work_geometry::{
+        DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+        DesignWorkPointRule,
+    };
+    let mut bytes = Vec::new();
+    let mut headers = Vec::new();
+    let mut recipes = Vec::new();
+    for (base, valid) in [(100u32, false), (200, true)] {
+        let start = bytes.len();
+        indexed_header(&mut bytes, *b"369", base);
+        indexed_header(&mut bytes, *b"261", base);
+        indexed_header(&mut bytes, *b"408", base + 1);
+        indexed_header(&mut bytes, *b"414", base + 2);
+        indexed_header(&mut bytes, *b"423", base + 3);
+        let recipe_at = bytes.len() + 4;
+        bytes.extend_from_slice(&18u32.to_le_bytes());
+        bytes.extend_from_slice(b"vertex_recipe_data");
+        if valid {
+            for value in [-1i32, 3, 1, -1, 2, -1, 0, -1, 0, 0] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        indexed_header(&mut bytes, *b"370", base + 5);
+        headers.push(DesignRecordHeader {
+            id: format!("{STREAM}:design-record-header#{base}"),
+            record_index: base,
+            class_tag: "369".to_owned().try_into().unwrap(),
+            byte_offset: Some(u64::try_from(start).unwrap()),
+        });
+        recipes.push(ConstructionRecipe {
+            id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+            byte_offset: Some(u64::try_from(recipe_at).unwrap()),
+            kind: ConstructionRecipeKind::Vertex,
+            design: None,
+            recipe_index: 9,
+            record_index: None,
+        });
+    }
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#50"),
+        DesignFeatureKind::WorkPoint,
+        50,
+    );
+    let inputs = [100, 200]
+        .into_iter()
+        .map(|index| DesignWorkPointInput::try_new(index, None, None).unwrap())
+        .collect();
+    let rule = DesignWorkPointRule::from_serialized(99, inputs).unwrap();
+    let DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() else {
+        panic!("work point fixture")
+    };
+    *slot = Some(DesignWorkPointConstruction {
+        point_record_index: 50,
+        point_record_byte_offset: None,
+        position: crate::test_support::reals([0.0, 0.0, 0.0]),
+        position_offset: None,
+        rule,
+        reference_type_offset: None,
+    });
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[100, 101, 102, 103, 105, 200, 201, 202, 203, 205],
+        &[100, 200],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            crate::design::decode::operands::bind_work_point_input_carriers(
+                (ctx, &mut parts),
+                scan,
+                std::slice::from_mut(&mut scope),
+                &headers,
+                &recipes,
+                &[],
+                &[],
+            )
+            .unwrap();
+            let inputs = scope.work_point_construction().unwrap().rule.inputs();
+            assert!(inputs[0].carrier().is_none());
+            assert!(matches!(
+                inputs[1].carrier(),
+                Some(DesignWorkPointInputCarrier::VertexRecipe { .. })
+            ));
+            let (_, native, _, losses) = parts.into_parts();
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        });
+    });
+}
+
+#[test]
+fn work_plane_gives_up_broken_vertex_and_keeps_sibling_plane() {
+    use crate::records::parameters::{
+        DesignParameter, DesignParameterContent, DesignParameterOwner, DesignParameterOwnerContent,
+        DesignParameterSource,
+    };
+    let mut bytes = Vec::new();
+    let mut headers = Vec::new();
+    let mut recipes = Vec::new();
+    let mut primary = Vec::new();
+    let mut secondary = Vec::new();
+    for base in [100u32, 200, 300, 400, 500, 600] {
+        let start = bytes.len();
+        indexed_header(&mut bytes, *b"369", base);
+        indexed_header(&mut bytes, *b"261", base);
+        indexed_header(&mut bytes, *b"408", base + 1);
+        indexed_header(&mut bytes, *b"414", base + 2);
+        indexed_header(&mut bytes, *b"423", base + 3);
+        let recipe_at = bytes.len() + 4;
+        bytes.extend_from_slice(&18u32.to_le_bytes());
+        bytes.extend_from_slice(b"vertex_recipe_data");
+        if base != 100 {
+            for value in [-1i32, 3, 1, -1, 2, -1, 0, -1, 0, 0] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        indexed_header(&mut bytes, *b"370", base + 5);
+        primary.extend([base, base + 1, base + 2, base + 3, base + 5]);
+        secondary.push(base);
+        headers.push(DesignRecordHeader {
+            id: format!("{STREAM}:design-record-header#{base}"),
+            record_index: base,
+            class_tag: "369".to_owned().try_into().unwrap(),
+            byte_offset: Some(u64::try_from(start).unwrap()),
+        });
+        recipes.push(ConstructionRecipe {
+            id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+            byte_offset: Some(u64::try_from(recipe_at).unwrap()),
+            kind: ConstructionRecipeKind::Vertex,
+            design: None,
+            recipe_index: 9,
+            record_index: None,
+        });
+    }
+    let mut scopes = Vec::new();
+    let mut owners = Vec::new();
+    let mut parameters = Vec::new();
+    for (scope_index, vertices, owner_index) in
+        [(50, [100, 200, 300], 900), (51, [400, 500, 600], 910)]
+    {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{STREAM}:design-parameter-scope#{scope_index}"),
+            DesignFeatureKind::WorkPlane,
+            scope_index,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 256;
+                draft.paired_byte_offset = 256;
+                draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                    1,
+                    vertices[0],
+                    vertices[1],
+                    vertices[2],
+                    owner_index,
+                ]);
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope.with_work_plane_transform(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            .try_into()
+            .unwrap(),
+        );
+        scope.with_work_plane_reference(owner_index);
+        scopes.push(scope);
+        owners.push(
+            DesignParameterOwner::try_from(DesignParameterOwnerContent {
+                id: format!("{STREAM}:owner#{owner_index}"),
+                class_tag: "365".to_owned().try_into().unwrap(),
+                record_index: owner_index,
+                scope_record_index: Some(scope_index),
+                local_ordinal: None,
+                evaluated_value: 0.0,
+                parameter_record_index: owner_index + 1,
+                owned_ordinal: 0,
+                variant: None,
+                companion_record_index: owner_index + 2,
+            })
+            .unwrap(),
+        );
+        parameters.push(
+            DesignParameter::authored(DesignParameterContent {
+                id: format!("{STREAM}:parameter#{}", owner_index + 1),
+                class_tag: "365".to_owned().try_into().unwrap(),
+                record_index: owner_index + 1,
+                source_ordinal: 0,
+                source: DesignParameterSource::authored(
+                    "ExtraOffset".into(),
+                    Some(owner_index),
+                    None,
+                )
+                .unwrap(),
+                expression: "0".into(),
+                unit: None,
+                name: "ExtraOffset".into(),
+                evaluated_value: 0.0,
+            })
+            .unwrap(),
+        );
+    }
+    let metadata =
+        crate::test_support::zip_test::indexed_fixture_metastream(&bytes, &primary, &secondary);
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            crate::design::decode::operands::bind_work_plane_constructions(
+                (ctx, &mut parts),
+                scan,
+                &mut scopes,
+                &headers,
+                &recipes,
+                &owners,
+                &parameters,
+            )
+            .unwrap();
+            assert!(scopes[0].work_plane_construction().is_none());
+            assert!(scopes[1].work_plane_construction().is_some());
+            let (_, native, _, losses) = parts.into_parts();
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        });
+    });
+}
