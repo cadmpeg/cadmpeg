@@ -342,12 +342,17 @@ struct Stream<'a> {
 }
 
 /// Decodes a structure member in its binary (§3.1) or XML (§3.14) form.
-pub(crate) fn read(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, CodecError> {
+pub(crate) fn read<'a>(
+    ctx: &DecodeContext<'a>,
+    member: View<'a>,
+    stream: &str,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+) -> Result<Structure, CodecError> {
     let window = member.window();
     if window.starts_with(BINARY_PREFIX) {
         read_binary(ctx, member)
     } else if window.starts_with(XML_PREFIX) {
-        xml::read(ctx, window)
+        xml::read(ctx, member, stream, parts)
     } else {
         Err(CodecError::malformed(
             "structure member opens with neither PV-PVS nor <PV_FILE",

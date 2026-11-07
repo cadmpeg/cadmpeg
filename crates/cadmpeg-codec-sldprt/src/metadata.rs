@@ -188,13 +188,14 @@ fn scan_units_xml(
     let Some(text) = crate::container::xml_text(section.payload()) else {
         return Ok(());
     };
-    let document = match ctx.parse_xml(text.as_str(), "decode XML tree") {
-        Ok(tree) => tree,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => {
-            return Ok(());
-        }
-    };
+    let document =
+        match crate::container::recover_xml(ctx, &text, "decode XML tree", |_, _, _| Ok(())) {
+            Ok(tree) => tree,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => {
+                return Ok(());
+            }
+        };
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         let value = if node.tag_name().name() == "SW_UnitsLinear" {
             node.text()
