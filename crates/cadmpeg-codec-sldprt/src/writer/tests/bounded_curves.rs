@@ -87,6 +87,66 @@ fn surface_curve_construction_survives_source_less_synthesis() {
             let plan = crate::SldprtCodec
                 .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
                 .unwrap();
+            assert_eq!(
+                plan.report()
+                    .coverage
+                    .disposition(cadmpeg_ir::schema::EntityKind::ProceduralCurve),
+                cadmpeg_ir::codec::write::ArenaDisposition::Written
+            );
+            assert!(!plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("model.procedural_curves")
+                    && loss.message.contains("omitted")));
+            let mut mixed = input.ir().clone();
+            let mut omitted = mixed.model.procedural_curves[0].clone();
+            omitted.id =
+                cadmpeg_ir::ids::ProceduralCurveId::mint("synthetic:test:procedural-curve#omitted")
+                    .unwrap();
+            omitted.edit_definition(|definition| {
+                let ProceduralCurveDefinition::SurfaceCurve {
+                    family:
+                        SurfaceCurveFamily::Parametric {
+                            tail: Some(tail), ..
+                        },
+                } = definition
+                else {
+                    panic!("parametric surface curve cache")
+                };
+                tail.flags.flag = true;
+            });
+            let omitted_id = omitted.id.clone();
+            let mut extra = mixed
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == id)
+                .unwrap()
+                .clone();
+            extra.id = cadmpeg_ir::ids::CurveId::mint("synthetic:test:curve#extra").unwrap();
+            let CurveGeometry::Procedural { construction, .. } = &mut extra.geometry else {
+                unreachable!()
+            };
+            *construction = omitted_id.clone();
+            mixed.model.curves.push(extra);
+            mixed.model.procedural_curves.push(omitted);
+            mixed.model.finalize();
+            let mixed_plan = crate::SldprtCodec
+                .plan(EncodeInput::new(&mixed, None), TargetRequest::Inherit)
+                .unwrap();
+            assert_eq!(
+                mixed_plan
+                    .report()
+                    .coverage
+                    .disposition(cadmpeg_ir::schema::EntityKind::ProceduralCurve),
+                cadmpeg_ir::codec::write::ArenaDisposition::Reported
+            );
+            assert!(mixed_plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(omitted_id.as_str())));
             assert!(plan
                 .report()
                 .losses
