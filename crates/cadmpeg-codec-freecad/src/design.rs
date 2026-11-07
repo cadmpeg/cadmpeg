@@ -122,18 +122,6 @@ pub(crate) fn transfer(
         }
     }
     let expression_objects = ExpressionObjects::new(objects, &properties_by_owner);
-    let feature_objects: HashSet<&str> = objects
-        .iter()
-        .filter(|object| should_project_feature(object, &ir.model, products, joints))
-        .map(|object| object.id().as_str())
-        .collect();
-    let mut feature_ids = HashMap::new();
-    for object in objects
-        .iter()
-        .filter(|object| feature_objects.contains(object.id().as_str()))
-    {
-        feature_ids.insert(object.id().as_str(), feature_id(object)?);
-    }
     let mut parent_by_member = HashMap::new();
     for body in objects.iter().filter(|object| is_body(&object.type_name)) {
         let Some(property) = properties_by_owner
@@ -150,6 +138,22 @@ pub(crate) fn transfer(
         {
             parent_by_member.insert(member, feature_id(body)?);
         }
+    }
+    let feature_objects: HashSet<&str> = objects
+        .iter()
+        .filter(|object| {
+            (is_design_object(&object.type_name)
+                && parent_by_member.contains_key(object.id().as_str()))
+                || should_project_feature(object, &ir.model, products, joints)
+        })
+        .map(|object| object.id().as_str())
+        .collect();
+    let mut feature_ids = HashMap::new();
+    for object in objects
+        .iter()
+        .filter(|object| feature_objects.contains(object.id().as_str()))
+    {
+        feature_ids.insert(object.id().as_str(), feature_id(object)?);
     }
     let mut sketch_ids = HashMap::new();
     for object in objects.iter().filter(|object| is_sketch(&object.type_name)) {
