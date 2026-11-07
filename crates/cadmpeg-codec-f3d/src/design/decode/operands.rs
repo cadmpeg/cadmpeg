@@ -1173,6 +1173,9 @@ pub(crate) fn decode_face_source_groups(
         else {
             continue;
         };
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
         let Ok(scope_start) = usize::try_from(
             scope
                 .byte_offset()
@@ -1262,7 +1265,9 @@ pub(crate) fn decode_face_source_groups(
                     let source_class = source_class_tag;
                     if !face_source_record_is_registered(types, &scope.id, source_record_index, source_class, FaceSourceType::Identity) { return Ok(None); }
                     let Some(frame) = records.iter().find(|frame| frame.start == source_byte_offset) else { return Ok(None); };
-                    let Some(member) = decode_face_source_identity_part(ctx, parts, source, &entry.name, frame)? else { return Ok(None); };
+                    let next_index = meta.records.iter().find(|next| usize::try_from(next.bulk_offset).ok() == Some(frame.end))
+                        .and_then(|next| u32::try_from(next.entity_id).ok());
+                    let Some(member) = decode_face_source_identity_part(ctx, parts, source, &entry.name, frame, next_index)? else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
                     let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(source_class_tag) else { return Ok(None); };
@@ -1383,6 +1388,7 @@ fn decode_face_source_identity_part(
     source: View<'_>,
     stream: &str,
     frame: &crate::metastream::PrimaryRecordFrame,
+    next_index: Option<u32>,
 ) -> Result<Option<ParsedExtrudeIdentityMember>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let begin = source
@@ -1415,19 +1421,24 @@ fn decode_face_source_identity_part(
         return Ok(None);
     }
     let bytes = source.window();
-    if frame.end < bytes.len()
-        && lp_ascii_filtered_view(bytes, frame.end, 1..=2000, u8::is_ascii_graphic)
-            .and_then(|(_, at)| View::u32_le_at(bytes, at))
-            .is_none()
-    {
+    if frame.end < bytes.len() && next_index.is_none() {
         return Ok(None);
     }
     ctx.decode_part(parts, extent, spec, |_| {
-        parse_extrude_identity_member(bytes, frame.start, None)
+        let input = bytes
+            .get(..frame.end)
+            .ok_or_else(|| CodecError::malformed("face-source identity exceeds its stream"))?;
+        let mut member = parse_extrude_identity_member(input, frame.start, None)
             .filter(|member| {
                 usize::try_from(member.next_byte_offset).is_ok_and(|end| end <= frame.end)
             })
-            .ok_or_else(|| CodecError::malformed("invalid face-source identity"))
+            .ok_or_else(|| CodecError::malformed("invalid face-source identity"))?;
+        if usize::try_from(member.next_byte_offset).ok() == Some(frame.end) {
+            if let Some(next) = next_index {
+                member.next_record_index = next;
+            }
+        }
+        Ok(member)
     })
 }
 
