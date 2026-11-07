@@ -91,6 +91,19 @@ pub(in crate::contract) fn model(ir: &CadIr) -> (Value, Value, Markers) {
         .extend_rewritten(normalized.model, &mut mark)
         .expect("mark typed identities");
     let mut marked = serde_json::to_value(rewritten).expect("serialize marked neutral model");
+    if let (Some(Value::Array(records)), Some(Value::Array(output))) =
+        (original.get("features"), marked.get_mut("features"))
+    {
+        for (record, target) in records.iter().zip(output) {
+            let native_ref = record.get("native_ref").and_then(Value::as_str);
+            let selection = record
+                .pointer("/definition/bodies/value/native")
+                .and_then(Value::as_str);
+            if let Some(id) = native_ref.filter(|id| Some(*id) == selection) {
+                target["definition"]["bodies"]["value"]["native"] = Value::String(mark.marker(id));
+            }
+        }
+    }
     // These five entity owners explicitly declare SourceObjectAssociation.
     // Its native object/layer/instance keys are identities even when not full
     // CADIR ids. The other fields, including format/name/color, stay literal.

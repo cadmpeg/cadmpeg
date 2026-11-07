@@ -31,6 +31,77 @@ struct Extrusion {
     previous_state: u32,
 }
 
+struct EmptyBaseFeature {
+    ordinal: u64,
+    id: FeatureId,
+    reference: u32,
+    state: u32,
+}
+
+fn select_empty_base_features(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> Vec<EmptyBaseFeature> {
+    target
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies:
+                    cadmpeg_ir::features::BodySelection::Resolved {
+                        bodies,
+                        native: selection,
+                    },
+            }) = feature.evaluation.definition()
+            else {
+                return None;
+            };
+            if !bodies.is_empty()
+                || feature.native_ref.as_deref() != Some(selection.as_str())
+                || feature.suppressed == Some(true)
+                || feature.needs_recompute
+                || feature.product_definition.is_some()
+                || !feature.dependencies.is_empty()
+                || !feature.source_properties.is_empty()
+                || feature.source_text.is_some()
+                || !feature.source_content.is_empty()
+                || !feature.evaluation.outputs().is_empty()
+                || feature
+                    .source_tag
+                    .as_deref()
+                    .is_some_and(|tag| tag != "Base Feature")
+            {
+                return None;
+            }
+            let scope = native
+                .design_parameter_scopes
+                .iter()
+                .find(|scope| scope.id == *selection)?;
+            if scope
+                .base_feature_construction()?
+                .body_entity_suffixes()
+                .len()
+                != 0
+            {
+                return None;
+            }
+            let mut references = scope.reference_members().values();
+            let reference = *references.next()?;
+            if references.next().is_some() {
+                return None;
+            }
+            let state = u32::try_from(scope.history_state_id()?).ok()?;
+            Some(EmptyBaseFeature {
+                ordinal: feature.ordinal,
+                id: feature.id.clone(),
+                reference,
+                state,
+            })
+        })
+        .collect()
+}
+
 struct SketchDimension {
     constraint: cadmpeg_ir::sketches::SketchConstraintId,
     scope: u32,
@@ -458,6 +529,7 @@ pub(super) fn encode(
 ) -> Result<Option<EncodedFeatures>, CodecError> {
     let mut primitives = select(target);
     let mut extrusions = select_extrusions(target, native, sketch.as_deref());
+    let base_features = select_empty_base_features(target, native);
     let mut dimensions = select_sketch_dimensions(target, native, sketch.as_deref());
     extrusions.sort_by_key(|extrusion| extrusion.ordinal);
     let mut copies = select_copies(target, native, attributes)?;
@@ -475,7 +547,7 @@ pub(super) fn encode(
         copies.clear();
     }
     let append_main = !copies.is_empty() && design_registry.body_map.is_some();
-    if primitives.is_empty() && copies.is_empty() && !joined {
+    if primitives.is_empty() && copies.is_empty() && base_features.is_empty() && !joined {
         return Ok(None);
     }
     primitives.sort_by_key(|primitive| primitive.0);
@@ -496,7 +568,7 @@ pub(super) fn encode(
     } else {
         256
     };
-    let tags = (0..13u32)
+    let tags = (0..14u32)
         .map(|offset| {
             type_start
                 .checked_add(offset)
@@ -540,6 +612,10 @@ pub(super) fn encode(
     let mut extrusion_bases = Vec::new();
     for _ in &extrusions {
         extrusion_bases.push(reserve_indices(&mut occupied, &mut next, 11)?);
+    }
+    let mut base_feature_indices = Vec::new();
+    for _ in &base_features {
+        base_feature_indices.push(reserve_indices(&mut occupied, &mut next, 1)?);
     }
     let mut dimension_bases = Vec::new();
     for _ in &dimensions {
@@ -682,10 +758,31 @@ pub(super) fn encode(
         }
     }
     let mut extrusion_scopes = Vec::new();
+    let mut base_feature_scopes = Vec::new();
     let mut extrusion_companions = Vec::new();
     let mut dimension_loci = Vec::new();
     let mut dimension_recipes = Vec::new();
     let mut copy_groups = Vec::new();
+    for (feature, index) in base_features.iter().zip(base_feature_indices) {
+        let family = family_ordinals.entry("Base Feature").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D base features".into()))?;
+        base_feature_scopes.push(u64::from(index));
+        timeline_scopes.push((feature.ordinal, u64::from(index)));
+        mark_primary(ctx, &mut primary, index, out.len())?;
+        let start = out.len();
+        header(&mut out, &tags[13], index)?;
+        out.resize(start + 138, 0);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut out, feature.reference);
+        out.extend_from_slice(&feature.state.to_le_bytes());
+        native_lp_utf16(&mut out, "Base Feature")?;
+        out.extend_from_slice(&family.to_le_bytes());
+        out.extend_from_slice(&[0; 78]);
+        mark(&mut secondary, index, out.len());
+        header(&mut out, &tags[0], index)?;
+    }
     for (extrusion, base) in extrusions.iter().zip(extrusion_bases) {
         let group = base + 1;
         let profile = base + 4;
@@ -1100,6 +1197,13 @@ pub(super) fn encode(
             "Dimension",
             dimension_recipes,
         ),
+        (
+            "D7015B81-AB4D-4C89-BED7-AA4411E1964A",
+            None,
+            0,
+            "Fusion",
+            base_feature_scopes,
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -1187,6 +1291,7 @@ pub(super) fn encode(
     written.extend(primitives.into_iter().map(|(_, _, _, _, id)| id));
     written.extend(copies.into_iter().map(|copy| copy.id));
     written.extend(extrusions.into_iter().map(|extrusion| extrusion.id));
+    written.extend(base_features.into_iter().map(|feature| feature.id));
     Ok(Some(EncodedFeatures {
         stream,
         features: written,
