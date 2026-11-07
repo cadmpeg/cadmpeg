@@ -269,6 +269,43 @@ fn run_component_insert_scope_fixture() {
         Some(u64_from_index(expanded_carrier_transform_at))
     );
 
+    let mut unrelated = expanded.clone();
+    let mut sibling_header = Vec::new();
+    header(&mut sibling_header, b"999", 999);
+    let shift = sibling_header.len();
+    unrelated.splice(expanded_role_at..expanded_role_at, sibling_header);
+    let shifted_scope_at = expanded_scope_at + shift;
+    let shifted_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(shifted_scope_at),
+            class_tag: crate::records::references::DesignClassTag::try_from("335".to_owned())
+                .unwrap(),
+            frame_length: 404,
+            reference_count_offset: u64_from_index(shifted_scope_at + 9),
+            reference_members: crate::records::identity::ReferenceRun::located(vec![
+                crate::records::identity::Located {
+                    value: 20,
+                    offset: u64_from_index(shifted_scope_at + 42),
+                },
+            ]),
+            payload: scope.kind().try_into().unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "260".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: u64_from_index(shifted_scope_at + 404),
+            ..scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert!(tested_component_insert_construction(
+        &unrelated,
+        &crate::design::test_support::test_primary_frames(&unrelated),
+        &shifted_scope,
+    )
+    .is_none());
+
     let mut legacy = Vec::new();
     header(&mut legacy, b"288", 10);
     legacy.resize(30, 0);

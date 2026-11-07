@@ -315,18 +315,24 @@ pub(super) fn exact_component_insert_construction(
                     .iter()
                     .filter(|at| scope.frame_length() == Some(404) && **at < relation_at)
                 {
-                    for at in carrier_at + 11..relation_at {
-                        let Some(after_role) = fixed_guid_end(bytes, at) else {
+                    let end = records
+                        .iter()
+                        .find(|frame| (frame.start..frame.end).contains(&carrier_at))?
+                        .end
+                        .min(relation_at);
+                    let carrier_bytes = bytes.get(..end)?;
+                    for at in carrier_at + 11..end {
+                        let Some(after_role) = fixed_guid_end(carrier_bytes, at) else {
                             continue;
                         };
-                        if bytes.get(after_role..after_role + 12)
+                        if carrier_bytes.get(after_role..after_role + 12)
                             != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
                         {
                             continue;
                         }
                         for transform_at in carrier_at + 11..at {
-                            if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                                let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
+                            if rigid_transform_at(carrier_bytes, transform_at) == Some(transform) {
+                                let role = lp_utf16_bounded(carrier_bytes, at, 36..=36)?.0;
                                 placements.push((role, at + 4, Some(transform_at)));
                             }
                         }
