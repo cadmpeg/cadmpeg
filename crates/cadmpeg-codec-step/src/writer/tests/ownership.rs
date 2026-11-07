@@ -1216,9 +1216,16 @@ fn scalar_attributes_characterize_their_step_geometry_items() {
             .next()
             .unwrap();
         assert!(text.contains(&format!("#{value} = {expected_value}")));
-        assert!(!report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains(attribute_id)));
+        let generic_target = ir.model.attributes.iter().any(|attribute| {
+            attribute.id.as_str() == attribute_id
+                && matches!(attribute.target, AttributeTarget::Record { .. })
+        });
+        assert_eq!(
+            report.losses.iter().any(|loss| {
+                loss.code == StepLossCode::SourceAttributeTargetNormalized.kind()
+                    && loss.message.contains(attribute_id)
+            }),
+            generic_target
+        );
     }
 }
