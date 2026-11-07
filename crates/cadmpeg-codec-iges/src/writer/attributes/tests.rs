@@ -6,8 +6,12 @@ use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 #[test]
 fn minimum_integer_attribute_reports_the_record() {
     let mut ir = CadIr::empty();
-    let point: cadmpeg_ir::ids::PointId = "test:model:point#owner".try_into().unwrap();
-    let id: cadmpeg_ir::ids::AttributeId = "test:model:attribute#minimum".try_into().unwrap();
+    let point: cadmpeg_ir::ids::PointId = "test:model:point#owner"
+        .try_into()
+        .expect("valid point identity");
+    let id: cadmpeg_ir::ids::AttributeId = "test:model:attribute#minimum"
+        .try_into()
+        .expect("valid attribute identity");
     ir.model.attributes.push(SourceAttribute {
         native_ref: None,
         id: id.clone(),
