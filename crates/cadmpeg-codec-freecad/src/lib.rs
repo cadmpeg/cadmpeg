@@ -992,6 +992,13 @@ impl CodecBackend for FcstdCodec {
                 &mut graph,
                 &scan.data,
             )?;
+            let drawing_entries = drawing_content::recover_templates(
+                ctx,
+                &mut parts,
+                &graph.objects,
+                &graph.properties,
+                &scan.data,
+            )?;
             container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut part_losses)?;
             let namespace = ir.native.namespace_mut("fcstd");
             scan.losses.extend(graph.losses);
@@ -1094,7 +1101,7 @@ impl CodecBackend for FcstdCodec {
                 &property_reader,
                 &mut ir.model,
                 &graph.properties,
-                &scan.data,
+                &drawing_entries,
                 &mut scan.losses,
             )?;
             annotation::enrich_dimensions(
@@ -1177,7 +1184,7 @@ impl CodecBackend for FcstdCodec {
                 ctx,
                 &mut ir.model,
                 &graph.properties,
-                &scan.data,
+                &drawing_entries,
             )?);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

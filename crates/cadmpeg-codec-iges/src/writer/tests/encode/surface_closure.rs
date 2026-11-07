@@ -48,6 +48,16 @@ fn vertex_loop_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn scalar_properties_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("scalar_property_forms"));
+}
+
+#[test]
+fn offset_circle_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("uniform_offset_circle"));
+}
+
+#[test]
 fn edited_nurbs_control_point_replaces_source_curve() {
     let decoded = IgesCodec
         .decode(
