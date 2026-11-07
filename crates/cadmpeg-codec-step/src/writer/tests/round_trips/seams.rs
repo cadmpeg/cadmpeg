@@ -383,6 +383,12 @@ fn shared_pcurve_on_distinct_surfaces_reports_split() {
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveSplitAcrossSurfaces.kind()
             && loss.message.contains(id.as_str())
+            && ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge)
+                .all(|coedge| loss.message.contains(coedge.id.as_str()))
     }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write STEP");
