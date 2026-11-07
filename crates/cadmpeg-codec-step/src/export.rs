@@ -3729,6 +3729,7 @@ impl<'a> Builder<'a> {
         items: &mut Vec<Ref>,
     ) {
         let mut missing = BTreeSet::new();
+        let mut free_vertex_order = Vec::new();
         let mut retained = BTreeSet::new();
         let mut missing_edges = BTreeSet::new();
         let mut retained_edges = BTreeSet::new();
@@ -3737,6 +3738,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             missing.extend(shell.free_vertices().iter().cloned());
+            free_vertex_order.extend(shell.free_vertices().iter().cloned());
             for edge_id in shell.wire_edges() {
                 if let Some(edge) = self.edges.get(edge_id.as_str()) {
                     let vertices = if wire_written && self.edge_refs.contains_key(edge_id.as_str())
@@ -3833,6 +3835,12 @@ impl<'a> Builder<'a> {
             );
             self.push_region_recovery_item(region, context, item, items);
         }
+        let mut seen_vertices = BTreeSet::new();
+        let ordered_missing: Vec<_> = free_vertex_order
+            .into_iter()
+            .chain(missing.difference(&retained).cloned())
+            .filter(|id| !retained.contains(id) && seen_vertices.insert(id.clone()))
+            .collect();
         if !wire_written
             && edges.is_empty()
             && !self.body_step_refs.contains_key(region.body.as_str())
@@ -3840,7 +3848,7 @@ impl<'a> Builder<'a> {
         {
             let mut loops = Vec::new();
             let mut vertices = Vec::new();
-            for vertex_id in missing.difference(&retained) {
+            for vertex_id in &ordered_missing {
                 if let Some(vertex) = self.emit_vertex(vertex_id.as_str()) {
                     loops.push(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
                     vertices.push(format!("'{vertex_id}'"));
@@ -3889,7 +3897,7 @@ impl<'a> Builder<'a> {
         let mut points = Vec::new();
         let mut point_set = std::collections::HashSet::new();
         let mut retained_vertices = Vec::new();
-        for vertex_id in missing.difference(&retained) {
+        for vertex_id in &ordered_missing {
             let Some(point) = self
                 .vertices
                 .get(vertex_id.as_str())
