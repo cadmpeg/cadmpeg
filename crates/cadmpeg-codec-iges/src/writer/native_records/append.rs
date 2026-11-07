@@ -672,9 +672,10 @@ impl Emitter<'_, '_> {
         mut entity: Entity,
         owners: Vec<usize>,
     ) {
-        // A re-emitted boundary carrier keeps its source dependence: an
-        // independent copy mints standalone topology on re-decode.
-        if matches!(arena, "associativities" | "groups" | "directions") {
+        if matches!(
+            arena,
+            "associativities" | "groups" | "directions" | "definition_levels"
+        ) {
             if let Some(status) = super::source_status(self.ir, record) {
                 entity.status = status;
             }
