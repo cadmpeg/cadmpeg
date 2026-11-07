@@ -636,6 +636,9 @@ pub(super) fn write_with_limits(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Extrude { .. },
             ) => Some("Extrude"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
+            ) => Some("Base Feature"),
             _ => None,
         };
         let written = written_features
