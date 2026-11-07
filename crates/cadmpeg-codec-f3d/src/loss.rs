@@ -320,6 +320,12 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionNative,
     /// Legacy face operands use a current active face after no historical slot proof.
     FeatureFaceSelectionActiveSubstituted,
+    /// Offset Surface support groups with different ordinals are read as one
+    /// support-face selection.
+    FeatureSurfaceOffsetGroupOrdinalsAssumed,
+    /// A legacy Scale form is selected by the frame length of its English
+    /// spelling; its payload length matches no form.
+    FeatureScaleFrameLengthFormAssumed,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
@@ -656,6 +662,8 @@ impl F3dLossCode {
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
+        Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
+        Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
         Self::FeatureFixedFilletAssignmentNative,
@@ -916,6 +924,10 @@ impl F3dLossCode {
             Self::FeatureFaceSelectionActiveSubstituted => {
                 "feature.face-selection-active-substituted"
             }
+            Self::FeatureSurfaceOffsetGroupOrdinalsAssumed => {
+                "feature.surface-offset-group-ordinals-assumed"
+            }
+            Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
@@ -1185,6 +1197,8 @@ impl F3dLossCode {
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
+            | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
+            | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
@@ -1384,6 +1398,8 @@ impl F3dLossCode {
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
+            | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
+            | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
@@ -1671,6 +1687,8 @@ mod tests {
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
+                "feature.surface-offset-group-ordinals-assumed",
+                "feature.scale-frame-length-form-assumed",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
                 "feature.fixed-fillet-assignment-native",

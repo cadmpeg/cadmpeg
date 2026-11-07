@@ -31,6 +31,7 @@ mod referenced_revolve;
 mod remove_body_named_tail;
 mod scale;
 mod shell_wall_slots;
+mod surface_offset_groups;
 mod surfaces;
 mod thicken;
 mod thread;

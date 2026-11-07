@@ -827,6 +827,20 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
     pub(crate) const OWNED_ORDINAL_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `scale_legacy_uniform_tail` record.
+///
+/// Spec §3.1. Record length 78 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the LP-UTF16 kind code units of the 299-byte-payload legacy uniform Scale form, for any kind spelling. The paired same-index header follows the tail.
+/// ```
+pub(crate) mod scale_legacy_uniform_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 78;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
+}
+
 /// Byte offsets for the `paramesh_entry_name_prefix` record.
 ///
 /// Spec §3.1. Record length 32 B.
