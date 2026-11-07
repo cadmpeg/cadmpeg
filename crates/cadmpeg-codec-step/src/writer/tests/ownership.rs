@@ -718,6 +718,26 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
 }
 
 #[test]
+fn failed_curve_construction_reports_its_unknown_support() {
+    let mut ir = standalone_subset_curve(None);
+    ir.model.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let support = ir.model.curves[0].id.clone();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write independent content");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+            && loss.message.contains(support.as_str())
+    }));
+}
+
+#[test]
 fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
