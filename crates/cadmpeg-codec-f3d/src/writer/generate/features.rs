@@ -55,6 +55,63 @@ struct NativeSurfaceStitch {
     opaque_scalar: f64,
 }
 
+struct NativeForm {
+    ordinal: u64,
+    id: FeatureId,
+    reference: u32,
+}
+
+fn select_native_forms(target: &CadIr, native: &crate::native::F3dNative) -> Vec<NativeForm> {
+    target
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) =
+                feature.evaluation.definition()
+            else {
+                return None;
+            };
+            if kind.as_str() != "Form"
+                || !parameters.is_empty()
+                || feature.suppressed == Some(true)
+                || feature.needs_recompute
+                || feature.product_definition.is_some()
+                || !feature.dependencies.is_empty()
+                || feature.source_text.is_some()
+                || !feature.source_content.is_empty()
+                || !feature.evaluation.outputs().is_empty()
+                || feature
+                    .source_tag
+                    .as_deref()
+                    .is_some_and(|tag| tag != "Form")
+                || feature.source_properties.len() != 1
+            {
+                return None;
+            }
+            let (key, value) = feature.source_properties.iter().next()?;
+            if key.as_str() != "reference:0" {
+                return None;
+            }
+            let reference = value.parse::<u32>().ok().filter(|value| *value != 0)?;
+            let scope = native
+                .design_parameter_scopes
+                .iter()
+                .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))?;
+            if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Form
+                || !scope.reference_members().values().copied().eq([reference])
+            {
+                return None;
+            }
+            Some(NativeForm {
+                ordinal: feature.ordinal,
+                id: feature.id.clone(),
+                reference,
+            })
+        })
+        .collect()
+}
+
 struct NativeComponentCopy {
     ordinal: u64,
     id: FeatureId,
@@ -912,6 +969,7 @@ pub(super) fn encode(
     let mut stitches = select_native_surface_stitches(target, native);
     let mut removals = select_native_remove_bodies(target, native);
     let mut component_copies = select_component_copies(target, native);
+    let mut forms = select_native_forms(target, native);
     let mut dimensions = select_sketch_dimensions(target, native, sketch.as_deref());
     extrusions.sort_by_key(|extrusion| extrusion.ordinal);
     let mut copies = select_copies(target, native, attributes)?;
@@ -936,6 +994,7 @@ pub(super) fn encode(
         && removals.is_empty()
         && stitches.is_empty()
         && component_copies.is_empty()
+        && forms.is_empty()
         && !joined
     {
         return Ok(None);
@@ -984,6 +1043,7 @@ pub(super) fn encode(
         DimensionConstruction::BodyRecipe(index) => index != 0 && occupied.insert(index),
     });
     occupied.extend(base_flanges.iter().flat_map(|feature| feature.references));
+    forms.retain(|feature| occupied.insert(feature.reference));
     stitches.retain(|feature| occupied.insert(feature.member));
     removals.retain(|feature| {
         let indices =
@@ -1001,6 +1061,7 @@ pub(super) fn encode(
         && removals.is_empty()
         && stitches.is_empty()
         && component_copies.is_empty()
+        && forms.is_empty()
         && !joined
     {
         return Ok(None);
@@ -1047,6 +1108,10 @@ pub(super) fn encode(
     let mut component_copy_bases = Vec::new();
     for _ in &component_copies {
         component_copy_bases.push(reserve_indices(&mut occupied, &mut next, 5)?);
+    }
+    let mut form_bases = Vec::new();
+    for _ in &forms {
+        form_bases.push(reserve_indices(&mut occupied, &mut next, 1)?);
     }
     let mut dimension_bases = Vec::new();
     for _ in &dimensions {
@@ -1197,6 +1262,25 @@ pub(super) fn encode(
     let mut dimension_loci = Vec::new();
     let mut dimension_recipes = Vec::new();
     let mut copy_groups = Vec::new();
+    for (form, index) in forms.iter().zip(form_bases) {
+        let family = family_ordinals.entry("Form").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D forms".into()))?;
+        mark_primary(ctx, &mut primary, index, out.len())?;
+        header(&mut out, &tags[1], index)?;
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&1_u32.to_le_bytes());
+        reference(&mut out, form.reference);
+        out.extend_from_slice(&u32::MAX.to_le_bytes());
+        native_lp_utf16(&mut out, "Form")?;
+        out.extend_from_slice(&family.to_le_bytes());
+        out.extend_from_slice(&[0; 78]);
+        scopes.push(u64::from(index));
+        timeline_scopes.push((form.ordinal, u64::from(index)));
+        mark(&mut secondary, index, out.len());
+        header(&mut out, &tags[0], index)?;
+    }
     let mut component_sources = Vec::new();
     let mut component_results = Vec::new();
     for (copy, base) in component_copies.iter().zip(component_copy_bases) {
@@ -2011,6 +2095,7 @@ pub(super) fn encode(
     written.extend(base_flanges.into_iter().map(|feature| feature.id));
     written.extend(removals.into_iter().map(|feature| feature.id));
     written.extend(stitches.into_iter().map(|feature| feature.id));
+    written.extend(forms.into_iter().map(|feature| feature.id));
     let component_definitions = component_copies
         .iter()
         .map(|feature| feature.definition.clone())

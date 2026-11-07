@@ -677,6 +677,9 @@ pub(super) fn write_with_limits(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
             ) if kind.as_str() == "BaseFlange" => Some("BaseFlange"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+            ) if kind.as_str() == "Form" => Some("Form"),
             _ => None,
         };
         let written = written_features
@@ -717,6 +720,16 @@ pub(super) fn write_with_limits(
                 partial = true;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
                     format!("feature {} recompute state is not encoded", feature.id),
+                ));
+            }
+            if matches!(feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+                ) if kind.as_str() == "Form")
+            {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} retains its Form reference; the referenced construction record is omitted", feature.id),
                 ));
             }
             if matches!(
