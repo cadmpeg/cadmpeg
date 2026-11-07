@@ -721,7 +721,7 @@ fn a_compact_plane_selection_without_face_candidates_names_the_next_work_plane()
         if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) =
             scope.payload_mut()
         {
-            *slot = Some(construction.clone());
+            *slot = Some(construction);
         }
         let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
             serde_json::from_value(serde_json::json!({
