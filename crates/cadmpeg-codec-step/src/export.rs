@@ -8999,10 +8999,27 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let owners: BTreeSet<_> = self
+                .procedural_surfaces
+                .iter()
+                .filter(|(_, procedural)| reduced_surfaces.contains(procedural.id.as_str()))
+                .map(|(owner, _)| *owner)
+                .chain(
+                    self.procedural_curves
+                        .iter()
+                        .filter(|(_, procedural)| reduced_curves.contains(procedural.id.as_str()))
+                        .map(|(owner, _)| *owner),
+                )
+                .collect();
+            let owners = owners
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their STEP carriers: {reduced}"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their STEP carriers: {reduced}; owner(s): {owners}"
                 ),
             );
         }
