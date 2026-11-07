@@ -11,7 +11,7 @@ use serde_json::Value;
 mod cross;
 mod export;
 mod given_up;
-mod graph;
+pub(crate) mod graph;
 mod pairing;
 
 use graph::Document;

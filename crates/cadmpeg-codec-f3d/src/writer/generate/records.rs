@@ -231,7 +231,7 @@ pub(super) fn encode_design_bulkstream(
         let extra = extra_body_pairs
             .iter()
             .filter(|(key, suffix)| body_map.entries.as_map().get(key) != Some(suffix))
-            .collect::<Vec<_>>();
+            .collect::<std::collections::BTreeSet<_>>();
         let total = body_map
             .entries
             .as_map()
