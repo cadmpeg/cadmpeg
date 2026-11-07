@@ -648,3 +648,111 @@ fn an_origin_plane_identity_keeps_its_plane_when_an_asm_face_shares_it() {
         );
     }
 }
+
+#[test]
+fn a_compact_plane_selection_without_face_candidates_names_the_next_work_plane() {
+    let construction: crate::records::feature::mirror::DesignMirrorConstruction =
+        serde_json::from_value(serde_json::json!({
+            "count": 2, "count_record_index": 11, "count_offset": 0,
+            "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+            "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+            "plane_group_record_index": 30, "plane_selection_record_index": 40
+        }))
+        .expect("mirror construction");
+    let group: crate::records::topology::construction::DesignConstructionOperandGroup =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
+            "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
+            "class_tag": "282", "members": [40], "member_offsets": [0],
+            "frame": {"member_count_offset": 0, "opaque_index": 1,
+                "opaque_index_offset": 18, "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22, "variant": false},
+            "role": 21_474_836_480u64, "role_offset": 0,
+            "paired_class_tag": "261", "paired_byte_offset": 0
+        }))
+        .expect("mirror plane group");
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        [2, 1]
+            .into_iter()
+            .map(|state_id| {
+                (
+                    AsmDeltaState {
+                        id: format!("history:state#{state_id}"),
+                        parent: "history".into(),
+                        byte_offset: 0,
+                        state_id,
+                        version_flag: 1,
+                        state_flag: 0,
+                        previous_ref: None,
+                        next_ref: (state_id == 2).then_some(1),
+                        node_index: state_id,
+                        partner_ref: None,
+                        owner_ref: 0,
+                        bulletin_boards: Vec::new(),
+                        records: Vec::new(),
+                        transition: None,
+                    },
+                    Some(AsmHistoricalTopology {
+                        faces: vec![10],
+                        ..Default::default()
+                    }),
+                    Vec::new(),
+                )
+            })
+            .collect(),
+    );
+    let bound_plane_scope = |primary_identity: u64| {
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#42",
+            crate::records::feature::scope::DesignFeatureKind::Mirror,
+            42,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(2);
+                draft.previous_history_state_id = Some(1);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) =
+            scope.payload_mut()
+        {
+            *slot = Some(construction.clone());
+        }
+        let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
+                "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
+                "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+                "asset_id_offset": 0, "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 0,
+                "identity_record_index": 43, "identity_record_offset": 0,
+                "primary_identity": primary_identity, "primary_identity_offset": 21,
+                "next_record_index": 42, "next_byte_offset": 29
+            }))
+            .expect("mirror plane selection");
+        bind_mirror_selection_planes(
+            std::slice::from_mut(&mut scope),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&operand),
+            &[],
+            &[],
+            std::slice::from_ref(&history),
+            &crate::test_support::origin_types::origin_design_types(
+                "f3d:Design/MetaStream.dat",
+                39,
+            ),
+        );
+        scope
+            .mirror_construction()
+            .expect("mirror construction")
+            .plane_scope_record_index
+            .map(|located| located.value)
+    };
+    assert_eq!(bound_plane_scope(60), Some(61));
+    assert_eq!(bound_plane_scope(10), None);
+    assert_eq!(bound_plane_scope(40), None);
+}

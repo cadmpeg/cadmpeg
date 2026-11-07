@@ -1236,6 +1236,17 @@ pub(crate) fn bind_mirror_selection_planes(
                     };
                     let primary_candidates =
                         entity_selection_face_candidates(operand.primary_identity, histories);
+                    if primary_candidates.is_empty() && persistent_candidates.is_empty() {
+                        construction.plane_scope_record_index = operand
+                            .compact_identity()
+                            .and_then(|identity| u32::try_from(identity).ok())
+                            .and_then(|identity| identity.checked_add(1))
+                            .map(|value| crate::records::identity::Located {
+                                value,
+                                offset: operand.primary_identity_offset(),
+                            });
+                        continue;
+                    }
                     let Some(candidate) =
                         unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
                     else {

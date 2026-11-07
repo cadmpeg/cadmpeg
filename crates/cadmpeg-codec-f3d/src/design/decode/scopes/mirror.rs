@@ -281,7 +281,7 @@ pub(crate) fn bind_mirror_constructions(
             matches!(
                 group.role(),
                 DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-            )
+            ) && !group.members().is_empty()
         })) {
             UniqueMatch::Zero => unique_match(scope_groups().filter(|group| {
                 crate::design::is_pattern_face_seed_group(&scopes[index].kind(), group)

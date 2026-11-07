@@ -172,13 +172,16 @@ fn a_projected_mirror_reads_a_compact_feature_seed() {
 }
 
 #[test]
-fn a_compact_plane_selection_names_the_work_plane_after_its_identity() {
+fn a_mirror_plane_scope_needs_a_framed_work_plane() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
 
     let mut scope = mirror_scope(40);
     if let DesignScopePayloadMut::Mirror(Some(construction)) = scope.payload_mut() {
         construction.plane = None;
-        construction.plane_selection_record_index = Some(31);
+        construction.plane_scope_record_index = Some(crate::records::identity::Located {
+            value: 6,
+            offset: 0,
+        });
     }
     let work_plane = |kind: DesignFeatureKind, framed: bool| {
         let mut plane = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#6", kind, 6);
@@ -203,15 +206,8 @@ fn a_compact_plane_selection_names_the_work_plane_after_its_identity() {
         group(10, 40, DesignOperandRole::BODIES_B),
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
-    let selection = super::pattern::compact_entity_selection(30, 31, 5);
     let project = |plane: DesignParameterScope| {
-        project_mirror(
-            &scope,
-            &groups,
-            &[],
-            std::slice::from_ref(&selection),
-            &[scope.clone(), plane],
-        )
+        project_mirror(&scope, &groups, &[], &[], &[scope.clone(), plane])
     };
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
         project(work_plane(DesignFeatureKind::WorkPlane, true)).expect("work-plane mirror")

@@ -7228,22 +7228,7 @@ fn project_mirror(
         None => {
             let plane_scope_record_index = construction
                 .plane_scope_record_index
-                .map(|value| value.value)
-                .or_else(|| {
-                    let selection_record_index = construction.plane_selection_record_index?;
-                    let selection =
-                        unique_feature_match(entity_selection_operands.iter().filter(|operand| {
-                            native_stream(&operand.id) == Some(stream)
-                                && operand.scope_record_index == scope.record_index
-                                && operand.group_record_index
-                                    == construction.plane_group_record_index
-                                && operand.group_member_ordinal == 0
-                                && operand.record_index() == selection_record_index
-                        }))?;
-                    u32::try_from(selection.compact_identity()?)
-                        .ok()?
-                        .checked_add(1)
-                })?;
+                .map(|value| value.value)?;
             let plane = unique_feature_match(scopes.iter().filter(|candidate| {
                 native_stream(&candidate.id) == Some(stream)
                     && candidate.record_index == plane_scope_record_index
