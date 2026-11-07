@@ -33,6 +33,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 mod cap_regions;
+pub(crate) mod face_profile_sets;
 mod region_members;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
@@ -1393,6 +1394,14 @@ pub(super) fn resolved_extrude_profile_selection(
     if let (Some(state_id), Some(previous_state_id)) = (history_state_id, previous_history_state_id)
     {
         if let Some(proven) = cap_regions::cap_profile_selection(
+            sketch,
+            resolution,
+            state_id,
+            previous_state_id,
+            resolved_profiles.as_ref(),
+        )? {
+            resolved_profiles = Some(proven);
+        } else if let Some(proven) = cap_regions::removed_profile_selection(
             sketch,
             resolution,
             state_id,
@@ -4349,15 +4358,16 @@ fn spatial_profile_containing_entity(
 
 pub(crate) fn bind_loft_and_revolve_sketch_selections(
     scan: &ContainerScan,
-    groups: &[DesignConstructionOperandGroup],
+    groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     resolution: &SketchProfileResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
     };
 
+    let mut bound_profiles = HashSet::new();
     let mut header_index = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -4436,7 +4446,10 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             }
             ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
         };
-        resolved_profiles.insert(group.id.as_str(), resolved);
+        if matches!(&resolved, ProfileRef::Planar(PlanarProfileRef::Native(_))) {
+            continue;
+        }
+        resolved_profiles.insert(group.id.clone(), (resolved, Some(profile)));
     }
     let mut resolved_entity_paths = HashMap::new();
     for group in groups.iter().filter(|group| {
@@ -4521,7 +4534,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             Ok(profile) => profile,
             Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
         };
-        resolved_profiles.insert(group.id.as_str(), resolved);
+        resolved_profiles.insert(group.id.clone(), (resolved, None));
     }
     for feature in features.iter_mut() {
         let mut edit_result = Ok(());
@@ -4539,7 +4552,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     else {
                         continue;
                     };
-                    if let Some(profile) = resolved_profiles.get(native.as_str()) {
+                    if let Some((profile, _)) = resolved_profiles.get(native.as_str()) {
+                        bound_profiles.insert(native.clone());
                         *section = LoftSection::Profile(copy_bound_profile(profile)?);
                     }
                 }
@@ -4580,17 +4594,28 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 let Some(PlanarProfileRef::Native(native)) = construction.profile() else {
                     return Ok(());
                 };
-                let Some(ProfileRef::Planar(profile)) = resolved_profiles.get(native.as_str())
+                let Some((ProfileRef::Planar(profile), _)) = resolved_profiles.get(native.as_str())
                 else {
                     return Ok(());
                 };
+                bound_profiles.insert(native.clone());
                 construction.set_profile(Some(copy_bound_planar_profile(profile)?));
                 Ok(())
             })();
         });
         edit_result?;
     }
-    Ok(())
+    let mut losses = Vec::new();
+    for group in groups
+        .iter_mut()
+        .filter(|group| bound_profiles.contains(&group.id))
+    {
+        if let Some((_, Some(profile))) = resolved_profiles.remove(&group.id) {
+            losses.extend(profile.flags_assumption_loss());
+            group.sketch_profile = Some(profile);
+        }
+    }
+    Ok(losses)
 }
 
 #[cfg(test)]

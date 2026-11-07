@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Prove an Extrude's sketch regions from the end cap its own transition
-//! inserts.
+//! Prove an Extrude's sketch regions from the faces its own transition
+//! inserts or cuts.
 //!
 //! A planar face that an Extrude transition inserts parallel to its Sketch,
 //! at one offset from the Sketch plane, repeats the swept region there. The
@@ -9,23 +9,29 @@
 //! is selected; the selection is admitted only when the selected regions
 //! cover the cap's area and their outline lies on the cap's boundary.
 //!
+//! A cut through the part inserts no such cap. When the stored profiles name
+//! curves that bound several regions, a region bounded only by those curves
+//! is selected when a plane parallel to the Sketch that the transition
+//! changed held the region's interior point before the transition and does
+//! not after it. Such a selection reports `feature.profile-cut-regions-assumed`.
+//!
 //! Each cap edge is drawn from a proven carrier: a straight edge whose curve
 //! axis runs along its chord, or a circle where the cap meets a cylinder whose
 //! axis is parallel to the cap normal. A cap with any other edge proves
 //! nothing.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::f64::consts::TAU;
 
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use super::ResolvedProfileSelection;
 use crate::design::geometry::{
     atomic_sketch_regions, point_in_polygon, point_segment_distance, profile_loop_contains_points,
-    project_to_sketch, AtomicSketchRegion, ProfileGeometryWork,
+    AtomicSketchRegion, ProfileGeometryWork,
 };
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
@@ -35,18 +41,73 @@ const ARC_SEGMENTS: u32 = 64;
 const SAMPLE_GRID: u32 = 24;
 /// Relative difference allowed between the cap area and the selected area.
 /// Both sides are polylines of the same circles and arcs.
-const AREA_AGREEMENT: f64 = 1e-3;
-/// How far from parallel, as a cosine, a cap's plane normal may be to the sketch normal.
-const PARALLEL_CAP: f64 = 1e-9;
+pub(super) const AREA_AGREEMENT: f64 = 1e-3;
+/// How far from parallel, as a cosine, a cap's plane normal may be to the frame normal.
+pub(super) const PARALLEL_CAP: f64 = 1e-9;
 /// Largest sine of the angle between a straight edge's carrier axis and its chord.
 const STRAIGHT_CARRIER: f64 = 1e-9;
-/// How many linear tolerances either side of a region boundary segment its
-/// two sides are sampled at.
-const SIDE_OFFSET: f64 = 4.0;
+/// How many linear tolerances either side of a boundary segment its two sides
+/// are sampled at.
+pub(super) const SIDE_OFFSET: f64 = 4.0;
 /// Most loops and loop edges one cap may have.
-const CAP_EDGES: usize = 4096;
+pub(super) const CAP_EDGES: usize = 4096;
 
-/// One proven piece of a cap loop, in sketch coordinates.
+/// An orthonormal frame on one plane.
+#[derive(Clone, Copy)]
+pub(super) struct PlaneFrame {
+    origin: Point3,
+    u: Vector3,
+    v: Vector3,
+    normal: Vector3,
+}
+
+impl PlaneFrame {
+    fn of_sketch(sketch: &cadmpeg_ir::sketches::Sketch) -> Option<Self> {
+        let (origin, normal, u) = sketch.resolved_placement()?;
+        let (normal, u) = (normal.get(), u.get());
+        Some(Self {
+            origin: origin.get(),
+            u,
+            v: normal.cross(u),
+            normal,
+        })
+    }
+
+    /// The frame through `origin` with unit normal along `normal` and its
+    /// first axis across the world axis least aligned with it.
+    pub(super) fn of_plane(origin: Point3, normal: Vector3) -> Option<Self> {
+        let normal = normal.unit()?;
+        let across = [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .min_by(|a, b| a.dot(normal).abs().total_cmp(&b.dot(normal).abs()))?;
+        let u = across.cross(normal).unit()?;
+        Some(Self {
+            origin,
+            u,
+            v: normal.cross(u),
+            normal,
+        })
+    }
+
+    pub(super) fn normal(&self) -> Vector3 {
+        self.normal
+    }
+
+    pub(super) fn project(&self, point: Point3) -> Point2 {
+        let offset = point.vector_from(self.origin);
+        Point2::new(offset.dot(self.u), offset.dot(self.v))
+    }
+
+    pub(super) fn height(&self, point: Point3) -> f64 {
+        point.vector_from(self.origin).dot(self.normal)
+    }
+}
+
+/// One proven piece of a cap loop, in frame coordinates.
 enum Piece {
     Line(Point2, Point2),
     /// From `start` radians through `sweep` radians; a negative sweep turns
@@ -112,21 +173,21 @@ impl Piece {
     }
 }
 
-fn distance(a: Point2, b: Point2) -> f64 {
+pub(super) fn distance(a: Point2, b: Point2) -> f64 {
     (a.u - b.u).hypot(a.v - b.v)
 }
 
-/// One planar cap: its loops as closed sketch-plane polylines, the proven
+/// One planar cap: its loops as closed frame polylines, the proven
 /// pieces they are drawn from, and the loop vertices.
-struct Cap {
-    loops: Vec<Vec<Point2>>,
+pub(super) struct Cap {
+    pub(super) loops: Vec<Vec<Point2>>,
     pieces: Vec<Piece>,
-    corners: Vec<Point2>,
-    area: f64,
+    pub(super) corners: Vec<Point2>,
+    pub(super) area: f64,
 }
 
 impl Cap {
-    fn contains(&self, point: Point2) -> bool {
+    pub(super) fn contains(&self, point: Point2) -> bool {
         self.loops
             .iter()
             .filter(|ring| point_in_polygon(point, ring))
@@ -135,7 +196,7 @@ impl Cap {
             == 1
     }
 
-    fn boundary_distance(&self, point: Point2) -> f64 {
+    pub(super) fn boundary_distance(&self, point: Point2) -> f64 {
         self.pieces
             .iter()
             .map(|piece| piece.distance(point))
@@ -176,8 +237,11 @@ pub(super) fn cap_profile_selection(
     if transition.previous_state_id != Some(previous_state_id) {
         return Ok(None);
     }
+    let Some(frame) = PlaneFrame::of_sketch(sketch) else {
+        return Ok(None);
+    };
     let Some(caps) = far_caps(
-        sketch,
+        &frame,
         topology,
         &transition.topology.faces.inserted,
         tolerance,
@@ -223,8 +287,193 @@ pub(super) fn cap_profile_selection(
             }
         }
     }
+    Ok(trimmed_selection(&sampled, &selected))
+}
+
+/// The material a transition leaves on one plane parallel to the sketch:
+/// the faces on it before the transition that it deleted or changed, and
+/// the faces on it after the transition that it inserted or changed.
+struct PlaneSides {
+    offset: f64,
+    before: Vec<Cap>,
+    after: Vec<Cap>,
+}
+
+/// The planes parallel to the sketch that the transition from `before` to
+/// `after` changed. A plane on which any changed face has no proven cap is
+/// left out. `None` when a changed face has no surface binding or several,
+/// or its surface several plane rows.
+fn changed_planes(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    (before, after): (&AsmHistoricalTopology, &AsmHistoricalTopology),
+    faces: &crate::history_records::AsmHistoricalEntityDelta,
+    tolerance: f64,
+) -> Option<Vec<PlaneSides>> {
+    let frame = PlaneFrame::of_sketch(sketch)?;
+    let mut planes: Vec<PlaneSides> = Vec::new();
+    let mut incomplete: Vec<f64> = Vec::new();
+    let sides = [
+        (before, faces.deleted.iter().chain(&faces.updated), true),
+        (after, faces.inserted.iter().chain(&faces.updated), false),
+    ];
+    for (topology, changed, is_before) in sides {
+        for face in changed {
+            let point = match parallel_plane(topology, *face, frame.normal) {
+                ParallelPlane::At(point) => point,
+                ParallelPlane::Elsewhere => continue,
+                ParallelPlane::Unreadable => return None,
+            };
+            let offset = frame.height(point);
+            let Some(cap) = face_cap(&frame, topology, *face, tolerance) else {
+                incomplete.push(offset);
+                continue;
+            };
+            let index = match planes
+                .iter()
+                .position(|plane| (plane.offset - offset).abs() <= tolerance)
+            {
+                Some(index) => index,
+                None => {
+                    planes.push(PlaneSides {
+                        offset,
+                        before: Vec::new(),
+                        after: Vec::new(),
+                    });
+                    planes.len() - 1
+                }
+            };
+            if is_before {
+                planes[index].before.push(cap);
+            } else {
+                planes[index].after.push(cap);
+            }
+        }
+    }
+    planes.retain(|plane| {
+        !incomplete
+            .iter()
+            .any(|offset| (plane.offset - offset).abs() <= tolerance)
+    });
+    Some(planes)
+}
+
+/// The regions bounded only by the curves of the stored profiles `current`
+/// names that the transition from `previous_state_id` to `state_id` cut out
+/// of the planes parallel to the sketch it changed.
+///
+/// A region is cut when a changed plane held its interior before the
+/// transition and does not after it, and kept when a changed plane holds it
+/// on both sides. `None` when a candidate region has no such evidence or
+/// conflicting evidence, when the cut regions do not use every profile
+/// curve, or when they are the regions `current` already covers.
+pub(super) fn removed_profile_selection(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::ScopedExtrudeProfileResolution<'_>,
+    state_id: i64,
+    previous_state_id: i64,
+    current: Option<&ResolvedProfileSelection>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    let Some(current @ ResolvedProfileSelection::Loops(indices)) = current else {
+        return Ok(None);
+    };
+    let mut curves = HashSet::new();
+    for index in indices {
+        let Some(profile) = usize::try_from(*index)
+            .ok()
+            .and_then(|index| sketch.profiles.as_slice().get(index))
+        else {
+            return Ok(None);
+        };
+        curves.extend(profile.iter().map(|use_| &use_.entity));
+    }
+    let entities = resolution.entities;
+    let tolerance = resolution.linear_tolerance;
+    let work = resolution.profile_work;
+    let ctx = resolution.ctx;
+    let Some((after, state)) = unique_state(resolution.histories, state_id) else {
+        return Ok(None);
+    };
+    let Some(transition) = state.transition.as_ref() else {
+        return Ok(None);
+    };
+    if transition.previous_state_id != Some(previous_state_id) {
+        return Ok(None);
+    }
+    let Some((before, _)) = unique_state(resolution.histories, previous_state_id) else {
+        return Ok(None);
+    };
+    let Some(planes) = changed_planes(
+        sketch,
+        (before, after),
+        &transition.topology.faces,
+        tolerance,
+    ) else {
+        return Ok(None);
+    };
+    if planes.is_empty() {
+        return Ok(None);
+    }
+    let Some(regions) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
+        return Ok(None);
+    };
+    let Some(sampled) = sample_regions(&regions, tolerance) else {
+        return Ok(None);
+    };
+    let mut selected = Vec::new();
+    let mut used = HashSet::new();
+    for (index, region) in sampled.iter().enumerate() {
+        if !region
+            .region
+            .boundary
+            .iter()
+            .all(|use_| curves.contains(&use_.entity))
+        {
+            continue;
+        }
+        let mut removed = false;
+        let mut kept = false;
+        for plane in &planes {
+            let held = plane.before.iter().any(|cap| cap.contains(region.point));
+            let holds = plane.after.iter().any(|cap| cap.contains(region.point));
+            match (held, holds) {
+                (true, true) => kept = true,
+                (true, false) => removed = true,
+                (false, true) => return Ok(None),
+                (false, false) => {}
+            }
+        }
+        if removed == kept {
+            return Ok(None);
+        }
+        if removed {
+            selected.push(index);
+            used.extend(region.region.boundary.iter().map(|use_| &use_.entity));
+        }
+    }
+    if selected.is_empty() || used != curves {
+        return Ok(None);
+    }
+    let points: Vec<Point2> = sampled.iter().map(|region| region.point).collect();
+    if covered_regions(sketch, entities, current, &points, tolerance, work, ctx)?
+        .is_some_and(|covered| covered == selected)
+    {
+        return Ok(None);
+    }
+    let selection = trimmed_selection(&sampled, &selected);
+    if selection.is_some() {
+        work.note_cut_regions_assumed();
+    }
+    Ok(selection)
+}
+
+/// The `selected` regions as trimmed regions, each with the nested regions
+/// left out of the selection as holes.
+fn trimmed_selection(
+    sampled: &[Sampled<'_>],
+    selected: &[usize],
+) -> Option<ResolvedProfileSelection> {
     let mut out = Vec::new();
-    for &index in &selected {
+    for &index in selected {
         let region = &sampled[index];
         let holes = region
             .nested
@@ -248,11 +497,11 @@ pub(super) fn cap_profile_selection(
             region.region.boundary.clone(),
             holes,
         ) else {
-            return Ok(None);
+            return None;
         };
         out.push(region);
     }
-    Ok(Some(ResolvedProfileSelection::Regions(out)))
+    Some(ResolvedProfileSelection::Regions(out))
 }
 
 /// Whether the outline of the union of the `chosen` regions lies on the
@@ -323,37 +572,24 @@ fn unique_state(
     Some((history.topology(state)?, state))
 }
 
-/// The inserted planar faces parallel to the sketch at the offset farthest
-/// from its plane, each with every loop resolved.
+/// The inserted planar faces parallel to the frame at the offset farthest
+/// from its plane, each with every loop resolved. `None` when an inserted
+/// face has no surface binding or several, or its surface several plane rows.
 fn far_caps(
-    sketch: &cadmpeg_ir::sketches::Sketch,
+    frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
     inserted: &[i64],
     tolerance: f64,
 ) -> Option<Vec<Cap>> {
-    let (origin, normal, _) = sketch.resolved_placement()?;
-    let normal = normal.get();
-    let offset = |point: Point3| point.vector_from(origin.get()).dot(normal);
-    let surfaces: HashMap<i64, i64> = topology
-        .face_surfaces
-        .iter()
-        .map(|binding| (binding.entity, binding.carrier))
-        .collect();
     let mut caps: Vec<(f64, Cap)> = Vec::new();
     for face in inserted {
-        let Some(plane) = surfaces.get(face).and_then(|surface| {
-            topology
-                .surface_planes
-                .iter()
-                .find(|plane| plane.surface == *surface)
-        }) else {
-            continue;
+        let origin = match parallel_plane(topology, *face, frame.normal) {
+            ParallelPlane::At(origin) => origin,
+            ParallelPlane::Elsewhere => continue,
+            ParallelPlane::Unreadable => return None,
         };
-        if (plane.normal.dot(normal).abs() - 1.0).abs() > PARALLEL_CAP {
-            continue;
-        }
-        let height = offset(plane.origin);
-        let cap = face_cap(sketch, topology, *face, tolerance)?;
+        let height = frame.height(origin);
+        let cap = face_cap(frame, topology, *face, tolerance)?;
         caps.push((height, cap));
     }
     let far = caps
@@ -368,34 +604,113 @@ fn far_caps(
     (!caps.is_empty()).then_some(caps)
 }
 
-/// Every loop of `face` as a sketch-plane polyline drawn from its proven
-/// pieces. `None` when a loop does not close or an edge has no proven
-/// carrier.
-fn face_cap(
-    sketch: &cadmpeg_ir::sketches::Sketch,
+/// What the surface binding of a face states about a plane parallel to a
+/// normal.
+enum ParallelPlane {
+    /// A point of the face's plane, which is parallel to the normal's plane.
+    At(Point3),
+    /// The face's surface has no plane row, or its plane is not parallel.
+    Elsewhere,
+    /// The face has no surface binding or several, or its surface several
+    /// plane rows.
+    Unreadable,
+}
+
+fn parallel_plane(
+    topology: &AsmHistoricalTopology,
+    face: i64,
+    normal: cadmpeg_ir::math::Vector3,
+) -> ParallelPlane {
+    let Ok(Some(binding)) = sole(
+        topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == face),
+    ) else {
+        return ParallelPlane::Unreadable;
+    };
+    match sole(
+        topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == binding.carrier),
+    ) {
+        Err(Several) => ParallelPlane::Unreadable,
+        Ok(Some(plane)) if (plane.normal.dot(normal).abs() - 1.0).abs() <= PARALLEL_CAP => {
+            ParallelPlane::At(plane.origin)
+        }
+        Ok(_) => ParallelPlane::Elsewhere,
+    }
+}
+
+/// Every loop of `face` as a frame polyline drawn from its proven pieces.
+/// `None` when a loop does not close or an edge has no proven carrier.
+pub(super) fn face_cap(
+    frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
     face: i64,
     tolerance: f64,
 ) -> Option<Cap> {
-    let (_, normal, _) = sketch.resolved_placement()?;
-    let normal = normal.get();
-    let position = |vertex: i64| -> Option<Point3> {
-        let point = topology
-            .vertex_points
-            .iter()
-            .find(|binding| binding.entity == vertex)?
-            .carrier;
-        Some(
-            topology
-                .point_positions
-                .iter()
-                .find(|row| row.point == point)?
-                .position,
-        )
-    };
     let mut loops = Vec::new();
     let mut pieces = Vec::new();
     let mut corners = Vec::new();
+    for steps in oriented_loops(topology, face)? {
+        let mut ring: Vec<Point2> = Vec::new();
+        for (edge, from, to) in steps {
+            let piece = edge_piece(frame, topology, face, edge, (from, to), tolerance)?;
+            corners.push(frame.project(from));
+            piece.push(&mut ring);
+            pieces.push(piece);
+        }
+        if ring.len() < 3 {
+            return None;
+        }
+        loops.push(ring);
+    }
+    let mut areas: Vec<f64> = loops.iter().map(|ring| polygon_area(ring).abs()).collect();
+    let outer = areas
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.total_cmp(b.1))
+        .map(|(index, _)| index)?;
+    let outer_area = areas.swap_remove(outer);
+    let area = outer_area - areas.iter().sum::<f64>();
+    (area > tolerance * tolerance).then_some(Cap {
+        loops,
+        pieces,
+        corners,
+        area,
+    })
+}
+
+/// Each loop of `face` as its edges in loop order, each with the positions
+/// it runs from and to. `None` when a loop does not close or a row is
+/// missing.
+pub(super) fn oriented_loops(
+    topology: &AsmHistoricalTopology,
+    face: i64,
+) -> Option<Vec<Vec<(i64, Point3, Point3)>>> {
+    let position = |vertex: i64| -> Option<Point3> {
+        let point = sole(
+            topology
+                .vertex_points
+                .iter()
+                .filter(|binding| binding.entity == vertex),
+        )
+        .ok()??
+        .carrier;
+        Some(
+            sole(
+                topology
+                    .point_positions
+                    .iter()
+                    .filter(|row| row.point == point),
+            )
+            .ok()??
+            .position,
+        )
+    };
+    let mut loops = Vec::new();
     let mut edges_seen = 0usize;
     for loop_ in relation(&topology.face_loops, face)? {
         let coedges = relation(&topology.loop_coedges, *loop_)?;
@@ -405,12 +720,15 @@ fn face_cap(
         }
         let mut ends = Vec::new();
         for coedge in coedges {
-            let edge = topology
-                .coedge_topology
-                .iter()
-                .find(|row| row.coedge == *coedge)?
-                .edge;
-            ends.push(topology.edge_vertices.iter().find(|row| row.edge == edge)?);
+            let edge = sole(
+                topology
+                    .coedge_topology
+                    .iter()
+                    .filter(|row| row.coedge == *coedge),
+            )
+            .ok()??
+            .edge;
+            ends.push(sole(topology.edge_vertices.iter().filter(|row| row.edge == edge)).ok()??);
         }
         // Orient every edge, the first one by the edge after it, before
         // drawing any of them.
@@ -439,33 +757,14 @@ fn face_cap(
         if steps.first()?.1 != steps.last()?.2 {
             return None;
         }
-        let mut ring: Vec<Point2> = Vec::new();
-        for (edge, from, to) in steps {
-            let (from, to) = (position(from)?, position(to)?);
-            let piece = edge_piece(sketch, topology, face, edge, (from, to), normal, tolerance)?;
-            corners.push(project_to_sketch(sketch, from)?);
-            piece.push(&mut ring);
-            pieces.push(piece);
-        }
-        if ring.len() < 3 {
-            return None;
-        }
-        loops.push(ring);
+        loops.push(
+            steps
+                .into_iter()
+                .map(|(edge, from, to)| Some((edge, position(from)?, position(to)?)))
+                .collect::<Option<Vec<_>>>()?,
+        );
     }
-    let mut areas: Vec<f64> = loops.iter().map(|ring| polygon_area(ring).abs()).collect();
-    let outer = areas
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.total_cmp(b.1))
-        .map(|(index, _)| index)?;
-    let outer_area = areas.swap_remove(outer);
-    let area = outer_area - areas.iter().sum::<f64>();
-    (area > tolerance * tolerance).then_some(Cap {
-        loops,
-        pieces,
-        corners,
-        area,
-    })
+    Some(loops)
 }
 
 /// The proven piece of the cap `face`'s `edge` between its two ends: a line
@@ -473,31 +772,34 @@ fn face_cap(
 /// circle where the cap meets a cylinder about an axis parallel to the cap
 /// normal. `None` for any other carrier.
 fn edge_piece(
-    sketch: &cadmpeg_ir::sketches::Sketch,
+    frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
     face: i64,
     edge: i64,
     (from, to): (Point3, Point3),
-    normal: cadmpeg_ir::math::Vector3,
     tolerance: f64,
 ) -> Option<Piece> {
-    let start = project_to_sketch(sketch, from)?;
-    let end = project_to_sketch(sketch, to)?;
-    let interior = topology
-        .edge_samples
-        .iter()
-        .find(|row| row.edge == edge)
+    let normal = frame.normal;
+    let start = frame.project(from);
+    let end = frame.project(to);
+    let interior = sole(topology.edge_samples.iter().filter(|row| row.edge == edge))
+        .ok()?
         .map(|row| row.interior);
     let closed = distance(start, end) <= tolerance;
-    let curve = topology
-        .edge_curves
-        .iter()
-        .find(|binding| binding.entity == edge)
-        .and_then(|binding| binding.carrier);
+    let curve = sole(
+        topology
+            .edge_curves
+            .iter()
+            .filter(|binding| binding.entity == edge),
+    )
+    .ok()?
+    .and_then(|binding| binding.carrier);
+    let axis = match curve {
+        Some(curve) => sole(topology.curve_axes.iter().filter(|row| row.curve == curve)).ok()?,
+        None => None,
+    };
     if !closed {
-        if let Some(axis) =
-            curve.and_then(|curve| topology.curve_axes.iter().find(|row| row.curve == curve))
-        {
+        if let Some(axis) = axis {
             let chord = to.vector_from(from);
             let direction = axis.direction;
             let off_line = |point: Point3| {
@@ -507,48 +809,48 @@ fn edge_piece(
                 && off_line(from) <= tolerance
                 && off_line(to) <= tolerance
             {
-                return match interior.map(|point| project_to_sketch(sketch, point)) {
-                    Some(Some(point))
-                        if point_segment_distance(point, (start, end)) > tolerance =>
-                    {
-                        None
-                    }
-                    Some(None) => None,
+                return match interior.map(|point| frame.project(point)) {
+                    Some(point) if point_segment_distance(point, (start, end)) > tolerance => None,
                     _ => Some(Piece::Line(start, end)),
                 };
             }
         }
     }
-    let surfaces: Vec<i64> = topology
+    let mut surfaces = Vec::new();
+    for row in topology
         .coedge_topology
         .iter()
         .filter(|row| row.edge == edge)
-        .filter_map(|row| {
+    {
+        let owner = sole(
             topology
                 .face_loops
                 .iter()
-                .find(|relation| relation.member_refs.contains(&row.owner_loop))
-                .map(|relation| relation.owner_ref)
-        })
-        .filter(|owner| *owner != face)
-        .filter_map(|owner| {
+                .filter(|relation| relation.member_refs.contains(&row.owner_loop)),
+        )
+        .ok()??
+        .owner_ref;
+        if owner == face {
+            continue;
+        }
+        let binding = sole(
             topology
                 .face_surfaces
                 .iter()
-                .find(|binding| binding.entity == owner)
-                .map(|binding| binding.carrier)
-        })
-        .collect();
+                .filter(|binding| binding.entity == owner),
+        )
+        .ok()??;
+        surfaces.push(binding.carrier);
+    }
     let mut cylinders = topology.surface_cylinders.iter().filter(|cylinder| {
         surfaces.contains(&cylinder.surface)
             && (cylinder.axis.dot(normal).abs() / cylinder.axis.norm() - 1.0).abs() <= PARALLEL_CAP
     });
     let cylinder = cylinders.next()?;
-    let center = project_to_sketch(sketch, cylinder.origin)?;
+    let center = frame.project(cylinder.origin);
     let radius = cylinder.radius;
     if cylinders.any(|other| {
-        project_to_sketch(sketch, other.origin)
-            .is_none_or(|other_center| distance(other_center, center) > tolerance)
+        distance(frame.project(other.origin), center) > tolerance
             || (other.radius - radius).abs() > tolerance
     }) {
         return None;
@@ -567,7 +869,7 @@ fn edge_piece(
             sweep: TAU,
         });
     }
-    let middle = project_to_sketch(sketch, interior?)?;
+    let middle = frame.project(interior?);
     if !on_circle(middle) {
         return None;
     }
@@ -585,7 +887,23 @@ fn edge_piece(
     })
 }
 
-fn relation(rows: &[crate::history_records::AsmHistoricalRelation], owner: i64) -> Option<&[i64]> {
+/// Several rows where at most one may occur.
+struct Several;
+
+/// The item of `items` when it holds at most one.
+fn sole<T>(mut items: impl Iterator<Item = T>) -> Result<Option<T>, Several> {
+    let first = items.next();
+    if first.is_some() && items.next().is_some() {
+        Err(Several)
+    } else {
+        Ok(first)
+    }
+}
+
+pub(super) fn relation(
+    rows: &[crate::history_records::AsmHistoricalRelation],
+    owner: i64,
+) -> Option<&[i64]> {
     let mut rows = rows.iter().filter(|row| row.owner_ref == owner);
     let row = rows.next()?;
     rows.next().is_none().then_some(row.member_refs.as_slice())
