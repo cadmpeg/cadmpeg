@@ -1252,10 +1252,18 @@ fn decode_operand_recipe_part<T>(
     else {
         return parse().transpose();
     };
+    let paired_search = start
+        .checked_add(11)
+        .ok_or_else(|| CodecError::malformed("operand header offset overflows"))?;
+    let missing_pair = input
+        .records
+        .first_at_or_after(paired_search, input.header.record_index)
+        .is_none_or(|paired| paired >= end);
+    let failed_offset = if missing_pair { start } else { offset };
     let Some(frame) = input
         .records
         .iter()
-        .find(|frame| frame.start <= offset && offset < frame.end)
+        .find(|frame| frame.start <= failed_offset && failed_offset < frame.end)
     else {
         return parse().transpose();
     };
