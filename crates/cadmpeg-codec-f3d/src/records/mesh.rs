@@ -281,11 +281,23 @@ const MESH_TEXTURE_FLAGS_ENTRY_BYTES: u64 = 4 + 36 + 4;
 
 const MESH_TEXTURE_FILENAME_ENTRY_BYTES: u64 = 4 + 36 + 11;
 
-/// Texture resources with complete flags and filename ordinal permutations.
+/// Texture resources in their source flags and filename ordinal positions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignMeshTextureTable {
     record: DesignMeshRecordIdentity,
+    entry_count: u32,
     resources: Vec<DesignMeshTextureResource>,
+}
+
+fn texture_map_count(record: &DesignMeshRecordIdentity) -> Result<u32, String> {
+    let prefix = u64_from_index(crate::layout::paramesh_texture_table_prefix::LEN) + 4;
+    let stride = MESH_TEXTURE_FLAGS_ENTRY_BYTES + MESH_TEXTURE_FILENAME_ENTRY_BYTES;
+    let bytes = record
+        .frame_length()
+        .checked_sub(prefix)
+        .filter(|bytes| bytes % stride == 0)
+        .ok_or("texture_table_record.frame_length must contain exactly both texture maps")?;
+    u32::try_from(bytes / stride).map_err(|_| "texture map count exceeds u32".into())
 }
 
 impl DesignMeshTextureTable {
@@ -300,27 +312,19 @@ impl DesignMeshTextureTable {
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, String> {
-        let count =
-            u32::try_from(resources.len()).map_err(|_| "textures exceeds the u32 map count")?;
-        let expected = u64_from_index(crate::layout::paramesh_texture_table_prefix::LEN)
-            + 4
-            + u64::from(count)
-                * (MESH_TEXTURE_FLAGS_ENTRY_BYTES + MESH_TEXTURE_FILENAME_ENTRY_BYTES);
-        if record.frame_length() != expected {
-            return Err(
-                "texture_table_record.frame_length must contain exactly both texture maps".into(),
-            );
-        }
+        let count = texture_map_count(&record)?;
         let mut flags = std::collections::HashSet::new();
         let mut filenames = std::collections::HashSet::new();
         let mut guids = std::collections::HashSet::new();
         for resource in &resources {
             if resource.ordinal >= count || flags.contains(&resource.ordinal) {
-                return Err("textures.ordinal must be a complete map permutation".into());
+                return Err("textures.ordinal must be unique and within the source map".into());
             }
             if resource.filename_ordinal >= count || filenames.contains(&resource.filename_ordinal)
             {
-                return Err("textures.filename_ordinal must be a complete map permutation".into());
+                return Err(
+                    "textures.filename_ordinal must be unique and within the source map".into(),
+                );
             }
             let guid = resource.resource_guid.as_str().to_ascii_uppercase();
             if guids.contains(&guid) {
@@ -331,7 +335,11 @@ impl DesignMeshTextureTable {
             filenames.insert(resource.filename_ordinal);
             guids.insert(guid);
         }
-        Ok(Self { record, resources })
+        Ok(Self {
+            record,
+            entry_count: count,
+            resources,
+        })
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
@@ -353,7 +361,7 @@ impl DesignMeshTextureTable {
     fn filename_count_offset(&self) -> u64 {
         self.record.byte_offset()
             + u64_from_index(crate::layout::paramesh_texture_table_prefix::LEN)
-            + MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64_from_index(self.resources.len())
+            + MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(self.entry_count)
     }
     // Output cardinalities are bounded by already-materialized input vectors.
     fn from_wire(
@@ -362,7 +370,7 @@ impl DesignMeshTextureTable {
         filename_count_offset: u64,
         rows: Vec<DesignMeshTextureResourceWire>,
     ) -> Result<Self, String> {
-        let count = u32::try_from(rows.len()).map_err(|_| "textures exceeds the u32 map count")?;
+        let count = texture_map_count(&record)?;
         let flags_start = record.byte_offset().checked_add(u64_from_index(
             crate::layout::paramesh_texture_table_prefix::LEN,
         ));

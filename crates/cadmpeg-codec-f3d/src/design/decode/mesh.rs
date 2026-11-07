@@ -1567,8 +1567,19 @@ where
                 .ok_or_else(|| {
                     stream_error("each texture filename reference targets a filename record")
                 })?;
-            let (filename_record, filename) =
-                parse_mesh_texture_filename_record(bytes, filename_frame)?;
+            let Some((filename_record, filename)) = decode_mesh_record_parts(
+                ctx,
+                parts,
+                source,
+                source_entry_name,
+                vec![filename_frame],
+                &mut unreadable,
+                |frame| parse_mesh_texture_filename_record(bytes, frame),
+            )?
+            .into_iter()
+            .next() else {
+                continue;
+            };
             let (archive_entry_name, _) = asset_for_filename(&filename)?;
             textures.push(DesignMeshTextureResource {
                 ordinal: flag.ordinal,
@@ -1647,26 +1658,54 @@ where
                 .ok_or_else(|| {
                     stream_error("each Scene node has one unused Scene auxiliary record")
                 })?;
-            let scene_auxiliary = parse_typed_identity(
-                bytes,
-                scene_auxiliary_frame,
-                SCENE_AUXILIARY_TYPE_VERSION,
-                SCENE_AUXILIARY_BASE_TYPE_GUID,
-                SCENE_MODULE,
-                "mesh-scene-auxiliary",
-            )?;
+            let Some(scene_auxiliary) = decode_mesh_record_parts(
+                ctx,
+                parts,
+                source,
+                source_entry_name,
+                vec![scene_auxiliary_frame],
+                &mut unreadable,
+                |frame| {
+                    parse_typed_identity(
+                        bytes,
+                        frame,
+                        SCENE_AUXILIARY_TYPE_VERSION,
+                        SCENE_AUXILIARY_BASE_TYPE_GUID,
+                        SCENE_MODULE,
+                        "mesh-scene-auxiliary",
+                    )
+                },
+            )?
+            .into_iter()
+            .next() else {
+                continue;
+            };
             let body_owner_frame = body_owner_frames
                 .get(&body.owner_record_index)
                 .copied()
                 .ok_or_else(|| stream_error("each mesh body references a typed Body owner"))?;
-            let body_owner = parse_typed_identity(
-                bytes,
-                body_owner_frame,
-                MESH_BODY_OWNER_TYPE_VERSION,
-                MESH_BODY_OWNER_BASE_TYPE_GUID,
-                "Body",
-                "mesh-body-owner",
-            )?;
+            let Some(body_owner) = decode_mesh_record_parts(
+                ctx,
+                parts,
+                source,
+                source_entry_name,
+                vec![body_owner_frame],
+                &mut unreadable,
+                |frame| {
+                    parse_typed_identity(
+                        bytes,
+                        frame,
+                        MESH_BODY_OWNER_TYPE_VERSION,
+                        MESH_BODY_OWNER_BASE_TYPE_GUID,
+                        "Body",
+                        "mesh-body-owner",
+                    )
+                },
+            )?
+            .into_iter()
+            .next() else {
+                continue;
+            };
             feature_bodies.push(DesignMeshBody {
                 placement: body.placement,
                 entry: entry_name.entry,
@@ -2051,6 +2090,57 @@ mod tests {
             wire["scope_body_reference_offsets"],
             serde_json::json!([scope_start + 11])
         );
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let (_, native, fidelity, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Design));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    }
+
+    #[test]
+    fn damaged_mesh_texture_filename_keeps_other_texture_and_source_offsets() {
+        let mut graph = synthetic_mesh_graph(true);
+        let frames = typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            super::MESH_TEXTURE_FILENAME_TYPE_GUID,
+        )
+        .unwrap();
+        assert_eq!(frames.len(), 2);
+        graph.bytes[frames[0].start + super::texture_filename::ZERO_RUN_10] = 1;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&graph.bytes, &arena, &policy)
+                .unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let mut asset = |filename: &str| {
+            let entry = format!("Synthetic/Textures/{filename}");
+            Ok((entry.clone(), crate::ids::neutral_asset_id(&entry)))
+        };
+        let features = super::parse_mesh_design_records(
+            &ctx,
+            &mut parts,
+            source,
+            &graph.meta,
+            "Design/BulkStream.dat",
+            &mut asset,
+        )
+        .unwrap();
+        assert_eq!(features.len(), 1);
+        let resources = features[0].texture_table.resources();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].ordinal, 1);
+        let wire = serde_json::to_value(&features[0]).unwrap();
         let decoded: crate::records::mesh::DesignMeshFeature =
             serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
