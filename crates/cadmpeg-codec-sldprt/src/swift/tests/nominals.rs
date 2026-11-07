@@ -10,8 +10,8 @@ use crate::swift::enrich_implicit_nominals;
 use crate::swift::pmi_id;
 use crate::swift::project;
 use crate::swift::project_with_topology;
-use crate::swift::rendered_dimensions;
 use crate::swift::rendered_nominal;
+use crate::swift::rendered_projections;
 use crate::swift::unique_diameter;
 use crate::swift::Entity;
 use crate::swift::Reference;
@@ -1320,7 +1320,7 @@ fn scans_explicit_rendered_diameter_literals() {
         }
     }
     assert_eq!(
-        rendered_dimensions(&payload),
+        rendered_projections(&payload).0,
         [
             RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,
