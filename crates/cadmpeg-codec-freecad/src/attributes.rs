@@ -87,6 +87,12 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
             .iter()
             .find(|object| object.id().as_str() == property.owner)
         {
+            if object.type_name == "Part::Extrusion"
+                && matches!(property.name.as_str(), "LengthFwd" | "LengthRev")
+                && crate::persistence::scalar_value_tag(&property.type_name).is_some()
+            {
+                return true;
+            }
             let dynamic_parameter = property
                 .dynamic
                 .as_ref()
@@ -131,6 +137,19 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
         .features
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some(property.owner.as_str()));
+    if matches!(property.name.as_str(), "LengthFwd" | "LengthRev")
+        && objects.iter().any(|object| {
+            object.id().as_str() == property.owner && object.type_name == "Part::Extrusion"
+        })
+        && feature.is_some_and(|feature| {
+            matches!(
+                feature.evaluation.definition().operation(),
+                FeatureOperation::Extrude { .. }
+            )
+        })
+    {
+        return true;
+    }
     if feature.is_some() && matches!(property.name.as_str(), "Label" | "Suppressed") {
         return true;
     }
