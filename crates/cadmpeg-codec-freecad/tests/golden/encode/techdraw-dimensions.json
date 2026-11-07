@@ -8,7 +8,7 @@
     {
       "name": "Box.Shape.brp",
       "payload_len": 2561,
-      "payload_sha256": "16de1522c25fb2a6e3968e6844b3116fe26303f9270bc1dc8d9b6c8227529e5a"
+      "payload_sha256": "4090c7890ba4cf04faf9a9b7f1e0e990f759a92f8b6e0ff7708cb3d6bba7b419"
     },
     {
       "name": "techdraw-template.svg",
@@ -53,12 +53,12 @@
     {
       "name": "Triangle.Shape.brp",
       "payload_len": 602,
-      "payload_sha256": "e27487bed0b0348d9e4aa9ddfd889c6d8632433247e3460e8f1a5e1c4226d2d1"
+      "payload_sha256": "07aa2d042f8c441c04b8b6c737a82392c6f5c74ae2a7719d7717323820a9cc9c"
     },
     {
       "name": "Cylinder.Shape.brp",
       "payload_len": 1045,
-      "payload_sha256": "fcd1365cc473cafaa0c7621ee6a5db22ee9d076b467693dd055452d3d080154d"
+      "payload_sha256": "b479a2ba462df8e331db56b94e5a6a03d5f054672c27587b5552e94be03390a4"
     },
     {
       "name": "BoxCorners3",
