@@ -311,10 +311,6 @@ fn a_matched_face_owner_with_the_face_qualifier_and_a_shared_generator_is_select
         let mut second = archive(schema);
         second[2] = generated(11, 1, schema, 37);
         assert!(run(&second, schema).is_some());
-        // Attribute copies of one face revision keep one owner.
-        let mut copies = archive(schema);
-        copies.push(matched(12, 1, schema, 9, 7, 1));
-        assert_eq!(run(&copies, schema).expect("selected").owner, 1);
         // A history snapshot of a face is a face revision.
         let mut snapshot = archive(schema);
         snapshot[0] = record(
@@ -324,6 +320,102 @@ fn a_matched_face_owner_with_the_face_qualifier_and_a_shared_generator_is_select
         );
         assert!(run(&snapshot, schema).is_some());
     }
+}
+
+/// A generated name of a second family, the blend family.
+fn blend(index: usize, owner: i64, schema: u32, generator: i64) -> Record {
+    let mut tokens = common(owner);
+    if schema == 44 {
+        tokens.extend([
+            Token::Str("INV_NMX_BLEND_TAG".into()),
+            Token::Long(1),
+            Token::Long(44),
+        ]);
+        tokens.extend([1, generator, -1, 23, 0, 20].map(Token::Long));
+        record(index, "ATTRIB_CUSTOM-attrib", tokens)
+    } else {
+        tokens.push(Token::Long(i64::from(schema)));
+        tokens.extend([1, generator, -1, 1, 2, 3, 4, 5, 6, 7].map(Token::Long));
+        record(
+            index,
+            "NMx_blend_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib",
+            tokens,
+        )
+    }
+}
+
+#[test]
+fn a_plain_join_states_no_assumption() {
+    for schema in [38, 44] {
+        let face = run(&archive(schema), schema).expect("selected");
+        assert!(!face.repeated_attribute && !face.unshared_family);
+        // Two families that both share a generator.
+        let mut both = archive(schema);
+        both.push(blend(12, 1, schema, 37));
+        let face = run(&both, schema).expect("selected");
+        assert!(!face.repeated_attribute && !face.unshared_family);
+        // Two names of one family, of which one shares a generator.
+        let mut one_family = archive(schema);
+        one_family.push(generated(12, 1, schema, 99));
+        let face = run(&one_family, schema).expect("selected");
+        assert!(!face.unshared_family);
+    }
+}
+
+#[test]
+fn a_repeated_attribute_on_one_owner_selects_it_and_states_the_repeat() {
+    for schema in [38, 44] {
+        let mut copies = archive(schema);
+        copies.push(matched(12, 1, schema, 9, 7, 1));
+        let face = run(&copies, schema).expect("selected");
+        assert_eq!(face.owner, 1);
+        assert!(face.repeated_attribute && !face.unshared_family);
+        // A copy on a second owner still selects nothing.
+        let mut owners = archive(schema);
+        owners.push(face_record_with_attribute(schema));
+        assert!(run(&owners, schema).is_none());
+    }
+}
+
+fn face_record_with_attribute(schema: u32) -> Record {
+    matched(12, 2, schema, 9, 7, 1)
+}
+
+#[test]
+fn a_family_that_shares_no_generator_selects_through_another_and_states_it() {
+    for schema in [38, 44] {
+        let mut mixed = archive(schema);
+        mixed.push(blend(12, 1, schema, 99));
+        let face = run(&mixed, schema).expect("selected");
+        assert_eq!(face.owner, 1);
+        assert!(face.unshared_family && !face.repeated_attribute);
+        // No family shares a generator: nothing is selected.
+        let mut none = archive(schema);
+        none[2] = generated(11, 1, schema, 98);
+        none.push(blend(12, 1, schema, 99));
+        assert!(run(&none, schema).is_none());
+    }
+}
+
+#[test]
+fn assumption_losses_count_the_features_that_use_the_face() {
+    let ctx = context();
+    let (mut inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    assert!(assumption_losses(std::slice::from_ref(&feature), &inventory).is_empty());
+    {
+        let face = inventory
+            .edge_inputs
+            .faces
+            .get_mut(&(TOKEN.to_owned(), 41))
+            .expect("first face");
+        face.repeated_attribute = true;
+        face.unshared_family = true;
+    }
+    // A native selection uses no face, so no assumption applies.
+    assert!(assumption_losses(std::slice::from_ref(&feature), &inventory).is_empty());
+    project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
+    assert_eq!(notes.len(), 2);
 }
 
 #[test]
@@ -463,10 +555,15 @@ fn fixture(
         .as_str()
         .to_owned();
     for (selector, item, owner) in [(41, 21, 5), (43, 22, 6)] {
-        inventory
-            .edge_inputs
-            .faces
-            .insert((token.clone(), selector), SelectedFace { owner, item });
+        inventory.edge_inputs.faces.insert(
+            (token.clone(), selector),
+            SelectedFace {
+                owner,
+                item,
+                repeated_attribute: false,
+                unshared_family: false,
+            },
+        );
     }
     (inventory, feature)
 }

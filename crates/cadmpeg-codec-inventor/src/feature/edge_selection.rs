@@ -192,6 +192,18 @@ pub(super) fn source_names(
     Some((*owner, sources))
 }
 
+/// The family of a generated-name attribute that `source_names` admits.
+pub(super) fn generated_family<'a>(record: &'a Record, fields: &[&'a Token]) -> Option<&'a str> {
+    if custom(record) {
+        match fields.get(5)? {
+            Token::Str(family) => Some(family.as_str()),
+            _ => None,
+        }
+    } else {
+        legacy_family(record)
+    }
+}
+
 const SELECTOR_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d53);
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -96,6 +96,10 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeOwnerIdenticalGeometry,
     /// A Move Face feature retains a face operand that does not join exactly one stored face revision.
     FeatureMoveFaceSelectionNative,
+    /// A selected face rests on a matching attribute that repeats on its owner.
+    FeatureFaceJoinRepeatedAttribute,
+    /// A selected face has a generated-name family that shares no feature with its selector.
+    FeatureFaceJoinUnsharedFamily,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -288,6 +292,8 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureMoveFaceSelectionNative,
+        Self::FeatureFaceJoinRepeatedAttribute,
+        Self::FeatureFaceJoinUnsharedFamily,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureExtrusionTargetFaceNative,
@@ -412,6 +418,8 @@ impl InventorLossCode {
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
+            Self::FeatureFaceJoinRepeatedAttribute => "feature.face-join-repeated-attribute",
+            Self::FeatureFaceJoinUnsharedFamily => "feature.face-join-unshared-family",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -538,6 +546,8 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureMoveFaceSelectionNative
+            | Self::FeatureFaceJoinRepeatedAttribute
+            | Self::FeatureFaceJoinUnsharedFamily
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureExtrusionTargetFaceNative
@@ -691,6 +701,8 @@ mod tests {
                 "feature.edge-selection-native",
                 "feature.edge-owner-identical-geometry",
                 "feature.move-face-selection-native",
+                "feature.face-join-repeated-attribute",
+                "feature.face-join-unshared-family",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.extrusion-target-face-native",
