@@ -1180,7 +1180,7 @@ kind = "byte"
 section = "7.3"
 anchor = "The initial count-framed reference list at payload offset zero"
 size = 1
-note = "The count atom starts at payload offset one. Its variable width and the declared reference count determine the remaining list extent."
+note = "The count atom starts at payload offset one. It is one greater than the number of tagged member references; a terminal 0x81 closes the list."
 
 [[record.field]]
 name = "list_marker"

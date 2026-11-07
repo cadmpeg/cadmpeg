@@ -91,6 +91,8 @@ pub(crate) enum CatiaLossCode {
     TopologyFbbRowsWithheld,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotBuilt,
+    /// Closed sketch components and sheet bodies were inferred from a Fill boundary.
+    TopologySheetComponentsInferred,
     /// A standard-family topology evidence search reached its local work bound.
     TopologyStandardSearchBounded,
     /// A planar face stated too many boundary points to classify its loops.
@@ -159,6 +161,7 @@ impl CatiaLossCode {
         Self::TopologyBoundaryGraphNotEmitted,
         Self::TopologyFbbRowsWithheld,
         Self::TopologyGraphNotBuilt,
+        Self::TopologySheetComponentsInferred,
         Self::TopologyStandardSearchBounded,
         Self::TopologyPlanarBoundaryBounded,
         Self::TopologyE5GraphUnclosed,
@@ -209,6 +212,7 @@ impl CatiaLossCode {
             Self::TopologyBoundaryGraphNotEmitted => "topology.boundary-graph-not-emitted",
             Self::TopologyFbbRowsWithheld => "topology.fbb-rows-withheld",
             Self::TopologyGraphNotBuilt => "topology.graph-not-built",
+            Self::TopologySheetComponentsInferred => "topology.sheet-components-inferred",
             Self::TopologyE5GraphUnclosed => "topology.e5-graph-unclosed",
             Self::TopologyB5GaugeSubstituted => "topology.b5-gauge-substituted",
             Self::TopologyObjectStreamWorkSliceExhausted => {
@@ -267,7 +271,8 @@ impl CatiaLossCode {
             Self::SourceRouteFellThrough
             | Self::SourceAnnotationCollision
             | Self::SourceCatalogScanBounded
-            | Self::GeometryVertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
+            | Self::GeometryVertexToleranceWidened
+            | Self::TopologySheetComponentsInferred => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
@@ -361,6 +366,7 @@ mod tests {
                 "topology.boundary-graph-not-emitted",
                 "topology.fbb-rows-withheld",
                 "topology.graph-not-built",
+                "topology.sheet-components-inferred",
                 "topology.standard-search-bounded",
                 "topology.planar-boundary-bounded",
                 "topology.e5-graph-unclosed",

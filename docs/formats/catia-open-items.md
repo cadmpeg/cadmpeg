@@ -168,17 +168,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
 
-**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. Under a contextual one-based reference interpretation, adjacent inline tolerance records select the two scalars and distinct geometry-reference chains. Their terminal `ShortBrpLocation` labels are `1(E,227)` and `1(E,220)`. The second record also selects a `0.127` scalar and segment fields. This supports a composite-profile candidate. The subtype, datum references, and topology targets remain unresolved.
+**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. Contextual entity references select the two scalars and distinct geometry-reference chains. The first chain reaches `ShortBrpLocation` label `2(E,227)`. The second selects an aggregate with 32 members; one member reaches label `2(E,220)`, and recursive traversal reaches 33 locations. The second record also selects a `0.127` scalar and segment fields. This supports a composite-profile candidate. The subtype, datum references, and topology targets remain unresolved.
 
 ### DI-29. Sheet topology roots
 
 **Question.** Which native records own sheet bodies and their surface representations?
 
-**Known.** FTC-07 has one FBB group with 304 face rows. `SurfacicReps` supplies analytic carriers for 284 of those faces. Its STEP twin contains a 304-face solid and two separate one-face sheets. Six native line programs form two triangular components. A stored chart maps their six local vertices to the STEP sheet vertices. A one-based reference interpretation selects those vertices for the twelve endpoints. The largest line-to-point residual is `0.000000942 mm`. A seventh line extends beyond the two components.
+**Known.** FTC-07 has one FBB group with 304 face rows. `SurfacicReps` supplies analytic carriers for 284 of those faces. Its STEP twin contains a 304-face solid and two separate one-face sheets. The Fill Boundary field selects the sketch by both entity reference and persistent key. Six native line programs form two directed triangular components in the sketch chart. The source endpoint references select the six shared point records. The chart lifts the components to the STEP sheet vertices; the largest line-to-point residual is `0.000000942 mm`. The two reconstructed sheet areas are `7.7961625330 mm²` and `7.7961620861 mm²`, versus `7.7961625247 mm²` and `7.7961620847 mm²` in STEP. A seventh line extends beyond the two components and has a different management-flag field. The decoder transfers independent closed components as sheet bodies and reports `topology.sheet-components-inferred` for member exclusion and result grouping.
 
-**Need.** Identify the Fill boundary selection, construction state, sheet orientation, and split policy. Establish the object-head roles and reference encoding that bind the sketch and its members to the Fill.
+**Need.** Establish the management-flag and construction-state meanings and the Fill result grouping. Transfer the source-selected chart and directed boundary uses with their identity encoding.
 
-**Conflict.** The current owner-first head interpretation groups both sketches under one owner slot and groups their points and lines by type. Interpreting the first head operand as a runtime class and the second as a one-based owner reference assigns the points and lines to their respective sketches and both sketches to the geometric set. This alternative requires a class binding and an escaped-head grammar.
+**Conflict.** The current owner-first head interpretation groups records by runtime class. The paired definition suffix identifies that class; the next head operand selects the owner. Compact references and escaped `80` references use different identity encodings. Applying a one-based correction to the escaped form selects the wrong owner or a sketch itself.
 
 ### DI-30. Source-schema selector indexing
 
@@ -208,7 +208,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Establish the metadata meaning through a controlled producer save that measures the exact streamed objects. Do not derive it from partial allocation ownership or assign a link-count meaning from distribution alone.
 
-**Note.** The canonical A5 class-`32` header does not select a rolling-ball variant. Its generic meaning also remains unknown. A controlled producer save that measures the exact streamed object must establish the meaning before a fresh writer can derive the header value.
+**Note.** The canonical A5 class-`32` header does not select a rolling-ball variant. Its generic meaning also remains unknown. A controlled producer save that measures the exact streamed object must establish the meaning before a fresh writer can derive the header value. A class-`5b` frame candidate has a four-byte compact header and a count-one reference to the following class-`61` roster. Its suffix reference interpretations select unrelated record classes across peer frames; suffix semantics and allocation continuity remain unresolved.
 
 ### SN-04. Class-`0x5e` terminal byte
 
@@ -275,6 +275,8 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 **Need.** Identify the serialized factory context and any additional typed identity relation for support tags outside the admitted circle, cylinder-header, standard-carrier, and canonical-alias relations. Require a source-closed relation and its chart and endpoint invariants.
 
 **Conflict.** A unique class-`19` record with tag 125 and a pcurve with `op1=125` occupy the same source extent, but their U intervals differ and the pcurve is not constant in V. Distinct tags 113 and 126 lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
+
+**Note.** In FTC-07, class-`5f` and class-`62` owner references bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. Scaling the jet coordinates by the sphere radius makes both lifts follow their edge curves. The class-`06` compressed station controls need an independent decoding. The solid area and volume remain unavailable because other face curves and orientation relations also fail measurement.
 
 ### SN-15. Additional standard-circle branch relations
 

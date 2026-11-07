@@ -2069,11 +2069,11 @@ pub(crate) struct CatiaCatalogEntry {
     /// Containing [`CatiaCatalog`] identity.
     parent: String,
     /// Stable serialized order within the catalog.
-    ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the inclusive length field.
     byte_offset: u64,
     /// Decoded ASCII schema name.
-    value: String,
+    pub(crate) value: String,
 }
 
 /// One definition selector resolved against an object graph's source schema.

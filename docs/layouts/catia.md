@@ -429,7 +429,7 @@ Both slots are binary64. Nullable slots use the variable-width production instea
 
 Spec §7.3 · layout: byte offsets · size: 1 B
 
-The count atom starts at payload offset one. Its variable width and the declared reference count determine the remaining list extent.
+The count atom starts at payload offset one. It is one greater than the number of tagged member references; a terminal 0x81 closes the list.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

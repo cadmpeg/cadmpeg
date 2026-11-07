@@ -22,7 +22,14 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode FTC-07 CATPart");
     let model = &decoded.ir().model;
-    assert_eq!(model.faces.len(), 304);
+    assert_eq!(
+        model
+            .faces
+            .iter()
+            .filter(|face| face.id.as_str().starts_with("catia:standard:face#"))
+            .count(),
+        304
+    );
     let mut nurbs = 0;
     for face in &model.faces {
         let surface = model
@@ -394,4 +401,135 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     }
     assert_eq!(freeform_pcurve_uses, 72);
     assert_eq!(plane_pcurve_uses, PLANE_JET_EDGES.len());
+}
+
+#[test]
+fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
+    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode FTC-07 CATPart");
+    let model = &decoded.ir().model;
+    let solid_faces: HashSet<_> = model
+        .faces
+        .iter()
+        .filter(|face| face.id.as_str().starts_with("catia:standard:face#"))
+        .map(|face| &face.id)
+        .collect();
+    let colored_solid_faces: HashSet<_> = model
+        .appearance_bindings
+        .iter()
+        .filter_map(|binding| match &binding.target {
+            cadmpeg_ir::appearance::AppearanceTarget::Face(face) if solid_faces.contains(face) => {
+                Some(face)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(solid_faces.len(), 304);
+    assert_eq!(colored_solid_faces, solid_faces);
+    let sheets: Vec<_> = model
+        .bodies
+        .iter()
+        .filter(|body| body.kind == BodyKind::Sheet)
+        .collect();
+    assert_eq!(sheets.len(), 2);
+    let mut areas = Vec::new();
+    for body in sheets {
+        let [region_id] = body.regions.as_slice() else {
+            panic!("one region per sheet")
+        };
+        let region = model
+            .regions
+            .iter()
+            .find(|region| &region.id == region_id)
+            .expect("sheet region");
+        let [shell_id] = region.shells.as_slice() else {
+            panic!("one shell per sheet")
+        };
+        let shell = model
+            .shells
+            .iter()
+            .find(|shell| &shell.id == shell_id)
+            .expect("sheet shell");
+        let [face_id] = shell.faces() else {
+            panic!("one face per sheet")
+        };
+        let face = model
+            .faces
+            .iter()
+            .find(|face| &face.id == face_id)
+            .expect("sheet face");
+        let surface = model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .expect("sheet surface");
+        assert!(matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        ));
+        let boundaries: Vec<_> = model
+            .loops
+            .iter()
+            .filter(|boundary| boundary.face == face.id)
+            .collect();
+        let [boundary] = boundaries.as_slice() else {
+            panic!("one boundary per sheet")
+        };
+        let coedges: Vec<_> = model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.owner_loop == boundary.id)
+            .collect();
+        assert_eq!(coedges.len(), 3);
+        let mut vertex_ids = HashSet::new();
+        for coedge in coedges {
+            let edge = model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .expect("sheet edge");
+            vertex_ids.insert(&edge.start);
+            vertex_ids.insert(&edge.end);
+        }
+        assert_eq!(vertex_ids.len(), 3);
+        let points: Vec<_> = vertex_ids
+            .into_iter()
+            .map(|id| {
+                let vertex = model
+                    .vertices
+                    .iter()
+                    .find(|vertex| &vertex.id == id)
+                    .expect("sheet vertex");
+                model
+                    .points
+                    .iter()
+                    .find(|point| point.id == vertex.point)
+                    .expect("sheet point")
+                    .position()
+                    .get()
+            })
+            .collect();
+        for point in &points {
+            assert!((point.y - 12.7).abs() < 1.0e-6);
+        }
+        let a = points[1].vector_from(points[0]);
+        let b = points[2].vector_from(points[0]);
+        areas.push(a.cross(b).norm() * 0.5);
+    }
+    areas.sort_by(f64::total_cmp);
+    for (actual, expected) in areas
+        .into_iter()
+        .zip([7.796_162_084_652_766, 7.796_162_524_684_708])
+    {
+        assert!(
+            (actual - expected).abs() < 1.0e-5,
+            "sheet area {actual} vs STEP {expected}"
+        );
+    }
 }
