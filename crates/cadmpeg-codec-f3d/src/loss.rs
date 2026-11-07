@@ -293,6 +293,16 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
+    /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
+    FeatureExtrudeProfileFaceOrderAssumed,
+    /// An Extrude face profile's end-cap search stopped at a local cap.
+    FeatureExtrudeProfileFaceSearchCapped,
+    /// An Extrude face profile takes the preceding faces that its transition's end caps cover.
+    FeatureExtrudeProfileCapFacesInferred,
+    /// An Extrude face profile takes the faces that its transition deletes on the plane of its resolved faces.
+    FeatureExtrudeProfileDeletedFacesInferred,
+    /// An Extrude face profile stays native because its end caps or deleted faces contradict a face set.
+    FeatureExtrudeProfileFaceSetDisputed,
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
@@ -632,6 +642,11 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeProfileFaceOrderAssumed,
+        Self::FeatureExtrudeProfileFaceSearchCapped,
+        Self::FeatureExtrudeProfileCapFacesInferred,
+        Self::FeatureExtrudeProfileDeletedFacesInferred,
+        Self::FeatureExtrudeProfileFaceSetDisputed,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
@@ -875,6 +890,21 @@ impl F3dLossCode {
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeProfileFaceOrderAssumed => {
+                "feature.extrude-profile-face-order-assumed"
+            }
+            Self::FeatureExtrudeProfileFaceSearchCapped => {
+                "feature.extrude-profile-face-search-capped"
+            }
+            Self::FeatureExtrudeProfileCapFacesInferred => {
+                "feature.extrude-profile-cap-faces-inferred"
+            }
+            Self::FeatureExtrudeProfileDeletedFacesInferred => {
+                "feature.extrude-profile-deleted-faces-inferred"
+            }
+            Self::FeatureExtrudeProfileFaceSetDisputed => {
+                "feature.extrude-profile-face-set-disputed"
+            }
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
@@ -1141,6 +1171,11 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileFaceOrderAssumed
+            | Self::FeatureExtrudeProfileFaceSearchCapped
+            | Self::FeatureExtrudeProfileCapFacesInferred
+            | Self::FeatureExtrudeProfileDeletedFacesInferred
+            | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -1335,6 +1370,11 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileFaceOrderAssumed
+            | Self::FeatureExtrudeProfileFaceSearchCapped
+            | Self::FeatureExtrudeProfileCapFacesInferred
+            | Self::FeatureExtrudeProfileDeletedFacesInferred
+            | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -1617,6 +1657,11 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-profile-face-order-assumed",
+                "feature.extrude-profile-face-search-capped",
+                "feature.extrude-profile-cap-faces-inferred",
+                "feature.extrude-profile-deleted-faces-inferred",
+                "feature.extrude-profile-face-set-disputed",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",
