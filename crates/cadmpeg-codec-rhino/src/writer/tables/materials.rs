@@ -25,7 +25,12 @@ fn own_material<'a>(
         .find(|record| record.id() == id)
 }
 
-fn scalar(appearance: &Appearance, name: &str, default: f64) -> f64 {
+fn scalar(
+    appearance: &Appearance,
+    fields: Option<&Map<String, Value>>,
+    name: &str,
+    default: f64,
+) -> f64 {
     appearance
         .properties
         .iter()
@@ -38,6 +43,11 @@ fn scalar(appearance: &Appearance, name: &str, default: f64) -> f64 {
             } else {
                 None
             }
+        })
+        .or_else(|| {
+            fields
+                .and_then(|fields| fields.get(name))
+                .and_then(Value::as_f64)
         })
         .unwrap_or(default)
 }
@@ -156,7 +166,7 @@ fn encode_material(
                             .and_then(Value::as_f64)
                             .unwrap_or(default)
                     },
-                    |appearance| scalar(appearance, name, default),
+                    |appearance| scalar(appearance, fields, name, default),
                 )
                 .to_le_bytes(),
         );
@@ -187,7 +197,7 @@ fn encode_material(
                             .and_then(Value::as_f64)
                             .unwrap_or(default)
                     },
-                    |appearance| scalar(appearance, name, default),
+                    |appearance| scalar(appearance, fields, name, default),
                 )
                 .to_le_bytes(),
         );
