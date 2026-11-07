@@ -570,6 +570,18 @@ travel.
 
 **Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record. The native `sketch_geometry_groups` record keeps the member run in `members` and the owning sketch reference in `sketch_reference`. A member reference that names a record without a decoded backlink to the group assigns no owner, and the decoder emits `sketch.geometry-group-member-unbacklinked`.
 
+### DR-308. Canvas flag byte before the second boundary
+
+**Question.** What does the flag byte before the second boundary segment of a Canvas geometry record select, and does a zero value change the image placement or display?
+
+**Known.** `f3d.md` §3.1 "Canvas geometry has eight fixed prefix layouts." gives the byte position in each layout. The byte is zero in the legacy layout and zero or one in the other layouts. A modern Canvas with a zero byte stores both boundary segments, the plane reference, and the payload frame at the same offsets as a modern Canvas with a one byte.
+
+**Need.** Controlled saves of one Canvas that toggle each Canvas display and selection option, compared byte for byte, to find the option that sets this byte.
+
+**Conflict.** None.
+
+**Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences

@@ -456,6 +456,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             history_only_body_bindings: 0,
             incomplete_features: 6,
             native_reference_images: 0,
+            assumed_reference_image_flags: 0,
             native_decals: 0,
             unprojected_feature_scopes: 1,
             unprojected_parameters: 1,

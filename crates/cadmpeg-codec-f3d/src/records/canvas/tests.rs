@@ -21,6 +21,40 @@ fn canvas_prologue_reconstructs_both_flags_and_fixed_zero_bytes() {
 }
 
 #[test]
+fn canvas_expanded_prologue_reconstructs_its_null_reference_and_flags() {
+    use crate::records::canvas::geometry_layout::DesignCanvasGeometryLayout;
+    use crate::records::canvas::DesignCanvasPrologue;
+    for layout in [
+        DesignCanvasGeometryLayout::Expanded,
+        DesignCanvasGeometryLayout::ExpandedPlaneless,
+    ] {
+        for first_flag in [0, 1] {
+            for visible in [0, 1] {
+                let mut bytes = [0; 19];
+                bytes[9] = 1;
+                bytes[14] = first_flag;
+                bytes[18] = visible;
+                let prologue =
+                    DesignCanvasPrologue::from_layout(layout, &bytes).expect("expanded prologue");
+                assert_eq!(prologue.bytes(), bytes);
+                assert_eq!(prologue.visible(), visible != 0);
+            }
+        }
+        for offset in 0..19 {
+            let mut bytes = [0; 19];
+            bytes[9] = 1;
+            bytes[offset] = if matches!(offset, 14 | 18) {
+                2
+            } else {
+                1 + bytes[offset]
+            };
+            assert!(DesignCanvasPrologue::from_layout(layout, &bytes).is_err());
+        }
+        assert!(DesignCanvasPrologue::from_layout(layout, &[0; 15]).is_err());
+    }
+}
+
+#[test]
 fn canvas_geometry_prologue_decodes_visibility_in_both_forms() {
     use crate::records::canvas::DesignCanvasPrologue;
     let mut expanded = [0; 15];
@@ -123,7 +157,7 @@ fn canvas_wire_fixture() -> serde_json::Value {
         "paired_geometry_byte_offset": 329, "paired_component_reference_offset": 349,
         "boundary_segments": [[{"u":-2.0,"v":-1.0},{"u":3.0,"v":-1.0}],[{"u":-2.0,"v":4.0},{"u":3.0,"v":4.0}]],
         "boundary_coordinate_offsets": [126,134,142,150,281,289,297,305],
-        "second_boundary_present_offset": 280, "plane_entity_suffix": 200,
+        "second_boundary_flag": true, "second_boundary_flag_offset": 280, "plane_entity_suffix": 200,
         "plane_reference_offset": 159, "component_entity_suffix": 201,
         "component_reference_offset": 258, "asset_class_tag": "258", "asset_record_index": 102,
         "asset_reference_offset": 270, "asset_byte_offset": 359, "asset_name": "image.png",
@@ -250,7 +284,7 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         "geometry_frame_length",
         "paired_geometry_byte_offset",
         "paired_component_reference_offset",
-        "second_boundary_present_offset",
+        "second_boundary_flag_offset",
         "plane_reference_offset",
         "component_reference_offset",
         "asset_reference_offset",
@@ -280,6 +314,18 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
             .to_string();
         assert!(error.contains(field));
     }
+    let mut planeless = base.clone();
+    planeless["plane_entity_suffix"] = serde_json::Value::Null;
+    let error = serde_json::from_value::<crate::records::canvas::DesignCanvasImage>(planeless)
+        .expect_err("modern Canvas without a plane")
+        .to_string();
+    assert!(error.contains("plane_entity_suffix"));
+    let mut cleared = base.clone();
+    cleared["second_boundary_flag"] = serde_json::json!(false);
+    let image: crate::records::canvas::DesignCanvasImage =
+        serde_json::from_value(cleared).expect("modern Canvas with a cleared flag");
+    assert!(image.geometry().flag_assumed());
+    assert!(!canvas_image_fixture().geometry().flag_assumed());
     let mut repeated_record = base.clone();
     repeated_record["asset_record_index"] = serde_json::json!(101);
     let error =

@@ -5579,8 +5579,8 @@ pub(crate) mod canvas_geometry_prefix {
     pub(crate) const COMPONENT_REFERENCE: usize = 157;
     /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 169;
-    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
-    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 180;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 180;
     /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
     pub(crate) const SECOND_BOUNDARY: usize = 181;
     /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
@@ -5947,8 +5947,8 @@ pub(crate) mod canvas_geometry_legacy_prefix {
     pub(crate) const COMPONENT_REFERENCE: usize = 155;
     /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 166;
-    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
-    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 177;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 177;
     /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
     pub(crate) const SECOND_BOUNDARY: usize = 178;
     /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
@@ -5973,8 +5973,8 @@ pub(crate) mod canvas_geometry_transitional_prefix {
     pub(crate) const COMPONENT_REFERENCE: usize = 156;
     /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 168;
-    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
-    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 179;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 179;
     /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
     pub(crate) const SECOND_BOUNDARY: usize = 180;
     /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
@@ -5999,8 +5999,8 @@ pub(crate) mod canvas_geometry_extra12_prefix {
     pub(crate) const COMPONENT_REFERENCE: usize = 169;
     /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 181;
-    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
-    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 192;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 192;
     /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
     pub(crate) const SECOND_BOUNDARY: usize = 193;
     /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
@@ -6025,8 +6025,8 @@ pub(crate) mod canvas_geometry_typed_legacy_prefix {
     pub(crate) const COMPONENT_REFERENCE: usize = 235;
     /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 286;
-    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
-    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 337;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 337;
     /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
     pub(crate) const SECOND_BOUNDARY: usize = 338;
     /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
@@ -6051,12 +6051,64 @@ pub(crate) mod canvas_geometry_typed_transitional_prefix {
     pub(crate) const COMPONENT_REFERENCE: usize = 236;
     /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 288;
-    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
-    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 339;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 339;
     /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
     pub(crate) const SECOND_BOUNDARY: usize = 340;
     /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 372;
+}
+
+/// Byte offsets for the `canvas_geometry_expanded_prefix` record.
+///
+/// Spec §3.1. Record length 221 B.
+pub(crate) mod canvas_geometry_expanded_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 221;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 30;
+    /// Offset of `plane_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 62;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 73;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 150;
+    /// Offset of `component_reference` (`bytes[12]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 161;
+    /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 173;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 184;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 185;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 217;
+}
+
+/// Byte offsets for the `canvas_geometry_planeless_prefix` record.
+///
+/// Spec §3.1. Record length 211 B.
+pub(crate) mod canvas_geometry_planeless_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 211;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 30;
+    /// Offset of `plane_reference` (`u8`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 62;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 63;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 140;
+    /// Offset of `component_reference` (`bytes[12]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 151;
+    /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 163;
+    /// Offset of `second_boundary_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_FLAG: usize = 174;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 175;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 207;
 }
 
 /// Byte offsets for the `canvas_scope_typed_tail` record.

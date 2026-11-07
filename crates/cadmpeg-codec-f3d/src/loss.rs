@@ -166,6 +166,7 @@ pub(crate) enum F3dLossCode {
     HistoryOnlyBodyOmitted,
     /// Reference-image timeline objects retain native Canvas records.
     ReferenceImageNativeRetained,
+    ReferenceImageFlagAssumed,
     /// Decal timeline objects retain native image and mapping records.
     DecalNativeRetained,
     /// Source parametric edge references marked lost have no independent proof.
@@ -564,6 +565,7 @@ impl F3dLossCode {
         Self::DesignBodyBindingUnresolved,
         Self::HistoryOnlyBodyOmitted,
         Self::ReferenceImageNativeRetained,
+        Self::ReferenceImageFlagAssumed,
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
@@ -804,6 +806,7 @@ impl F3dLossCode {
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
             Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
+            Self::ReferenceImageFlagAssumed => "appearance.reference-image-flag-assumed",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
@@ -998,7 +1001,8 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveUnprofiledSelected
-            | Self::ThreadLiveFaceUnproven => Severity::Info,
+            | Self::ThreadLiveFaceUnproven
+            | Self::ReferenceImageFlagAssumed => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -1378,6 +1382,7 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ReferenceImageNativeRetained
+            | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
             | Self::MeshAttributeNotTransferred
@@ -1535,6 +1540,7 @@ mod tests {
                 "design.body-binding-unresolved",
                 "design.history-only-body-omitted",
                 "appearance.reference-image-native",
+                "appearance.reference-image-flag-assumed",
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
