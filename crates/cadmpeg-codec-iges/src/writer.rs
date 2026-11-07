@@ -7476,9 +7476,7 @@ impl CurveEntityEmitter<'_> {
             )));
         }
         if sense == Sense::Forward {
-            if let Some(index) =
-                self.append_uniform_circle_offset(curve_id, geometry, span, status)?
-            {
+            if let Some(index) = self.append_offset(curve_id, geometry, span, status)? {
                 self.active.remove(curve_id);
                 self.entities[index]
                     .source_targets

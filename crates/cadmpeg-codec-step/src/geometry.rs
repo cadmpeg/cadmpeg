@@ -157,6 +157,10 @@ fn similarity_transform(transform: &Transform) -> Option<SimilarityColumns> {
         .then_some(SimilarityColumns { directions, scale })
 }
 
+pub(crate) fn is_similarity_transform(transform: &Transform) -> bool {
+    similarity_transform(transform).is_some()
+}
+
 /// Emit or reuse a `CARTESIAN_POINT`.
 ///
 /// `name` is the owning record's name, or empty for an unnamed carrier.
