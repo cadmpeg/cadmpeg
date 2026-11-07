@@ -3594,6 +3594,22 @@ impl<'a> Builder<'a> {
                         .entry(region.body.as_str().to_owned())
                         .or_insert(item);
                     wire_written = true;
+                    let shells = region
+                        .shells
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>();
+                    let faces = region
+                        .shells
+                        .iter()
+                        .filter_map(|id| self.shells.get(id.as_str()))
+                        .flat_map(|shell| shell.faces())
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>();
+                    self.loss(
+                        StepLossCode::MixedRegionSplit,
+                        format!("body {} and region {} were split into surface and wire STEP items; shells: {}; faces: {}", region.body, region.id, shells.join(", "), faces.join(", ")),
+                    );
                 } else {
                     self.empty_wire_regions
                         .insert(region.id.as_str().to_owned());
