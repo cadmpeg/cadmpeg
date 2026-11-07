@@ -373,6 +373,9 @@ fn forward_dependency_keeps_source_declaration_order() {
 
 #[test]
 fn datum_placement_keeps_native_property_metadata() {
+    use cadmpeg_ir::features::{FeatureDatumPlaneFrame, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="PartDesign::Plane" name="Plane" id="1"/></Objects><ObjectData Count="1"><Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement" status="128"><PropertyPlacement Px="1.0" Py="2.0" Pz="3.0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object></ObjectData></Document>"#;
     let bytes = crate::test_support::test_archive::archive(document);
     let input = FcstdCodec
@@ -400,8 +403,6 @@ fn datum_placement_keeps_native_property_metadata() {
         serde_json::to_value(placement(input.ir())).unwrap(),
         serde_json::to_value(placement(output.ir())).unwrap()
     );
-    use cadmpeg_ir::features::{FeatureDatumPlaneFrame, FeatureDefinition, FeatureOperation};
-    use cadmpeg_ir::math::{Point3, Vector3};
     let frame = FeatureDatumPlaneFrame::new(
         Point3::new(9.0, 2.0, 3.0),
         Vector3::new(0.0, 0.0, 1.0),
