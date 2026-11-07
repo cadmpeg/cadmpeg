@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Author parametric surface-curve carriers and their two-dimensional splines.
 
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
     Curve, CurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceCurveFamily,
@@ -132,7 +132,7 @@ pub(super) fn point_at(
     ir: &CadIr,
     curve: &Curve,
     parameter: f64,
-) -> Result<Option<cadmpeg_ir::math::Point3>, CodecError> {
+) -> Result<Option<cadmpeg_ir::math::Point3>, ResourceLimit> {
     let Some((surface, _, _)) = supported(ir, curve) else {
         return Ok(None);
     };
