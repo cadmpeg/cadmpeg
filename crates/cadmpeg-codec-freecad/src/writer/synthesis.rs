@@ -946,10 +946,8 @@ pub(super) fn write(
                 && !entries.contains_key(file))
             .then(|| (file.clone(), property))
         });
-        let file = original_file
-            .as_ref()
-            .map(|(file, _)| file.clone())
-            .unwrap_or_else(|| {
+        let file = original_file.as_ref().map_or_else(
+            || {
                 let mut file = format!("{name}.brp");
                 let mut suffix = 1;
                 while entries.contains_key(&file) || entry_names.contains(&file) {
@@ -957,7 +955,9 @@ pub(super) fn write(
                     suffix += 1;
                 }
                 file
-            });
+            },
+            |(file, _)| file.clone(),
+        );
         entries.insert(file.clone(), serialized.bytes);
         for body in &bodies {
             if !serialized
