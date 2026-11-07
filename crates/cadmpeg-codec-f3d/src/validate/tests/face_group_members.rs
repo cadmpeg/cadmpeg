@@ -71,7 +71,12 @@ fn retained_sketch_profiles_resolve_members_in_their_own_scope() {
     let (archive, mut scope, headers, entities) =
         crate::test_support::multiple_profiles::fixture(2);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
         let losses = crate::design::decode::operands::bind_sketch_profiles(
+            &ctx,
+            &mut parts,
             scan,
             std::slice::from_mut(&mut scope),
             &headers,
