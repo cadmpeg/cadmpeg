@@ -688,7 +688,7 @@ struct Frame<'a> {
     count: usize,
 }
 
-impl<'a> Frame<'a> {
+impl Frame<'_> {
     fn admitted_prefix(&self, count: usize) -> Option<(&Self, usize)> {
         if count == 0
             || count > self.count

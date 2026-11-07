@@ -119,7 +119,7 @@ fn directed_range(
         lifted[at] = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.get().u, uv.get().v),
         )?)?
-        .map(|p| p.get());
+        .map(cadmpeg_ir::features::FinitePoint3::get);
     }
     let [Some(first), Some(second)] = lifted else {
         return Ok(None);

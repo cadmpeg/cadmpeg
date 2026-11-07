@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
-pub(in crate::families) mod weighted_edges;
 pub(in crate::families) mod owner_pcurves;
+pub(in crate::families) mod weighted_edges;
 mod weighted_plane;
 
 use cadmpeg_core::convert::f64_from_index;

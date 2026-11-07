@@ -11,6 +11,7 @@ use crate::families::consolidated::records::class25::{
 use crate::wire::bytes::{allocation_reference, AllocationReference, AllocationReferenceEncoding};
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord};
 
+#[derive(Clone, Copy)]
 pub(super) struct Selection {
     pub(super) representations: [usize; 2],
     pub(super) selected: usize,

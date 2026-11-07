@@ -363,10 +363,12 @@ fn finish_decode(
         );
     }
     if tolerance_transfer.unresolved_field_keys != 0 {
-        report.losses.push(CatiaLossCode::AttributesPmiFieldKeyUnresolved.note(format!(
-            "Retained unbound source field keys for {} geometric tolerances",
-            tolerance_transfer.unresolved_field_keys
-        )));
+        report
+            .losses
+            .push(CatiaLossCode::AttributesPmiFieldKeyUnresolved.note(format!(
+                "Retained unbound source field keys for {} geometric tolerances",
+                tolerance_transfer.unresolved_field_keys
+            )));
     }
     if tolerance_transfer.unresolved_composite_links != 0 {
         report.losses.push(
