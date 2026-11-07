@@ -218,6 +218,13 @@ pub(in crate::writer) fn bound_appearance<'a>(
 }
 
 pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
+    native_base_complete(record)
+        && record
+            .fields()
+            .is_ok_and(|fields| textures_complete(&fields))
+}
+
+fn native_base_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
     let Ok(fields) = record.fields() else {
         return false;
     };
@@ -279,7 +286,6 @@ pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> b
                     .and_then(crate::presentation::parse_uuid_text)
                     .is_some_and(|uuid| !uuid.is_nil())
         })
-        && textures_complete(&fields)
         && fields.get("physically_based").is_none_or(Value::is_null)
 }
 

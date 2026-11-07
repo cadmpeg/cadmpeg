@@ -1493,6 +1493,26 @@ fn legacy_rdk_material_userdata_transfers_uuid_from_unterminated_xml() {
 }
 
 #[test]
+fn legacy_rdk_xml_recovers_material_after_damaged_sibling() {
+    let xml = r#"<xml><render-content-manager-data><broken a="1" a="2"/><material instance-id="AABBCCDD-EEFF-0011-2233-445566778899"/></render-content-manager-data></xml>"#;
+    let bytes = legacy_rdk_payload(xml, false, &[]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let damage = super::damaged_rdk_xml(&ctx, &bytes, 0..bytes.len()).expect("scan XML");
+    assert_eq!(damage.len(), 1);
+    assert_eq!(damage[0].name, "broken");
+    assert_eq!(&bytes[damage[0].range.clone()], br#"<broken a="1" a="2"/>"#);
+    let instance = parse_legacy_rdk_material_instance_id(&ctx, &bytes, 0..bytes.len())
+        .expect("recover material");
+    assert_eq!(
+        instance,
+        Some(Uuid::from_canonical([
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99,
+        ]))
+    );
+}
+
+#[test]
 fn legacy_rdk_material_userdata_ignores_terminated_callback_xml() {
     let xml = "<xml><render-content-manager-data><material instance-id=\"AABBCCDD-EEFF-0011-2233-445566778899\" /></render-content-manager-data></xml>";
     let bytes = legacy_rdk_payload(xml, true, &[]);
