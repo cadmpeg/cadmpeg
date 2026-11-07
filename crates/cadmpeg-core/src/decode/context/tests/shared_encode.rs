@@ -302,6 +302,32 @@ fn generated_root_charges_the_shared_input_limit() {
 }
 
 #[test]
+fn sibling_keeps_the_admitted_root_and_account_at_a_new_depth() {
+    use crate::decode::DecodeDepth;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_input_bytes = 3;
+    let origin = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&origin).expect("encode session");
+    let (root, view) = DecodeContext::for_encode_session_root(&arena, &session, b"abc")
+        .expect("source fits exactly");
+    let sibling_arena = DecodeArena::new();
+    let sibling = root
+        .encode_sibling(&sibling_arena, DecodeDepth::Geometry)
+        .expect("sibling");
+    assert_eq!(root.depth(), DecodeDepth::Full);
+    assert_eq!(sibling.depth(), DecodeDepth::Geometry);
+    assert_eq!(sibling.source_digest(), root.source_digest());
+    assert_eq!(view.window(), b"abc");
+    let Err(error) = DecodeContext::for_encode_session_root(&arena, &session, b"x") else {
+        panic!("the admitted root consumes the input budget");
+    };
+    assert_eq!(error.dimension, ResourceDimension::InputBytes);
+    assert_eq!((error.limit, error.used, error.additional), (3, 3, 1));
+}
+
+#[test]
 fn ordinary_independent_decodes_keep_separate_caller_accounts() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

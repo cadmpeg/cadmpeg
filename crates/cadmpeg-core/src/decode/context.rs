@@ -115,6 +115,19 @@ impl<'a> DecodeContext<'a> {
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
 
+    /// Shares an admitted root and account at another decode depth.
+    pub fn encode_sibling<'b>(
+        &self,
+        arena: &'b DecodeArena,
+        depth: DecodeDepth,
+    ) -> Result<DecodeContext<'b>, ResourceLimit> {
+        let session = crate::encode::EncodeSession::from_context(self)?;
+        let mut sibling = DecodeContext::for_encode_session(arena, &session)?;
+        sibling.depth = depth;
+        sibling.source_digest.set(self.source_digest.get());
+        Ok(sibling)
+    }
+
     /// Whether this context owns temporary projections for an encode operation.
     pub const fn is_encoding(&self) -> bool {
         self.encoding
