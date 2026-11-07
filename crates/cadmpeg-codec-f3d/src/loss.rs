@@ -320,6 +320,10 @@ pub(crate) enum F3dLossCode {
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `SurfaceExtend` scope projects with an unresolved extension method.
+    FeatureSurfaceExtendMethodUnresolved,
+    /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
+    FeatureSurfaceExtendDistanceNonpositive,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -640,6 +644,8 @@ impl F3dLossCode {
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureSurfaceExtendMethodUnresolved,
+        Self::FeatureSurfaceExtendDistanceNonpositive,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -882,6 +888,12 @@ impl F3dLossCode {
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureSurfaceExtendMethodUnresolved => {
+                "feature.surface-extend-method-unresolved"
+            }
+            Self::FeatureSurfaceExtendDistanceNonpositive => {
+                "feature.surface-extend-distance-nonpositive"
+            }
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -1141,6 +1153,8 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1332,6 +1346,8 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1611,6 +1627,8 @@ mod tests {
                 "feature.revolve-layout-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.surface-extend-method-unresolved",
+                "feature.surface-extend-distance-nonpositive",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",

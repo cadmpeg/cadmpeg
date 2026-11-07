@@ -21,8 +21,7 @@ use crate::records::feature::fixed_parameters::{
 use crate::records::feature::primitives::DesignSolidPrimitive;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::{
-    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport,
+    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
@@ -1331,8 +1330,6 @@ pub(super) fn fixed_kind_tail_operations(
             distance: crate::test_support::real(0.04),
             distance_offset: u64_from_index(extend_distance_at + 40),
             distance_record_index: extend_distance_record_index,
-            method: DesignSurfaceExtendMethod::Tangent,
-            method_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 2),
             boundary_record_index: extend_boundary_record_index,
             boundary_reference_record_index: 900,
             boundary_reference_offset: u64_from_index(
@@ -1370,7 +1367,7 @@ pub(super) fn fixed_kind_tail_operations(
         }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
-                method: cadmpeg_ir::features::SurfaceExtension::Linear,
+                method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
             }),) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]
