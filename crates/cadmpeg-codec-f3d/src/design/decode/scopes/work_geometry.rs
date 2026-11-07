@@ -3,6 +3,10 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use super::point_data::exact_point_data_construction;
+use super::point_direction::{
+    point_direction_carrier_at, PointDirectionCarrier, POINT_DIRECTION_TYPE_GUID,
+};
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::{f64s_at, finite_reals_at};
@@ -27,6 +31,13 @@ use crate::records::feature::work_geometry::DesignWorkAxisConstruction;
 use crate::records::feature::work_geometry::DesignWorkAxisSource;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
+use std::collections::HashMap;
+
+const WORK_AXIS_CARRIER_VALUE_COUNT: u32 = 8;
+
+const WORK_AXIS_TWO_POINT_REFERENCE_TYPE: u32 = 12;
+
+const EPS_WORK_AXIS_ENDPOINT_CM: f64 = 1.0e-9;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ScopePlacementFrame {
@@ -243,12 +254,128 @@ pub(super) fn exact_work_axis_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignWorkAxisConstruction> {
     if scope.kind() != scope::DesignFeatureKind::WorkAxis {
         return None;
     }
     exact_two_point_work_axis_construction(bytes, records, scope)
         .or_else(|| exact_direct_work_axis_construction(bytes, records, scope))
+        .or_else(|| {
+            exact_point_direction_work_axis_construction(bytes, records, scope, stream_types)
+        })
+}
+
+fn exact_point_direction_work_axis_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignWorkAxisConstruction> {
+    let mut candidate = None;
+    for record_index in scope.reference_members().values() {
+        let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
+            continue;
+        };
+        if *type_guid != POINT_DIRECTION_TYPE_GUID || !matches!(*version, 1 | 4) {
+            continue;
+        }
+        let mut frames = records.frames(*record_index);
+        let (Some((start, paired)), None) = (frames.next(), frames.next()) else {
+            return None;
+        };
+        let carrier = point_direction_carrier_at(bytes, start, paired, *record_index, *version)?;
+        let construction = work_axis_from_point_direction_carrier(
+            bytes,
+            records,
+            *record_index,
+            &carrier,
+            stream_types,
+        )?;
+        if candidate
+            .as_ref()
+            .is_some_and(|previous| previous != &construction)
+        {
+            return None;
+        }
+        candidate = Some(construction);
+    }
+    candidate
+}
+
+fn work_axis_from_point_direction_carrier(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    carrier_record_index: u32,
+    carrier: &PointDirectionCarrier,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignWorkAxisConstruction> {
+    if carrier.bounding_box_index != WORK_AXIS_CARRIER_VALUE_COUNT
+        || carrier
+            .point_parameters
+            .iter()
+            .any(|value| value.get() != 0.0)
+    {
+        return None;
+    }
+    let origin = carrier.position;
+    let displacement = carrier.direction;
+    let displacement_length = displacement[0]
+        .get()
+        .hypot(displacement[1].get())
+        .hypot(displacement[2].get());
+    if displacement_length <= f64::EPSILON {
+        return None;
+    }
+    let source = if carrier.reference_type == WORK_AXIS_TWO_POINT_REFERENCE_TYPE {
+        let [first, second] = carrier.input_records.as_slice() else {
+            return None;
+        };
+        let endpoint: [f64; 3] =
+            std::array::from_fn(|axis| origin[axis].get() + displacement[axis].get());
+        let mut point_offsets = [0; 2];
+        for (ordinal, (input, expected)) in [
+            (first.value, origin.map(FiniteReal::get)),
+            (second.value, endpoint),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let point = exact_point_data_construction(bytes, records, [&input], stream_types)?;
+            if point
+                .position
+                .iter()
+                .zip(expected)
+                .any(|(actual, expected)| {
+                    (actual.get() - expected).abs() > EPS_WORK_AXIS_ENDPOINT_CM
+                })
+            {
+                return None;
+            }
+            point_offsets[ordinal] = point.position_offset;
+        }
+        DesignWorkAxisSource::TwoPoint {
+            point_record_indices: [first.value, second.value],
+            point_offsets,
+        }
+    } else {
+        DesignWorkAxisSource::PointDirection {
+            carrier_record_index,
+            reference_type: carrier.reference_type,
+            input_record_indices: carrier
+                .input_records
+                .iter()
+                .map(|input| input.value)
+                .collect(),
+        }
+    };
+    Some(DesignWorkAxisConstruction {
+        origin,
+        displacement,
+        origin_offset: u64::try_from(carrier.position_at).ok()?,
+        displacement_offset: u64::try_from(carrier.direction_at).ok()?,
+        source: Some(source),
+    })
 }
 
 fn exact_two_point_work_axis_construction(

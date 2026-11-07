@@ -449,6 +449,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
+            &std::collections::HashMap::new(),
         )
         .expect("direct WorkAxis carrier");
         assert_eq!(construction.origin_offset, 25);

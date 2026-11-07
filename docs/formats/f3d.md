@@ -1781,6 +1781,8 @@ A three-point `WorkPlane` scope has five ordered references: the solved placemen
 
 A two-point `WorkAxis` scope has five ordered references. Reference zero is a 232-byte solved-axis carrier. After its indexed header it stores ten zero bytes, u32 value count 8, and eight f64 values at offset 25: a three-coordinate origin in centimetres, a three-component displacement to the second point in centimetres, and two zeros. A u32 reference count of two at offset 118 is followed by marked references to scope references two and four. Those records are 197-byte point carriers; each stores 31 zero bytes after its indexed header and a three-coordinate point at offset 42. The first point equals the solved-axis origin and the second equals the origin plus the displacement. The displacement is nonzero and defines the axis direction.
 
+A `WorkAxis` scope can reference a point-and-direction carrier with type GUID `F2A7590D-6654-4674-B393-A2AEF4FEC48A` and version 1 or 4. Its base level has the fields of the Hole carrier above; version 1 omits the tangent point data prefix and tangent point data. For `refType` 12, `boundingboxIndex` is 8, the point parameters are zero, `position` is the axis origin in centimetres, and `direction` is a nonzero axis displacement. The two inputs name point-data records in endpoint order. The first point equals the origin and the second equals the origin plus the displacement.
+
 Two two-reference `WorkAxis` scope forms use direct axis carriers. Their scope frames are:
 
 | Primary class | Paired class | Frame length | Reference-count offset | Member-reference offsets | Current-state offset | Kind offset | Feature-ordinal offset |

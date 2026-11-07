@@ -16,6 +16,7 @@ rewrite_native_record!(DesignWorkAxisConstruction, []; {origin, displacement, or
 rewrite_native_enum!(DesignWorkAxisSource, []; {
     TwoPoint {point_record_indices, point_offsets},
     DirectCarrier {carrier_record_index, support_record_index},
+    PointDirection {carrier_record_index, reference_type, input_record_indices},
 });
 rewrite_native_record!(DesignWorkPlaneConstruction, []; {placement_record_index, inputs});
 rewrite_native_record!(DesignWorkPointConstruction, []; {point_record_index, point_record_byte_offset, position, position_offset, rule, reference_type_offset});
