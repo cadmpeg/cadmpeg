@@ -130,6 +130,16 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "assembly.occurrences-unresolved",
+            "kind": "assembly_placements_not_transferred",
+            "namespace": "nx",
+            "scope": "namespaced"
+          },
+          "message": "The file retains 0 assembly use(s) and 1 placement frame(s), but their neutral occurrence graph is unresolved.",
+          "severity": "blocking"
         }
       ],
       "notes": [

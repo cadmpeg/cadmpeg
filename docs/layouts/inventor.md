@@ -9,6 +9,77 @@ Table source: `docs/layouts/inventor.toml`.
 
 Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein stream envelope, UFRxDoc, and kernel-carrier envelope. The Protein page format is tabulated in `docs/layouts/protein.toml`.
 
+## `rse_a5c24506_prefix`
+
+Spec §4 · layout: byte offsets · size: 54 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `word_a` | `u32` | little | spec | word_a u32 = 5 · value `5` |
+| 10 | 4 | `word_b` | `u32` | little | spec | word_b u32 = 0x30000002 · value `805306370` |
+| 14 | 4 | `word_c` | `u32` | little | spec | word_c u32 = 0 · value `0` |
+| 18 | 20 | `zero_values` | `u32[5]` | little | spec | zero_values u32[5] = [0, 0, 0, 0, 0] |
+| 38 | 4 | `word_d` | `u32` | little | spec | word_d u32 |
+| 42 | 4 | `zero_value` | `u32` | little | spec | zero_value u32 = 0 · value `0` |
+| 46 | 2 | `list_marker` | `u16` | little | spec | list_marker u16 = 2 · value `2` |
+| 48 | 2 | `list_signature` | `u16` | little | spec | list_signature u16 = 0x3000 · value `12288` |
+| 50 | 4 | `list_count` | `u32` | little | spec | list_count u32 |
+
+## `pm_dc_751ade_label_owner_body_v25`
+
+Spec §13 · layout: byte offsets · size: 36 B
+
+Offsets start after the versioned state content header in segment major version 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | state i32 = -1 first_reference u32 · value `-1` |
+| 4 | 4 | `first_reference` | `u32` | little | spec | first_reference u32 |
+| 8 | 4 | `work_plane` | `u32` | little | spec | work_plane u32 |
+| 12 | 4 | `value` | `u32` | little | spec | work_plane u32 value u32 |
+| 16 | 20 | `references` | `u32[5]` | little | spec | references u32[5] |
+
+## `pm_dc_751ade_label_owner_body_v28`
+
+Spec §13 · layout: byte offsets · size: 44 B
+
+Offsets start after the versioned state content header in segment major version 28.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | state i32 = -1 first_reference u32 · value `-1` |
+| 4 | 4 | `first_reference` | `u32` | little | spec | first_reference u32 |
+| 8 | 4 | `work_plane` | `u32` | little | spec | work_plane u32 |
+| 12 | 4 | `value` | `u32` | little | spec | work_plane u32 value u32 |
+| 16 | 4 | `empty_list_marker` | `u32` | little | spec | empty_list_marker u32 = 0x30000002 · value `805306370` |
+| 20 | 4 | `empty_list_count` | `u32` | little | spec | empty_list_count u32 = 0 · value `0` |
+| 24 | 20 | `references` | `u32[5]` | little | spec | references u32[5] |
+
+## `pm_dc_cf2b17_state`
+
+Spec §13 · layout: byte offsets · size: 4 B
+
+Offset starts after the versioned state content header in segment major versions 25 and 28.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | `state:i32 = -1` and a sequence of u32 values · value `-1` |
+
+## `pm_dc_c6b25a_body`
+
+Spec §13 · layout: byte offsets · size: 16 B
+
+Offsets start after the versioned state content header in segment major versions 25 and 28.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | state i32 sketch u32 second_reference u32 |
+| 4 | 4 | `sketch` | `u32` | little | spec | sketch u32 |
+| 8 | 4 | `second_reference` | `u32` | little | spec | second_reference u32 |
+| 12 | 4 | `third_reference` | `u32` | little | spec | third_reference u32 |
+
 ## `pm_dc_derived_source_field`
 
 Spec §13.4 · layout: byte offsets · size: 4 B

@@ -1005,7 +1005,8 @@ fn validate_loaded(
         &native.design_body_recipe_operands,
         &native.asm_histories,
     );
-    history::bind_face_operand_history_candidates(
+    // discarded-value: the decoder reported these losses when it bound the operands.
+    let _ = history::bind_face_operand_history_candidates(
         decode,
         &mut expected_face_operands,
         &native.design_parameter_scopes,
@@ -8007,6 +8008,17 @@ fn validate_face_operands<'a>(
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X21
                                 }) && revolve_axis_recipe_kind_admitted(operand.recipe_kind)
+                            }
+                            Some(
+                                design::DesignFeatureFamily::RectangularPattern
+                                | design::DesignFeatureFamily::CircularPattern
+                                | design::DesignFeatureFamily::Mirror,
+                            ) if group.is_some_and(|group| {
+                                design::is_pattern_face_seed_group(&scope.kind(), group)
+                            }) =>
+                            {
+                                operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::CircularPattern) => {
                                 group.is_some_and(|group| {
