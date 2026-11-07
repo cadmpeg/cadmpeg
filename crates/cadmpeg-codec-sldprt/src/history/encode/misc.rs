@@ -125,13 +125,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(CosmeticThreadExtent::Through {}) => {
                     parameters.remove("D1");
                 }
-                None if existing.is_none() => {
-                    return Err(CodecError::UnsupportedContent(format!(
-                        "SLDPRT feature {} has an unresolved cosmetic-thread extent",
-                        feature.id
-                    )));
+                None => {
+                    let unresolved = parameters.get("D1").is_some_and(|value| {
+                        super::super::literals::parse_positive_dimension_length_mm(value).is_none()
+                            && super::super::literals::parse_angle_rad(value).is_none()
+                            && super::super::literals::parse_dimension_display_length(value)
+                                != Some(cadmpeg_ir::scalar::Length::ZERO)
+                    });
+                    if !unresolved {
+                        return Err(CodecError::UnsupportedContent(format!(
+                            "SLDPRT feature {} has an unresolved cosmetic-thread extent",
+                            feature.id
+                        )));
+                    }
                 }
-                None => {}
             }
             let mut properties = self.base_properties();
             if let Some(value) = face_selection_value(face) {
