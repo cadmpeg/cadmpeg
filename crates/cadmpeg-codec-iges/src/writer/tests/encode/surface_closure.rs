@@ -33,6 +33,11 @@ fn nurbs_curve_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn null_entity_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("null_entity"));
+}
+
+#[test]
 fn edited_nurbs_control_point_replaces_source_curve() {
     let decoded = IgesCodec
         .decode(
