@@ -234,6 +234,9 @@ fn encode(
         }
         _ => return Err("record has no native writer".into()),
     };
+    if arena == "primitive_solids" {
+        solids::retain_implicit_block_placement(ir, record, &mut result);
+    }
     super::numeric::retain(ir, record, &mut result);
     if let Some(definition) = definition {
         result.source_targets.push(definition.id.to_string());

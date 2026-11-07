@@ -70,9 +70,8 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
 }
 
 fn check_spatial_point_line_distance_reaches_output(
-    construction: bool,
-    point_construction: bool,
-    second_point_construction: bool,
+    [construction, point_construction, second_point_construction]: [bool; 3],
+    reference: bool,
 ) {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{DesignParameter, Dimension, ParameterId, ParameterValue};
@@ -106,9 +105,9 @@ fn check_spatial_point_line_distance_reaches_output(
         id: parameter.clone(),
         owner: Some(ir.model.features[0].id.clone()),
         ordinal: 0,
-        name: "D1".into(),
+        name: if reference { "D1@reference" } else { "D1" }.into(),
         expression: "4mm".into(),
-        driving: true,
+        driving: !reference,
         display: None,
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
@@ -228,6 +227,18 @@ fn check_spatial_point_line_distance_reaches_output(
             .unwrap(),
             native_ref: None,
         });
+    let independent = Point3::new(30.0, 40.0, 50.0);
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#independent")
+                .unwrap(),
+            ir.model.spatial_sketches[0].id.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                position: independent,
+            })
+            .unwrap(),
+        ));
     ir.model.finalize();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -248,6 +259,16 @@ fn check_spatial_point_line_distance_reaches_output(
     let output = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    assert!(output.ir().model.parameters.iter().any(|parameter| {
+        parameter.name == if reference { "D1@reference" } else { "D1" }
+            && parameter.driving != reference
+    }));
+    assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| {
+        matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
+            if floats_agree(position.get().x, independent.x)
+                && floats_agree(position.get().y, independent.y)
+                && floats_agree(position.get().z, independent.z))
+    }));
     let native = crate::test_support::native::sldprt_native(output.ir());
     let lane = native
         .feature_input_lanes
@@ -277,7 +298,12 @@ fn check_spatial_point_line_distance_reaches_output(
         let scalar = lane
             .scalars
             .iter()
-            .find(|scalar| Some(scalar.id.as_str()) == relation.parameter_scalar_ref())
+            .find(|scalar| {
+                Some(scalar.id.as_str())
+                    == relation
+                        .parameter_scalar_ref()
+                        .or_else(|| relation.display_scalar_ref())
+            })
             .unwrap();
         let name = lane
             .names
@@ -336,6 +362,12 @@ fn check_spatial_point_line_distance_reaches_output(
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
             .unwrap();
+        assert!(decoded.ir().model.spatial_sketch_entities.iter().any(|entity| {
+            matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
+                if floats_agree(position.get().x, independent.x)
+                    && floats_agree(position.get().y, independent.y)
+                    && floats_agree(position.get().z, independent.z))
+        }));
         assert_eq!(
             decoded
                 .ir()
@@ -354,23 +386,564 @@ fn check_spatial_point_line_distance_reaches_output(
 
 #[test]
 fn source_less_spatial_point_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(false, false, false);
+    check_spatial_point_line_distance_reaches_output([false, false, false], false);
 }
 
 #[test]
 fn source_less_spatial_construction_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, false, false);
+    check_spatial_point_line_distance_reaches_output([true, false, false], false);
 }
 
 #[test]
 fn source_less_spatial_construction_point_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, true, true);
+    check_spatial_point_line_distance_reaches_output([true, true, true], false);
 }
 
 #[test]
 fn source_less_spatial_mixed_point_roles_reach_output() {
-    check_spatial_point_line_distance_reaches_output(true, true, false);
-    check_spatial_point_line_distance_reaches_output(true, false, true);
+    check_spatial_point_line_distance_reaches_output([true, true, false], false);
+    check_spatial_point_line_distance_reaches_output([true, false, true], false);
+}
+
+#[test]
+fn source_less_spatial_reference_point_line_distance_reaches_output() {
+    check_spatial_point_line_distance_reaches_output([false, false, false], true);
+}
+
+#[test]
+fn source_less_partial_knit_surface_remains_an_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><KnitSurface Name="Knit" Type="Knit" id="34"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(matches!(
+        expected,
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+            faces: FaceSelection::Unresolved,
+            merge_entities: None,
+            create_solid: None,
+            gap_tolerance: None,
+        })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_partial_filled_surface_remains_an_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, SurfaceBoundary};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(
+        matches!(&expected, FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+        boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+        support_faces: FaceSelection::Unresolved, continuity, merge_result: None,
+    }) if continuity.resolved().is_none())
+    );
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_partial_body_retention_remains_an_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection};
+
+    for (tag, kind, expected_mode) in [
+        ("Feature", "Body-Delete/Keep", BodyRetentionMode::Unresolved),
+        (
+            "DeleteBody",
+            "DeleteBody",
+            BodyRetentionMode::DeleteSelected,
+        ),
+        ("KeepBody", "KeepBody", BodyRetentionMode::KeepSelected),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let xml =
+            format!(r#"<Keywords><{tag} Name="Body edit" Type="{kind}" id="20"/></Keywords>"#);
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Keywords",
+            xml.as_bytes(),
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(
+            matches!(&expected, FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+            bodies: BodySelection::Unresolved, mode,
+        }) if *mode == expected_mode)
+        );
+        ir.native = cadmpeg_ir::Native::default();
+        ir.source = None;
+        for feature in &mut ir.model.features {
+            feature.native_ref = None;
+        }
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition() == &expected));
+    }
+}
+
+#[test]
+fn source_less_feature_tree_nodes_keep_their_native_roles() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::FeatureTreeNodeRole;
+
+    for (class, role) in [
+        ("moHistoryFolder_c", FeatureTreeNodeRole::History),
+        ("moCommentsFolder_c", FeatureTreeNodeRole::Comments),
+        ("moFtrFolder_c", FeatureTreeNodeRole::FeatureFolder),
+        ("moSolidBodyFolder_c", FeatureTreeNodeRole::SolidBodies),
+        ("moSurfaceBodyFolder_c", FeatureTreeNodeRole::SurfaceBodies),
+        ("moDetailCabinet_c", FeatureTreeNodeRole::Annotations),
+        ("moDetailFolder_c", FeatureTreeNodeRole::Details),
+        ("moDocsFolder_c", FeatureTreeNodeRole::DesignBinder),
+        ("moEnvFolder_c", FeatureTreeNodeRole::LightsAndCameras),
+        ("moFavoriteFolder_c", FeatureTreeNodeRole::Favorites),
+        ("moInkMarkupFolder_c", FeatureTreeNodeRole::Markups),
+        ("moMaterialFolder_c", FeatureTreeNodeRole::Materials),
+        ("moNotesAreaFtrFolder_c", FeatureTreeNodeRole::Notes),
+        ("moSelectionSetFolder_c", FeatureTreeNodeRole::SelectionSets),
+        ("moSensorFolder_c", FeatureTreeNodeRole::Sensors),
+        ("moTableFolder_c", FeatureTreeNodeRole::Tables),
+        ("moAmbientLight_c", FeatureTreeNodeRole::AmbientLight),
+        ("moDirectionLight_c", FeatureTreeNodeRole::DirectionalLight),
+        ("moPointLight_c", FeatureTreeNodeRole::PointLight),
+        ("moSpotLight_c", FeatureTreeNodeRole::SpotLight),
+        ("moOriginProfileFeature_c", FeatureTreeNodeRole::ModelOrigin),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="Folder" Type="Folder" id="42"/></Keywords>"#,
+        ));
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+                class, "Folder", 42,
+            )]),
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(
+            matches!(&expected, FeatureDefinition::Operation(FeatureOperation::TreeNode { role: actual, .. }) if *actual == role),
+            "{class}: {expected:?}"
+        );
+        ir.native = cadmpeg_ir::Native::default();
+        ir.source = None;
+        for feature in &mut ir.model.features {
+            feature.native_ref = None;
+        }
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            output
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.evaluation.definition() == &expected),
+            "{class}"
+        );
+    }
+}
+
+#[test]
+fn source_less_cosmetic_thread_keeps_unresolved_face_and_through_extent() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{CosmeticThreadExtent, FaceSelection};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"/></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(matches!(
+        &expected,
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            face: FaceSelection::Unresolved,
+            diameter: None,
+            extent: Some(CosmeticThreadExtent::Through {}),
+            ..
+        })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_cosmetic_thread_keeps_blind_length_and_diameter() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::CosmeticThreadExtent;
+    const EPS_THREAD_LENGTH_MM: f64 = 1e-9;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"><Dimension Name="D1">4mm</Dimension><Dimension Name="D2">&lt;MOD-DIAM&gt;6</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            diameter: Some(_),
+            extent: Some(CosmeticThreadExtent::Blind { .. }),
+            ..
+        })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| {
+        match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                diameter: Some(diameter),
+                extent: Some(CosmeticThreadExtent::Blind { length }),
+                ..
+            }) => {
+                output
+                    .ir()
+                    .dimension_value(diameter)
+                    .is_some_and(|value| (value.get() - 6.0).abs() < EPS_THREAD_LENGTH_MM)
+                    && output
+                        .ir()
+                        .dimension_value(length)
+                        .is_some_and(|value| (value.get() - 4.0).abs() < EPS_THREAD_LENGTH_MM)
+            }
+            _ => false,
+        }
+    }));
+}
+
+#[test]
+fn source_less_cosmetic_thread_keeps_unresolved_extent() {
+    use cadmpeg_ir::codec::write::Encoder;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"><Dimension Name="D1">-4mm</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { extent: None, .. })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { extent: None, .. })
+    )));
+    assert!(output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "D1"
+            && parameter.expression == cadmpeg_ir::features::Expression::text("-4mm")));
+}
+
+#[test]
+fn cosmetic_thread_reports_unsupported_fields_and_keeps_the_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::Dimension;
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"/></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            standard,
+            designation,
+            pitch,
+            modeled,
+            ..
+        }) = definition
+        else {
+            panic!("cosmetic thread")
+        };
+        *standard = cadmpeg_core::text::NonBlankString::new("metric");
+        *designation = cadmpeg_core::text::NonBlankString::new("M6");
+        *pitch = Some(Dimension::Literal(PositiveLength::new(1.0).unwrap()));
+        *modeled = Some(true);
+    });
+    let id = ir.model.features[0].id.clone();
+    let with_fidelity = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        with_fidelity.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(with_fidelity
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("modeled")));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && ["standard", "designation", "pitch", "modeled"]
+                .iter()
+                .all(|field| loss.message.contains(field))));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { .. })
+    )));
+}
+
+#[test]
+fn source_less_principal_planes_keep_reserved_roles() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::PrincipalPlane;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42, "Contents/Keywords",
+        br#"<Keywords><Feature Name="A" Type="LocalizedPlane" id="2"/><Feature Name="B" Type="LocalizedPlane" id="3"/><Feature Name="C" Type="LocalizedPlane" id="4"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    for (feature, plane) in ir.model.features.iter().zip([
+        PrincipalPlane::Front,
+        PrincipalPlane::Top,
+        PrincipalPlane::Right,
+    ]) {
+        assert_eq!(
+            feature.evaluation.definition(),
+            &FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane })
+        );
+    }
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let mut other = ir.model.features[0].clone();
+    other.id = FeatureId::mint("synthetic:test:feature#other").unwrap();
+    other.name = Some("Other".into());
+    other.ordinal = 0;
+    other.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    );
+    for feature in &mut ir.model.features {
+        feature.ordinal += 1;
+    }
+    ir.model.features.insert(0, other);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for plane in [
+        PrincipalPlane::Front,
+        PrincipalPlane::Top,
+        PrincipalPlane::Right,
+    ] {
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition()
+                == &FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane })));
+    }
 }
 
 #[test]
@@ -386,6 +959,102 @@ fn source_less_native_spatial_reference_relation_keeps_its_operands() {
 #[test]
 fn native_spatial_operand_address_has_a_checked_capacity() {
     check_native_spatial_relation(true, ["d6", "e1"], 65536);
+}
+
+#[test]
+fn source_less_native_spatial_dimension_families_round_trip() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintId, SketchNativeOperand, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinitionInput,
+    };
+    const ANGLE_TOLERANCE: f64 = 1e-9;
+    const LENGTH_TOLERANCE: f64 = 1e-9;
+
+    for (kind, count, angle, tag) in [
+        ("sgLLDist", 2, false, "e1"),
+        ("sgPntPntDist", 2, false, "d6"),
+        ("sgPntPntHorDist", 2, false, "cb8d"),
+        ("sgPntPntVertDist", 2, false, "cb8d"),
+        ("sgCircleDim", 1, false, "fe83"),
+        ("sgAnglDim", 2, true, "da8d"),
+    ] {
+        let mut ir =
+            source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+        let parameter_id = ParameterId::mint("synthetic:test:parameter#dimension").unwrap();
+        let value = if angle {
+            ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(0.5).unwrap())
+        } else {
+            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(4.0).unwrap())
+        };
+        ir.model.parameters.push(DesignParameter {
+            product_definition: None,
+            id: parameter_id.clone(),
+            owner: Some(ir.model.features[0].id.clone()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: if angle { "0.5rad" } else { "4mm" }.into(),
+            driving: true,
+            display: None,
+            value: Some(value),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        let constraint_id =
+            SketchConstraintId::mint("synthetic:test:constraint#dimension").unwrap();
+        let operands = (0..count)
+            .map(|index| SketchNativeOperand {
+                native_kind: cadmpeg_core::text::NonBlankString::new(tag).unwrap(),
+                field: None,
+                object_index: Some(10 + index),
+                native_ref: None,
+            })
+            .collect();
+        ir.model
+            .spatial_sketch_constraints
+            .push(SpatialSketchConstraint {
+                id: constraint_id.clone(),
+                sketch: ir.model.spatial_sketches[0].id.clone(),
+                definition: SpatialSketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new(kind).unwrap(),
+                    native_state: None,
+                    parameter: Some(parameter_id),
+                    operands,
+                }
+                .try_into()
+                .unwrap(),
+                native_ref: None,
+            });
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(
+            !plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(constraint_id.as_str())),
+            "{kind}"
+        );
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| matches!(
+            constraint.definition.kind(),
+            SpatialSketchConstraintDefinitionInput::Native { native_kind, parameter: Some(id), operands, .. }
+                if native_kind.as_str() == kind && operands.len() == usize::try_from(count).unwrap()
+                    && operands.iter().all(|operand| operand.native_kind.as_str() == tag)
+                    && output.ir().model.parameters.iter().any(|parameter| &parameter.id == id && match &parameter.value {
+                        Some(ParameterValue::Angle(value)) if angle => (value.get() - 0.5).abs() < ANGLE_TOLERANCE,
+                        Some(ParameterValue::Length(value)) if !angle => (value.get() - 4.0).abs() < LENGTH_TOLERANCE,
+                        _ => false,
+                    })
+        )), "{kind}: {:#?}", output.ir().model.spatial_sketch_constraints);
+    }
 }
 
 fn check_native_spatial_relation(driving: bool, tags: [&str; 2], address: u32) {
