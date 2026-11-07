@@ -2695,7 +2695,9 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// prefixes the flag block with a further byte. Neither
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
-/// this record's own index.
+/// this record's own index. That paired header is the next indexed header
+/// with this record's index, and the record's fields are read from the bytes
+/// before it.
 pub(super) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -2712,18 +2714,24 @@ pub(super) fn parse_construction_operand_group(
     if bytes.get(start + 11..start + 19) != Some(&[0; 8]) {
         return NotAGroup;
     }
-    let Some(mut cursor) = payload_prologue(bytes, start + 19, bytes.len()) else {
+    // The record ends at its paired header: the next indexed header with its
+    // own index, or the end of the stream.
+    let end = next_indexed_record_offset_with_index(bytes, start + 1, header.record_index)
+        .unwrap_or(bytes.len());
+    let Some(record_bytes) = bytes.get(..end) else {
+        return NotAGroup;
+    };
+    let Some(mut cursor) = payload_prologue(record_bytes, start + 19, end) else {
         return NotAGroup;
     };
     let member_count_at = cursor;
-    let Some(member_count) = View::u32_le_at(bytes, cursor) else {
+    let Some(member_count) = View::u32_le_at(record_bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    // A reference is at least one byte, so a count the remaining bytes cannot
-    // supply is corrupt and must not reach the allocator.
-    if bytes
-        .len()
+    // A reference is at least one byte, so a count the rest of the record
+    // cannot supply is corrupt and must not reach the allocator.
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(member_count) > remaining)
     {
@@ -2731,7 +2739,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let members_at = cursor;
     for _ in 0..member_count {
-        if take_record_reference(bytes, &mut cursor).is_none() {
+        if take_record_reference(record_bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
     }
@@ -2741,12 +2749,12 @@ pub(super) fn parse_construction_operand_group(
         .iter_mut()
         .zip(&mut auxiliary_slots)
     {
-        if bytes.get(cursor) == Some(&0) {
+        if record_bytes.get(cursor) == Some(&0) {
             cursor += 1;
             continue;
         }
         *present = true;
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((record_index, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
 
@@ -2755,12 +2763,11 @@ pub(super) fn parse_construction_operand_group(
             offset,
         });
     }
-    let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
+    let Some(trailing_count) = View::u32_le_at(record_bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    if bytes
-        .len()
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(trailing_count) > remaining)
     {
@@ -2768,7 +2775,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let trailing_at = cursor;
     for _ in 0..trailing_count {
-        if take_record_reference(bytes, &mut cursor).is_none() {
+        if take_record_reference(record_bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
     }
@@ -2781,7 +2788,7 @@ pub(super) fn parse_construction_operand_group(
         })
         && trailing_count == 0;
     if legacy_move_class_328 {
-        if bytes.get(cursor) != Some(&0) {
+        if record_bytes.get(cursor) != Some(&0) {
             return NotAGroup;
         }
         cursor += 1;
@@ -2789,21 +2796,21 @@ pub(super) fn parse_construction_operand_group(
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
     let (Some(0), Some(role)) = (
-        View::u32_le_at(bytes, role_at),
-        View::u64_le_at(bytes, role_at),
+        View::u32_le_at(record_bytes, role_at),
+        View::u64_le_at(record_bytes, role_at),
     ) else {
         return NotAGroup;
     };
     let role = DesignOperandRole::from_raw(role);
     cursor += 8;
-    if bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
+    if record_bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
         return NotAGroup;
     }
     cursor += 10;
     let opaque_index_at = cursor;
     let (Some(opaque_index), Some(opaque_scalar)) = (
-        View::u32_le_at(bytes, cursor),
-        View::f64_le_at(bytes, cursor + 4),
+        View::u32_le_at(record_bytes, cursor),
+        View::f64_le_at(record_bytes, cursor + 4),
     ) else {
         return NotAGroup;
     };
@@ -2821,18 +2828,18 @@ pub(super) fn parse_construction_operand_group(
     for repeats_ordinal in [true, false] {
         let mut tail = cursor;
         if repeats_ordinal {
-            if View::u32_le_at(bytes, tail) != Some(opaque_index.get()) {
+            if View::u32_le_at(record_bytes, tail) != Some(opaque_index.get()) {
                 continue;
             }
             tail += 4;
         }
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+        if take_record_reference(record_bytes, &mut tail).map(|(index, _)| index)
             != header.record_index.checked_add(2)
         {
             continue;
         }
         for flag_bytes in [2usize, 3] {
-            let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
+            let Some(flags) = record_bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
             if flags[flag_bytes - 2] > 1 || flags[flag_bytes - 1] > 1 {
@@ -2841,22 +2848,25 @@ pub(super) fn parse_construction_operand_group(
             let variant = flags[flag_bytes - 2] != 0;
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
                 != header.record_index.checked_add(1)
             {
                 continue;
             }
-            if bytes.get(after) != Some(&0) {
+            if record_bytes.get(after) != Some(&0) {
                 continue;
             }
             after += 1;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
                 != Some(scope.record_index)
             {
                 continue;
             }
+            if after != end {
+                continue;
+            }
             let Some((paired_class_tag, after_tag)) =
-                lp_ascii_filtered_view(bytes, after, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, end, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
@@ -2908,7 +2918,7 @@ pub(super) fn parse_construction_operand_group(
     let mut members = Vec::new();
     let mut cursor = members_at;
     for _ in 0..member_count {
-        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((value, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
         members.push(crate::records::identity::Located { value, offset });
@@ -2917,7 +2927,7 @@ pub(super) fn parse_construction_operand_group(
     let mut trailing_records = Vec::new();
     let mut cursor = trailing_at;
     for _ in 0..trailing_count {
-        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((value, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
         trailing_records.push(crate::records::identity::Located { value, offset });
