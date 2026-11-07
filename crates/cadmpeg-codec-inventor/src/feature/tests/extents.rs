@@ -142,9 +142,6 @@ struct ExtentCase {
     symmetric: bool,
 }
 
-/// Ordinal of the true Boolean that replaces slot 3 in a reversed surface case.
-const SURFACE_REVERSAL_RECORD: u32 = 23;
-
 /// The extent fixture of either body kind. A surface extrusion has the
 /// surface part operation, its result in slot 16, and a null slot 26.
 fn build_extent_extrusion(
@@ -496,22 +493,16 @@ fn build_extent_extrusion(
                     == crate::loss::InventorLossCode::FeatureExtrusionProfileNative.code()
             })
             .count();
-        let reversal_losses = losses
+        let polarity_losses = losses
             .iter()
             .filter(|note| {
                 note.code.local_code()
-                    == crate::loss::InventorLossCode::FeatureSurfaceExtrusionReversalAssumed.code()
+                    == crate::loss::InventorLossCode::FeatureSurfaceExtrusionPolarityAssumed.code()
             })
             .count();
-        assert_eq!(losses.len(), profile_losses + reversal_losses);
+        assert_eq!(losses.len(), profile_losses + polarity_losses);
         assert_eq!(profile_losses, usize::from(projected.is_some()));
-        // Slot 3 is false unless a case replaces it with the true record.
-        let reversed =
-            feature.properties.references()[3].record_ordinal() == Some(SURFACE_REVERSAL_RECORD);
-        assert_eq!(
-            reversal_losses,
-            usize::from(projected.is_some() && reversed)
-        );
+        assert_eq!(polarity_losses, usize::from(projected.is_some()));
     } else if projected.as_ref().is_some_and(|feature| {
         crate::feature::extrusion::has_native_profile(feature.evaluation.definition())
     }) {

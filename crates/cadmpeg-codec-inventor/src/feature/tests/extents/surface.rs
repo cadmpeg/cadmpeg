@@ -33,15 +33,18 @@ fn surface_body(ordinal: u32) -> PmDcFeatureProperty {
     )
 }
 
+/// Ordinal of the true Boolean that replaces slot 3.
+const TRUE_SLOT_3: u32 = 23;
+
 #[test]
-fn a_surface_extrusion_with_slot_3_set_states_the_assumed_reversal() {
-    // `build_extent_extrusion` counts the note against the slot-3 record.
+fn a_surface_extrusion_states_the_assumed_polarity_for_both_slot_3_values() {
+    // `build_extent_extrusion` requires the note on every projected case.
     let reversed = surface_extrusion(
         5,
         5,
-        &[(3, SURFACE_REVERSAL_RECORD)],
+        &[(3, TRUE_SLOT_3)],
         vec![test_property(
-            SURFACE_REVERSAL_RECORD,
+            TRUE_SLOT_3,
             PmDcFeaturePropertyKind::Boolean {
                 name: String::new(),
                 name_value: 0,
