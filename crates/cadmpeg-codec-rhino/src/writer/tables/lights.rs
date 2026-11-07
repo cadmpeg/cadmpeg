@@ -127,13 +127,9 @@ fn light(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
 ) -> Result<LightRecordExport, WriteError> {
-    let fields = record.fields().map_err(|error| match error {
-        cadmpeg_ir::native::NativeConvertError::Resource(
-            cadmpeg_core::CodecError::ResourceLimit(limit),
-        ) => WriteError::Encode(limit.into()),
-        cadmpeg_ir::native::NativeConvertError::Resource(error) => WriteError::Fail(error),
-        error => WriteError::Omit(error.to_string()),
-    })?;
+    let fields = record
+        .fields()
+        .map_err(crate::writer::native_record_error)?;
     let mut payload = vec![0x12];
     let enabled = fields
         .get("enabled")

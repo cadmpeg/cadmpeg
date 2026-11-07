@@ -125,6 +125,66 @@ fn neutral_projection_removes_declared_classes_and_provenance_layer() {
 }
 
 #[test]
+fn written_comparison_preserves_face_self_selection() {
+    let feature = |scope: &str, selection: &str| {
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:feature#1", "ordinal": 0, "suppressed": false,
+            "needs_recompute": false, "native_ref": scope,
+            "definition": {"definition": "knit_surface", "faces": {"kind": "native", "value": selection},
+                "merge_entities": true, "create_solid": true}
+        })).expect("typed knit feature")
+    };
+    let mut before = CadIr::empty();
+    before
+        .model
+        .features
+        .push(feature("test:design:scope#1", "test:design:scope#1"));
+    let mut after = before.clone();
+    after.model.features[0] = feature("test:design:scope#2", "test:design:scope#2");
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&before, None), TargetRequest::Inherit)
+        .expect("CADIR plan");
+    assert_written_arenas_agree(plan.report(), &before, &after);
+    after.model.features[0] = feature("test:design:scope#2", "test:design:scope#3");
+    assert!(std::panic::catch_unwind(|| assert_written_arenas_agree(
+        plan.report(),
+        &before,
+        &after
+    ))
+    .is_err());
+}
+
+#[test]
+fn written_comparison_preserves_selected_input_identity() {
+    let document = |selection: &str, operand: &str| {
+        let mut ir = CadIr::empty();
+        ir.model.features.push(serde_json::from_value(serde_json::json!({
+            "id": "test:model:feature#1", "ordinal": 0, "suppressed": false,
+            "needs_recompute": false,
+            "definition": {"definition": "delete_body", "bodies": {"kind": "native", "value": selection}, "mode": "delete_selected"}
+        })).expect("typed DeleteBody"));
+        ir.model.feature_input_topologies.push(serde_json::from_value(serde_json::json!({
+            "id": "test:input:state#1", "input_of": "test:model:feature#1",
+            "operands": [{"id": "test:input:operand#1", "definition": {"kind": "native"}, "native_ref": operand}]
+        })).expect("typed feature input"));
+        ir
+    };
+    let before = document("test:design:group#1", "test:design:group#1");
+    let mut after = document("test:design:group#2", "test:design:group#2");
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&before, None), TargetRequest::Inherit)
+        .expect("CADIR plan");
+    assert_written_arenas_agree(plan.report(), &before, &after);
+    after = document("test:design:group#3", "test:design:group#2");
+    assert!(std::panic::catch_unwind(|| assert_written_arenas_agree(
+        plan.report(),
+        &before,
+        &after
+    ))
+    .is_err());
+}
+
+#[test]
 fn written_comparison_preserves_feature_self_selection() {
     let feature = |scope: &str, selection: &str| {
         serde_json::from_value(serde_json::json!({

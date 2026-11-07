@@ -82,7 +82,7 @@ fn apply_topology_source(
         .and_then(|stem| stem.rsplit(':').next())
         .and_then(|stem| stem.strip_prefix('D'))
         .and_then(|value| value.parse().ok());
-    if let Some((_, label)) =
+    if let Some((source, label)) =
         sequence.and_then(|sequence| directory_source(ir, sequence, type_code))
     {
         if matches!(type_code, 143 | 144)
@@ -91,6 +91,7 @@ fn apply_topology_source(
         {
             return;
         }
+        entity.source_targets.push(source);
         entity.label = label;
     }
 }
