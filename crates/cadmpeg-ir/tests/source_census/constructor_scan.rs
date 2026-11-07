@@ -560,6 +560,7 @@ impl FormCache<'_> {
 /// renamed imports and glob-imported names. A raw hit skips resolution, so
 /// an alias chain that would add further variants beyond the spelling is
 /// not followed (the observation side covers actual decodes).
+#[derive(Clone, Copy)]
 struct ConstructorLookup<'a> {
     keys: &'a [(String, Vec<String>)],
     table: &'a BTreeMap<String, BTreeSet<String>>,
