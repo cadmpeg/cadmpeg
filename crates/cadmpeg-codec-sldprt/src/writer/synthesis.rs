@@ -622,6 +622,7 @@ pub(super) fn plan(
     )?;
     if projected.scope.model
         && !projected.scope.design
+        && !supported.is_empty()
         && prepared_native.as_ref().is_none_or(|native| {
             native
                 .feature_histories
