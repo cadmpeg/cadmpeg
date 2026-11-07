@@ -232,7 +232,8 @@ pub(super) fn write(
             .and_then(|feature| feature.name.as_deref())
             .unwrap_or(original.name());
         let mut object = Object::new(name, &original.type_name, label);
-        object.declaration_id = original.persistent_id.map(|id| id.to_string());
+        object.declaration_id =
+            xml::DeclarationId::Source(original.persistent_id.map(|id| id.to_string()));
         object
             .declaration_attributes
             .clone_from(&original.attributes);
@@ -1060,6 +1061,36 @@ pub(super) fn write(
                     object.set_text("Label", label);
                 }
             }
+        }
+    }
+    for original in &native_objects {
+        if native_properties
+            .iter()
+            .any(|property| property.owner == *original.id() && property.name == "Label")
+        {
+            continue;
+        }
+        let Some(name) = names.get(original.id().as_str()) else {
+            continue;
+        };
+        let Some(object) = objects.iter_mut().find(|object| &object.name == name) else {
+            continue;
+        };
+        let neutral_name = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(original.id().as_str()))
+            .and_then(|feature| feature.name.as_deref());
+        if neutral_name.is_none_or(|label| label == original.name())
+            && object
+                .properties
+                .get("Label")
+                .and_then(|xml| xml::property_string_value(xml))
+                .as_deref()
+                == Some(original.name())
+        {
+            object.properties.shift_remove("Label");
         }
     }
     super::native::attachments(
