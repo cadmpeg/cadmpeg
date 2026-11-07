@@ -42,3 +42,28 @@ fn native_registry_equals_dispositions() {
         .collect();
     assert_eq!(declared, registry);
 }
+
+#[test]
+fn omitted_shape_payload_drops_its_carrier_census() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Owner"/></Objects><ObjectData Count="1"><Object name="Owner"><Properties Count="1"><Property name="BackupShape" type="Part::PropertyPartShape"><Part file="Backup.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 1\nFa 0 0.001 1 0 1001000 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Backup.brp", brep),
+    ]);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let census = namespace
+        .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
+        .unwrap();
+    assert_eq!(census.len(), 1);
+    let report = dispositions(decoded.ir());
+    assert_eq!(
+        report
+            .native_dispositions
+            .record_disposition("fcstd", "carrier_census", &census[0].id,),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+}
