@@ -132,3 +132,35 @@ fn zero_length_lines_are_reported_with_a_pinned_loss() {
     assert_eq!(note.code.local_code(), "sketch.degenerate-line-native");
     assert!(note.message.contains("3 Inventor line"));
 }
+
+#[test]
+fn endpoints_that_differ_by_rounding_are_one_position() {
+    let (inventory, _) = closed_square_inventory();
+    let line = &inventory.entities[first_side(&inventory)];
+    let PmDcSketchEntityKind::Line { points, .. } = &line.kind else {
+        unreachable!("square side")
+    };
+    let first = points.references()[0].index();
+    let base = 3.0_f64;
+    let rounded = |ulps: f64| {
+        move |_: &str, reference: u32| {
+            let x = if reference == first {
+                base
+            } else {
+                base + ulps * f64::EPSILON * base
+            };
+            Some([real(x), real(base)])
+        }
+    };
+    // A difference of four units of rounding is one position.
+    assert!(degenerate_line(line, rounded(4.0)));
+    // A difference of eight units of rounding is a segment.
+    assert!(!degenerate_line(line, rounded(8.0)));
+    // A zero coordinate has no rounding allowance.
+    assert!(!degenerate_line(line, |_, reference| {
+        Some([
+            real(if reference == first { 0.0 } else { 1e-300 }),
+            real(0.0),
+        ])
+    }));
+}

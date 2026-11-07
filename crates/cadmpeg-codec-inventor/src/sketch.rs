@@ -116,10 +116,26 @@ pub(crate) fn construction_carrier_conflict(
     };
     let [start, end] = [start, end].map(|point| point.map(FiniteReal::get));
     let direction = direction.map(FiniteReal::get);
-    if start == end || direction == [0.0, 0.0] {
+    if same_position(start, end) || direction == [0.0, 0.0] {
         return false;
     }
     !line_carrier_matches(origin.map(FiniteReal::get), direction, start, end)
+}
+
+/// Largest per-axis difference between two stored positions that still counts
+/// as one position, in units of the machine epsilon times the larger
+/// coordinate magnitude of the pair. Positions are converted between unit
+/// systems in binary floating point, so two records of one point can differ
+/// by a few units in the last place.
+const SAME_POSITION_ULPS: f64 = 4.0;
+
+/// Whether two stored positions are one position up to floating-point
+/// rounding of their coordinates.
+fn same_position(first: [f64; 2], second: [f64; 2]) -> bool {
+    first
+        .iter()
+        .zip(&second)
+        .all(|(a, b)| (a - b).abs() <= SAME_POSITION_ULPS * f64::EPSILON * a.abs().max(b.abs()))
 }
 
 /// Whether the record is a line whose first two point references resolve to
@@ -140,7 +156,7 @@ pub(crate) fn degenerate_line(
     let (Some(start), Some(end)) = (point(token, start.index()), point(token, end.index())) else {
         return false;
     };
-    start.map(FiniteReal::get) == end.map(FiniteReal::get)
+    same_position(start.map(FiniteReal::get), end.map(FiniteReal::get))
 }
 
 /// Whether the record is a curve whose entity flags carry a bit with an
