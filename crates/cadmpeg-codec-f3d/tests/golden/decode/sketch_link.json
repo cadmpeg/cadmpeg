@@ -439,6 +439,7 @@
             }
           }
         ],
+        "sketch_geometry_groups": [],
         "sketch_points": [],
         "sketch_relations": [],
         "sketch_surfaces": [],

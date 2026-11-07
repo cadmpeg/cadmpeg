@@ -48,7 +48,9 @@ use crate::records::{
     },
     parameters::DesignParameterCompanion,
     references::{LostEdgeReference, PersistentReference},
-    sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchSurface, SketchText},
+    sketch_geometry::{
+        SketchCurveIdentity, SketchGeometryGroup, SketchPoint, SketchSurface, SketchText,
+    },
     sketch_links::{PersistentDesignLink, PersistentSubentityTag},
     sketch_placement::DesignSketchPlacement,
     sketch_relations::SketchRelation,
@@ -131,6 +133,7 @@ pub(super) struct DesignNative {
     sketch_texts: Vec<SketchText>,
     sketch_curve_identities: Vec<SketchCurveIdentity>,
     sketch_surfaces: Vec<SketchSurface>,
+    sketch_geometry_groups: Vec<SketchGeometryGroup>,
     pub(super) design_parameter_companions: Vec<DesignParameterCompanion>,
     design_face_source_groups: Vec<DesignFaceSourceGroup>,
     design_canvas_images: Vec<DesignCanvasImage>,
@@ -189,6 +192,7 @@ impl DesignNative {
             sketch_texts,
             sketch_curve_identities,
             sketch_surfaces,
+            sketch_geometry_groups,
             design_parameter_companions,
             design_face_source_groups,
             design_canvas_images,
@@ -232,6 +236,7 @@ impl DesignNative {
         native.sketch_texts = sketch_texts;
         native.sketch_curve_identities = sketch_curve_identities;
         native.sketch_surfaces = sketch_surfaces;
+        native.sketch_geometry_groups = sketch_geometry_groups;
         native.design_parameter_companions = design_parameter_companions;
         native.design_face_source_groups = design_face_source_groups;
         native.design_canvas_images = design_canvas_images;
@@ -438,6 +443,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let (untyped_tracking_paths, profile_losses) =
         extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
+    losses.extend(
+        crate::design::decode::operands::body_recipe_serialization_form_losses(
+            &design.design_body_recipe_operands,
+        ),
+    );
     if untyped_tracking_paths != 0 {
         push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
             format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
@@ -445,11 +455,17 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     for history in &mut design.asm_histories {
         history.release_topologies();
     }
-    design.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
+    design.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan, &mut losses)?;
     design.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
     design.sketch_curve_identities =
-        crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
+        crate::design::decode::sketch::decode_sketch_curve_identities(scan, &mut losses)?;
     design.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
+    design.sketch_geometry_groups = crate::design::decode::sketch::decode_sketch_geometry_groups(
+        scan,
+        &design.sketch_points,
+        &design.sketch_curve_identities,
+        &mut losses,
+    )?;
     crate::design::decode::sketch::bind_sketch_graph(
         &prereqs.design_entity_headers,
         &mut design.sketch_points,
@@ -597,6 +613,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             sheet_metal_settings: &design.design_sheet_metal_settings,
         },
     )?;
+    losses.extend(
+        crate::design::decode::operands::construction_closing_flag_losses(
+            &design.design_construction_operand_groups,
+        ),
+    );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.hole_losses);
     losses.extend(
@@ -866,24 +887,26 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             spatial_sketch_entities: &model.spatial_sketch_entities,
         },
     );
-    crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
-        scan,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &crate::design::profile_select::SketchProfileResolution {
-            entities: &prereqs.design_entity_headers,
-            entity_selection_operands: &design.design_entity_selection_operands,
-            placements: &design.design_sketch_placements,
-            curve_identities: &design.sketch_curve_identities,
-            sketches: &model.sketches,
-            sketch_entities: &model.sketch_entities,
-            spatial_sketches: &model.spatial_sketches,
-            spatial_sketch_entities: &model.spatial_sketch_entities,
-            linear_tolerance: geometry.tolerances.linear.get(),
-            angular_tolerance: geometry.tolerances.angular.get(),
-        },
-        &mut model.features,
-    )?;
+    losses.extend(
+        crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
+            scan,
+            &mut design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &crate::design::profile_select::SketchProfileResolution {
+                entities: &prereqs.design_entity_headers,
+                entity_selection_operands: &design.design_entity_selection_operands,
+                placements: &design.design_sketch_placements,
+                curve_identities: &design.sketch_curve_identities,
+                sketches: &model.sketches,
+                sketch_entities: &model.sketch_entities,
+                spatial_sketches: &model.spatial_sketches,
+                spatial_sketch_entities: &model.spatial_sketch_entities,
+                linear_tolerance: geometry.tolerances.linear.get(),
+                angular_tolerance: geometry.tolerances.angular.get(),
+            },
+            &mut model.features,
+        )?,
+    );
     crate::design::feature_project::orient_revolve_axes(
         &mut model.features,
         &design.design_parameter_scopes,

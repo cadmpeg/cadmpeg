@@ -1400,6 +1400,14 @@ pub(super) fn resolved_extrude_profile_selection(
             resolved_profiles.as_ref(),
         )? {
             resolved_profiles = Some(proven);
+        } else if let Some(proven) = cap_regions::removed_profile_selection(
+            sketch,
+            resolution,
+            state_id,
+            previous_state_id,
+            resolved_profiles.as_ref(),
+        )? {
+            resolved_profiles = Some(proven);
         }
     }
     if resolved_profiles.is_none() && exact_member_run {
@@ -3672,6 +3680,7 @@ fn resolve_profile_curve_arrangement_regions(
         return Ok(None);
     };
     let mut regions = Vec::new();
+    let mut assumed = false;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3709,7 +3718,24 @@ fn resolve_profile_curve_arrangement_regions(
                 scoped.ctx,
             )?
             else {
-                return Ok(None);
+                let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
+                    source,
+                    resolution.sketch_entities,
+                    program,
+                    scoped.linear_tolerance,
+                    scoped.profile_work,
+                    scoped.ctx,
+                )?
+                else {
+                    return Ok(None);
+                };
+                assumed = true;
+                for region in split {
+                    if !regions.contains(&region) {
+                        regions.push(region);
+                    }
+                }
+                continue;
             };
             if !regions.contains(&region) {
                 regions.push(region);
@@ -3719,9 +3745,13 @@ fn resolve_profile_curve_arrangement_regions(
     if cursor != curves.len() {
         return Ok(None);
     }
-    Ok(PlanarProfileRef::sketch_regions(sketch, regions)
+    let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
-        .map(ProfileRef::Planar))
+        .map(ProfileRef::Planar);
+    if assumed && profile.is_some() {
+        scoped.profile_work.note_crossing_loop_assumed();
+    }
+    Ok(profile)
 }
 
 fn resolve_profile_curve_path(
@@ -4327,15 +4357,16 @@ fn spatial_profile_containing_entity(
 
 pub(crate) fn bind_loft_and_revolve_sketch_selections(
     scan: &ContainerScan,
-    groups: &[DesignConstructionOperandGroup],
+    groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     resolution: &SketchProfileResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
     };
 
+    let mut bound_profiles = HashSet::new();
     let mut header_index = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -4414,7 +4445,10 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             }
             ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
         };
-        resolved_profiles.insert(group.id.as_str(), resolved);
+        if matches!(&resolved, ProfileRef::Planar(PlanarProfileRef::Native(_))) {
+            continue;
+        }
+        resolved_profiles.insert(group.id.clone(), (resolved, Some(profile)));
     }
     let mut resolved_entity_paths = HashMap::new();
     for group in groups.iter().filter(|group| {
@@ -4499,7 +4533,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             Ok(profile) => profile,
             Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
         };
-        resolved_profiles.insert(group.id.as_str(), resolved);
+        resolved_profiles.insert(group.id.clone(), (resolved, None));
     }
     for feature in features.iter_mut() {
         let mut edit_result = Ok(());
@@ -4517,7 +4551,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     else {
                         continue;
                     };
-                    if let Some(profile) = resolved_profiles.get(native.as_str()) {
+                    if let Some((profile, _)) = resolved_profiles.get(native.as_str()) {
+                        bound_profiles.insert(native.clone());
                         *section = LoftSection::Profile(copy_bound_profile(profile)?);
                     }
                 }
@@ -4558,17 +4593,28 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 let Some(PlanarProfileRef::Native(native)) = construction.profile() else {
                     return Ok(());
                 };
-                let Some(ProfileRef::Planar(profile)) = resolved_profiles.get(native.as_str())
+                let Some((ProfileRef::Planar(profile), _)) = resolved_profiles.get(native.as_str())
                 else {
                     return Ok(());
                 };
+                bound_profiles.insert(native.clone());
                 construction.set_profile(Some(copy_bound_planar_profile(profile)?));
                 Ok(())
             })();
         });
         edit_result?;
     }
-    Ok(())
+    let mut losses = Vec::new();
+    for group in groups
+        .iter_mut()
+        .filter(|group| bound_profiles.contains(&group.id))
+    {
+        if let Some((_, Some(profile))) = resolved_profiles.remove(&group.id) {
+            losses.extend(profile.flags_assumption_loss());
+            group.sketch_profile = Some(profile);
+        }
+    }
+    Ok(losses)
 }
 
 #[cfg(test)]

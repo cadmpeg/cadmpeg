@@ -37,9 +37,9 @@ use crate::layout::construction_operand_affine_transform_frame as trailing_affin
 use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
-use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
-use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
-use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
+use crate::layout::legacy_loft_body_carrier as legacy_loft;
+use crate::layout::legacy_loft_body_carrier_owner_tail as legacy_loft_tail;
+use crate::layout::legacy_loft_body_carrier_three_flag as legacy_loft_three;
 use crate::layout::marked_sketch_curve_identity as marked_curve;
 use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
 use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
@@ -924,8 +924,9 @@ pub(crate) fn decode_face_operands(
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role() == DesignOperandRole::ROLE_0X5;
-        let is_split_face_operand =
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace;
+        let is_split_face_operand = scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::SplitFace
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_delete_face_operand = matches!(
             scope.kind(),
             crate::records::feature::scope::DesignFeatureKind::MoveFace
@@ -954,6 +955,14 @@ pub(crate) fn decode_face_operands(
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role() == DesignOperandRole::PROFILE;
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+            && !is_split_face_operand
+        {
+            for member in group.members() {
+                seen.insert((stream, scope.record_index, member.value));
+            }
+            continue;
+        }
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -1008,7 +1017,11 @@ pub(crate) fn decode_face_operands(
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
-                    if !is_offset_faces_operand && !is_shell_operand && !is_extrude_operand {
+                    if !is_offset_faces_operand
+                        && !is_shell_operand
+                        && !is_extrude_operand
+                        && group_member_index + 1 != group.members().len()
+                    {
                         return None;
                     }
                     scope
@@ -1018,7 +1031,11 @@ pub(crate) fn decode_face_operands(
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal + 1))
                         .and_then(|record_index| header_index.get(&(stream, *record_index)))
                         .map(|next| next.byte_offset)
-                        .filter(|next| !is_extrude_operand || *next > header.byte_offset)
+                        .filter(|next| {
+                            is_offset_faces_operand
+                                || is_shell_operand
+                                || *next > header.byte_offset
+                        })
                 });
             if let Some(operand) = parse_face_operand(
                 ctx,
@@ -1741,6 +1758,7 @@ pub(crate) fn bind_sketch_profiles(
         let Some(profile) = profiles.pop() else {
             continue;
         };
+        losses.extend(profile.flags_assumption_loss());
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
             if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
                 scope.payload_mut()
@@ -1989,108 +2007,120 @@ fn push_loft_legacy_body_carrier(
     out.push(carrier);
 }
 
-/// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
+/// Parse one legacy Loft body carrier.
 fn parse_loft_legacy_body_carrier(
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
 ) -> Option<DesignLoftLegacyBodyCarrier> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
-        "322" => {
-            let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
-            let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
-            let pair_matches = |at: usize| {
-                indexed_record_header_at(bytes, at).is_some_and(|paired| {
-                    paired.record_index == header.record_index && paired.class_tag.as_str() == "262"
-                })
-            };
-            let short_pair_matches = pair_matches(short_paired_offset);
-            let long_pair_matches = pair_matches(long_paired_offset);
-            if short_pair_matches {
-                ("262", legacy_loft_322::LEN, false)
-            } else if long_pair_matches {
-                ("262", legacy_loft_322_tail::LEN, true)
-            } else {
-                return None;
-            }
-        }
-        "411" => ("266", legacy_loft_411::LEN, true),
-        _ => return None,
+    let pair_matches = |length: usize| {
+        start
+            .checked_add(length)
+            .and_then(|at| indexed_record_header_at(bytes, at))
+            .is_some_and(|paired| paired.record_index == header.record_index)
     };
-    if indexed_record_header_at(bytes, start)
+    let frame_length = [
+        legacy_loft::LEN,
+        legacy_loft_tail::LEN,
+        legacy_loft_three::LEN,
+    ]
+    .into_iter()
+    .find(|&length| pair_matches(length))?;
+    let three_flags = frame_length == legacy_loft_three::LEN;
+    let common = start
+        + if three_flags {
+            legacy_loft_three::COMMON_PREFIX
+        } else if frame_length == legacy_loft_tail::LEN {
+            legacy_loft_tail::COMMON_PREFIX
+        } else {
+            legacy_loft::INDEXED_HEADER
+        };
+    if indexed_record_header_at(bytes, common)
         .is_none_or(|parsed| parsed.record_index != header.record_index)
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10)?
-            != [0; 10]
-        || bytes.get(start + legacy_loft_322::PRESENCE)? != &1
-        || View::u32_le_at(bytes, start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?
+        || bytes.get(common + legacy_loft::ZERO_RUN_10..common + legacy_loft::PRESENCE)? != [0; 10]
+        || bytes.get(common + legacy_loft::PRESENCE)? != &1
+        || View::u32_le_at(bytes, common + legacy_loft::OWNER_SCOPE_RECORD_INDEX)?
             != scope.record_index
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6)?
+        || bytes.get(common + legacy_loft::ZERO_RUN_6..common + legacy_loft::MEMBER_COUNT)?
             != [0; 6]
-        || View::u32_le_at(bytes, start + legacy_loft_322::MEMBER_COUNT)? != 1
+        || View::u32_le_at(bytes, common + legacy_loft::MEMBER_COUNT)? != 1
     {
         return None;
     }
-    let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
+    let mut cursor = common.checked_add(legacy_loft::MEMBER_REFERENCE)?;
     let member_offset = cursor;
     let (member, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
+    if cursor != common.checked_add(legacy_loft::OPAQUE_INDEX)? {
         return None;
     }
     let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?)
         .ok()
         .and_then(std::num::NonZeroU8::new)?;
-    cursor = cursor.checked_add(4)?;
-    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, cursor)?)?;
-    cursor = cursor.checked_add(8)?;
-    let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
+    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(
+        bytes,
+        common + legacy_loft::OPAQUE_SCALAR,
+    )?)?;
+    let repeated_opaque_index =
+        View::u32_le_at(bytes, common + legacy_loft::REPEATED_OPAQUE_INDEX)?;
     if repeated_opaque_index != u32::from(opaque_index.get()) {
         return None;
     }
-    cursor = cursor.checked_add(4)?;
+    cursor = common.checked_add(legacy_loft::NEXT_NEXT_REFERENCE)?;
     let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::FLAGS)?
-        || bytes.get(cursor..cursor + 2)? != [0, 0]
+    if next_next_record_index != header.record_index.checked_add(2)?
+        || cursor != common.checked_add(legacy_loft::FLAGS)?
     {
         return None;
     }
-    cursor = cursor.checked_add(2)?;
-    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::LEN)? {
-        return None;
-    }
-    let trailing_scope_reference_offset = if has_trailing_scope {
-        if cursor != start + legacy_loft_322_tail::TAIL_ZERO || bytes.get(cursor)? != &0 {
+    let (next_offset, tail_zero, tail_reference) = if three_flags {
+        if bytes.get(start + legacy_loft_three::FLAGS..start + legacy_loft_three::NEXT_REFERENCE)?
+            != [1, 0, 0]
+        {
             return None;
         }
-        cursor = cursor.checked_add(1)?;
-        if cursor != start + legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE {
-            return None;
-        }
-        let reference_offset = cursor;
-        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
-        if record_index != scope.record_index {
-            return None;
-        }
-        Some(u64::try_from(reference_offset).ok()?)
+        (
+            start.checked_add(legacy_loft_three::NEXT_REFERENCE)?,
+            Some(legacy_loft_three::TAIL_ZERO),
+            Some(legacy_loft_three::TRAILING_SCOPE_REFERENCE),
+        )
     } else {
-        None
+        if bytes.get(common + legacy_loft::FLAGS..common + legacy_loft::NEXT_REFERENCE)? != [0, 0] {
+            return None;
+        }
+        (
+            common.checked_add(legacy_loft::NEXT_REFERENCE)?,
+            (frame_length == legacy_loft_tail::LEN).then_some(legacy_loft_tail::TAIL_ZERO),
+            (frame_length == legacy_loft_tail::LEN)
+                .then_some(legacy_loft_tail::TRAILING_SCOPE_REFERENCE),
+        )
     };
-    let paired_byte_offset = start.checked_add(frame_length)?;
-    if cursor != paired_byte_offset
-        || indexed_record_header_at(bytes, paired_byte_offset)
-            .is_none_or(|parsed| parsed.record_index != header.record_index)
-    {
+    cursor = next_offset;
+    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+    if next_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    let paired_class_tag = std::str::from_utf8(bytes.get(
-        paired_byte_offset + indexed_header::CLASS_TAG
-            ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
-    )?)
-    .ok()?;
-    if paired_class_tag != paired_class {
+    let trailing_scope_reference_offset =
+        if let (Some(zero), Some(reference)) = (tail_zero, tail_reference) {
+            if cursor != start.checked_add(zero)? || bytes.get(cursor)? != &0 {
+                return None;
+            }
+            cursor = start.checked_add(reference)?;
+            let reference_offset = cursor;
+            let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+            if record_index != scope.record_index {
+                return None;
+            }
+            Some(u64::try_from(reference_offset).ok()?)
+        } else {
+            None
+        };
+    let paired_byte_offset = start.checked_add(frame_length)?;
+    if cursor != paired_byte_offset {
+        return None;
+    }
+    let paired = indexed_record_header_at(bytes, paired_byte_offset)?;
+    if paired.record_index != header.record_index {
         return None;
     }
     Some(DesignLoftLegacyBodyCarrier {
@@ -2100,26 +2130,26 @@ fn parse_loft_legacy_body_carrier(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         owner_scope_record_index_offset: u64::try_from(
-            start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
+            common + legacy_loft::OWNER_SCOPE_RECORD_INDEX,
         )
         .ok()?,
         member,
         member_offset: u64::try_from(member_offset).ok()?,
-        member_count_offset: u64::try_from(start + legacy_loft_322::MEMBER_COUNT).ok()?,
+        member_count_offset: u64::try_from(common + legacy_loft::MEMBER_COUNT).ok()?,
         opaque_index,
-        opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
+        opaque_index_offset: u64::try_from(common + legacy_loft::OPAQUE_INDEX).ok()?,
         opaque_scalar,
-        opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
-        repeated_opaque_index_offset: u64::try_from(start + legacy_loft_322::REPEATED_OPAQUE_INDEX)
+        opaque_scalar_offset: u64::try_from(common + legacy_loft::OPAQUE_SCALAR).ok()?,
+        repeated_opaque_index_offset: u64::try_from(common + legacy_loft::REPEATED_OPAQUE_INDEX)
             .ok()?,
         next_next_record_index,
-        next_next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_NEXT_REFERENCE)
+        next_next_reference_offset: u64::try_from(common + legacy_loft::NEXT_NEXT_REFERENCE)
             .ok()?,
-        flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
+        flags_offset: u64::try_from(common + legacy_loft::FLAGS).ok()?,
         next_record_index,
-        next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
+        next_reference_offset: u64::try_from(next_offset).ok()?,
         trailing_scope_reference_offset,
-        paired_class_tag: paired_class_tag.to_owned().try_into().ok()?,
+        paired_class_tag: paired.class_tag,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
     })
 }
@@ -2654,10 +2684,8 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// auxiliary reference, a zero trailing count, and a retained null trailing
 /// slot before the role. The ordinary tail is a reference to record `N + 2`,
 /// a flag block, a reference to record `N + 1`, a zero byte, the owning scope's
-/// reference, and the same-index paired header. The class-328 Move tail has a
-/// leading zero, the flag block, an unmarked `N + 1` u64 reference with three
-/// zero bytes, and the owning-scope reference. The flag block's last byte is
-/// zero; one container generation prefixes it with a further byte. Neither
+/// reference, and the same-index paired header. One container generation
+/// prefixes the flag block with a further byte. Neither
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
 /// this record's own index.
@@ -2800,15 +2828,9 @@ pub(super) fn parse_construction_operand_group(
             let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
-            let closing_flags: &[u8] = if flag_bytes == 3 { &[0, 1] } else { &[0] };
-            if !flags
-                .last()
-                .is_some_and(|last| closing_flags.contains(last))
-            {
+            if flags[flag_bytes - 2] > 1 || flags[flag_bytes - 1] > 1 {
                 continue;
             }
-            // The wider block prefixes the narrower one, so the variant flag is
-            // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
@@ -2840,16 +2862,6 @@ pub(super) fn parse_construction_operand_group(
             {
                 return Unclosed;
             }
-        }
-    }
-    if let Some((variant, paired_at, paired_class_tag)) =
-        legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
-    {
-        if closed
-            .replace((variant, false, paired_at, paired_class_tag))
-            .is_some()
-        {
-            return Unclosed;
         }
     }
     let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
@@ -2942,85 +2954,6 @@ pub(super) fn parse_construction_operand_group(
         return Unclosed;
     };
     Complete(Box::new(group))
-}
-
-/// Read the legacy Move/RemoveBody tail whose two flag bytes have no
-/// terminating zero. The class and feature gates keep this admission separate
-/// from the terminated flag-block grammar used by other construction groups.
-fn legacy_body_group_tail(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-    header: &RecordFrame,
-    cursor: usize,
-    opaque_index: u32,
-) -> Option<(bool, usize, String)> {
-    let body_scope = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
-        || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody;
-    let (flag_pair, variant) = match header.class_tag.as_str() {
-        "257" | "323" | "338" if body_scope => ([1, 1], true),
-        "328" if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move => {
-            ([1, 1], true)
-        }
-        "282" | "302" if body_scope => ([0, 1], false),
-        _ => return None,
-    };
-    let mut tail = cursor;
-    if View::u32_le_at(bytes, tail)? != opaque_index {
-        return None;
-    }
-    tail += 4;
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-        != header.record_index.checked_add(2)
-    {
-        return None;
-    }
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
-        && header.class_tag.as_str() == "328"
-    {
-        if bytes.get(tail) != Some(&0) {
-            return None;
-        }
-        tail += 1;
-        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
-            return None;
-        }
-        tail += 2;
-        if View::u64_le_at(bytes, tail)? != u64::from(header.record_index.checked_add(1)?)
-            || bytes.get(tail + 8..tail + 11) != Some(&[0; 3])
-        {
-            return None;
-        }
-        tail += 11;
-    } else {
-        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
-            return None;
-        }
-        tail += 2;
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-            != header.record_index.checked_add(1)
-        {
-            return None;
-        }
-        if bytes.get(tail) != Some(&0) {
-            return None;
-        }
-        tail += 1;
-    }
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
-        return None;
-    }
-    let (paired_class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, tail, 3..=3, u8::is_ascii_digit)?;
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
-        && header.class_tag.as_str() == "328"
-        && paired_class_tag != "263"
-    {
-        return None;
-    }
-    if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
-        return None;
-    }
-    Some((variant, tail, paired_class_tag.to_owned()))
 }
 
 fn construction_tracking_registry<'cache>(
@@ -4424,6 +4357,16 @@ pub(super) fn parse_entity_selection_frame_with(
     })
 }
 
+pub(crate) fn body_recipe_serialization_form_losses(
+    operands: &[DesignBodyRecipeOperand],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    operands.iter().filter_map(|operand| operand.serialization_form().filter(|form| *form > 1).map(|form| {
+        crate::loss::F3dLossCode::BodyRecipeSerializationFormAssumed.note(format!(
+            "body recipe operand {} stores serialization form {form}; its reference runs decode with the layout of forms 0 and 1", operand.id
+        ))
+    })).collect()
+}
+
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub(crate) fn decode_body_recipe_operands(
     scan: &ContainerScan,
@@ -4829,17 +4772,9 @@ fn parse_body_recipe_operand_frame_with_index(
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
         .try_into()
         .ok()?;
-    let selector_tail_is_valid = match header.class_tag.as_str() {
-        // The class-365 member is a four-byte generation-dependent value.
-        // Retain it until DR-24 identifies its neutral meaning.
-        "365" => true,
-        "367" => selector_tail == [1, 0, 0, 0],
-        _ => selector_tail == [0; 4],
-    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || !selector_tail_is_valid
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
     {
         return None;
@@ -5472,6 +5407,7 @@ pub(in crate::design) fn parse_sketch_profile(
             return None;
         }
     }
+    let mut compact_tail_flags = None;
     if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;
         let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
@@ -5483,7 +5419,10 @@ pub(in crate::design) fn parse_sketch_profile(
             || View::u32_le_at(bytes, tail + 8) != Some(1)
             || marked_record_reference(bytes, tail + nested_two_at)
                 != header.record_index.checked_add(2)
-            || bytes.get(tail + nested_one_at - 2..tail + nested_one_at) != Some(&[0; 2])
+            || !bytes
+                .get(tail + nested_one_at - 2..tail + nested_one_at)?
+                .iter()
+                .all(|&flag| flag <= 1)
             || marked_record_reference(bytes, tail + nested_one_at)
                 != header.record_index.checked_add(1)
             || bytes.get(tail + scope_at - 1) != Some(&0)
@@ -5494,6 +5433,10 @@ pub(in crate::design) fn parse_sketch_profile(
         {
             return None;
         }
+        compact_tail_flags = Some([
+            bytes[tail + nested_one_at - 2] != 0,
+            bytes[tail + nested_one_at - 1] != 0,
+        ]);
     }
     let mut matches = entities.iter().filter(|entity| {
         native_stream(&entity.id) == Some(stream)
@@ -5517,6 +5460,7 @@ pub(in crate::design) fn parse_sketch_profile(
             asset_id_offset: u64::try_from(start + 40).ok()?,
             entity_id: crate::records::identity::DesignEntityId::try_from(entity_id_text).ok()?,
             entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
+            compact_tail_flags,
             region_selection,
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
                 .ok()?,
@@ -7158,4 +7102,19 @@ fn parse_profile_loop_lists(
         }
     }
     Ok((view.remaining() == 0).then_some(lists))
+}
+
+pub(crate) fn construction_closing_flag_losses(
+    groups: &[DesignConstructionOperandGroup],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    groups
+        .iter()
+        .filter(|group| group.frame.closing_flag)
+        .map(|group| {
+            crate::loss::F3dLossCode::ConstructionClosingFlagAssumed.note(format!(
+                "construction group {} has closing flag 1; its interpretation assumes the flag does not change operation semantics",
+                group.id
+            ))
+        })
+        .collect()
 }

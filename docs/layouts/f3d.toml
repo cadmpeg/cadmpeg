@@ -233,11 +233,11 @@ source = "spec"
 anchor = "u32 at member offset 30"
 
 [[record.field]]
-name = "reserved_zero"
+name = "sketch_flag"
 offset = 34
 type = "u8"
 source = "spec"
-anchor = "Byte 34 is zero"
+anchor = "Byte 34 is a one-byte flag"
 
 [[record.field]]
 name = "visible"
@@ -257,6 +257,110 @@ anchor = "byte 36 is `01`"
 path = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
 contains = "const SKETCH_CONTAINER_MEMBER_TYPE_GUID: &str = \"37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9\";"
 note = "The decoder selects the member by this type GUID before reading this prefix."
+
+
+[[record]]
+name = "sketch_geometry_group_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A sketch geometry group has type GUID"
+size = 75
+note = "Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its primary frame stores the indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes, a u32 ordinal at offset 21"
+
+[[record.field]]
+name = "ordinal"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 ordinal at offset 21"
+
+[[record.field]]
+name = "constant_one"
+offset = 25
+type = "u32"
+value = 1
+source = "spec"
+anchor = "u32 `1` at offset 25"
+
+[[record.field]]
+name = "zero_byte"
+offset = 29
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a zero byte at offset 29"
+
+[[record.field]]
+name = "nested_header"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "A nested indexed header with the same record index starts at offset 30"
+
+[[record.field]]
+name = "nested_zero_run"
+offset = 41
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets 41 through 48"
+
+[[record.field]]
+name = "marker"
+offset = 49
+type = "u8"
+value = 1
+source = "spec"
+anchor = "`01` at offset 49"
+
+[[record.field]]
+name = "nested_zero_run_2"
+offset = 50
+type = "bytes[12]"
+source = "spec"
+anchor = "twelve zero bytes at offsets 50 through 61"
+
+[[record.field]]
+name = "scale_a"
+offset = 62
+type = "f32"
+source = "spec"
+anchor = "f32 `1.0` at offsets 62 and 66"
+
+[[record.field]]
+name = "scale_b"
+offset = 66
+type = "f32"
+source = "spec"
+anchor = "f32 `1.0` at offsets 62 and 66"
+
+[[record.field]]
+name = "zero_byte_2"
+offset = 70
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a zero byte at offset 70"
+
+[[record.field]]
+name = "member_count"
+offset = 71
+type = "u32"
+source = "spec"
+anchor = "A u32 member count `N` at offset 71"
 
 [[record]]
 name = "design_decal_scope_prefix"
@@ -7049,10 +7153,175 @@ source = "spec"
 anchor = "offsets 34 through 44 are zero"
 
 [[record]]
-name = "legacy_loft_body_carrier_class_322"
+name = "three_flag_compact_loft_operation_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes"
+anchor = "The three-flag compact form stores bytes"
+size = 44
+note = "Offsets are relative to the primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "flags"
+offset = 21
+type = "bytes[3]"
+source = "spec"
+anchor = "bytes `01 01` and a byte `0` or `1` at offsets 21 through 23"
+
+[[record.field]]
+name = "operation"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 at offset 24"
+
+[[record.field]]
+name = "zero_flag"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "a zero byte at offset 28"
+
+[[record.field]]
+name = "all_ones"
+offset = 29
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff` at offsets 29 through 32"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "zero bytes at offsets 33 through 43"
+
+[[record]]
+name = "standard_loft_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The standard `Loft` scope has nine zero bytes"
+size = 34
+note = "Offsets are relative to the primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte `01` at offset 20"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 21
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offsets 21 through 24"
+
+[[record.field]]
+name = "flags"
+offset = 25
+type = "bytes[4]"
+source = "spec"
+anchor = "four flag bytes at offsets 25 through 28"
+
+[[record.field]]
+name = "operation"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 at offset 29"
+
+[[record.field]]
+name = "marked_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "Byte 33 opens a same-segment marked reference"
+
+[[record]]
+name = "three_flag_standard_loft_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The three-flag standard form stores three flag bytes"
+size = 33
+note = "Offsets are relative to the primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte `01` at offset 20"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 21
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offsets 21 through 24"
+
+[[record.field]]
+name = "flags"
+offset = 25
+type = "bytes[3]"
+source = "spec"
+anchor = "three flag bytes at offsets 25 through 27"
+
+[[record.field]]
+name = "operation"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 at offset 28"
+
+[[record.field]]
+name = "null_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "a null marked reference `00` at offset 32"
+
+[[record]]
+name = "legacy_loft_body_carrier"
+kind = "byte"
+section = "3.1"
+anchor = "The legacy Boolean-Loft body carrier is 87 bytes"
 size = 87
 note = "Offsets are relative to the primary indexed header. The same-index paired header begins at offset 87."
 
@@ -7148,10 +7417,10 @@ source = "spec"
 anchor = "a marked reference to record `N+1` starts at offset 76"
 
 [[record]]
-name = "legacy_loft_body_carrier_class_322_tail"
+name = "legacy_loft_body_carrier_owner_tail"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier with an owner tail is 99 bytes"
+anchor = "The legacy body carrier with an owner tail is 99 bytes"
 size = 99
 note = "Offsets are relative to the primary indexed header. The same-index paired header begins at offset 99."
 
@@ -7160,7 +7429,7 @@ name = "common_prefix"
 offset = 0
 type = "bytes[87]"
 source = "spec"
-anchor = "uses the class-`322`/`262` carrier prefix through offset 86"
+anchor = "uses the 87-byte carrier fields through offset 86"
 
 [[record.field]]
 name = "tail_zero"
@@ -7177,33 +7446,47 @@ source = "spec"
 anchor = "a marked reference to the owning scope at offset 88"
 
 [[record]]
-name = "legacy_loft_body_carrier_class_411"
+name = "legacy_loft_body_carrier_three_flag"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`411`/`266` carrier has the same fields and offsets"
-size = 99
-note = "Offsets are relative to the primary indexed header. The class-specific owner tail occupies offsets 87 through 98."
+anchor = "The legacy body carrier with a three-byte flag block is 100 bytes"
+size = 100
+note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "common_prefix"
 offset = 0
-type = "bytes[87]"
+type = "bytes[74]"
 source = "spec"
-anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes"
+anchor = "uses the 87-byte carrier fields through offset 73"
+
+[[record.field]]
+name = "flags"
+offset = 74
+type = "bytes[3]"
+source = "spec"
+anchor = "flags `[01 00 00]` at offset 74"
+
+[[record.field]]
+name = "next_reference"
+offset = 77
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to record `N+1` at offset 77"
 
 [[record.field]]
 name = "tail_zero"
-offset = 87
+offset = 88
 type = "u8"
 source = "spec"
-anchor = "stores a zero byte at offset 87"
+anchor = "a zero byte at offset 88"
 
 [[record.field]]
 name = "trailing_scope_reference"
-offset = 88
+offset = 89
 type = "bytes[11]"
 source = "spec"
-anchor = "a marked reference to the owning scope at offset 88"
+anchor = "a marked reference to the owning scope at offset 89"
 
 [[record]]
 name = "fixed_pipe_operation_prefix"
@@ -16714,9 +16997,9 @@ note = "The transform record's tail precedes the same-index paired header at off
 name = "legacy_body_group_frame_123"
 kind = "byte"
 section = "3.1"
-anchor = "The legacy body-group frame is keyed by its primary and paired class tags"
+anchor = "In the legacy body-group frame"
 size = 123
-note = "Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 328/263, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 01 01, 00 01, and 00 01 respectively. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53; its tail has byte 0 at +98, discriminant 01 01 at +99, an unmarked N+1 reference at +101, and the owning-scope reference at +112. It has no counted trailing-reference run."
+note = "Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53. It has no counted trailing-reference run."
 
 [[record.field]]
 name = "indexed_header"
@@ -16794,7 +17077,7 @@ name = "tail_discriminant"
 offset = 98
 type = "bytes[2]"
 source = "spec"
-anchor = "a two-byte discriminant"
+anchor = "the two-byte construction-group flag block"
 
 [[record.field]]
 name = "n_plus_1_reference"
