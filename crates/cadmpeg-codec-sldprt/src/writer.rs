@@ -3873,7 +3873,35 @@ fn descriptor(
     Ok(())
 }
 
-fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
+#[derive(Debug)]
+enum MaterialError {
+    MissingAppearance,
+    Decline(&'static str),
+}
+
+impl From<MaterialError> for CodecError {
+    fn from(error: MaterialError) -> Self {
+        match error {
+            MaterialError::MissingAppearance => {
+                Self::Malformed("body binding references missing appearance".into())
+            }
+            MaterialError::Decline(reason) => Self::UnsupportedContent(reason.into()),
+        }
+    }
+}
+
+impl From<MaterialError> for write_error::WriteError {
+    fn from(error: MaterialError) -> Self {
+        match error {
+            MaterialError::MissingAppearance => Self::Fatal(CodecError::Malformed(
+                "body binding references missing appearance".into(),
+            )),
+            MaterialError::Decline(reason) => Self::Decline(reason.into()),
+        }
+    }
+}
+
+fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, MaterialError> {
     let appearances = ir
         .model
         .appearances
@@ -3885,19 +3913,19 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("body binding references missing appearance".into())
-        })?;
-        let color = appearance.base_color.ok_or_else(|| {
-            CodecError::UnsupportedContent("SLDPRT body appearance has no base color".into())
-        })?;
+        let appearance = appearances
+            .get(&binding.appearance)
+            .ok_or(MaterialError::MissingAppearance)?;
+        let color = appearance
+            .base_color
+            .ok_or(MaterialError::Decline("SLDPRT body appearance has no base color"))?;
         let material = (appearance.name.as_deref().unwrap_or("Material"), color);
         if selected
             .as_ref()
             .is_some_and(|current| current != &material)
         {
-            return Err(CodecError::UnsupportedContent(
-                "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
+            return Err(MaterialError::Decline(
+                "SLDPRT writer cannot encode distinct body materials in SWObjects",
             ));
         }
         selected = Some(material);
@@ -3913,8 +3941,8 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
                 .as_ref()
                 .is_some_and(|current| current != &material)
             {
-                return Err(CodecError::UnsupportedContent(
-                    "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
+                return Err(MaterialError::Decline(
+                    "SLDPRT writer cannot encode distinct body materials in SWObjects",
                 ));
             }
             selected = Some(material);
@@ -3939,7 +3967,7 @@ fn materials_payload(
     Ok((payload, residuals))
 }
 
-fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
+fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, MaterialError> {
     let mut materials = Vec::new();
     if let Some(material) = body_material(ir)? {
         materials.push(material);
@@ -3949,8 +3977,8 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
             continue;
         }
         let Some(color) = appearance.base_color else {
-            return Err(CodecError::UnsupportedContent(
-                "SLDPRT material appearance has no base color".into(),
+            return Err(MaterialError::Decline(
+                "SLDPRT material appearance has no base color",
             ));
         };
         let material = (appearance.name.as_deref().unwrap_or("Material"), color);
@@ -4061,18 +4089,19 @@ pub(crate) fn brep_body(
         if bounded_curve::derived_sphere_seam(ir, edge) {
             continue;
         }
-        let bounded = bounded_curve::from_edge(ctx, ir, edge, length_scale)?.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
-                "SLDPRT edge {} has no writable bounded curve",
-                edge.id
-            ))
-        })?;
+        let bounded = bounded_curve::from_edge(ctx, ir, edge, length_scale)
+            .map_err(|limit| write_error::WriteError::Fatal(limit.into()))?
+            .ok_or_else(|| {
+                write_error::WriteError::Decline(format!(
+                    "SLDPRT edge {} has no writable bounded curve",
+                    edge.id
+                ))
+            })?;
         if !curves.contains_key(&bounded.curve) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(write_error::WriteError::Decline(format!(
                 "SLDPRT edge {} has no emitted bounded-curve source",
                 edge.id
-            ))
-            .into());
+            )));
         }
         bounded_curves.insert(edge.id.clone(), (take_attr(&mut next)?, bounded));
     }
@@ -4958,7 +4987,7 @@ pub(super) fn surface_values(
     geometry: &SurfaceGeometry,
     reference: cadmpeg_ir::math::Vector3,
     length_scale: f64,
-) -> Result<(u8, Vec<f64>), CodecError> {
+) -> Result<(u8, Vec<f64>), write_error::WriteError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
@@ -5006,12 +5035,12 @@ pub(super) fn surface_values(
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
             if ratio != 1.0 {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact cone carriers encode circular cones only".into(),
                 ));
             }
             if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact cone carriers require an acute positive half-angle".into(),
                 ));
             }
@@ -5038,7 +5067,7 @@ pub(super) fn surface_values(
             let axis = sphere_surface.frame().axis().as_raw();
             let radius = sphere_surface.radius().get();
             if radius < 0.0 {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact sphere carriers require a positive radius".into(),
                 ));
             }
@@ -5065,7 +5094,7 @@ pub(super) fn surface_values(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if !(major_radius > minor_radius && minor_radius > 0.0) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact torus carriers require major > minor > 0".into(),
                 ));
             }
@@ -5093,7 +5122,7 @@ pub(super) fn surface_values(
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
         }

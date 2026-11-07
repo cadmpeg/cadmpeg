@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(super) struct Provider {
     name: String,
+    order: Option<usize>,
     expanded: Option<bool>,
     properties: BTreeMap<String, String>,
     native: BTreeMap<String, GuiPropertyRecord>,
@@ -23,6 +24,7 @@ impl Provider {
     fn new(name: String) -> Self {
         Self {
             name,
+            order: None,
             expanded: None,
             properties: BTreeMap::new(),
             native: BTreeMap::new(),
@@ -61,6 +63,52 @@ impl Provider {
 
 fn native_property(record: &GuiPropertyRecord) -> Result<Option<String>, CodecError> {
     xml::native_gui(record)
+}
+
+fn unchanged_scalar(record: &GuiPropertyRecord, generated: &str) -> bool {
+    let [source] = record.values.as_slice() else {
+        return false;
+    };
+    if !record.side_entries.is_empty() || source.text.is_some() || source.attributes.len() != 1 {
+        return false;
+    }
+    let Some(original) = source.attributes.get("value") else {
+        return false;
+    };
+    let Ok(document) = roxmltree::Document::parse(generated) else {
+        return false;
+    };
+    let root = document.root_element();
+    let mut children = root.children().filter(roxmltree::Node::is_element);
+    let Some(node) = children.next() else {
+        return false;
+    };
+    let Some(value) = node.attribute("value") else {
+        return false;
+    };
+    if root.attribute("type") != Some(record.type_name.as_str())
+        || node.tag_name().name() != source.tag
+        || node.attributes().len() != 1
+        || children.next().is_some()
+        || node
+            .children()
+            .any(|child| child.is_element() || child.is_text())
+    {
+        return false;
+    }
+    if original == value {
+        return true;
+    }
+    match record.type_name.as_str() {
+        "App::PropertyBool" => matches!(
+            (original.as_str(), value),
+            ("true", "1") | ("false", "0") | ("1", "true") | ("0", "false")
+        ),
+        "App::PropertyFloat" | "App::PropertyFloatConstraint" => {
+            matches!((original.parse::<f64>(), value.parse::<f64>()), (Ok(a), Ok(b)) if a.is_finite() && a == b)
+        }
+        _ => false,
+    }
 }
 
 fn native(
@@ -103,6 +151,7 @@ fn native(
                 None => record.name.clone(),
             };
         let mut provider = Provider::new(name.clone());
+        provider.order = Some(record.order);
         provider.expanded = record.expanded;
         for property in properties
             .iter()
@@ -168,11 +217,13 @@ fn neutral_views(
             .entry(name.clone())
             .or_insert_with(|| Provider::new(name));
         provider.expanded = view.expanded;
-        for (name, property) in &provider.native {
-            if property.values.iter().any(|value| {
-                value.attributes.contains_key("value") || value.attributes.contains_key("Value")
-            }) {
-                provider.properties.remove(name);
+        if view.native_ref.is_none() {
+            for (name, property) in &provider.native {
+                if property.values.iter().any(|value| {
+                    value.attributes.contains_key("value") || value.attributes.contains_key("Value")
+                }) {
+                    provider.properties.remove(name);
+                }
             }
         }
         for name in [
@@ -265,6 +316,19 @@ pub(super) fn write(
     let mut providers = native(ir, names, &live, losses)?;
     neutral_views(ir, names, &live, &mut providers, losses)?;
     colors::write(ir, names, body_names, &mut providers, entries, losses)?;
+    for provider in providers.values_mut() {
+        for (name, original) in &provider.native {
+            if provider
+                .properties
+                .get(name)
+                .is_some_and(|generated| unchanged_scalar(original, generated))
+            {
+                if let Some(property) = native_property(original)? {
+                    provider.properties.insert(name.clone(), property);
+                }
+            }
+        }
+    }
     for view in &ir.model.view_presentations {
         let provider = view
             .object
@@ -308,7 +372,9 @@ pub(super) fn write(
         losses.push(FreecadLossCode::ExportPresentationNotTransferred.note("FreeCAD GUI carriers create presentation records for appearance or visibility state without an authored neutral presentation"));
     }
     let mut content = String::new();
-    for provider in providers.values() {
+    let mut ordered_providers: Vec<_> = providers.values().collect();
+    ordered_providers.sort_by_key(|provider| (provider.order.is_none(), provider.order));
+    for provider in ordered_providers {
         let expanded = provider.expanded.map_or(String::new(), |value| {
             format!(" expanded=\"{}\"", u8::from(value))
         });
@@ -319,7 +385,14 @@ pub(super) fn write(
         content.push_str("><Properties Count=\"");
         content.push_str(&provider.properties.len().to_string());
         content.push_str("\">");
-        content.push_str(&provider.properties.values().cloned().collect::<String>());
+        let mut properties: Vec<_> = provider.properties.iter().collect();
+        properties.sort_by_key(|(name, _)| {
+            let order = provider.native.get(*name).map(|property| property.order);
+            (order.is_none(), order)
+        });
+        for (_, property) in properties {
+            content.push_str(property);
+        }
         content.push_str("</Properties></ViewProvider>");
     }
     let (schema, attributes, states) = document::write(ir, losses)?;

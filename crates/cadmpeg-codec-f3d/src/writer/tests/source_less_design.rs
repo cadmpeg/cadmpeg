@@ -22,6 +22,78 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_extrude_keeps_profile_record_indices() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let indices = |ir: &cadmpeg_ir::document::CadIr| {
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                    )
+                )
+            })
+            .unwrap();
+        let native = f3d_native(ir);
+        let scope = native
+            .design_parameter_scopes
+            .iter()
+            .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+            .unwrap();
+        let group = *scope.reference_members().values().next().unwrap();
+        (group, scope.extrude_profile().unwrap().record_index)
+    };
+    let expected = indices(decoded.ir());
+    let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert_eq!(indices(written.ir()), expected);
+}
+
+#[test]
+fn source_less_extrude_keeps_profile_asset() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let asset = |ir: &cadmpeg_ir::document::CadIr| {
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                    )
+                )
+            })
+            .unwrap();
+        let native = f3d_native(ir);
+        let scope = native
+            .design_parameter_scopes
+            .iter()
+            .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+            .unwrap();
+        scope
+            .extrude_profile()
+            .unwrap()
+            .asset_id
+            .as_str()
+            .to_owned()
+    };
+    let expected = asset(decoded.ir());
+    let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert_eq!(asset(written.ir()), expected);
+}
+
+#[test]
 fn source_less_extrude_keeps_scope_and_parameter_indices() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
     let decoded = F3dCodec
