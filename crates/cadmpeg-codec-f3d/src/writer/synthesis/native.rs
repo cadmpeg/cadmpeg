@@ -180,6 +180,9 @@ pub(super) fn reconcile(
                                     cadmpeg_ir::features::FeatureOperation::Extrude { .. },
                                 ) => scope.kind()
                                     == crate::records::feature::scope::DesignFeatureKind::Extrude,
+                                cadmpeg_ir::features::FeatureDefinition::Operation(
+                                    cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
+                                ) => scope.base_feature_construction().is_some(),
                                 _ => false,
                             }
                     })

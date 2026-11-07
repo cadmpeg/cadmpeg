@@ -22,6 +22,25 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_empty_base_feature_keeps_its_selection() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_base_feature;
+
+    let bytes = f3d_with_smbh_and_protein_with_generated_base_feature(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let (written, mut report) =
+        super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        decoded.ir(),
+        written.ir(),
+    );
+}
+
+#[test]
 fn source_less_typed_sketch_text_survives_synthesis() {
     use crate::records::entity_header::{DesignEntityHeader, SegmentType, SegmentTypeData};
     use crate::records::identity::ReferenceRun;
@@ -419,7 +438,10 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
                 value: format!("{}", 320 + ordinal),
                 offset: None,
             },
-            selector: Some(crate::records::recipes::ConstructionRecipeSelector { value: 0, byte_offset: None }),
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector {
+                value: 0,
+                byte_offset: None,
+            }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
@@ -503,21 +525,53 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design BulkStream encode");
     let mut absent_selector = source_less.clone();
-    f3d_native_mut(&mut absent_selector).construction_recipes[0].design.as_mut().unwrap().selector = None;
-    let selector_plan = F3dCodec.plan(EncodeInput::new(&absent_selector, None), TargetRequest::Inherit).unwrap();
+    f3d_native_mut(&mut absent_selector).construction_recipes[0]
+        .design
+        .as_mut()
+        .unwrap()
+        .selector = None;
+    let selector_plan = F3dCodec
+        .plan(
+            EncodeInput::new(&absent_selector, None),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
     let selector_id = &f3d_native(&absent_selector).construction_recipes[0].id;
-    assert_eq!(selector_plan.report().native_dispositions.record_disposition("f3d", "construction_recipes", selector_id), cadmpeg_ir::codec::write::NativeDisposition::Dropped);
-    assert!(selector_plan.report().losses.iter().any(|loss| loss.message.contains(selector_id)));
+    assert_eq!(
+        selector_plan
+            .report()
+            .native_dispositions
+            .record_disposition("f3d", "construction_recipes", selector_id),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    assert!(selector_plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(selector_id)));
     f3d_native_mut(&mut source_less).construction_recipes[0].recipe_index = 1;
     let plan = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .expect("an unrepresentable recipe is dropped");
     let dropped = &f3d_native(&source_less).construction_recipes[0].id;
-    assert_eq!(plan.report().native_dispositions.record_disposition("f3d", "construction_recipes", dropped), cadmpeg_ir::codec::write::NativeDisposition::Dropped);
-    assert!(plan.report().losses.iter().any(|loss| loss.message.contains(dropped)));
+    assert_eq!(
+        plan.report().native_dispositions.record_disposition(
+            "f3d",
+            "construction_recipes",
+            dropped
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(dropped)));
     let mut reduced = Vec::new();
     plan.write_to(&mut reduced).unwrap();
-    let reduced = F3dCodec.decode(&mut Cursor::new(reduced), &DecodeOptions::default()).unwrap();
+    let reduced = F3dCodec
+        .decode(&mut Cursor::new(reduced), &DecodeOptions::default())
+        .unwrap();
     assert_eq!(f3d_native(reduced.ir()).construction_recipes.len(), 4);
     let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
     let mut bulkstream = Vec::new();
