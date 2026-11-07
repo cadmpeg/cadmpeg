@@ -121,7 +121,7 @@ pub(super) fn read<'a>(
         .collect();
     skipped_property_sets.sort_unstable_by_key(|(offset, _)| *offset);
     for (extent, name, _, _) in damaged {
-        give_up_element(ctx, parts, extent, stream, &name)?;
+        give_up_element(ctx, parts, extent, stream, &name, "is malformed")?;
     }
     let root = document.root_element();
     if root.tag_name().name() != ROOT || root.attribute("type") != Some("PVS") {
@@ -201,7 +201,14 @@ pub(super) fn read<'a>(
             let extent = member
                 .child(start, end)
                 .ok_or_else(|| CodecError::malformed("XML property set escapes its member"))?;
-            give_up_element(ctx, parts, extent, stream, PROPERTY_COMPONENT_REF)?;
+            give_up_element(
+                ctx,
+                parts,
+                extent,
+                stream,
+                PROPERTY_COMPONENT_REF,
+                "has no recoverable component index",
+            )?;
             continue;
         }
         let step = match set.attribute("index_offset") {
@@ -242,6 +249,7 @@ fn give_up_element(
     extent: View<'_>,
     stream: &str,
     name: &str,
+    reason: &str,
 ) -> Result<(), CodecError> {
     let mut spec = PartSpec::new("pvz.xml_element").holding([cadmpeg_ir::ArenaClass::Model]);
     if let Some(stream) = cadmpeg_ir::StreamName::member(stream) {
@@ -249,7 +257,7 @@ fn give_up_element(
     }
     ctx.decode_part(parts, extent, spec, |_| {
         Err::<(), _>(CodecError::malformed(format_args!(
-            "damaged XML element <{name}>"
+            "XML element <{name}> {reason}"
         )))
     })?;
     Ok(())
