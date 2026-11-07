@@ -102,12 +102,18 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeOwnerIdenticalGeometry,
     /// A Move Face feature retains a face operand that does not join exactly one stored face revision.
     FeatureMoveFaceSelectionNative,
+    /// A Thread face stores a cone axis ratio that is not a finite number.
+    FeatureFaceJoinThreadRatioNonfinite,
+    /// A Thread face differs from the exact surface form within a tolerance.
+    FeatureFaceJoinThreadToleranceAssumed,
     /// A selected face rests on the assumption that its matched revision is the input face.
     FeatureFaceJoinInputRevisionAssumed,
     /// A selected face rests on a matching attribute that repeats on its owner.
     FeatureFaceJoinRepeatedAttribute,
     /// A selected face has a generated-name family that shares no feature with its selector.
     FeatureFaceJoinUnsharedFamily,
+    /// A selected face has several matched owners of identical surface geometry.
+    FeatureFaceJoinIdenticalOwners,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -313,9 +319,12 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureMoveFaceSelectionNative,
+        Self::FeatureFaceJoinThreadRatioNonfinite,
+        Self::FeatureFaceJoinThreadToleranceAssumed,
         Self::FeatureFaceJoinInputRevisionAssumed,
         Self::FeatureFaceJoinRepeatedAttribute,
         Self::FeatureFaceJoinUnsharedFamily,
+        Self::FeatureFaceJoinIdenticalOwners,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureSurfaceExtrusionPolarityAssumed,
@@ -451,9 +460,14 @@ impl InventorLossCode {
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
+            Self::FeatureFaceJoinThreadRatioNonfinite => "feature.face-join-thread-ratio-nonfinite",
+            Self::FeatureFaceJoinThreadToleranceAssumed => {
+                "feature.face-join-thread-tolerance-assumed"
+            }
             Self::FeatureFaceJoinInputRevisionAssumed => "feature.face-join-input-revision-assumed",
             Self::FeatureFaceJoinRepeatedAttribute => "feature.face-join-repeated-attribute",
             Self::FeatureFaceJoinUnsharedFamily => "feature.face-join-unshared-family",
+            Self::FeatureFaceJoinIdenticalOwners => "feature.face-join-identical-owners",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -585,9 +599,12 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureMoveFaceSelectionNative
+            | Self::FeatureFaceJoinThreadRatioNonfinite
+            | Self::FeatureFaceJoinThreadToleranceAssumed
             | Self::FeatureFaceJoinInputRevisionAssumed
             | Self::FeatureFaceJoinRepeatedAttribute
             | Self::FeatureFaceJoinUnsharedFamily
+            | Self::FeatureFaceJoinIdenticalOwners
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureSurfaceExtrusionPolarityAssumed
@@ -751,9 +768,12 @@ mod tests {
                 "feature.edge-selection-native",
                 "feature.edge-owner-identical-geometry",
                 "feature.move-face-selection-native",
+                "feature.face-join-thread-ratio-nonfinite",
+                "feature.face-join-thread-tolerance-assumed",
                 "feature.face-join-input-revision-assumed",
                 "feature.face-join-repeated-attribute",
                 "feature.face-join-unshared-family",
+                "feature.face-join-identical-owners",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.surface-extrusion-polarity-assumed",
