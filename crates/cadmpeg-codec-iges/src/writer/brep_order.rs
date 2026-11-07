@@ -73,7 +73,7 @@ fn apply_topology_source(
 ) {
     let prefix = match type_code {
         508 => "iges:model:loop#",
-        510 => "iges:model:face#",
+        143 | 144 | 510 => "iges:model:face#",
         514 => "iges:model:shell#",
         _ => return,
     };
@@ -93,7 +93,7 @@ pub(super) fn apply_topology_sources(ir: &cadmpeg_ir::CadIr, entities: &mut [sup
     for entity in entities {
         let prefix = match entity.type_code {
             508 => "iges:model:loop#",
-            510 => "iges:model:face#",
+            143 | 144 | 510 => "iges:model:face#",
             514 => "iges:model:shell#",
             _ => continue,
         };
