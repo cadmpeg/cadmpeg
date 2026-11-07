@@ -1659,3 +1659,26 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder projects the scope from its ordered reference table and keeps these lanes in the native scope bytes.
+### DR-311. Extension method of a SurfaceExtend scope
+
+**Question.** Which field of a `SurfaceExtend` scope stores the extension method: natural, tangent, or perpendicular?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing compact flag record. The candidate fields are the boolean of that flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope.
+
+**Need.** Three saves that extend the same edge by the same distance, one with each extension method, compared byte for byte.
+
+**Conflict.** None.
+
+**Note.** The decoder projects each `SurfaceExtend` scope with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`.
+
+### DR-312. Negative SurfaceExtend distance
+
+**Question.** What operation does a negative `SurfaceExtend` extension distance select?
+
+**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive.
+
+**Need.** Two saves that extend the same edge by a positive distance and by its negation, with the resulting body geometry of each.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the signed distance in the native operation, keeps the scope native, and reports `feature.surface-extend-distance-nonpositive`.

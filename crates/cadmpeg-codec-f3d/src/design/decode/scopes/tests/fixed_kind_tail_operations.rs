@@ -21,8 +21,7 @@ use crate::records::feature::fixed_parameters::{
 use crate::records::feature::primitives::DesignSolidPrimitive;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::{
-    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport,
+    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
@@ -1230,8 +1229,6 @@ pub(super) fn fixed_kind_tail_operations(
             distance: crate::test_support::real(0.04),
             distance_offset: u64_from_index(extend_distance_at + 40),
             distance_record_index: extend_distance_record_index,
-            method: DesignSurfaceExtendMethod::Tangent,
-            method_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 2),
             boundary_record_index: extend_boundary_record_index,
             boundary_reference_record_index: 900,
             boundary_reference_offset: u64_from_index(
@@ -1269,7 +1266,7 @@ pub(super) fn fixed_kind_tail_operations(
         }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
-                method: cadmpeg_ir::features::SurfaceExtension::Linear,
+                method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
             }),) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]
@@ -1339,7 +1336,7 @@ pub(super) fn fixed_kind_tail_operations(
             &extend_scope,
         )
         .map(|operation| operation.support),
-        None
+        Some(operation.support.clone())
     );
     let mut zero_tolerance = bytes.clone();
     let tolerance_at = extend_boundary_at + extend_boundary_tail + 39;
@@ -1509,7 +1506,20 @@ pub(super) fn fixed_kind_tail_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &grouped_scope,
         ),
-        None
+        Some(DesignSurfaceOffsetOperation {
+            distance: crate::test_support::real(-0.4),
+            distance_offset: u64_from_index(extend_distance_at + 40),
+            distance_record_index: extend_distance_record_index,
+            support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+                boundary_record_index: grouped_record_index,
+                boundary_reference_record_index: grouped_record_index + 2,
+                boundary_reference_offset: u64_from_index(grouped_at + 36 + 6),
+                edge_record_indices: vec![grouped_member_record_index],
+                tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.0001)
+                    .expect("checked fixture value"),
+                tolerance_offset: u64_from_index(grouped_at + 36 + 39),
+            },
+        })
     );
 
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]

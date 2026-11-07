@@ -8997,6 +8997,59 @@ Unstated regions:
 - `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
 - `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
 
+## `surface_boundary_group_tail_88`
+
+Spec §3.1 · layout: byte offsets · size: 88 B
+
+Offsets are relative to the end of the boundary-carrier member run. The same-index paired header begins at offset 88.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `absent_optional_references` | `bytes[2]` | little | spec | Each tail stores two zero bytes |
+| 2 | 4 | `trailing_count` | `u32` | little | spec | `u32 trailing_count` with value 1 |
+| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference that names a compact flag record |
+| 17 | 8 | `role` | `u64` | little | spec | A u64 role follows |
+| 25 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 35 | 4 | `ordinal` | `u32` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 39 | 8 | `tolerance` | `f64` | little | spec | a positive f64 modelling tolerance in centimetres |
+| 47 | 4 | `ordinal_copy` | `u32` | little | spec | a second copy of the ordinal |
+| 51 | 11 | `second_next_reference` | `bytes[11]` | little | spec | a marked reference to record `N + 2` |
+| 62 | 1 | `flag_prefix` | `u8` | little | spec | `01 + u8 variant + u8 closing_flag` |
+| 63 | 1 | `variant` | `u8` | little | spec | `01 + u8 variant + u8 closing_flag` |
+| 64 | 1 | `closing_flag` | `u8` | little | spec | `01 + u8 variant + u8 closing_flag` |
+| 65 | 11 | `next_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 76 | 1 | `zero_byte` | `u8` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 77 | 11 | `scope_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+
+## `surface_boundary_group_tail_87`
+
+Spec §3.1 · layout: byte offsets · size: 87 B
+
+Offsets are relative to the end of the boundary-carrier member run. The same-index paired header begins at offset 87.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `absent_optional_references` | `bytes[2]` | little | spec | Each tail stores two zero bytes |
+| 2 | 4 | `trailing_count` | `u32` | little | spec | `u32 trailing_count` with value 1 |
+| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference that names a compact flag record |
+| 17 | 8 | `role` | `u64` | little | spec | A u64 role follows |
+| 25 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 35 | 4 | `ordinal` | `u32` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 39 | 8 | `tolerance` | `f64` | little | spec | a positive f64 modelling tolerance in centimetres |
+| 47 | 4 | `ordinal_copy` | `u32` | little | spec | a second copy of the ordinal |
+| 51 | 11 | `second_next_reference` | `bytes[11]` | little | spec | a marked reference to record `N + 2` |
+| 62 | 1 | `variant` | `u8` | little | spec | `u8 variant + u8 closing_flag` |
+| 63 | 1 | `closing_flag` | `u8` | little | spec | `u8 variant + u8 closing_flag` |
+| 64 | 11 | `next_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 75 | 1 | `zero_byte` | `u8` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 76 | 11 | `scope_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+
 ## `path_pattern_settings`
 
 Spec §Assembly operands · layout: byte offsets · size: 267 B
