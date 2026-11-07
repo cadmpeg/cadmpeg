@@ -1372,9 +1372,17 @@ pub(super) fn write(
         if let (Some(original), None) = (originals.next(), originals.next()) {
             object.declaration_id =
                 xml::DeclarationId::Source(original.persistent_id.map(|id| id.to_string()));
+            let neutral_owns_dependencies = ir.model.features.iter().any(|feature| {
+                feature.native_ref.as_deref() == Some(original.id().as_str())
+                    && matches!(
+                        feature.definition().operation(),
+                        FeatureOperation::Native { .. }
+                    )
+            });
             let mut dependencies = original
                 .dependencies
                 .iter()
+                .filter(|_| !neutral_owns_dependencies)
                 .filter_map(|id| names.get(id))
                 .filter(|name| emitted_names.contains(*name))
                 .cloned()
