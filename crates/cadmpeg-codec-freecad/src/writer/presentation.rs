@@ -217,6 +217,15 @@ fn neutral_views(
             .entry(name.clone())
             .or_insert_with(|| Provider::new(name));
         provider.expanded = view.expanded;
+        if view.native_ref.is_none() {
+            for (name, property) in &provider.native {
+                if property.values.iter().any(|value| {
+                    value.attributes.contains_key("value") || value.attributes.contains_key("Value")
+                }) {
+                    provider.properties.remove(name);
+                }
+            }
+        }
         for name in [
             "Visibility",
             "DisplayMode",
