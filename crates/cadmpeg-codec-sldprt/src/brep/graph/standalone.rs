@@ -315,9 +315,11 @@ mod tests {
             parameter_range: None,
             source_object: None,
         });
-        let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
-        let arena = DecodeArena::new();
+        let write_arena = DecodeArena::new();
         let policy = DecodePolicy::desktop();
+        let (write_ctx, _) = DecodeContext::from_root_bytes(&[], &write_arena, &policy).unwrap();
+        let body = crate::writer::brep_body(&write_ctx, &ir, 0.001, false).unwrap();
+        let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
         let decoded = super::decode(&ctx, &body, &cadmpeg_ir::stream_name!("standalone")).unwrap();
         assert!(decoded.is_some_and(|brep| brep.curves.len() == 1));
