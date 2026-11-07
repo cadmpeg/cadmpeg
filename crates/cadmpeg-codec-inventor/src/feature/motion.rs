@@ -418,8 +418,30 @@ impl<'a> ValidationIndex<'a> {
         bodies: &HashMap<String, cadmpeg_ir::ids::BodyId>,
     ) -> bool {
         decode(source, &self.properties, &self.transforms).is_some_and(|motion| {
+            let mut expected = motion.operation;
+            // A historical face selection keeps its native collection; the
+            // face join is checked by `face_selection::valid`.
+            if let (
+                FeatureOperation::MoveFace {
+                    faces: expected_faces,
+                    ..
+                },
+                FeatureDefinition::Operation(FeatureOperation::MoveFace { faces: actual, .. }),
+            ) = (&mut expected, definition)
+            {
+                if let (
+                    FaceSelection::Native(native),
+                    FaceSelection::Historical { native: stored, .. }
+                    | FaceSelection::HistoricalPartial { native: stored, .. },
+                ) = (&*expected_faces, actual)
+                {
+                    if native == stored.as_str() {
+                        *expected_faces = actual.clone();
+                    }
+                }
+            }
             super::body_selection::matches(
-                FeatureDefinition::Operation(motion.operation),
+                FeatureDefinition::Operation(expected),
                 definition,
                 bodies,
                 None,
