@@ -3873,7 +3873,35 @@ fn descriptor(
     Ok(())
 }
 
-fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
+#[derive(Debug)]
+enum MaterialError {
+    MissingAppearance,
+    Decline(&'static str),
+}
+
+impl From<MaterialError> for CodecError {
+    fn from(error: MaterialError) -> Self {
+        match error {
+            MaterialError::MissingAppearance => {
+                Self::Malformed("body binding references missing appearance".into())
+            }
+            MaterialError::Decline(reason) => Self::UnsupportedContent(reason.into()),
+        }
+    }
+}
+
+impl From<MaterialError> for write_error::WriteError {
+    fn from(error: MaterialError) -> Self {
+        match error {
+            MaterialError::MissingAppearance => Self::Fatal(CodecError::Malformed(
+                "body binding references missing appearance".into(),
+            )),
+            MaterialError::Decline(reason) => Self::Decline(reason.into()),
+        }
+    }
+}
+
+fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, MaterialError> {
     let appearances = ir
         .model
         .appearances
@@ -3885,19 +3913,19 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("body binding references missing appearance".into())
-        })?;
-        let color = appearance.base_color.ok_or_else(|| {
-            CodecError::UnsupportedContent("SLDPRT body appearance has no base color".into())
-        })?;
+        let appearance = appearances
+            .get(&binding.appearance)
+            .ok_or(MaterialError::MissingAppearance)?;
+        let color = appearance
+            .base_color
+            .ok_or(MaterialError::Decline("SLDPRT body appearance has no base color"))?;
         let material = (appearance.name.as_deref().unwrap_or("Material"), color);
         if selected
             .as_ref()
             .is_some_and(|current| current != &material)
         {
-            return Err(CodecError::UnsupportedContent(
-                "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
+            return Err(MaterialError::Decline(
+                "SLDPRT writer cannot encode distinct body materials in SWObjects",
             ));
         }
         selected = Some(material);
@@ -3913,8 +3941,8 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
                 .as_ref()
                 .is_some_and(|current| current != &material)
             {
-                return Err(CodecError::UnsupportedContent(
-                    "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
+                return Err(MaterialError::Decline(
+                    "SLDPRT writer cannot encode distinct body materials in SWObjects",
                 ));
             }
             selected = Some(material);
@@ -3939,7 +3967,7 @@ fn materials_payload(
     Ok((payload, residuals))
 }
 
-fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
+fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, MaterialError> {
     let mut materials = Vec::new();
     if let Some(material) = body_material(ir)? {
         materials.push(material);
@@ -3949,8 +3977,8 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
             continue;
         }
         let Some(color) = appearance.base_color else {
-            return Err(CodecError::UnsupportedContent(
-                "SLDPRT material appearance has no base color".into(),
+            return Err(MaterialError::Decline(
+                "SLDPRT material appearance has no base color",
             ));
         };
         let material = (appearance.name.as_deref().unwrap_or("Material"), color);
