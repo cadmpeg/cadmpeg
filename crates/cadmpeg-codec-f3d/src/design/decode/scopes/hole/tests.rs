@@ -28,8 +28,7 @@ fn exact_hole_construction_with_ctx(
     super::exact_hole_construction(
         &ctx,
         &mut parts,
-        source,
-        "Design/BulkStream.dat",
+        (source, "Design/BulkStream.dat"),
         records,
         scope,
         stream_types,
@@ -784,8 +783,7 @@ fn damaged_hole_carrier_keeps_its_valid_sibling_and_is_retained_once() {
         let result = super::exact_hole_construction(
             &ctx,
             &mut parts,
-            source,
-            "Design/BulkStream.dat",
+            (source, "Design/BulkStream.dat"),
             &records,
             &scope,
             &types,
@@ -865,8 +863,7 @@ fn ambiguous_valid_hole_carriers_do_not_hide_a_damaged_sibling() {
     let result = super::exact_hole_construction(
         &ctx,
         &mut parts,
-        source,
-        "Design/BulkStream.dat",
+        (source, "Design/BulkStream.dat"),
         &records,
         &scope,
         &types,

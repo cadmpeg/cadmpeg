@@ -29,9 +29,9 @@ pub(super) fn contain_point_data<'a>(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     for index in references {
-        if !types
+        if types
             .get(&u64::from(*index))
-            .is_some_and(|(guid, _)| *guid == POINT_DATA_TYPE_GUID)
+            .is_none_or(|(guid, _)| *guid != POINT_DATA_TYPE_GUID)
         {
             continue;
         }

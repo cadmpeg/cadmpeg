@@ -54,8 +54,7 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 pub(in crate::design::decode) fn exact_hole_construction(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
-    source: View<'_>,
-    stream: &str,
+    source: (View<'_>, &str),
     records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
@@ -66,6 +65,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
     if &scope.kind() != required_scope_kind {
         return Ok(None);
     }
+    let (source, stream) = source;
     let bytes = source.window();
     let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
     let mut candidate = None;

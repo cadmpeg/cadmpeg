@@ -661,8 +661,7 @@ pub(crate) fn decode_parameter_scopes(
                     let construction = exact_hole_construction(
                         ctx,
                         &mut parts,
-                        source,
-                        &entry.name,
+                        (source, &entry.name),
                         &records,
                         &scope,
                         &stream_types,
@@ -687,10 +686,12 @@ pub(crate) fn decode_parameter_scopes(
                                 source,
                                 &entry.name,
                                 &records,
-                                &scope,
                                 &stream_types,
-                                recipes,
-                                solved_frame,
+                                super::super::assembly::LegacyAsBuiltOperands {
+                                    scope: &scope,
+                                    recipes,
+                                    solved_frame,
+                                },
                             ) {
                                 Ok(Some(carriers)) => carriers,
                                 Ok(None) => return None,
