@@ -14,6 +14,109 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::test_support::indexed_header;
 
 #[test]
+fn damaged_assembly_solved_frame_retains_valid_sibling() {
+    let generation =
+        crate::design::assembly::legacy_as_built_421_generation(421, "364", "272").unwrap();
+    let mut bytes = Vec::new();
+    let mut scopes = Vec::new();
+    for (index, damaged) in [(200, true), (201, false)] {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+            DesignFeatureKind::AsBuilt,
+            10,
+        );
+        scope.class_tag = DesignClassTag::try_from("364".to_owned()).unwrap();
+        scope.paired_class_tag = DesignClassTag::try_from("272".to_owned()).unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 421;
+                draft.paired_byte_offset = 421;
+                draft.reference_count_offset = 185;
+                let mut refs: Vec<_> = (20..31).collect();
+                refs[8] = index;
+                draft.reference_members = ReferenceRun::from_columns(
+                    refs,
+                    (0..11)
+                        .map(|ordinal| u64::try_from(190 + ordinal * 11).unwrap())
+                        .collect(),
+                    "reference_members",
+                )
+                .unwrap();
+                draft.feature_ordinal_offset = 334;
+                draft.layout_fixture_references();
+            })
+            .unwrap();
+        let start = bytes.len();
+        indexed_header(
+            &mut bytes,
+            generation.frame_class_tag().as_bytes().try_into().unwrap(),
+            index,
+        );
+        bytes.resize(start + generation.frame_length(), 0);
+        bytes[start + generation.matrix_prefix()..start + generation.matrix_offset()]
+            .copy_from_slice(&[1, 1, 0, 0]);
+        for (ordinal, value) in SketchPlacementMatrix::IDENTITY
+            .rows()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let at = start + generation.matrix_offset() + ordinal * std::mem::size_of::<f64>();
+            bytes[at..at + std::mem::size_of::<f64>()].copy_from_slice(&value.to_le_bytes());
+        }
+        if damaged {
+            bytes[start + generation.matrix_prefix()] = 0;
+        }
+        indexed_header(
+            &mut bytes,
+            generation
+                .frame_paired_class_tag()
+                .as_bytes()
+                .try_into()
+                .unwrap(),
+            index,
+        );
+        scopes.push(scope);
+    }
+    let records = crate::design::test_support::test_primary_frames(&bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    for scope in &scopes {
+        crate::design::decode::assembly::contain_legacy_as_built_solved_frame(
+            &ctx,
+            &mut parts,
+            source,
+            "Design/BulkStream.dat",
+            &records,
+            scope,
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        crate::design::decode::assembly::exact_legacy_as_built_421_solved_frame(
+            &bytes, &records, &scopes[1]
+        )
+        .unwrap()
+        .reference_record_index,
+        201
+    );
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
+#[test]
 fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projection() {
     let owner = |scope_record_index: u32,
                  record_index: u32,

@@ -582,8 +582,6 @@ pub(crate) struct DecodedMaterials {
     /// Distance-valued texture properties omitted because their unit tag has
     /// no defined model-space conversion.
     pub(crate) untyped_distance_properties: usize,
-    /// Rejected Protein record diagnostics.
-    pub(crate) notes: Vec<String>,
     /// Retained bytes of the given-up protein record runs.
     pub(crate) part_fidelity: SourceFidelity,
     /// Native stubs of the given-up protein record runs.
@@ -617,7 +615,6 @@ pub(crate) fn decode_with_body_bindings<'a>(
     output: &mut PartOutput,
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
-    let notes = Vec::new();
     let mut untyped_distance_properties = 0usize;
     for entry in scan
         .entries
@@ -846,7 +843,6 @@ pub(crate) fn decode_with_body_bindings<'a>(
         face_assignments,
         has_topology_assignments,
         untyped_distance_properties,
-        notes,
         part_fidelity,
         part_stubs,
         part_losses,

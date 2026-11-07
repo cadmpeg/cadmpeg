@@ -81,73 +81,161 @@ pub(super) fn browser_node_records(
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    let Ok(frames) = typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")
-    else {
-        return Ok(Vec::new());
-    };
+    let frames = typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID)?;
     for frame in frames {
-        if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
-            continue;
+        match parse_browser_node(bytes, frame) {
+            Ok(Some(node)) => out.push(node),
+            Ok(None) | Err(CodecError::Malformed(_)) => {}
+            Err(error) => return Err(error),
         }
-        if frame.design_type.module != DESIGN_MODULE_FUSION
-            || !frame
-                .design_type
-                .base_type_guid
-                .value()
-                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D Design browser-node entity {} has incompatible registration metadata",
-                frame.entity_id
-            )));
-        }
-        let record = &bytes[frame.start..frame.end];
-        let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
-            crate::design::text::malformed_design(format_args!(
-                "F3D Design browser-node entity {} has a truncated record index",
-                frame.entity_id
-            ))
-        })?;
-        if u64::from(record_index) != frame.entity_id || record.get(11..21) != Some(&[0; 10]) {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D Design browser-node entity {} has an invalid header",
-                frame.entity_id
-            )));
-        }
-        let Some((guid, after_guid)) =
-            lp_utf16_bounded(record, 21, GUID_LEN..=GUID_LEN).filter(|(guid, after)| {
-                is_guid_prefix(guid)
-                    && after
-                        .checked_add(11)
-                        .is_some_and(|record_end| record_end <= record.len())
-                    && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
-            })
-        else {
-            continue;
-        };
-        let hidden @ (0 | 1) = record.get(after_guid).copied().ok_or_else(|| {
-            CodecError::Malformed("F3D Design browser-node flag is truncated".into())
-        })?
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D Design browser-node entity {} has an invalid hidden flag",
-                frame.entity_id
-            )));
-        };
-        let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
-            CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
-        })?;
-
-        out.push(BrowserNodeRecord {
-            record_index,
-            guid,
-            entity_suffix,
-            hidden_offset: u64_from_index(frame.start + after_guid),
-            hidden: hidden == 1,
-        });
     }
     Ok(out)
+}
+
+fn parse_browser_node(
+    bytes: &[u8],
+    frame: super::meta::TypedPrimaryFrame<'_>,
+) -> Result<Option<BrowserNodeRecord>, CodecError> {
+    if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
+        return Ok(None);
+    }
+    if frame.design_type.module != DESIGN_MODULE_FUSION
+        || !frame
+            .design_type
+            .base_type_guid
+            .value()
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+            .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
+    {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D Design browser-node entity {} has incompatible registration metadata",
+            frame.entity_id
+        )));
+    }
+    let record = &bytes[frame.start..frame.end];
+    let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
+        crate::design::text::malformed_design(format_args!(
+            "F3D Design browser-node entity {} has a truncated record index",
+            frame.entity_id
+        ))
+    })?;
+    if u64::from(record_index) != frame.entity_id || record.get(11..21) != Some(&[0; 10]) {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D Design browser-node entity {} has an invalid header",
+            frame.entity_id
+        )));
+    }
+    let Some((guid, after_guid)) =
+        lp_utf16_bounded(record, 21, GUID_LEN..=GUID_LEN).filter(|(guid, after)| {
+            is_guid_prefix(guid)
+                && after
+                    .checked_add(11)
+                    .is_some_and(|record_end| record_end <= record.len())
+                && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
+        })
+    else {
+        return Ok(None);
+    };
+    let hidden @ (0 | 1) = record
+        .get(after_guid)
+        .copied()
+        .ok_or_else(|| CodecError::Malformed("F3D Design browser-node flag is truncated".into()))?
+    else {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D Design browser-node entity {} has an invalid hidden flag",
+            frame.entity_id
+        )));
+    };
+    let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
+        CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
+    })?;
+
+    Ok(Some(BrowserNodeRecord {
+        record_index,
+        guid,
+        entity_suffix,
+        hidden_offset: u64_from_index(frame.start + after_guid),
+        hidden: hidden == 1,
+    }))
+}
+
+pub(super) fn contain_browser_nodes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    meta: &crate::metastream::MetaStream,
+) -> Result<(), CodecError> {
+    let frames = typed_primary_frames(source.window(), meta, BROWSER_NODE_TYPE_GUID)?;
+    contain_presentation_records(ctx, parts, source, stream, frames, |frame| {
+        parse_browser_node(source.window(), frame).map(|_| ())
+    })
+}
+
+fn contain_presentation_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frames: Vec<super::meta::TypedPrimaryFrame<'_>>,
+    mut parse: impl FnMut(super::meta::TypedPrimaryFrame<'_>) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    for frame in frames {
+        let start = source
+            .start()
+            .checked_add(frame.start)
+            .ok_or_else(|| CodecError::malformed("browser node start overflows"))?;
+        let end = source
+            .start()
+            .checked_add(frame.end)
+            .ok_or_else(|| CodecError::malformed("browser node end overflows"))?;
+        let extent = source
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("browser node exceeds its stream"))?;
+        let id = cadmpeg_ir::ids::Identity::new(super::text::design_record_id(
+            stream,
+            ":design-record-header#",
+            u64_from_index(frame.start),
+        ))
+        .map_err(CodecError::malformed)?;
+        let mut spec = PartSpec::new("f3d.bulk_record")
+            .holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ])
+            .record_id(id);
+        if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+            spec = spec.in_stream(
+                cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                    .map_err(CodecError::malformed)?,
+            );
+        }
+        ctx.decode_part(parts, extent, spec, |_| parse(frame))?;
+    }
+    Ok(())
+}
+
+pub(super) fn contain_body_presentations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    meta: &crate::metastream::MetaStream,
+) -> Result<(), CodecError> {
+    let bytes = source.window();
+    let frames = typed_primary_frames(bytes, meta, BODY_PRESENTATION_TYPE_GUID)?;
+    if frames.is_empty() {
+        return Ok(());
+    }
+    let nodes = browser_node_records(bytes, meta)?;
+    let types = entity_types(meta)?;
+    contain_presentation_records(ctx, parts, source, stream, frames, |frame| {
+        let record = bytes
+            .get(frame.start..frame.end)
+            .ok_or_else(|| CodecError::malformed("body-presentation exceeds its stream"))?;
+        parse_typed_body_presentation(record, frame, &nodes, &types).map(|_| ())
+    })
 }
 
 /// Decode every typed body presentation in one Design stream.
@@ -183,37 +271,50 @@ pub(crate) fn each_body_presentation(
 ) -> Result<(), CodecError> {
     let nodes = browser_node_records(bytes, meta)?;
     let entity_types = entity_types(meta)?;
-    let Ok(frames) = typed_primary_frames(
-        bytes,
-        meta,
-        BODY_PRESENTATION_TYPE_GUID,
-        "body-presentation",
-    ) else {
-        return Ok(());
-    };
+    let frames = typed_primary_frames(bytes, meta, BODY_PRESENTATION_TYPE_GUID)?;
     for frame in frames {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
         }
-        if frame.design_type.module != DESIGN_MODULE_BODY
-            || !frame
-                .design_type
-                .base_type_guid
-                .value()
-                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D Design body-presentation entity {} has incompatible registration metadata",
-                frame.entity_id
-            )));
-        }
-        let (start, entity_id) = (frame.start, frame.entity_id);
-        visit(frame.start..frame.end, &|record: &[u8]| {
-            parse_body_presentation(record, start, entity_id, &nodes, &entity_types)
-        })?;
+        visit(
+            frame.start..frame.end,
+            &|record: &[u8]| match parse_typed_body_presentation(
+                record,
+                frame,
+                &nodes,
+                &entity_types,
+            ) {
+                Err(CodecError::Malformed(_)) => Ok(None),
+                result => result,
+            },
+        )?;
     }
     Ok(())
+}
+
+fn parse_typed_body_presentation(
+    record: &[u8],
+    frame: super::meta::TypedPrimaryFrame<'_>,
+    nodes: &[BrowserNodeRecord],
+    entity_types: &HashMap<u64, (&str, u32)>,
+) -> Result<Option<BodyPresentation>, CodecError> {
+    if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
+        return Ok(None);
+    }
+    if frame.design_type.module != DESIGN_MODULE_BODY
+        || !frame
+            .design_type
+            .base_type_guid
+            .value()
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+            .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
+    {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D Design body-presentation entity {} has incompatible registration metadata",
+            frame.entity_id
+        )));
+    }
+    parse_body_presentation(record, frame.start, frame.entity_id, nodes, entity_types)
 }
 
 /// Parse one body-presentation frame. `record` holds the frame from its
@@ -739,6 +840,116 @@ mod tests {
         let nodes = browser_node_records(&bytes, &meta).unwrap();
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].entity_suffix, 42);
+    }
+
+    #[test]
+    fn damaged_browser_node_keeps_its_indexed_sibling() {
+        let mut bytes = Vec::new();
+        let mut offsets = Vec::new();
+        for (index, hidden) in [(43u32, 2), (44, 1)] {
+            offsets.push(bytes.len());
+            lp_ascii(&mut bytes, "256");
+            bytes.extend_from_slice(&index.to_le_bytes());
+            bytes.extend_from_slice(&[0; 10]);
+            lp_utf16(&mut bytes, "11111111-2222-8333-A444-555555555555");
+            bytes.extend_from_slice(&[hidden, 1, 1]);
+            bytes.extend_from_slice(&42u64.to_le_bytes());
+        }
+        let meta = crate::metastream::MetaStream {
+            types: vec![design_type(
+                256,
+                BROWSER_NODE_TYPE_GUID,
+                Some(BROWSER_NODE_BASE_TYPE_GUID),
+                BROWSER_NODE_TYPE_VERSION,
+                DESIGN_MODULE_FUSION,
+                vec![43, 44],
+            )],
+            records: vec![
+                primary_record(43, offsets[0]),
+                primary_record(44, offsets[1]),
+            ],
+            secondary_records: Vec::new(),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        super::contain_browser_nodes(&ctx, &mut parts, source, "Design/BulkStream.dat", &meta)
+            .unwrap();
+        let nodes = browser_node_records(&bytes, &meta).unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].record_index, 44);
+        let (_, native, fidelity, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Model));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    }
+
+    #[test]
+    fn damaged_body_presentation_keeps_its_indexed_sibling() {
+        let mut bytes = Vec::new();
+        let mut offsets = Vec::new();
+        for (tag, index) in [(256, 42u64), (257, 43)] {
+            offsets.push(bytes.len());
+            lp_ascii(&mut bytes, &tag.to_string());
+            bytes.extend_from_slice(&index.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            lp_utf16(&mut bytes, &format!("0_{index}"));
+        }
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    256,
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    "Wrong",
+                    vec![42],
+                ),
+                design_type(
+                    257,
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![43],
+                ),
+            ],
+            records: vec![
+                primary_record(42, offsets[0]),
+                primary_record(43, offsets[1]),
+            ],
+            secondary_records: Vec::new(),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        super::contain_body_presentations(&ctx, &mut parts, source, "Design/BulkStream.dat", &meta)
+            .unwrap();
+        let presentations = body_presentations(&bytes, &meta).unwrap();
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].entity_suffix, 43);
+        let (_, native, fidelity, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Model));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
     }
 
     #[test]

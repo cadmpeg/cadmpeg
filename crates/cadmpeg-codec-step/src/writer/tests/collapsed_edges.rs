@@ -274,7 +274,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
 }
 
 /// What the writer made of a model: its `ORIENTED_EDGE` and `SEAM_EDGE`,
-/// `ADVANCED_FACE` and `VERTEX_LOOP` records, and the losses it reported.
+/// `ADVANCED_FACE`, `FACE_SURFACE` and `VERTEX_LOOP` records, and the losses it reported.
 #[derive(Debug, PartialEq)]
 struct Written {
     oriented_edges: usize,
@@ -297,7 +297,7 @@ fn written(source: &CadIr) -> Written {
     Written {
         oriented_edges: text.matches("ORIENTED_EDGE(").count(),
         seam_edges: text.matches("SEAM_EDGE(").count(),
-        faces: text.matches("ADVANCED_FACE(").count(),
+        faces: text.matches("ADVANCED_FACE(").count() + text.matches("FACE_SURFACE(").count(),
         vertex_loops: text.matches("VERTEX_LOOP(").count(),
         losses: report
             .losses
@@ -389,28 +389,55 @@ fn writer_reports_a_curveless_edge_whose_pcurve_stays_at_its_vertex() {
     }));
 }
 
-/// An edge with no 3D curve is reported as left out when its pcurve leaves
-/// its vertex, or when it has no pcurve: nothing shows that it has no length.
+/// A curveless edge with a pcurve is reported when the association cannot be written.
 #[test]
 fn writer_reports_a_curveless_edge_that_may_have_length() {
     let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
-    for ring in [Ring::CurvelessWithLength, Ring::CurvelessBare] {
-        let reported = written(&cube_with_a_collapsed_edge(ring));
-        assert_eq!(
-            (reported.oriented_edges, reported.faces),
-            (plain.oriented_edges, plain.faces)
+    let reported = written(&cube_with_a_collapsed_edge(Ring::CurvelessWithLength));
+    assert_eq!(
+        (reported.oriented_edges, reported.faces),
+        (plain.oriented_edges, plain.faces)
+    );
+    for code in [
+        "step/topology.edge-no-3d-curve",
+        "step/geometry.curveless-edge-omitted",
+    ] {
+        assert!(
+            reported.losses.contains(&code.to_owned()),
+            "{:?}",
+            reported.losses
         );
-        for code in [
-            "step/topology.edge-no-3d-curve",
-            "step/geometry.curveless-edge-omitted",
-        ] {
-            assert!(
-                reported.losses.contains(&code.to_owned()),
-                "{:?}",
-                reported.losses
-            );
-        }
     }
+}
+
+#[test]
+fn writer_keeps_a_curveless_edge_without_pcurves() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
+    let source = cube_with_a_collapsed_edge(Ring::CurvelessBare);
+    let retained = written(&source);
+    assert_eq!(retained.oriented_edges, plain.oriented_edges + 1);
+    assert_eq!(retained.faces, plain.faces);
+    assert!(!retained
+        .losses
+        .contains(&"step/topology.edge-no-3d-curve".to_owned()));
+    let mut bytes = Vec::new();
+    write_step(
+        &source,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write partial topology");
+    let decoded = crate::StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode partial topology");
+    assert!(decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .any(|edge| edge.curve().is_none()));
 }
 
 /// A ring of collapsed edges alone, with no coedge geometry, is the point
@@ -690,8 +717,7 @@ fn writer_writes_a_seam_ring_beside_another_bound_as_a_vertex_loop() {
     );
 }
 
-/// As a face's only bound, the seam ring keeps its seam edges. The same
-/// holds when the face's other loop is not written.
+/// As a face's only bound, the seam ring keeps its seam edges.
 #[test]
 fn writer_keeps_a_seam_ring_that_is_the_only_bound() {
     let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
@@ -700,9 +726,9 @@ fn writer_keeps_a_seam_ring_that_is_the_only_bound() {
         (alone.oriented_edges, alone.faces, alone.vertex_loops),
         (plain.oriented_edges - 4 + 2, plain.faces, 0)
     );
-    let unwritable = written(&cube_with_a_seam_ring(SeamRing::BesideAnUnwritableLoop));
-    assert_eq!(unwritable.vertex_loops, 0);
-    assert!(unwritable.oriented_edges >= 2);
+    let retained = written(&cube_with_a_seam_ring(SeamRing::BesideAnUnwritableLoop));
+    assert_eq!(retained.vertex_loops, 1);
+    assert!(retained.oriented_edges >= 2);
 }
 
 /// An edge with no 3D curve whose pcurve has length on the face is not a
