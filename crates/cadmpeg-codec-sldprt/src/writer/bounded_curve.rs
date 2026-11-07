@@ -38,7 +38,11 @@ pub(super) fn from_edge(
     edge: &Edge,
     length_scale: f64,
 ) -> Result<Option<BoundedCurve>, CodecError> {
-    let Some(range) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) else {
+    let Some(range) = edge
+        .param_range()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+        .or_else(|| super::surface_curve::bounded_interval(ir, edge))
+    else {
         return Ok(None);
     };
     let Some(id) = edge.curve() else {
@@ -54,6 +58,9 @@ pub(super) fn from_edge(
         return Ok(None);
     }
     let point = |parameter| -> Result<Option<Point3>, CodecError> {
+        if curve.geometry.solved().is_none() {
+            return super::surface_curve::point_at(ctx, ir, curve, parameter);
+        }
         Ok(
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
                 ctx,

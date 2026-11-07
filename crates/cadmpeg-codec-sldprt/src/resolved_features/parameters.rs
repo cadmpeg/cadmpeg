@@ -1,7 +1,7 @@
 //! Design parameter enrichment and scalar synchronisation.
 
 use super::scalars::FeatureObjectNames;
-use super::{NAME_MARKER, VALUE_ONLY_SCALAR_HEADER};
+use super::VALUE_ONLY_SCALAR_HEADER;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
     FeatureInputScalar, FeatureInputScalarRole,
@@ -436,10 +436,7 @@ fn scalar_unit_from_feature_parameter(
 }
 
 pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
-    let name_offset = usize::try_from(name.offset).ok()?;
-    let header_offset = name_offset
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    let header_offset = super::names::record_name_end(payload, name)?;
     (payload.get(header_offset..header_offset + VALUE_ONLY_SCALAR_HEADER.len())
         == Some(VALUE_ONLY_SCALAR_HEADER))
     .then_some(header_offset + VALUE_ONLY_SCALAR_HEADER.len())

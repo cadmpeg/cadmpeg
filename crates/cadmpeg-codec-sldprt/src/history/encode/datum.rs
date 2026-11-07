@@ -22,20 +22,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         let principal_planes_by_record = self.principal_planes_by_record;
         Ok({
-            let record = existing.ok_or_else(|| {
-                WriteError::Decline(format!(
-                    "SLDPRT feature {} requires a retained principal-plane record",
-                    feature.id
-                ))
-            })?;
-            if principal_planes_by_record.get(&record.id) != Some(&plane) {
+            if existing
+                .is_some_and(|record| principal_planes_by_record.get(&record.id) != Some(&plane))
+            {
                 return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes its principal-plane role",
                     feature.id
                 )));
             }
             NeutralFeatureEncoding {
-                kind: record.kind.clone(),
+                kind: existing
+                    .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
                 parameters: self.base_parameters(),
                 properties: self.base_properties(),
             }
