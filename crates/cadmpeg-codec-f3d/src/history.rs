@@ -468,73 +468,46 @@ fn bind_snapshot_revision_ids(
     Ok(())
 }
 
-fn is_history_boundary_record(record: &AsmHistoryRecord) -> bool {
-    matches!(
-        record.name(),
-        "End-of-ASM-History-Section" | "End-of-ASM-data"
-    )
+/// Borrowed view of `states` for the shared history walks.
+fn delta_state_views(states: &[AsmDeltaState]) -> Vec<cadmpeg_asm::history::DeltaStateView<'_>> {
+    states
+        .iter()
+        .map(|state| cadmpeg_asm::history::DeltaStateView {
+            node_index: state.node_index,
+            previous_ref: state.previous_ref,
+            next_ref: state.next_ref,
+            changes: state
+                .bulletin_boards
+                .iter()
+                .flat_map(|board| &board.changes)
+                .map(|change| match change.kind {
+                    AsmEntityChangeKind::Insert { new } => EntityChange::Insert { new },
+                    AsmEntityChangeKind::Delete { old } => EntityChange::Delete { old },
+                    AsmEntityChangeKind::Update { old, new } => EntityChange::Update { old, new },
+                })
+                .collect(),
+            records: state
+                .records
+                .iter()
+                .map(|record| cadmpeg_asm::history::StateRecordView {
+                    revision_id: record.revision_id,
+                    byte_offset: record.byte_offset,
+                    raw_bytes: record.raw_bytes.as_slice(),
+                    name: record.name(),
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 pub(crate) fn archived_active_record_count(
     states: &[AsmDeltaState],
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let mut archived = Vec::new();
-    for revision_id in states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter_map(|record| record.revision_id)
-    {
-        archived.push(revision_id);
-    }
-    archived.sort_unstable_by(Ord::cmp);
-    let Some(&active_count) = archived.first() else {
-        return Ok(None);
-    };
-    let count = i64::try_from(archived.len()).map_err(|_| {
-        cadmpeg_core::CodecError::malformed("F3D archived revision count exceeds i64")
-    })?;
-    let Some(end) = active_count.checked_add(count) else {
-        return Ok(None);
-    };
-    if active_count <= 0 || archived.iter().copied().ne(active_count..end) {
-        return Ok(None);
-    }
-    Ok(usize::try_from(active_count).ok())
+    cadmpeg_asm::history::archived_active_record_count(&delta_state_views(states))
 }
 
-/// Return the active `RecordTable` length for a history that has no archived
-/// snapshot. Insert-only chains use the active records themselves as every
-/// revision, so their bulletin-board references must cover every non-header
-/// slot exactly once.
 pub(crate) fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
-    let mut has_boundary_record = false;
-    for record in states.iter().flat_map(|state| &state.records) {
-        if record.revision_id.is_some() || !is_history_boundary_record(record) {
-            return None;
-        }
-        has_boundary_record = true;
-    }
-    if !has_boundary_record {
-        return None;
-    }
-    let mut inserted = BTreeSet::new();
-    for change in states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes)
-    {
-        let new_ref = change.new_ref().filter(|_| change.old_ref().is_none())?;
-        if new_ref <= 0 || inserted.contains(&new_ref) {
-            return None;
-        }
-        inserted.insert(new_ref);
-    }
-    let &last = inserted.last()?;
-    if inserted.iter().copied().ne(1..=last) {
-        return None;
-    }
-    last.checked_add(1)
-        .and_then(|count| usize::try_from(count).ok())
+    cadmpeg_asm::history::insert_only_active_record_count(&delta_state_views(states))
 }
 
 /// Estimated native `asm_delta_states` text bytes per changed record slot.
@@ -605,79 +578,18 @@ pub(crate) fn admit_history_binding(
     Ok(HistoryBindingAdmission::Admitted)
 }
 
-/// Walk the state chain from its head and give each state's entity-to-record
-/// version map to `visit`. Returns false, after a partial walk, when the chain
-/// or a bulletin-board change is inconsistent with the archived revisions.
 pub(crate) fn walk_entity_versions(
     states: &[AsmDeltaState],
     active_count: i64,
     archived_ids: &[i64],
-    mut visit: impl FnMut(usize, &BTreeMap<i64, i64>),
+    visit: impl FnMut(usize, &BTreeMap<i64, i64>),
 ) -> bool {
-    let mut by_node = HashMap::new();
-    for (ordinal, state) in states.iter().enumerate() {
-        by_node.insert(state.node_index, ordinal);
-    }
-    if by_node.len() != states.len() {
-        return false;
-    }
-    let mut heads = states
-        .iter()
-        .enumerate()
-        .filter(|(_, state)| state.previous_ref.is_none())
-        .map(|(ordinal, _)| ordinal);
-    let Some(mut ordinal) = heads.next() else {
-        return false;
-    };
-    if heads.next().is_some() {
-        return false;
-    }
-
-    let mut versions = BTreeMap::new();
-    for id in 0..active_count {
-        versions.insert(id, id);
-    }
-    let mut visited = HashSet::new();
-    loop {
-        let state = &states[ordinal];
-        if !visited.insert(state.node_index) {
-            return false;
-        }
-        visit(ordinal, &versions);
-        for change in state
-            .bulletin_boards
-            .iter()
-            .flat_map(|board| &board.changes)
-        {
-            match change.kind {
-                AsmEntityChangeKind::Update { old, new } => {
-                    if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
-                        return false;
-                    }
-                    versions.insert(new, old);
-                }
-                AsmEntityChangeKind::Insert { new } => {
-                    if versions.remove(&new).is_none() {
-                        return false;
-                    }
-                }
-                AsmEntityChangeKind::Delete { old } => {
-                    if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
-                        return false;
-                    }
-                    versions.insert(old, old);
-                }
-            }
-        }
-        let Some(next) = state.next_ref else {
-            break;
-        };
-        let Some(&next_ordinal) = by_node.get(&next) else {
-            return false;
-        };
-        ordinal = next_ordinal;
-    }
-    visited.len() == states.len() && versions.len() == 1 && versions.get(&0) == Some(&0)
+    cadmpeg_asm::history::walk_entity_versions(
+        &delta_state_views(states),
+        active_count,
+        archived_ids,
+        visit,
+    )
 }
 
 fn bind_complete_record_tables(
@@ -696,76 +608,15 @@ pub(crate) fn decode_record_archive(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<Option<HistoricalRecordArchive>, cadmpeg_core::CodecError> {
-    let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
+    let Some(frames) =
+        cadmpeg_asm::history::decode_record_archive(ctx, &delta_state_views(states), bytes, width)?
+    else {
         return Ok(None);
     };
-    let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
-        Ok(records) => records,
-        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
-        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
-            return Err(error.into_codec_error())
-        }
-        Err(_) => return Ok(None),
-    };
-
-    let insert_only = insert_only_active_record_count(states);
-    let archived_count = archived_active_record_count(states)?;
-    let Some(active_count) = archived_count.or(insert_only) else {
-        return Ok(None);
-    };
-    if insert_only.is_some() && framed.len() != active_count {
-        return Ok(None);
-    }
-    let Some(active_records) = framed.get(..active_count) else {
-        return Ok(None);
-    };
-    let mut archived_frames = HashMap::new();
-    for record in states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter(|record| record.revision_id.is_some())
-    {
-        let Some(revision_id) = record.revision_id else {
-            return Ok(None);
-        };
-        let Some(offset) = usize::try_from(record.byte_offset).ok() else {
-            return Ok(None);
-        };
-        let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
-            return Ok(None);
-        };
-        if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
-            return Ok(None);
-        }
-        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
-            Ok(records) => records,
-            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
-                return Err(error.into())
-            }
-            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
-                return Err(error.into_codec_error())
-            }
-            Err(_) => return Ok(None),
-        };
-        if framed.len() != 1 {
-            return Ok(None);
-        }
-        let Some(framed) = framed.pop() else {
-            return Ok(None);
-        };
-        if framed.name != record.name() {
-            return Ok(None);
-        }
-
-        if archived_frames.insert(revision_id, framed).is_some() {
-            return Ok(None);
-        }
-    }
     Ok(historical_record_archive(
         states,
-        active_records,
-        archived_frames,
+        &frames.active,
+        frames.archived,
     ))
 }
 
@@ -776,13 +627,6 @@ fn historical_record_archive(
     active_records: &[cadmpeg_asm::sab::Record],
     archived_frames: HashMap<i64, cadmpeg_asm::sab::Record>,
 ) -> Option<HistoricalRecordArchive> {
-    if active_records
-        .iter()
-        .enumerate()
-        .any(|(index, record)| record.index != index)
-    {
-        return None;
-    }
     let active_count = i64::try_from(active_records.len()).ok()?;
 
     let mut revision_entities = HashMap::new();
