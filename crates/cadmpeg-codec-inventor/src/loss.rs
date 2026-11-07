@@ -63,6 +63,8 @@ pub(crate) enum InventorLossCode {
     SketchConstructionCarrierConflict,
     /// A line stores two endpoints at one position; the line stays native.
     SketchDegenerateLineNative,
+    /// Distinct line endpoints are read as one position under an assumption of rounding.
+    SketchLineEndpointsRoundingAssumed,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
     /// A sketch entity retains unresolved curve construction operands.
@@ -285,6 +287,7 @@ impl InventorLossCode {
         Self::SketchAxisDistanceNative,
         Self::SketchConstructionCarrierConflict,
         Self::SketchDegenerateLineNative,
+        Self::SketchLineEndpointsRoundingAssumed,
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
@@ -407,6 +410,7 @@ impl InventorLossCode {
             Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
             Self::SketchConstructionCarrierConflict => "sketch.construction-carrier-conflict",
             Self::SketchDegenerateLineNative => "sketch.degenerate-line-native",
+            Self::SketchLineEndpointsRoundingAssumed => "sketch.line-endpoints-rounding-assumed",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
@@ -613,6 +617,7 @@ impl InventorLossCode {
             | Self::SketchAxisDistanceNative
             | Self::SketchConstructionCarrierConflict
             | Self::SketchDegenerateLineNative
+            | Self::SketchLineEndpointsRoundingAssumed
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
@@ -708,6 +713,7 @@ mod tests {
                 "sketch.axis-distance-native",
                 "sketch.construction-carrier-conflict",
                 "sketch.degenerate-line-native",
+                "sketch.line-endpoints-rounding-assumed",
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",
