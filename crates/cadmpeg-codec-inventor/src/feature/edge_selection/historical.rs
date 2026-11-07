@@ -130,7 +130,7 @@ pub(in crate::feature) struct SelectedEdge {
 }
 
 pub(crate) const fn supported_schema(schema: u32) -> bool {
-    matches!(schema, 38 | 40 | 42 | 44)
+    matches!(schema, 38 | 40 | 42 | 43 | 44)
 }
 
 pub(super) fn selected(
