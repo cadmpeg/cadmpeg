@@ -581,7 +581,8 @@ pub fn cross_compare(
     prioritize_required(&mut projected, &required, full_unpaired.as_ref());
     let nulled = null_dangling(&projected, &required);
     let adjusted = apply_reduced(&nulled, config.reduced, true);
-    let reduced_after = apply_reduced(&after.ir, config.reduced, false);
+    let projected_after = project_document(&after.ir, config.carried, config.fixed_paths, format);
+    let reduced_after = apply_reduced(&projected_after, config.reduced, false);
     let synthetic = match unpaired_both(&adjusted, &reduced_after, true) {
         Ok((_, unpaired_after)) => added_roots(&reduced_after, &unpaired_after),
         Err(_) => BTreeSet::new(),
@@ -1347,6 +1348,70 @@ mod tests {
         };
         let findings = super::cross_compare(&before, &empty, &report, "step", &config);
         assert!(findings.contains(&"required record supported is missing".into()));
+    }
+
+    #[test]
+    fn cross_compare_projects_unobserved_layer_items_on_both_sides() {
+        use crate::carried::Carried;
+        use crate::writer_closure::Redecoded;
+        use std::collections::BTreeMap;
+
+        let before = json!({"model":{"presentation_layers":[{"id":"source", "name":"0", "items":[
+            {"kind":"curve", "curve":"curve"}, {"kind":"face", "face":"face"}
+        ]}]}, "native":{}});
+        let after = Redecoded {
+            ir: json!({"model":{"presentation_layers":[{"id":"target", "name":"0", "items":[
+                {"kind":"curve", "curve":"curve"}, {"kind":"face", "face":"face"}
+            ]}]}, "native":{}}),
+            loss_codes: BTreeSet::new(),
+            members: Vec::new(),
+        };
+        let mut carried = Carried::default();
+        carried.arenas.insert("presentation_layers".into());
+        carried.variants.extend([
+            "PresentationItem::Face".into(),
+            "PresentationItem::Curve".into(),
+        ]);
+        carried.paths.extend([
+            "model.presentation_layers[].name".into(),
+            "model.presentation_layers[].items[].kind".into(),
+            "model.presentation_layers[].items[].face".into(),
+        ]);
+        let fixed = BTreeMap::from([(
+            "model.presentation_layers[].items[].kind".into(),
+            json!("face"),
+        )]);
+        let known = BTreeSet::new();
+        let config = super::CrossConfig {
+            carried: &carried,
+            fixed_paths: &fixed,
+            known_losses: &known,
+            reduced: &[],
+            members: &[],
+        };
+        let report: cadmpeg_ir::report::export::ExportReport = serde_json::from_value(json!({
+            "identity": {"payload": "native", "target": "step:ap242-e3"},
+            "census": {"basis": "target_records", "counts": {}},
+            "write_path": {"path": "synthesized", "fidelity": {"status": "not_provided"}},
+            "coverage": {"coverage": "complete"}, "native_dispositions": {"namespaces": {}},
+            "losses": [], "notes": []
+        }))
+        .expect("report");
+        let findings = super::cross_compare(&before, &after, &report, "step", &config);
+        assert!(findings.is_empty(), "{findings:?}");
+        let projected = super::project_document(&before, &carried, &fixed, "step");
+        assert!(
+            super::required_ids_with_source(&projected, &before, &carried, "step")
+                .contains("source")
+        );
+        let mut missing = after.clone();
+        missing.ir["model"]["presentation_layers"][0]["items"] =
+            json!([{ "kind":"curve", "curve":"curve" }]);
+        let findings = super::cross_compare(&before, &missing, &report, "step", &config);
+        assert!(
+            findings.contains(&"required record source is missing".to_owned()),
+            "{findings:?}"
+        );
     }
 
     #[test]

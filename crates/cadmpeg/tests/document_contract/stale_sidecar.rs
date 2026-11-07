@@ -4,7 +4,8 @@
 use std::fs;
 
 use assert_cmd::Command;
-use cadmpeg_ir::{decode_sidecar_path, CadIr};
+use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar};
 use serde_json::Value;
 use tempfile::tempdir;
 
@@ -57,7 +58,10 @@ fn edited_freecad_with_stale_sidecar_synthesizes_like_no_sidecar() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0]["code"]["code"], "sidecar.stale");
     assert_eq!(losses[0]["severity"], "warning");
-    fs::remove_file(decode_sidecar_path(&cadir).unwrap()).unwrap();
+    let sidecar_path = decode_sidecar_path(&cadir).unwrap();
+    let original_sidecar =
+        DecodeSidecar::from_json(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+    fs::remove_file(&sidecar_path).unwrap();
     let output_without = dir.path().join("without.FCStd");
     let report_without = dir.path().join("without.json");
     Command::cargo_bin("cadmpeg")
@@ -82,6 +86,45 @@ fn edited_freecad_with_stale_sidecar_synthesizes_like_no_sidecar() {
     assert_eq!(with_stale_sidecar, without_sidecar);
     let written = decode(&cadmpeg_codec_freecad::FcstdCodec, &without_sidecar);
     assert!(written
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("EditedPad")));
+
+    let edited = fs::read(&cadir).unwrap();
+    let rebound = DecodeSidecar::bind_sha256(
+        Sha256Digest::digest(&edited),
+        original_sidecar.report,
+        original_sidecar.fidelity,
+    );
+    fs::write(&sidecar_path, rebound.to_canonical_json().unwrap()).unwrap();
+    let restored_output = dir.path().join("restored.FCStd");
+    let restored_report = dir.path().join("restored.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cadir.to_str().unwrap(),
+            "-o",
+            restored_output.to_str().unwrap(),
+            "--report",
+            restored_report.to_str().unwrap(),
+            "--reject-lossy=decode",
+        ])
+        .assert()
+        .success();
+    let restored_report: Value =
+        serde_json::from_slice(&fs::read(restored_report).unwrap()).unwrap();
+    assert_eq!(
+        restored_report["export"]["write_path"]["path"],
+        "synthesized"
+    );
+    let restored = decode(
+        &cadmpeg_codec_freecad::FcstdCodec,
+        &fs::read(restored_output).unwrap(),
+    );
+    assert!(restored
         .ir()
         .model
         .features

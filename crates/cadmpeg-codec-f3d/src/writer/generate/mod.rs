@@ -643,6 +643,9 @@ pub(super) fn write_with_limits(
                 cadmpeg_ir::features::FeatureOperation::DeleteBody { .. },
             ) => Some("RemoveBody"),
             cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::KnitSurface { .. },
+            ) => Some("SurfaceStitch"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
             ) if kind.as_str() == "BaseFlange" => Some("BaseFlange"),
             _ => None,
@@ -687,6 +690,17 @@ pub(super) fn write_with_limits(
                     format!("feature {} recompute state is not encoded", feature.id),
                 ));
             }
+            if matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
+                )
+            ) {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} retains its stitch group; its unresolved member construction record is omitted", feature.id),
+                ));
+            }
             if matches!(feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
@@ -704,8 +718,21 @@ pub(super) fn write_with_limits(
                 )
             ) {
                 partial = true;
+                let member_omitted = target
+                    .model
+                    .feature_input_topologies
+                    .iter()
+                    .any(|input| input.input_of == feature.id && input.operands.len() == 1);
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!("feature {} retains its native body group; its auxiliary construction references are regenerated", feature.id),
+                    format!(
+                        "feature {} retains its native body group; {}",
+                        feature.id,
+                        if member_omitted {
+                            "its member construction record is omitted"
+                        } else {
+                            "its auxiliary construction references are regenerated"
+                        }
+                    ),
                 ));
             }
             if timeline_ranks
@@ -762,6 +789,22 @@ pub(super) fn write_with_limits(
                         && matches!(
                             feature.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
+                            )
+                        )
+                })
+            {
+                dispositions.feature_input_topologies = ArenaDisposition::Reported;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature input {} retains its stitch group; the selected construction record is omitted", input.id),
+                ));
+            }
+            if written_features.contains(&input.input_of)
+                && target.model.features.iter().any(|feature| {
+                    feature.id == input.input_of
+                        && matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::DeleteBody { .. }
                             )
                         )
@@ -769,7 +812,15 @@ pub(super) fn write_with_limits(
             {
                 dispositions.feature_input_topologies = ArenaDisposition::Reported;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!("feature input {} retains its selected group and operand with regenerated auxiliary references", input.id),
+                    format!(
+                        "feature input {} retains its selected group; {}",
+                        input.id,
+                        if input.operands.len() == 1 {
+                            "its member construction record is omitted"
+                        } else {
+                            "its operand has regenerated auxiliary references"
+                        }
+                    ),
                 ));
             }
             if written_features.contains(&input.input_of)
