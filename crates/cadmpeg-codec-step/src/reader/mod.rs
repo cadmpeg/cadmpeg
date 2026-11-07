@@ -896,6 +896,14 @@ fn retain_unowned_carriers(
     for id in standalone_pcurves(exchange) {
         owned.insert(ids::data(kind!("pcurve"), id).to_string());
     }
+    for (id, basis) in geometry::standalone_surface_curve_pcurves(exchange, ctx)? {
+        let construction =
+            cadmpeg_ir::ids::ProceduralCurveId::from(ids::construction(kind!("pcurve"), id));
+        let basis = cadmpeg_ir::ids::CurveId::from(ids::data(kind!("curve"), basis));
+        if ir.model.procedural_curve_owner(&construction) == Some(&basis) {
+            owned.insert(ids::data(kind!("pcurve"), id).to_string());
+        }
+    }
     for coedge in &ir.model.coedges {
         for use_ in &coedge.pcurves {
             insert_retained_identity(&mut owned, use_.pcurve.as_str());

@@ -81,6 +81,20 @@ pub(super) fn encode(
             u32::try_from(id.suffix()).ok().filter(|id| *id != 0)
         })
         .collect::<std::collections::BTreeSet<_>>();
+    let reserved_scopes = target
+        .model
+        .sketches
+        .iter()
+        .filter_map(|sketch| {
+            let feature = sketch_feature(target, &sketch.id)?;
+            let scope = native.design_parameter_scopes.iter().find(|scope| {
+                feature.native_ref.as_deref() == Some(scope.id.as_str())
+                    && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Sketch
+            })?;
+            (scope.record_index != 0 && occupied.insert(scope.record_index))
+                .then_some((feature.id.clone(), scope.record_index))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     let mut next = 1u32;
     for sketch in &target.model.sketches {
         let original_container = sketch
@@ -298,6 +312,20 @@ pub(super) fn encode(
                 reserved_members.insert(ordinal, index);
             }
         }
+        let relation_indices = relations
+            .iter()
+            .map(|relation| {
+                native
+                    .sketch_relations
+                    .iter()
+                    .find(|record| {
+                        relation.native_ref.as_deref() == Some(record.id.as_str())
+                            && record.owner_reference == container
+                    })
+                    .map(|record| record.record_index)
+                    .filter(|index| *index != 0 && occupied.insert(*index))
+            })
+            .collect::<Vec<_>>();
         let count = u32::try_from(members.len())
             .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
         let Some(head) = allocate(&mut occupied, &mut next) else {
@@ -321,8 +349,8 @@ pub(super) fn encode(
             break;
         }
         let mut allocated_relations = Vec::new();
-        for _ in &relations {
-            let Some(index) = allocate(&mut occupied, &mut next) else {
+        for reserved in relation_indices {
+            let Some(index) = reserved.or_else(|| allocate(&mut occupied, &mut next)) else {
                 break;
             };
             allocated_relations.push(index);
@@ -542,7 +570,11 @@ pub(super) fn encode(
             constraints.push(relation.id.clone());
         }
         if let Some(feature) = sketch_feature(target, &sketch.id) {
-            let Some(scope) = allocate(&mut occupied, &mut next) else {
+            let Some(scope) = reserved_scopes
+                .get(&feature.id)
+                .copied()
+                .or_else(|| allocate(&mut occupied, &mut next))
+            else {
                 break;
             };
             let family_ordinal = target
