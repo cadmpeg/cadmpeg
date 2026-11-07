@@ -619,7 +619,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ),
     );
     losses.extend(projected.unruled_flange_thickness_loss());
-    losses.extend(projected.hole_losses);
+    losses.extend(projected.projection_losses);
     losses.extend(
         crate::design::decode::operands::fixed_fillet_assignment_losses(
             &design.design_parameter_scopes,
@@ -662,6 +662,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_surface_trim_operations,
+        &mut losses,
     );
     super::bind_mesh_feature_definitions(
         &mut model.features,
@@ -946,6 +947,20 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.sketch_surfaces,
             &model.spatial_sketch_entities,
         );
+    losses.extend(
+        crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets(
+            &mut model.features,
+            &crate::design::profile_select::face_profile_sets::FaceProfileSetResolution {
+                scopes: &design.design_parameter_scopes,
+                groups: &design.design_construction_operand_groups,
+                operands: &design.design_face_operands,
+                histories: &design.asm_histories,
+                scope_histories: &scope_histories,
+                linear_tolerance: geometry.tolerances.linear.get(),
+                ctx,
+            },
+        )?,
+    );
     crate::design::profile_select::bind_extrude_profile_selections(
         &mut model.features,
         &design.design_parameter_scopes,
@@ -1299,7 +1314,7 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &mut design.design_record_headers,
     )?;
-    let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
+    let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
@@ -1679,7 +1694,7 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
     );
-    crate::history::bind_face_operand_history_candidates(
+    profile_losses.extend(crate::history::bind_face_operand_history_candidates(
         ctx,
         &mut design.design_face_operands,
         &design.design_parameter_scopes,
@@ -1687,7 +1702,7 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
-    )?;
+    )?);
     crate::history::selection::bind_mirror_selection_planes(
         &mut design.design_parameter_scopes,
         &design.design_construction_operand_groups,
