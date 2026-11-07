@@ -363,6 +363,7 @@ pub(crate) enum F3dLossCode {
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
+    MeshScopePrefixUninterpreted,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
@@ -684,6 +685,7 @@ impl F3dLossCode {
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
+        Self::MeshScopePrefixUninterpreted,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
         Self::XrefOccurrenceUnplaced,
@@ -951,6 +953,7 @@ impl F3dLossCode {
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
+            Self::MeshScopePrefixUninterpreted => "mesh.scope-prefix-uninterpreted",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
@@ -1056,6 +1059,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
             | Self::MeshGuidBytesUninterpreted
+            | Self::MeshScopePrefixUninterpreted
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven => Severity::Info,
@@ -1314,6 +1318,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
+            | Self::MeshScopePrefixUninterpreted
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1713,6 +1718,7 @@ mod tests {
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
+                "mesh.scope-prefix-uninterpreted",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
                 "xref.occurrence-unplaced",

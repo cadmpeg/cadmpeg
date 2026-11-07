@@ -251,14 +251,15 @@ impl Serialize for DesignMeshFeature {
             #[serde(skip_serializing_if = "Option::is_none")]
             collection_owner_name_count: Option<u32>,
             scope_owner_record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            scope_flagged_word: Option<u32>,
             scope_owner_reference_offset: u64,
             texture_flags_count_offset: u64,
             texture_filename_count_offset: u64,
             bodies: SliceColumn<'a, DesignMeshBody, BodyRef<'a>>,
             textures: TextureRows<'a>,
         }
-        let scope_start = self.scope.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
+        let scope_start = self.scope.record().byte_offset() + self.scope.prefix_len();
         let collection_start = self.collection.record().byte_offset()
             + self.collection.prefix_len()
             + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
@@ -289,6 +290,7 @@ impl Serialize for DesignMeshFeature {
             collection_owner_backlink_offset: self.collection_owner.backlink_offset(),
             collection_owner_name_count: self.collection_owner.name_count(),
             scope_owner_record_index: self.scope.owner_record_index(),
+            scope_flagged_word: self.scope.flagged_word(),
             scope_owner_reference_offset: self.scope.owner_reference_offset(),
             texture_flags_count_offset: self.texture_table.flags_count_offset(),
             texture_filename_count_offset: self.texture_table.filename_count_offset(),

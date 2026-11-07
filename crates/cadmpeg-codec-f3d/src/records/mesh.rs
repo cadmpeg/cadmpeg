@@ -1343,6 +1343,7 @@ pub(crate) struct DesignMeshScope {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
     owner_record_index: std::num::NonZeroU32,
+    flagged_word: Option<u32>,
 }
 
 impl DesignMeshScope {
@@ -1350,11 +1351,15 @@ impl DesignMeshScope {
         record: DesignMeshRecordIdentity,
         base_record: DesignMeshRecordIdentity,
         owner_record_index: u32,
+        flagged_word: Option<u32>,
     ) -> Result<Self, String> {
         let base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
-        if record.frame_length()
-            < u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN) + base_length
-        {
+        let prefix_len = if flagged_word.is_some() {
+            crate::layout::paramesh_flagged_feature_scope_prefix::LEN
+        } else {
+            crate::layout::paramesh_feature_scope_prefix::LEN
+        };
+        if record.frame_length() < u64_from_index(prefix_len) + base_length {
             return Err(
                 "scope_record.frame_length() must contain the prefix and closing base".into(),
             );
@@ -1374,6 +1379,17 @@ impl DesignMeshScope {
             record,
             base_class_tag: base_record.class_tag,
             owner_record_index,
+            flagged_word,
+        })
+    }
+    pub(crate) fn flagged_word(&self) -> Option<u32> {
+        self.flagged_word
+    }
+    fn prefix_len(&self) -> u64 {
+        u64_from_index(if self.flagged_word.is_some() {
+            crate::layout::paramesh_flagged_feature_scope_prefix::LEN
+        } else {
+            crate::layout::paramesh_feature_scope_prefix::LEN
         })
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
@@ -1534,7 +1550,7 @@ impl DesignMeshFeature {
             return Err("bodies count must match collection_record.frame_length".into());
         }
         let scope_body_bytes = u64::from(body_count) * 11;
-        let scope_prefix = u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
+        let scope_prefix = scope.prefix_len();
         let scope_base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
         if scope_body_bytes > scope.record().frame_length() - scope_prefix - scope_base_length {
             return Err("bodies reference run must end before scope_base_record".into());
@@ -1564,8 +1580,7 @@ impl DesignMeshFeature {
     }
     fn body_count_offsets(&self) -> [u64; 3] {
         [
-            self.scope.record().byte_offset()
-                + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
+            self.scope.record().byte_offset() + self.scope.prefix_len() - 4,
             self.collection.record().byte_offset()
                 + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::BODY_COUNT),
             self.collection.record().byte_offset()
@@ -1574,8 +1589,7 @@ impl DesignMeshFeature {
         ]
     }
     fn scope_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
-        let start = self.scope.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
+        let start = self.scope.record().byte_offset() + self.scope.prefix_len();
         (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
     }
     fn collection_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
@@ -1620,6 +1634,8 @@ struct DesignMeshFeatureWire {
     collection_owner_name_count: Option<u32>,
     /// Design owner of the feature scope.
     scope_owner_record_index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scope_flagged_word: Option<u32>,
     /// Byte offset of the paired scope record's owner reference.
     scope_owner_reference_offset: u64,
     /// Byte offset of the texture flags-map count.
@@ -1664,6 +1680,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             wire.scope_record,
             wire.scope_base_record,
             wire.scope_owner_record_index,
+            wire.scope_flagged_word,
         )?;
         if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
             return Err(
@@ -1764,6 +1781,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_owner_backlink_offset,
             collection_owner_name_count,
             scope_owner_record_index: value.scope.owner_record_index(),
+            scope_flagged_word: value.scope.flagged_word(),
             scope_owner_reference_offset: value.scope.owner_reference_offset(),
             texture_flags_count_offset,
             texture_filename_count_offset,

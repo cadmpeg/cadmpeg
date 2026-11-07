@@ -25,6 +25,7 @@ use crate::layout::paramesh_collection_owner_v21 as collection_owner_v21;
 use crate::layout::paramesh_entry_name_prefix as entry_name_prefix;
 use crate::layout::paramesh_feature_scope_base as feature_scope_base;
 use crate::layout::paramesh_feature_scope_prefix as feature_scope;
+use crate::layout::paramesh_flagged_feature_scope_prefix as flagged_scope;
 use crate::layout::paramesh_flagged_mesh_body_join_prefix as flagged_body;
 use crate::layout::paramesh_flagged_mesh_collection_prefix as flagged_collection;
 use crate::layout::paramesh_guid_join_prefix as guid_join;
@@ -1096,11 +1097,21 @@ fn parse_mesh_scope_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-feature-scope")?;
-    let counted_bodies = counted_local_record_indices(record, feature_scope::BODY_COUNT);
     let parsed = (|| {
-        (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
-            .then_some(())?;
-        let (body_records, body_list_end) = counted_bodies?;
+        let flagged = record.get(flagged_scope::FLAG) == Some(&flagged_scope::FLAG_VALUE);
+        let (count_at, flagged_word) = if flagged {
+            (record.get(flagged_scope::ZERO_RUN_9..flagged_scope::FLAG) == Some(&[0; 9]))
+                .then_some(())?;
+            (
+                flagged_scope::BODY_COUNT,
+                Some(View::u32_le_at(record, flagged_scope::FLAGGED_WORD)?),
+            )
+        } else {
+            (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
+                .then_some(())?;
+            (feature_scope::BODY_COUNT, None)
+        };
+        let (body_records, body_list_end) = counted_local_record_indices(record, count_at)?;
         let scope = match parse_parameter_scope_with_type_guid(
             bytes,
             records,
@@ -1145,7 +1156,8 @@ fn parse_mesh_scope_record(
         let owner_at = paired_relative.checked_add(feature_scope_base::SCOPE_OWNER_REFERENCE)?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         Some(Ok(MeshScopeRecord {
-            scope: DesignMeshScope::new(identity, base_record, owner_record_index).ok()?,
+            scope: DesignMeshScope::new(identity, base_record, owner_record_index, flagged_word)
+                .ok()?,
             body_records,
         }))
     })();
@@ -1684,6 +1696,20 @@ fn mesh_image_asset(
         asset.name.clone(),
         crate::ids::neutral_asset_id(&asset.name),
     ))
+}
+
+pub(crate) fn mesh_scope_prefix_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features.iter().filter_map(|feature| {
+        let word = feature.scope().flagged_word()?;
+        Some(
+            crate::loss::F3dLossCode::MeshScopePrefixUninterpreted.note(format!(
+                "mesh feature scope {} stores prefix word {word}; the native record retains it",
+                feature.scope().record().record_index(),
+            )),
+        )
+    })
 }
 
 pub(crate) fn mesh_guid_byte_losses(
@@ -2789,6 +2815,47 @@ mod tests {
         let guid_start = sole_typed_frame(&graph, MESH_GUID_TYPE_GUID).start;
         graph.bytes[guid_start + 21..guid_start + 32].copy_from_slice(&MESH_GUID_BYTES_21_TO_31);
         (graph, start)
+    }
+
+    #[test]
+    fn flagged_scope_reads_prefix_and_shifted_body_references() {
+        let mut graph = synthetic_mesh_graph(false);
+        let start = sole_typed_frame(&graph, MESH_FEATURE_SCOPE_TYPE_GUID).start;
+        graph.bytes[start + 20] = 1;
+        graph
+            .bytes
+            .splice(start + 21..start + 21, 37_u32.to_le_bytes());
+        for record in &mut graph.meta.records {
+            if record.bulk_offset > u64_from_index(start) {
+                record.bulk_offset += 4;
+            }
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("flagged scope");
+        let [feature] = features.as_slice() else {
+            panic!("one feature")
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["scope_flagged_word"], 37);
+        assert_eq!(wire["body_count_offsets"][0], start + 25);
+        assert_eq!(
+            wire["scope_body_reference_offsets"],
+            serde_json::json!([start + 29])
+        );
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
+        let losses: Vec<_> = super::mesh_scope_prefix_losses(&features).collect();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "mesh.scope-prefix-uninterpreted"
+        );
     }
 
     #[test]

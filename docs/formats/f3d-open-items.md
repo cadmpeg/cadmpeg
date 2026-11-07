@@ -1551,3 +1551,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`.
+
+### DR-326. Flagged mesh scope prefix
+
+**Question.** What does the u32 in the flagged mesh feature scope prefix mean?
+
+**Known.** The flagged scope stores a u32 before its body count. The decoder retains the u32.
+
+**Need.** Controlled saves that vary the flagged prefix and establish the u32 meaning.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `mesh.scope-prefix-uninterpreted`.
