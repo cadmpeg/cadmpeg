@@ -8758,12 +8758,17 @@ fn project_move_face(
         DesignOperandRole::ROLE_0X10
     ));
     let member_count = or_none!(scope.reference_members().len().checked_sub(2));
-    if group.scope_reference_ordinal != 0
-        || group.record_index != *or_none!(scope.reference_members().values().next())
+    // The transform is the last reference after the group and its members, or
+    // the first reference before them.
+    let group_ordinal = usize::from(
+        scope.reference_members().values().next() == Some(&operation.transform_record_index),
+    );
+    if usize::try_from(group.scope_reference_ordinal).ok() != Some(group_ordinal)
+        || group.record_index != *or_none!(scope.reference_members().values().nth(group_ordinal))
         || !group.members().iter().map(|member| member.value).eq(scope
             .reference_members()
             .values()
-            .skip(1)
+            .skip(group_ordinal + 1)
             .take(member_count)
             .copied())
     {
