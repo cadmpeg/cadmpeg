@@ -704,6 +704,11 @@ fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
         .iter()
         .any(|loss| loss.severity == Severity::Error
             && loss.code == crate::loss::StepLossCode::UnknownSurfaceFaceOmitted.kind()));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::RegionSolidReducedToSheet.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+            && loss.message.contains(ir.model.regions[0].id.as_str())
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("surface model writes");
     let text = std::str::from_utf8(&bytes).expect("Part 21 text");

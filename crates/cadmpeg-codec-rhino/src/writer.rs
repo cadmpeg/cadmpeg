@@ -732,6 +732,22 @@ impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
     }
 }
 
+fn native_record_error(error: cadmpeg_ir::native::NativeConvertError) -> WriteError {
+    use cadmpeg_ir::native::NativeConvertError;
+    match error {
+        NativeConvertError::Resource(CodecError::ResourceLimit(limit)) => {
+            WriteError::Encode(limit.into())
+        }
+        NativeConvertError::Resource(CodecError::Io(error)) => WriteError::Encode(error.into()),
+        NativeConvertError::Resource(CodecError::UnsupportedTarget(refusal)) => WriteError::Encode(
+            cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(refusal),
+        ),
+        NativeConvertError::Arena { source, .. }
+        | NativeConvertError::WriteRecord { source, .. } => native_record_error(*source),
+        error => WriteError::Omit(error.to_string()),
+    }
+}
+
 /// One carrier resolution naming every wrapper it skipped, so no dropped
 /// wrapper stays silent when its edge is written on the resolved leaf.
 fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
@@ -1273,7 +1289,14 @@ fn prepare_write<'a, 'budget>(
                 baked.model.bodies[0].id
             )));
         }
-        baked = reduce::retain_faces(&baked, &selected)?;
+        baked = match reduce::retain_faces(&baked, &selected) {
+            Ok(reduced) => reduced,
+            Err(WriteError::Omit(reason)) => {
+                failed_bodies.push((baked, Some(reason)));
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         if general {
             baked.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
         }
@@ -1307,13 +1330,20 @@ fn prepare_write<'a, 'budget>(
                     candidate
                 });
                 let last_payload = std::cell::RefCell::new(None);
-                let (reduced, reduction_losses) =
-                    reduce::sheet(candidate.as_ref().unwrap_or(&baked), |candidate| {
-                        let payload = WritableModel::try_new(candidate)
-                            .and_then(|model| brep_payload(ctx, &model, archive_version))?;
-                        last_payload.replace(Some(payload));
-                        Ok(())
-                    })?;
+                let reduction = reduce::sheet(candidate.as_ref().unwrap_or(&baked), |candidate| {
+                    let payload = WritableModel::try_new(candidate)
+                        .and_then(|model| brep_payload(ctx, &model, archive_version))?;
+                    last_payload.replace(Some(payload));
+                    Ok(())
+                });
+                let (reduced, reduction_losses) = match reduction {
+                    Ok(result) => result,
+                    Err(WriteError::Omit(reason)) => {
+                        failed_bodies.push((baked, Some(reason)));
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
                     failed_bodies.push((
