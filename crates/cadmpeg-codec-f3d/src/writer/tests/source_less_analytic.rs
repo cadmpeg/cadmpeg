@@ -1120,7 +1120,7 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
             )
             .unwrap(),
         )),
-        source_object: Some(association),
+        source_object: Some(association.clone()),
     });
     source_less
         .model
@@ -1148,7 +1148,7 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         .model
         .curves
         .iter()
-        .all(|record| record.source_object.is_none()));
+        .all(|record| record.source_object.as_ref() != Some(&association)));
     assert!(report
         .losses
         .iter()
