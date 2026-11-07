@@ -662,6 +662,7 @@ pub(in crate::writer) fn styles(
     version: crate::RhinoArchiveVersion,
 ) -> Result<DimStyleExport, WriteError> {
     let modern_target = version != crate::RhinoArchiveVersion::V5;
+    let fonts = super::fonts::styles(ir)?;
     let mut output = DimStyleExport {
         records: Vec::new(),
         written: std::collections::BTreeSet::new(),
@@ -676,7 +677,7 @@ pub(in crate::writer) fn styles(
             .and_then(Value::as_i64)
             .and_then(|value| i32::try_from(value).ok())
         {
-            let target = super::fonts::style_index(ir, source)?.unwrap_or(-1);
+            let target = super::fonts::style_index(ir, &fonts, source).unwrap_or(-1);
             if source != target {
                 fields.insert("text_style_index".into(), Value::from(target));
                 reference_change = Some((source, target));
