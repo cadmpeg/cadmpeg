@@ -69,6 +69,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_canvas,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
     f3d_with_smbh_and_protein_with_generated_copy_paste_bodies,
+    f3d_with_smbh_and_protein_with_generated_extrude,
     f3d_with_smbh_and_protein_with_generated_form,
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
@@ -118,6 +119,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         (
             "design_sketch_constraints",
             original_design_fixture(f3d_with_smbh_and_protein_with_original_sketch_dimension(&synthetic_geometry_smbh()), false),
+        ),
+        (
+            "design_extrude_depth",
+            f3d_with_smbh_and_protein_with_generated_extrude(&synthetic_geometry_smbh()),
         ),
         (
             "design_base_feature",
@@ -1424,6 +1429,48 @@ fn synthetic_mesh_fixture_decodes_mesh_and_brep() {
         .losses
         .iter()
         .all(|loss| loss.code.local_code() != "record.unreadable"));
+}
+
+#[test]
+fn synthetic_extrude_fixture_has_bound_depth() {
+    let bytes = crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_extrude(
+        &synthetic_geometry_smbh(),
+    );
+    create_fixture_if_requested("design_extrude_depth", &bytes);
+    let decoded = decode_result(&bytes).unwrap();
+    assert_fixture_valid(&decoded);
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            matches!(
+                feature.definition().operation(),
+                cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+            )
+        })
+        .expect("fixture projects an extrude");
+    let parameter = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|row| row.name == "Depth")
+        .unwrap();
+    let definition = serde_json::to_value(feature.definition()).unwrap();
+    assert!(
+        feature.definition().dimension_paths().iter().any(|path| {
+            definition.pointer(path).is_some_and(|value| {
+                value["kind"] == "parameter" && value["value"] == parameter.id.as_str()
+            })
+        }),
+        "the extrude binds its Depth parameter"
+    );
+    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else {
+        panic!("extrude depth is a length");
+    };
+    assert!((value.get() - 10.0).abs() < 1.0e-12);
 }
 
 #[test]

@@ -757,6 +757,181 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_base_flange(smbh: &[u8]) 
     )
 }
 
+pub(crate) fn f3d_with_smbh_and_protein_with_generated_extrude(smbh: &[u8]) -> Vec<u8> {
+    let properties = vec![generated_instance_properties_for(
+        "11111111-2222-3333-4444-555555555555",
+    )];
+    let (mut bulk, mut records) = generated_design_base_flange_bulkstream();
+    let scope_start =
+        usize::try_from(records.iter().find(|(id, _)| *id == 1400).unwrap().1).unwrap();
+    let mut scope = Vec::new();
+    crate::test_support::indexed_header(&mut scope, *b"268", 1400);
+    scope.resize(208, 0);
+    scope[21..25].copy_from_slice(&4_u32.to_le_bytes());
+    scope[25..29].copy_from_slice(&2_u32.to_le_bytes());
+    scope[30..34].copy_from_slice(&1_u32.to_le_bytes());
+    scope.extend_from_slice(&3_u32.to_le_bytes());
+    for reference in [2000_u32, 1501, 2200] {
+        scope.push(1);
+        scope.extend_from_slice(&reference.to_le_bytes());
+        scope.extend_from_slice(&[0; 6]);
+    }
+    scope.extend_from_slice(&7_u32.to_le_bytes());
+    crate::test_support::lp_utf16(&mut scope, "Extrude");
+    let mut tail = [0_u8; 78];
+    tail[..4].copy_from_slice(&1_u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&2_u32.to_le_bytes());
+    scope.extend_from_slice(&tail);
+    crate::test_support::indexed_header(&mut scope, *b"261", 1400);
+    let mut closing = Vec::new();
+    crate::test_support::indexed_header(&mut closing, *b"261", 1400);
+    let scope_end = scope_start
+        + bulk[scope_start..]
+            .windows(closing.len())
+            .position(|window| window == closing)
+            .unwrap()
+        + closing.len();
+    bulk.splice(scope_start..scope_end, scope);
+
+    for (id, class) in [(2000_u32, *b"264"), (1501, *b"377")] {
+        let mut header = Vec::new();
+        crate::test_support::indexed_header(&mut header, class, id);
+        let offset = bulk
+            .windows(header.len())
+            .position(|window| window == header)
+            .unwrap();
+        if id == 1501 {
+            bulk[offset + 4..offset + 7].copy_from_slice(b"264");
+            let old: Vec<u8> = "800".encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let new: Vec<u8> = "277".encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let suffix = offset
+                + bulk[offset..]
+                    .windows(old.len())
+                    .position(|window| window == old)
+                    .unwrap();
+            bulk[suffix..suffix + old.len()].copy_from_slice(&new);
+        }
+        records.push((u64::from(id), u64::try_from(offset).unwrap()));
+    }
+    let (sketch, sketch_records) =
+        crate::test_support::sketch_stream_test::generated_design_sketch_bulkstream();
+    let sketch_start =
+        usize::try_from(sketch_records.iter().find(|(id, _)| *id == 1100).unwrap().1).unwrap();
+    let sketch_offset = bulk.len();
+    bulk.extend_from_slice(&sketch[sketch_start..]);
+    records.extend(
+        sketch_records
+            .into_iter()
+            .filter(|(id, _)| matches!(id, 1100 | 584))
+            .map(|(id, offset)| {
+                (
+                    id,
+                    u64::try_from(sketch_offset).unwrap() + offset
+                        - u64::try_from(sketch_start).unwrap(),
+                )
+            }),
+    );
+
+    let owner_offset = u64::try_from(bulk.len()).unwrap();
+    let mut owner = crate::design::test_support::parameter_owner_frame();
+    owner[4..7].copy_from_slice(b"270");
+    owner[7..11].copy_from_slice(&2200_u32.to_le_bytes());
+    owner[25..29].copy_from_slice(&1400_u32.to_le_bytes());
+    owner[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
+    owner[49..53].copy_from_slice(&2201_u32.to_le_bytes());
+    owner[68..72].copy_from_slice(&1400_u32.to_le_bytes());
+    owner[82..86].copy_from_slice(&2202_u32.to_le_bytes());
+    owner[94..98].copy_from_slice(&1400_u32.to_le_bytes());
+    let owner_end = owner_offset + u64::try_from(owner.len()).unwrap();
+    bulk.extend_from_slice(&owner);
+    crate::test_support::indexed_header(&mut bulk, *b"270", 2200);
+    records.push((2200, owner_offset));
+    let parameter_offset = u64::try_from(bulk.len()).unwrap();
+    let mut parameter = crate::design::test_support::parameter_record(
+        Some(2200),
+        "10 mm",
+        "AlongDistance",
+        Some("mm"),
+        "Depth",
+        1.0,
+    );
+    parameter[4..7].copy_from_slice(b"271");
+    parameter[7..11].copy_from_slice(&2201_u32.to_le_bytes());
+    bulk.extend_from_slice(&parameter);
+    records.push((2201, parameter_offset));
+    records.push((2202, u64::try_from(bulk.len()).unwrap()));
+    let mut companion = vec![0_u8; 58];
+    companion[..4].copy_from_slice(&3_u32.to_le_bytes());
+    companion[4..7].copy_from_slice(b"272");
+    companion[7..11].copy_from_slice(&2202_u32.to_le_bytes());
+    companion[31] = 1;
+    companion[32..36].copy_from_slice(&2200_u32.to_le_bytes());
+    companion[42..50].copy_from_slice(&1_700_000_000_000_000_u64.to_le_bytes());
+    bulk.extend_from_slice(&companion);
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::BaseFlange);
+    let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    types[8].4 = &[123, 1501, 2000, 4645, 4646];
+    types[12].4 = &[1100, 1400];
+    types[13] = (
+        "00000000-0000-0000-0000-000000000584",
+        base,
+        1,
+        "MSketch",
+        &[584],
+    );
+    types[14] = (
+        "00000000-0000-0000-0000-000000002200",
+        base,
+        1,
+        "Dimension",
+        &[2200],
+    );
+    types[15] = (
+        "00000000-0000-0000-0000-000000002201",
+        base,
+        1,
+        "Dimension",
+        &[2201],
+    );
+    types[16] = (
+        "00000000-0000-0000-0000-000000002202",
+        base,
+        1,
+        "Dimension",
+        &[2202],
+    );
+    let timeline_tag = u32::try_from(256 + types.len()).unwrap();
+    records.push((2300, u64::try_from(bulk.len()).unwrap()));
+    crate::test_support::lp_ascii(&mut bulk, &timeline_tag.to_string());
+    bulk.extend_from_slice(&2300_u64.to_le_bytes());
+    crate::test_support::lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0, 1]);
+    bulk.extend_from_slice(&277_u64.to_le_bytes());
+    bulk.extend_from_slice(&[0, 0]);
+    bulk.extend_from_slice(&2_u32.to_le_bytes());
+    for id in [1100_u64, 1400] {
+        bulk.push(1);
+        bulk.extend_from_slice(&id.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0]);
+    }
+    types.push((
+        crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+        crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+        2,
+        "Fusion",
+        &[2300],
+    ));
+    records.sort_by_key(|(_, offset)| *offset);
+    let meta = design_metastream_with_records_and_secondary(&types, &records, &[(2200, owner_end)]);
+    let meta = fixture_secondary_index(meta, &bulk, &[10, 30, 584, 1100, 1400, 1501, 2000]);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        smbh,
+        &properties,
+        &bulk,
+        &meta,
+    )
+}
+
 pub(crate) fn f3d_with_smbh_and_protein_with_generated_remove_body(smbh: &[u8]) -> Vec<u8> {
     let properties = vec![generated_instance_properties_for(
         "11111111-2222-3333-4444-555555555555",
