@@ -369,8 +369,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ConstructionOperandGroupParse::NotAGroup
     ));
 
-    // A member count larger than the record can hold is refused, however many
-    // bytes follow the paired header.
+    // A member count larger than the record can hold refuses the record,
+    // however many bytes follow the paired header.
     let mut overrun = bytes.clone();
     overrun.extend(std::iter::repeat_n(0u8, 2048));
     assert!(
@@ -384,8 +384,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ConstructionOperandGroupParse::NotAGroup
     ));
 
-    // A record whose paired header follows its ten zero bytes holds no ordinal
-    // or duration; the header's bytes are not read as them.
+    // A paired header directly after the ten zero bytes refuses the record.
     let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
         .expect("complete group");
@@ -396,6 +395,15 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         parse_construction_operand_group(&cut, &scope, 0, &RecordFrame::from(&record)),
         ConstructionOperandGroupParse::NotAGroup
+    ));
+
+    // A byte between the owning scope's reference and the paired header leaves
+    // the group unclosed.
+    let mut stray = bytes.clone();
+    stray.insert(paired_at, 0);
+    assert!(matches!(
+        parse_construction_operand_group(&stray, &scope, 0, &RecordFrame::from(&record)),
+        ConstructionOperandGroupParse::Unclosed
     ));
 
     // A record that opens the grammar but whose tail names another record is a
