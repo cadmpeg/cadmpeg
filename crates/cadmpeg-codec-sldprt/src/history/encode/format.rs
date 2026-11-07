@@ -4,7 +4,6 @@
 use super::super::literals::{
     format_angle_rad, format_length_mm, format_length_number, parse_dimension_length_mm,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 
@@ -36,22 +35,15 @@ pub(super) fn format_length_like(value: Length, previous: Option<&str>) -> Strin
 }
 
 /// The angle in the unit of `previous`: degrees when it ends with a degree
-/// sign, radians otherwise. An angle whose degree value is not finite has no
-/// degree literal and is refused.
-pub(super) fn format_angle_like(
-    value: Angle,
-    previous: Option<&str>,
-) -> Result<String, CodecError> {
+/// sign when finite, radians otherwise.
+pub(super) fn format_angle_like(value: Angle, previous: Option<&str>) -> String {
     if previous
         .map(str::trim)
         .is_some_and(|value| value.ends_with('\u{00b0}'))
     {
         let degrees = value.get().to_degrees();
         if !degrees.is_finite() {
-            return Err(CodecError::UnsupportedContent(format!(
-                "SLDPRT angle {} rad has no finite degree value",
-                value.get()
-            )));
+            return format_angle_rad(value);
         }
         let rounded = degrees.round();
         let degrees = if (degrees - rounded).abs() <= EPS_DEGREE_ROUND {
@@ -59,9 +51,9 @@ pub(super) fn format_angle_like(
         } else {
             degrees
         };
-        Ok(format!("{degrees}\u{00b0}"))
+        format!("{degrees}\u{00b0}")
     } else {
-        Ok(format_angle_rad(value))
+        format_angle_rad(value)
     }
 }
 
@@ -80,22 +72,15 @@ mod tests {
     use super::format_angle_like;
     use cadmpeg_ir::scalar::Angle;
 
-    /// An angle whose degree value overflows has no degree literal; it was
-    /// written as `inf°`.
     #[test]
-    fn an_angle_whose_degree_value_overflows_has_no_degree_literal() {
+    fn an_angle_whose_degree_value_overflows_is_written_in_radians() {
         let angle = Angle::new(1.0e307).expect("a finite angle");
         let written = format_angle_like(angle, Some("30\u{00b0}"));
-        let Err(error) = written else {
-            panic!("{written:?}");
-        };
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::UnsupportedContent(_)),
-            "{error}"
-        );
+        let parsed = super::super::super::literals::parse_angle_rad(&written)
+            .expect("the native radians literal decodes");
+        assert!((parsed.get() / angle.get() - 1.0).abs() < f64::EPSILON);
         assert_eq!(
-            format_angle_like(Angle::new(0.5).expect("a finite angle"), Some("30\u{00b0}"))
-                .expect("a finite degree value"),
+            format_angle_like(Angle::new(0.5).expect("a finite angle"), Some("30\u{00b0}")),
             format!("{}\u{00b0}", 0.5_f64.to_degrees())
         );
     }

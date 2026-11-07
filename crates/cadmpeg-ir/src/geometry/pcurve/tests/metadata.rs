@@ -11,8 +11,10 @@ use crate::units::FiniteVector;
 #[test]
 fn pcurve_support_surface_survives_serialization() {
     let surface = crate::ids::SurfaceId::mint("test:model:surface#support").unwrap();
-    let mut form = PcurveGeneralForm::default();
-    form.support_surface = Some(surface.clone());
+    let form = PcurveGeneralForm {
+        support_surface: Some(surface.clone()),
+        ..PcurveGeneralForm::default()
+    };
     let metadata = PcurveMetadata::General { form };
     let value = serde_json::to_value(&metadata).unwrap();
     assert_eq!(value["form"]["support_surface"], surface.as_str());
