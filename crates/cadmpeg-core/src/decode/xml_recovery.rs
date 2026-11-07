@@ -281,25 +281,16 @@ fn damaged_elements(
         }
     }
     let mut fresh: Vec<DamagedSpan> = Vec::new();
+    let mut previous_end = None;
     for index in &selected {
         let own = (
             elements[*index].extent().start(),
             elements[*index].extent().end(),
         );
-        if is_blanked(own)
-            || selected.iter().any(|other| {
-                *other != *index
-                    && contains(
-                        (
-                            elements[*other].extent().start(),
-                            elements[*other].extent().end(),
-                        ),
-                        own,
-                    )
-            })
-        {
+        if is_blanked(own) || previous_end.is_some_and(|end| own.1 <= end) {
             continue;
         }
+        previous_end = Some(own.1);
         fresh.push((
             own.0,
             own.1,
@@ -387,6 +378,39 @@ mod tests {
         )
         .expect("recover readable sibling");
         assert_eq!(damaged, [(b"<parent><child>".to_vec(), b"parent".to_vec())]);
+        assert!(document
+            .root_element()
+            .children()
+            .any(|node| node.has_tag_name("keep")));
+    }
+
+    #[test]
+    fn interrupted_siblings_remain_distinct_parts() {
+        let bytes = b"<root><first><bad></first><keep/><second><nested></root>";
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("create decode context");
+        let mut damaged = Vec::new();
+        let (_, document) = parse_xml_recovering(
+            &ctx,
+            view,
+            "test XML",
+            "scan test XML",
+            "parse test XML",
+            &|detail| CodecError::malformed(detail),
+            |extent, name, _, _| {
+                damaged.push((extent.window().to_vec(), name.to_vec()));
+                Ok(())
+            },
+        )
+        .expect("recover readable siblings");
+        assert_eq!(
+            damaged,
+            [
+                (b"<bad>".to_vec(), b"bad".to_vec()),
+                (b"<second><nested>".to_vec(), b"second".to_vec()),
+            ]
+        );
         assert!(document
             .root_element()
             .children()
