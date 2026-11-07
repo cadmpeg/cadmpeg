@@ -362,10 +362,7 @@ pub(super) fn source_less_body_key(
                 .map_err(|_| CodecError::InvalidInput("F3D ASM body key exceeds i64::MAX".into()))
         });
     }
-    let key = u64::try_from(body_ordinal)
-        .ok()
-        .and_then(|ordinal| ordinal.checked_add(1))
-        .ok_or_else(|| CodecError::InvalidInput("F3D body ordinal exceeds u64".into()))?;
+    let key = cadmpeg_core::decode::u64_from_index(body_ordinal) + 1;
     i64::try_from(key)
         .map_err(|_| CodecError::InvalidInput("F3D ASM body key exceeds i64::MAX".into()))
 }

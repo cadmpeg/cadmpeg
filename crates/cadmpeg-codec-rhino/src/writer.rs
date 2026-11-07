@@ -538,6 +538,7 @@ fn write_archive_prefix(
     let mut light_losses = Vec::new();
     let mut linetype_losses = Vec::new();
     let mut hatch_losses = Vec::new();
+    let mut font_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -561,7 +562,11 @@ fn write_archive_prefix(
                 light_losses.extend(exported.losses);
                 exported.records
             }
-            TCODE_FONT_TABLE => tables::fonts::styles(ir)?,
+            TCODE_FONT_TABLE => {
+                let exported = tables::fonts::styles(ir)?;
+                font_losses.extend(exported.losses);
+                exported.records
+            }
             TCODE_HATCH_PATTERN_TABLE => {
                 let exported = tables::hatches::patterns(ir)?;
                 hatch_losses.extend(exported.losses);
@@ -604,7 +609,10 @@ fn write_archive_prefix(
     losses.extend(setting_losses);
     losses.extend(tables::layer_linetype_losses(ir)?);
     losses.extend(tables::layer_material_losses(ir, materials));
+    losses.extend(tables::layer_color_losses(ir)?);
+    losses.extend(tables::products::definition_metadata_losses(ir, version));
     losses.extend(linetype_losses);
+    losses.extend(font_losses);
     for record in records_in(ir, "object_presentation") {
         if let Some(source) = record
             .field("linetype_index")
@@ -1463,7 +1471,9 @@ fn native_dispositions(
                     let (source, target) = tables::layer_linetype(ir, value)?;
                     let (material_source, material_target) =
                         tables::layer_material(ir, value, &materials);
-                    unchanged |= source == target && material_source == material_target;
+                    unchanged |= source == target
+                        && material_source == material_target
+                        && tables::layer_colors_complete(ir, value)?;
                 }
             }
             if unchanged && tables::native_layer_complete(record) {
@@ -1477,6 +1487,7 @@ fn native_dispositions(
         }
     }
     let emitted_linetypes = tables::native::linetypes(ir)?;
+    let emitted_fonts = tables::fonts::styles(ir)?;
     if let Some(namespace) = ir.native.namespace("rhino") {
         for arena in ["groups", "linetypes", "materials", "text_styles"] {
             for record in namespace.arenas().get(arena).into_iter().flatten() {
@@ -1497,7 +1508,17 @@ fn native_dispositions(
                     {
                         NativeDisposition::Written
                     }
-                    "text_styles" if tables::fonts::complete(record) => NativeDisposition::Written,
+                    "text_styles"
+                        if tables::fonts::complete(record)
+                            && emitted_fonts.indices.get(record.id()).is_some_and(|index| {
+                                record
+                                    .field("archive_index")
+                                    .and_then(|value| value.as_i64())
+                                    .is_none_or(|source| source == i64::from(*index))
+                            }) =>
+                    {
+                        NativeDisposition::Written
+                    }
                     "materials"
                         if ir.model.appearances.iter().any(|appearance| {
                             appearance.native_ref.as_deref() == Some(record.id())
@@ -1683,7 +1704,10 @@ fn native_dispositions(
         .model
         .product_definitions
         .iter()
-        .filter(|definition| tables::products::definition_written(ir, &referenced, definition))
+        .filter(|definition| {
+            tables::products::definition_written(ir, &referenced, definition)
+                && tables::products::reduced_definition_fields(ir, definition, version).is_empty()
+        })
         .filter_map(|definition| definition.native_ref.as_deref())
         .collect::<std::collections::BTreeSet<_>>();
     for record in records_in(ir, "product_definitions") {
@@ -2743,19 +2767,25 @@ fn native_count_limit(limit: u64, count: u64) -> CodecError {
     ))
 }
 
+fn writable_count_limit(limit: u64, count: u64) -> WriteError {
+    WriteError::Omit(format!(
+        "Rhino native count {count} exceeds the format limit {limit}"
+    ))
+}
+
 fn polymorphic_array<'a>(
     children: impl ExactSizeIterator<Item = &'a ([u8; 16], Vec<u8>)>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     polymorphic_records(children.map(|(class, body)| (*class, body.as_slice(), None)))
 }
 
 fn polymorphic_records<'a>(
     children: impl ExactSizeIterator<Item = ([u8; 16], &'a [u8], Option<&'a [u8]>)>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let mut body = vec![0x10];
     body.extend(
         (i32::try_from(children.len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(children.len()),
             )
@@ -2772,14 +2802,14 @@ fn polymorphic_records<'a>(
             checksum.unwrap_or(payload),
         )?);
     }
-    crc_chunk_with_direct(0x4000_8000, &body, &direct)
+    Ok(crc_chunk_with_direct(0x4000_8000, &body, &direct)?)
 }
 
-fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
+fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
     let mut body = vec![0x10];
     body.extend(
         (i32::try_from(records.len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(records.len()),
             )
@@ -2787,20 +2817,20 @@ fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
         .to_le_bytes(),
     );
     body.extend(records.concat());
-    crc_chunk(0x4000_8000, &body)
+    Ok(crc_chunk(0x4000_8000, &body)?)
 }
 
 fn face_array(
     records: &[Vec<u8>],
     faces: &[&cadmpeg_ir::topology::Face],
     archive_version: RhinoArchiveVersion,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let version_two = archive_version.uses_face_array_v2();
     let minor = if version_two { 2 } else { 1 };
     let mut body = vec![0x10 | minor];
     body.extend(
         (i32::try_from(records.len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(records.len()),
             )
@@ -2821,7 +2851,7 @@ fn face_array(
             body.push(0);
         }
     }
-    crc_chunk(0x4000_8000, &body)
+    Ok(crc_chunk(0x4000_8000, &body)?)
 }
 
 fn encoded_face_colors(
@@ -3263,9 +3293,9 @@ fn nurbs_curve_payload_dimension(
 ) -> Result<Vec<u8>, WriteError> {
     let rational = i32::from(curve.weights().is_some());
     let order = i32::try_from(curve.degree() + 1)
-        .map_err(|_| native_count_limit(2_147_483_647, u64::from(curve.degree() + 1)))?;
+        .map_err(|_| writable_count_limit(2_147_483_647, u64::from(curve.degree() + 1)))?;
     let count = i32::try_from(curve.control_points().len()).map_err(|_| {
-        native_count_limit(
+        writable_count_limit(
             2_147_483_647,
             cadmpeg_core::decode::u64_from_index(curve.control_points().len()),
         )
@@ -3291,7 +3321,7 @@ fn nurbs_curve_payload_dimension(
     }
     payload.extend(
         (i32::try_from(curve.knots().len() - 2).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(curve.knots().len() - 2),
             )
@@ -3370,17 +3400,17 @@ fn nurbs_surface_payload(
         3,
         rational,
         i32::try_from(surface.u_degree() + 1)
-            .map_err(|_| native_count_limit(2_147_483_647, u64::from(surface.u_degree() + 1)))?,
+            .map_err(|_| writable_count_limit(2_147_483_647, u64::from(surface.u_degree() + 1)))?,
         i32::try_from(surface.v_degree() + 1)
-            .map_err(|_| native_count_limit(2_147_483_647, u64::from(surface.v_degree() + 1)))?,
+            .map_err(|_| writable_count_limit(2_147_483_647, u64::from(surface.v_degree() + 1)))?,
         i32::try_from(surface.u_count()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(surface.u_count()),
             )
         })?,
         i32::try_from(surface.v_count()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(surface.v_count()),
             )
@@ -3403,7 +3433,7 @@ fn nurbs_surface_payload(
     for knots in [surface.u_knots(), surface.v_knots()] {
         payload.extend(
             (i32::try_from(knots.len() - 2).map_err(|_| {
-                native_count_limit(
+                writable_count_limit(
                     2_147_483_647,
                     cadmpeg_core::decode::u64_from_index(knots.len() - 2),
                 )
@@ -3992,7 +4022,7 @@ fn mesh_payload(
     let mut payload = vec![payload_version];
     payload.extend(
         (i32::try_from(mesh.vertices().len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
             )
@@ -4001,7 +4031,7 @@ fn mesh_payload(
     );
     payload.extend(
         (i32::try_from(mesh.triangles().len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(mesh.triangles().len()),
             )
@@ -4026,7 +4056,7 @@ fn mesh_payload(
     };
     payload.extend(
         (i32::try_from(width.bytes()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(width.bytes()),
             )
@@ -4100,7 +4130,7 @@ fn mesh_payload(
         body.extend(0_i32.to_le_bytes());
         body.extend(
             (u32::try_from(mesh.vertices().len()).map_err(|_| {
-                native_count_limit(
+                writable_count_limit(
                     4_294_967_295,
                     cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
                 )

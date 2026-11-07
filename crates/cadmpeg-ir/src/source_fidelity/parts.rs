@@ -399,7 +399,11 @@ fn give_up(
     let mut dropped: Vec<String> = Vec::new();
     collect_dropped(&stage.model, &mut dropped);
     collect_native_dropped(&output.native, &stage.native, &mut dropped);
-    dropped.extend(spec.dropped_records.iter().map(|record| record.as_str().to_owned()));
+    dropped.extend(
+        spec.dropped_records
+            .iter()
+            .map(|record| record.as_str().to_owned()),
+    );
     dropped.sort();
     dropped.dedup();
     let message = format!(

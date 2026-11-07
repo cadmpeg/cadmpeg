@@ -444,8 +444,11 @@ pub(super) fn encode(
         body_map: None,
         browser_nodes: None,
     };
-    let meta = encode_design_metastream(&registry, &primary, &secondary)?
-        .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
+    let meta = encode_design_metastream(&registry, &primary, &secondary)?;
+    debug_assert!(meta.is_some(), "generated feature registry has fixed types");
+    let Some(meta) = meta else {
+        return Ok(None);
+    };
     let written_parameters = primitives
         .iter()
         .flat_map(|(_, _, values, _, _)| values.iter().filter_map(|value| value.parameter.clone()))
