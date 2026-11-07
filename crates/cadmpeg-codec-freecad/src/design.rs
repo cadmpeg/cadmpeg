@@ -678,22 +678,13 @@ fn feature_ordinals<'a>(
     }
     let mut by_source_order = (0..design_objects.len()).collect::<Vec<_>>();
     by_source_order.sort_unstable_by_key(|&position| (design_objects[position].order, position));
-    let ordinals = by_source_order
-        .iter()
-        .enumerate()
-        .map(|(rank, &position)| {
-            (
-                design_objects[position].id().as_str(),
-                cadmpeg_core::decode::u64_from_index(rank),
-            )
-        })
-        .collect();
+    let mut ordinals = HashMap::new();
     let mut cycle_candidates = by_source_order.into_iter();
     let mut emitted = Vec::new();
     emitted.resize(design_objects.len(), false);
     let mut cycle_affected = BTreeSet::new();
 
-    for _ in 0..design_objects.len() {
+    for rank in 0..design_objects.len() {
         // The ready object earliest in source order is emitted next. When none
         // is ready, every un-emitted object is cycle-affected and the earliest
         // one is emitted anyway.
@@ -712,6 +703,10 @@ fn feature_ordinals<'a>(
                 .find(|&position| !emitted[position])
                 .ok_or_else(unresolved_cycle)?
         };
+        ordinals.insert(
+            design_objects[next].id().as_str(),
+            cadmpeg_core::decode::u64_from_index(rank),
+        );
         emitted[next] = true;
         for &dependent in &dependents[next] {
             let Some(remaining) = waiting[dependent].checked_sub(1) else {

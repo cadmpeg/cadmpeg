@@ -3029,7 +3029,7 @@
           "name": "Dimensions",
           "native_ref": "fcstd:native:object#Dimensions",
           "needs_recompute": false,
-          "ordinal": 3,
+          "ordinal": 1,
           "source_tag": "Spreadsheet::Sheet",
           "suppressed": null
         },
@@ -3085,7 +3085,7 @@
           "name": "Pad",
           "native_ref": "fcstd:native:object#Pad",
           "needs_recompute": false,
-          "ordinal": 2,
+          "ordinal": 3,
           "outputs": [
             "fcstd:model:body#Pad:AddSubShape:PartShape2.brp:24",
             "fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1"
@@ -3105,7 +3105,7 @@
           "name": "Sketch",
           "native_ref": "fcstd:native:object#Sketch",
           "needs_recompute": false,
-          "ordinal": 1,
+          "ordinal": 2,
           "outputs": [
             "fcstd:model:body#Sketch:Shape:PartShape1.brp:9%40location1"
           ],

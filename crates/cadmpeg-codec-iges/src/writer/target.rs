@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IGES target planning and retained-image replay.
 
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::write::{
     target::{ResolvedTarget, ResolvedWrite},
     ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
@@ -46,7 +46,7 @@ fn replay_or_synthesize(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
 ) -> Result<ExportBody, super::WriteError> {
-    let replay_failure = match replay_bytes(input)? {
+    let replay_failure = match replay_bytes(input) {
         Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
         Replay::Declined(reason) => reason,
     };
@@ -61,7 +61,6 @@ fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
     let mut body = super::body(
         bytes,
         WritePath::VerbatimReplay,
-        // Replay runs only while the document digest matches its decode baseline.
         ArenaCoverage::Complete,
         Vec::new(),
         "preserved source container replayed verbatim",
@@ -279,7 +278,7 @@ impl Replay {
     }
 }
 
-fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
+fn replay_bytes(input: EncodeInput<'_>) -> Replay {
     let ir = input.ir;
     let fidelity = input.fidelity;
     let Some(_source) = ir
@@ -287,52 +286,43 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
         .as_ref()
         .filter(|source| source.format() == crate::dialect::FORMAT)
     else {
-        return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
+        return Replay::Declined(DeclineReason::SourceImageUnavailable);
     };
     if fidelity.is_some_and(|fidelity| !fidelity.unrepresented().is_empty()) {
-        return Ok(Replay::Declined(DeclineReason::Rejected(
+        return Replay::Declined(DeclineReason::Rejected(
             "retained source contains untyped content; synthesis is required".to_owned(),
-        )));
+        ));
     }
     let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
-    let expected = fidelity.map(|fidelity| &fidelity.decode_digest);
-    let Some(expected) = expected else {
-        return Ok(Replay::declined_for_record(
-            record,
-            "preserved IGES source carries no decode digest baseline; byte replay skipped"
-                .to_owned(),
-        ));
-    };
-    // The gate replays only when the retained image still digests to the
-    // source baseline and decodes to the current document. Absent bytes
-    // decline as unavailable before any comparison: replay needs the bytes
-    // whatever the document holds. The digest agreement is the edit detector:
-    // an edited document re-decodes to a different digest and synthesizes.
     let Some(data) = record.and_then(|record| record.data()) else {
-        return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
+        return Replay::Declined(DeclineReason::SourceImageUnavailable);
     };
-    let current = crate::document_digest(ir, input.limits)?;
-    let replays = cadmpeg_ir::hash::retained_image_replays(
-        data,
-        expected,
-        current.as_str(),
-        ir.scope,
-        input.limits,
-        |ctx, root| {
-            let fresh = cadmpeg_ir::Codec::decode_with_context(&crate::IgesCodec, ctx, root)
-                .map_err(|_| ())?;
-            crate::document_digest(fresh.ir(), input.limits).map_err(|_| ())
-        },
-    );
+    let depth = match (ir.scope.model, ir.scope.design) {
+        (true, false) => DecodeDepth::Geometry,
+        (false, false) => DecodeDepth::Container,
+        _ => DecodeDepth::Full,
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: input.limits,
+        ..DecodePolicy::default()
+    };
+    let replays = DecodeContext::from_root_bytes_at(data, &arena, &policy, depth)
+        .ok()
+        .is_some_and(|(ctx, root)| {
+            let fresh = cadmpeg_ir::Codec::decode_with_context(&crate::IgesCodec, &ctx, root);
+            let session = ctx.finish_session();
+            fresh.is_ok_and(|fresh| fresh.ir() == ir) && session.is_ok()
+        });
     if !replays {
-        return Ok(Replay::declined_for_record(
+        return Replay::declined_for_record(
             record,
-            "decoded model no longer matches the preserved IGES source digest; byte replay skipped",
-        ));
+            "decoded model no longer matches the preserved IGES source; byte replay skipped",
+        );
     }
-    Ok(Replay::Replayed {
+    Replay::Replayed {
         bytes: data.to_vec(),
-    })
+    }
 }
 
 #[cfg(test)]
