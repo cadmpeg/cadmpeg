@@ -100,6 +100,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeOwnerIdenticalGeometry,
     /// A Move Face feature retains a face operand that does not join exactly one stored face revision.
     FeatureMoveFaceSelectionNative,
+    /// A Thread face differs from the exact surface form within a tolerance.
+    FeatureFaceJoinThreadToleranceAssumed,
     /// A selected face rests on the assumption that its matched revision is the input face.
     FeatureFaceJoinInputRevisionAssumed,
     /// A selected face rests on a matching attribute that repeats on its owner.
@@ -304,6 +306,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureMoveFaceSelectionNative,
+        Self::FeatureFaceJoinThreadToleranceAssumed,
         Self::FeatureFaceJoinInputRevisionAssumed,
         Self::FeatureFaceJoinRepeatedAttribute,
         Self::FeatureFaceJoinUnsharedFamily,
@@ -438,6 +441,9 @@ impl InventorLossCode {
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
+            Self::FeatureFaceJoinThreadToleranceAssumed => {
+                "feature.face-join-thread-tolerance-assumed"
+            }
             Self::FeatureFaceJoinInputRevisionAssumed => "feature.face-join-input-revision-assumed",
             Self::FeatureFaceJoinRepeatedAttribute => "feature.face-join-repeated-attribute",
             Self::FeatureFaceJoinUnsharedFamily => "feature.face-join-unshared-family",
@@ -568,6 +574,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureMoveFaceSelectionNative
+            | Self::FeatureFaceJoinThreadToleranceAssumed
             | Self::FeatureFaceJoinInputRevisionAssumed
             | Self::FeatureFaceJoinRepeatedAttribute
             | Self::FeatureFaceJoinUnsharedFamily
@@ -730,6 +737,7 @@ mod tests {
                 "feature.edge-selection-native",
                 "feature.edge-owner-identical-geometry",
                 "feature.move-face-selection-native",
+                "feature.face-join-thread-tolerance-assumed",
                 "feature.face-join-input-revision-assumed",
                 "feature.face-join-repeated-attribute",
                 "feature.face-join-unshared-family",

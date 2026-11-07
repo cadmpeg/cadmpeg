@@ -80,10 +80,12 @@ pub(in crate::feature) enum Surface {
     /// The face stores no surface this reader classifies.
     Other,
     Plane,
-    /// A cone with unit axis ratio. `sine` is the sine of the half-angle and
-    /// is zero for a cylinder; `radius` is the length of the stored major
-    /// axis, in the length unit of the archive.
+    /// A cone with unit axis ratio within `EPS_CONE_RATIO`. `sine` is the sine
+    /// of the half-angle, and within `EPS_CYLINDER_SINE` of zero for a cylinder;
+    /// `radius` is the length of the stored major axis, in the length unit of
+    /// the archive.
     Cone {
+        ratio: f64,
         sine: f64,
         radius: f64,
     },
@@ -227,6 +229,7 @@ fn classify_surface(face: &Record, by_index: &HashMap<i64, Option<&Record>>) -> 
     let radius = major.iter().map(|axis| axis * axis).sum::<f64>().sqrt();
     if radius.is_finite() && radius > 0.0 && sine.is_finite() {
         Surface::Cone {
+            ratio: *ratio,
             sine: *sine,
             radius,
         }
@@ -235,14 +238,24 @@ fn classify_surface(face: &Record, by_index: &HashMap<i64, Option<&Record>>) -> 
     }
 }
 
+/// Surface record kinds that a face revision can name.
+const SURFACE_KINDS: [&str; 5] = ["plane", "cone", "sphere", "torus", "spline"];
+
 /// The surface fields and the sense of a face revision, for the comparison of
-/// the owners of one selector pair. `None` when the face stores no surface.
+/// the owners of one selector pair. `None` when the face stores no surface
+/// record or no sense.
 fn surface_signature(face: &Record, by_index: &HashMap<i64, Option<&Record>>) -> Option<String> {
     let surface = surface_record(face, by_index)?;
+    if !SURFACE_KINDS.iter().any(|kind| is_surface(surface, kind)) {
+        return None;
+    }
+    let sense = face
+        .chunk(8)
+        .filter(|token| matches!(token, Token::True | Token::False))?;
     let fields = surface
         .chunks()
         .skip(3)
-        .chain(face.chunk(8))
+        .chain(std::iter::once(sense))
         .map(|token| format!("{token:?}"))
         .collect::<Vec<_>>();
     (fields.len() > 3).then(|| format!("{}:{}", surface.head(), fields.join(",")))
@@ -536,12 +549,32 @@ fn thread_diameter(feature: &Feature) -> Option<f64> {
 /// is a cylinder or a cone. A cylinder agrees with the stated diameter.
 fn thread_surface_admitted(surface: Surface, diameter: Option<f64>) -> bool {
     match surface {
-        Surface::Cone { sine, radius } if sine.abs() > EPS_CYLINDER_SINE && radius > 0.0 => true,
+        Surface::Cone { sine, radius, .. } if sine.abs() > EPS_CYLINDER_SINE && radius > 0.0 => {
+            true
+        }
         Surface::Cone { radius, .. } => diameter.is_none_or(|diameter| {
             (2.0 * radius * MM_PER_ARCHIVE_LENGTH - diameter).abs() <= EPS_THREAD_DIAMETER_MM
         }),
         Surface::Plane | Surface::Other => false,
     }
+}
+
+/// Whether a thread face that the tolerances admit differs from the exact form:
+/// a unit axis ratio, a zero sine for a cylinder, and the stated diameter.
+fn thread_tolerance_used(surface: Surface, diameter: Option<f64>) -> bool {
+    let Surface::Cone {
+        ratio,
+        sine,
+        radius,
+    } = surface
+    else {
+        return false;
+    };
+    let cylinder = sine.abs() <= EPS_CYLINDER_SINE;
+    ratio != 1.0
+        || (cylinder && sine != 0.0)
+        || (cylinder
+            && diameter.is_some_and(|diameter| 2.0 * radius * MM_PER_ARCHIVE_LENGTH != diameter))
 }
 
 /// Replaces the native face selection of each Move Face, Shell, Thread, and
@@ -850,6 +883,23 @@ pub(crate) fn assumption_losses(
         })
         .count();
     let identical = count(&ids(|face| face.identical_owners));
+    let tolerated = features
+        .iter()
+        .filter(|feature| {
+            let Some((Kind::Thread, FaceSelection::Historical { faces, .. })) = selection(feature)
+            else {
+                return false;
+            };
+            inventory
+                .edge_inputs
+                .faces
+                .iter()
+                .any(|((token, source), face)| {
+                    thread_tolerance_used(face.surface, thread_diameter(feature))
+                        && face_id(token, *source).is_ok_and(|id| faces.as_slice().contains(&id))
+                })
+        })
+        .count();
     let mut notes = Vec::new();
     if selecting > 0 {
         notes.push(crate::loss::InventorLossCode::FeatureFaceJoinInputRevisionAssumed.note(format!("{selecting} face-selecting feature(s) keep historical face selections; the join does not establish the stored body state of a matched revision, so the selection assumes that the revision represents the input face of the feature.")));
@@ -859,6 +909,9 @@ pub(crate) fn assumption_losses(
     }
     if unshared > 0 {
         notes.push(crate::loss::InventorLossCode::FeatureFaceJoinUnsharedFamily.note(format!("{unshared} face-selecting feature(s) select a face with a generated-name family that shares no feature with the selector; the selection assumes that another family of the face identifies it.")));
+    }
+    if tolerated > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinThreadToleranceAssumed.note(format!("{tolerated} Thread feature(s) select a face within the tolerances of the cone axis ratio, the cylinder sine, or the stated diameter; the selection assumes that the difference is rounding.")));
     }
     if identical > 0 {
         notes.push(crate::loss::InventorLossCode::FeatureFaceJoinIdenticalOwners.note(format!("{identical} face-selecting feature(s) select a face through a selector pair with several matched owners of identical surface geometry; the selection takes the owner with the lowest entity index.")));

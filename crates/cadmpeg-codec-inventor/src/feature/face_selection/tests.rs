@@ -913,14 +913,47 @@ fn thread_fixture(
 }
 
 #[test]
+fn a_thread_face_within_a_tolerance_states_the_assumption() {
+    let ctx = context();
+    let surface = |ratio, sine| Surface::Cone {
+        ratio,
+        sine,
+        radius: 0.25,
+    };
+    for (face, diameter, assumed) in [
+        (surface(1.0, 0.0), Some(5.0), false),
+        (surface(1.0, 0.0), None, false),
+        (surface(1.0, 0.1), Some(9.0), false),
+        (surface(1.000_000_000_5, 0.0), Some(5.0), true),
+        (surface(1.0, 5e-10), Some(5.0), true),
+        (surface(1.0, 0.0), Some(5.000_000_5), true),
+    ] {
+        let (inventory, mut feature) = thread_fixture(&ctx, face, diameter);
+        let before = assumption_losses(std::slice::from_ref(&feature), &inventory);
+        assert!(before.is_empty(), "a native selection uses no face");
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
+        assert_eq!(
+            notes
+                .iter()
+                .any(|note| note.code.local_code() == "feature.face-join-thread-tolerance-assumed"),
+            assumed,
+            "{face:?} {diameter:?}"
+        );
+    }
+}
+
+#[test]
 fn a_thread_joins_one_cylinder_or_cone_of_the_stated_size() {
     let ctx = context();
     // The cylinder radius is in archive length units; the diameter is in millimetres.
     let cylinder = Surface::Cone {
+        ratio: 1.0,
         sine: 0.0,
         radius: 0.25,
     };
     let taper = Surface::Cone {
+        ratio: 1.0,
         sine: 0.1,
         radius: 0.25,
     };
@@ -951,6 +984,7 @@ fn a_thread_joins_one_cylinder_or_cone_of_the_stated_size() {
 fn a_thread_selects_exactly_one_face() {
     let ctx = context();
     let cylinder = Surface::Cone {
+        ratio: 1.0,
         sine: 0.0,
         radius: 0.25,
     };
@@ -1176,6 +1210,7 @@ fn a_selected_face_reports_the_surface_of_its_owner() {
             (
                 cone(3, 0.0, 0.25),
                 Surface::Cone {
+                    ratio: 1.0,
                     sine: 0.0,
                     radius: 0.25,
                 },
@@ -1256,6 +1291,21 @@ fn several_owners_of_different_surfaces_senses_or_unstored_geometry_select_nothi
         mixed.pop();
         mixed.push(matched(12, 2, schema, 9, 7, 0));
         assert!(run(&mixed, schema).is_none());
+        // The second owner has no sense field.
+        let mut senseless = two_owners(schema, cone(4, 0.0, 0.25), false);
+        let mut tokens = senseless[4].tokens.to_vec();
+        tokens.pop();
+        senseless[4].tokens = tokens.into();
+        assert!(run(&senseless, schema).is_none());
+        // Both owners name a record that is not a surface.
+        let mut unsurfaced = two_owners(schema, cone(4, 0.0, 0.25), false);
+        for index in [3, 5] {
+            let copy = unsurfaced[index].clone();
+            let mut tokens = copy.tokens.to_vec();
+            tokens[0] = Token::Ident("edge".into());
+            unsurfaced[index] = record(copy.index, "edge", tokens);
+        }
+        assert!(run(&unsurfaced, schema).is_none());
         // One owner that is not a face.
         let mut edge = two_owners(schema, cone(4, 0.0, 0.25), false);
         edge[4] = record(2, "edge", vec![Token::Ref(-1)]);
@@ -1269,6 +1319,7 @@ fn assumption_losses_state_identical_owners_for_every_face_selecting_kind() {
     let (mut inventory, mut feature) = thread_fixture(
         &ctx,
         Surface::Cone {
+            ratio: 1.0,
             sine: 0.0,
             radius: 0.25,
         },
