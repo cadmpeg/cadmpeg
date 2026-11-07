@@ -609,26 +609,54 @@ pub(super) fn decode(
         }
     }
     for (&id, record) in exchange.records() {
-        if style_reachable.contains(&id) || record.partial("COLOUR_RGB").is_none() {
+        let is_predefined = record.partial("DRAUGHTING_PRE_DEFINED_COLOUR").is_some();
+        if style_reachable.contains(&id)
+            || (record.partial("COLOUR_RGB").is_none() && !is_predefined)
+        {
             continue;
         }
-        let mut active = BTreeSet::new();
-        let mut cache = ColorCache::default();
-        let mut invalid_surface_sides = BTreeSet::new();
-        let Some(ColorResolution::Candidate(candidate)) = find_color(
-            id,
-            exchange,
-            StyleDomain::Any,
-            ColorSearchState {
-                active: &mut active,
-                cache: &mut cache,
-                losses: &mut losses,
-                invalid_surface_sides: &mut invalid_surface_sides,
-            },
-            ctx,
-        )?
-        else {
-            continue;
+        let (name, color) = if is_predefined {
+            let name_value = if record.partials.len() == 1 {
+                record.parameter(0)
+            } else {
+                record
+                    .partial("PRE_DEFINED_ITEM")
+                    .and_then(|partial| partial.parameters.first())
+            };
+            let Some(name) = name_value.and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "predefined colour name",
+                    StepLossCode::AttributeStringInvalid,
+                )
+            }) else {
+                continue;
+            };
+            let color = predefined(&name);
+            ((!name.is_empty()).then_some(name), color)
+        } else {
+            let mut active = BTreeSet::new();
+            let mut cache = ColorCache::default();
+            let mut invalid_surface_sides = BTreeSet::new();
+            let Some(ColorResolution::Candidate(candidate)) = find_color(
+                id,
+                exchange,
+                StyleDomain::Any,
+                ColorSearchState {
+                    active: &mut active,
+                    cache: &mut cache,
+                    losses: &mut losses,
+                    invalid_surface_sides: &mut invalid_surface_sides,
+                },
+                ctx,
+            )?
+            else {
+                continue;
+            };
+            (candidate.name, Some(candidate.color))
         };
         ir.model.appearances.push(Appearance {
             native_ref: None,
@@ -636,14 +664,14 @@ pub(super) fn decode(
                 kind!("appearance"),
                 IdentityKey::from(id),
             )),
-            name: candidate.name,
+            name,
             asset_guid: None,
             library_id: None,
             visual_guid: None,
             physical_token: None,
             schema: Some("step_surface_style".into()),
             category: None,
-            base_color: Some(candidate.color),
+            base_color: color,
             textures: Vec::new(),
             properties: BTreeMap::new(),
         });
