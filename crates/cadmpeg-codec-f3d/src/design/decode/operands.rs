@@ -2695,7 +2695,8 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// prefixes the flag block with a further byte. Neither
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
-/// this record's own index.
+/// this record's own index. That paired header is the next indexed header
+/// with this record's index, and every read stops before it.
 pub(super) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -2712,7 +2713,11 @@ pub(super) fn parse_construction_operand_group(
     if bytes.get(start + 11..start + 19) != Some(&[0; 8]) {
         return NotAGroup;
     }
-    let Some(mut cursor) = payload_prologue(bytes, start + 19, bytes.len()) else {
+    // The record ends at its paired header: the next indexed header with its
+    // own index, or the end of the stream.
+    let end = next_indexed_record_offset_with_index(bytes, start + 1, header.record_index)
+        .unwrap_or(bytes.len());
+    let Some(mut cursor) = payload_prologue(bytes, start + 19, end) else {
         return NotAGroup;
     };
     let member_count_at = cursor;
@@ -2720,10 +2725,9 @@ pub(super) fn parse_construction_operand_group(
         return NotAGroup;
     };
     cursor += 4;
-    // A reference is at least one byte, so a count the remaining bytes cannot
-    // supply is corrupt and must not reach the allocator.
-    if bytes
-        .len()
+    // A reference is at least one byte, so a count the rest of the record
+    // cannot supply is corrupt and must not reach the allocator.
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(member_count) > remaining)
     {
@@ -2759,8 +2763,7 @@ pub(super) fn parse_construction_operand_group(
         return NotAGroup;
     };
     cursor += 4;
-    if bytes
-        .len()
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(trailing_count) > remaining)
     {
@@ -2788,6 +2791,13 @@ pub(super) fn parse_construction_operand_group(
     }
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
+    // The role, ten zero bytes, the ordinal and the duration precede the tail.
+    if role_at
+        .checked_add(30)
+        .is_none_or(|fixed_end| fixed_end > end)
+    {
+        return NotAGroup;
+    }
     let (Some(0), Some(role)) = (
         View::u32_le_at(bytes, role_at),
         View::u64_le_at(bytes, role_at),
@@ -2860,7 +2870,7 @@ pub(super) fn parse_construction_operand_group(
             else {
                 continue;
             };
-            if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
+            if after != end || View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
                 continue;
             }
             if closed

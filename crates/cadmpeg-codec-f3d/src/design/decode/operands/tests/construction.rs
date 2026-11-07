@@ -369,6 +369,35 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ConstructionOperandGroupParse::NotAGroup
     ));
 
+    // A member count larger than the record can hold is refused, however many
+    // bytes follow the paired header.
+    let mut overrun = bytes.clone();
+    overrun.extend(std::iter::repeat_n(0u8, 2048));
+    assert!(
+        parse_construction_operand_group(&overrun, &scope, 0, &RecordFrame::from(&record))
+            .complete()
+            .is_some()
+    );
+    overrun[21..25].copy_from_slice(&256u32.to_le_bytes());
+    assert!(matches!(
+        parse_construction_operand_group(&overrun, &scope, 0, &RecordFrame::from(&record)),
+        ConstructionOperandGroupParse::NotAGroup
+    ));
+
+    // A record whose paired header follows its ten zero bytes holds no ordinal
+    // or duration; the header's bytes are not read as them.
+    let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
+        .complete()
+        .expect("complete group");
+    let opaque_at = usize::try_from(group.frame.opaque_index_offset()).unwrap();
+    let mut cut = bytes[..opaque_at].to_vec();
+    indexed_header(&mut cut, *b"259", 100);
+    cut.extend_from_slice(&[0; 16]);
+    assert!(matches!(
+        parse_construction_operand_group(&cut, &scope, 0, &RecordFrame::from(&record)),
+        ConstructionOperandGroupParse::NotAGroup
+    ));
+
     // A record that opens the grammar but whose tail names another record is a
     // group this reader cannot read, not a reference member that is not a group.
     let mut truncated = bytes.clone();
