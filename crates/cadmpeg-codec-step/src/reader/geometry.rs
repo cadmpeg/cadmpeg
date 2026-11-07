@@ -1727,6 +1727,19 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
+    for (id, record) in exchange.entities("SURFACE") {
+        if record.simple_name() != Some("SURFACE") {
+            continue;
+        }
+        ir.model.surfaces.push(Surface {
+            native_ref: None,
+            id: SurfaceId::from(ids::data(kind!("surface"), id)),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        typed.insert(id);
+    }
+
     for (id, record) in exchange.entities_any(LeafSurfaceEntity::NAMES) {
         let Some(surface_kind) = LeafSurfaceEntity::of(record) else {
             continue;
