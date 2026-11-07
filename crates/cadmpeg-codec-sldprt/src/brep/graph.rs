@@ -2428,28 +2428,27 @@ pub(crate) fn decode_bodies(
             .iter()
             .map(|curve| curve.id.clone())
             .collect::<HashSet<_>>();
+        let existing_points = decoded
+            .points
+            .iter()
+            .map(|point| point.id.clone())
+            .collect::<HashSet<_>>();
         if let Some(mut prefix) = standalone::decode_prefix(
             ctx,
             header_body(payload, header)?,
             stream,
             &existing,
+            &existing_points,
         )? {
-            prefix.curves.retain(|curve| !existing.contains(&curve.id));
-            let existing_points = decoded
-                .points
-                .iter()
-                .map(|point| point.id.clone())
-                .collect::<HashSet<_>>();
-            prefix
-                .points
-                .retain(|point| !existing_points.contains(&point.id));
             let added = prefix
                 .curves
                 .iter()
                 .map(|curve| curve.id.as_str())
                 .chain(prefix.points.iter().map(|point| point.id.as_str()))
                 .collect::<HashSet<_>>();
-            prefix.annotations.retain_provenance(|id| added.contains(id));
+            prefix
+                .annotations
+                .retain_provenance(|id| added.contains(id));
             decoded.annotations.append(prefix.annotations)?;
             decoded.curves.append(&mut prefix.curves);
             decoded.points.append(&mut prefix.points);
@@ -8215,9 +8214,10 @@ fn synthesize_sphere_seams(
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
         });
-        let bounds = out.edges[edge_index]
-            .param_range()
-            .map_or([0.0, std::f64::consts::TAU], cadmpeg_ir::units::FiniteVector::get);
+        let bounds = out.edges[edge_index].param_range().map_or(
+            [0.0, std::f64::consts::TAU],
+            cadmpeg_ir::units::FiniteVector::get,
+        );
         out.edges[edge_index].carrier =
             cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(bounds))
                 .map_err(cadmpeg_core::CodecError::malformed)?;
