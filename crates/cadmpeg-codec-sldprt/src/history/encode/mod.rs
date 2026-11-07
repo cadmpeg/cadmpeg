@@ -18,6 +18,7 @@ use self::solid::{ExtrudeDefinition, HoleDefinition};
 use self::spin::{LoftDefinition, LoftForm, LoftInterpolation, SweepDefinition};
 use self::surface::ShellDefinition;
 use crate::records::Feature;
+use crate::writer::write_error::WriteError;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
@@ -77,7 +78,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     }
 
     /// Resolve a temporary target value from the document's single binding.
-    fn dimension<Q: DimensionValue>(&self, dimension: &Dimension<Q>) -> Result<Q, CodecError> {
+    fn dimension<Q: DimensionValue>(&self, dimension: &Dimension<Q>) -> Result<Q, WriteError> {
         match dimension {
             Dimension::Literal(value) => Ok(value.clone()),
             Dimension::Parameter(id) => {
@@ -91,14 +92,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             self.feature.id
                         ))
                     })?;
-                Q::resolve_parameter(parameter).ok_or_else(|| CodecError::UnsupportedContent(format!(
+                Q::resolve_parameter(parameter).ok_or_else(|| WriteError::Decline(format!(
                     "SLDPRT feature {} cannot render unevaluated or incompatible parameter {id}", self.feature.id
                 )))
             }
         }
     }
 
-    pub(super) fn encode(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let mut encoding = match self.feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::TreeNode { role, children }) => {
                 self.encode_tree_node(*role, children, children.active_child().as_ref())

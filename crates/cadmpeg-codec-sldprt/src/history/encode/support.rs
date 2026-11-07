@@ -4,7 +4,7 @@
 use crate::classification::{classify, FeatureClass};
 use crate::history::classify::feature_family;
 use crate::records::Feature;
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, EdgeSelection, FaceSelection, FeatureId, FeatureTreeNodeRole,
     PathRef, PlanarProfileRef, ProfileRef, VertexSelection,
@@ -49,10 +49,10 @@ pub(super) fn require_same_family(
     existing: Option<&Feature>,
     feature_id: &FeatureId,
     families: &[&str],
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     if existing.is_some_and(|record| !families.iter().any(|family| feature_family(record, family)))
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Decline(format!(
             "SLDPRT feature {feature_id} changes operation family"
         )));
     }
@@ -172,9 +172,9 @@ fn format_boolean_op(value: BooleanOp) -> Option<&'static str> {
 pub(super) fn resolved_boolean_op(
     value: BooleanOp,
     feature: &FeatureId,
-) -> Result<&'static str, CodecError> {
+) -> Result<&'static str, WriteError> {
     format_boolean_op(value).ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        WriteError::Decline(format!(
             "SLDPRT feature {feature} has an unresolved boolean operation"
         ))
     })

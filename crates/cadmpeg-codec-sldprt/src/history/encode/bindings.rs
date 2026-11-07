@@ -2,6 +2,7 @@
 //! Native parameter roles refer to canonical bindings, never copied values.
 
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
+use crate::writer::write_error::WriteError;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::ParameterId;
 
@@ -9,14 +10,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn bind_operation_dimensions(
         &self,
         encoding: &mut NeutralFeatureEncoding,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), WriteError> {
         let operation = self.feature.evaluation.definition().operation();
         let value = serde_json::to_value(operation).map_err(|error| {
             CodecError::malformed(format!(
                 "serialize canonical SLDPRT dimensional roles: {error}"
             ))
         })?;
-        let bind = |roles: &[&str], paths: &[&str]| -> Result<(), CodecError> {
+        let bind = |roles: &[&str], paths: &[&str]| -> Result<(), WriteError> {
             let Some(role) = roles
                 .iter()
                 .find(|role| encoding.parameters.contains_key(**role))
@@ -33,7 +34,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && parameter.name == role
                         && !self.orphaned_parameters.contains(&parameter.id)
                 }) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT native dimensional role {role} cannot also hold an independent literal control on feature {}",
                         self.feature.id
                     )));
@@ -88,7 +89,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && candidate.name == role
                         && !self.orphaned_parameters.contains(&candidate.id)
                 }) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT native dimensional role {role} conflicts with an independently authored parameter on feature {}",
                         self.feature.id
                     )));
@@ -120,10 +121,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 }
 
 /// Enumerate the target's understood scalar roles once, for both text and cache emission.
-pub(crate) fn visit_operation_roles(
+pub(crate) fn visit_operation_roles<E>(
     operation: &cadmpeg_ir::features::FeatureOperation,
-    mut bind: impl FnMut(&[&str], &[&str]) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
+    mut bind: impl FnMut(&[&str], &[&str]) -> Result<(), E>,
+) -> Result<(), E> {
     use cadmpeg_ir::features::FeatureOperation;
     match operation {
         FeatureOperation::Extrude { .. } => {
@@ -275,7 +276,7 @@ pub(crate) fn role_parameter(
     let value = serde_json::to_value(operation)
         .map_err(|error| CodecError::malformed(format!("serialize canonical role: {error}")))?;
     let mut result = None;
-    visit_operation_roles(operation, |roles, paths| {
+    visit_operation_roles(operation, |roles, paths| -> Result<(), CodecError> {
         if roles
             .iter()
             .find(|candidate| native_roles.contains_key(**candidate))
