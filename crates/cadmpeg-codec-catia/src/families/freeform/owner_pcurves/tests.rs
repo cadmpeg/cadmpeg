@@ -474,11 +474,11 @@ fn source_owner_port_face_and_chart_mismatches_withhold_the_jet() {
             }
             1 => {
                 ir.model.points[0].source_object =
-                    Some(crate::assemble::cgm_source("vertex", 6).expect("tag"))
+                    Some(crate::assemble::cgm_source("vertex", 6).expect("tag"));
             }
             2 => {
                 ir.model.surfaces[0].source_object =
-                    Some(crate::assemble::cgm_source("carrier", 9).expect("tag"))
+                    Some(crate::assemble::cgm_source("carrier", 9).expect("tag"));
             }
             _ => {
                 ir.model.surfaces[0].geometry =
@@ -490,7 +490,7 @@ fn source_owner_port_face_and_chart_mismatches_withhold_the_jet() {
                             RADIUS,
                         )
                         .expect("different chart"),
-                    ))
+                    ));
             }
         }
         let records = consolidated_records(&data);
@@ -688,6 +688,7 @@ fn an_identical_source_bound_use_is_idempotent() {
 }
 
 fn source_with_fit(fit: f64, second_operand: u8) -> Vec<u8> {
+    const SAMPLE_COUNT: u8 = 15;
     let mut data = source_without_map();
     let records = consolidated_records(&data);
     let payload = records[6].payload().expect("edge payload");
@@ -697,7 +698,6 @@ fn source_with_fit(fit: f64, second_operand: u8) -> Vec<u8> {
     for value in [0.0_f64, 1.0, 0.0, ACTIVE[0], ACTIVE[1]] {
         map.extend(value.to_le_bytes());
     }
-    const SAMPLE_COUNT: u8 = 15;
     map.push(0x80 + SAMPLE_COUNT);
     for [lower, upper] in [[0.0_f64, 1.0], ACTIVE] {
         for at in 0..SAMPLE_COUNT {
