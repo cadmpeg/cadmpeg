@@ -340,6 +340,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
+    FeatureThickenFlagsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
@@ -671,6 +673,7 @@ impl F3dLossCode {
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureEdgeSelectionNative,
@@ -935,6 +938,7 @@ impl F3dLossCode {
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
@@ -1206,6 +1210,7 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
@@ -1407,6 +1412,7 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
@@ -1696,6 +1702,7 @@ mod tests {
                 "feature.revolve-layout-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
                 "feature.face-operand-fallback-contradicted",
                 "feature.edge-selection-native",

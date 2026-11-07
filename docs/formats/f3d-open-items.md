@@ -1506,6 +1506,30 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
+### DR-313. Flag bytes of the Thicken scope frame
+
+**Question.** Which Thicken settings do the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?
+
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the flag position and admits `0` or `1` in each byte. The decoder records `feature.thicken-flags-assumed` with the two flag bytes for each admitted scope and projects the Thicken side from the sign of the thickness scalar alone.
+
+**Need.** Saves of one `Thicken` that change the direction between one side and symmetric and change tangent-chain selection, one at a time, each recording the two flag bytes.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-314. Zero fields of the Thicken scope frame
+
+**Question.** What do the zero byte that ends the six-byte marker-one prologue and the u32 zero that can follow the marked scalar reference of a `Thicken` scope encode?
+
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives both fields and the bytes that place them: u32 `4` after the prologue, and u32 `1` before the marked auxiliary reference. The decoder reads every combination of the two fields and keeps no value from them.
+
+**Need.** `Thicken` scopes that store a nonzero value in either field, or saves of one `Thicken` from application versions whose frames differ in these fields.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-269. Marker-one Revolve frames of other lengths
 
 **Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
