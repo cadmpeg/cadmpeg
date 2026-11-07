@@ -11,6 +11,7 @@ mod delete_face;
 mod draft;
 mod edge_operands;
 mod face_boundaries;
+mod fallback_faces;
 mod feature_inputs;
 mod feature_outputs;
 mod header_index;

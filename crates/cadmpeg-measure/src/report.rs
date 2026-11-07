@@ -591,6 +591,8 @@ pub enum WitnessKind {
     TangentEdge,
     /// The sign of a closed shell's volume.
     ShellSign,
+    /// Linked faces of one sphere whose total area leaves one reading.
+    SharedSphere,
     /// One reading of the face has zero area.
     EmptyReading,
 }
