@@ -287,7 +287,12 @@ fn native_project(
     text: &str,
     virtual_sections: &BTreeMap<String, Option<String>>,
 ) -> Result<NativeAssembly, CodecError> {
-    let document = match ctx.parse_xml(text, "parse SolidWorks component instance tree") {
+    let document = match crate::container::recover_xml(
+        ctx,
+        text,
+        "parse SolidWorks component instance tree",
+        |_, _, _| Ok(()),
+    ) {
         Ok(document) => document,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
