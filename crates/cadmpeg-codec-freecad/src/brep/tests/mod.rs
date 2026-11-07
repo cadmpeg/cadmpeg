@@ -1279,7 +1279,12 @@ pub(crate) fn transfers_binary_exact_curve_and_surface_carriers() {
     flags(&mut brep);
     child(&mut brep, 0, 5);
     brep.push(b'*');
-    for (kind, reverse_index) in [(3_u8, 4_i32), (2, 3), (0, 2)] {
+    brep.push(3);
+    flags(&mut brep);
+    let face_use_orientation = brep.len();
+    child(&mut brep, 0, 4);
+    brep.push(b'*');
+    for (kind, reverse_index) in [(2_u8, 3_i32), (0, 2)] {
         brep.push(kind);
         flags(&mut brep);
         child(&mut brep, 0, reverse_index);
@@ -1316,6 +1321,20 @@ pub(crate) fn transfers_binary_exact_curve_and_surface_carriers() {
     );
     assert_eq!(result.ir().model.coedges.len(), 1);
     assert!(result.report().geometry_transferred());
+    assert_eq!(
+        result.ir().model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Forward
+    );
+
+    brep[face_use_orientation] = 1;
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
+    let reversed = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("reversed binary face use");
+    assert_eq!(
+        reversed.ir().model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
 }
 
 #[test]
