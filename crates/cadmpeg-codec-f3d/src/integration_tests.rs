@@ -11,6 +11,7 @@ mod configuration_parameters;
 mod design_canvas;
 mod design_containment;
 mod design_sheet_metal;
+mod detached_carriers;
 mod emboss_operands;
 mod history_deltas;
 mod history_scale;
