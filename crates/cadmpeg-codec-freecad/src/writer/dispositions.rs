@@ -141,11 +141,22 @@ pub(super) fn emitted(
             );
         }
     }
+    for census in namespace.arena_as::<crate::native::CarrierCensusRecord>("carrier_census")? {
+        if outcomes.record_disposition("fcstd", "shape_payloads", &census.payload)
+            != NativeDisposition::Dropped
+        {
+            record(
+                outcomes,
+                "carrier_census",
+                &census.id,
+                NativeDisposition::Regenerated,
+            );
+        }
+    }
     // These are typed summaries/projections of the emitted object graph. They
     // are regenerated rather than copied as an independent content source.
     for arena in [
         "document",
-        "carrier_census",
         "product_nodes",
         "joints",
         "applications",
