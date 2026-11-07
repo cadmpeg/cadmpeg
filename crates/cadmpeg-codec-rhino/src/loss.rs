@@ -241,18 +241,28 @@ pub(crate) enum RhinoLossCode {
     WriterCarrierResolved,
     /// Material records have no writer encoding.
     WriterMaterialOmitted,
+    /// A native material color cannot be represented.
+    WriterMaterialColorReduced,
     /// Material texture channels cannot be written.
     WriterMaterialTextureOmitted,
     /// A material identity is changed to keep physical components distinct.
     WriterMaterialUuidReassigned,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// A document setting color cannot be represented.
+    WriterSettingColorReduced,
     /// A dimension style archive index changes.
     WriterDimensionStyleIndexReassigned,
     /// A text style has no writable native record.
     WriterTextStyleOmitted,
     /// A text style reference is reduced or reassigned.
     WriterTextStyleReferenceReduced,
+    /// A product definition has unrepresentable native metadata.
+    WriterProductMetadataReduced,
+    /// An embedded image cannot be written.
+    WriterImageOmitted,
+    /// An object display order cannot fit its native field.
+    WriterObjectDisplayOrderReduced,
     /// A native light has incomplete or unrepresentable fields.
     WriterLightOmitted,
     /// A light's stored archive index changes to its emitted table position.
@@ -271,6 +281,8 @@ pub(crate) enum RhinoLossCode {
     WriterLayerLinetypeReduced,
     /// A layer material reference changes its archive index or is omitted.
     WriterLayerMaterialReduced,
+    /// A native layer color cannot be represented.
+    WriterLayerColorReduced,
     /// Layer membership cannot be assigned to an individual non-object record.
     WriterLayerMembershipOmitted,
     /// An unspecified layer visibility is written as the native default.
@@ -405,12 +417,17 @@ impl RhinoLossCode {
         Self::WriterPcurveReversalDefaulted,
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
+        Self::WriterMaterialColorReduced,
         Self::WriterMaterialTextureOmitted,
         Self::WriterMaterialUuidReassigned,
         Self::WriterAttributesOmitted,
+        Self::WriterSettingColorReduced,
         Self::WriterDimensionStyleIndexReassigned,
         Self::WriterTextStyleOmitted,
         Self::WriterTextStyleReferenceReduced,
+        Self::WriterProductMetadataReduced,
+        Self::WriterImageOmitted,
+        Self::WriterObjectDisplayOrderReduced,
         Self::WriterLightOmitted,
         Self::WriterLightIndexReassigned,
         Self::WriterLightAttributeIndexReassigned,
@@ -420,6 +437,7 @@ impl RhinoLossCode {
         Self::WriterLinetypeReduced,
         Self::WriterLayerLinetypeReduced,
         Self::WriterLayerMaterialReduced,
+        Self::WriterLayerColorReduced,
         Self::WriterLayerMembershipOmitted,
         Self::WriterLayerVisibilityDefaulted,
         Self::WriterLayerDescriptionNormalized,
@@ -506,12 +524,17 @@ impl RhinoLossCode {
             Self::WriterPcurveReversalDefaulted => "writer.pcurve-reversal-defaulted",
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
+            Self::WriterMaterialColorReduced => "writer.material-color-reduced",
             Self::WriterMaterialTextureOmitted => "writer.material-texture-omitted",
             Self::WriterMaterialUuidReassigned => "writer.material-uuid-reassigned",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterSettingColorReduced => "writer.setting-color-reduced",
             Self::WriterDimensionStyleIndexReassigned => "writer.dimension-style-index-reassigned",
             Self::WriterTextStyleOmitted => "writer.text-style-omitted",
             Self::WriterTextStyleReferenceReduced => "writer.text-style-reference-reduced",
+            Self::WriterProductMetadataReduced => "writer.product-metadata-reduced",
+            Self::WriterImageOmitted => "writer.image-omitted",
+            Self::WriterObjectDisplayOrderReduced => "writer.object-display-order-reduced",
             Self::WriterLightOmitted => "writer.light-omitted",
             Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
             Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
@@ -521,6 +544,7 @@ impl RhinoLossCode {
             Self::WriterLinetypeReduced => "writer.linetype-reduced",
             Self::WriterLayerLinetypeReduced => "writer.layer-linetype-reduced",
             Self::WriterLayerMaterialReduced => "writer.layer-material-reduced",
+            Self::WriterLayerColorReduced => "writer.layer-color-reduced",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
             Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
@@ -647,12 +671,14 @@ impl RhinoLossCode {
                 LossTaxonomy::ProceduralReduced
             }
             Self::WriterMaterialOmitted
+            | Self::WriterMaterialColorReduced
             | Self::WriterMaterialTextureOmitted
             | Self::WriterMaterialUuidReassigned
             | Self::WriterLinetypeOmitted
             | Self::WriterLinetypeReduced
             | Self::WriterLayerLinetypeReduced
             | Self::WriterLayerMaterialReduced
+            | Self::WriterLayerColorReduced
             | Self::WriterLayerMembershipOmitted
             | Self::WriterLayerVisibilityDefaulted
             | Self::WriterLayerDescriptionNormalized
@@ -664,9 +690,13 @@ impl RhinoLossCode {
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAttributesOmitted
+            | Self::WriterSettingColorReduced
             | Self::WriterDimensionStyleIndexReassigned
             | Self::WriterTextStyleOmitted
             | Self::WriterTextStyleReferenceReduced
+            | Self::WriterProductMetadataReduced
+            | Self::WriterImageOmitted
+            | Self::WriterObjectDisplayOrderReduced
             | Self::WriterLightOmitted
             | Self::WriterLightIndexReassigned
             | Self::WriterLightAttributeIndexReassigned
@@ -786,12 +816,16 @@ mod tests {
                 "writer.pcurve-reversal-defaulted",
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
+                "writer.material-color-reduced",
                 "writer.material-texture-omitted",
                 "writer.material-uuid-reassigned",
                 "writer.attributes-omitted",
                 "writer.dimension-style-index-reassigned",
                 "writer.text-style-omitted",
                 "writer.text-style-reference-reduced",
+                "writer.product-metadata-reduced",
+                "writer.image-omitted",
+                "writer.object-display-order-reduced",
                 "writer.light-omitted",
                 "writer.light-index-reassigned",
                 "writer.light-attribute-index-reassigned",
@@ -801,6 +835,7 @@ mod tests {
                 "writer.linetype-reduced",
                 "writer.layer-linetype-reduced",
                 "writer.layer-material-reduced",
+                "writer.layer-color-reduced",
                 "writer.layer-membership-omitted",
                 "writer.layer-visibility-defaulted",
                 "writer.layer-description-normalized",

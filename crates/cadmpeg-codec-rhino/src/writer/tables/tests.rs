@@ -305,3 +305,51 @@ fn current_layer_setting_tracks_the_neutral_native_ref_after_reordering() {
     .records
     .is_empty());
 }
+
+#[test]
+fn malformed_layer_color_is_named_while_sibling_layers_are_written() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = CadIr::empty();
+    ir.model
+        .presentation_layers
+        .push(layer("cadir:model:layer#bad", "bad", Some(NATIVE)));
+    ir.model
+        .presentation_layers
+        .push(layer("cadir:model:layer#good", "good", None));
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "layers".into(),
+        vec![native(
+            NATIVE,
+            json!({"archive_index":0,"name":"bad","plot_color":{"bad":true}}),
+        )],
+    );
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterLayerColorReduced.kind()
+        && loss.message.contains(NATIVE)));
+    assert_eq!(
+        report
+            .native_dispositions
+            .record_disposition("rhino", "layers", NATIVE),
+        NativeDisposition::Dropped
+    );
+    let decoded = crate::RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .any(|layer| layer.name == "bad"));
+    assert!(decoded
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .any(|layer| layer.name == "good"));
+}

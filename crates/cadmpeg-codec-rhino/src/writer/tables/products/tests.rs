@@ -240,3 +240,108 @@ fn overflowing_occurrence_placement_names_only_the_unwritable_record() {
     let valid = crate::writer::neutral_object_uuid("test:model:occurrence#valid");
     assert!(bytes.windows(valid.len()).any(|window| window == valid));
 }
+
+#[test]
+fn invalid_occurrence_graph_names_removed_records_and_keeps_sibling() {
+    let mut ir = CadIr::empty();
+    let definition: cadmpeg_ir::ids::ProductDefinitionId =
+        "test:model:product#part".try_into().unwrap();
+    ir.model.product_definitions.push(ProductDefinition {
+        id: definition.clone(),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::default(),
+        bodies: vec![],
+        sketches: Vec::new(),
+        native_ref: None,
+    });
+    for (name, parent) in [
+        ("valid", None),
+        ("missing", Some("absent")),
+        ("cycle-a", Some("cycle-b")),
+        ("cycle-b", Some("cycle-a")),
+        ("duplicate", None),
+        ("duplicate", None),
+    ] {
+        ir.model.occurrences.push(Occurrence {
+            id: format!("test:model:occurrence#{name}").try_into().unwrap(),
+            prototype: PrototypeReference::Local {
+                definition: definition.clone(),
+            },
+            parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
+                OccurrenceParent::Occurrence {
+                    occurrence: format!("test:model:occurrence#{parent}")
+                        .try_into()
+                        .unwrap(),
+                }
+            }),
+            ordinal: 0,
+            transform: Some(Transform::identity()),
+            linked_prototype: None,
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        });
+    }
+    let plan = super::super::materials::MaterialPlan::new(&ir).unwrap();
+    let output = super::references(&ir, &plan).unwrap();
+    assert!(output.written.contains("test:model:occurrence#valid"));
+    for name in ["missing", "cycle-a", "cycle-b", "duplicate"] {
+        let id = format!("test:model:occurrence#{name}");
+        assert!(
+            output.losses.iter().any(|loss| loss.message.contains(&id)),
+            "{id}"
+        );
+        assert!(!output.written.contains(&id));
+    }
+}
+
+#[test]
+fn unrepresentable_product_metadata_names_definition_and_keeps_sibling() {
+    let mut ir = CadIr::empty();
+    let native_id = "rhino:product:definition#bad";
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "product_definitions".into(),
+        vec![cadmpeg_ir::NativeRecord::new(
+            native_id.try_into().unwrap(),
+            serde_json::from_value(
+                serde_json::json!({"unit_system": 4_294_967_296_u64,"archive_index": 4_294_967_296_i64}),
+            )
+            .unwrap(),
+        )
+        .unwrap()],
+    );
+    for (id, native_ref) in [("bad", Some(native_id)), ("good", None)] {
+        ir.model.product_definitions.push(ProductDefinition {
+            id: format!("test:model:product#{id}").try_into().unwrap(),
+            kind: ProductDefinitionKind::Part,
+            source_name: Some(id.into()),
+            label: None,
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::default(),
+            bodies: vec![],
+            sketches: Vec::new(),
+            native_ref: native_ref.map(str::to_owned),
+        });
+    }
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterProductMetadataReduced.kind()
+        && loss.message.contains("test:model:product#bad")
+        && loss.message.contains(native_id)
+        && loss.message.contains("unit_system")
+        && loss.message.contains("archive_index")));
+    let bad = crate::writer::neutral_object_uuid("test:model:product#bad");
+    let good = crate::writer::neutral_object_uuid("test:model:product#good");
+    assert!(bytes.windows(bad.len()).any(|window| window == bad));
+    assert!(bytes.windows(good.len()).any(|window| window == good));
+}

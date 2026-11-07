@@ -400,3 +400,44 @@ fn unstyled_brep_keeps_its_unspecified_color() {
     assert_eq!(decoded.ir().model.bodies[0].color, None);
     assert_eq!(decoded.ir().model.faces.len(), 1);
 }
+
+#[test]
+fn unrepresentable_display_order_names_presentation_and_keeps_point() {
+    let mut ir = CadIr::empty();
+    let point_id = "test:model:point#visible";
+    let source_id = "rhino:model:object#source";
+    let presentation_id = "rhino:presentation:object#source";
+    ir.model.points.push(
+        Point::new(
+            point_id.try_into().unwrap(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            None,
+        )
+        .with_native_ref(Some(source_id.into())),
+    );
+    let record = cadmpeg_ir::NativeRecord::new(
+        presentation_id.try_into().unwrap(),
+        serde_json::from_value(
+            serde_json::json!({"links":[source_id],"display_order":4_294_967_296_i64}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    ir.native
+        .namespace_mut("rhino")
+        .arenas_mut()
+        .insert("object_presentation".into(), vec![record]);
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterObjectDisplayOrderReduced.kind()
+        && loss.message.contains(presentation_id)
+        && loss.message.contains(source_id)));
+    let output = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.points.len(), 1);
+}
