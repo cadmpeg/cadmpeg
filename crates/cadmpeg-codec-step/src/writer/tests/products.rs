@@ -228,6 +228,70 @@ fn unplaced_occurrences_round_trip_as_product_usages_without_placements() {
 }
 
 #[test]
+fn unplaced_external_paths_round_trip_as_product_definition_references() {
+    use cadmpeg_ir::products::{ExternalDocument, PrototypeReference};
+
+    let mut ir = CadIr::empty();
+    for (index, object) in [Some("part"), None].into_iter().enumerate() {
+        let mut occurrence = unnamed_occurrence(
+            &format!("test:model:occurrence#{index}"),
+            "test:model:product#unused",
+            None,
+        );
+        occurrence.prototype = PrototypeReference::External {
+            document: ExternalDocument::path("assembly/part.step"),
+            object: object.map(str::to_owned),
+        };
+        occurrence.name = Some(format!("External {index}"));
+        occurrence.ordinal = u32::try_from(index).unwrap();
+        occurrence.transform = None;
+        ir.model.occurrences.push(occurrence);
+    }
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write external occurrences");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::OccurrenceExternalProduct.kind()));
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .all(
+            |occurrence| report.losses.iter().any(|loss| loss.code.local_code()
+                == "record.residual-unavailable"
+                && loss.message.contains(occurrence.id.as_str()))
+        ));
+    let text = std::str::from_utf8(&bytes).unwrap();
+    assert_eq!(text.matches(" = PRODUCT_DEFINITION_REFERENCE(").count(), 2);
+    assert_eq!(
+        text.matches(" = NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),
+        2
+    );
+    assert!(!text.contains("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION("));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode external occurrences");
+    for original in &ir.model.occurrences {
+        let written = decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|row| row.name == original.name)
+            .expect("occurrence");
+        assert_eq!(written.prototype, original.prototype);
+        assert!(written.transform.is_none());
+    }
+}
+
+#[test]
 fn writer_leaves_ambiguous_fallback_names_empty() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
