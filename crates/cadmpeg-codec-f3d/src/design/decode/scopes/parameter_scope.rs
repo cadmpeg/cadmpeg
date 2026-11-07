@@ -632,6 +632,15 @@ pub(crate) fn decode_parameter_scopes(
             if let Some((scope, record_losses)) = decoded {
                 losses.extend(record_losses);
                 if let Some(mut scope) = scope {
+                    super::super::patch::contain_surface_patch_boundaries(
+                        ctx,
+                        &mut parts,
+                        source,
+                        &entry.name,
+                        &records,
+                        &scope,
+                        &stream_types,
+                    )?;
                     let construction = exact_hole_construction(
                         ctx,
                         &mut parts,

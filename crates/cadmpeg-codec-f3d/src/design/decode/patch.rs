@@ -6,6 +6,94 @@ use crate::metastream::PrimaryFrames;
 use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
 use cadmpeg_core::decode::View;
 
+pub(super) fn contain_surface_patch_boundaries(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    records: &[crate::metastream::PrimaryRecordFrame],
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
+        return Ok(());
+    }
+    let refs: Vec<_> = scope.reference_members().values().copied().collect();
+    let Some(count) = refs.len().checked_sub(1).filter(|n| *n > 0 && n % 3 == 0) else {
+        return Ok(());
+    };
+    let Some(extra) = (count / 3 - 1).checked_mul(44) else {
+        return Ok(());
+    };
+    let Some(length) = scope.frame_length().and_then(|n| usize::try_from(n).ok()) else {
+        return Ok(());
+    };
+    if length != 340 + extra && length != 354 + extra {
+        return Ok(());
+    }
+    let group = |index: u32| {
+        types.get(&u64::from(index)).is_some_and(|(guid, _)| {
+            guid.eq_ignore_ascii_case("2CA5A1CD-C99B-4C9B-91AF-57989148E841")
+        })
+    };
+    let starts: Vec<_> = [0, 1]
+        .into_iter()
+        .filter(|start| (0..count / 3).all(|i| group(refs[start + i * 3])))
+        .collect();
+    let [start] = starts.as_slice() else {
+        return Ok(());
+    };
+    for ordinal in (0..count / 3).map(|i| start + i * 3 + 2) {
+        let index = refs[ordinal];
+        for frame in records
+            .iter()
+            .filter(|frame| frame.entity_id == u64::from(index))
+        {
+            let begin = source.start().checked_add(frame.start).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SurfacePatch boundary start overflows")
+            })?;
+            let end = source.start().checked_add(frame.end).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SurfacePatch boundary end overflows")
+            })?;
+            let extent = source.child(begin, end).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SurfacePatch boundary exceeds its stream")
+            })?;
+            let id = cadmpeg_ir::ids::Identity::new(super::text::design_record_id(
+                stream,
+                ":design-record-header#",
+                cadmpeg_core::decode::u64_from_index(frame.start),
+            ))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design])
+                .record_id(id);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                );
+            }
+            let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+            if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+                continue;
+            }
+            ctx.decode_part(parts, extent, spec, |_| {
+                exact_surface_patch_boundary(
+                    source.window().get(..frame.end).unwrap_or_default(),
+                    frame.start,
+                )
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "SurfacePatch boundary entity {index} has an invalid frame"
+                    ))
+                })
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /// The boundary-settings records a `SurfacePatch` scope references, in scope
 /// reference order.
 ///
