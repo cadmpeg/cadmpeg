@@ -617,3 +617,52 @@ fn damaged_typed_scope_gives_up_one_part_and_keeps_its_sibling() {
         Some(u64::try_from(good_start).unwrap())
     );
 }
+
+#[test]
+fn primary_scope_offsets_keep_valid_siblings_and_contain_bad_indexes() {
+    use std::io::{Cursor, Write};
+
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bytes = Vec::new();
+    crate::test_support::indexed_header(&mut bytes, *b"999", 42);
+    let sibling = bytes.len();
+    crate::test_support::indexed_header(&mut bytes, *b"256", 43);
+    for valid_index in [true, false] {
+        let second_offset = if valid_index {
+            sibling
+        } else {
+            bytes.len() + 1
+        };
+        let meta = crate::test_support::streams_test::design_metastream_with_records(
+            &[(
+                "00000000-0000-0000-0000-000000000001",
+                "",
+                0,
+                "Fusion",
+                &[42, 43],
+            )],
+            &[(42, 0), (43, u64::try_from(second_offset).unwrap())],
+        );
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(STREAM, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let offsets = super::design_primary_frame_offsets(scan).unwrap();
+            if valid_index {
+                assert_eq!(offsets.len(), 1);
+                assert!(offsets.contains(&(
+                    crate::ids::native_scope(STREAM),
+                    u64::try_from(sibling).unwrap()
+                )));
+            } else {
+                assert!(offsets.is_empty());
+            }
+        });
+    }
+}

@@ -728,7 +728,7 @@ pub(crate) fn design_primary_frame_offsets(
             continue;
         };
         let scope = crate::ids::native_scope(&entry.name);
-        for frame in crate::metastream::primary_record_frames(&meta, bytes.len())? {
+        for frame in crate::design::decode::meta::design_primary_frames(bytes, &meta)? {
             out.insert((scope.clone(), u64_from_index(frame.start)));
         }
     }
