@@ -1754,6 +1754,8 @@ fn extend_related_design_records(
         )?;
     design.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
+            ctx,
+            design_parts,
             scan,
             &prereqs.design_parameters,
             &prereqs.design_parameter_owners,

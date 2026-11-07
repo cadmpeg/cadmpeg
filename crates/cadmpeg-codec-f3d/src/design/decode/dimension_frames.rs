@@ -110,12 +110,15 @@ fn dimension_geometry_indices(
 /// Decode the indexed record that directly contains each construction recipe
 /// owned by a dimensional parameter companion.
 pub(crate) fn decode_dimension_recipe_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignDimensionRecipeRecord>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let parameter_index = dimension_parameter_index(parameters);
     let mut dimension_owners = HashSet::new();
     for owner in owners {
@@ -146,7 +149,10 @@ pub(crate) fn decode_dimension_recipe_records(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("dimension recipe source View is missing"))?;
+        let bytes = source.window();
         let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
@@ -183,65 +189,84 @@ pub(crate) fn decode_dimension_recipe_records(
             else {
                 continue;
             };
-            let Some(program_offset) = recipe_offset
-                .checked_add(construction_recipe_family_name_len(recipe.kind))
-                .filter(|offset| *offset < record_end)
-            else {
+            let Some(frame) = frames.iter().find(|frame| frame.start == at) else {
                 continue;
             };
-            let Some((prefix_offset, prefix_bytes)) = recipe_record_prefix(
-                bytes,
-                at,
-                recipe_offset,
-                construction_recipe_family_name_len(recipe.kind),
-            ) else {
-                continue;
-            };
-            let Ok(prefix_offset) = u64::try_from(prefix_offset) else {
-                continue;
-            };
-            let references = decode_recipe_references(prefix_bytes, prefix_offset);
-            let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
-                continue;
-            };
-            let prefix_bytes = prefix_bytes.to_vec();
-            let class_tag = class_tag.to_owned();
-            let Ok(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag)
-            else {
-                continue;
-            };
-            let (Ok(recipe_ordinal), Ok(byte_offset), Ok(frame_length), Ok(program_offset)) = (
-                u32::try_from(recipe_ordinal),
-                u64::try_from(at),
-                u64::try_from(record_end - at),
-                u64::try_from(program_offset),
-            ) else {
-                continue;
-            };
-            let id = design_record_id(
+            let begin = source
+                .start()
+                .checked_add(at)
+                .ok_or_else(|| CodecError::malformed("dimension recipe start overflows"))?;
+            let finish = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("dimension recipe end overflows"))?;
+            let extent = source
+                .child(begin, finish)
+                .ok_or_else(|| CodecError::malformed("dimension recipe exceeds its stream"))?;
+            let record_id = cadmpeg_ir::ids::Identity::new(design_record_id(
                 &entry.name,
-                ":design-dimension-recipe-record#",
-                u64_from_index(recipe_offset),
-            );
-            let recipe_id = recipe.id.clone();
-
-            out.push(DesignDimensionRecipeRecord {
-                id,
-                companion_record_index: companion.record_index(),
-                recipe_ordinal,
-                recipe_id,
-                recipe_kind: recipe.kind,
-                byte_offset: Some(byte_offset),
-                class_tag,
-                record_index,
-                frame_length: Some(frame_length),
-                prefix_offset: Some(prefix_offset),
-                prefix_bytes: prefix_bytes.into(),
-                references,
-                program_offset: Some(program_offset),
-                program,
-                matching_edge_operand_ids: Vec::new(),
-            });
+                ":design-record-header#",
+                u64_from_index(at),
+            ))
+            .map_err(CodecError::malformed)?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design])
+                .record_id(record_id);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+            if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+                continue;
+            }
+            let Some(record) = ctx.decode_part(parts, extent, spec, |_| {
+                let parsed = || {
+                    let program_offset = recipe_offset
+                        .checked_add(construction_recipe_family_name_len(recipe.kind))
+                        .filter(|offset| *offset < record_end)?;
+                    let (prefix_offset, prefix_bytes) = recipe_record_prefix(
+                        bytes,
+                        at,
+                        recipe_offset,
+                        construction_recipe_family_name_len(recipe.kind),
+                    )?;
+                    let prefix_offset = u64::try_from(prefix_offset).ok()?;
+                    let references = decode_recipe_references(prefix_bytes, prefix_offset);
+                    let program = contiguous_i32_program(bytes, program_offset, record_end)?;
+                    Some(DesignDimensionRecipeRecord {
+                        id: design_record_id(
+                            &entry.name,
+                            ":design-dimension-recipe-record#",
+                            u64_from_index(recipe_offset),
+                        ),
+                        companion_record_index: companion.record_index(),
+                        recipe_ordinal: u32::try_from(recipe_ordinal).ok()?,
+                        recipe_id: recipe.id.clone(),
+                        recipe_kind: recipe.kind,
+                        byte_offset: Some(u64::try_from(at).ok()?),
+                        class_tag: crate::records::references::DesignClassTag::try_from(
+                            class_tag.to_owned(),
+                        )
+                        .ok()?,
+                        record_index,
+                        frame_length: Some(u64::try_from(record_end.checked_sub(at)?).ok()?),
+                        prefix_offset: Some(prefix_offset),
+                        prefix_bytes: prefix_bytes.to_vec().into(),
+                        references,
+                        program_offset: Some(u64::try_from(program_offset).ok()?),
+                        program,
+                        matching_edge_operand_ids: Vec::new(),
+                    })
+                };
+                parsed().ok_or_else(|| CodecError::malformed("invalid dimension recipe record"))
+            })?
+            else {
+                continue;
+            };
+            out.push(record);
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
