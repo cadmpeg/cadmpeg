@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Embedded resources are authored from the current asset bytes.
 
-use super::{
-    class_wrapper, crc_chunk_with_direct, native_count_limit, records, utf16, uuid, CadIr,
-    CodecError, Value,
-};
+use super::{class_wrapper, crc_chunk_with_direct, records, utf16, uuid, CadIr, CodecError, Value};
 use crate::loss::RhinoLossCode;
 use cadmpeg_ir::assets::AssetContent;
 use cadmpeg_ir::report::loss::LossNote;
@@ -19,6 +16,15 @@ pub(in crate::writer) struct ImageExport {
     pub(in crate::writer) losses: Vec<LossNote>,
     /// Held `embedded_images` records re-emitted from their linked asset bytes.
     pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
+}
+
+fn image_length(identity: &str, native: Option<&str>, length: u64) -> Result<u32, LossNote> {
+    u32::try_from(length).map_err(|_| {
+        RhinoLossCode::WriterImageOmitted.note(format!(
+            "asset {identity} native {} omitted: image length {length} exceeds the 3DM field",
+            native.unwrap_or("unlinked")
+        ))
+    })
 }
 
 pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
@@ -38,13 +44,24 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
         let AssetContent::Embedded { data } = &asset.content else {
             output
                 .losses
-                .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                .push(RhinoLossCode::WriterImageOmitted.note(format!(
                     "asset {} has no embedded content and is not written to the bitmap table",
                     asset.id
                 )));
             continue;
         };
         let data = data.as_bytes();
+        let length = match image_length(
+            asset.id.as_str(),
+            asset.native_ref.as_deref(),
+            cadmpeg_core::decode::u64_from_index(data.len()),
+        ) {
+            Ok(length) => length,
+            Err(loss) => {
+                output.losses.push(loss);
+                continue;
+            }
+        };
         let native = asset
             .native_ref
             .as_deref()
@@ -65,16 +82,7 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
         )?);
         payload.extend(crc32fast::hash(data).to_le_bytes());
         payload.extend(0i32.to_le_bytes());
-        payload.extend(
-            u32::try_from(data.len())
-                .map_err(|_| {
-                    native_count_limit(
-                        u32::MAX.into(),
-                        cadmpeg_core::decode::u64_from_index(data.len()),
-                    )
-                })?
-                .to_le_bytes(),
-        );
+        payload.extend(length.to_le_bytes());
         payload.extend(data);
         payload.extend(uuid(
             fields.and_then(|fields| fields.get("source_uuid")),
@@ -96,4 +104,23 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
         }
     }
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unrepresentable_image_length_names_both_records() {
+        let length = u64::from(u32::MAX) + 1;
+        let loss = image_length(
+            "test:model:asset#image",
+            Some("rhino:asset:image#native"),
+            length,
+        )
+        .unwrap_err();
+        assert_eq!(loss.code, RhinoLossCode::WriterImageOmitted.kind());
+        assert!(loss.message.contains("test:model:asset#image"));
+        assert!(loss.message.contains("rhino:asset:image#native"));
+    }
 }
