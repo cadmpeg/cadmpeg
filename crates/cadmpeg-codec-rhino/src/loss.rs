@@ -271,6 +271,8 @@ pub(crate) enum RhinoLossCode {
     WriterLayerLinetypeReduced,
     /// A layer material reference changes its archive index or is omitted.
     WriterLayerMaterialReduced,
+    /// A native layer color cannot be represented.
+    WriterLayerColorReduced,
     /// Layer membership cannot be assigned to an individual non-object record.
     WriterLayerMembershipOmitted,
     /// An unspecified layer visibility is written as the native default.
@@ -420,6 +422,7 @@ impl RhinoLossCode {
         Self::WriterLinetypeReduced,
         Self::WriterLayerLinetypeReduced,
         Self::WriterLayerMaterialReduced,
+        Self::WriterLayerColorReduced,
         Self::WriterLayerMembershipOmitted,
         Self::WriterLayerVisibilityDefaulted,
         Self::WriterLayerDescriptionNormalized,
@@ -521,6 +524,7 @@ impl RhinoLossCode {
             Self::WriterLinetypeReduced => "writer.linetype-reduced",
             Self::WriterLayerLinetypeReduced => "writer.layer-linetype-reduced",
             Self::WriterLayerMaterialReduced => "writer.layer-material-reduced",
+            Self::WriterLayerColorReduced => "writer.layer-color-reduced",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
             Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
@@ -653,6 +657,7 @@ impl RhinoLossCode {
             | Self::WriterLinetypeReduced
             | Self::WriterLayerLinetypeReduced
             | Self::WriterLayerMaterialReduced
+            | Self::WriterLayerColorReduced
             | Self::WriterLayerMembershipOmitted
             | Self::WriterLayerVisibilityDefaulted
             | Self::WriterLayerDescriptionNormalized
@@ -801,6 +806,7 @@ mod tests {
                 "writer.linetype-reduced",
                 "writer.layer-linetype-reduced",
                 "writer.layer-material-reduced",
+                "writer.layer-color-reduced",
                 "writer.layer-membership-omitted",
                 "writer.layer-visibility-defaulted",
                 "writer.layer-description-normalized",
