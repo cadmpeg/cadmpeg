@@ -7,8 +7,8 @@ use super::{
     wire_index, CadIr, CodecError, Value,
 };
 use cadmpeg_ir::products::{
-    AssemblyGraph, ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition,
-    PrototypeReference,
+    AssemblyGraph, AssemblyGraphError, ExternalDocument, Occurrence, OccurrenceParent,
+    ProductDefinition, PrototypeReference,
 };
 use std::collections::BTreeSet;
 
@@ -196,9 +196,31 @@ fn occurrence_written(ir: &CadIr, graph: &AssemblyGraph<'_>, occurrence: &Occurr
             .is_ok_and(|transform| transform.is_some())
 }
 
+fn admitted_occurrences(ir: &CadIr) -> Result<Vec<Occurrence>, AssemblyGraphError> {
+    let mut occurrences = ir.model.occurrences.clone();
+    loop {
+        match AssemblyGraph::new(&occurrences) {
+            Ok(_) => return Ok(occurrences),
+            Err(AssemblyGraphError::Transform { occurrence, .. }) => {
+                let Some(row) = occurrences.iter_mut().find(|row| row.id == occurrence) else {
+                    return Ok(occurrences);
+                };
+                if row.transform.is_none() {
+                    return Ok(occurrences);
+                }
+                row.transform = None;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 /// Definitions named by a writable occurrence decode with placed members.
 pub(in crate::writer) fn referenced_definitions(ir: &CadIr) -> BTreeSet<String> {
-    let Ok(graph) = AssemblyGraph::new(&ir.model.occurrences) else {
+    let Ok(occurrences) = admitted_occurrences(ir) else {
+        return BTreeSet::new();
+    };
+    let Ok(graph) = AssemblyGraph::new(&occurrences) else {
         return BTreeSet::new();
     };
     ir.model
@@ -262,7 +284,8 @@ pub(in crate::writer) fn definitions(
     written_bodies: &std::collections::BTreeSet<String>,
     version: crate::RhinoArchiveVersion,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
+    let occurrences = admitted_occurrences(ir).map_err(CodecError::malformed)?;
+    let graph = AssemblyGraph::new(&occurrences).map_err(CodecError::malformed)?;
     let referenced = referenced_definitions(ir);
     let mut result = Vec::new();
     for (ordinal, definition) in ir.model.product_definitions.iter().enumerate() {
@@ -524,7 +547,8 @@ pub(in crate::writer) fn references(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
 ) -> Result<ReferenceExport, CodecError> {
-    let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
+    let occurrences = admitted_occurrences(ir).map_err(CodecError::malformed)?;
+    let graph = AssemblyGraph::new(&occurrences).map_err(CodecError::malformed)?;
     let mut losses = ir
         .model
         .occurrences
@@ -532,7 +556,7 @@ pub(in crate::writer) fn references(
         .filter(|occurrence| graph.effective_transform(&occurrence.id).is_none())
         .map(|occurrence| {
             crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                "occurrence {} omitted because its placement or an ancestor placement is unknown",
+                "occurrence {} omitted because its placement or an ancestor placement is unknown or cannot be composed",
                 occurrence.id
             ))
         })
@@ -603,17 +627,26 @@ pub(in crate::writer) fn references(
         };
         let mut payload = vec![0x10];
         payload.extend(definition);
-        let Some(transform) = occurrence
-            .effective_transform()
-            .map_err(CodecError::malformed)?
-        else {
-            losses.push(
-                crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                    "occurrence {} omitted because its own placement is unknown",
-                    occurrence.id
-                )),
-            );
-            continue;
+        let transform = match occurrence.effective_transform() {
+            Ok(Some(transform)) => transform,
+            Ok(None) => {
+                losses.push(
+                    crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                        "occurrence {} omitted because its own placement is unknown",
+                        occurrence.id
+                    )),
+                );
+                continue;
+            }
+            Err(error) => {
+                losses.push(
+                    crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                        "occurrence {} omitted because its placement cannot be composed: {error}",
+                        occurrence.id
+                    )),
+                );
+                continue;
+            }
         };
         for value in transform.rows().iter().flatten() {
             payload.extend(value.to_le_bytes());
