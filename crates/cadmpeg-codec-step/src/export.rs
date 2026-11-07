@@ -2857,7 +2857,7 @@ impl<'a> Builder<'a> {
                 && (occurrence_products.contains_key(&occurrence.id)
                     || writable_external(occurrence))
                 && occurrence.effective_transform().is_ok_and(|transform| {
-                    transform.is_none_or(|transform| transform.is_proper_rigid())
+                    transform.is_none_or(|transform| geometry::is_similarity_transform(&transform))
                 })
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
@@ -2906,6 +2906,7 @@ impl<'a> Builder<'a> {
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
+        let mut mapped_occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
             let parent_product = match &occurrence.parent {
                 OccurrenceParent::Occurrence { occurrence: parent } => {
@@ -2935,6 +2936,11 @@ impl<'a> Builder<'a> {
                 }
             };
             let Some(frame) = transform.proper_rigid_frame() else {
+                if let Some(target) =
+                    geometry::transformation_operator(&mut self.emitter, transform)
+                {
+                    mapped_occurrence_placements.insert(occurrence.id.clone(), (from, target));
+                }
                 continue;
             };
             let rows = transform.rows();
@@ -2955,7 +2961,10 @@ impl<'a> Builder<'a> {
         }
         let required_representations: BTreeSet<_> = occurrences
             .iter()
-            .filter(|occurrence| occurrence_placements.contains_key(&occurrence.id))
+            .filter(|occurrence| {
+                occurrence_placements.contains_key(&occurrence.id)
+                    || mapped_occurrence_placements.contains_key(&occurrence.id)
+            })
             .filter_map(|occurrence| occurrence_products.get(&occurrence.id).cloned())
             .chain(representation_placements.keys().cloned())
             .collect();
@@ -3180,7 +3189,9 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if transform.is_some_and(|transform| !transform.is_proper_rigid()) {
+            if transform.is_some_and(|transform| !transform.is_proper_rigid())
+                && !mapped_occurrence_placements.contains_key(&occurrence.id)
+            {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -3237,6 +3248,28 @@ impl<'a> Builder<'a> {
             );
             self.occurrence_step_refs
                 .insert(occurrence.id.as_str().to_owned(), usage);
+            if let Some(&(origin, target)) = mapped_occurrence_placements.get(&occurrence.id) {
+                let Some(child_representation) = child_representation else {
+                    continue;
+                };
+                let map = self.emitter.emit(
+                    "REPRESENTATION_MAP",
+                    &format!("{origin},{child_representation}"),
+                );
+                let item = self
+                    .emitter
+                    .emit("MAPPED_ITEM", &format!("'',{map},{target}"));
+                let representation =
+                    self.emit_shape_representation("", vec![item], Vec::new(), context);
+                let usage_shape = self
+                    .emitter
+                    .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
+                self.emitter.emit(
+                    "SHAPE_DEFINITION_REPRESENTATION",
+                    &format!("{usage_shape},{representation}"),
+                );
+                continue;
+            }
             let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
                 continue;
             };
@@ -4485,6 +4518,22 @@ impl<'a> Builder<'a> {
             if let Some(reference) = self
                 .emit_standalone_support_pcurve(&curve_id)
                 .or_else(|| self.emit_curve(&curve_id))
+                .or_else(|| {
+                    let curve = self.curves.get(curve_id.as_str())?;
+                    if self.construction_supports.contains(&curve_id)
+                        || curve.parameter_range.is_some()
+                        || !matches!(
+                            curve.geometry.solved(),
+                            Some(SolvedCurveGeometry::Unknown { .. })
+                        )
+                    {
+                        return None;
+                    }
+                    let name = Self::carrier_name(&self.carrier_names, &curve_id);
+                    let reference = self.emitter.emit("CURVE", &string(name));
+                    self.curve_refs.insert(curve_id.clone(), reference);
+                    Some(reference)
+                })
             {
                 let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
                 let reference = if let Some(range) = self
@@ -4622,11 +4671,23 @@ impl<'a> Builder<'a> {
             "DEFINITIONAL_REPRESENTATION",
             &format!("'',({curve}),{context}"),
         );
-        let name = Self::carrier_name(&self.carrier_names, curve_id);
-        let reference = self.emitter.emit(
+        let name = Self::carrier_name(&self.carrier_names, curve_id).to_owned();
+        let pcurve = self.emitter.emit(
             "PCURVE",
-            &format!("{},{surface},{representation}", string(name)),
+            &format!("{},{surface},{representation}", string(&name)),
         );
+        let reference = if matches!(
+            self.curves.get(curve_id)?.geometry.solved(),
+            Some(SolvedCurveGeometry::Unknown { .. })
+        ) {
+            let basis = self.emitter.emit("CURVE", &string(&name));
+            self.emitter.emit(
+                "SURFACE_CURVE",
+                &format!("{},{basis},({pcurve}),.PCURVE_S1.", string(&name)),
+            )
+        } else {
+            pcurve
+        };
         self.curve_refs.insert(curve_id.to_owned(), reference);
         if exact_construction {
             self.written_procedural_curves.insert(construction_id);

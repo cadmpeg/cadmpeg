@@ -22,6 +22,112 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_extrude_keeps_scope_and_parameter_indices() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let indices = |ir: &cadmpeg_ir::document::CadIr| {
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                    )
+                )
+            })
+            .unwrap();
+        let native = f3d_native(ir);
+        let scope = native
+            .design_parameter_scopes
+            .iter()
+            .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+            .unwrap();
+        let parameter = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.owner.as_ref() == Some(&feature.id))
+            .unwrap();
+        let parameter = native
+            .design_parameters
+            .iter()
+            .find(|record| parameter.native_ref.as_deref() == Some(record.id.as_str()))
+            .unwrap();
+        (scope.record_index, parameter.record_index)
+    };
+    let expected = indices(decoded.ir());
+    let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert_eq!(indices(written.ir()), expected);
+}
+
+#[test]
+fn source_less_sketch_keeps_feature_scope_index() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let scope_index = |ir: &cadmpeg_ir::document::CadIr| {
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch { .. }
+                    )
+                )
+            })
+            .unwrap();
+        f3d_native(ir)
+            .design_parameter_scopes
+            .iter()
+            .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+            .unwrap()
+            .record_index
+    };
+    let expected = scope_index(decoded.ir());
+    let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert_eq!(scope_index(written.ir()), expected);
+}
+
+#[test]
+fn source_less_sketch_keeps_relation_record_indices() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let expected: Vec<_> = f3d_native(decoded.ir())
+        .sketch_relations
+        .iter()
+        .map(|relation| relation.record_index)
+        .collect();
+    assert!(!expected.is_empty());
+    let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    let actual: Vec<_> = written
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .map(|constraint| {
+            f3d_native(written.ir())
+                .sketch_relations
+                .iter()
+                .find(|relation| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
+                .unwrap()
+                .record_index
+        })
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn source_less_decal_keeps_edited_image_and_target() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_decal.f3d");
     let decoded = F3dCodec

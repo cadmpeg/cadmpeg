@@ -17,6 +17,88 @@ use cadmpeg_ir::{
 };
 
 #[test]
+fn unknown_intersection_carrier_round_trips_with_inline_pcurve() {
+    use cadmpeg_ir::geometry::{
+        pcurve::{PcurveGeometry, PcurveNurbs},
+        IntcurveSupportContext, IntcurveSupportSide, SolvedCurveGeometry, SupportPcurve,
+    };
+    use cadmpeg_ir::math::Point2;
+
+    let mut ir = edgeless_doc();
+    let curve_id = CurveId::mint("test:model:curve#unknown").unwrap();
+    let construction_id = ProceduralCurveId::mint("test:model:construction#intersection").unwrap();
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    let side = IntcurveSupportSide {
+        surface: Some(ir.model.surfaces[0].id.clone()),
+        pcurve: Some(SupportPcurve::from(pcurve.clone())),
+    };
+    let context =
+        IntcurveSupportContext::try_new([side.clone(), side], [0.0, 1.0], Default::default())
+            .unwrap();
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        id: curve_id.clone(),
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_curve(
+            &curve_id,
+            ProceduralCurve::new(
+                construction_id.clone(),
+                ProceduralCurveDefinition::Intersection {
+                    context,
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+            ),
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(entity_count(&bytes, "CURVE"), 1);
+    assert_eq!(entity_count(&bytes, "SURFACE_CURVE"), 1);
+    assert_eq!(entity_count(&bytes, "PCURVE"), 1);
+    assert!(report.losses.iter().any(|loss| loss.code
+        == StepLossCode::ProceduralReducedToCarrier.kind()
+        && loss.message.contains(construction_id.as_str())));
+    let decoded = <crate::StepCodec as cadmpeg_ir::codec::Codec>::decode(
+        &crate::StepCodec::default(),
+        &mut std::io::Cursor::new(bytes),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+    )
+    .unwrap()
+    .into_parts()
+    .0;
+    assert!(decoded.model.curves.iter().any(|curve| matches!(
+        curve.geometry.solved(),
+        Some(SolvedCurveGeometry::Unknown { record: None })
+    )));
+    assert!(decoded.model.procedural_curves.iter().any(|curve| matches!(
+        curve.definition(),
+        ProceduralCurveDefinition::SurfaceCurve { .. }
+    )));
+    let validation = cadmpeg_ir::validate_neutral(&decoded, Vec::new()).unwrap();
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn standalone_intersection_with_identical_support_curves_writes_a_pcurve() {
     use cadmpeg_ir::geometry::{
         pcurve::{PcurveGeometry, PcurveNurbs},
