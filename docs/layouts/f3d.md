@@ -3072,6 +3072,21 @@ Unstated regions:
 
 - `25..132` (107 B): The LP-UTF16 entry name, marked surface reference, and two-byte zero tail occupy this variable-length region; the complete serializer frame remains 132 bytes.
 
+## `compact_selection_envelope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the group's primary indexed header. The ordered member references start at offset 36.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A compact counted selection envelope starts with an indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes, a marked owning-scope reference |
+| 21 | 1 | `owner_marker` | `u8` | little | spec | a marked owning-scope reference · value `1` |
+| 22 | 8 | `owner_scope_record_index` | `u64` | little | spec | a marked owning-scope reference |
+| 30 | 2 | `owner_zero_tail` | `bytes[2]` | little | spec | `u8 1 + u64 record index + u16 0` |
+| 32 | 4 | `member_count` | `u32` | little | spec | `u32 member_count` |
+
 ## `form_class_328_scope`
 
 Spec §1.1.1 · layout: byte offsets · size: 940 B

@@ -807,6 +807,30 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** Controlled exports that vary evaluation time, operation order, and the relevant Boolean state must separate the scalar unit, ordinal allocation rule, flag meaning, and flag-width selector. A neutral Form writer also needs an explicit tracking-member-to-cage identity join.
 
+### DR-324. Cage order of a Form bound through body records
+
+**Question.** In which order does a Form scope that several Form body records name hold its cages?
+
+**Known.** `f3d.md` §1.1.1 "**Form body-record cage join.**" binds each cage to its owning Form scope through one Form body record. The scope's reference table holds a result-owner record and a Form selection group, and its selection members are tracking records. The decoder orders the cages by ascending body-record index and reports `feature.form-cage-order-assumed` for each such Form with two or more cages.
+
+**Need.** Controlled saves of one Form session that creates two bodies in one order and then changes the first body, to compare the body order of the session with the body-record index order.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-325. Empty Form selection group
+
+**Question.** What does a zero member count in a Form selection group mean for the cages committed by its scope?
+
+**Known.** A Form scope can have a selection group with zero members and no Form body record that names the scope. The decoder projects an empty cage list for that combination and reports `feature.form-empty-cages-assumed`.
+
+**Need.** Controlled saves of empty and edited Form sessions that compare the selection group, body records, and committed cages.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### TS-06. Radial deleted-slot indices and nondefault sweep
 
 **Question.** Does a radial operand address a raw program slot or a compact live-element index when its domain contains a deleted slot, and how does a nondefault sweep change the rotation?

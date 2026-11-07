@@ -674,6 +674,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &mut model.features,
         geometry.subds,
+        &mut losses,
     )?;
     let canvas_assets = crate::design::decode::canvas::project_canvas_images(
         ctx,

@@ -323,6 +323,8 @@ pub(crate) enum F3dLossCode {
     /// Offset Surface support groups with different ordinals are read as one
     /// support-face selection.
     FeatureSurfaceOffsetGroupOrdinalsAssumed,
+    FeatureFormCageOrderAssumed,
+    FeatureFormEmptyCagesAssumed,
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
@@ -663,6 +665,8 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
+        Self::FeatureFormCageOrderAssumed,
+        Self::FeatureFormEmptyCagesAssumed,
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
@@ -927,6 +931,8 @@ impl F3dLossCode {
             Self::FeatureSurfaceOffsetGroupOrdinalsAssumed => {
                 "feature.surface-offset-group-ordinals-assumed"
             }
+            Self::FeatureFormCageOrderAssumed => "feature.form-cage-order-assumed",
+            Self::FeatureFormEmptyCagesAssumed => "feature.form-empty-cages-assumed",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
@@ -1198,6 +1204,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
+            | Self::FeatureFormCageOrderAssumed
+            | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
@@ -1399,6 +1407,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
+            | Self::FeatureFormCageOrderAssumed
+            | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
@@ -1688,6 +1698,8 @@ mod tests {
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
                 "feature.surface-offset-group-ordinals-assumed",
+                "feature.form-cage-order-assumed",
+                "feature.form-empty-cages-assumed",
                 "feature.scale-frame-length-form-assumed",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
