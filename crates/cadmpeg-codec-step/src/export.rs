@@ -1154,7 +1154,7 @@ impl<'a> Builder<'a> {
                     .is_ok_and(|transform| transform.is_none())
         });
         if self.ir.model.product_definitions.is_empty() && !has_external_root {
-            let product_def_shape = self.emit_product_structure();
+            let product_def_shape = self.emit_product_structure(context);
             self.default_product_definition_shape = Some(product_def_shape);
             if bodies_written {
                 let origin = geometry::placement(
@@ -2595,7 +2595,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_product_structure(&mut self) -> Ref {
+    fn emit_product_structure(&mut self, context: Ref) -> Ref {
         let name = self.model_name;
 
         let (application, _, _) = self.schema.application_protocol();
@@ -2625,8 +2625,58 @@ impl<'a> Builder<'a> {
             "PRODUCT_DEFINITION",
             &format!("{},'',{formation},{pd_ctx}", string("design")),
         );
+        self.emit_document_attributes(product_def, context);
         self.emitter
             .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{product_def}"))
+    }
+
+    fn emit_document_attributes(&mut self, owner: Ref, context: Ref) {
+        if !matches!(
+            self.schema,
+            StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
+        ) {
+            return;
+        }
+        let ir = self.ir;
+        for attribute in &ir.model.attributes {
+            if attribute.target != AttributeTarget::Document || self.attribute_is_written(attribute)
+            {
+                continue;
+            }
+            let [Some(value)] = attribute.values.as_slice() else {
+                continue;
+            };
+            let (kind, value) = match value {
+                AttributeValue::String(value) => ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value)),
+                AttributeValue::Integer(value) => (
+                    "VALUE_REPRESENTATION_ITEM",
+                    format!("COUNT_MEASURE({value})"),
+                ),
+                AttributeValue::Float(value) => (
+                    "VALUE_REPRESENTATION_ITEM",
+                    format!("NUMERIC_MEASURE({})", self.emitter.real(value.get())),
+                ),
+                AttributeValue::Boolean(value) => (
+                    "BOOLEAN_REPRESENTATION_ITEM",
+                    if *value { ".T." } else { ".F." }.to_owned(),
+                ),
+                _ => continue,
+            };
+            let name = string(&attribute.name);
+            let property = self
+                .emitter
+                .emit("PROPERTY_DEFINITION", &format!("{name},'',{owner}"));
+            let item = self.emitter.emit(kind, &format!("{name},{value}"));
+            let representation = self
+                .emitter
+                .emit("REPRESENTATION", &format!("'',({item}),{context}"));
+            self.emitter.emit(
+                "PROPERTY_DEFINITION_REPRESENTATION",
+                &format!("{property},{representation}"),
+            );
+            self.consumed_attribute_ids
+                .insert(attribute.id.as_str().to_owned());
+        }
     }
 
     fn emit_scalar_attribute(
@@ -3105,6 +3155,15 @@ impl<'a> Builder<'a> {
                 has_unclaimed_written_bodies,
             )
         });
+        if let Some(definition) = assembly_root.map(|(definition, _)| definition).or_else(|| {
+            root_product
+                .or_else(|| {
+                    (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id)
+                })
+                .and_then(|id| definitions.get(id).copied())
+        }) {
+            self.emit_document_attributes(definition, context);
+        }
         let root_representation = assembly_root
             .and_then(|(_, representation)| representation)
             .or_else(|| {
@@ -3472,7 +3531,7 @@ impl<'a> Builder<'a> {
                 &format!("'','',{root},{representation}"),
             );
         } else {
-            let shape = self.emit_product_structure();
+            let shape = self.emit_product_structure(context);
             self.emitter.emit(
                 "SHAPE_DEFINITION_REPRESENTATION",
                 &format!("{shape},{representation}"),
