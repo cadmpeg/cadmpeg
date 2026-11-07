@@ -1490,10 +1490,7 @@ impl<'a> Builder<'a> {
                     self.tessellation_step_refs.get(id).copied(),
                     StyleKind::Surface,
                 ),
-                AppearanceTarget::Occurrence(id) => (
-                    self.occurrence_step_refs.get(id.as_str()).copied(),
-                    StyleKind::Surface,
-                ),
+                AppearanceTarget::Occurrence(_) => (None, StyleKind::Surface),
                 AppearanceTarget::Record { .. } => (None, StyleKind::Surface),
                 AppearanceTarget::Body(_) | AppearanceTarget::TriangleGroup { .. } => continue,
             };
@@ -3597,6 +3594,22 @@ impl<'a> Builder<'a> {
                         .entry(region.body.as_str().to_owned())
                         .or_insert(item);
                     wire_written = true;
+                    let shells = region
+                        .shells
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>();
+                    let faces = region
+                        .shells
+                        .iter()
+                        .filter_map(|id| self.shells.get(id.as_str()))
+                        .flat_map(|shell| shell.faces())
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>();
+                    self.loss(
+                        StepLossCode::MixedRegionSplit,
+                        format!("body {} and region {} were split into surface and wire STEP items; shells: {}; faces: {}", region.body, region.id, shells.join(", "), faces.join(", ")),
+                    );
                 } else {
                     self.empty_wire_regions
                         .insert(region.id.as_str().to_owned());
@@ -5421,6 +5434,11 @@ impl<'a> Builder<'a> {
                     && has_extent
                 {
                     self.point_loop_curves.insert(curve.id.as_str().to_owned());
+                    self.topology_relation_loss(
+                        format!("loop:{loop_id}:collapsed-edge:{edge_key}"),
+                        StepLossCode::LoopCollapsedEdgeOmitted,
+                        format!("loop {loop_id} omitted collapsed coedge {coedge_key}, edge {edge_key}, and its degenerate carrier {curve_id}"),
+                    );
                     continue;
                 }
             } else {
@@ -8107,6 +8125,27 @@ impl<'a> Builder<'a> {
                     "{} coedge(s) were not emitted as loop members because their loops were unwritten or collapsed to vertices: {}",
                     unemitted_coedges.len(),
                     unemitted_coedges.join(", ")
+                ),
+            );
+        }
+        let reduced_radial_rings: Vec<_> = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| {
+                self.emitted_coedges.contains(coedge.id.as_str())
+                    && !self.emitted_coedges.contains(coedge.radial_next.as_str())
+            })
+            .map(|coedge| format!("{} -> {}", coedge.id, coedge.radial_next))
+            .collect();
+        if !reduced_radial_rings.is_empty() {
+            self.loss(
+                StepLossCode::CoedgeRadialNeighborUnwritten,
+                format!(
+                    "{} coedge radial neighbor(s) were not written: {}",
+                    reduced_radial_rings.len(),
+                    reduced_radial_rings.join(", ")
                 ),
             );
         }
