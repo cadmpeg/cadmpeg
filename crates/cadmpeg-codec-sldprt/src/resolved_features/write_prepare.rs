@@ -1324,6 +1324,13 @@ pub(crate) fn synthesize_feature_classes(
     features: Option<&[cadmpeg_ir::features::Feature]>,
 ) -> Result<std::collections::BTreeSet<String>, crate::writer::write_error::WriteError> {
     const LANE_ID: &str = "sldprt:generated:feature-class-input#0";
+    const BLOCK_REFERENCE: cadmpeg_ir::codec::write::CapacityField =
+        cadmpeg_ir::codec::write::CapacityField {
+            field: "sketch_block.object_reference",
+            limit: 0x7ffe,
+            source: "docs/formats/sldprt.md §2.3: short CArchive object references",
+            helper: "append_block_instance",
+        };
     native.feature_input_lanes.retain(|lane| lane.id != LANE_ID);
     let mut used = native
         .feature_histories
@@ -1374,13 +1381,6 @@ pub(crate) fn synthesize_feature_classes(
             })?;
             let previous = block_objects.get(block).copied();
             let value = previous.map_or(archive_index + 5, u64::from);
-            const BLOCK_REFERENCE: cadmpeg_ir::codec::write::CapacityField =
-                cadmpeg_ir::codec::write::CapacityField {
-                    field: "sketch_block.object_reference",
-                    limit: 0x7ffe,
-                    source: "docs/formats/sldprt.md §2.3: short CArchive object references",
-                    helper: "append_block_instance",
-                };
             if value > BLOCK_REFERENCE.limit {
                 return Err(crate::writer::write_error::WriteError::Capacity {
                     field: &BLOCK_REFERENCE,
