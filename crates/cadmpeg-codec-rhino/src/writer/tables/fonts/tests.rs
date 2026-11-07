@@ -30,7 +30,7 @@ fn source_free_text_style_retains_font_names_weight_and_panose() {
         .namespace_mut("rhino")
         .arenas_mut()
         .insert("text_styles".to_owned(), vec![record]);
-    let authored = styles(&ir).expect("typed font inverse");
+    let authored = styles(&ir).expect("typed font inverse").records;
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
         &[
@@ -51,4 +51,57 @@ fn source_free_text_style_retains_font_names_weight_and_panose() {
     for field in ["name", "source_uuid", "font_description", "font"] {
         assert_eq!(parsed.field(field).as_ref(), native.get(field), "{field}");
     }
+}
+
+#[test]
+fn malformed_style_is_named_and_valid_style_keeps_references() {
+    let mut ir = CadIr::empty();
+    let make = |id: &str, fields: Value| {
+        cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).unwrap(),
+            serde_json::from_value(fields).unwrap(),
+        )
+        .unwrap()
+    };
+    let bad = "rhino:presentation:text_style#bad";
+    let good = "rhino:presentation:text_style#good";
+    ir.native.namespace_mut("rhino").arenas_mut().insert("text_styles".into(), vec![
+        make(bad, serde_json::json!({"archive_index": 0, "name":"bad", "font":null})),
+        make(good, serde_json::json!({"archive_index": 7, "name":"good", "font": {"windows_logfont_name":"Face"}})),
+    ]);
+    let output = styles(&ir).unwrap();
+    assert_eq!(output.records.len(), 1);
+    assert_eq!(output.indices.get(good), Some(&0));
+    assert!(output.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterTextStyleOmitted.kind()
+        && loss.message.contains(bad)));
+    assert_eq!(style_index(&ir, 7).unwrap(), Some(0));
+    assert_eq!(style_index(&ir, 0).unwrap(), None);
+}
+
+#[test]
+fn document_current_font_follows_emitted_style_index() {
+    let mut ir = CadIr::empty();
+    let make = |id: &str, fields: Value| {
+        cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).unwrap(),
+            serde_json::from_value(fields).unwrap(),
+        )
+        .unwrap()
+    };
+    let setting = "rhino:document:setting#font";
+    ir.native.namespace_mut("rhino").arenas_mut().insert("text_styles".into(), vec![
+        make("rhino:presentation:text_style#valid", serde_json::json!({"archive_index":7,"name":"valid","font":{"windows_logfont_name":"Face"}})),
+    ]);
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "document_settings".into(),
+        vec![make(setting, serde_json::json!({"current_font_index":7}))],
+    );
+    let materials = super::super::materials::MaterialPlan::new(&ir).unwrap();
+    let mut losses = Vec::new();
+    let settings = super::super::document::settings(&ir, &materials, &mut losses).unwrap();
+    assert!(settings
+        .records
+        .contains(&crate::writer::short_chunk(0xa000_0132, 0)));
+    assert!(losses.iter().any(|loss| loss.message.contains(setting)));
 }

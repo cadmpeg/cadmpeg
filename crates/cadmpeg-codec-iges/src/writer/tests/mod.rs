@@ -934,6 +934,38 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
 }
 
 #[test]
+fn transformed_surface_rejects_nonrigid_placement() {
+    let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("valid plane");
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("valid affine transform");
+    let surface = SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(plane)),
+            transform,
+        )
+        .expect("valid placed surface"),
+    );
+    assert!(matches!(
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &surface,
+            0,
+            IgesVersion::V5_3,
+        ),
+        Err(CodecError::UnsupportedContent(_))
+    ));
+}
+
+#[test]
 fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
     let cone = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
         Point3::new(0.0, 0.0, 0.0),

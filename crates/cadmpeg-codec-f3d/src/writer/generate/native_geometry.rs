@@ -26,7 +26,7 @@ use cadmpeg_asm::nurbs::support_chart::NativeChart;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
-pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+pub(super) fn native_smbh_header(target: &CadIr) -> Vec<u8> {
     let mut bytes = b"ASM BinaryFile8".to_vec();
     // Release word matching the product string, the zero region, then the
     // entity-count and flags words (bit 0: history partition present).
@@ -34,9 +34,7 @@ pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
     bytes.extend_from_slice(&[0; 12]);
     // Top-level bodies follow asmheader; their first owned record follows
     // that entire prefix. This is an index, not a fixed prototype count.
-    let first_owned = cadmpeg_core::decode::u64_from_index(target.model.bodies.len())
-        .checked_add(1)
-        .ok_or_else(|| CodecError::InvalidInput("F3D top-level entity index exceeds u64".into()))?;
+    let first_owned = cadmpeg_core::decode::u64_from_index(target.model.bodies.len()) + 1;
     bytes.extend_from_slice(&first_owned.to_le_bytes());
     bytes.extend_from_slice(&3u64.to_le_bytes());
     native_string(&mut bytes, "Autodesk Neutron");
@@ -49,7 +47,7 @@ pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
         target.tolerances.linear_or_default().get() / 10.0,
     );
     native_f64(&mut bytes, target.tolerances.angular.get());
-    Ok(bytes)
+    bytes
 }
 
 pub(super) fn native_nurbs_surface(
