@@ -2543,6 +2543,12 @@ impl<'a> Builder<'a> {
                 );
             }
             if assigned.is_empty() {
+                if unsupported == 0 {
+                    self.loss(
+                        StepLossCode::EmptyLayerOmitted,
+                        format!("empty presentation layer {} was omitted because STEP requires an assigned item", layer.id),
+                    );
+                }
                 if layer.visible == Some(false) {
                     self.hidden_presentation_layers_without_items
                         .insert(layer.id.as_str().to_owned());
@@ -3754,8 +3760,9 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::RegionEdgesRecovered,
                 format!(
-                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
+                    "region {} of body {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
                     region.id,
+                    region.body,
                     edges.len()
                 ),
             );

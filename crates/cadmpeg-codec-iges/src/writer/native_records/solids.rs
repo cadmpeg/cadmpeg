@@ -669,8 +669,7 @@ pub(super) fn apply_rectangular_pattern(
         omitted.insert(position);
     }
     let total = u64::from(columns) * u64::from(rows);
-    let omitted_count =
-        u64::try_from(omitted.len()).map_err(|_| "rectangular mask count overflows")?;
+    let omitted_count = cadmpeg_core::decode::u64_from_index(omitted.len());
     let mut positions = Vec::new();
     if !omitted.is_empty() {
         let count = if flag == 0 {
