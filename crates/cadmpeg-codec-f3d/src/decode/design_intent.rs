@@ -1184,6 +1184,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             neutral_features: &model.features,
         },
     )?;
+    crate::design::configurations::reconcile_active_configurations(
+        &mut model.features,
+        &mut model.configurations,
+    );
     let phase_one_headers = prereqs
         .design_record_headers
         .iter()

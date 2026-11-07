@@ -595,17 +595,23 @@ fn a_pattern_admits_a_path_carried_seed_group_without_members() {
 }
 
 #[test]
+fn a_path_carried_seed_group_admits_either_variant() {
+    use crate::records::feature::scope::DesignFeatureKind::RPattern;
+    let variant = path_seed_native(RPattern, 2, |group| group["frame"]["variant"] = true.into());
+    assert!(invalid_group_records(&variant).is_empty());
+}
+
+#[test]
 fn a_path_carried_seed_group_keeps_its_exact_shape() {
     use crate::records::feature::scope::DesignFeatureKind::{Fillet, RPattern};
     let bare_references = path_seed_native(RPattern, 0, |_| {});
     let one_path = path_seed_native(RPattern, 1, |_| {});
-    let variant = path_seed_native(RPattern, 2, |group| group["frame"]["variant"] = true.into());
     let member = path_seed_native(RPattern, 2, |group| {
         group["members"] = serde_json::json!([101]);
         group["member_offsets"] = serde_json::json!([1_026]);
     });
     let outside_patterns = path_seed_native(Fillet, 2, |_| {});
-    for native in [bare_references, one_path, variant, member, outside_patterns] {
+    for native in [bare_references, one_path, member, outside_patterns] {
         assert_eq!(invalid_group_records(&native).len(), 1);
     }
 }
