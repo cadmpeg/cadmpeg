@@ -3177,7 +3177,7 @@
           "name": "AdditiveBox",
           "native_ref": "fcstd:native:object#AdditiveBox",
           "needs_recompute": false,
-          "ordinal": 1,
+          "ordinal": 2,
           "outputs": [
             "fcstd:model:body#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:34",
             "fcstd:model:body#AdditiveBox:Shape:AdditiveBox.Shape.brp:34%40location1"
@@ -3220,7 +3220,7 @@
           "name": "Sketch",
           "native_ref": "fcstd:native:object#Sketch",
           "needs_recompute": false,
-          "ordinal": 2,
+          "ordinal": 1,
           "outputs": [
             "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:2%40location1"
           ],

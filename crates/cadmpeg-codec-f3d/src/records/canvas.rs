@@ -207,6 +207,9 @@ impl DesignCanvasPrologue {
     pub(crate) fn visible(self) -> bool {
         self.visible
     }
+    pub(crate) fn first_flag(self) -> bool {
+        self.first_flag
+    }
 }
 
 const CANVAS_IMAGE_ASSET_PREFIX_BYTES: u64 = 25;
@@ -265,6 +268,12 @@ impl DesignCanvasGeometry {
     }
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index
+    }
+    pub(crate) fn class_tags(&self) -> &[String; 2] {
+        &self.class_tags
+    }
+    pub(crate) fn label(&self) -> &str {
+        &self.label
     }
     fn frame_length(&self) -> u64 {
         u64_from_index(self.prologue.layout.offsets().prefix)
@@ -390,6 +399,12 @@ impl DesignCanvasImage {
     }
     pub(crate) fn asset_name(&self) -> &str {
         &self.asset.name
+    }
+    pub(crate) fn asset_class_tag(&self) -> &str {
+        self.asset.class_tag.as_str()
+    }
+    pub(crate) fn asset_record_index(&self) -> u32 {
+        self.asset.record_index
     }
 }
 
