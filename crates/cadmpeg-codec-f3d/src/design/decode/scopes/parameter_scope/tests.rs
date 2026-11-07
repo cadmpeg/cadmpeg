@@ -521,3 +521,99 @@ fn a_scanned_count_whose_table_overflows_is_rejected_not_fatal() {
     let wide = usize::MAX / 11 + 1;
     assert!(!reference_table_ends_at(100, wide, 11, 126));
 }
+
+#[test]
+fn damaged_typed_scope_gives_up_one_part_and_keeps_its_sibling() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::io::{Cursor, Write};
+
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    fn scope_record(entity: u32, damaged: bool) -> (Vec<u8>, usize) {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"256");
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        lp_utf16(&mut bytes, if damaged { "\u{1}" } else { "Hole" });
+        let mut tail = [0; 78];
+        tail[..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        let paired = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"257");
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        (bytes, paired)
+    }
+
+    let (broken, broken_pair) = scope_record(1, true);
+    let (good, good_pair) = scope_record(2, false);
+    let good_start = broken.len();
+    let mut bytes = broken;
+    bytes.extend_from_slice(&good);
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&bytes).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records_and_secondary(
+        &[
+            (
+                "1C037A07-4A15-43F6-ABFC-BBF61B9038D4",
+                "",
+                1,
+                "Fusion",
+                &[1, 2],
+            ),
+            ("00000000-0000-0000-0000-000000000001", "", 1, "Fusion", &[]),
+        ],
+        &[(1, 0), (2, u64::try_from(good_start).unwrap())],
+        &[
+            (1, u64::try_from(broken_pair).unwrap()),
+            (2, u64::try_from(good_start + good_pair).unwrap()),
+        ],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let types = crate::design::decode::meta::decode_types(&scan).unwrap();
+    let decoded = super::decode_parameter_scopes(
+        &ctx,
+        &scan,
+        &super::ParameterScopeSources {
+            types: &types,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(decoded.scopes.len(), 1);
+    assert_eq!(decoded.scopes[0].record_index, 2);
+    let (_, native, fidelity, losses) = decoded.parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    assert!(losses[0].message.contains("design-parameter-scope#0"));
+    let location = losses[0].provenance.as_ref().unwrap();
+    assert_eq!(location.stream_name(), Some(STREAM));
+    assert_eq!(location.offset, 0);
+    assert_eq!(
+        location.byte_len(),
+        Some(u64::try_from(good_start).unwrap())
+    );
+}
