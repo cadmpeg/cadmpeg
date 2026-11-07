@@ -5707,7 +5707,6 @@ fn project_chamfer(
         left.scope_reference_ordinal
             .cmp(&right.scope_reference_ordinal)
     });
-    let group_count = edge_groups.len();
     let ordered_parameters =
         |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
             {
@@ -5734,6 +5733,23 @@ fn project_chamfer(
     let right_distances = ordered_parameters(&|kind| kind == "rightDistance")?;
     let angles =
         ordered_parameters(&|kind| matches!(kind, "Angle" | "Rotate Angle" | "rotateAngle"))?;
+    // Face-role groups next to the one edge-role group add faces to that
+    // selection. When the scope stores one specification, they all take it.
+    let face_groups = edge_groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
+        .count();
+    let one_specification = [&distances, &first_distances, &left_distances]
+        .into_iter()
+        .map(Vec::len)
+        .sum::<usize>()
+        == 1;
+    let group_count =
+        if one_specification && face_groups != 0 && edge_groups.len() - face_groups == 1 {
+            1
+        } else {
+            edge_groups.len()
+        };
     if !parameters.iter().all(|(_, parameter)| {
         matches!(
             parameter.source_kind_str(),
@@ -5814,7 +5830,8 @@ fn project_chamfer(
         candidates.push(spec);
     }
     let mut groups = Vec::new();
-    for (spec, group) in candidates.into_iter().zip(edge_groups) {
+    for (ordinal, group) in edge_groups.into_iter().enumerate() {
+        let spec = *or_none!(candidates.get(if group_count == 1 { 0 } else { ordinal }));
         let group = ChamferGroup {
             edges: resolved_edge_treatment_group_with_corners(
                 group,
