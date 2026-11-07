@@ -561,8 +561,9 @@ pub(crate) fn native_losses(features: &[Feature]) -> Vec<cadmpeg_ir::report::los
     }
 }
 
-/// Notes counting the Move Face features whose selected faces rest on a reading
-/// of a repeated matching attribute or of an unshared generated-name family.
+/// Notes counting the Move Face features whose selected faces rest on a reading:
+/// that a matched revision is the input face of the feature, of a repeated
+/// matching attribute, or of an unshared generated-name family.
 pub(crate) fn assumption_losses(
     features: &[Feature],
     inventory: &crate::feature::FeatureInventory,
@@ -591,7 +592,19 @@ pub(crate) fn assumption_losses(
     };
     let repeated = count(&ids(|face| face.repeated_attribute));
     let unshared = count(&ids(|face| face.unshared_family));
+    let selecting = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                selection(feature),
+                Some(FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. })
+            )
+        })
+        .count();
     let mut notes = Vec::new();
+    if selecting > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinInputRevisionAssumed.note(format!("{selecting} Move Face feature(s) keep historical face selections; the join does not establish the stored body state of a matched revision, so the selection assumes that the revision represents the input face of the feature.")));
+    }
     if repeated > 0 {
         notes.push(crate::loss::InventorLossCode::FeatureFaceJoinRepeatedAttribute.note(format!("{repeated} Move Face feature(s) select a face through a matching attribute that repeats on its owner; the selection assumes that the copies state one selection.")));
     }

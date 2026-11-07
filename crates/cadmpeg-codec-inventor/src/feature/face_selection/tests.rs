@@ -434,7 +434,11 @@ fn assumption_losses_count_the_features_that_use_the_face() {
     assert!(assumption_losses(std::slice::from_ref(&feature), &inventory).is_empty());
     project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
     let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
-    assert_eq!(notes.len(), 2);
+    assert_eq!(notes.len(), 3);
+    assert_eq!(
+        notes[0].code.local_code(),
+        crate::loss::InventorLossCode::FeatureFaceJoinInputRevisionAssumed.code()
+    );
 }
 
 #[test]
