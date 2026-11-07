@@ -159,6 +159,55 @@ fn design_only_configuration_does_not_create_a_model_partition() {
 }
 
 #[test]
+fn design_only_configuration_does_not_replay_a_retained_model_partition() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+    let mut original_ir = CadIr::empty();
+    original_ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:configuration#retained").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Default".into()),
+        material: None,
+        properties: std::collections::BTreeMap::default(),
+        bodies: None,
+        parameter_values: std::collections::BTreeMap::default(),
+        parameter_overrides: std::collections::BTreeMap::default(),
+        feature_states: std::collections::BTreeMap::default(),
+        native_ref: None,
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&original_ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut original = Vec::new();
+    plan.write_to(&mut original).unwrap();
+    let source_scan = crate::test_support::container::scan(&original);
+    assert!(crate::container::select_active_parasolid_site(&source_scan).is_some());
+    let input = SldprtCodec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    assert!(!ir.model.configurations.is_empty());
+    let mut scope = ir.scope;
+    scope.model = false;
+    ir.set_scope(scope).unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(input.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    assert!(crate::container::select_active_parasolid_site(&scan).is_none());
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!output.ir().scope.model);
+}
+
+#[test]
 fn empty_authored_document_produces_a_native_file_and_empty_model_loss() {
     let ir = CadIr::empty();
     let plan = SldprtCodec
