@@ -4738,6 +4738,8 @@ pub(super) fn parse_entity_selection_frame(
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub(crate) fn decode_body_recipe_operands(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -4813,19 +4815,36 @@ pub(crate) fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe_with_index(
-                bytes,
-                records,
-                header,
-                body_recipes_by_stream
-                    .get(stream)
-                    .map_or(&[], Vec::as_slice),
-            ) else {
-                continue;
-            };
-            if let Some(operand) =
-                parse_body_recipe_operand_with_index(bytes, records, group, ordinal, header, recipe)
-            {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing body operand stream"))?;
+            if let Some(operand) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream,
+                    records,
+                    recipes,
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Body],
+                },
+                || {
+                    let recipe = unique_body_recipe_with_index(
+                        bytes,
+                        records,
+                        header,
+                        body_recipes_by_stream
+                            .get(stream)
+                            .map_or(&[], Vec::as_slice),
+                    )?;
+                    parse_body_recipe_operand_with_index(
+                        bytes, records, group, ordinal, header, recipe,
+                    )
+                    .map(Ok)
+                },
+            )? {
                 push_body_recipe_operand(
                     &mut out,
                     operand,
@@ -4892,27 +4911,44 @@ pub(crate) fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, *record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe_with_index(
-                bytes,
-                records,
-                header,
-                body_recipes_by_stream
-                    .get(stream)
-                    .map_or(&[], Vec::as_slice),
-            ) else {
-                continue;
-            };
             let owner = DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             };
-            if let Some(operand) = parse_body_recipe_operand_frame_with_index(
-                bytes,
-                records,
-                scope.record_index,
-                owner,
-                header,
-                recipe,
-            ) {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing body operand stream"))?;
+            if let Some(operand) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream,
+                    records,
+                    recipes,
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Body],
+                },
+                || {
+                    let recipe = unique_body_recipe_with_index(
+                        bytes,
+                        records,
+                        header,
+                        body_recipes_by_stream
+                            .get(stream)
+                            .map_or(&[], Vec::as_slice),
+                    )?;
+                    parse_body_recipe_operand_frame_with_index(
+                        bytes,
+                        records,
+                        scope.record_index,
+                        owner,
+                        header,
+                        recipe,
+                    )
+                    .map(Ok)
+                },
+            )? {
                 push_body_recipe_operand(
                     &mut out,
                     operand,

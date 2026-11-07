@@ -359,17 +359,114 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     record.id = crate::ids::native_scoped_id(stream_name, "record", 100);
     recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);
     let output_id = crate::ids::native_scoped_id(stream_name, "design-body-recipe-operand", 0);
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let decoded = crate::design::decode::operands::decode_body_recipe_operands(
-            scan,
-            &[],
-            std::slice::from_ref(&group),
-            std::slice::from_ref(&record),
-            std::slice::from_ref(&recipe),
-        )
-        .unwrap();
-        assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].id, output_id);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            let decoded = crate::design::decode::operands::decode_body_recipe_operands(
+                ctx,
+                &mut parts,
+                scan,
+                &[],
+                std::slice::from_ref(&group),
+                std::slice::from_ref(&record),
+                std::slice::from_ref(&recipe),
+            )
+            .unwrap();
+            assert_eq!(decoded.len(), 1);
+            assert_eq!(decoded[0].id, output_id);
+        });
+    });
+}
+
+#[test]
+fn malformed_body_recipe_is_given_up_and_sibling_survives() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bytes = Vec::new();
+    let mut headers = Vec::new();
+    let mut recipes = Vec::new();
+    for (base, valid) in [(100u32, false), (200, true)] {
+        let start = bytes.len();
+        indexed_header(&mut bytes, *b"365", base);
+        bytes.extend_from_slice(&[0; 10]);
+        if valid {
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&2265u64.to_le_bytes());
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.push(1);
+            bytes.extend_from_slice(&u64::from(base + 3).to_le_bytes());
+            bytes.extend_from_slice(&[0; 2]);
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+            lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
+            bytes.extend_from_slice(&2u32.to_le_bytes());
+            bytes.extend_from_slice(&[7, 0, 0, 0]);
+        } else {
+            bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        }
+        indexed_header(&mut bytes, *b"259", base);
+        indexed_header(&mut bytes, *b"283", base + 1);
+        indexed_header(&mut bytes, *b"463", base + 2);
+        indexed_header(&mut bytes, *b"452", base + 3);
+        let recipe_at = bytes.len();
+        bytes.extend_from_slice(b"body_recipe_data");
+        indexed_header(&mut bytes, *b"311", base + 4);
+        headers.push(DesignRecordHeader {
+            id: crate::ids::native_scoped_id(stream, "record", base),
+            byte_offset: Some(u64_from_index(start)),
+            class_tag: "365".to_owned().try_into().unwrap(),
+            record_index: base,
+        });
+        recipes.push(ConstructionRecipe {
+            id: crate::ids::native_scoped_id(stream, "construction-recipe", recipe_at),
+            byte_offset: Some(u64_from_index(recipe_at)),
+            kind: ConstructionRecipeKind::Body,
+            design: None,
+            recipe_index: 0,
+            record_index: None,
+        });
+    }
+    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        "id": crate::ids::native_scoped_id(stream, "operand-group", 90),
+        "scope_record_index": 80, "scope_reference_ordinal": 0,
+        "record_index": 90, "class_tag": "269", "members": [100, 200],
+        "role": DesignOperandRole::ROLE_0X5.raw(), "paired_class_tag": "265",
+        "frame": {"opaque_index": 1, "opaque_scalar": 0.0, "variant": false}
+    }))
+    .unwrap();
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[100, 101, 102, 103, 104, 200, 201, 202, 203, 204],
+        &[100, 200],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            let operands = crate::design::decode::operands::decode_body_recipe_operands(
+                ctx,
+                &mut parts,
+                scan,
+                &[],
+                &[group],
+                &headers,
+                &recipes,
+            )
+            .unwrap();
+            assert_eq!(operands.iter().map(crate::records::topology::body_recipe::DesignBodyRecipeOperand::record_index).collect::<Vec<_>>(), [200]);
+            let (_, native, _, losses) = parts.into_parts();
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        });
     });
 }
 
