@@ -1520,11 +1520,13 @@ window from the first `dtl_named_item` to the next `dim_array` marker contains
 `value_string`, `datum_refs`, and `frame_datum_refs`.
 Depth-bounded ASCII elements can instead contain direct `value` and
 `datum_refs_array` fields. The ASCII object-array depth grammar has separate
-row boundaries.
+row boundaries. A typed positional prefix can carry the tolerance type, value,
+nested text owner, and placement pointer. A named row can carry null
+`drfs_data`, leaving the following positional scan without a `drf_id` anchor.
 
 **Need.** Establish the complete binary element and array extent from their
-serialized productions. Consume nested fields and distinguish later slots
-before transferring a tolerance or its attachments.
+serialized productions. Consume nested fields and distinguish later slots to
+transfer their datum and target references.
 
 ### PP-23. Geometric-tolerance datum identities
 
@@ -1545,24 +1547,56 @@ include identifiers both present and absent in the vertex arena. An ASCII
 `feat_id`, and `gtol_id` fields, followed by a `p_ldr` compound. The window
 before `set_datum_tag_xar` can contain one `e3 01 f6 f6 f6 e3` candidate per
 remaining slot after the leading nulls and prototype. The `p_ldr` data also
-contains nested `e3` markers.
+contains nested `e3` markers. The first datum-tag prototype's `dtm_def_id`
+selects the first populated `gtol_datum_def_xar` slot. A class-qualified
+prototype-boundary candidate precedes the positional rows.
+Positional tag rows carry a definition-slot value before `p_sld_info` and a
+datum label in the text fields. The typed one-byte slot form is `01` followed
+by a compact value; extended slot-value encodings remain unresolved. The
+candidate positional datum-definition row is `e3 01 f6 f6 f6 e3`. Counting
+these typed rows after the first prototype provides a candidate ordinal-to-slot
+mapping. An `ext_ref` continuation under a `frame_datum_refs` candidate can carry
+identifier sequences that differ from the tag definition slots. The enclosing
+row production is unresolved.
 
-**Need.** Resolve the owned reference tables, ordered datum compartments, and
-their datum-feature targets before constructing a datum system.
+**Need.** Connect the ordered labels in neutral tolerance attributes to the
+owned reference tables and their datum-feature targets. Confirm that the
+candidate datum-definition terminator yields one row per occupied slot in
+ordinal order before using its row count to assert slot identity.
+
+**Conflict.** The class-boundary search can encounter bytes in nested `p_ldr`
+data, and the count of typed `e3` row candidates does not establish a
+one-to-one row boundary and slot ordinal.
 
 ### PP-24. Geometric-tolerance attachment targets
 
 **Question.** Which pointer and nested attachment types select dimension,
 curve, surface, and bounded-face targets for a geometric tolerance?
 
-**Known.** A type-1 `gtol_place_ptr` can refer to a dimension slot that names
+**Known.** A type-1 `gtol_place_ptr` selects a dimension slot that names
 the tolerance in `gtol_ids`. A type-2 placement can carry a nested attachment
 whose identifier equals the outer identifier. Dimension and geometry
 identifiers can overlap. A surface reference can resolve without a bounded
-face.
+face. A type-2 placement can contain a type-`25` attachment to a surface;
+the decoder uses its unique bounded face when one is present and records the
+inference.
+Some positional placement identifiers start with `c0` and remain unresolved.
 
 **Need.** Establish each pointer's namespace and its complete owned target
 join before transferring a face or curve attachment.
+
+### PP-25. PMI attribute units
+
+**Question.** How does a nonempty neutral attribute `unit` field affect its
+PMI numeric value?
+
+**Known.** Neutral attribute rows carry a unit field. PMI attributes with an
+empty unit field use the principal model length unit for length values. For a
+nonempty unit field, the decoder uses the model length unit or stored radians
+and records that assumption.
+
+**Need.** Compare nonempty PMI unit fields with independently measured values
+to establish their conversion and precedence over the model unit.
 
 ## 6. Assembly component table
 
