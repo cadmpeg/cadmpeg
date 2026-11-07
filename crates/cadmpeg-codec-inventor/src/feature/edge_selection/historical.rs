@@ -28,6 +28,7 @@ pub(super) struct StoredSelector {
     pub(super) secondary: Vec<u32>,
     pub(super) key: u32,
     body: PmDcReference,
+    body_source: u32,
     item: PmDcReference,
     context: PmDcReference,
 }
@@ -46,9 +47,9 @@ pub(super) fn parse(
         return Ok(None);
     }
     let body = cursor.reference("edge selector body")?;
-    if cursor.u32("edge selector topology")? != 2
-        || (super::selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
-        || cursor.u32("edge selector naming form")? != 2
+    let body_source = cursor.u32("edge selector topology")?;
+    if (super::selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
+        || cursor.u32("edge selector naming form")? != body_source
     {
         return Ok(None);
     }
@@ -90,6 +91,7 @@ pub(super) fn parse(
         secondary: secondary_names,
         key,
         body,
+        body_source,
         item,
         context,
     }))
@@ -107,11 +109,16 @@ pub(super) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> 
     Ok(state_content_header(&mut Cursor::new(payload), version)?.source_index)
 }
 
-pub(super) fn links(selector: &StoredSelector, type_at: impl Fn(u32) -> Option<[u8; 16]>) -> bool {
+pub(super) fn links(
+    selector: &StoredSelector,
+    type_at: impl Fn(u32) -> Option<[u8; 16]>,
+    body_source_at: impl Fn(u32) -> Option<u32>,
+) -> bool {
     let target = |reference: PmDcReference, expected| {
         reference.qualified() && reference.record_ordinal().and_then(&type_at) == Some(expected)
     };
     target(selector.body, crate::pmdc::inventor_id(0x9087_4d47))
+        && selector.body.record_ordinal().and_then(&body_source_at) == Some(selector.body_source)
         && target(selector.item, super::super::EDGE_ITEM_TYPE)
         && target(
             selector.context,
