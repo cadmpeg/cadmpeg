@@ -590,8 +590,6 @@ pub(super) fn plan(
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
         design::prepare(&slot_context, &mut projected, &mut losses, input.fidelity.is_none())?;
-<<<<<<< HEAD
-    slot_context.finish_session()?;
     if projected.scope.model
         && !projected.scope.design
         && prepared_native.as_ref().is_none_or(|native| {
