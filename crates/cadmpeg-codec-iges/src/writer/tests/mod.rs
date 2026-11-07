@@ -352,7 +352,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         .expect("generated Global record is ASCII")
         .replace(' ', "");
     assert!(global_text.starts_with(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
+        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
     assert!(global_text.contains(",1.2300000000000000D2,"));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
