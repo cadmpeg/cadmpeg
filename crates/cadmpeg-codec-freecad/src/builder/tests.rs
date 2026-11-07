@@ -9,6 +9,32 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn generated_declaration_ids_do_not_collide_with_source_ids() {
+    use crate::writer::xml::{DeclarationId, Object};
+
+    let mut source = Object::new("Source".into(), "Part::Feature", "Source");
+    source.declaration_id = DeclarationId::Source(Some("2".into()));
+    let generated = Object::new("Generated".into(), "Part::Feature", "Generated");
+    let xml = super::document_xml(&[source, generated], &Default::default(), "4", None, "1");
+    let document = roxmltree::Document::parse(&xml).unwrap();
+    let declarations = document
+        .descendants()
+        .find(|node| node.has_tag_name("Objects"))
+        .unwrap();
+    let ids: Vec<_> = declarations
+        .children()
+        .filter(|node| node.has_tag_name("Object"))
+        .map(|node| {
+            (
+                node.attribute("name").unwrap(),
+                node.attribute("id").unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(ids, [("Source", "2"), ("Generated", "1")]);
+}
+
+#[test]
 fn builds_and_writes_a_source_less_typed_application_graph() {
     let mut builder = crate::FcstdDocumentBuilder::new("source-less & portable");
     builder
