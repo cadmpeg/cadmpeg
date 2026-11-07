@@ -702,6 +702,32 @@ fn layer_without_writable_items_is_named_in_the_loss() {
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code == crate::loss::StepLossCode::LayerItemWithoutCarrier.kind()
             && loss.message.contains("test:model:layer#unwritable")
+            && loss.message.contains("test:model:surface#unknown")
+    }));
+}
+
+#[test]
+fn empty_layer_is_named_in_the_loss() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::PresentationLayer;
+
+    let mut ir = unit_cube().expect("cube");
+    let id = LayerId::mint("test:model:layer#empty").expect("identity");
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: id.clone(),
+        native_ref: None,
+        parent: None,
+        name: "Empty".into(),
+        description: None,
+        visible: Some(true),
+        items: Vec::new(),
+    });
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write layer");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::EmptyLayerOmitted.kind()
+            && loss.message.contains(id.as_str())
     }));
 }
 
@@ -767,5 +793,49 @@ fn point_only_tessellation_is_written_as_an_ap242_point_set() {
         record.partials.iter().find(|part| part.name == "TESSELLATED_SHAPE_REPRESENTATION").is_some_and(|representation| {
             matches!(&representation.parameters[1], Value::List(items) if items.contains(&Value::Reference(point_id)))
         })
+    }));
+}
+
+#[test]
+fn coedge_losing_a_radial_neighbor_is_named() {
+    use crate::export::write_step;
+    use crate::loss::StepLossCode;
+    use crate::{StepSchema, StepWriteOptions};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let mut ir = unit_cube().expect("unit cube");
+    let omitted_loop = ir.model.faces[0].loops.iter().next().unwrap().clone();
+    let omitted: std::collections::BTreeSet<_> = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.owner_loop == omitted_loop)
+        .map(|coedge| coedge.id.clone())
+        .collect();
+    let survivor = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !omitted.contains(&coedge.id) && omitted.contains(&coedge.radial_next))
+        .expect("adjacent coedge")
+        .id
+        .clone();
+    let target = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == target)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write partial body");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::CoedgeRadialNeighborUnwritten.kind()
+            && loss.message.contains(survivor.as_str())
     }));
 }

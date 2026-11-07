@@ -1997,3 +1997,4 @@ fn curves_without_decoded_geometry_project_as_native_entities() {
 }
 
 mod spatial_native;
+mod point_owner;

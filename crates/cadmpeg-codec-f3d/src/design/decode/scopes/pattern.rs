@@ -390,10 +390,7 @@ fn exact_rectangular_pattern_instances(
             let start = reference_starts
                 .iter()
                 .find_map(|(candidate, offset)| (candidate == record_index).then_some(*offset))?;
-            let end = reference_starts
-                .iter()
-                .filter_map(|(_, offset)| (*offset > start).then_some(*offset))
-                .min()?;
+            let end = records.iter().find(|frame| frame.start == start)?.end;
             let span = end.checked_sub(start)?;
             if span > MAX_RECTANGULAR_PATTERN_RECORD_BYTES {
                 return Some(InstanceSearch::Capped(

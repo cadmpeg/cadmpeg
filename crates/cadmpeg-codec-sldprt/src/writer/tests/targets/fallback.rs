@@ -138,6 +138,14 @@ fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_con
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes
                 && limit.limit == 0
     ));
+    let mut input = EncodeInput::new(&ir, Some(&fidelity));
+    input.limits = limits;
+    assert!(matches!(
+        SldprtCodec.plan(input, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes
+                && limit.limit == 0
+    ));
     let error = crate::writer::write_semantic_with_records(
         &ir,
         &fidelity.annotations,
