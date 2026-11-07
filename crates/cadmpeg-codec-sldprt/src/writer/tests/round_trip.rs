@@ -802,6 +802,69 @@ fn source_less_cosmetic_thread_keeps_unresolved_extent() {
 }
 
 #[test]
+fn source_less_principal_planes_keep_reserved_roles() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::PrincipalPlane;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42, "Contents/Keywords",
+        br#"<Keywords><Feature Name="A" Type="LocalizedPlane" id="2"/><Feature Name="B" Type="LocalizedPlane" id="3"/><Feature Name="C" Type="LocalizedPlane" id="4"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    for (feature, plane) in ir.model.features.iter().zip([
+        PrincipalPlane::Front,
+        PrincipalPlane::Top,
+        PrincipalPlane::Right,
+    ]) {
+        assert_eq!(
+            feature.evaluation.definition(),
+            &FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane })
+        );
+    }
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let mut other = ir.model.features[0].clone();
+    other.id = FeatureId::mint("synthetic:test:feature#other").unwrap();
+    other.name = Some("Other".into());
+    other.ordinal = 0;
+    other.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    );
+    for feature in &mut ir.model.features {
+        feature.ordinal += 1;
+    }
+    ir.model.features.insert(0, other);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for plane in [
+        PrincipalPlane::Front,
+        PrincipalPlane::Top,
+        PrincipalPlane::Right,
+    ] {
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition()
+                == &FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane })));
+    }
+}
+
+#[test]
 fn source_less_native_spatial_relation_keeps_its_operands() {
     check_native_spatial_relation(true, ["d6", "e1"], 10);
 }
