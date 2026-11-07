@@ -79,6 +79,67 @@ fn golden_snapshots_hold() {
     harness().check(&branches());
 }
 
+#[test]
+fn e2_structure_fixture_matches_builder() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/fixtures/e2_structure.3dm");
+    let built = crate::test_support::e2_structure::build();
+    if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+        std::fs::write(&path, &built).expect("write fixture");
+    }
+    assert_eq!(std::fs::read(path).expect("read fixture"), built);
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(built), &DecodeOptions::default())
+        .expect("decode structure fixture");
+    let model = &decoded.ir().model;
+    assert_eq!(model.presentation_layers.len(), 2);
+    let parent = model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "Parent")
+        .expect("parent layer");
+    let child = model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "Child")
+        .expect("child layer");
+    assert_eq!(child.parent.as_ref(), Some(&parent.id));
+    for name in ["Copper", "Blue"] {
+        assert!(model
+            .appearances
+            .iter()
+            .any(|appearance| appearance.name.as_deref() == Some(name)));
+    }
+    assert_eq!(model.product_definitions.len(), 1);
+    assert_eq!(model.occurrences.len(), 2);
+    assert!(model.occurrences.iter().all(|occurrence| matches!(
+        &occurrence.prototype,
+        cadmpeg_ir::products::PrototypeReference::Local { definition }
+            if definition == &model.product_definitions[0].id
+    )));
+    assert_eq!(model.semantic_annotations.len(), 1);
+    assert!(model.semantic_annotations[0]
+        .text
+        .iter()
+        .any(|text| text == "legacy text"));
+    assert!(model.view_presentations.iter().any(|view| view
+        .properties
+        .iter()
+        .any(|(key, value)| key.as_str() == "name" && value == "Witness view")));
+    let namespace = decoded
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("Rhino namespace");
+    assert_eq!(namespace.arenas()["groups"].len(), 1);
+    let group = &namespace.arenas()["groups"][0];
+    assert_eq!(
+        group
+            .field("links")
+            .and_then(|value| value.as_array().map(Vec::len)),
+        Some(3)
+    );
+}
+
 /// Putting the same bytes through a branch twice produces identical text.
 #[test]
 fn golden_output_is_deterministic() {
