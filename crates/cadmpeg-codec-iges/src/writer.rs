@@ -707,7 +707,7 @@ fn synthesize_with_admission(
     native_records::attach_unowned_directions(&mut graph.entities)?;
     graph
         .losses
-        .extend(placement_entities::materialize(&mut graph.entities)?);
+        .extend(placement_entities::materialize(&mut graph.entities));
     entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
     feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
