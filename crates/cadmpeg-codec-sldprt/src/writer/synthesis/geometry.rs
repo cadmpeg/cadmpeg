@@ -273,6 +273,7 @@ fn apply_curve_transform(
 }
 
 pub(super) fn preflight(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     body: &Body,
 ) -> Result<(), super::super::write_error::WriteError> {
@@ -282,11 +283,12 @@ pub(super) fn preflight(
     candidate.model.tessellations.clear();
     crate::writer_transform::bake(&mut candidate)?;
     super::super::check_semantic_support(&candidate)?;
-    super::super::brep_body(&candidate, 0.001, body.kind == BodyKind::Sheet)?;
+    super::super::brep_body(ctx, &candidate, 0.001, body.kind == BodyKind::Sheet)?;
     Ok(())
 }
 
 pub(super) fn reduce_sheet(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     body: &Body,
     losses: &mut Vec<LossNote>,
@@ -296,7 +298,7 @@ pub(super) fn reduce_sheet(
     for face in &original.model.faces {
         let mut candidate = original.clone();
         retain_faces(&mut candidate, &body.id, &HashSet::from([face.id.clone()]));
-        match preflight(&candidate, body) {
+        match preflight(ctx, &candidate, body) {
             Ok(()) => {
                 kept.insert(face.id.clone());
             }
@@ -308,7 +310,7 @@ pub(super) fn reduce_sheet(
         }
     }
     retain_faces(ir, &body.id, &kept);
-    match preflight(ir, body) {
+    match preflight(ctx, ir, body) {
         Ok(()) => Ok(true),
         Err(super::super::write_error::WriteError::Decline(_)) => Ok(false),
         Err(error) => Err(error),

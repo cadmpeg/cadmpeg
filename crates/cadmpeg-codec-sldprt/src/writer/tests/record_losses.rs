@@ -344,7 +344,16 @@ fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
     for kind in [BodyKind::Wire, BodyKind::General] {
         let mut ir = cube();
         ir.model.bodies[0].kind = kind;
-        let error = crate::writer::brep_body(&ir, 0.001, false).unwrap_err();
+        let error = crate::writer::brep_body(
+            &cadmpeg_core::decode::DecodeContext::for_encode(
+                &cadmpeg_core::decode::DecodeArena::new(),
+                &cadmpeg_core::decode::DecodePolicy::desktop(),
+            ),
+            &ir,
+            0.001,
+            false,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("as a solid lump"));
     }
 }
@@ -379,7 +388,16 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     ir.model.pcurves.push(pcurve);
     // The topology writer ignores the shell members and the coedge relation;
     // accounting belongs to that write, irrespective of neutral admission.
-    crate::writer::brep_body(&ir, 0.001, false).unwrap();
+    crate::writer::brep_body(
+        &cadmpeg_core::decode::DecodeContext::for_encode(
+            &cadmpeg_core::decode::DecodeArena::new(),
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        ),
+        &ir,
+        0.001,
+        false,
+    )
+    .unwrap();
     let losses = super::super::accounting::losses(&ir, true);
     for (code, field) in [
         (
