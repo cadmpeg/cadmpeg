@@ -692,6 +692,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
+            ctx,
+            &mut design_parts,
             scan,
             &design.design_parameter_scopes,
         )?;

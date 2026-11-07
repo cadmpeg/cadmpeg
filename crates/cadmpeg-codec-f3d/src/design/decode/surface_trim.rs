@@ -153,9 +153,6 @@ fn exact_surface_trim_operation(
             if !cell_record_indices.insert(cell_record_index) {
                 return None;
             }
-            if records.offsets(cell_record_index).is_empty() {
-                return None;
-            }
             let cell_record_reference_offset = u64::try_from(entry_start.checked_add(1)?).ok()?;
             let ordinal_offset = u64::try_from(entry_start.checked_add(11)?).ok()?;
             let ordinal_value = View::u64_le_at(bytes, entry_start.checked_add(11)?)?;
@@ -198,11 +195,47 @@ fn exact_surface_trim_operation(
     })()
 }
 
+fn surface_trim_cell_frame(
+    bytes: &[u8],
+    records: &[crate::metastream::PrimaryRecordFrame],
+    scope: &DesignParameterScope,
+) -> Option<crate::metastream::PrimaryRecordFrame> {
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
+        || scope.reference_members().len() != 4
+    {
+        return None;
+    }
+    let index = *scope.reference_members().values().nth(3)?;
+    let (start, _) = records.frames(index).next()?;
+    let class = exact_indexed_header_at(bytes, start, index)?;
+    let selection =
+        parse_entity_selection_frame(bytes, records, index, u64::try_from(start).ok()?, &class)?;
+    let mut at = usize::try_from(selection.next_byte_offset).ok()?;
+    for _ in 0..2 {
+        let header = indexed_record_header_at(bytes, at)?;
+        if !records.offsets(header.record_index).contains(&at) {
+            return None;
+        }
+        at = records.next_at_or_after(at.checked_add(11)?)?;
+    }
+    let header = indexed_record_header_at(bytes, at)?;
+    if !matches!(header.class_tag.as_str(), "287" | "325") {
+        return None;
+    }
+    records
+        .iter()
+        .find(|frame| frame.start == at && frame.entity_id == u64::from(header.record_index))
+        .copied()
+}
+
 /// Decode every exact `SurfaceTrim` BRep-cell carrier into its own native arena.
 pub(crate) fn decode_surface_trim_operations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let mut record_offsets = HashMap::<String, Vec<crate::metastream::PrimaryRecordFrame>>::new();
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
@@ -215,13 +248,64 @@ pub(crate) fn decode_surface_trim_operations(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("SurfaceTrim source View is missing"))?;
+        let bytes = source.window();
         let Some(records) =
             cached_owned_primary_frames(&mut record_offsets, stream, bytes, scan, &entry.name)?
         else {
             continue;
         };
-        let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope) else {
+        let Some(frame) = surface_trim_cell_frame(bytes, records, scope) else {
+            continue;
+        };
+        let extent = source
+            .child(
+                source
+                    .start()
+                    .checked_add(frame.start)
+                    .ok_or_else(|| CodecError::malformed("SurfaceTrim table start overflows"))?,
+                source
+                    .start()
+                    .checked_add(frame.end)
+                    .ok_or_else(|| CodecError::malformed("SurfaceTrim table end overflows"))?,
+            )
+            .ok_or_else(|| CodecError::malformed("SurfaceTrim table exceeds its stream"))?;
+        let record_id = cadmpeg_ir::ids::Identity::new(design_record_id(
+            &entry.name,
+            ":design-record-header#",
+            cadmpeg_core::decode::u64_from_index(frame.start),
+        ))
+        .map_err(CodecError::malformed)?;
+        let mut spec = PartSpec::new("f3d.bulk_record")
+            .holding([cadmpeg_ir::document::ArenaClass::Design])
+            .record_id(record_id);
+        if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+            spec = spec.in_stream(
+                cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                    .map_err(CodecError::malformed)?,
+            );
+        }
+        let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+        if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+            continue;
+        }
+        let Some(Some(mut operation)) = ctx.decode_part(parts, extent, spec, |_| {
+            let operation =
+                exact_surface_trim_operation(bytes, records, scope).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "SurfaceTrim cell table entity {} has an invalid frame",
+                        frame.entity_id
+                    ))
+                })?;
+            Ok(operation
+                .cell_entries()
+                .iter()
+                .all(|cell| !records.offsets(cell.record_index).is_empty())
+                .then_some(operation))
+        })?
+        else {
             continue;
         };
         operation.id = design_record_id(
