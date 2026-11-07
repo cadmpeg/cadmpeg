@@ -281,19 +281,30 @@ fn damaged_elements(
         }
     }
     let mut fresh: Vec<DamagedSpan> = Vec::new();
-    for index in selected {
+    for index in &selected {
         let own = (
-            elements[index].extent().start(),
-            elements[index].extent().end(),
+            elements[*index].extent().start(),
+            elements[*index].extent().end(),
         );
-        if is_blanked(own) {
+        if is_blanked(own)
+            || selected.iter().any(|other| {
+                *other != *index
+                    && contains(
+                        (
+                            elements[*other].extent().start(),
+                            elements[*other].extent().end(),
+                        ),
+                        own,
+                    )
+            })
+        {
             continue;
         }
         fresh.push((
             own.0,
             own.1,
-            element_name(&elements[index]),
-            ancestors(elements, index),
+            element_name(&elements[*index]),
+            ancestors(elements, *index),
         ));
     }
     for span in gap_spans {
@@ -353,6 +364,33 @@ mod tests {
         let damaged = damaged_elements(&scan, &[]);
         assert_eq!(damaged.len(), 1);
         assert_eq!(&bytes[damaged[0].0..damaged[0].1], b"<broken>");
+    }
+
+    #[test]
+    fn interrupted_nested_elements_are_given_up_once() {
+        let bytes = b"<root><keep/><parent><child></root>";
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("create decode context");
+        let mut damaged = Vec::new();
+        let (_, document) = parse_xml_recovering(
+            &ctx,
+            view,
+            "test XML",
+            "scan test XML",
+            "parse test XML",
+            &|detail| CodecError::malformed(detail),
+            |extent, name, _, _| {
+                damaged.push((extent.window().to_vec(), name.to_vec()));
+                Ok(())
+            },
+        )
+        .expect("recover readable sibling");
+        assert_eq!(damaged, [(b"<parent><child>".to_vec(), b"parent".to_vec())]);
+        assert!(document
+            .root_element()
+            .children()
+            .any(|node| node.has_tag_name("keep")));
     }
 
     #[test]
