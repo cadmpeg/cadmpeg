@@ -9,6 +9,58 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn has_ordering_dependency(ir: &cadmpeg_ir::CadIr, owner: &str, target: &str) -> bool {
+    use std::collections::{HashMap, HashSet};
+    let native = ir.native.namespace("fcstd").unwrap();
+    let objects = native
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let properties = native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let extensions = native
+        .arena_as::<crate::native::ExtensionRecord>("extensions")
+        .unwrap();
+    let mut by_owner = HashMap::<&str, Vec<&crate::native::PropertyRecord>>::new();
+    for property in &properties {
+        by_owner.entry(&property.owner).or_default().push(property);
+    }
+    let attachment_owners = extensions
+        .iter()
+        .filter(|extension| {
+            matches!(
+                extension.type_name.as_str(),
+                "Part::AttachExtension" | "Part::AttachExtensionPython"
+            )
+        })
+        .map(|extension| extension.owner.as_str())
+        .collect::<HashSet<_>>();
+    let positions = objects
+        .iter()
+        .enumerate()
+        .map(|(index, object)| (object.id().as_str(), index))
+        .collect::<HashMap<_, _>>();
+    let object = objects
+        .iter()
+        .find(|object| object.name() == owner)
+        .unwrap();
+    let target = objects
+        .iter()
+        .position(|object| object.name() == target)
+        .unwrap();
+    let expressions = super::super::ExpressionObjects::new(&objects, &by_owner);
+    super::super::design_object_dependencies(
+        object,
+        &by_owner,
+        &HashMap::new(),
+        &HashMap::new(),
+        &expressions,
+        &positions,
+        &attachment_owners,
+    )
+    .contains(&target)
+}
+
 #[test]
 fn distinguishes_stored_base_and_application_owned_features() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -909,7 +961,7 @@ fn preserves_forward_declared_feature_dependencies() {
 
     assert!(first.dependencies.is_empty());
     assert!(second.dependencies.is_empty());
-    assert!(second.ordinal < first.ordinal);
+    assert!(first.ordinal < second.ordinal);
     let objects = result
         .ir()
         .native
@@ -955,7 +1007,8 @@ fn orders_forward_linked_sketches_before_profile_consumers() {
             .find(|feature| feature.name.as_deref() == Some("Sketch"))
             .expect("sketch feature");
 
-        assert!(sketch.ordinal < pad.ordinal, "property {property_name}");
+        assert!(pad.ordinal < sketch.ordinal, "property {property_name}");
+        assert!(has_ordering_dependency(result.ir(), "Pad", "Sketch"));
         assert_valid_document(result.ir());
     }
 }
@@ -1406,10 +1459,14 @@ fn custom_link_dependencies_do_not_depend_on_declaration_order() {
             assert!(!consumer.dependencies.contains(&operand.id), "{runtime}");
             let consumer_declared_first =
                 declarations.find("Consumer") < declarations.find("Operand");
-            let operand_first = is_dependency || !consumer_declared_first;
             assert_eq!(
                 operand.ordinal < consumer.ordinal,
-                operand_first,
+                !consumer_declared_first,
+                "{runtime}"
+            );
+            assert_eq!(
+                has_ordering_dependency(result.ir(), "Consumer", "Operand"),
+                is_dependency,
                 "{runtime}"
             );
             assert_valid_document(result.ir());
@@ -1463,7 +1520,11 @@ fn expression_owner_is_a_feature_dependency_without_objectdeps() {
             .find(|feature| feature.name.as_deref() == Some("Operand"))
             .unwrap();
         assert!(consumer.dependencies.is_empty());
-        assert!(operand.ordinal < consumer.ordinal);
+        assert_eq!(
+            operand.ordinal < consumer.ordinal,
+            declarations.find("Operand") < declarations.find("Consumer")
+        );
+        assert!(has_ordering_dependency(result.ir(), "Consumer", "Operand"));
         assert_valid_document(result.ir());
     }
 }
@@ -1527,8 +1588,9 @@ fn restored_runtime_and_extension_scopes_exclude_hidden_references() {
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Operand"))
             .unwrap();
+        assert!(consumer.ordinal < operand.ordinal);
         assert_eq!(
-            operand.ordinal < consumer.ordinal,
+            has_ordering_dependency(result.ir(), "Consumer", "Operand"),
             expected,
             "{runtime} {name} {extension}"
         );
@@ -1605,8 +1667,9 @@ fn expression_dependencies_use_unique_labels_and_skip_strings_and_metadata() {
         let consumer = feature("Consumer");
         let operand = feature("Operand");
         assert!(consumer.dependencies.is_empty());
+        assert!(consumer.ordinal < operand.ordinal);
         assert_eq!(
-            operand.ordinal < consumer.ordinal,
+            has_ordering_dependency(result.ir(), "Consumer", "Operand"),
             expected,
             "{expression} {property_type}"
         );
