@@ -116,7 +116,7 @@ impl CurveEntityEmitter<'_> {
             .checked_add(self.reference_offset)
             .ok_or_else(|| CodecError::malformed("IGES offset source index overflows"))?;
         let index = self.entities.len();
-        self.entities.push(Entity {
+        let mut entity = Entity {
             structure: None,
             property_links: Vec::new(),
             association_links: Vec::new(),
@@ -137,7 +137,24 @@ impl CurveEntityEmitter<'_> {
             .into_bytes(),
             transform: None,
             transform_link: None,
-        });
+        };
+        if let Some(sequence) = self
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| &curve.id == curve_id)
+            .and_then(|curve| curve.source_object.as_ref())
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+        {
+            super::native_records::numeric::retain_directory(
+                self.ir,
+                &format!("iges:entity:directory#{sequence}"),
+                &mut entity,
+            );
+        }
+        self.entities.push(entity);
         Ok(Some(index))
     }
 }
