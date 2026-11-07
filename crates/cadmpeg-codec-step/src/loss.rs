@@ -193,6 +193,8 @@ pub(crate) enum StepLossCode {
     BodyWithoutProductRepresentation,
     /// Solid and sheet shells do not retain wire members within the shell.
     SurfaceShellWireTopologyOmitted,
+    /// A mixed surface and wire region was split into separate STEP items.
+    MixedRegionSplit,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
     /// Tessellation feature-edge classification is not represented.
@@ -375,6 +377,8 @@ pub(crate) enum StepLossCode {
     /// A coedge was not emitted as a loop member because its loop was
     /// unwritten or collapsed to a vertex.
     CoedgeLoopMemberUnwritten,
+    /// A written coedge lost a radial neighbor.
+    CoedgeRadialNeighborUnwritten,
     /// A loop cannot be ordered because a coedge occurs more than once.
     LoopDuplicateCoedge,
     /// A loop cannot be ordered because a coedge is missing.
@@ -507,6 +511,7 @@ impl StepLossCode {
         Self::WireShellNoWritableEdges,
         Self::BodyWithoutProductRepresentation,
         Self::SurfaceShellWireTopologyOmitted,
+        Self::MixedRegionSplit,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
         Self::TessellationCornerNormals,
@@ -595,6 +600,7 @@ impl StepLossCode {
         Self::LoopEdgeNotWritable,
         Self::LoopNoWritableEdges,
         Self::CoedgeLoopMemberUnwritten,
+        Self::CoedgeRadialNeighborUnwritten,
         Self::LoopDuplicateCoedge,
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
@@ -715,6 +721,7 @@ impl StepLossCode {
             Self::HiddenPmiVisibilityUnsupported => "pmi.hidden-visibility-unsupported",
             Self::BodyWithoutProductRepresentation => "product.body-without-representation",
             Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
+            Self::MixedRegionSplit => "topology.mixed-region-split",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::WireShellNoWritableEdges => "topology.wire-shell-no-writable-edges",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
@@ -813,6 +820,7 @@ impl StepLossCode {
             Self::LoopEdgeNotWritable => "topology.loop-edge-not-writable",
             Self::LoopNoWritableEdges => "topology.loop-no-writable-edges",
             Self::CoedgeLoopMemberUnwritten => "topology.coedge-loop-member-unwritten",
+            Self::CoedgeRadialNeighborUnwritten => "topology.coedge-radial-neighbor-unwritten",
             Self::LoopDuplicateCoedge => "topology.loop-duplicate-coedge",
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
@@ -996,6 +1004,7 @@ impl StepLossCode {
             | Self::WireShellNoWritableEdges
             | Self::BodyWithoutProductRepresentation
             | Self::SurfaceShellWireTopologyOmitted
+            | Self::MixedRegionSplit
             | Self::TessellationBodyLinkUnwritable
             | Self::TopologyUnreachableFromRegion
             | Self::RegionNoShellList
@@ -1023,6 +1032,7 @@ impl StepLossCode {
             | Self::LoopEdgeNotWritable
             | Self::LoopNoWritableEdges
             | Self::CoedgeLoopMemberUnwritten
+            | Self::CoedgeRadialNeighborUnwritten
             | Self::LoopDuplicateCoedge
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
@@ -1219,6 +1229,7 @@ mod tests {
                 "topology.wire-shell-no-writable-edges",
                 "product.body-without-representation",
                 "topology.surface-shell-wire-omitted",
+                "topology.mixed-region-split",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
                 "tessellation.corner-normals",
@@ -1307,6 +1318,7 @@ mod tests {
                 "topology.loop-edge-not-writable",
                 "topology.loop-no-writable-edges",
                 "topology.coedge-loop-member-unwritten",
+                "topology.coedge-radial-neighbor-unwritten",
                 "topology.loop-duplicate-coedge",
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",
