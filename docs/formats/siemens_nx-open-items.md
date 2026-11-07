@@ -881,7 +881,7 @@ member as a neutral suppression or visibility state.
 
 **Question.** Which serialized relation binds each placement frame to one child occurrence, and which field defines its translation unit?
 
-**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "An assembly placement frame at the start" joins a frame to its bounded object record. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder reports `assembly.occurrences-unresolved` when it retains assembly uses or placement frames without a neutral occurrence graph.
+**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "An assembly placement frame at the start" joins a frame to its bounded object record. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder transfers each placement as an occurrence. It associates a placement with a prototype when its UUID group has one prototype and reports `assembly.uuid-prototype-assumed`. It reports unresolved prototype joins and uses without placements as `assembly.occurrences-unresolved`.
 
 **Need.** Identify the child occurrence and how the placement translations obtain their unit. Compare inch and metric models against independently matching geometry.
 
@@ -892,13 +892,25 @@ different orders. A positional join then assigns different keys to one
 prototype. Equal-sized key groups admit multiple prototype assignments.
 With aligned prototype origins, pairwise placement distances distinguish some
 assignments. Sorting the keys and prototype indices gives incorrect assignments
-for those groups. A singleton has no within-group distance to compare.
+for those groups. A singleton has no within-group distance to compare. Direct
+matrix comparisons can distinguish singleton uses when their prototype and
+assembly frames agree.
 
 The MTC STEP assembly declares millimetres. Pairwise distances within its
 14-screw placement group match the NX placement distances at scale 1. The
 root mean square distance error at scales 25.4 and 1/25.4 is approximately
 1971 mm and 77.6 mm, respectively. The 14 NX translations use millimetres.
 The serialized unit selector remains unresolved.
+At rotation tolerance `1e-4` and translation tolerance 0.01 mm, one of the
+36 decoded NX placement matrices matches a decoded STEP occurrence matrix.
+After one translation per prototype, the 26 non-nut placement positions match
+the STEP viewer positions within 0.003 mm. Four of the prototypes are
+singletons. The same test matches three of the ten nut positions. The two
+representations can use different frames.
+For all 36 STEP uses, the relationship endpoints are child then assembly,
+while the transformation items name an assembly-owned frame then the
+child-owned frame. The decoded STEP nut rotations have nine distinct values;
+the NX nut rotations have two.
 Five FastLoad occurrences of that screw type carry marker `0x31`. The STEP
 assembly includes all 14 occurrences of that type. Treating `0x31` as a
 suppression marker would exclude five occurrences present in the STEP model.

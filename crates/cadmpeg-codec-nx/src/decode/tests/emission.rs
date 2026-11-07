@@ -1283,6 +1283,23 @@ fn decode_reports_untransferred_assembly_placement() {
         .losses
         .iter()
         .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+    assert_eq!(result.ir().model.occurrences.len(), 2);
+    let placement = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.native_ref.is_some())
+        .expect("unpaired native placement remains an occurrence");
+    assert!(matches!(
+        &placement.prototype,
+        cadmpeg_ir::products::PrototypeReference::Unresolved {}
+    ));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::AssemblyPlacementUnitsAssumed.kind()));
 }
 
 #[test]
