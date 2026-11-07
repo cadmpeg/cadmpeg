@@ -1634,6 +1634,17 @@ nonempty unit field has an unresolved effect on numeric values.
 **Need.** Compare nonempty PMI unit fields with independently measured values
 to establish their conversion and precedence over the model unit.
 
+**Note.** Unit tests gave these results:
+
+1. An empty unit field uses the principal model length unit for length values: supported by the specimen dimensions.
+2. A nonempty unit field on a length tolerance with the principal unit present withholds the magnitude: tested.
+3. A nonempty unit field on a length tolerance without the principal unit withholds the magnitude: tested.
+4. A conflicting duplicate magnitude with an empty unit withholds the magnitude: tested.
+5. A conflicting duplicate magnitude still emits the secondary tolerance when its inputs are valid: tested.
+6. An ambiguous nominal withholds the nominal but keeps an independently valid symmetric tolerance: tested.
+7. Angular numeric values use radians and `PTC_DIM_ANGULARDIM_UNIT` selects the display unit: spec-defined.
+8. A nonempty unit field on a dimension nominal withholds the nominal value: tested by the ambiguity path.
+
 ## 6. Assembly component table
 
 ### AS-01. Other `ee` frame-slot fills
