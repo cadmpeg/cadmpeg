@@ -13,8 +13,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
-use cadmpeg_core::CodecError;
-
 use crate::document::CadIr;
 use crate::geometry::curve_payloads::SubsetCurveConstruction;
 use crate::geometry::nurbs::NurbsCurve;
@@ -92,10 +90,7 @@ struct Lowering {
 /// `ir` with every subset curve that `lower` selects restated on its first
 /// source that `lower` does not select. A subset whose chain cannot be lowered
 /// is kept for the writer's admission pass.
-pub fn lower_subset_curves(
-    ir: &CadIr,
-    lower: impl Fn(&Curve) -> bool,
-) -> Result<Cow<'_, CadIr>, CodecError> {
+pub fn lower_subset_curves(ir: &CadIr, lower: impl Fn(&Curve) -> bool) -> Cow<'_, CadIr> {
     let mut lowerings = Vec::new();
     for procedural in &ir.model.procedural_curves {
         let Some((curve, subset)) = subset_owner(ir, procedural) else {
@@ -150,15 +145,15 @@ pub fn lower_subset_curves(
     drop(planned);
     lowerings.retain(|item| !retained.contains(&item.curve));
     if lowerings.is_empty() {
-        return Ok(Cow::Borrowed(ir));
+        return Cow::Borrowed(ir);
     }
     let mut lowered = ir.clone();
     for lowering in lowerings {
         if !apply(&mut lowered, lowering) {
-            return Ok(Cow::Borrowed(ir));
+            return Cow::Borrowed(ir);
         }
     }
-    Ok(Cow::Owned(lowered))
+    Cow::Owned(lowered)
 }
 
 fn subset_owner<'ir>(
