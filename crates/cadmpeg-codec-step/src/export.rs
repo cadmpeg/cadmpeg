@@ -5833,10 +5833,24 @@ impl<'a> Builder<'a> {
             Some((first_id, first_surface))
                 if first_surface != surface && self.split_pcurves.insert(pcurve_id) =>
             {
+                let coedges = self
+                    .ir
+                    .model
+                    .coedges
+                    .iter()
+                    .filter(|coedge| {
+                        coedge
+                            .pcurves
+                            .iter()
+                            .any(|use_| use_.pcurve.as_str() == pcurve_id)
+                    })
+                    .map(|coedge| coedge.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 self.loss(
                     StepLossCode::PcurveSplitAcrossSurfaces,
                     format!(
-                        "pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"
+                        "pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}; coedges: {coedges}"
                     ),
                 );
             }
