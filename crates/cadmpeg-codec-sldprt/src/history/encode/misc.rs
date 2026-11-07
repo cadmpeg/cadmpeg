@@ -85,10 +85,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         face: &FaceSelection,
         diameter: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
         extent: Option<&CosmeticThreadExtent>,
+        has_extended_fields: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
+            if has_extended_fields {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} has unsupported cosmetic-thread fields",
+                    feature.id
+                )));
+            }
             if existing.is_some_and(|record| classify(record) != Some(FeatureClass::CosmeticThread))
             {
                 return Err(CodecError::UnsupportedContent(format!(

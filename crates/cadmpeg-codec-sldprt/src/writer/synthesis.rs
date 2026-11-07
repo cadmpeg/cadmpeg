@@ -1405,6 +1405,37 @@ fn reduce_design(
     repair: bool,
 ) -> Result<(), super::write_error::WriteError> {
     for feature in &mut ir.model.features {
+        let mut omitted_thread_fields = Vec::new();
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                standard,
+                designation,
+                pitch,
+                modeled,
+                ..
+            }) = definition
+            {
+                if standard.take().is_some() {
+                    omitted_thread_fields.push("standard");
+                }
+                if designation.take().is_some() {
+                    omitted_thread_fields.push("designation");
+                }
+                if pitch.take().is_some() {
+                    omitted_thread_fields.push("pitch");
+                }
+                if modeled.take().is_some() {
+                    omitted_thread_fields.push("modeled");
+                }
+            }
+        });
+        if !omitted_thread_fields.is_empty() {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: cosmetic-thread fields {} have no native encoding",
+                feature.id,
+                omitted_thread_fields.join(", ")
+            )));
+        }
         let mut omitted_positions = Vec::new();
         let mut pattern_error = None;
         feature.evaluation.edit(|definition, _| {
