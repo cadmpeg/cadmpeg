@@ -6,6 +6,27 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+#[test]
+fn surface_curve_inlining_requires_exclusive_basis_and_pcurve() {
+    for (extra, expected) in [
+        ("", true),
+        ("#5=UNKNOWN(#1);", false),
+        ("#5=UNKNOWN(#2);", false),
+    ] {
+        let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CURVE('');#2=PCURVE('',#6,#7);#3=SURFACE_CURVE('',#1,(#2),.PCURVE_S1.);#4=GEOMETRIC_CURVE_SET('',(#3));#6=SURFACE('');#7=DEFINITIONAL_REPRESENTATION('',(),$);{extra}ENDSEC;END-ISO-10303-21;");
+        let (exchange, _) =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect("parse source");
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("source fits policy");
+        let candidates = super::super::standalone_surface_curve_pcurves(&exchange, &ctx)
+            .expect("reference scan");
+        assert_eq!(candidates.get(&2) == Some(&1), expected);
+    }
+}
+
 fn pcurve_geometry_refusal(depth_limit: u64) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_CURVE();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
