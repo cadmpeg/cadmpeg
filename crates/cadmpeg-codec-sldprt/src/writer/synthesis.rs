@@ -357,11 +357,11 @@ pub(super) fn plan(
             )));
             continue;
         }
-        match geometry::preflight(&projected, &body) {
+        match geometry::preflight(&slot_context, &projected, &body) {
             Ok(()) => supported.push(body.id.clone()),
             Err(super::write_error::WriteError::Decline(reason)) => {
                 if body.kind == cadmpeg_ir::topology::BodyKind::Sheet
-                    && geometry::reduce_sheet(&mut projected, &body, &mut losses)?
+                    && geometry::reduce_sheet(&slot_context, &mut projected, &body, &mut losses)?
                 {
                     supported.push(body.id.clone());
                 } else {
@@ -534,7 +534,8 @@ pub(super) fn plan(
     )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
-        design::prepare(&mut projected, &mut losses, input.fidelity.is_none())?;
+        design::prepare(&slot_context, &mut projected, &mut losses, input.fidelity.is_none())?;
+    slot_context.finish_session()?;
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
         let mut declared = NativeDispositions::for_namespace(
@@ -630,6 +631,7 @@ pub(super) fn plan(
             sw_version: declaration,
             prepared_native,
             source_trust,
+            limits: input.limits,
         },
         &mut bytes,
     )?;
