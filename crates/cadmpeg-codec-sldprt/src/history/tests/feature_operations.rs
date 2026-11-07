@@ -458,23 +458,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
 
     assert!(regenerated.ir().model.features[2].dependencies.is_empty());
     assert_eq!(native[2].properties["Dependencies"], "51,52,51");
-    // Keep the original adversarial input after removing one old duplicate edge:
-    // the unrelated Profile dependency alone must still be refused.
     let dependencies = vec![regenerated.ir().model.features[0].id.clone()];
     regenerated.ir_mut().model.features[2].dependencies =
         cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        regenerated.ir(),
-        regenerated.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("dependencies are inconsistent with its operands"),
-        "{error}"
-    );
+    crate::test_support::assert_synthesis_fallback(regenerated.ir(), regenerated.source_fidelity());
 }
 
 #[test]

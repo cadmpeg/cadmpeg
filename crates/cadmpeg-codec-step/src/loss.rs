@@ -379,6 +379,8 @@ pub(crate) enum StepLossCode {
     CoedgeLoopMemberUnwritten,
     /// A written coedge lost a radial neighbor.
     CoedgeRadialNeighborUnwritten,
+    /// A degenerate edge was removed from a loop with other edges.
+    LoopCollapsedEdgeOmitted,
     /// A loop cannot be ordered because a coedge occurs more than once.
     LoopDuplicateCoedge,
     /// A loop cannot be ordered because a coedge is missing.
@@ -601,6 +603,7 @@ impl StepLossCode {
         Self::LoopNoWritableEdges,
         Self::CoedgeLoopMemberUnwritten,
         Self::CoedgeRadialNeighborUnwritten,
+        Self::LoopCollapsedEdgeOmitted,
         Self::LoopDuplicateCoedge,
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
@@ -821,6 +824,7 @@ impl StepLossCode {
             Self::LoopNoWritableEdges => "topology.loop-no-writable-edges",
             Self::CoedgeLoopMemberUnwritten => "topology.coedge-loop-member-unwritten",
             Self::CoedgeRadialNeighborUnwritten => "topology.coedge-radial-neighbor-unwritten",
+            Self::LoopCollapsedEdgeOmitted => "topology.loop-collapsed-edge-omitted",
             Self::LoopDuplicateCoedge => "topology.loop-duplicate-coedge",
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
@@ -1033,6 +1037,7 @@ impl StepLossCode {
             | Self::LoopNoWritableEdges
             | Self::CoedgeLoopMemberUnwritten
             | Self::CoedgeRadialNeighborUnwritten
+            | Self::LoopCollapsedEdgeOmitted
             | Self::LoopDuplicateCoedge
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
@@ -1319,6 +1324,7 @@ mod tests {
                 "topology.loop-no-writable-edges",
                 "topology.coedge-loop-member-unwritten",
                 "topology.coedge-radial-neighbor-unwritten",
+                "topology.loop-collapsed-edge-omitted",
                 "topology.loop-duplicate-coedge",
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",

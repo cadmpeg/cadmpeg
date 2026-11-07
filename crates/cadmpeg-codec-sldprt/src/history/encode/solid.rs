@@ -9,7 +9,7 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::features::{
     holes::{
         HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, PartialPair,
@@ -54,7 +54,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extrude(
         &self,
         definition: ExtrudeDefinition<'_>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let ExtrudeDefinition {
             profile,
             direction,
@@ -112,13 +112,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || length_along_profile_normal.is_some()
                 || allow_multi_profile_faces.is_some()
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses unsupported extrusion construction controls",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_extrude(record)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported extrusion semantics",
                     feature.id
                 )));
@@ -135,7 +135,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }) && crate::history::project::neutral_feature_id(owner)
                     .is_ok_and(|id| id == feature.id));
                 if !retained {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} requires retained extrusion profile data",
                         feature.id
                     )));
@@ -151,7 +151,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(
                     profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::UnsupportedContent(format!(
+                            WriteError::Decline(format!(
                                 "SLDPRT feature {} references a missing extrusion profile",
                                 feature.id
                             ))
@@ -163,7 +163,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     && *op != BooleanOp::Unresolved
                     && extrude_feature_op(record).is_some_and(|native_op| native_op != *op)
                 {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} changes its inferred extrusion operation",
                         feature.id
                     )));
@@ -187,13 +187,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.remove("Vertex");
             }
             let unsupported_termination_selection = || {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} uses an unsupported extrusion termination selection",
                     feature.id
                 ))
             };
             let unsupported_extent = || {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} uses an unsupported extrusion extent",
                     feature.id
                 ))
@@ -247,7 +247,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     | LinearTermination::ToLast {}
                     | LinearTermination::ToPlane { .. }
                     | LinearTermination::ToShape { .. } => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} uses an unsupported extrusion termination",
                             feature.id
                         )));
@@ -337,7 +337,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             match direction {
                 cadmpeg_ir::features::ExtrudeDirection::Unresolved {} => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} has an unresolved extrusion direction",
                         feature.id
                     )));
@@ -346,7 +346,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.remove("Direction");
                 }
                 cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {} => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} uses a reversed profile-normal extrusion direction",
                         feature.id
                     )));
@@ -403,7 +403,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_hole(
         &self,
         definition: HoleDefinition<'_>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let HoleDefinition {
             profile,
             profile_filter,
@@ -435,13 +435,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || specification.is_some()
                 || allow_multi_profile_faces.is_some()
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported hole construction semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| classify(record) != Some(FeatureClass::Hole)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported hole semantics",
                     feature.id
                 )));
@@ -479,7 +479,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             Some(HoleForm::Chamfer) => false,
                         };
                         if !encodes_form {
-                            return Err(CodecError::UnsupportedContent(format!(
+                            return Err(WriteError::Decline(format!(
                                 "SLDPRT feature {} has unresolved hole entry construction",
                                 feature.id
                             )));
@@ -604,13 +604,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                     }
                     HoleKind::Counterdrill { .. } => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} has unsupported counterdrill construction",
                             feature.id
                         )));
                     }
                     HoleKind::Chamfer { .. } => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} has unsupported chamfered-hole construction",
                             feature.id
                         )));
@@ -659,13 +659,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
                 Some((FaceSelection::Unresolved, _)) => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} has an unresolved hole face selection",
                         feature.id
                     )));
                 }
                 Some(_) => {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} has an empty hole face selection",
                         feature.id
                     )));
@@ -712,7 +712,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             )
                         }) => {}
                 _ => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                                        "SLDPRT feature {} has placements that require native generated-surface identities",
                                        feature.id
                                    )));
@@ -737,7 +737,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
                 Some(_) => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} changes unsupported hole termination",
                         feature.id
                     )))
