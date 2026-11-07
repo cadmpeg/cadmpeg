@@ -9,6 +9,112 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_extrusion_does_not_invent_an_input() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_extrude;
+
+    let input = f3d_with_smbh_and_protein_with_generated_extrude(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let mut document = decoded.ir().clone();
+    document.model.feature_input_topologies.clear();
+    let (rewritten, report) =
+        super::super::source_less_analytic::synthesize_document(&document, None);
+    assert!(rewritten.ir().model.feature_input_topologies.is_empty());
+    assert!(!report.losses.is_empty());
+}
+
+#[test]
+fn source_less_sketch_extrusion_keeps_its_parameter_binding() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_extrude;
+    use cadmpeg_ir::features::{
+        BooleanOp, Dimension, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FeatureDefinition,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    };
+
+    let input = f3d_with_smbh_and_protein_with_generated_extrude(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let (rewritten, mut report) =
+        super::super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    let feature = rewritten
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+            )
+        })
+        .expect("the extrusion is present");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile,
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("one-sided extrusion")
+    };
+    assert!(
+        matches!(profile, ProfileRef::Planar(PlanarProfileRef::Sketch(id)) if rewritten.ir().model.sketches.iter().any(|sketch| &sketch.id == id))
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            direction: ExtrudeDirection::ProfileNormal {},
+            start: ExtrudeStart::ProfilePlane {},
+            op: BooleanOp::NewBody,
+            solid: Some(true),
+            ..
+        })
+    ));
+    let sketch = rewritten
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|candidate| {
+            matches!(
+                candidate.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+            )
+        })
+        .unwrap();
+    assert!(feature.dependencies.iter().any(|id| id == &sketch.id));
+    assert_eq!(rewritten.ir().model.feature_input_topologies.len(), 1);
+    let input = &rewritten.ir().model.feature_input_topologies[0];
+    assert_eq!(input.input_of, feature.id);
+    assert_eq!(input.operands.len(), 1);
+    let LinearTermination::Blind { length } = &side.termination else {
+        panic!("blind extrusion")
+    };
+    let Dimension::Parameter(id) = length else {
+        panic!("bound blind extrusion")
+    };
+    let parameter = rewritten
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| &parameter.id == id)
+        .expect("the depth parameter is present");
+    assert_eq!(parameter.name, "Depth");
+    assert_eq!(parameter.owner.as_ref(), Some(&feature.id));
+    assert!((rewritten.ir().dimension_value(length).unwrap().get() - 10.0).abs() < 1.0e-12);
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        decoded.ir(),
+        rewritten.ir(),
+    );
+}
+
+#[test]
 fn source_less_sketch_and_primitive_features_share_the_timeline() {
     use cadmpeg_ir::features::{
         BooleanOp, Dimension, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,

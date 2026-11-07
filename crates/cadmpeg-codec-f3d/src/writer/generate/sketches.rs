@@ -29,6 +29,7 @@ pub(super) struct SketchStream {
     pub(super) occupied: std::collections::BTreeSet<u32>,
     pub(super) next: u32,
     pub(super) feature_scopes: Vec<(u64, cadmpeg_ir::features::FeatureId, u32)>,
+    pub(super) feature_containers: std::collections::BTreeMap<cadmpeg_ir::features::FeatureId, u32>,
     pub(super) sketches: Vec<SketchId>,
     pub(super) renamed_sketches: Vec<SketchId>,
     pub(super) entities: Vec<SketchEntityId>,
@@ -60,6 +61,7 @@ pub(super) fn encode(
     let mut renamed_sketches = Vec::new();
     let mut entities = Vec::new();
     let mut feature_scopes = Vec::new();
+    let mut feature_containers = std::collections::BTreeMap::new();
     let scope_type_needed = target
         .model
         .sketches
@@ -552,6 +554,7 @@ pub(super) fn encode(
             mark(ctx, &mut secondary, scope, bulk.len())?;
             header(&mut bulk, "267", scope)?;
             feature_scopes.push((feature.ordinal, feature.id.clone(), scope));
+            feature_containers.insert(feature.id.clone(), container);
         }
         sketches.push(sketch.id.clone());
         containers_used.insert(container);
@@ -687,6 +690,7 @@ pub(super) fn encode(
         occupied,
         next,
         feature_scopes,
+        feature_containers,
         sketches,
         renamed_sketches,
         entities,
