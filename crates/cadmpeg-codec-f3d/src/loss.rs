@@ -362,7 +362,6 @@ pub(crate) enum F3dLossCode {
     MeshContainerMissing,
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
-    /// A mesh-GUID record stores bytes 21 through 31 that have no settled meaning.
     MeshGuidBytesUninterpreted,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
