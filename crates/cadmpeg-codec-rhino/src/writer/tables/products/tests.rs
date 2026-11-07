@@ -250,7 +250,7 @@ fn unrepresentable_product_metadata_names_definition_and_keeps_sibling() {
         vec![cadmpeg_ir::NativeRecord::new(
             native_id.try_into().unwrap(),
             serde_json::from_value(
-                serde_json::json!({"unit_system": 4294967296_u64,"archive_index": 4294967296_i64}),
+                serde_json::json!({"unit_system": 4_294_967_296_u64,"archive_index": 4_294_967_296_i64}),
             )
             .unwrap(),
         )
