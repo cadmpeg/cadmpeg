@@ -46,7 +46,7 @@ fn standalone_intersection_with_identical_support_curves_writes_a_pcurve() {
             .unwrap();
     ir.model.curves.push(Curve {
         native_ref: None,
-        id: curve_id,
+        id: curve_id.clone(),
         parameter_range: None,
         geometry: CurveGeometry::Procedural {
             construction: construction_id.clone(),
@@ -73,7 +73,8 @@ fn standalone_intersection_with_identical_support_curves_writes_a_pcurve() {
     assert_eq!(entity_count(&bytes, "PCURVE"), 1);
     assert!(report.losses.iter().any(|loss| loss.code
         == StepLossCode::ProceduralReducedToCarrier.kind()
-        && loss.message.contains(construction_id.as_str())));
+        && loss.message.contains(construction_id.as_str())
+        && loss.message.contains(curve_id.as_str())));
     let decoded = <crate::StepCodec as cadmpeg_ir::codec::Codec>::decode(
         &crate::StepCodec::default(),
         &mut std::io::Cursor::new(bytes),

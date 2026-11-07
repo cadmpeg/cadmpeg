@@ -161,6 +161,8 @@ pub(crate) enum StepLossCode {
     NoExportableSolids,
     /// A layer item has no writable STEP carrier.
     LayerItemWithoutCarrier,
+    /// An empty presentation layer has no STEP assignment.
+    EmptyLayerOmitted,
     /// The assembly occurrence graph is invalid.
     AssemblyGraphInvalid,
     /// A root occurrence placement or scale is not representable.
@@ -487,6 +489,7 @@ impl StepLossCode {
         Self::ValidationItemUnsupported,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
+        Self::EmptyLayerOmitted,
         Self::AssemblyGraphInvalid,
         Self::RootOccurrencePlacementNotRepresentable,
         Self::OccurrenceUnresolvedParent,
@@ -689,6 +692,7 @@ impl StepLossCode {
             Self::ValidationItemUnsupported => "validation.item-unsupported",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
+            Self::EmptyLayerOmitted => "layer.empty-omitted",
             Self::AssemblyGraphInvalid => "assembly.graph-invalid",
             Self::RootOccurrencePlacementNotRepresentable => {
                 "occurrence.root-placement-not-representable"
@@ -947,6 +951,7 @@ impl StepLossCode {
             | Self::ValidationItemUnsupported => LossTaxonomy::MetadataNotTransferred,
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
+            | Self::EmptyLayerOmitted
             | Self::HiddenBodyVisibilityUnsupported
             | Self::HiddenAppearanceVisibilityUnsupported
             | Self::HiddenPresentationLayerVisibilityUnsupported
@@ -1192,6 +1197,7 @@ mod tests {
                 "validation.item-unsupported",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",
+                "layer.empty-omitted",
                 "assembly.graph-invalid",
                 "occurrence.root-placement-not-representable",
                 "occurrence.unresolved-parent",

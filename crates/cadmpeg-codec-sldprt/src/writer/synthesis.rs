@@ -50,7 +50,7 @@ fn cascade_validation_errors(
             finding.message.clone(),
         ))
     };
-    for _ in 0..1024 {
+    loop {
         let validation = cadmpeg_ir::validate::validate_neutral(projected, Vec::new())?;
         let errors: Vec<_> = validation
             .findings
@@ -132,9 +132,6 @@ fn cascade_validation_errors(
             }
         }
     }
-    Err(CodecError::Malformed(
-        "SLDPRT synthesis cascade exceeded its work cap".into(),
-    ))
 }
 
 /// Drop one model record by id through JSON, keeping admission order.
@@ -593,6 +590,7 @@ pub(super) fn plan(
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
         design::prepare(&slot_context, &mut projected, &mut losses, input.fidelity.is_none())?;
+<<<<<<< HEAD
     slot_context.finish_session()?;
     if projected.scope.model
         && !projected.scope.design
@@ -703,6 +701,7 @@ pub(super) fn plan(
         });
     let declaration = source_declaration.or(target.write_declaration());
     let output = super::write_semantic_at(
+        &slot_context,
         &projected,
         &Annotations::default(),
         &[],
@@ -711,10 +710,10 @@ pub(super) fn plan(
             sw_version: declaration,
             prepared_native,
             source_trust,
-            limits: input.limits,
         },
         &mut bytes,
     )?;
+    slot_context.finish_session()?;
     debug_assert_eq!(
         output.dialect,
         *resolved.target_id(),

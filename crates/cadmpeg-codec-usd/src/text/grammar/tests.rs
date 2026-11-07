@@ -8,6 +8,23 @@ use crate::text::syntax::{
     Packed, PathList, PropertySpec, RelationshipField, Specifier, Value, Variability,
 };
 
+#[test]
+fn generated_layer_reuses_the_emitted_record_account() {
+    use cadmpeg_core::encode::EncodeSession;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_entities = 1;
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&ctx).expect("encode session");
+    session
+        .charge_entities(1, "written prim")
+        .expect("one record");
+    super::parse_generated_layer(&ctx, b"#usda 1.0\ndef \"A\" {}\n")
+        .expect("the emitted prim was already charged");
+    assert!(session.charge_entities(1, "another prim").is_err());
+}
+
 fn parse(text: &str) -> Result<Layer, String> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();

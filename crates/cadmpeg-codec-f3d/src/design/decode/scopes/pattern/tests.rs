@@ -1436,6 +1436,20 @@ fn rectangular_instance_fixture() -> (
 }
 
 #[test]
+fn rectangular_pattern_ignores_transform_in_unreferenced_sibling() {
+    let (mut bytes, _, scope, construction) = rectangular_instance_fixture();
+    let mut sibling_header = Vec::new();
+    append_header(&mut sibling_header, 9999);
+    let first_header = sibling_header.len();
+    bytes.splice(first_header..first_header, sibling_header);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
+    assert_eq!(
+        super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction),
+        super::InstanceSearch::Unresolved,
+    );
+}
+
+#[test]
 fn rectangular_pattern_local_search_ceilings_cap_the_search() {
     let (bytes, records, scope, construction) = rectangular_instance_fixture();
     let mut wire =

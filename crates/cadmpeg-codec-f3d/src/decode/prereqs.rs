@@ -228,6 +228,7 @@ pub(super) fn decode(
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
         scopes: mut design_parameter_scopes,
         losses: design_parameter_scope_losses,
+        parts: scope_parts,
     } = crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
         ctx,
         scan,
@@ -265,6 +266,14 @@ pub(super) fn decode(
     } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     crate::design::decode::body::decode_body_members(ctx, scan, &mut record_parts)?;
     let mut bulk_record_parts = crate::design::decode::meta::admit_damaged_bulk_records(ctx, scan)?;
+    let (_, mut scope_native, scope_fidelity, scope_losses) = scope_parts.into_parts();
+    bulk_record_parts.fidelity.append(scope_fidelity)?;
+    bulk_record_parts.losses.extend(scope_losses);
+    bulk_record_parts.stubs.extend(
+        scope_native
+            .namespace_mut("f3d")
+            .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?,
+    );
     let (_, mut record_native, record_fidelity, record_losses) = record_parts.into_parts();
     let design_body_members = record_native
         .namespace_mut("f3d")

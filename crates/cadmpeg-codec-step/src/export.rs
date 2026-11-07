@@ -463,6 +463,7 @@ pub(crate) struct Builder<'a> {
     /// Bodies retained as geometric set members: the set root decodes
     /// back to faces, so the body is represented.
     surface_set_bodies: BTreeSet<String>,
+    surface_set_surfaces: BTreeSet<String>,
     /// Bodies with wire geometry retained outside their original
     /// topology: the bound wireframe decodes back to a wire body.
     wire_recovery_bodies: BTreeSet<String>,
@@ -628,24 +629,20 @@ impl FileNameFields {
             })
             .collect();
         let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
-        // An alias is consumed only when the header carries its value back:
-        // any other held alias keeps its drop loss, which names it. An
-        // empty fold still writes one empty entry, which carries every held
-        // empty alias back.
-        let empty_entry = vec![String::new()];
         let mut consumed_ids: Vec<_> = descriptions.iter().map(|(id, _)| id.clone()).collect();
         consumed_ids.extend(consumed(
             &label,
             &name.clone().into_iter().collect::<Vec<_>>(),
         ));
-        consumed_ids.extend(consumed(
-            &author,
-            if authors.is_empty() {
-                &empty_entry
-            } else {
-                &authors
-            },
-        ));
+        let first_author = authors.first().map_or("", String::as_str);
+        let second_author = authors.get(1).map_or(first_author, String::as_str);
+        for (name, value) in [
+            ("author", first_author),
+            ("CreatedBy", first_author),
+            ("LastModifiedBy", second_author),
+        ] {
+            consumed_ids.extend(consumed(&Self::held(ir, &[name]), &[value.to_owned()]));
+        }
         consumed_ids.extend(consumed(
             &organization,
             &organizations.clone().unwrap_or_default(),
@@ -930,6 +927,7 @@ impl<'a> Builder<'a> {
             empty_wire_regions: BTreeSet::new(),
             dropped_region_bodies: BTreeSet::new(),
             surface_set_bodies: BTreeSet::new(),
+            surface_set_surfaces: BTreeSet::new(),
             wire_recovery_bodies: BTreeSet::new(),
             missing_wire_shells: BTreeSet::new(),
             hidden_bodies_without_items: BTreeSet::new(),
@@ -1114,7 +1112,10 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|face| !self.face_step_refs.contains_key(face.id.as_str()))
             .map(|face| face.surface.as_str())
-            .filter(|surface| !retained_surfaces.contains(surface))
+            .filter(|surface| {
+                !retained_surfaces.contains(surface)
+                    && !self.surface_set_surfaces.contains(*surface)
+            })
             .filter(|surface| {
                 !self.construction_supports.contains(*surface)
                     || self.surfaces.get(*surface).is_some_and(|surface| {
@@ -2445,9 +2446,9 @@ impl<'a> Builder<'a> {
     fn emit_layers(&mut self) {
         for layer in self.ir.model.presentation_layers.clone() {
             let mut assigned = Vec::new();
-            let mut unsupported = 0usize;
+            let mut unsupported = Vec::new();
             for item in layer.items {
-                let references = match item {
+                let references = match &item {
                     PresentationItem::Body { body } => self
                         .body_item_refs
                         .get(body.as_str())
@@ -2517,27 +2518,47 @@ impl<'a> Builder<'a> {
                     PresentationItem::Source { .. } => Vec::new(),
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
-                        .get(&tessellation)
+                        .get(tessellation)
                         .copied()
                         .into_iter()
                         .collect(),
                 };
                 if references.is_empty() {
-                    unsupported += 1;
+                    let id = match &item {
+                        PresentationItem::Body { body } => body.as_str(),
+                        PresentationItem::Face { face } => face.as_str(),
+                        PresentationItem::Edge { edge } => edge.as_str(),
+                        PresentationItem::Vertex { vertex } => vertex.as_str(),
+                        PresentationItem::Point { point } => point.as_str(),
+                        PresentationItem::Curve { curve } => curve.as_str(),
+                        PresentationItem::Surface { surface } => surface.as_str(),
+                        PresentationItem::Product { product } => product.as_str(),
+                        PresentationItem::Occurrence { occurrence } => occurrence.as_str(),
+                        PresentationItem::Pmi { annotation } => annotation.as_str(),
+                        PresentationItem::Tessellation { tessellation } => tessellation.as_str(),
+                        PresentationItem::Source { source_id } => source_id.as_str(),
+                    };
+                    unsupported.push(id.to_owned());
                 } else {
                     assigned.extend(references);
                 }
             }
-            if unsupported > 0 {
+            if !unsupported.is_empty() {
                 self.loss(
                     StepLossCode::LayerItemWithoutCarrier,
                     format!(
-                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier; layer id: {}",
-                        layer.name, layer.id
+                        "layer '{}' has {} item(s) without a writable STEP carrier; layer id: {}; items: {}",
+                        layer.name, unsupported.len(), layer.id, unsupported.join(", ")
                     ),
                 );
             }
             if assigned.is_empty() {
+                if unsupported.is_empty() {
+                    self.loss(
+                        StepLossCode::EmptyLayerOmitted,
+                        format!("empty presentation layer {} was omitted because STEP requires an assigned item", layer.id),
+                    );
+                }
                 if layer.visible == Some(false) {
                     self.hidden_presentation_layers_without_items
                         .insert(layer.id.as_str().to_owned());
@@ -3611,6 +3632,7 @@ impl<'a> Builder<'a> {
                     continue;
                 };
                 members.push(surface);
+                self.surface_set_surfaces.insert(face.surface.to_string());
                 retained_faces.push(format!("'{}'", face.id));
             }
         }
@@ -3748,8 +3770,9 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::RegionEdgesRecovered,
                 format!(
-                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
+                    "region {} of body {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
                     region.id,
+                    region.body,
                     edges.len()
                 ),
             );
@@ -4056,6 +4079,7 @@ impl<'a> Builder<'a> {
                 .wire_edges()
                 .iter()
                 .filter_map(|id| {
+                    self.edges.get(id.as_str())?.curve()?;
                     let emitted = self.emit_edge(id.as_str())?;
                     self.edges.get(id.as_str()).map(|edge| (emitted, *edge))
                 })
@@ -4843,6 +4867,9 @@ impl<'a> Builder<'a> {
                     let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
                         return false;
                     };
+                    if edge.curve().is_none() && self.emitted_coedges.contains(coedge_id.as_str()) {
+                        return false;
+                    }
                     let degenerate = edge.start == edge.end
                         && (self
                             .collapsed_curveless_coedges
@@ -4970,8 +4997,24 @@ impl<'a> Builder<'a> {
         } else {
             ".T."
         };
+        let has_unattributed_edge = face.loops.iter().any(|loop_id| {
+            self.loops.get(loop_id.as_str()).is_some_and(|lp| {
+                lp.coedges().iter().any(|id| {
+                    self.emitted_coedges.contains(id.as_str())
+                        && self
+                            .coedges
+                            .get(id.as_str())
+                            .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                            .is_some_and(|edge| edge.curve().is_none())
+                })
+            })
+        });
         let advanced_face = self.emitter.emit(
-            "ADVANCED_FACE",
+            if has_unattributed_edge {
+                "FACE_SURFACE"
+            } else {
+                "ADVANCED_FACE"
+            },
             &format!(
                 "{},{},{surf_ref},{flag}",
                 string(face.name.as_deref().unwrap_or("")),
@@ -5338,48 +5381,55 @@ impl<'a> Builder<'a> {
                 );
                 return None;
             };
-            let Some(curve_id) = edge.curve() else {
+            if let Some(curve_id) = edge.curve() {
+                let Some(curve) = self.curves.get(curve_id.as_str()).copied() else {
+                    self.topology_relation_loss(
+                        format!("edge:{edge_key}:curve:{curve_id}"),
+                        StepLossCode::EdgeCurveNotWritable,
+                        format!(
+                            "edge {edge_key} was omitted because curve {curve_id} is not writable"
+                        ),
+                    );
+                    continue;
+                };
+                if !self.curve_is_writable(curve) {
+                    self.curveless_edges.insert(edge_key.to_string());
+                    self.topology_relation_loss(
+                        format!("edge:{edge_key}:unsupported-curve:{curve_id}"),
+                        StepLossCode::EdgeCurveUnsupported,
+                        format!(
+                            "edge {edge_key} was omitted because curve {curve_id} is unsupported"
+                        ),
+                    );
+                    continue;
+                }
+                // An edge collapsed to its one vertex has no length to bound the
+                // face with.  It exists to close the loop in parameter space at
+                // a singular point of the surface, which a STEP reader does for
+                // itself; the loop is continuous through the vertex without it.
+                // A loop of nothing else keeps them: they are all it has.
+                if matches!(
+                    curve.geometry.solved(),
+                    Some(SolvedCurveGeometry::Degenerate(_))
+                ) && edge.start == edge.end
+                    && has_extent
+                {
+                    self.point_loop_curves.insert(curve.id.as_str().to_owned());
+                    continue;
+                }
+            } else {
                 if has_extent && self.collapsed_curveless_coedges.contains(coedge_key) {
                     continue;
                 }
-                self.curveless_edges.insert(edge_key.to_string());
-                self.topology_relation_loss(
-                    format!("edge:{edge_key}:curve"),
-                    StepLossCode::EdgeNo3dCurve,
-                    format!("edge {edge_key} was omitted because it has no 3D curve"),
-                );
-                continue;
-            };
-            let Some(curve) = self.curves.get(curve_id.as_str()).copied() else {
-                self.topology_relation_loss(
-                    format!("edge:{edge_key}:curve:{curve_id}"),
-                    StepLossCode::EdgeCurveNotWritable,
-                    format!("edge {edge_key} was omitted because curve {curve_id} is not writable"),
-                );
-                continue;
-            };
-            if !self.curve_is_writable(curve) {
-                self.curveless_edges.insert(edge_key.to_string());
-                self.topology_relation_loss(
-                    format!("edge:{edge_key}:unsupported-curve:{curve_id}"),
-                    StepLossCode::EdgeCurveUnsupported,
-                    format!("edge {edge_key} was omitted because curve {curve_id} is unsupported"),
-                );
-                continue;
-            }
-            // An edge collapsed to its one vertex has no length to bound the
-            // face with.  It exists to close the loop in parameter space at
-            // a singular point of the surface, which a STEP reader does for
-            // itself; the loop is continuous through the vertex without it.
-            // A loop of nothing else keeps them: they are all it has.
-            if matches!(
-                curve.geometry.solved(),
-                Some(SolvedCurveGeometry::Degenerate(_))
-            ) && edge.start == edge.end
-                && has_extent
-            {
-                self.point_loop_curves.insert(curve.id.as_str().to_owned());
-                continue;
+                if !coedge.pcurves.is_empty() {
+                    self.curveless_edges.insert(edge_key.to_string());
+                    self.topology_relation_loss(
+                        format!("edge:{edge_key}:curve"),
+                        StepLossCode::EdgeNo3dCurve,
+                        format!("edge {edge_key} was omitted because it has no 3D curve"),
+                    );
+                    continue;
+                }
             }
             let (start_vertex, end_vertex) = match coedge.sense {
                 Sense::Forward => (&edge.start, &edge.end),
@@ -5547,13 +5597,16 @@ impl<'a> Builder<'a> {
             return None;
         };
         let Some(curve_id) = edge.curve() else {
-            self.curveless_edges.insert(edge_id.to_string());
-            self.topology_relation_loss(
-                format!("edge:{edge_id}:curve"),
-                StepLossCode::EdgeNo3dCurve,
-                format!("edge {edge_id} was omitted because it has no 3D curve"),
-            );
-            return None;
+            if !associated.is_empty() {
+                self.curveless_edges.insert(edge_id.to_owned());
+                self.topology_relation_loss(
+                    format!("edge:{edge_id}:curve"),
+                    StepLossCode::EdgeNo3dCurve,
+                    format!("edge {edge_id} was omitted because it has no 3D curve"),
+                );
+                return None;
+            }
+            return Some(self.emitter.emit("EDGE", &format!("'',{v1},{v2}")));
         };
         let unwritable = self
             .curves
@@ -7541,7 +7594,7 @@ impl<'a> Builder<'a> {
 
     fn note_unrepresented(&mut self) {
         for edge in &self.ir.model.edges {
-            if edge.curve().is_none() {
+            if edge.curve().is_none() && !self.edge_refs.contains_key(edge.id.as_str()) {
                 let id = edge.id.as_str();
                 self.topology_relation_loss(
                     format!("edge:{id}:curve"),
@@ -7782,6 +7835,32 @@ impl<'a> Builder<'a> {
             }
             self.loss(StepLossCode::UnknownSurfaceFaceOmitted, message);
         }
+        self.unwritten_geometry_carriers.extend(
+            self.ir
+                .model
+                .curves
+                .iter()
+                .filter(|curve| {
+                    matches!(
+                        curve.geometry.solved(),
+                        Some(SolvedCurveGeometry::Unknown { .. })
+                    ) && !self.curve_refs.contains_key(curve.id.as_str())
+                })
+                .map(|curve| curve.id.to_string()),
+        );
+        self.unwritten_geometry_carriers.extend(
+            self.ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| {
+                    matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Unknown { .. })
+                    ) && !self.surface_refs.contains_key(surface.id.as_str())
+                })
+                .map(|surface| surface.id.to_string()),
+        );
         self.unwritten_geometry_carriers.retain(|id| {
             !self.surface_refs.contains_key(id.as_str())
                 && !self.curve_refs.contains_key(id.as_str())
@@ -8937,10 +9016,27 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let owners: BTreeSet<_> = self
+                .procedural_surfaces
+                .iter()
+                .filter(|(_, procedural)| reduced_surfaces.contains(procedural.id.as_str()))
+                .map(|(owner, _)| *owner)
+                .chain(
+                    self.procedural_curves
+                        .iter()
+                        .filter(|(_, procedural)| reduced_curves.contains(procedural.id.as_str()))
+                        .map(|(owner, _)| *owner),
+                )
+                .collect();
+            let owners = owners
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their STEP carriers: {reduced}"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their STEP carriers: {reduced}; owner(s): {owners}"
                 ),
             );
         }

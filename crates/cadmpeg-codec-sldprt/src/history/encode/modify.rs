@@ -354,7 +354,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             existing
                                 .and_then(|record| record.parameters.get(angle_key.as_str()))
                                 .map(String::as_str),
-                        )?,
+                        ),
                     );
                 }
             }
