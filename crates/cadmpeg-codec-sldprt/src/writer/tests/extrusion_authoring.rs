@@ -1171,14 +1171,32 @@ fn source_less_surface_cut_retains_unresolved_operands() {
 #[test]
 fn source_less_sketch_block_definition_retains_its_sketch_geometry() {
     const EPS_SKETCH_MM: f64 = 1.0e-8;
-    let source = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/fixtures/authored_nested_circle.sldprt")).unwrap();
-    let decoded = SldprtCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let source = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/authored_nested_circle.sldprt"
+    ))
+    .unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
     let mut ir = decoded.ir().clone();
     let sketch_id = ir.model.sketches[0].id.clone();
     let expected_name = ir.model.sketches[0].name.clone();
-    let expected_count = ir.model.sketch_entities.iter().filter(|entity| entity.sketch == sketch_id).count();
+    let expected_count = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch_id)
+        .count();
     assert!(expected_count > 0);
-    let expected_geometry = ir.model.sketch_entities.iter().find(|entity| entity.sketch == sketch_id).unwrap().geometry.clone();
+    let expected_geometry = ir
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.sketch == sketch_id)
+        .unwrap()
+        .geometry
+        .clone();
     let owner_name = Some("Block geometry".to_owned());
     ir.model.features.push(cadmpeg_ir::features::Feature {
         product_definition: None,
@@ -1192,29 +1210,240 @@ fn source_less_sketch_block_definition_retains_its_sketch_geometry() {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         needs_recompute: false,
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: Some(sketch_id) })),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition {
+                sketch: Some(sketch_id),
+            }),
+        ),
         native_ref: None,
     });
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    for feature in &mut ir.model.features { feature.native_ref = None; }
-    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit).unwrap();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
-    let output = SldprtCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
-    let owner = output.ir().model.features.iter().find(|feature| feature.name == owner_name).unwrap();
-    let FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: Some(written) }) = owner.evaluation.definition() else {
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let owner = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name == owner_name)
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition {
+        sketch: Some(written),
+    }) = owner.evaluation.definition()
+    else {
         let native = crate::test_support::native::sldprt_native(output.ir());
-        panic!("block definition lost its sketch: {:?}; histories {:?}; lanes {:?}", owner.evaluation.definition(), native.feature_histories.iter().flat_map(|history| &history.features).map(|feature| (&feature.id, &feature.name, &feature.source_id, &feature.input_class)).collect::<Vec<_>>(), native.feature_input_lanes.iter().map(|lane| (&lane.id, &lane.configuration, &lane.names, lane.sketch_entities.iter().map(|entity| (entity.offset(), &entity.feature_ref)).collect::<Vec<_>>())).collect::<Vec<_>>());
+        panic!(
+            "block definition lost its sketch: {:?}; histories {:?}; lanes {:?}",
+            owner.evaluation.definition(),
+            native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .map(|feature| (
+                    &feature.id,
+                    &feature.name,
+                    &feature.source_id,
+                    &feature.input_class
+                ))
+                .collect::<Vec<_>>(),
+            native
+                .feature_input_lanes
+                .iter()
+                .map(|lane| (
+                    &lane.id,
+                    &lane.configuration,
+                    &lane.names,
+                    lane.sketch_entities
+                        .iter()
+                        .map(|entity| (entity.offset(), &entity.feature_ref))
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>()
+        );
     };
     assert_eq!(
-        output.ir().model.sketches.iter().find(|sketch| &sketch.id == written).unwrap().name,
+        output
+            .ir()
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| &sketch.id == written)
+            .unwrap()
+            .name,
         expected_name
     );
-    assert_eq!(output.ir().model.sketch_entities.iter().filter(|entity| &entity.sketch == written).count(), expected_count, "geometry: {:?}", output.ir().model.sketch_entities.iter().filter(|entity| &entity.sketch == written).map(|entity| entity.geometry.definition()).collect::<Vec<_>>());
-    let geometry = &output.ir().model.sketch_entities.iter().find(|entity| &entity.sketch == written).unwrap().geometry;
-    let (cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center: before, radius: before_radius }, cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center: after, radius: after_radius }) = (expected_geometry.definition(), geometry.definition()) else { panic!("circle geometry: before {:?}, after {:?}", expected_geometry.definition(), geometry.definition()); };
+    assert_eq!(
+        output
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| &entity.sketch == written)
+            .count(),
+        expected_count,
+        "geometry: {:?}",
+        output
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| &entity.sketch == written)
+            .map(|entity| entity.geometry.definition())
+            .collect::<Vec<_>>()
+    );
+    let geometry = &output
+        .ir()
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| &entity.sketch == written)
+        .unwrap()
+        .geometry;
+    let (
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
+            center: before,
+            radius: before_radius,
+        },
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
+            center: after,
+            radius: after_radius,
+        },
+    ) = (expected_geometry.definition(), geometry.definition())
+    else {
+        panic!(
+            "circle geometry: before {:?}, after {:?}",
+            expected_geometry.definition(),
+            geometry.definition()
+        );
+    };
     assert!((before.get().u - after.get().u).abs() < EPS_SKETCH_MM);
     assert!((before.get().v - after.get().v).abs() < EPS_SKETCH_MM);
     assert!((before_radius.get() - after_radius.get()).abs() < EPS_SKETCH_MM);
+}
+
+#[test]
+fn authored_block_instance_retains_definition_reference_and_placement() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let definition_id =
+        cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#block").unwrap();
+    let instance_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#use").unwrap();
+    let placement = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 30.0],
+    ])
+    .unwrap();
+    let feature = |id, name: &str, operation| cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id,
+        ordinal: 0,
+        name: Some(name.to_owned()),
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(operation),
+        ),
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        definition_id.clone(),
+        "Block",
+        FeatureOperation::SketchBlockDefinition { sketch: None },
+    ));
+    ir.model.features.push(feature(
+        instance_id,
+        "Use",
+        FeatureOperation::SketchBlockInstance {
+            block: Some(definition_id),
+            placement: Some(placement),
+        },
+    ));
+    ir.model.features.last_mut().unwrap().ordinal = 1;
+    let definition = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+        block: Some(block),
+        placement: Some(placement),
+    }) = instance.evaluation.definition()
+    else {
+        panic!("block instance");
+    };
+    assert_eq!(block, &definition.id);
+    let expected_placement = *placement;
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    let history = scan
+        .sections()
+        .find(|section| section.name().is_some_and(|name| name.contains("Keywords")))
+        .unwrap();
+    let text = crate::container::xml_text(history.payload()).unwrap();
+    let document = roxmltree::Document::parse(&text).unwrap();
+    let element = document
+        .descendants()
+        .find(|node| node.attribute("Name") == Some("Use"))
+        .unwrap();
+    assert!(element.attribute("BlockDefinition").is_none());
+    assert!(element.attribute("BlockOrigin").is_none());
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let definition = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    assert!(
+        matches!(instance.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) }) if block == &definition.id && placement == &expected_placement)
+    );
 }

@@ -17,6 +17,7 @@ mod metadata_members;
 mod move_body_authoring;
 mod native_feature_class;
 mod native_properties;
+mod nested_closure;
 mod normalization;
 mod parameter_native_defaults;
 mod parameters_equation_aliases;
