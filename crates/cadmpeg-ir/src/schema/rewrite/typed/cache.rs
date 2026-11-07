@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 
 /// Borrowed replacements require unique keys in byte order.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TextReplacements<'ctx> {
     values: Vec<(&'ctx str, &'ctx str)>,
 }

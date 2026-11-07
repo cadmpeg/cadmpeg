@@ -168,8 +168,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             .extend_rewritten(
                 member,
                 &mut OccurrenceScope {
-                    native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
-                        .unwrap(),
+                    native_text: &TextReplacements::default(),
                     ctx: &ctx,
                     occurrence: "member",
                 },
@@ -284,8 +283,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     for ordinal in 0..2 {
         let occurrence = format!("role/occurrence-{ordinal}");
         let mut scope = OccurrenceScope {
-            native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
-                .unwrap(),
+            native_text: &TextReplacements::default(),
             ctx: &ctx,
             occurrence: &occurrence,
         };
@@ -359,7 +357,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
         visible: None,
     };
     let scoped = OccurrenceScope {
-        native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>()).unwrap(),
+        native_text: &TextReplacements::default(),
         ctx: &ctx,
         occurrence: "component-0",
     }
@@ -637,8 +635,7 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
         .extend_rewritten(
             component,
             &mut OccurrenceScope {
-                native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
-                    .unwrap(),
+                native_text: &TextReplacements::default(),
                 ctx: &ctx,
                 occurrence: "component-0",
             },
@@ -1395,8 +1392,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .extend_rewritten(
                 component,
                 &mut OccurrenceScope {
-                    native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
-                        .unwrap(),
+                    native_text: &TextReplacements::default(),
                     ctx: &ctx,
                     occurrence: "member",
                 },
@@ -1525,8 +1521,7 @@ fn product_history_owner_rescopes_feature_and_parameter_links() {
         .extend_rewritten(
             component,
             &mut OccurrenceScope {
-                native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
-                    .unwrap(),
+                native_text: &TextReplacements::default(),
                 ctx: &ctx,
                 occurrence: "left",
             },
