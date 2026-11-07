@@ -2858,7 +2858,6 @@ fn spherical_diameter_display_literals(text: &str) -> Vec<SphericalDiameterDispl
                 break;
             };
             let literal = tail.trim_start();
-            let leading_space = tail.len().saturating_sub(literal.len());
             let literal_end = literal
                 .bytes()
                 .position(|byte| !byte.is_ascii_digit() && byte != b'.')
@@ -2873,11 +2872,7 @@ fn spherical_diameter_display_literals(text: &str) -> Vec<SphericalDiameterDispl
                 value,
                 decimal_places,
             });
-            start = token_end
-                .checked_add(leading_space)
-                .and_then(|start| start.checked_add(literal_end))
-                .filter(|start| *start > token_end)
-                .unwrap_or(token_end);
+            start = token_end;
         }
     }
     displays

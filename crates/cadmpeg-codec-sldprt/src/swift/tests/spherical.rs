@@ -185,6 +185,26 @@ fn counted_display_value_matches_one_unrounded_length_unit() {
 }
 
 #[test]
+fn display_scan_finds_markers_after_numeric_nominals() {
+    let displays = spherical_diameter_display_literals("2X <MOD-SPHDIA>1.250 1X <MOD-SPHDIA>0.500");
+    let [first, second] = displays.as_slice() else {
+        panic!("two spherical-diameter displays")
+    };
+    assert_eq!(first.multiplicity, Some(2));
+    assert_eq!(first.decimal_places, Some(3));
+    assert!(approximately_equal(
+        first.value.expect("first displayed nominal").get(),
+        1.250
+    ));
+    assert_eq!(second.multiplicity, Some(1));
+    assert_eq!(second.decimal_places, Some(3));
+    assert!(approximately_equal(
+        second.value.expect("second displayed nominal").get(),
+        0.500
+    ));
+}
+
+#[test]
 fn raw_utf16_display_preserves_its_count_and_missing_nominal() {
     let text = "2X <MOD-SPHDIA>";
     let units = u8::try_from(text.encode_utf16().count()).expect("fixture fits SWIFT text length");
