@@ -549,7 +549,7 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
         match super::reduce::validate(&scoped) {
             Ok(()) => {}
             Err(super::WriteError::Omit(reason)) => {
-                losses.push(super::omitted_body(&scoped, &reason, &Default::default()));
+                losses.push(super::omitted_body(&scoped, &reason, &BTreeSet::new()));
                 continue;
             }
             Err(error) => return Err(error),
