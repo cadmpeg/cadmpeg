@@ -224,6 +224,7 @@ pub(crate) enum F3dLossCode {
     FeatureScopePayloadUninterpreted,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
     EmbossControlsNative,
+    FeatureShellAuxiliaryReferencesNative,
     /// An Emboss prefix matches no admitted native construction form.
     EmbossPrefixUnparsed,
     /// A non-equivalent duplicate scope envelope was superseded by the
@@ -614,6 +615,7 @@ impl F3dLossCode {
         Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
         Self::EmbossControlsNative,
+        Self::FeatureShellAuxiliaryReferencesNative,
         Self::EmbossPrefixUnparsed,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
@@ -855,6 +857,9 @@ impl F3dLossCode {
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
+            Self::FeatureShellAuxiliaryReferencesNative => {
+                "feature.shell-auxiliary-references-native"
+            }
             Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
             Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
             Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
@@ -1144,6 +1149,7 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -1349,6 +1355,7 @@ impl F3dLossCode {
             | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
+            | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
@@ -1639,6 +1646,7 @@ mod tests {
                 "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
                 "feature.emboss-controls-native",
+                "feature.shell-auxiliary-references-native",
                 "feature.emboss-prefix-unparsed",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
