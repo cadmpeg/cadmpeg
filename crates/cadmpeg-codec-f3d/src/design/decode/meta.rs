@@ -576,10 +576,16 @@ pub(in crate::design) fn primary_frame_extents_with_unindexed_pairs(
         if frame.member_end != frame.end {
             continue;
         }
-        let Some(first) = frame.start.checked_add(crate::layout::indexed_design_record_header::LEN) else {
+        let Some(first) = frame
+            .start
+            .checked_add(crate::layout::indexed_design_record_header::LEN)
+        else {
             continue;
         };
-        let Some(last) = frame.end.checked_sub(crate::layout::indexed_design_record_header::LEN) else {
+        let Some(last) = frame
+            .end
+            .checked_sub(crate::layout::indexed_design_record_header::LEN)
+        else {
             continue;
         };
         let mut matches = (first..=last).filter(|&at| {
@@ -754,31 +760,8 @@ pub(super) fn typed_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
-    record_kind: &str,
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
-    let mut typed_entities = HashSet::new();
-    for design_type in &meta.types {
-        if !design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(type_guid)
-        {
-            continue;
-        }
-        for &entity_id in design_type.entities.values() {
-            if typed_entities.contains(&entity_id) {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D Design {record_kind} entity {entity_id} is registered more than once"
-                )));
-            }
-
-            typed_entities.insert(entity_id);
-        }
-    }
-
-    let (primary_frames, faults) = partition_primary_frames(bytes, meta)?;
-    let mut resolved_entities: HashSet<_> =
-        faults.into_iter().map(|fault| fault.entity_id).collect();
+    let primary_frames = design_primary_frames(bytes, meta)?;
     let mut frames = Vec::new();
     for primary_frame in primary_frames {
         if !primary_frame
@@ -789,21 +772,12 @@ pub(super) fn typed_primary_frames<'a>(
         {
             continue;
         }
-        if !resolved_entities.contains(&primary_frame.entity_id) {
-            resolved_entities.insert(primary_frame.entity_id);
-        }
-
         frames.push(TypedPrimaryFrame {
             entity_id: primary_frame.entity_id,
             start: primary_frame.start,
             end: primary_frame.end,
             design_type: primary_frame.design_type,
         });
-    }
-    if let Some(entity_id) = typed_entities.difference(&resolved_entities).min() {
-        return Err(crate::design::text::malformed_design(format_args!(
-            "F3D Design {record_kind} entity {entity_id} has no primary record of its registered class"
-        )));
     }
     Ok(frames)
 }
