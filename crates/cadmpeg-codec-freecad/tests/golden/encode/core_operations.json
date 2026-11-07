@@ -2,8 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 112350,
-      "payload_sha256": "fe98b108af531e2344a8b9b4191aa5a741df74e8ab80bad96f0fbb99f6f15fc8"
+      "payload_len": 114126,
+      "payload_sha256": "0285e036f37a79419cb77a67207d496f752b5223642145350c5936fa128699d8"
+    },
+    {
+      "name": "RevolutionProfile.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "name": "ExtrusionProfile.Shape.brp",
@@ -76,14 +81,59 @@
       "payload_sha256": "32a28957914841cabc4b1d7c6715ecc276795030d66c9870ff2fcb26a005eda7"
     },
     {
+      "name": "DraftBase.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Draft.AddSubShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Draft.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
       "name": "HoleBase.Shape.brp",
       "payload_len": 2561,
       "payload_sha256": "a348c02b4bf9aa87e8a9c915ac37aecea1173dffd80528447031dcce6fdca89a"
     },
     {
+      "name": "HoleBase.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "HoleProfile.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Hole.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PatternBase.AddSubShape.brp",
+      "payload_len": 2486,
+      "payload_sha256": "725d668a6cab0260cbf1dbd330df932891c5d77fa6b8548be15ae367467b1f1c"
+    },
+    {
       "name": "PatternBase.Shape.brp",
-      "payload_len": 4864,
-      "payload_sha256": "67f3c1a1bb12e89f8beb48833d33f96ab2b2a17055728462896d853c7002ef87"
+      "payload_len": 2486,
+      "payload_sha256": "725d668a6cab0260cbf1dbd330df932891c5d77fa6b8548be15ae367467b1f1c"
+    },
+    {
+      "name": "PatternBase.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "LinearPattern.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "name": "Draft.brp",
@@ -107,8 +157,8 @@
     },
     {
       "name": "Hole.brp",
-      "payload_len": 6668,
-      "payload_sha256": "95542a739f43e4642e00a4e76fc332537c10a0a9a8f6cc98290e5ae3c042b0e8"
+      "payload_len": 2275,
+      "payload_sha256": "948da2ceaad7571576977fa73f8384a1c35eb9dd10647c8cd0916837595bec5c"
     },
     {
       "name": "HoleBody.brp",
@@ -119,6 +169,11 @@
       "name": "HoleProfile.brp",
       "payload_len": 375,
       "payload_sha256": "ecf62b2e0702f921bd232da49572e888673587b80df062f21fcfe741e85aa08e"
+    },
+    {
+      "name": "Hole_1.brp",
+      "payload_len": 4527,
+      "payload_sha256": "e3e501604a8de80b9eb9b9e3b0225b72196427bfd750d2f3570f2f9df32ae40d"
     },
     {
       "name": "LinearPattern.brp",
@@ -371,6 +426,16 @@
           "namespace": "export",
           "scope": "namespaced"
         },
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.carrier_census`: fcstd:native:carrier-census#DatumAxis:Shape:DatumAxis.Shape.brp:families",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
         "message": "the fcstd write omits 1 native record(s) from `fcstd.element_maps`: fcstd:native:element-map#Hole:AddSubShape:map",
         "severity": "info"
       },
@@ -381,7 +446,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 49 native record(s) from `fcstd.entries`: fcstd:native:entry#DatumAxis.Shape.brp, fcstd:native:entry#Draft.AddSubShape.brp, fcstd:native:entry#Draft.Shape.Map.txt, fcstd:native:entry#Draft.Shape.brp, fcstd:native:entry#Draft.SuppressedShape.brp, fcstd:native:entry#DraftBase.SuppressedShape.brp, fcstd:native:entry#DraftBody.Shape.Map.txt, fcstd:native:entry#DraftBody.Shape.brp, fcstd:native:entry#Edges, fcstd:native:entry#Edges1, fcstd:native:entry#Hole.AddSubShape.Map.txt, fcstd:native:entry#Hole.AddSubShape.brp, fcstd:native:entry#Hole.Shape.Map.txt, fcstd:native:entry#Hole.Shape.brp, fcstd:native:entry#Hole.SuppressedShape.brp, fcstd:native:entry#HoleBase.SuppressedShape.brp, fcstd:native:entry#HoleBody.Shape.Map.txt, fcstd:native:entry#HoleBody.Shape.brp, fcstd:native:entry#HoleProfile.InternalShape.brp, fcstd:native:entry#HoleProfile.Shape.Map.txt, fcstd:native:entry#HoleProfile.Shape.brp, fcstd:native:entry#LinearPattern.Shape.Map.txt, fcstd:native:entry#LinearPattern.Shape.brp, fcstd:native:entry#LinearPattern.SuppressedShape.brp, fcstd:native:entry#Loft.Shape.Map.txt, fcstd:native:entry#Loft.Shape.brp, fcstd:native:entry#Mirror.Shape.Map.txt, fcstd:native:entry#Mirror.Shape.brp, fcstd:native:entry#PartChamfer.Shape.Map.txt, fcstd:native:entry#PartChamfer.Shape.brp, fcstd:native:entry#PartFillet.Shape.Map.txt, fcstd:native:entry#PartFillet.Shape.brp, fcstd:native:entry#PatternBase.AddSubShape.brp, fcstd:native:entry#PatternBase.SuppressedShape.brp, fcstd:native:entry#PatternBody.Shape.Map.txt, fcstd:native:entry#PatternBody.Shape.brp, fcstd:native:entry#Revolution.Shape.Map.txt, fcstd:native:entry#Revolution.Shape.brp, fcstd:native:entry#RevolutionProfile.InternalShape.brp, fcstd:native:entry#RevolutionProfile.Shape.Map.txt, fcstd:native:entry#RevolutionProfile.Shape.brp, fcstd:native:entry#SpacingPattern, fcstd:native:entry#SpacingPattern2, fcstd:native:entry#Spacings, fcstd:native:entry#StringHasher.Table.txt, fcstd:native:entry#Sweep.Shape.Map.txt, fcstd:native:entry#Sweep.Shape.brp, fcstd:native:entry#SymmetricExtrusion.Shape.Map.txt, fcstd:native:entry#SymmetricExtrusion.Shape.brp",
+        "message": "the fcstd write omits 39 native record(s) from `fcstd.entries`: fcstd:native:entry#DatumAxis.Shape.brp, fcstd:native:entry#Draft.Shape.Map.txt, fcstd:native:entry#Draft.Shape.brp, fcstd:native:entry#DraftBody.Shape.Map.txt, fcstd:native:entry#DraftBody.Shape.brp, fcstd:native:entry#Edges, fcstd:native:entry#Edges1, fcstd:native:entry#Hole.AddSubShape.Map.txt, fcstd:native:entry#Hole.AddSubShape.brp, fcstd:native:entry#Hole.Shape.Map.txt, fcstd:native:entry#Hole.Shape.brp, fcstd:native:entry#HoleBody.Shape.Map.txt, fcstd:native:entry#HoleBody.Shape.brp, fcstd:native:entry#HoleProfile.Shape.Map.txt, fcstd:native:entry#HoleProfile.Shape.brp, fcstd:native:entry#LinearPattern.Shape.Map.txt, fcstd:native:entry#LinearPattern.Shape.brp, fcstd:native:entry#Loft.Shape.Map.txt, fcstd:native:entry#Loft.Shape.brp, fcstd:native:entry#Mirror.Shape.Map.txt, fcstd:native:entry#Mirror.Shape.brp, fcstd:native:entry#PartChamfer.Shape.Map.txt, fcstd:native:entry#PartChamfer.Shape.brp, fcstd:native:entry#PartFillet.Shape.Map.txt, fcstd:native:entry#PartFillet.Shape.brp, fcstd:native:entry#PatternBody.Shape.Map.txt, fcstd:native:entry#PatternBody.Shape.brp, fcstd:native:entry#Revolution.Shape.Map.txt, fcstd:native:entry#Revolution.Shape.brp, fcstd:native:entry#RevolutionProfile.Shape.Map.txt, fcstd:native:entry#RevolutionProfile.Shape.brp, fcstd:native:entry#SpacingPattern, fcstd:native:entry#SpacingPattern2, fcstd:native:entry#Spacings, fcstd:native:entry#StringHasher.Table.txt, fcstd:native:entry#Sweep.Shape.Map.txt, fcstd:native:entry#Sweep.Shape.brp, fcstd:native:entry#SymmetricExtrusion.Shape.Map.txt, fcstd:native:entry#SymmetricExtrusion.Shape.brp",
         "severity": "info"
       },
       {
@@ -391,7 +456,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 94 native record(s) from `fcstd.properties`: fcstd:native:property#DatumAxis:ExpressionEngine, fcstd:native:property#DatumAxis:Shape, fcstd:native:property#DatumCoordinateSystem:ExpressionEngine, fcstd:native:property#DatumPlane:ExpressionEngine, fcstd:native:property#DatumPoint:ExpressionEngine, fcstd:native:property#Draft:AddSubShape, fcstd:native:property#Draft:BaseFeature, fcstd:native:property#Draft:ExpressionEngine, fcstd:native:property#Draft:Placement, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#Draft:PullDirection, fcstd:native:property#Draft:SuppressedShape, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#DraftBase:SuppressedShape, fcstd:native:property#DraftBody:BaseFeature, fcstd:native:property#DraftBody:ExpressionEngine, fcstd:native:property#DraftBody:Placement, fcstd:native:property#Hole:AddSubShape, fcstd:native:property#Hole:BaseFeature, fcstd:native:property#Hole:ExpressionEngine, fcstd:native:property#Hole:Midplane, fcstd:native:property#Hole:ModelThread, fcstd:native:property#Hole:Placement, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#Hole:Reversed, fcstd:native:property#Hole:SuppressedShape, fcstd:native:property#Hole:ThreadClass, fcstd:native:property#Hole:ThreadDepthType, fcstd:native:property#Hole:ThreadDirection, fcstd:native:property#Hole:ThreadFit, fcstd:native:property#Hole:ThreadSize, fcstd:native:property#Hole:Threaded, fcstd:native:property#Hole:UpToFace, fcstd:native:property#Hole:UpToFace2, fcstd:native:property#Hole:UseCustomThreadClearance, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#HoleBase:SuppressedShape, fcstd:native:property#HoleBody:BaseFeature, fcstd:native:property#HoleBody:ExpressionEngine, fcstd:native:property#HoleBody:Placement, fcstd:native:property#HoleProfile:ExpressionEngine, fcstd:native:property#HoleProfile:ExternalGeo, fcstd:native:property#HoleProfile:ExternalGeometry, fcstd:native:property#HoleProfile:InternalShape, fcstd:native:property#LinearPattern:BaseFeature, fcstd:native:property#LinearPattern:ExpressionEngine, fcstd:native:property#LinearPattern:Mode2, fcstd:native:property#LinearPattern:Placement, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#LinearPattern:Reversed, fcstd:native:property#LinearPattern:SpacingPattern, fcstd:native:property#LinearPattern:SpacingPattern2, fcstd:native:property#LinearPattern:Spacings, fcstd:native:property#LinearPattern:Spacings2, fcstd:native:property#LinearPattern:SuppressedShape, fcstd:native:property#Loft:ExpressionEngine, fcstd:native:property#Loft:Placement, fcstd:native:property#Mirror:ExpressionEngine, fcstd:native:property#Mirror:MirrorPlane, fcstd:native:property#Mirror:Placement, fcstd:native:property#PartChamfer:Edges, fcstd:native:property#PartChamfer:ExpressionEngine, fcstd:native:property#PartChamfer:Placement, fcstd:native:property#PartFillet:Edges, fcstd:native:property#PartFillet:ExpressionEngine, fcstd:native:property#PartFillet:Placement, fcstd:native:property#PatternBase:AddSubShape, fcstd:native:property#PatternBase:BaseFeature, fcstd:native:property#PatternBase:ExpressionEngine, fcstd:native:property#PatternBase:PreviewShape, fcstd:native:property#PatternBase:SuppressedShape, fcstd:native:property#PatternBody:BaseFeature, fcstd:native:property#PatternBody:ExpressionEngine, fcstd:native:property#PatternBody:Placement, fcstd:native:property#Revolution:AxisLink, fcstd:native:property#Revolution:ExpressionEngine, fcstd:native:property#Revolution:FaceMakerClass, fcstd:native:property#Revolution:Placement, fcstd:native:property#Revolution:Source, fcstd:native:property#RevolutionProfile:ExpressionEngine, fcstd:native:property#RevolutionProfile:ExternalGeo, fcstd:native:property#RevolutionProfile:ExternalGeometry, fcstd:native:property#RevolutionProfile:InternalShape, fcstd:native:property#Sweep:ExpressionEngine, fcstd:native:property#Sweep:Placement, fcstd:native:property#SymmetricExtrusion:DirLink, fcstd:native:property#SymmetricExtrusion:ExpressionEngine, fcstd:native:property#SymmetricExtrusion:FaceMakerClass, fcstd:native:property#SymmetricExtrusion:FaceMakerMode, fcstd:native:property#SymmetricExtrusion:Placement, fcstd:native:property#SymmetricExtrusion:Reversed, fcstd:native:property#SymmetricExtrusion:TaperAngleRev, fcstd:native:property#Thickness:ExpressionEngine, fcstd:native:property#Thickness:Placement",
+        "message": "the fcstd write omits 83 native record(s) from `fcstd.properties`: fcstd:native:property#DatumAxis:ExpressionEngine, fcstd:native:property#DatumAxis:Shape, fcstd:native:property#DatumCoordinateSystem:ExpressionEngine, fcstd:native:property#DatumPlane:ExpressionEngine, fcstd:native:property#DatumPoint:ExpressionEngine, fcstd:native:property#Draft:BaseFeature, fcstd:native:property#Draft:ExpressionEngine, fcstd:native:property#Draft:Placement, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#Draft:PullDirection, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#DraftBody:BaseFeature, fcstd:native:property#DraftBody:ExpressionEngine, fcstd:native:property#DraftBody:Placement, fcstd:native:property#Hole:BaseFeature, fcstd:native:property#Hole:ExpressionEngine, fcstd:native:property#Hole:Midplane, fcstd:native:property#Hole:ModelThread, fcstd:native:property#Hole:Placement, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#Hole:Reversed, fcstd:native:property#Hole:ThreadClass, fcstd:native:property#Hole:ThreadDepthType, fcstd:native:property#Hole:ThreadDirection, fcstd:native:property#Hole:ThreadFit, fcstd:native:property#Hole:ThreadSize, fcstd:native:property#Hole:Threaded, fcstd:native:property#Hole:UpToFace, fcstd:native:property#Hole:UpToFace2, fcstd:native:property#Hole:UseCustomThreadClearance, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#HoleBody:BaseFeature, fcstd:native:property#HoleBody:ExpressionEngine, fcstd:native:property#HoleBody:Placement, fcstd:native:property#HoleProfile:ExpressionEngine, fcstd:native:property#HoleProfile:ExternalGeo, fcstd:native:property#HoleProfile:ExternalGeometry, fcstd:native:property#LinearPattern:BaseFeature, fcstd:native:property#LinearPattern:ExpressionEngine, fcstd:native:property#LinearPattern:Mode2, fcstd:native:property#LinearPattern:Placement, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#LinearPattern:Reversed, fcstd:native:property#LinearPattern:SpacingPattern, fcstd:native:property#LinearPattern:SpacingPattern2, fcstd:native:property#LinearPattern:Spacings, fcstd:native:property#LinearPattern:Spacings2, fcstd:native:property#Loft:ExpressionEngine, fcstd:native:property#Loft:Placement, fcstd:native:property#Mirror:ExpressionEngine, fcstd:native:property#Mirror:MirrorPlane, fcstd:native:property#Mirror:Placement, fcstd:native:property#PartChamfer:Edges, fcstd:native:property#PartChamfer:ExpressionEngine, fcstd:native:property#PartChamfer:Placement, fcstd:native:property#PartFillet:Edges, fcstd:native:property#PartFillet:ExpressionEngine, fcstd:native:property#PartFillet:Placement, fcstd:native:property#PatternBase:BaseFeature, fcstd:native:property#PatternBase:ExpressionEngine, fcstd:native:property#PatternBase:PreviewShape, fcstd:native:property#PatternBody:BaseFeature, fcstd:native:property#PatternBody:ExpressionEngine, fcstd:native:property#PatternBody:Placement, fcstd:native:property#Revolution:AxisLink, fcstd:native:property#Revolution:ExpressionEngine, fcstd:native:property#Revolution:FaceMakerClass, fcstd:native:property#Revolution:Placement, fcstd:native:property#Revolution:Source, fcstd:native:property#RevolutionProfile:ExpressionEngine, fcstd:native:property#RevolutionProfile:ExternalGeo, fcstd:native:property#RevolutionProfile:ExternalGeometry, fcstd:native:property#Sweep:ExpressionEngine, fcstd:native:property#Sweep:Placement, fcstd:native:property#SymmetricExtrusion:DirLink, fcstd:native:property#SymmetricExtrusion:ExpressionEngine, fcstd:native:property#SymmetricExtrusion:FaceMakerClass, fcstd:native:property#SymmetricExtrusion:FaceMakerMode, fcstd:native:property#SymmetricExtrusion:Placement, fcstd:native:property#SymmetricExtrusion:Reversed, fcstd:native:property#SymmetricExtrusion:TaperAngleRev, fcstd:native:property#Thickness:ExpressionEngine, fcstd:native:property#Thickness:Placement",
         "severity": "info"
       },
       {
@@ -401,7 +466,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 12 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#DatumAxis:Shape:DatumAxis.Shape.brp, fcstd:native:shape-payload#Draft:AddSubShape:Draft.AddSubShape.brp, fcstd:native:shape-payload#Draft:SuppressedShape:Draft.SuppressedShape.brp, fcstd:native:shape-payload#DraftBase:SuppressedShape:DraftBase.SuppressedShape.brp, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp, fcstd:native:shape-payload#Hole:SuppressedShape:Hole.SuppressedShape.brp, fcstd:native:shape-payload#HoleBase:SuppressedShape:HoleBase.SuppressedShape.brp, fcstd:native:shape-payload#HoleProfile:InternalShape:HoleProfile.InternalShape.brp, fcstd:native:shape-payload#LinearPattern:SuppressedShape:LinearPattern.SuppressedShape.brp, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp, fcstd:native:shape-payload#PatternBase:SuppressedShape:PatternBase.SuppressedShape.brp, fcstd:native:shape-payload#RevolutionProfile:InternalShape:RevolutionProfile.InternalShape.brp",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#DatumAxis:Shape:DatumAxis.Shape.brp",
         "severity": "info"
       },
       {
@@ -411,7 +476,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.topology_uses`: fcstd:native:shape-payload#DatumAxis:Shape:DatumAxis.Shape.brp:topology-use:1",
+        "message": "the fcstd write omits 57 native record(s) from `fcstd.topology_uses`: fcstd:native:shape-payload#DatumAxis:Shape:DatumAxis.Shape.brp:topology-use:1, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:1, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:10, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:11, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:12, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:13, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:14, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:15, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:16, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:17, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:18, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:19, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:2, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:20, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:21, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:22, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:3, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:4, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:5, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:6, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:7, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:8, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:9, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:1, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:10, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:11, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:12, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:13, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:14, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:15, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:16, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:17, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:18, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:19, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:2, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:20, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:21, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:22, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:23, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:24, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:25, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:26, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:27, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:28, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:29, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:3, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:30, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:31, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:32, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:33, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:34, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:4, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:5, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:6, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:7, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:8, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:9",
         "severity": "info"
       }
     ],
@@ -549,7 +614,6 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:carrier-census#ChamferBase:Shape:ChamferBase.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#DatumAxis:Shape:DatumAxis.Shape.brp:families": "regenerated",
                 "fcstd:native:carrier-census#DatumCoordinateSystem:Shape:DatumCoordinateSystem.Shape.brp:families": "regenerated",
                 "fcstd:native:carrier-census#DatumPlane:Shape:DatumPlane.Shape.brp:families": "regenerated",
                 "fcstd:native:carrier-census#DatumPoint:Shape:DatumPoint.Shape.brp:families": "regenerated",
@@ -658,14 +722,24 @@
                 "fcstd:native:entry#DatumPlane.Shape.brp": "regenerated",
                 "fcstd:native:entry#DatumPoint.Shape.brp": "regenerated",
                 "fcstd:native:entry#Document.xml": "regenerated",
+                "fcstd:native:entry#Draft.AddSubShape.brp": "regenerated",
+                "fcstd:native:entry#Draft.SuppressedShape.brp": "regenerated",
                 "fcstd:native:entry#DraftBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#DraftBase.SuppressedShape.brp": "regenerated",
                 "fcstd:native:entry#DressupBase.Shape.brp": "regenerated",
                 "fcstd:native:entry#ExtrusionProfile.Shape.brp": "regenerated",
+                "fcstd:native:entry#Hole.SuppressedShape.brp": "regenerated",
                 "fcstd:native:entry#HoleBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#HoleBase.SuppressedShape.brp": "regenerated",
+                "fcstd:native:entry#HoleProfile.InternalShape.brp": "regenerated",
+                "fcstd:native:entry#LinearPattern.SuppressedShape.brp": "regenerated",
                 "fcstd:native:entry#LoftSectionA.Shape.brp": "regenerated",
                 "fcstd:native:entry#LoftSectionB.Shape.brp": "regenerated",
                 "fcstd:native:entry#MirrorBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#PatternBase.AddSubShape.brp": "regenerated",
                 "fcstd:native:entry#PatternBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#PatternBase.SuppressedShape.brp": "regenerated",
+                "fcstd:native:entry#RevolutionProfile.InternalShape.brp": "regenerated",
                 "fcstd:native:entry#SweepSection.Shape.brp": "regenerated",
                 "fcstd:native:entry#SweepSpine.Shape.brp": "regenerated",
                 "fcstd:native:entry#Thickness.Shape.brp": "regenerated",
@@ -887,6 +961,7 @@
                 "fcstd:native:property#DatumPoint:ShapeMaterial": "written",
                 "fcstd:native:property#DatumPoint:Visibility": "regenerated",
                 "fcstd:native:property#DatumPoint:_ElementMapVersion": "written",
+                "fcstd:native:property#Draft:AddSubShape": "regenerated",
                 "fcstd:native:property#Draft:Angle": "regenerated",
                 "fcstd:native:property#Draft:Base": "regenerated",
                 "fcstd:native:property#Draft:Label": "regenerated",
@@ -898,6 +973,7 @@
                 "fcstd:native:property#Draft:ShapeMaterial": "written",
                 "fcstd:native:property#Draft:SupportTransform": "regenerated",
                 "fcstd:native:property#Draft:Suppressed": "regenerated",
+                "fcstd:native:property#Draft:SuppressedShape": "regenerated",
                 "fcstd:native:property#Draft:Visibility": "regenerated",
                 "fcstd:native:property#Draft:_Body": "written",
                 "fcstd:native:property#Draft:_ElementMapVersion": "written",
@@ -909,6 +985,7 @@
                 "fcstd:native:property#DraftBase:Shape": "regenerated",
                 "fcstd:native:property#DraftBase:ShapeMaterial": "written",
                 "fcstd:native:property#DraftBase:Suppressed": "regenerated",
+                "fcstd:native:property#DraftBase:SuppressedShape": "regenerated",
                 "fcstd:native:property#DraftBase:Visibility": "regenerated",
                 "fcstd:native:property#DraftBase:_Body": "written",
                 "fcstd:native:property#DraftBase:_ElementMapVersion": "written",
@@ -939,6 +1016,7 @@
                 "fcstd:native:property#ExtrusionProfile:ShapeMaterial": "written",
                 "fcstd:native:property#ExtrusionProfile:Visibility": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:_ElementMapVersion": "written",
+                "fcstd:native:property#Hole:AddSubShape": "regenerated",
                 "fcstd:native:property#Hole:AllowMultiFace": "regenerated",
                 "fcstd:native:property#Hole:BaseProfileType": "regenerated",
                 "fcstd:native:property#Hole:CustomThreadClearance": "regenerated",
@@ -960,6 +1038,7 @@
                 "fcstd:native:property#Hole:Shape": "regenerated",
                 "fcstd:native:property#Hole:ShapeMaterial": "written",
                 "fcstd:native:property#Hole:Suppressed": "regenerated",
+                "fcstd:native:property#Hole:SuppressedShape": "regenerated",
                 "fcstd:native:property#Hole:Tapered": "regenerated",
                 "fcstd:native:property#Hole:TaperedAngle": "regenerated",
                 "fcstd:native:property#Hole:ThreadDepth": "regenerated",
@@ -978,6 +1057,7 @@
                 "fcstd:native:property#HoleBase:Shape": "regenerated",
                 "fcstd:native:property#HoleBase:ShapeMaterial": "written",
                 "fcstd:native:property#HoleBase:Suppressed": "regenerated",
+                "fcstd:native:property#HoleBase:SuppressedShape": "regenerated",
                 "fcstd:native:property#HoleBase:Visibility": "regenerated",
                 "fcstd:native:property#HoleBase:_Body": "written",
                 "fcstd:native:property#HoleBase:_ElementMapVersion": "written",
@@ -1002,6 +1082,7 @@
                 "fcstd:native:property#HoleProfile:ExternalTypes": "regenerated",
                 "fcstd:native:property#HoleProfile:FullyConstrained": "regenerated",
                 "fcstd:native:property#HoleProfile:Geometry": "regenerated",
+                "fcstd:native:property#HoleProfile:InternalShape": "regenerated",
                 "fcstd:native:property#HoleProfile:Label": "regenerated",
                 "fcstd:native:property#HoleProfile:Label2": "regenerated",
                 "fcstd:native:property#HoleProfile:MakeInternals": "regenerated",
@@ -1031,6 +1112,7 @@
                 "fcstd:native:property#LinearPattern:Shape": "regenerated",
                 "fcstd:native:property#LinearPattern:ShapeMaterial": "written",
                 "fcstd:native:property#LinearPattern:Suppressed": "regenerated",
+                "fcstd:native:property#LinearPattern:SuppressedShape": "regenerated",
                 "fcstd:native:property#LinearPattern:TransformMode": "regenerated",
                 "fcstd:native:property#LinearPattern:Visibility": "regenerated",
                 "fcstd:native:property#LinearPattern:_Body": "written",
@@ -1144,6 +1226,7 @@
                 "fcstd:native:property#PartFillet:ShapeMaterial": "written",
                 "fcstd:native:property#PartFillet:Visibility": "regenerated",
                 "fcstd:native:property#PartFillet:_ElementMapVersion": "written",
+                "fcstd:native:property#PatternBase:AddSubShape": "regenerated",
                 "fcstd:native:property#PatternBase:AttacherEngine": "regenerated",
                 "fcstd:native:property#PatternBase:AttacherType": "regenerated",
                 "fcstd:native:property#PatternBase:AttachmentOffset": "regenerated",
@@ -1160,6 +1243,7 @@
                 "fcstd:native:property#PatternBase:Shape": "regenerated",
                 "fcstd:native:property#PatternBase:ShapeMaterial": "written",
                 "fcstd:native:property#PatternBase:Suppressed": "regenerated",
+                "fcstd:native:property#PatternBase:SuppressedShape": "regenerated",
                 "fcstd:native:property#PatternBase:Visibility": "regenerated",
                 "fcstd:native:property#PatternBase:Width": "regenerated",
                 "fcstd:native:property#PatternBase:_Body": "written",
@@ -1196,6 +1280,7 @@
                 "fcstd:native:property#RevolutionProfile:ExternalTypes": "regenerated",
                 "fcstd:native:property#RevolutionProfile:FullyConstrained": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Geometry": "regenerated",
+                "fcstd:native:property#RevolutionProfile:InternalShape": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Label": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Label2": "regenerated",
                 "fcstd:native:property#RevolutionProfile:MakeInternals": "regenerated",
@@ -1406,16 +1491,24 @@
                 "fcstd:native:shape-payload#DatumCoordinateSystem:Shape:DatumCoordinateSystem.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#DatumPlane:Shape:DatumPlane.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#DatumPoint:Shape:DatumPoint.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Draft:AddSubShape:Draft.AddSubShape.brp": "regenerated",
                 "fcstd:native:shape-payload#Draft:Shape:Draft.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Draft:SuppressedShape:Draft.SuppressedShape.brp": "regenerated",
                 "fcstd:native:shape-payload#DraftBase:Shape:DraftBase.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#DraftBase:SuppressedShape:DraftBase.SuppressedShape.brp": "regenerated",
                 "fcstd:native:shape-payload#DraftBody:Shape:DraftBody.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#DressupBase:Shape:DressupBase.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp": "regenerated",
                 "fcstd:native:shape-payload#Hole:Shape:Hole.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#Hole:SuppressedShape:Hole.SuppressedShape.brp": "regenerated",
                 "fcstd:native:shape-payload#HoleBase:Shape:HoleBase.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#HoleBase:SuppressedShape:HoleBase.SuppressedShape.brp": "regenerated",
                 "fcstd:native:shape-payload#HoleBody:Shape:HoleBody.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#HoleProfile:InternalShape:HoleProfile.InternalShape.brp": "regenerated",
                 "fcstd:native:shape-payload#HoleProfile:Shape:HoleProfile.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#LinearPattern:Shape:LinearPattern.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#LinearPattern:SuppressedShape:LinearPattern.SuppressedShape.brp": "regenerated",
                 "fcstd:native:shape-payload#Loft:Shape:Loft.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#LoftSectionA:Shape:LoftSectionA.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#LoftSectionB:Shape:LoftSectionB.Shape.brp": "regenerated",
@@ -1423,9 +1516,12 @@
                 "fcstd:native:shape-payload#MirrorBase:Shape:MirrorBase.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#PartChamfer:Shape:PartChamfer.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#PartFillet:Shape:PartFillet.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp": "regenerated",
                 "fcstd:native:shape-payload#PatternBase:Shape:PatternBase.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#PatternBase:SuppressedShape:PatternBase.SuppressedShape.brp": "regenerated",
                 "fcstd:native:shape-payload#PatternBody:Shape:PatternBody.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#Revolution:Shape:Revolution.Shape.brp": "regenerated",
+                "fcstd:native:shape-payload#RevolutionProfile:InternalShape:RevolutionProfile.InternalShape.brp": "regenerated",
                 "fcstd:native:shape-payload#RevolutionProfile:Shape:RevolutionProfile.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#Sweep:Shape:Sweep.Shape.brp": "regenerated",
                 "fcstd:native:shape-payload#SweepSection:Shape:SweepSection.Shape.brp": "regenerated",
@@ -1626,28 +1722,6 @@
                 "fcstd:native:shape-payload#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp:topology-use:7": "regenerated",
                 "fcstd:native:shape-payload#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp:topology-use:8": "regenerated",
                 "fcstd:native:shape-payload#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:14": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:18": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:19": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:20": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:21": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:22": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp:topology-use:9": "regenerated",
                 "fcstd:native:shape-payload#Hole:Shape:Hole.Shape.brp:topology-use:1": "regenerated",
                 "fcstd:native:shape-payload#Hole:Shape:Hole.Shape.brp:topology-use:10": "regenerated",
                 "fcstd:native:shape-payload#Hole:Shape:Hole.Shape.brp:topology-use:11": "regenerated",
@@ -1955,40 +2029,6 @@
                 "fcstd:native:shape-payload#PartFillet:Shape:PartFillet.Shape.brp:topology-use:7": "regenerated",
                 "fcstd:native:shape-payload#PartFillet:Shape:PartFillet.Shape.brp:topology-use:8": "regenerated",
                 "fcstd:native:shape-payload#PartFillet:Shape:PartFillet.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:14": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:18": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:19": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:20": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:21": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:22": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:23": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:24": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:25": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:26": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:27": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:28": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:29": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:30": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:31": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:32": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:33": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:34": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:topology-use:9": "regenerated",
                 "fcstd:native:shape-payload#PatternBase:Shape:PatternBase.Shape.brp:topology-use:1": "regenerated",
                 "fcstd:native:shape-payload#PatternBase:Shape:PatternBase.Shape.brp:topology-use:10": "regenerated",
                 "fcstd:native:shape-payload#PatternBase:Shape:PatternBase.Shape.brp:topology-use:11": "regenerated",
