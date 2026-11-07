@@ -330,3 +330,43 @@ fn primitive_feature_and_shape_round_trip_together() {
     assert!(height.dynamic.is_none());
     assert_eq!(height.values()[0].attributes["value"], "7");
 }
+
+#[test]
+fn forward_dependency_keeps_source_declaration_order() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2" Dependencies="1"><ObjectDeps Name="Consumer" Count="1"><Dep Name="Driver"/></ObjectDeps><ObjectDeps Name="Driver" Count="0"/><Object name="Consumer" type="PartDesign::Feature"/><Object name="Driver" type="PartDesign::Feature"/></Objects><ObjectData Count="2"><Object name="Consumer"><Properties Count="0"/></Object><Object name="Driver"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let bytes = crate::test_support::test_archive::archive(document);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for arena in ["objects", "applications"] {
+        let records = |ir: &cadmpeg_ir::CadIr| {
+            ir.native
+                .namespace("fcstd")
+                .unwrap()
+                .arenas()
+                .get(arena)
+                .unwrap()
+                .iter()
+                .map(|record| serde_json::to_value(record).unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(records(input.ir()), records(output.ir()), "{arena}");
+    }
+    let rank = |ir: &cadmpeg_ir::CadIr, name: &str| {
+        ir.model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap()
+            .ordinal
+    };
+    assert!(rank(output.ir(), "Driver") < rank(output.ir(), "Consumer"));
+}

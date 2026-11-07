@@ -82,6 +82,62 @@ fn cascade_names_each_feature_with_a_removed_regeneration_parent() {
 }
 
 #[test]
+fn cascade_preserves_block_instance_with_an_undeclared_dependency() {
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
+    };
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let definition = FeatureId::mint("synthetic:test:feature#block").unwrap();
+    let instance = FeatureId::mint("synthetic:test:feature#instance").unwrap();
+    for (ordinal, (id, operation)) in [
+        (
+            definition.clone(),
+            FeatureOperation::SketchBlockDefinition { sketch: None },
+        ),
+        (
+            instance.clone(),
+            FeatureOperation::SketchBlockInstance {
+                block: Some(definition.clone()),
+                placement: None,
+            },
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ir.model.features.push(Feature {
+            product_definition: None,
+            id,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
+            name: None,
+            suppressed: Some(false),
+            needs_recompute: false,
+            dependencies: DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
+            native_ref: None,
+        });
+    }
+    let mut losses = Vec::new();
+    super::cascade_validation_errors(&mut ir, &mut losses).unwrap();
+    let written = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id == instance)
+        .unwrap();
+    assert!(written.dependencies.contains(&definition));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(instance.as_str())));
+}
+
+#[test]
 fn design_only_document_keeps_its_scope() {
     let source = crate::test_support::carchive::sldprt_with_archive_parameter();
     let input = SldprtCodec
