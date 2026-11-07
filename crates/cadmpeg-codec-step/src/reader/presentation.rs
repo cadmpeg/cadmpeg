@@ -571,24 +571,45 @@ pub(super) fn decode(
         }
         typed.insert(color_id);
     }
-    let mut referenced = BTreeSet::new();
+    let mut style_reachable = BTreeSet::new();
+    let mut pending = Vec::new();
     for record in exchange
         .records()
         .values()
         .chain(exchange.dead_records().values())
     {
+        let Some(parts) = styled_item_parts(record) else {
+            continue;
+        };
+        for reference in references(parts.styles, ctx) {
+            ctx.reserve_working(&mut pending, 1, "STEP style graph references")?;
+            pending.push(reference?);
+        }
+    }
+    while let Some(id) = pending.pop() {
+        if !style_reachable.insert(id) {
+            continue;
+        }
+        let Some(record) = exchange
+            .records()
+            .get(&id)
+            .or_else(|| exchange.dead_records().get(&id))
+        else {
+            continue;
+        };
         for parameter in record
             .partials
             .iter()
             .flat_map(|partial| &partial.parameters)
         {
             for reference in references(parameter, ctx) {
-                referenced.insert(reference?);
+                ctx.reserve_working(&mut pending, 1, "STEP style graph references")?;
+                pending.push(reference?);
             }
         }
     }
     for (&id, record) in exchange.records() {
-        if referenced.contains(&id) || record.partial("COLOUR_RGB").is_none() {
+        if style_reachable.contains(&id) || record.partial("COLOUR_RGB").is_none() {
             continue;
         }
         let mut active = BTreeSet::new();

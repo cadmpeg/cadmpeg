@@ -7,6 +7,39 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn secondary_empty_shape_survives_source_free_synthesis() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Owner"/></Objects><ObjectData Count="1"><Object name="Owner"><Properties Count="1"><Property name="BackupShape" type="Part::PropertyPartShape"><Part file="Backup.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let archive = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Backup.brp", b""),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let namespace = output.ir().native.namespace("fcstd").unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(properties
+        .iter()
+        .any(|property| property.name == "BackupShape"));
+    let payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    assert!(payloads
+        .iter()
+        .any(|payload| matches!(payload.payload, crate::brep::ShapePayload::Empty)));
+}
+
+#[test]
 fn edited_point_cloud_writes_current_transformed_positions() {
     let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Points::Feature" name="Cloud"/></Objects><ObjectData Count="1"><Object name="Cloud"><Properties Count="1"><Property name="Points" type="Points::PropertyPointKernel"><Points file="Cloud.points" mtrx="1 0 0 10 0 1 0 20 0 0 1 30 0 0 0 1"/></Property></Properties></Object></ObjectData></Document>"#;
     let mut payload = 2_u32.to_le_bytes().to_vec();
