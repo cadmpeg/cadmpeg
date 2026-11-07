@@ -1574,7 +1574,7 @@ fn source_less_partial_surface_operations_remain_operations() {
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Unresolved,
                 distance: None
-            }) | FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+            } | FeatureOperation::ExtendSurface {
                 faces: FaceSelection::Unresolved,
                 distance: None,
                 method: SurfaceExtension::Unresolved
