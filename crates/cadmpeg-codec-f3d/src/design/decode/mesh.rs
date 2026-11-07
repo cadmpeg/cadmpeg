@@ -2666,9 +2666,6 @@ mod tests {
         .is_err());
     }
 
-    /// An empty collection can store a flag byte and a u32 that move the rest
-    /// of its prefix by four bytes; a flagged collection with a nonzero first
-    /// body count is not a collection.
     #[test]
     fn flagged_empty_mesh_collection_is_an_empty_registry() {
         let graph = synthetic_mesh_graph_with_collection(false, 0, CollectionForm::Flagged(1));
