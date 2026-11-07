@@ -1283,19 +1283,19 @@ fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
 }
 
 /// Decode the concatenated `<Attrib>` XML fragments named by the registry.
-fn attribute_names<'a>(
-    ctx: &DecodeContext<'a>,
+fn attribute_names(
+    ctx: &DecodeContext<'_>,
     parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     stream_name: &str,
     stream: Option<&MeshStream>,
 ) -> Result<std::collections::BTreeMap<String, RegisteredAttributeName>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    const DECLARATION: &[u8] = b"<?xml version=\"1.0\"?>";
+    const PREFIX: &[u8] = b"<Root>";
     let Some(stream) = stream else {
         return Ok(std::collections::BTreeMap::new());
     };
     require_layout(stream, StreamLayout::Byte)?;
-    const DECLARATION: &[u8] = b"<?xml version=\"1.0\"?>";
-    const PREFIX: &[u8] = b"<Root>";
     let body = stream.bytes.strip_prefix(DECLARATION).ok_or_else(|| {
         CodecError::malformed("paramesh attribute-name stream has no XML declaration")
     })?;
