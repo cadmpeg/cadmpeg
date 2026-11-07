@@ -4662,6 +4662,20 @@ fn transfer_shape_appearances(
             )?);
             if materials.declared == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
+                    let color = decode_color(material.diffuse, Some(material.transparency.get()))?;
+                    if let Some(update) = plan
+                        .body_updates
+                        .iter_mut()
+                        .find(|update| update.id == *body)
+                    {
+                        update.color = Some(color);
+                    } else {
+                        plan.body_updates.push(BodyUpdate {
+                            id: body.clone(),
+                            visible: None,
+                            color: Some(color),
+                        });
+                    }
                     let binding = AppearanceBinding {
                         native_ref: projection_native_ref(ctx, Some(native_origin))?,
                         id: binding_id(format_args!(

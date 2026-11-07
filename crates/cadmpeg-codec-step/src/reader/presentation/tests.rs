@@ -1245,6 +1245,25 @@ fn complex_colour_rgb_inherits_name_and_components() {
 }
 
 #[test]
+fn bound_surface_colour_does_not_invent_a_material_schema() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('red',1.,0.,0.);
+#2=SURFACE_STYLE_RENDERING(#1,$,$,$,$,$);
+#3=PRESENTATION_STYLE_ASSIGNMENT((#2));
+#4=STYLED_ITEM('',(#3),#5);
+#5=(ADVANCED_FACE() FACE_SURFACE());",
+    );
+    let appearances = &result.ir().model.appearances;
+    assert_eq!(appearances.len(), 1);
+    assert!(appearances[0].schema.is_none());
+    assert_eq!(appearances[0].name.as_deref(), Some("red"));
+    assert_eq!(
+        appearances[0].base_color,
+        cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0)
+    );
+}
+
+#[test]
 fn complex_surface_targets_use_surface_style_domain() {
     let result = decode_inline(
         "#1=COLOUR_RGB('red',1.,0.,0.);

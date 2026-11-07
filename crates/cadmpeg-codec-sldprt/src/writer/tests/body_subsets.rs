@@ -60,7 +60,16 @@ fn configuration_subset_keeps_detached_supported_surfaces() {
         .surfaces
         .iter()
         .any(|candidate| candidate.id == surface.id));
-    let body = super::super::brep_body(&subset, 0.001, false).unwrap();
+    let body = super::super::brep_body(
+        &cadmpeg_core::decode::DecodeContext::for_encode(
+            &cadmpeg_core::decode::DecodeArena::new(),
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        ),
+        &subset,
+        0.001,
+        false,
+    )
+    .unwrap();
     assert!((0..body.len()).any(|offset| matches!(crate::brep::parse_carrier(&body, offset), Some(crate::brep::Carrier::Surface(carrier)) if carrier.geometry == surface.geometry)));
 }
 

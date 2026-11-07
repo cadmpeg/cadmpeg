@@ -137,6 +137,7 @@ fn write(
             &[],
             None,
             SemanticFidelity::NotConsumed,
+            input.limits,
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
@@ -149,6 +150,7 @@ fn write(
             } else {
                 SemanticFidelity::NotConsumed
             },
+            input.limits,
             &mut bytes,
         )?,
     };

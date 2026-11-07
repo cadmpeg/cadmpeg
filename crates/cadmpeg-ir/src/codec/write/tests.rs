@@ -707,7 +707,7 @@ fn malformed_scope_is_rejected_at_the_writer_boundary() {
     // A caller can bypass set_scope through the public field, but cannot
     // export the resulting contradiction through a backend that ignores it.
     ir.scope = crate::ContentScope::container();
-    let _ = NeutralEncoder.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+    drop(NeutralEncoder.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit));
 }
 
 mod framework;

@@ -47,6 +47,7 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         &fidelity.annotations,
         &records,
         Some(&fidelity),
+        cadmpeg_core::decode::ResourceLimits::default(),
         &mut written,
     )
     .expect("semantic write succeeds")

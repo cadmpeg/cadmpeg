@@ -484,3 +484,43 @@ fn unlinked_material_with_incomplete_texture_keeps_writable_material() {
     );
     assert_eq!(native(&output).field("texture_count"), Some(json!(0)));
 }
+
+#[test]
+fn invalid_native_color_is_named_while_material_is_written() {
+    for linked in [false, true] {
+        let mut ir = if linked { source() } else { CadIr::empty() };
+        let original = if linked {
+            native(&ir).clone()
+        } else {
+            material()
+        };
+        let id = original.id().to_owned();
+        let mut fields = original.fields().unwrap();
+        fields.insert("ambient".into(), json!({"invalid": true}));
+        let record = NativeRecord::new(id.as_str().try_into().unwrap(), fields).unwrap();
+        ir.native
+            .namespace_mut("rhino")
+            .arenas_mut()
+            .insert("materials".into(), vec![record]);
+        let plan = MaterialPlan::new(&ir).unwrap();
+        assert!(plan.losses().iter().any(|loss| loss.code
+            == crate::loss::RhinoLossCode::WriterMaterialColorReduced.kind()
+            && loss.message.contains(&id)
+            && loss.message.contains("ambient")));
+        let output = read(&plan.encode(&ir).unwrap(), false);
+        assert_eq!(
+            native(&output).field("name"),
+            Some(json!("Source material"))
+        );
+        assert_eq!(
+            native(&output).field("ambient"),
+            Some(json!(NativeBytes::from([0_u8, 0, 0, 0])))
+        );
+        assert_eq!(
+            crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+                .unwrap()
+                .record_disposition("rhino", "materials", &id),
+            NativeDisposition::Dropped
+        );
+    }
+}

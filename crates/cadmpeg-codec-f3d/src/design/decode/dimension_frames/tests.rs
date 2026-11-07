@@ -20,6 +20,119 @@ use std::collections::{HashMap, HashSet};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
+#[test]
+fn damaged_dimension_recipe_record_keeps_its_indexed_sibling() {
+    use crate::records::parameters::{
+        DesignCompanionPayload, DesignParameterCompanion, DesignParameterOwner,
+        DesignParameterOwnerWire,
+    };
+    use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
+    use std::io::{Cursor, Write};
+    const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let scope = crate::ids::native_scope(ENTRY);
+    let mut bytes = Vec::new();
+    let mut recipes = Vec::new();
+    for (index, program) in [(101u32, &[0u8, 0, 0][..]), (102, &[1u8, 0, 0, 0][..])] {
+        crate::test_support::indexed_header(&mut bytes, *b"256", index);
+        bytes.push(0);
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        let offset = bytes.len();
+        bytes.extend_from_slice(b"edge_recipe_data");
+        bytes.extend_from_slice(program);
+        recipes.push(ConstructionRecipe {
+            id: format!("{scope}:construction-recipe#{index}"),
+            byte_offset: Some(u64_from_index(offset)),
+            kind: ConstructionRecipeKind::Edge,
+            design: None,
+            recipe_index: index,
+            record_index: None,
+        });
+    }
+    let metadata =
+        crate::test_support::zip_test::indexed_fixture_metastream(&bytes, &[101, 102], &[]);
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&bytes).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let mut parameter = crate::design::decode::parameters::parse_design_parameter_record(
+        &crate::design::test_support::parameter_record(
+            Some(300),
+            "40 mm",
+            "Linear Dimension-3",
+            Some("mm"),
+            "d3",
+            4.0,
+        ),
+    )
+    .unwrap();
+    parameter.id = format!("{scope}:design-parameter#301");
+    parameter.record_index = 301;
+    let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
+        id: format!("{scope}:design-parameter-owner#300"),
+        byte_offset: 0,
+        frame_length: 104,
+        class_tag: "292".to_owned().try_into().unwrap(),
+        record_index: 300,
+        scope_record_index: 10,
+        local_ordinal: 0,
+        evaluated_value: 4.0,
+        evaluated_value_offset: 40,
+        parameter_record_index: 301,
+        owned_ordinal: 3,
+        variant: Some(0),
+        companion_record_index: 302,
+    })
+    .unwrap();
+    let companion = DesignParameterCompanion::unbound(
+        format!("{scope}:design-parameter-companion#302"),
+        0,
+        "292".to_owned().try_into().unwrap(),
+        302,
+        300,
+        std::num::NonZeroU64::MIN,
+        0,
+    )
+    .bound(DesignCompanionPayload::new(
+        0,
+        u64_from_index(bytes.len()),
+        recipes.iter().map(|recipe| recipe.id.clone()).collect(),
+    ));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let records = super::decode_dimension_recipe_records(
+        &ctx,
+        &mut parts,
+        &scan,
+        &[parameter],
+        &[owner],
+        &[companion],
+        &recipes,
+    )
+    .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].record_index, 102);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
 /// Neutral faces and edges carrying native row links for tag resolution.
 fn tagged_topology(
     faces: &[(&str, &str)],
@@ -901,6 +1014,21 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
 }
 
 #[test]
+fn presentation_candidate_excludes_a_null_first_locus() {
+    let mut bytes = Vec::new();
+    crate::test_support::indexed_header(&mut bytes, *b"314", 332);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.push(1);
+    let first_reference = bytes.len();
+    bytes.extend_from_slice(&306u32.to_le_bytes());
+    assert!(super::dimension_presentation_head(&bytes, 0).is_some());
+    bytes[first_reference..first_reference + 4].copy_from_slice(&0u32.to_le_bytes());
+    assert!(super::dimension_presentation_head(&bytes, 0).is_none());
+}
+
+#[test]
 fn companion_interval_ends_before_a_foreign_scope_member() {
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
@@ -996,7 +1124,11 @@ fn dimension_annotation_interval_of_zero_bytes_has_no_frames() {
             points: &[],
             curves: &[],
         };
-        let admitted = super::decode_dimension_annotation_frames(&inputs, &[]).unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let admitted =
+            super::decode_dimension_annotation_frames(&ctx, &mut parts, &inputs, &[]).unwrap();
         assert!(admitted.is_empty());
     });
 }
