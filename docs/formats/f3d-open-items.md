@@ -1624,6 +1624,16 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
+### DR-290. PathPattern settings scalars at offsets 94 and 124
+
+**Question.** What do the f64 values at offsets 94 and 124 of a path-pattern settings record encode?
+
+**Known.** `f3d.md` §3.1 gives the path-pattern settings record. The f64 at offset 94 is 3.0 on four line paths whose adjacent spacing is 3 cm and whose start point is at path parameter 0. It is −1.92699 on a circular-arc path of radius 5 cm with a 2 cm spacing and its start point at path parameter π/4. The f64 at offset 124 is 0.5 on that arc path and zero on the line paths. The decoder reads neither value.
+
+**Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
+
+**Conflict.** None.
+
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
 **Question.** What do the entry values and the trailing value of a `SurfaceTrim` BRep-cell table encode when the entry count equals the trailing value or two entries store the same value?

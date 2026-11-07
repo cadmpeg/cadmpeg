@@ -370,6 +370,63 @@ pub(crate) fn bind_split_face_sketch_selections(
     }
 }
 
+/// Resolve `PathPattern` path groups to ordered curves in one sketch.
+pub(crate) fn bind_path_pattern_sketch_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &SketchCurveSelectionResolution<'_>,
+) {
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternTransform},
+        FeatureDefinition, FeatureOperation, PathRef,
+    };
+
+    let path_resolution = resolution.path_resolution();
+    for feature in features {
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                definition
+            else {
+                break 'feature_edit;
+            };
+            let PatternTransform::CurveDriven {
+                path: Some(PathRef::Native(group_id)),
+                spacing,
+                count,
+            } = pattern.definition()
+            else {
+                break 'feature_edit;
+            };
+            let mut matching_groups = resolution.groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.role() == DesignOperandRole::ROLE_0X5
+                    && !group.members().is_empty()
+                    && resolution.scopes.iter().any(|scope| {
+                        scope.kind()
+                            == crate::records::feature::scope::DesignFeatureKind::PathPattern
+                            && scope.record_index == group.scope_record_index
+                            && native_stream(&scope.id) == native_stream(&group.id)
+                    })
+            });
+            let Some(group) = matching_groups.next() else {
+                break 'feature_edit;
+            };
+            if matching_groups.next().is_some() {
+                break 'feature_edit;
+            }
+            let Some(path) = resolve_entity_selection_path(group, &path_resolution) else {
+                break 'feature_edit;
+            };
+            if let Ok(resolved) = PatternKind::new(PatternTransform::CurveDriven {
+                path: Some(path),
+                spacing: *spacing,
+                count: *count,
+            }) {
+                *pattern = resolved;
+            }
+        });
+    }
+}
+
 /// Resolve `SurfaceTrim` curve-tool groups to ordered curves in one sketch.
 pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
