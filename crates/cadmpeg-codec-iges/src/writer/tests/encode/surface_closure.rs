@@ -93,6 +93,11 @@ fn scalar_properties_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn definition_levels_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("definition_levels"));
+}
+
+#[test]
 fn offset_circle_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("uniform_offset_circle"));
 }
@@ -103,6 +108,66 @@ fn linear_offset_synthesis_preserves_held_records() {
     assert_synthesis_closure(
         crate::test_support::test_curves_and_surfaces::linear_offset_line_file(2),
     );
+}
+
+#[test]
+fn function_offset_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("function_offset_line"));
+}
+
+#[test]
+fn edited_offset_function_does_not_replace_current_carrier() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(fixture("function_offset_line")),
+            &DecodeOptions::default(),
+        )
+        .expect("function offset decodes");
+    let mut ir = decoded.ir().clone();
+    let function = ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
+        .expect("function curve exists");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spline)) = &mut function.geometry else {
+        panic!("expected function spline");
+    };
+    spline
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
+                point.y += 1.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or(())
+        })
+        .expect("edited points are finite");
+    let current = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
+        .and_then(|curve| curve.geometry.solved())
+        .expect("current offset carrier exists")
+        .clone();
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("edited function synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("edited function writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("edited function decodes");
+    assert!(output
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry.solved() == Some(&current)));
+    assert!(output.ir().model.procedural_curves.is_empty());
 }
 
 #[test]
