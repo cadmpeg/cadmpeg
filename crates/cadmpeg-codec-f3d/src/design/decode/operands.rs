@@ -4355,6 +4355,8 @@ pub(crate) fn decode_extrude_selection_members(
 
 /// Decode nested persistent-entity frames named by construction groups.
 pub(crate) fn decode_entity_selection_operands(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -4388,8 +4390,13 @@ pub(crate) fn decode_entity_selection_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing entity selection stream"))?;
             if let Some(mut operand) =
-                parse_entity_selection_operand(bytes, records, group, ordinal, header)
+                decode_selection_part(ctx, parts, source, stream, records, header, || {
+                    parse_entity_selection_operand(bytes, records, group, ordinal, header)
+                })?
             {
                 operand.id = design_record_id(
                     &entry.name,
@@ -4563,6 +4570,33 @@ fn decode_work_point_selection_part(
     records: &[crate::metastream::PrimaryRecordFrame],
     header: &DesignRecordHeader,
 ) -> Result<Option<WorkPointSelection>, CodecError> {
+    decode_selection_part(ctx, parts, source, stream, records, header, || {
+        let bytes = source.window();
+        let byte_offset = header.byte_offset?;
+        parse_work_point_sketch_point_frame(bytes, records, header.record_index, byte_offset)
+            .map(WorkPointSelection::Sketch)
+            .or_else(|| {
+                parse_entity_selection_frame(
+                    bytes,
+                    records,
+                    header.record_index,
+                    byte_offset,
+                    header.class_tag.as_str(),
+                )
+                .map(WorkPointSelection::Entity)
+            })
+    })
+}
+
+fn decode_selection_part<T>(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    records: &[crate::metastream::PrimaryRecordFrame],
+    header: &DesignRecordHeader,
+    parse: impl FnOnce() -> Option<T>,
+) -> Result<Option<T>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let Some(offset) = header.byte_offset.and_then(|v| usize::try_from(v).ok()) else {
         return Ok(None);
@@ -4573,7 +4607,7 @@ fn decode_work_point_selection_part(
     let identity = header
         .record_index
         .checked_add(3)
-        .ok_or_else(|| CodecError::malformed("work point identity index overflows"))?;
+        .ok_or_else(|| CodecError::malformed("selection identity index overflows"))?;
     let Some(frame) = records
         .iter()
         .find(|frame| frame.entity_id == u64::from(identity))
@@ -4588,14 +4622,14 @@ fn decode_work_point_selection_part(
     let begin = source
         .start()
         .checked_add(frame.start)
-        .ok_or_else(|| CodecError::malformed("work point selection start overflows"))?;
+        .ok_or_else(|| CodecError::malformed("selection start overflows"))?;
     let end = source
         .start()
         .checked_add(frame.end)
-        .ok_or_else(|| CodecError::malformed("work point selection end overflows"))?;
+        .ok_or_else(|| CodecError::malformed("selection end overflows"))?;
     let extent = source
         .child(begin, end)
-        .ok_or_else(|| CodecError::malformed("work point selection exceeds its stream"))?;
+        .ok_or_else(|| CodecError::malformed("selection exceeds its stream"))?;
     let id = cadmpeg_ir::ids::Identity::new(design_record_id(
         stream,
         ":design-record-header#",
@@ -4615,21 +4649,7 @@ fn decode_work_point_selection_part(
         return Ok(None);
     }
     ctx.decode_part(parts, extent, spec, |_| {
-        let bytes = source.window();
-        let byte_offset = u64_from_index(offset);
-        parse_work_point_sketch_point_frame(bytes, records, header.record_index, byte_offset)
-            .map(WorkPointSelection::Sketch)
-            .or_else(|| {
-                parse_entity_selection_frame(
-                    bytes,
-                    records,
-                    header.record_index,
-                    byte_offset,
-                    header.class_tag.as_str(),
-                )
-                .map(WorkPointSelection::Entity)
-            })
-            .ok_or_else(|| CodecError::malformed("invalid work point selection"))
+        parse().ok_or_else(|| CodecError::malformed("invalid entity selection"))
     })
 }
 

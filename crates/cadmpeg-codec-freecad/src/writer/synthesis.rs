@@ -1335,7 +1335,10 @@ pub(super) fn write(
 
         let mut rank_of: HashMap<&str, (u64, usize)> = HashMap::new();
         for (index, feature) in ir.model.features.iter().enumerate() {
-            if let Some(name) = names.get(feature.id.as_str()) {
+            if let Some(name) = names
+                .get(feature.id.as_str())
+                .filter(|name| !source_order.contains_key(name.as_str()))
+            {
                 rank_of
                     .entry(name.as_str())
                     .or_insert((feature.ordinal, index));
@@ -1348,7 +1351,10 @@ pub(super) fn write(
                 occurrence.parent,
                 cadmpeg_ir::products::OccurrenceParent::Root {}
             ) {
-                if let Some(name) = names.get(occurrence.id.as_str()) {
+                if let Some(name) = names
+                    .get(occurrence.id.as_str())
+                    .filter(|name| !source_order.contains_key(name.as_str()))
+                {
                     roots
                         .entry(name.as_str())
                         .or_insert((u64::from(occurrence.ordinal), index));
@@ -1357,6 +1363,7 @@ pub(super) fn write(
         }
         order_slots(&mut objects, &roots);
     }
+    let emitted_names: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for object in &mut objects {
         let mut originals = native_objects.iter().filter(|original| {
             names.get(original.id().as_str()) == Some(&object.name)
@@ -1365,6 +1372,27 @@ pub(super) fn write(
         if let (Some(original), None) = (originals.next(), originals.next()) {
             object.declaration_id =
                 xml::DeclarationId::Source(original.persistent_id.map(|id| id.to_string()));
+            let neutral_owns_dependencies = ir.model.features.iter().any(|feature| {
+                feature.native_ref.as_deref() == Some(original.id().as_str())
+                    && matches!(
+                        feature.definition().operation(),
+                        FeatureOperation::Native { .. }
+                    )
+            });
+            let mut dependencies = original
+                .dependencies
+                .iter()
+                .filter(|_| !neutral_owns_dependencies)
+                .filter_map(|id| names.get(id))
+                .filter(|name| emitted_names.contains(*name))
+                .cloned()
+                .collect::<Vec<_>>();
+            for dependency in &object.dependencies {
+                if !dependencies.contains(dependency) {
+                    dependencies.push(dependency.clone());
+                }
+            }
+            object.dependencies = dependencies;
         }
     }
     // The document header preserves the source's producing application and
