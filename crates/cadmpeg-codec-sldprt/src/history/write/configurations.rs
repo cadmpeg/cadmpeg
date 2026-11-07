@@ -3,6 +3,7 @@
 
 use crate::loss::SldprtLossCode;
 use crate::records::{Configuration, FeatureHistory};
+use crate::writer::write_error::WriteError;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration, DistinctMembers, ParameterValue};
 use cadmpeg_ir::ids::BodyId;
@@ -108,9 +109,9 @@ pub(crate) fn synchronize_configuration_records(
         !configuration.feature_states.is_empty()
             || (!synthesized && !configuration.parameter_overrides.is_empty())
     }) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Decline(
             "SLDPRT configuration lanes encode evaluated scalar differences; structural and expression differences have no native serializer".into(),
-        ).into());
+        ));
     }
     let Some(native) = native.as_mut() else {
         return Ok(());
@@ -165,7 +166,7 @@ pub(crate) fn synchronize_configuration_records(
                 CodecError::malformed("SLDPRT configuration references a missing parameter")
             })?;
             let owner = parameter.owner.as_ref().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT configuration parameter {id} has no native feature owner"
                 ))
             })?;
@@ -191,12 +192,12 @@ pub(crate) fn synchronize_configuration_records(
                             && record.id == super::features::generated_feature_record_id(owner))
                 })
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    WriteError::Decline(format!(
                         "SLDPRT configuration feature {owner} has no writable native identity"
                     ))
                 })?;
             let object_id = record.source_value().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT configuration feature {owner} has no numeric native identity"
                 ))
             })?;
@@ -217,7 +218,7 @@ pub(crate) fn synchronize_configuration_records(
                     ParameterValue::Integer(value) => (
                         "moScalerParameter_c",
                         cadmpeg_core::convert::f64_from_i64(*value).ok_or_else(|| {
-                            CodecError::UnsupportedContent(format!(
+                            WriteError::Decline(format!(
                                 "SLDPRT configuration parameter {} cannot exactly encode integer {value}",
                                 parameter.id
                             ))
@@ -225,11 +226,10 @@ pub(crate) fn synchronize_configuration_records(
                     ),
                     ParameterValue::Boolean(value) => ("moScalerParameter_c", if *value { 1.0 } else { 0.0 }),
                     ParameterValue::String(_) => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT configuration parameter {} has no scalar encoding",
                             parameter.id
-                        ))
-                        .into())
+                        )))
                     }
                 };
                 crate::resolved_features::write_generate::append_generated_scalar(
