@@ -42,6 +42,40 @@ fn scalar(appearance: &Appearance, name: &str, default: f64) -> f64 {
         .unwrap_or(default)
 }
 
+const COLOR_FIELDS: [&str; 6] = [
+    "ambient",
+    "diffuse",
+    "emission",
+    "specular",
+    "reflection",
+    "transparent",
+];
+
+fn material_color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], CodecError> {
+    match color(fields, name) {
+        Ok(color) => Ok(color),
+        Err(CodecError::Malformed(_) | CodecError::InvalidInput(_)) => Ok([0, 0, 0, 0]),
+        Err(error) => Err(error),
+    }
+}
+
+fn invalid_color_fields(fields: &Map<String, Value>) -> Vec<&'static str> {
+    COLOR_FIELDS
+        .into_iter()
+        .filter(|name| {
+            fields
+                .get(*name)
+                .is_some_and(|value| !value.is_null() && crate::wire::native_color(value).is_err())
+        })
+        .collect()
+}
+
+pub(in crate::writer) fn native_colors_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
+    record
+        .fields()
+        .is_ok_and(|fields| invalid_color_fields(&fields).is_empty())
+}
+
 fn encode_material(
     identity: &str,
     index: i32,
@@ -100,10 +134,10 @@ fn encode_material(
             } else if appearance.is_some() {
                 [0, 0, 0, 0]
             } else {
-                color(fields, name)?
+                material_color(fields, name)?
             }
         } else {
-            color(fields, name)?
+            material_color(fields, name)?
         };
         payload.extend(packed);
     }
@@ -219,6 +253,7 @@ pub(in crate::writer) fn bound_appearance<'a>(
 
 pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
     native_base_complete(record)
+        && native_colors_complete(record)
         && record
             .fields()
             .is_ok_and(|fields| textures_complete(&fields))
@@ -234,20 +269,9 @@ fn native_base_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
             .and_then(Value::as_str)
             .and_then(crate::presentation::parse_uuid_text)
             .is_some()
-        && [
-            "ambient",
-            "diffuse",
-            "emission",
-            "specular",
-            "reflection",
-            "transparent",
-        ]
-        .iter()
-        .all(|name| {
-            fields
-                .get(*name)
-                .is_some_and(|value| crate::wire::native_color(value).is_ok())
-        })
+        && COLOR_FIELDS
+            .iter()
+            .all(|name| fields.get(*name).is_some_and(|value| !value.is_null()))
         && [
             "index_of_refraction",
             "reflectivity",

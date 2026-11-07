@@ -241,6 +241,8 @@ pub(crate) enum RhinoLossCode {
     WriterCarrierResolved,
     /// Material records have no writer encoding.
     WriterMaterialOmitted,
+    /// A native material color cannot be represented.
+    WriterMaterialColorReduced,
     /// Material texture channels cannot be written.
     WriterMaterialTextureOmitted,
     /// A material identity is changed to keep physical components distinct.
@@ -413,6 +415,7 @@ impl RhinoLossCode {
         Self::WriterPcurveReversalDefaulted,
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
+        Self::WriterMaterialColorReduced,
         Self::WriterMaterialTextureOmitted,
         Self::WriterMaterialUuidReassigned,
         Self::WriterAttributesOmitted,
@@ -518,6 +521,7 @@ impl RhinoLossCode {
             Self::WriterPcurveReversalDefaulted => "writer.pcurve-reversal-defaulted",
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
+            Self::WriterMaterialColorReduced => "writer.material-color-reduced",
             Self::WriterMaterialTextureOmitted => "writer.material-texture-omitted",
             Self::WriterMaterialUuidReassigned => "writer.material-uuid-reassigned",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
@@ -663,6 +667,7 @@ impl RhinoLossCode {
                 LossTaxonomy::ProceduralReduced
             }
             Self::WriterMaterialOmitted
+            | Self::WriterMaterialColorReduced
             | Self::WriterMaterialTextureOmitted
             | Self::WriterMaterialUuidReassigned
             | Self::WriterLinetypeOmitted
@@ -806,6 +811,7 @@ mod tests {
                 "writer.pcurve-reversal-defaulted",
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
+                "writer.material-color-reduced",
                 "writer.material-texture-omitted",
                 "writer.material-uuid-reassigned",
                 "writer.attributes-omitted",
