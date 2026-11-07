@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    attach_roots, project_configurations, reconcile_active_configurations, root_document,
-    unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
-    unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
-    ConfigurationTargets,
+    attach_roots, inferred_configuration_suppression_count, project_configurations,
+    reconcile_active_configurations, root_document, unresolved_configuration_member_count,
+    unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
+    unresolved_configuration_suppressed_feature_count, ConfigurationTargets,
 };
 use crate::records::configuration::{
     DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
@@ -516,7 +516,8 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     inactive.feature_states.clear();
     let mut features = vec![unlisted, unstated, stored];
     let mut configurations = vec![configuration.clone(), inactive];
-    reconcile_active_configurations(&mut features, &mut configurations);
+    reconcile_active_configurations(&mut features, &mut configurations).unwrap();
+    assert_eq!(inferred_configuration_suppression_count(&configurations), 0);
 
     // A suppressed feature no row names gains a row in the active configuration only.
     assert!(configurations[0].feature_states[&features[0].id]
@@ -527,4 +528,35 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     assert_eq!(features[1].suppressed, Some(true));
     // A stored non-Sketch state is not overwritten, so the checker still sees the conflict.
     assert_eq!(features[2].suppressed, Some(false));
+}
+
+#[test]
+fn an_inferred_suppressed_state_names_its_assumption_when_a_column_is_unresolved() {
+    let mut feature = neutral_feature(&scope(1), "f3d:test:feature#a");
+    feature.suppressed = Some(true);
+    let mut configuration = cadmpeg_ir::features::DesignConfiguration {
+        id: crate::ids::neutral_configuration_id(ENTRY, "active"),
+        ordinal: 0,
+        active: true,
+        source_index: None,
+        name: None,
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        bodies: None,
+        native_ref: None,
+    };
+    configuration.properties.insert(
+        cadmpeg_core::text::NonBlankString::new("suppressed:column".to_owned()).unwrap(),
+        "false".to_owned(),
+    );
+    let mut features = vec![feature];
+    let mut configurations = vec![configuration];
+    reconcile_active_configurations(&mut features, &mut configurations).unwrap();
+    assert!(configurations[0].feature_states[&features[0].id]
+        .evaluation
+        .is_suppressed());
+    assert_eq!(inferred_configuration_suppression_count(&configurations), 1);
 }

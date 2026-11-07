@@ -64,6 +64,9 @@ pub(crate) enum F3dLossCode {
     ConfigurationParameterOverrideUnbound,
     /// Design configuration feature states have no feature identity.
     ConfigurationFeatureSuppressionUnbound,
+    /// An active configuration's suppressed state is inferred while a
+    /// suppression column of its row names no feature.
+    ConfigurationSuppressionInferred,
     /// Design configuration root records name no active row of a unique table document.
     ConfigurationActiveRowUnbound,
     /// ACT component links have no resolved neutral product role.
@@ -583,6 +586,7 @@ impl F3dLossCode {
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
+        Self::ConfigurationSuppressionInferred,
         Self::ConfigurationActiveRowUnbound,
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
@@ -840,6 +844,7 @@ impl F3dLossCode {
             Self::ConfigurationFeatureSuppressionUnbound => {
                 "configuration.feature-suppression-unbound"
             }
+            Self::ConfigurationSuppressionInferred => "configuration.suppression-inferred",
             Self::ConfigurationActiveRowUnbound => "configuration.active-row-unbound",
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
@@ -1169,6 +1174,7 @@ impl F3dLossCode {
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ConfigurationSuppressionInferred
             | Self::ConfigurationActiveRowUnbound
             | Self::ActComponentLinkUnresolved
             | Self::ComponentBodyOwnerUnresolved
@@ -1395,6 +1401,7 @@ impl F3dLossCode {
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ConfigurationSuppressionInferred
             | Self::ConfigurationActiveRowUnbound
             | Self::DrawingDocumentOmitted
             | Self::XrefPlacementMetadataNative
@@ -1690,6 +1697,7 @@ mod tests {
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
+                "configuration.suppression-inferred",
                 "configuration.active-row-unbound",
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
