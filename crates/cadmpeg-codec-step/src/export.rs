@@ -2857,7 +2857,7 @@ impl<'a> Builder<'a> {
                 && (occurrence_products.contains_key(&occurrence.id)
                     || writable_external(occurrence))
                 && occurrence.effective_transform().is_ok_and(|transform| {
-                    transform.is_none_or(|transform| transform.is_proper_rigid())
+                    transform.is_none_or(|transform| geometry::is_similarity_transform(&transform))
                 })
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
@@ -2906,6 +2906,7 @@ impl<'a> Builder<'a> {
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
+        let mut mapped_occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
             let parent_product = match &occurrence.parent {
                 OccurrenceParent::Occurrence { occurrence: parent } => {
@@ -2935,6 +2936,11 @@ impl<'a> Builder<'a> {
                 }
             };
             let Some(frame) = transform.proper_rigid_frame() else {
+                if let Some(target) =
+                    geometry::transformation_operator(&mut self.emitter, transform)
+                {
+                    mapped_occurrence_placements.insert(occurrence.id.clone(), (from, target));
+                }
                 continue;
             };
             let rows = transform.rows();
@@ -2955,7 +2961,10 @@ impl<'a> Builder<'a> {
         }
         let required_representations: BTreeSet<_> = occurrences
             .iter()
-            .filter(|occurrence| occurrence_placements.contains_key(&occurrence.id))
+            .filter(|occurrence| {
+                occurrence_placements.contains_key(&occurrence.id)
+                    || mapped_occurrence_placements.contains_key(&occurrence.id)
+            })
             .filter_map(|occurrence| occurrence_products.get(&occurrence.id).cloned())
             .chain(representation_placements.keys().cloned())
             .collect();
@@ -3180,7 +3189,9 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if transform.is_some_and(|transform| !transform.is_proper_rigid()) {
+            if transform.is_some_and(|transform| !transform.is_proper_rigid())
+                && !mapped_occurrence_placements.contains_key(&occurrence.id)
+            {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -3237,6 +3248,28 @@ impl<'a> Builder<'a> {
             );
             self.occurrence_step_refs
                 .insert(occurrence.id.as_str().to_owned(), usage);
+            if let Some(&(origin, target)) = mapped_occurrence_placements.get(&occurrence.id) {
+                let Some(child_representation) = child_representation else {
+                    continue;
+                };
+                let map = self.emitter.emit(
+                    "REPRESENTATION_MAP",
+                    &format!("{origin},{child_representation}"),
+                );
+                let item = self
+                    .emitter
+                    .emit("MAPPED_ITEM", &format!("'',{map},{target}"));
+                let representation =
+                    self.emit_shape_representation("", vec![item], Vec::new(), context);
+                let usage_shape = self
+                    .emitter
+                    .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
+                self.emitter.emit(
+                    "SHAPE_DEFINITION_REPRESENTATION",
+                    &format!("{usage_shape},{representation}"),
+                );
+                continue;
+            }
             let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
                 continue;
             };
