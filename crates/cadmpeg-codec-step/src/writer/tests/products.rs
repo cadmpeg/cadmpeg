@@ -146,6 +146,88 @@ fn writer_names_unnamed_products_and_occurrences_distinctly() {
 }
 
 #[test]
+fn unplaced_occurrences_round_trip_as_product_usages_without_placements() {
+    use cadmpeg_ir::products::OccurrenceParent;
+
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+        unnamed_definition("test:model:product#child", Vec::new()),
+    ];
+    let mut root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product#assembly",
+        None,
+    );
+    root.name = Some("Unplaced root".into());
+    root.transform = None;
+    let mut child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product#part",
+        Some("test:model:occurrence#root"),
+    );
+    child.name = Some("Unplaced child".into());
+    child.transform = None;
+    let mut grandchild = unnamed_occurrence(
+        "test:model:occurrence#grandchild",
+        "test:model:product#child",
+        Some("test:model:occurrence#child"),
+    );
+    grandchild.name = Some("Placed grandchild".into());
+    ir.model.occurrences = vec![root, child, grandchild];
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::OccurrencePlacementUnknown.kind()));
+    let text = std::str::from_utf8(&bytes).expect("STEP text");
+    assert_eq!(
+        text.matches(" = NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),
+        3
+    );
+    assert_eq!(
+        text.matches(" = CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(")
+            .count(),
+        1
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode assembly");
+    let find = |name| {
+        decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.name.as_deref() == Some(name))
+            .expect("named occurrence")
+    };
+    let root = find("Unplaced root");
+    let child = find("Unplaced child");
+    let grandchild = find("Placed grandchild");
+    assert!(root.transform.is_none());
+    assert!(child.transform.is_none());
+    assert!(grandchild.transform.is_some());
+    assert!(
+        matches!(&child.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &root.id)
+    );
+    assert!(
+        matches!(&grandchild.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &child.id)
+    );
+}
+
+#[test]
 fn writer_leaves_ambiguous_fallback_names_empty() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
