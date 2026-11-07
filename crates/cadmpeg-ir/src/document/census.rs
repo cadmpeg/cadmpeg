@@ -12,10 +12,16 @@ macro_rules! define_census {
         /// Count the borrowed view with one arena walk.
         pub(crate) fn count(view: NativeView<'_>) -> BTreeMap<CensusKey, usize> {
             let mut counts = BTreeMap::new();
-            $(counts.insert(
-                CensusKey::model(ArenaName::registered(stringify!($field), super::arena_class!($class))),
-                view.ir.model.$field.len(),
-            );)*
+            $(
+                // An absent history-body arena leaves the census of a document
+                // that predates the arena unchanged.
+                if stringify!($field) != "history_bodies" || !view.ir.model.$field.is_empty() {
+                    counts.insert(
+                        CensusKey::model(ArenaName::registered(stringify!($field), super::arena_class!($class))),
+                        view.ir.model.$field.len(),
+                    );
+                }
+            )*
             let unknown_surfaces = view.ir.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }))).count();
             counts.insert(CensusKey::surfaces_unknown_geometry(), unknown_surfaces);
@@ -54,7 +60,11 @@ mod tests {
         assert_eq!(standard["native.future.records"], 1);
         assert!(!standard.contains_key("native.future.empty"));
         for name in super::ArenaName::ALL {
-            assert_eq!(standard[name.as_str()], 0);
+            if name.as_str() == "history_bodies" {
+                assert!(!standard.contains_key(name.as_str()));
+            } else {
+                assert_eq!(standard[name.as_str()], 0);
+            }
         }
         let decoded = count(NativeView::new(&ir, None));
         assert_eq!(decoded, standard);
