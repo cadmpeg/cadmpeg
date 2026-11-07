@@ -66,7 +66,8 @@ use self::records::{
 };
 use self::topology::{
     classify_edge_curve_senses, collect_wire_topology, decode_analytic_carriers,
-    keep_faces_and_carriers, walk_reachable_topology, TopologyContext,
+    decode_detached_surface_records, keep_faces_and_carriers, walk_reachable_topology,
+    TopologyContext,
 };
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
 /// of the ASM stream, independent of the format that references the stream.
@@ -654,6 +655,13 @@ fn decode_with_table(
     let mut detached_curves = HashSet::new();
     let mut detached_points = HashSet::new();
     if purpose == DecodePurpose::Model {
+        detached_surfaces.extend(decode_detached_surface_records(
+            topology_context,
+            &mut out,
+            records,
+            &mut carriers,
+            &mut reach,
+        )?);
         detached_surfaces.extend(
             carriers
                 .surface_geo
@@ -698,12 +706,13 @@ fn decode_with_table(
     let source_object = |identity: &str, detached: &HashSet<i64>| {
         let index = identity.rsplit_once('#')?.1.parse::<i64>().ok()?;
         let source_format = cadmpeg_ir::CodecFormat::parse(&format.to_string())?;
+        let object_id = cadmpeg_core::text::NonBlankString::new(format!("ASM:{index}"))?;
         detached
             .contains(&index)
             .then(|| cadmpeg_ir::SourceObjectAssociation {
                 format: source_format,
                 geometry_role: None,
-                object_id: cadmpeg_core::nonblank_literal!("ASM:{index}"),
+                object_id,
                 instance_path: Vec::new(),
             })
     };
