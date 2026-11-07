@@ -241,6 +241,9 @@ impl DesignBodyRecipeOperand {
     pub(crate) fn references(&self) -> &Vec<DesignBodyRecipeReference> {
         &self.references
     }
+    pub(crate) fn selector_tail(&self) -> Option<&SourceFrame> {
+        self.selector_tail.as_ref()
+    }
     pub(crate) fn nested_record_index(&self) -> u64 {
         u64::from(self.record_index + 3)
     }

@@ -640,6 +640,9 @@ pub(super) fn write_with_limits(
                 cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
             ) => Some("Base Feature"),
             cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::DeleteBody { .. },
+            ) => Some("RemoveBody"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
             ) if kind.as_str() == "BaseFlange" => Some("BaseFlange"),
             _ => None,
@@ -694,6 +697,17 @@ pub(super) fn write_with_limits(
                     format!("feature {} retains its native scope references; the referenced construction records are omitted", feature.id),
                 ));
             }
+            if matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DeleteBody { .. }
+                )
+            ) {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} retains its native body group; its auxiliary construction references are regenerated", feature.id),
+                ));
+            }
             if timeline_ranks
                 .get(&feature.id)
                 .is_some_and(|ordinal| *ordinal != feature.ordinal)
@@ -742,6 +756,22 @@ pub(super) fn write_with_limits(
             ArenaDisposition::Written
         };
         for input in &target.model.feature_input_topologies {
+            if written_features.contains(&input.input_of)
+                && target.model.features.iter().any(|feature| {
+                    feature.id == input.input_of
+                        && matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::DeleteBody { .. }
+                            )
+                        )
+                })
+            {
+                dispositions.feature_input_topologies = ArenaDisposition::Reported;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature input {} retains its selected group and operand with regenerated auxiliary references", input.id),
+                ));
+            }
             if written_features.contains(&input.input_of)
                 && target.model.features.iter().any(|feature| {
                     feature.id == input.input_of
