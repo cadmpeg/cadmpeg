@@ -567,6 +567,21 @@ fn source_less_feature_tree_nodes_keep_their_native_roles() {
         ("moSolidBodyFolder_c", FeatureTreeNodeRole::SolidBodies),
         ("moSurfaceBodyFolder_c", FeatureTreeNodeRole::SurfaceBodies),
         ("moDetailCabinet_c", FeatureTreeNodeRole::Annotations),
+        ("moDetailFolder_c", FeatureTreeNodeRole::Details),
+        ("moDocsFolder_c", FeatureTreeNodeRole::DesignBinder),
+        ("moEnvFolder_c", FeatureTreeNodeRole::LightsAndCameras),
+        ("moFavoriteFolder_c", FeatureTreeNodeRole::Favorites),
+        ("moInkMarkupFolder_c", FeatureTreeNodeRole::Markups),
+        ("moMaterialFolder_c", FeatureTreeNodeRole::Materials),
+        ("moNotesAreaFtrFolder_c", FeatureTreeNodeRole::Notes),
+        ("moSelectionSetFolder_c", FeatureTreeNodeRole::SelectionSets),
+        ("moSensorFolder_c", FeatureTreeNodeRole::Sensors),
+        ("moTableFolder_c", FeatureTreeNodeRole::Tables),
+        ("moAmbientLight_c", FeatureTreeNodeRole::AmbientLight),
+        ("moDirectionLight_c", FeatureTreeNodeRole::DirectionalLight),
+        ("moPointLight_c", FeatureTreeNodeRole::PointLight),
+        ("moSpotLight_c", FeatureTreeNodeRole::SpotLight),
+        ("moOriginProfileFeature_c", FeatureTreeNodeRole::ModelOrigin),
     ] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(crate::test_support::container::make_block(
