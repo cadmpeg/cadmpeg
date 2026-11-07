@@ -80,6 +80,38 @@ fn dimension_annotation_empty_metadata_projects_the_governed_parameter_and_entit
 }
 
 #[test]
+fn damaged_annotation_gives_up_one_part_and_keeps_its_sibling() {
+    let result = decode(f3d_with_generated_sketch_annotation(
+        SketchAnnotationCase::DamagedSibling,
+    ));
+    let native = f3d_native(result.ir());
+    assert_eq!(native.design_dimension_annotation_frames.len(), 1);
+    assert_eq!(
+        native.design_dimension_annotation_frames[0].record_index,
+        1304
+    );
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1305"));
+    let location = losses[0].provenance.as_ref().unwrap();
+    assert_eq!(
+        location.stream_name(),
+        Some("FusionAssetName[Active]/Design1/BulkStream.dat")
+    );
+    assert!(location.byte_len().is_some_and(|length| length > 0));
+    assert_eq!(result.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+}
+
+#[test]
 fn dimension_annotation_empty_metadata_keeps_ambiguous_and_refused_dimensions_with_losses() {
     for case in [
         SketchAnnotationCase::Ambiguous,

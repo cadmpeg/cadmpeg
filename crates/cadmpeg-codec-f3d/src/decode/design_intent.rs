@@ -565,6 +565,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
     design.design_dimension_annotation_frames =
         crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &prereqs.design_entity_headers,
         )?;

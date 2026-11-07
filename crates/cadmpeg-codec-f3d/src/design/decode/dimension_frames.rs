@@ -1317,9 +1317,12 @@ fn parse_dimension_null_locus_pair(
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
 /// and a direct backlink to the governed parameter owner.
 pub(crate) fn decode_dimension_annotation_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let &DimensionDecodeInputs {
         scan,
         parameters,
@@ -1368,7 +1371,10 @@ pub(crate) fn decode_dimension_annotation_frames(
         }) {
             governed_owners.insert(owner.record_index(), owner.companion_record_index());
         }
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("dimension annotation source View is missing"))?;
+        let bytes = source.window();
         let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
@@ -1424,15 +1430,61 @@ pub(crate) fn decode_dimension_annotation_frames(
             for primary in frames.iter().filter(|frame| {
                 frame.start >= start && frame.member_end < end && frame.member_end < frame.end
             }) {
-                if let Some(mut frame) = parse_dimension_annotation_frame(
-                    &bytes[..primary.end],
+                let record = &bytes[..primary.end];
+                if !dimension_annotation_candidate(
+                    record,
                     primary.start,
                     primary.member_end,
-                    containing_companion_record_index,
                     &governed_owners,
-                    &geometry_indices,
-                    &sketch_entities,
-                ) {
+                ) || !decoded_offsets.insert((stream, u64_from_index(primary.start)))
+                {
+                    continue;
+                }
+                let extent = source
+                    .child(
+                        source.start().checked_add(primary.start).ok_or_else(|| {
+                            CodecError::malformed("dimension annotation start overflows")
+                        })?,
+                        source.start().checked_add(primary.end).ok_or_else(|| {
+                            CodecError::malformed("dimension annotation end overflows")
+                        })?,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::malformed("dimension annotation extent exceeds its stream")
+                    })?;
+                let record_id = cadmpeg_ir::ids::Identity::new(design_record_id(
+                    &entry.name,
+                    ":design-dimension-annotation-frame#",
+                    u64_from_index(primary.start),
+                ))
+                .map_err(CodecError::malformed)?;
+                let mut spec = PartSpec::new("f3d.bulk_record")
+                    .holding([cadmpeg_ir::document::ArenaClass::Design])
+                    .record_id(record_id);
+                if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                    spec = spec.in_stream(
+                        cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                            .map_err(CodecError::malformed)?,
+                    );
+                }
+                if let Some(mut frame) = ctx.decode_part(parts, extent, spec, |_| {
+                    parse_dimension_annotation_payload(
+                        record,
+                        primary.start,
+                        primary.member_end,
+                        containing_companion_record_index,
+                        &governed_owners,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "dimension annotation entity {} has an invalid frame",
+                            primary.entity_id
+                        ))
+                    })
+                })? {
+                    if !annotation_references_resolve(&frame, &geometry_indices, &sketch_entities) {
+                        continue;
+                    }
                     let Some(frame_offset) = frame.byte_offset() else {
                         continue;
                     };
@@ -1441,10 +1493,7 @@ pub(crate) fn decode_dimension_annotation_frames(
                         ":design-dimension-annotation-frame#",
                         frame_offset,
                     );
-                    let key = (stream, frame_offset);
-                    if decoded_offsets.insert(key) {
-                        out.push(frame);
-                    }
+                    out.push(frame);
                 }
             }
         }
@@ -1453,6 +1502,84 @@ pub(crate) fn decode_dimension_annotation_frames(
     Ok(out)
 }
 
+fn dimension_annotation_candidate(
+    bytes: &[u8],
+    start: usize,
+    paired: usize,
+    owners: &HashMap<u32, u32>,
+) -> bool {
+    let Some(frame) = bytes.get(start..paired) else {
+        return false;
+    };
+    let Some(operand_start) = crate::layout::indexed_design_record_header::LEN.checked_add(13)
+    else {
+        return false;
+    };
+    let Some(count) = View::u32_le_at(frame, 20)
+        .filter(|count| (1..=64).contains(count))
+        .and_then(|count| usize::try_from(count).ok())
+    else {
+        return false;
+    };
+    let Some(metadata) = count
+        .checked_mul(15)
+        .and_then(|length| operand_start.checked_add(length))
+    else {
+        return false;
+    };
+    if frame.get(11..19) != Some(&[0; 8])
+        || frame.get(19) != Some(&1)
+        || frame.get(operand_start) != Some(&1)
+        || frame.get(metadata + annotation_metadata::PRESENT)
+            != Some(&annotation_metadata::PRESENT_VALUE)
+    {
+        return false;
+    }
+    let Some(tail) = frame.get(metadata + annotation_metadata::LEN..) else {
+        return false;
+    };
+    memchr::memchr_iter(1, tail).any(|at| {
+        let Some(count) = View::u32_le_at(tail, at + 11)
+            .filter(|count| *count <= 64)
+            .and_then(|count| usize::try_from(count).ok())
+        else {
+            return false;
+        };
+        let Some(end) = count
+            .checked_mul(11)
+            .and_then(|length| at.checked_add(15)?.checked_add(length))
+        else {
+            return false;
+        };
+        tail.get(at + 5..at + 11) == Some(&[0; 6])
+            && View::u32_le_at(tail, at + 1).is_some_and(|owner| owners.contains_key(&owner))
+            && tail.get(at + 15..end).is_some_and(|entries| {
+                entries.chunks_exact(11).all(|entry| {
+                    entry[0] == 1
+                        && View::u32_le_at(entry, 1).is_some_and(|index| index != 0)
+                        && entry[5..11] == [0; 6]
+                })
+            })
+            && tail
+                .get(end..)
+                .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
+    })
+}
+
+fn annotation_references_resolve(
+    frame: &DesignDimensionAnnotationFrame,
+    geometry: &HashSet<u32>,
+    sketches: &HashSet<u32>,
+) -> bool {
+    sketches.contains(&frame.owner_reference)
+        && frame.operands().iter().all(|operand| {
+            operand
+                .geometry_record_index
+                .is_none_or(|index| geometry.contains(&index.get()))
+        })
+}
+
+#[cfg(test)]
 fn parse_dimension_annotation_frame(
     bytes: &[u8],
     start: usize,
@@ -1461,6 +1588,23 @@ fn parse_dimension_annotation_frame(
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
+) -> Option<DesignDimensionAnnotationFrame> {
+    let frame = parse_dimension_annotation_payload(
+        bytes,
+        start,
+        paired_byte_offset,
+        companion_record_index,
+        governed_owners,
+    )?;
+    annotation_references_resolve(&frame, geometry_indices, sketch_entities).then_some(frame)
+}
+
+fn parse_dimension_annotation_payload(
+    bytes: &[u8],
+    start: usize,
+    paired_byte_offset: usize,
+    companion_record_index: Option<u32>,
+    governed_owners: &HashMap<u32, u32>,
 ) -> Option<DesignDimensionAnnotationFrame> {
     let (class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
@@ -1486,9 +1630,6 @@ fn parse_dimension_annotation_frame(
         }
         let geometry_record_index =
             std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?);
-        if geometry_record_index.is_some_and(|index| !geometry_indices.contains(&index.get())) {
-            return None;
-        }
         operands.push(DesignDimensionAnnotationOperand {
             geometry_record_index,
             geometry_reference_offset: Some(u64_from_index(position + 1)),
@@ -1576,10 +1717,6 @@ fn parse_dimension_annotation_frame(
                 valid = false;
                 break;
             };
-            if !geometry_indices.contains(&reference.get()) {
-                valid = false;
-                break;
-            }
             return_members.push(crate::records::identity::Located {
                 value: reference,
                 offset: u64_from_index(cursor + 1),
@@ -1630,9 +1767,6 @@ fn parse_dimension_annotation_frame(
         return None;
     }
     let owner_reference = View::u32_le_at(bytes, paired_byte_offset + 20)?;
-    if !sketch_entities.contains(&owner_reference) {
-        return None;
-    }
     let annotation_bytes = bytes.get(annotation_byte_offset..tail)?.to_vec();
     let draft = crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
         id: String::new(),

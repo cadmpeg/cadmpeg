@@ -1139,6 +1139,7 @@ pub(crate) enum SketchAnnotationCase {
     Ambiguous,
     UnknownOperand,
     MetadataCount,
+    DamagedSibling,
 }
 
 pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -> Vec<u8> {
@@ -1156,7 +1157,10 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     let owner = offset(1203);
     let parameter = offset(1204);
     let companion = offset(1205);
-    if case != SketchAnnotationCase::Valid {
+    if !matches!(
+        case,
+        SketchAnnotationCase::Valid | SketchAnnotationCase::DamagedSibling
+    ) {
         let second_point_v = offset(1302) + 97;
         bulk[second_point_v..second_point_v + 8].copy_from_slice(&1.0f64.to_le_bytes());
     }
@@ -1191,6 +1195,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
         crate::test_support::push_marked_reference(&mut frame, index);
         frame.extend_from_slice(&role.to_le_bytes());
     }
+    let metadata_start = frame.len();
     frame.push(1);
     frame.extend_from_slice(
         &(if case == SketchAnnotationCase::MetadataCount {
@@ -1213,8 +1218,23 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(paired + 59, 0);
     let insertion = records.iter().find(|(id, _)| *id == 1202).unwrap().1 + 58;
-    insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
-    records.push((1304, insertion));
+    let entities: &[u64] = if case == SketchAnnotationCase::DamagedSibling {
+        let mut damaged = frame.clone();
+        let id_offset = 3u32.to_le_bytes().len() + b"281".len();
+        damaged[id_offset..id_offset + 4].copy_from_slice(&1305u32.to_le_bytes());
+        damaged[paired + id_offset..paired + id_offset + 4].copy_from_slice(&1305u32.to_le_bytes());
+        damaged[metadata_start + 1..metadata_start + 5].copy_from_slice(&2u32.to_le_bytes());
+        let valid_start = insertion + u64::try_from(damaged.len()).unwrap();
+        damaged.extend_from_slice(&frame);
+        insert_frame_in_preceding_companion(&mut bulk, &mut records, &damaged);
+        records.push((1305, insertion));
+        records.push((1304, valid_start));
+        &[1305, 1304]
+    } else {
+        insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
+        records.push((1304, insertion));
+        &[1304]
+    };
     records.sort_by_key(|(_, offset)| *offset);
     let meta = sketch_dimension_metastream(
         &records,
@@ -1224,7 +1244,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
                 "",
                 3,
                 "Fusion",
-                &[1304],
+                entities,
             ),
             (
                 "00000000-0000-4000-8000-000000000274",
@@ -1235,7 +1255,12 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
             ),
         ],
     );
-    let meta = fixture_secondary_index(meta, &bulk, &[584, 1100, 1304, 1400, 1600]);
+    let secondary: &[u64] = if case == SketchAnnotationCase::DamagedSibling {
+        &[584, 1100, 1304, 1305, 1400, 1600]
+    } else {
+        &[584, 1100, 1304, 1400, 1600]
+    };
+    let meta = fixture_secondary_index(meta, &bulk, secondary);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],

@@ -1011,7 +1011,11 @@ fn dimension_annotation_interval_of_zero_bytes_has_no_frames() {
             points: &[],
             curves: &[],
         };
-        let admitted = super::decode_dimension_annotation_frames(&inputs, &[]).unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let admitted =
+            super::decode_dimension_annotation_frames(&ctx, &mut parts, &inputs, &[]).unwrap();
         assert!(admitted.is_empty());
     });
 }
