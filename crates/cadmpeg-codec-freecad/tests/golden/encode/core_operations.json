@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 114126,
-      "payload_sha256": "0285e036f37a79419cb77a67207d496f752b5223642145350c5936fa128699d8"
+      "payload_len": 113857,
+      "payload_sha256": "1cdb5e15af5cc892ab2c42217f2062aae8db0b19971126c70d13e05144eb3876"
     },
     {
       "name": "RevolutionProfile.InternalShape.brp",
@@ -240,7 +240,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 148,
+        "attributes": 146,
         "bodies": 33,
         "coedges": 531,
         "colliders": 0,
@@ -307,7 +307,7 @@
         "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
         "colliders": "omitted",
@@ -388,16 +388,6 @@
         },
         "message": "feature fcstd:design:feature#Thickness source tag Part::Thickness is written as PartDesign::Thickness",
         "severity": "info"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#SymmetricExtrusion:LengthFwd:property conflicts with operation property LengthFwd",
-        "severity": "warning"
       },
       {
         "code": {

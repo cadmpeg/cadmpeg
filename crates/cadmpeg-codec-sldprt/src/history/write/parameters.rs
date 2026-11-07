@@ -56,7 +56,18 @@ pub(crate) fn is_pmi_parameter(
     native: Option<&crate::native::SldprtNative>,
 ) -> bool {
     parameter.native_ref.as_deref().is_some_and(|id| {
-        native.is_some_and(|native| native.pmi_dimensions.iter().any(|record| record.id == id))
+        native.is_some_and(|native| {
+            native.pmi_dimensions.iter().any(|record| record.id == id)
+                || (parameter.pmi.is_some()
+                    && native
+                        .feature_histories
+                        .iter()
+                        .flat_map(|history| &history.features)
+                        .any(|feature| {
+                            feature.id == id
+                                && !feature.parameters.contains_key(parameter.name.as_str())
+                        }))
+        })
     })
 }
 
