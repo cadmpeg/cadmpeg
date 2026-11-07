@@ -278,6 +278,8 @@ pub(crate) enum StepLossCode {
     AssemblyJointOmitted,
     /// Product definitions use a non-part kind.
     ProductNonPartKind,
+    /// A product source name differs from the written STEP product name.
+    ProductSourceNameReduced,
     /// Product BOM property values were not represented.
     ProductBomPropertyOmitted,
     /// Occurrences reference external product definitions.
@@ -555,6 +557,7 @@ impl StepLossCode {
         Self::DocumentAssetMediaTypeOmitted,
         Self::AssemblyJointOmitted,
         Self::ProductNonPartKind,
+        Self::ProductSourceNameReduced,
         Self::ProductBomPropertyOmitted,
         Self::OccurrenceExternalProduct,
         Self::OccurrenceNoWritableProduct,
@@ -770,6 +773,7 @@ impl StepLossCode {
             Self::DocumentAssetMediaTypeOmitted => "asset.media-type-omitted",
             Self::AssemblyJointOmitted => "assembly.joint-omitted",
             Self::ProductNonPartKind => "product.non-part-kind",
+            Self::ProductSourceNameReduced => "product.source-name-reduced",
             Self::ProductBomPropertyOmitted => "product.bom-property-omitted",
             Self::OccurrenceExternalProduct => "occurrence.external-product",
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
@@ -903,6 +907,7 @@ impl StepLossCode {
             | Self::DocumentAssetMediaTypeOmitted
             | Self::AssemblyJointOmitted
             | Self::ProductNonPartKind
+            | Self::ProductSourceNameReduced
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceMetadataOmitted
             | Self::SourceAssociationOmitted
@@ -962,6 +967,7 @@ impl StepLossCode {
             | Self::DraughtingSemanticDefinitionUntyped
             | Self::DraughtingAssociatedItemUntyped
             | Self::ProductNonPartKind
+            | Self::ProductSourceNameReduced
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceNoWritableProduct
             | Self::OccurrenceMetadataOmitted
@@ -1276,6 +1282,7 @@ mod tests {
                 "asset.media-type-omitted",
                 "assembly.joint-omitted",
                 "product.non-part-kind",
+                "product.source-name-reduced",
                 "product.bom-property-omitted",
                 "occurrence.external-product",
                 "occurrence.no-writable-product",
