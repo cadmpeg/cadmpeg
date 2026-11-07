@@ -629,24 +629,20 @@ impl FileNameFields {
             })
             .collect();
         let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
-        // An alias is consumed only when the header carries its value back:
-        // any other held alias keeps its drop loss, which names it. An
-        // empty fold still writes one empty entry, which carries every held
-        // empty alias back.
-        let empty_entry = vec![String::new()];
         let mut consumed_ids: Vec<_> = descriptions.iter().map(|(id, _)| id.clone()).collect();
         consumed_ids.extend(consumed(
             &label,
             &name.clone().into_iter().collect::<Vec<_>>(),
         ));
-        consumed_ids.extend(consumed(
-            &author,
-            if authors.is_empty() {
-                &empty_entry
-            } else {
-                &authors
-            },
-        ));
+        let first_author = authors.first().map_or("", String::as_str);
+        let second_author = authors.get(1).map_or(first_author, String::as_str);
+        for (name, value) in [
+            ("author", first_author),
+            ("CreatedBy", first_author),
+            ("LastModifiedBy", second_author),
+        ] {
+            consumed_ids.extend(consumed(&Self::held(ir, &[name]), &[value.to_owned()]));
+        }
         consumed_ids.extend(consumed(
             &organization,
             &organizations.clone().unwrap_or_default(),
@@ -2450,9 +2446,9 @@ impl<'a> Builder<'a> {
     fn emit_layers(&mut self) {
         for layer in self.ir.model.presentation_layers.clone() {
             let mut assigned = Vec::new();
-            let mut unsupported = 0usize;
+            let mut unsupported = Vec::new();
             for item in layer.items {
-                let references = match item {
+                let references = match &item {
                     PresentationItem::Body { body } => self
                         .body_item_refs
                         .get(body.as_str())
@@ -2522,28 +2518,42 @@ impl<'a> Builder<'a> {
                     PresentationItem::Source { .. } => Vec::new(),
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
-                        .get(&tessellation)
+                        .get(tessellation)
                         .copied()
                         .into_iter()
                         .collect(),
                 };
                 if references.is_empty() {
-                    unsupported += 1;
+                    let id = match &item {
+                        PresentationItem::Body { body } => body.as_str(),
+                        PresentationItem::Face { face } => face.as_str(),
+                        PresentationItem::Edge { edge } => edge.as_str(),
+                        PresentationItem::Vertex { vertex } => vertex.as_str(),
+                        PresentationItem::Point { point } => point.as_str(),
+                        PresentationItem::Curve { curve } => curve.as_str(),
+                        PresentationItem::Surface { surface } => surface.as_str(),
+                        PresentationItem::Product { product } => product.as_str(),
+                        PresentationItem::Occurrence { occurrence } => occurrence.as_str(),
+                        PresentationItem::Pmi { annotation } => annotation.as_str(),
+                        PresentationItem::Tessellation { tessellation } => tessellation.as_str(),
+                        PresentationItem::Source { source_id } => source_id.as_str(),
+                    };
+                    unsupported.push(id.to_owned());
                 } else {
                     assigned.extend(references);
                 }
             }
-            if unsupported > 0 {
+            if !unsupported.is_empty() {
                 self.loss(
                     StepLossCode::LayerItemWithoutCarrier,
                     format!(
-                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier; layer id: {}",
-                        layer.name, layer.id
+                        "layer '{}' has {} item(s) without a writable STEP carrier; layer id: {}; items: {}",
+                        layer.name, unsupported.len(), layer.id, unsupported.join(", ")
                     ),
                 );
             }
             if assigned.is_empty() {
-                if unsupported == 0 {
+                if unsupported.is_empty() {
                     self.loss(
                         StepLossCode::EmptyLayerOmitted,
                         format!("empty presentation layer {} was omitted because STEP requires an assigned item", layer.id),
