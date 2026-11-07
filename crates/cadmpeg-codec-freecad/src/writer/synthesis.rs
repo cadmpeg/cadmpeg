@@ -15,6 +15,41 @@ use xml::Object;
 #[cfg(test)]
 mod tests;
 
+fn unchanged_placement(property: &PropertyRecord, generated: &str) -> bool {
+    if property.name != "Placement" || property.type_name != "App::PropertyPlacement" {
+        return false;
+    }
+    let [value] = property.values() else {
+        return false;
+    };
+    if value.tag != "PropertyPlacement" || value.attributes.len() != 7 || value.text.is_some() {
+        return false;
+    }
+    let Ok(document) = roxmltree::Document::parse(generated) else {
+        return false;
+    };
+    let Some(node) = document
+        .root_element()
+        .children()
+        .find(roxmltree::Node::is_element)
+    else {
+        return false;
+    };
+    if !node.has_tag_name("PropertyPlacement") || node.attributes().len() != 7 {
+        return false;
+    }
+    ["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"]
+        .into_iter()
+        .all(|key| {
+            let source = value
+                .attributes
+                .get(key)
+                .and_then(|s| s.parse::<f64>().ok());
+            let output = node.attribute(key).and_then(|s| s.parse::<f64>().ok());
+            matches!((source, output), (Some(a), Some(b)) if a.is_finite() && a == b)
+        })
+}
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -354,6 +389,17 @@ pub(super) fn write(
             .and_then(|name| objects.iter_mut().find(|object| object.name == *name));
         if let Some(object) = destination {
             let neutral_owned = !native_names.contains(&object.name);
+            if neutral_owned
+                && object
+                    .properties
+                    .get(&property.name)
+                    .is_some_and(|generated| unchanged_placement(property, generated))
+            {
+                if let Some(original) = xml::native_named(property, &names, &available)? {
+                    object.set(&property.name, original);
+                    continue;
+                }
+            }
             if neutral_owned
                 && (object.properties.contains_key(&property.name)
                     || (crate::property_policy::has_neutral_form(&property.name)
@@ -898,17 +944,20 @@ pub(super) fn write(
                     .count()
                     == 1
                 && !entries.contains_key(file))
-            .then(|| file.clone())
+            .then(|| (file.clone(), property))
         });
-        let file = original_file.unwrap_or_else(|| {
-            let mut file = format!("{name}.brp");
-            let mut suffix = 1;
-            while entries.contains_key(&file) || entry_names.contains(&file) {
-                file = format!("{name}_{suffix}.brp");
-                suffix += 1;
-            }
-            file
-        });
+        let file = original_file.as_ref().map_or_else(
+            || {
+                let mut file = format!("{name}.brp");
+                let mut suffix = 1;
+                while entries.contains_key(&file) || entry_names.contains(&file) {
+                    file = format!("{name}_{suffix}.brp");
+                    suffix += 1;
+                }
+                file
+            },
+            |(file, _)| file.clone(),
+        );
         entries.insert(file.clone(), serialized.bytes);
         for body in &bodies {
             if !serialized
@@ -926,13 +975,22 @@ pub(super) fn write(
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("body owner is absent"))?;
+        let source_property = if let Some((_, property)) = original_file {
+            let mut available = available.clone();
+            available.insert(file.clone());
+            xml::native_named(property, &names, &available)?
+        } else {
+            None
+        };
         object.set(
             &property_name,
-            xml::property(
-                &property_name,
-                "Part::PropertyPartShape",
-                &xml::element("Part", &[("file", file)]),
-            ),
+            source_property.unwrap_or_else(|| {
+                xml::property(
+                    &property_name,
+                    "Part::PropertyPartShape",
+                    &xml::element("Part", &[("file", file)]),
+                )
+            }),
         );
         if property_name == "Shape" {
             object.mark_geometry_written();
