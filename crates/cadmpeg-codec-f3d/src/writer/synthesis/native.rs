@@ -183,6 +183,11 @@ pub(super) fn reconcile(
                                 cadmpeg_ir::features::FeatureDefinition::Operation(
                                     cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
                                 ) => scope.base_feature_construction().is_some(),
+                                cadmpeg_ir::features::FeatureDefinition::Operation(
+                                    cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+                                ) if kind.as_str() == "BaseFlange" => {
+                                    scope.base_flange_operation().is_some()
+                                }
                                 _ => false,
                             }
                     })
