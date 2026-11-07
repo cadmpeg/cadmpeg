@@ -22,6 +22,68 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_canvas_keeps_edited_image_bytes() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_canvas.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    edited.model.assets[0].content = cadmpeg_ir::assets::AssetContent::Embedded {
+        data: cadmpeg_ir::assets::AssetData::new(b"edited image".to_vec()).unwrap(),
+    };
+    let mut definition = edited.model.features[0].evaluation.definition().clone();
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::ReferenceImage { frame, .. },
+    ) = &mut definition
+    else {
+        panic!("Canvas projects an image")
+    };
+    *frame = frame.with_origin(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(13.0, 27.0, 41.0))
+            .unwrap(),
+    );
+    edited.model.features[0]
+        .evaluation
+        .set_definition(definition);
+    let (written, mut report) = super::source_less_analytic::synthesize_document(&edited, None);
+    let cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage) = &report.coverage else {
+        panic!("synthesis declares arena coverage")
+    };
+    assert_eq!(
+        coverage.assets,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
+}
+
+#[test]
+fn source_less_canvas_mirrored_reports_omission() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_canvas.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    let mut definition = edited.model.features[0].evaluation.definition().clone();
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::ReferenceImage { mirror_u, .. },
+    ) = &mut definition
+    else {
+        panic!("Canvas projects an image")
+    };
+    *mirror_u = true;
+    edited.model.features[0]
+        .evaluation
+        .set_definition(definition);
+    let (written, report) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert!(written.ir().model.assets.is_empty());
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterAssetOmitted.kind()));
+}
+
+#[test]
 fn source_less_form_keeps_native_scope_and_cage() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_form.f3d");
     let decoded = F3dCodec
