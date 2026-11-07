@@ -94,6 +94,7 @@ pub(super) fn decode_prefix(
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
     emitted_curves: &HashSet<cadmpeg_ir::ids::CurveId>,
+    emitted_points: &HashSet<cadmpeg_ir::ids::PointId>,
 ) -> Result<Option<Brep>, cadmpeg_core::CodecError> {
     let arrays = if has_top_level_spline(body) {
         spline::referenced_array_attrs(body)
@@ -129,18 +130,28 @@ pub(super) fn decode_prefix(
         }
         offset = carrier.end();
     }
+    ctx.reserve_working(&mut sources, emitted_curves.len(), "index emitted curves")?;
+    sources.extend(emitted_curves.iter().cloned());
     sources.sort_unstable();
-    let Some(mut decoded) = decode(ctx, &body[..end], stream)? else {
-        return Ok(None);
-    };
-    decoded.curves.retain(|curve| sources.binary_search(&curve.id).is_err());
-    Ok(Some(decoded))
+    decode_selected(ctx, &body[..end], stream, Some((&sources, emitted_points)))
 }
 
 pub(super) fn decode(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
+) -> Result<Option<Brep>, cadmpeg_core::CodecError> {
+    decode_selected(ctx, body, stream, None)
+}
+
+fn decode_selected(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    stream: &cadmpeg_ir::StreamName,
+    prefix_exclusions: Option<(
+        &[cadmpeg_ir::ids::CurveId],
+        &HashSet<cadmpeg_ir::ids::PointId>,
+    )>,
 ) -> Result<Option<Brep>, cadmpeg_core::CodecError> {
     let has_splines = has_top_level_spline(body);
     let arrays = if has_splines {
@@ -220,6 +231,9 @@ pub(super) fn decode(
             Record::Curve(curve) => {
                 offset = curve.end;
                 let id = super::id_curve(curve.attr);
+                if prefix_exclusions.is_some_and(|(curves, _)| curves.binary_search(&id).is_ok()) {
+                    continue;
+                }
                 annotations.note(
                     id.as_str(),
                     &stream,
@@ -230,6 +244,9 @@ pub(super) fn decode(
             }
             Record::Surface(surface) => {
                 offset = surface.end;
+                if prefix_exclusions.is_some() {
+                    continue;
+                }
                 let id = id_surf(surface.attr);
                 annotations.note(
                     id.as_str(),
@@ -248,6 +265,9 @@ pub(super) fn decode(
             Record::Point(point, end) => {
                 offset = end;
                 let id = super::id_point(point.attr);
+                if prefix_exclusions.is_some_and(|(_, points)| points.contains(&id)) {
+                    continue;
+                }
                 annotations.note(
                     id.as_str(),
                     &stream,
@@ -269,6 +289,10 @@ pub(super) fn decode(
                 };
                 let curve = &splines[index];
                 let id = super::id_curve(curve.attr);
+                offset = end;
+                if prefix_exclusions.is_some_and(|(curves, _)| curves.binary_search(&id).is_ok()) {
+                    continue;
+                }
                 annotations.note(
                     id.as_str(),
                     &stream,
