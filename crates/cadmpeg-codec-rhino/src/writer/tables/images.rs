@@ -45,9 +45,10 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
             output
                 .losses
                 .push(RhinoLossCode::WriterImageOmitted.note(format!(
-                    "asset {} has no embedded content and is not written to the bitmap table",
-                    asset.id
-                )));
+                "asset {} native {} has no embedded content and is not written to the bitmap table",
+                asset.id,
+                asset.native_ref.as_deref().unwrap_or("unlinked")
+            )));
             continue;
         };
         let data = data.as_bytes();
@@ -109,6 +110,31 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_image_omission_names_linked_native_record() {
+        use cadmpeg_ir::assets::{Asset, AssetContent};
+        let mut ir = CadIr::empty();
+        ir.model.assets.push(
+            Asset::try_new(
+                "test:model:asset#external".try_into().unwrap(),
+                None,
+                None,
+                AssetContent::External {
+                    uri: cadmpeg_core::text::NonBlankString::new("file:external.png").unwrap(),
+                },
+                Some("rhino:asset:image#native".into()),
+            )
+            .unwrap(),
+        );
+        let output = images(&ir).unwrap();
+        assert!(output.records.is_empty());
+        assert!(output
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("test:model:asset#external")
+                && loss.message.contains("rhino:asset:image#native")));
+    }
 
     #[test]
     fn unrepresentable_image_length_names_both_records() {
