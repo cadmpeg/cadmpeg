@@ -321,6 +321,13 @@ fn unknown_collection_run_target_reports_a_loss() {
     let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
     assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
     assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchOwnerUnresolved.kind()
+    );
+    assert!(losses[0]
+        .message
+        .contains("Sketch 202 listed by container 300"));
 }
 
 #[test]

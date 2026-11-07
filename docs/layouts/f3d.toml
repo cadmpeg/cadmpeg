@@ -24072,7 +24072,7 @@ anchor = "Its indexed header is followed by nine zero bytes, a property block ca
 [[record]]
 name = "sketch_folder_prefix"
 kind = "byte"
-parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs", "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"]
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"]
 section = "3.1"
 anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
 size = 32

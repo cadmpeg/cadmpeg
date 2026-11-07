@@ -7279,7 +7279,6 @@ Spec §3.1 · layout: byte offsets · size: 32 B
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
-- `crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
