@@ -5414,10 +5414,11 @@ pub(in crate::design) fn parse_sketch_profile(
     }
     if tail_length == 83 {
         // The 83-byte tail omits the marked reference that follows the third
-        // u32 of the 94-byte tail, which is then zero.
+        // u32 of the 94-byte tail, which is then zero. Its second u32 is
+        // zero or one.
         let tail = after_entity_suffix;
         if View::u32_le_at(bytes, tail)? != 1
-            || View::u32_le_at(bytes, tail + 4)? != 1
+            || !matches!(View::u32_le_at(bytes, tail + 4)?, 0 | 1)
             || bytes.get(tail + 8..tail + 16)? != [0; 8]
             || View::u32_le_at(bytes, tail + 16)? != 0x41
             || marked_record_reference(bytes, tail + 46) != header.record_index.checked_add(2)
