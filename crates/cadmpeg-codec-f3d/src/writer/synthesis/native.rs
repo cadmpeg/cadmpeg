@@ -176,6 +176,9 @@ pub(super) fn reconcile(
                                 cadmpeg_ir::features::FeatureOperation::InsertBodies { .. },
                             ) => scope.copy_paste_bodies_operation().is_some(),
                             cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::InsertComponent { .. },
+                            ) => scope.copy_paste_component_operation().is_some(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::Extrude { .. },
                             ) => {
                                 scope.kind()
