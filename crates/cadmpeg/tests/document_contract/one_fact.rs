@@ -527,6 +527,69 @@ fn driven_dimension_edits_preserve_reference_state_and_report_formula_drivers() 
 
 #[cfg(feature = "f3d")]
 #[test]
+fn fusion_driven_extrude_depth_rejects_dimension_edit() {
+    use cadmpeg_codec_f3d::F3dCodec;
+    use cadmpeg_ir::document::DimensionEditError;
+    use cadmpeg_ir::features::FeatureOperation;
+
+    let bytes = fs::read(
+        workspace().join("crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_extrude_depth.f3d"),
+    )
+    .unwrap();
+    let source = decode(&F3dCodec, &bytes);
+    let mut ir = source.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            matches!(
+                feature.definition().operation(),
+                FeatureOperation::Extrude { .. }
+            )
+        })
+        .unwrap();
+    let feature_id = feature.id.clone();
+    let definition = serde_json::to_value(feature.definition()).unwrap();
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.name == "Depth" && parameter.owner.as_ref() == Some(&feature_id)
+        })
+        .unwrap()
+        .id
+        .clone();
+    let path = feature
+        .definition()
+        .dimension_paths()
+        .into_iter()
+        .find(|path| {
+            definition.pointer(path).is_some_and(|value| {
+                value["kind"] == "parameter" && value["value"] == parameter.as_str()
+            })
+        })
+        .unwrap();
+    ir.model
+        .parameters
+        .iter_mut()
+        .find(|row| row.id == parameter)
+        .unwrap()
+        .driving = false;
+    let before = ir.clone();
+    assert_eq!(
+        ir.set_dimension(&feature_id, &path, Length::new(15.0).unwrap()),
+        Err(DimensionEditError::DrivenParameter {
+            parameter,
+            drivers: Vec::new()
+        })
+    );
+    assert_eq!(ir, before);
+}
+
+#[cfg(feature = "f3d")]
+#[test]
 fn fusion_one_fact_updates_the_bound_sketch_constraint_and_its_owner_state() {
     use cadmpeg_codec_f3d::F3dCodec;
     let bytes = fs::read(

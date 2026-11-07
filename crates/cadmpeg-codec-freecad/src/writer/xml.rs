@@ -473,6 +473,12 @@ enum GeometryEmission {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum DeclarationId {
+    Generated,
+    Source(Option<String>),
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Object {
     geometry: GeometryEmission,
     pub(crate) name: String,
@@ -484,7 +490,7 @@ pub(crate) struct Object {
     /// Source persistent identity, re-emitted as the declaration `id` so the
     /// re-decode reproduces it. Synthesized objects without one take their
     /// emission position.
-    pub(crate) declaration_id: Option<String>,
+    pub(crate) declaration_id: DeclarationId,
 }
 
 impl Object {
@@ -497,7 +503,7 @@ impl Object {
             dependencies: Vec::new(),
             extensions: Vec::new(),
             declaration_attributes: BTreeMap::new(),
-            declaration_id: None,
+            declaration_id: DeclarationId::Generated,
         }
     }
 

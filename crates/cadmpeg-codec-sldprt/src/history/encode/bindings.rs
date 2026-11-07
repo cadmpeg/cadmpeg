@@ -2,21 +2,22 @@
 //! Native parameter roles refer to canonical bindings, never copied values.
 
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::features::ParameterId;
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn bind_operation_dimensions(
         &self,
         encoding: &mut NeutralFeatureEncoding,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), WriteError> {
         let operation = self.feature.evaluation.definition().operation();
         let value = serde_json::to_value(operation).map_err(|error| {
-            CodecError::malformed(format!(
-                "serialize canonical SLDPRT dimensional roles: {error}"
+            WriteError::Decline(format!(
+                "SLDPRT feature {} cannot serialize dimensional roles: {error}",
+                self.feature.id
             ))
         })?;
-        let bind = |roles: &[&str], paths: &[&str]| -> Result<(), CodecError> {
+        let bind = |roles: &[&str], paths: &[&str]| -> Result<(), WriteError> {
             let Some(role) = roles
                 .iter()
                 .find(|role| encoding.parameters.contains_key(**role))
@@ -33,7 +34,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && parameter.name == role
                         && !self.orphaned_parameters.contains(&parameter.id)
                 }) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT native dimensional role {role} cannot also hold an independent literal control on feature {}",
                         self.feature.id
                     )));
@@ -49,15 +50,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             else {
                 return Ok(());
             };
-            let id = ParameterId::mint(binding.to_owned()).map_err(CodecError::malformed)?;
+            let id = ParameterId::mint(binding.to_owned()).map_err(|error| {
+                WriteError::Decline(format!(
+                    "SLDPRT feature {} has an invalid parameter binding: {error}",
+                    self.feature.id
+                ))
+            })?;
             let parameter = self
                 .canonical_parameters
                 .iter()
                 .find(|parameter| parameter.id == id)
                 .ok_or_else(|| {
-                    CodecError::malformed(
-                        "SLDPRT dimensional role references a missing canonical parameter",
-                    )
+                    WriteError::Decline(format!(
+                        "SLDPRT feature {} references missing parameter {id}",
+                        self.feature.id
+                    ))
                 })?;
             let text = if parameter.name == role
                 && parameter.owner.as_ref() == Some(&self.feature.id)
@@ -80,7 +87,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 native_literal
                     .or_else(|| self.base_parameters().get(role).cloned())
                     .ok_or_else(|| {
-                        CodecError::malformed("SLDPRT canonical parameter expression is absent")
+                        WriteError::Decline(format!(
+                            "SLDPRT feature {} has no canonical expression for parameter {id}",
+                            self.feature.id
+                        ))
                     })?
             } else {
                 if self.canonical_parameters.iter().any(|candidate| {
@@ -88,7 +98,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && candidate.name == role
                         && !self.orphaned_parameters.contains(&candidate.id)
                 }) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT native dimensional role {role} conflicts with an independently authored parameter on feature {}",
                         self.feature.id
                     )));
@@ -120,10 +130,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 }
 
 /// Enumerate the target's understood scalar roles once, for both text and cache emission.
-pub(crate) fn visit_operation_roles(
+pub(crate) fn visit_operation_roles<E>(
     operation: &cadmpeg_ir::features::FeatureOperation,
-    mut bind: impl FnMut(&[&str], &[&str]) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
+    mut bind: impl FnMut(&[&str], &[&str]) -> Result<(), E>,
+) -> Result<(), E> {
     use cadmpeg_ir::features::FeatureOperation;
     match operation {
         FeatureOperation::Extrude { .. } => {
@@ -270,12 +280,16 @@ pub(crate) fn role_parameter(
     feature: &cadmpeg_ir::features::Feature,
     native_roles: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     role: &str,
-) -> Result<Option<ParameterId>, CodecError> {
+) -> Result<Option<ParameterId>, WriteError> {
     let operation = feature.definition().operation();
-    let value = serde_json::to_value(operation)
-        .map_err(|error| CodecError::malformed(format!("serialize canonical role: {error}")))?;
+    let value = serde_json::to_value(operation).map_err(|error| {
+        WriteError::Decline(format!(
+            "SLDPRT feature {} cannot serialize canonical roles: {error}",
+            feature.id
+        ))
+    })?;
     let mut result = None;
-    visit_operation_roles(operation, |roles, paths| {
+    visit_operation_roles(operation, |roles, paths| -> Result<(), WriteError> {
         if roles
             .iter()
             .find(|candidate| native_roles.contains_key(**candidate))
@@ -291,7 +305,14 @@ pub(crate) fn role_parameter(
             result = dimension
                 .get("value")
                 .and_then(serde_json::Value::as_str)
-                .map(|id| ParameterId::mint(id.to_owned()).map_err(CodecError::malformed))
+                .map(|id| {
+                    ParameterId::mint(id.to_owned()).map_err(|error| {
+                        WriteError::Decline(format!(
+                            "SLDPRT feature {} has an invalid parameter binding: {error}",
+                            feature.id
+                        ))
+                    })
+                })
                 .transpose()?;
         }
         Ok(())

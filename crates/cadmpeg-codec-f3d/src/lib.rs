@@ -157,20 +157,50 @@ impl F3dCodec {
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
         let current = decode::document_local_sha256(ir)?;
-        let replays = cadmpeg_ir::hash::retained_image_replays(
-            data,
-            expected,
-            current.as_str(),
-            scope,
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy {
             limits,
-            |ctx, root| {
-                let fresh =
-                    cadmpeg_ir::Codec::decode_with_context(&F3dCodec, ctx, root).map_err(|_| ())?;
-                decode::document_local_sha256(fresh.ir()).map_err(|_| ())
-            },
-        );
+            ..Default::default()
+        };
+        let context = DecodeContext::for_encode(&arena, &policy);
+        let session = cadmpeg_core::encode::EncodeSession::from_context(&context)?;
+        let depth = match (scope.model, scope.design) {
+            (true, false) => DecodeDepth::Geometry,
+            (false, false) => DecodeDepth::Container,
+            _ => DecodeDepth::Full,
+        };
+        let (source_ctx, source_root) =
+            DecodeContext::for_encode_session_root(&arena, &session, data)?;
+        let replays = if cadmpeg_ir::hash::digest::Sha256Digest::digest(data) == *expected {
+            let replay_arena = cadmpeg_core::decode::DecodeArena::new();
+            let replay_ctx = source_ctx.encode_sibling(&replay_arena, depth)?;
+            let fresh = replay_ctx
+                .run_part(|| {
+                    Ok(
+                        cadmpeg_ir::Codec::decode_with_context(&F3dCodec, &replay_ctx, source_root)
+                            .ok(),
+                    )
+                })?
+                .ok()
+                .flatten();
+            session.finish()?;
+            fresh
+                .and_then(|decoded| decode::document_local_sha256(decoded.ir()).ok())
+                .is_some_and(|hash| hash == current)
+        } else {
+            false
+        };
         if !replays {
-            writer::patch::write_semantic(ir, data, limits, writer, notes)?;
+            let result = writer::patch::write_with_context(
+                ir,
+                data,
+                writer,
+                notes,
+                &source_ctx,
+                source_root,
+            );
+            session.finish()?;
+            result?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;

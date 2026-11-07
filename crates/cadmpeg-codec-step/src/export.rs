@@ -5434,6 +5434,11 @@ impl<'a> Builder<'a> {
                     && has_extent
                 {
                     self.point_loop_curves.insert(curve.id.as_str().to_owned());
+                    self.topology_relation_loss(
+                        format!("loop:{loop_id}:collapsed-edge:{edge_key}"),
+                        StepLossCode::LoopCollapsedEdgeOmitted,
+                        format!("loop {loop_id} omitted collapsed coedge {coedge_key}, edge {edge_key}, and its degenerate carrier {curve_id}"),
+                    );
                     continue;
                 }
             } else {

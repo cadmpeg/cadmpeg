@@ -119,15 +119,19 @@ fn select_copies(
         };
         let mut bodies = Vec::new();
         for copied in operation.bodies() {
-            let Some(binding) = native.design_body_bindings.iter().find(|binding| {
+            let mut bindings = native.design_body_bindings.iter().filter(|binding| {
                 crate::ids::native_stream(binding.id()) == crate::ids::native_stream(&scope.id)
                     && binding.entity_suffix == u64::from(copied.copied.value)
-            }) else {
+            });
+            let Some(binding) = bindings.next() else {
                 break;
             };
             let Some(row) = binding.body.as_ref() else {
                 break;
             };
+            if bindings.any(|candidate| candidate.body.as_ref() != Some(row)) {
+                break;
+            }
             let Some((ordinal, body)) = target.model.bodies.iter().enumerate().find(|(_, body)| {
                 body.native_ref.as_deref() == Some(row.as_str())
                     && feature.evaluation.outputs().contains(&body.id)
@@ -575,7 +579,10 @@ pub(super) fn encode(
         header(&mut out, &tags[6], relation)?;
         out.extend_from_slice(&[0; 8]);
         out.push(1);
-        out.extend_from_slice(&(count * 2).to_le_bytes());
+        let reference_count = count.checked_mul(2).ok_or_else(|| {
+            CodecError::InvalidInput("F3D copy body reference count exceeds u32".into())
+        })?;
+        out.extend_from_slice(&reference_count.to_le_bytes());
         for (i, (key, source, copied)) in copy.bodies.iter().enumerate() {
             out.push(1);
             out.extend_from_slice(&source.to_le_bytes());
