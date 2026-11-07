@@ -91,29 +91,37 @@ pub(super) fn read<'a>(
                 && ancestors
                     .first()
                     .is_some_and(|parent| parent == b"section_structure");
+            let property_set = name == b"property_component_ref"
+                && ancestors
+                    .first()
+                    .is_some_and(|parent| parent == b"section_properties");
             damaged.push((
                 extent,
                 String::from_utf8_lossy(name).into_owned(),
                 component,
+                property_set,
             ));
             Ok(())
         },
     )?;
     let mut positions: Vec<(usize, Option<usize>)> = damaged
         .iter()
-        .filter(|(_, _, component)| *component)
-        .map(|(extent, _, _)| (extent.start() - member.start(), None))
+        .filter(|(_, _, component, _)| *component)
+        .map(|(extent, _, _, _)| (extent.start() - member.start(), None))
         .collect();
-    for (extent, name, _) in damaged {
-        let mut spec = PartSpec::new("pvz.xml_element").holding([cadmpeg_ir::ArenaClass::Model]);
-        if let Some(stream) = cadmpeg_ir::StreamName::member(stream) {
-            spec = spec.in_stream(stream);
-        }
-        ctx.decode_part(parts, extent, spec, |_| {
-            Err::<(), _>(CodecError::malformed(format_args!(
-                "damaged XML element <{name}>"
-            )))
-        })?;
+    let mut skipped_property_sets: Vec<_> = damaged
+        .iter()
+        .filter(|(_, _, _, property_set)| *property_set)
+        .map(|(extent, _, _, _)| {
+            (
+                extent.start() - member.start(),
+                damaged_property_step(extent.window()),
+            )
+        })
+        .collect();
+    skipped_property_sets.sort_unstable_by_key(|(offset, _)| *offset);
+    for (extent, name, _, _) in damaged {
+        give_up_element(ctx, parts, extent, stream, &name)?;
     }
     let root = document.root_element();
     if root.tag_name().name() != ROOT || root.attribute("type") != Some("PVS") {
@@ -173,25 +181,46 @@ pub(super) fn read<'a>(
             }
         });
     }
-    let mut cursor = 0_usize;
+    let mut cursor = Some(0_usize);
+    let mut skipped = skipped_property_sets.into_iter().peekable();
     for set in property_sets {
+        while let Some((_, step)) = skipped.next_if(|(offset, _)| *offset < set.range().start) {
+            cursor = cursor
+                .and_then(|current| step.and_then(|step| current.checked_add(step)))
+                .filter(|next| (1..=count).contains(next));
+        }
+        if cursor.is_none() {
+            let start = member
+                .start()
+                .checked_add(set.range().start)
+                .ok_or_else(|| CodecError::malformed("XML property set offset overflows"))?;
+            let end = member
+                .start()
+                .checked_add(set.range().end)
+                .ok_or_else(|| CodecError::malformed("XML property set offset overflows"))?;
+            let extent = member
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("XML property set escapes its member"))?;
+            give_up_element(ctx, parts, extent, stream, PROPERTY_COMPONENT_REF)?;
+            continue;
+        }
         let step = match set.attribute("index_offset") {
             Some(text) => index(text, "index_offset")?,
             None => 1,
         };
-        cursor = cursor
-            .checked_add(step)
+        let next = cursor
+            .and_then(|current| current.checked_add(step))
             .filter(|next| (1..=count).contains(next))
             .ok_or_else(|| {
                 CodecError::malformed("XML property_component_ref advances past the components")
             })?;
+        cursor = Some(next);
         for property in set.children().filter(Node::is_element) {
             if property.tag_name().name() != PROPERTY {
                 residue.xml_element(property.tag_name().name());
                 continue;
             }
-            if let Some(definition) =
-                indices[cursor - 1].and_then(|index| definitions.get_mut(index))
+            if let Some(definition) = indices[next - 1].and_then(|index| definitions.get_mut(index))
             {
                 definition.properties.push(Property {
                     stream: Rc::clone(&general),
@@ -205,6 +234,65 @@ pub(super) fn read<'a>(
         definitions,
         residue,
     })
+}
+
+fn give_up_element(
+    ctx: &DecodeContext<'_>,
+    parts: &mut PartOutput,
+    extent: View<'_>,
+    stream: &str,
+    name: &str,
+) -> Result<(), CodecError> {
+    let mut spec = PartSpec::new("pvz.xml_element").holding([cadmpeg_ir::ArenaClass::Model]);
+    if let Some(stream) = cadmpeg_ir::StreamName::member(stream) {
+        spec = spec.in_stream(stream);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        Err::<(), _>(CodecError::malformed(format_args!(
+            "damaged XML element <{name}>"
+        )))
+    })?;
+    Ok(())
+}
+
+fn damaged_property_step(bytes: &[u8]) -> Option<usize> {
+    let rest = bytes.strip_prefix(b"<")?;
+    let name_len = rest
+        .iter()
+        .position(|byte| byte.is_ascii_whitespace() || matches!(*byte, b'/' | b'>'))?;
+    let mut rest = rest.get(name_len..)?;
+    let mut step = None;
+    loop {
+        let trimmed = rest.trim_ascii_start();
+        let separated = trimmed.len() < rest.len();
+        rest = trimmed;
+        match rest {
+            [b'>', ..] | [b'/', b'>', ..] => return Some(step.unwrap_or(1)),
+            _ if !separated => return None,
+            _ => {}
+        }
+        let name_len = rest
+            .iter()
+            .position(|byte| *byte == b'=' || byte.is_ascii_whitespace())?;
+        let (name, after) = rest.split_at(name_len);
+        let after = after
+            .trim_ascii_start()
+            .strip_prefix(b"=")?
+            .trim_ascii_start();
+        let (&quote, after) = after.split_first()?;
+        if quote != b'"' && quote != b'\'' {
+            return None;
+        }
+        let value_len = after.iter().position(|byte| *byte == quote)?;
+        let (value, after) = after.split_at(value_len);
+        rest = after.get(1..)?;
+        if name == b"index_offset" {
+            if step.is_some() {
+                return None;
+            }
+            step = Some(std::str::from_utf8(value).ok()?.trim().parse().ok()?);
+        }
+    }
 }
 
 fn component_definition(
