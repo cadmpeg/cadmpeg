@@ -3,7 +3,7 @@
 use super::relation_records::{
     compact_scalar_layout, legacy_scalar_layout, scalar_role, shifted_value_only_scalar_trailer,
 };
-use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
+use super::{COMPACT_SCALAR_HEADER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
@@ -65,13 +65,9 @@ pub(crate) fn named_scalars(
 /// The scalar payload offset that follows the serialized object name at
 /// `name_offset`.
 ///
-/// The name length comes from the payload's own length byte, so the offset is a
-/// function of the retained bytes alone and never of a stored name value.
+/// The name length comes from its serialized count.
 fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
-    let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
-    let header_offset = name_offset
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(units.checked_mul(2)?)?;
+    let (_, header_offset) = super::names::name_span(payload, name_offset)?;
     let value_offset = header_offset.checked_add(SCALAR_HEADER.len())?;
     if payload.get(header_offset..value_offset) == Some(SCALAR_HEADER) {
         return Some(value_offset);

@@ -379,10 +379,10 @@ pub(super) fn merge(
                 }
                 let scalar_start = extras.len();
                 append_scalar_fields(&mut extras, name, value, next_object_id, &operands)?;
+                let units = name.encode_utf16().count();
                 let trailer = scalar_start
-                    + super::super::NAME_MARKER.len()
-                    + 1
-                    + name.encode_utf16().count() * 2
+                    + super::super::names::name_prefix_len(units)
+                    + units * 2
                     + super::super::SCALAR_HEADER.len()
                     + 8;
                 extras[trailer + 29] = match scalar.role {

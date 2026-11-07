@@ -1,7 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 use serde_json::json;
 
-use super::{edit_targets, scalar_edits, structural_name_findings};
+use super::{
+    collapsed_pointer, edit_targets, normalize_edit, scalar_edits, structural_name_findings,
+};
+
+#[test]
+fn normalized_edits_require_the_named_loss_and_use_the_declared_value() {
+    use crate::cross_closure::ReducedProbe;
+    use cadmpeg_ir::codec::write::ReducedStorage;
+    use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
+
+    let pointer = "/model/tessellations/0/channels/3/flags";
+    assert_eq!(
+        collapsed_pointer(pointer),
+        "model.tessellations[].channels[].flags"
+    );
+    let row = ReducedProbe {
+        path: "model.tessellations[].channels[].flags",
+        storage: ReducedStorage::Normalized {
+            loss: "sldprt/writer.fields-omitted",
+        },
+        normalize: Some(|_| json!(2)),
+    };
+    let document = json!({"model":{"tessellations":[{"channels":[{}, {}, {}, {"flags":7}]}]}});
+    let note = |message| {
+        LossNote::new(
+            LossKind::namespaced(
+                cadmpeg_ir::loss_namespace!("sldprt"),
+                "writer.fields-omitted",
+                LossTaxonomy::AttributesNotTransferred,
+            ),
+            message,
+        )
+    };
+    for losses in [vec![], vec![note("another record")]] {
+        let mut candidate = document.clone();
+        assert!(normalize_edit(&mut candidate, pointer, &row, "mesh#1", &losses).is_err());
+        assert_eq!(candidate.pointer(pointer), Some(&json!(7)));
+    }
+    let mut candidate = document;
+    normalize_edit(
+        &mut candidate,
+        pointer,
+        &row,
+        "mesh#1",
+        &[note("mesh#1 flag normalized")],
+    )
+    .unwrap();
+    assert_eq!(candidate.pointer(pointer), Some(&json!(2)));
+}
 
 #[test]
 fn dropped_native_list_member_does_not_make_the_owner_missing() {

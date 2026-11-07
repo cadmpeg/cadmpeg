@@ -147,66 +147,70 @@ pub(super) fn reconcile(
             history
         })
         .collect();
-    let mut native = F3dNative {
-        act_tables: original.act_tables.clone(),
-        act_types: original.act_types.clone(),
-        act_entities: original.act_entities.clone(),
-        act_guids: original.act_guids.clone(),
-        act_registry_channels: original.act_registry_channels.clone(),
-        act_component_links: original.act_component_links.clone(),
-        act_table_references: original.act_table_references.clone(),
-        asm_histories: histories,
-        construction_recipes: original.construction_recipes.clone(),
-        persistent_references: original.persistent_references.clone(),
-        lost_edge_references: original.lost_edge_references.clone(),
-        design_body_members: original.design_body_members.clone(),
-        design_types: original.design_types.clone(),
-        design_entity_headers: original.design_entity_headers.clone(),
-        design_record_headers: original.design_record_headers.clone(),
-        design_material_assignments: original.design_material_assignments.clone(),
-        design_body_bindings: original.design_body_bindings.clone(),
-        design_parameter_scopes: original
-            .design_parameter_scopes
-            .iter()
-            .filter(|scope| {
-                scope.copy_paste_bodies_operation().is_some()
-                    && target.model.features.iter().any(|feature| {
+    let mut native =
+        F3dNative {
+            act_tables: original.act_tables.clone(),
+            act_types: original.act_types.clone(),
+            act_entities: original.act_entities.clone(),
+            act_guids: original.act_guids.clone(),
+            act_registry_channels: original.act_registry_channels.clone(),
+            act_component_links: original.act_component_links.clone(),
+            act_table_references: original.act_table_references.clone(),
+            asm_histories: histories,
+            construction_recipes: original.construction_recipes.clone(),
+            persistent_references: original.persistent_references.clone(),
+            lost_edge_references: original.lost_edge_references.clone(),
+            design_body_members: original.design_body_members.clone(),
+            design_types: original.design_types.clone(),
+            design_entity_headers: original.design_entity_headers.clone(),
+            design_record_headers: original.design_record_headers.clone(),
+            design_material_assignments: original.design_material_assignments.clone(),
+            design_body_bindings: original.design_body_bindings.clone(),
+            design_parameter_scopes: original
+                .design_parameter_scopes
+                .iter()
+                .filter(|scope| {
+                    target.model.features.iter().any(|feature| {
                         feature.native_ref.as_deref() == Some(scope.id.as_str())
-                            && matches!(
-                                feature.evaluation.definition(),
+                            && match feature.evaluation.definition() {
                                 cadmpeg_ir::features::FeatureDefinition::Operation(
-                                    cadmpeg_ir::features::FeatureOperation::InsertBodies { .. }
-                                )
-                            )
+                                    cadmpeg_ir::features::FeatureOperation::InsertBodies { .. },
+                                ) => scope.copy_paste_bodies_operation().is_some(),
+                                cadmpeg_ir::features::FeatureDefinition::Operation(
+                                    cadmpeg_ir::features::FeatureOperation::Extrude { .. },
+                                ) => scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::Extrude,
+                                _ => false,
+                            }
                     })
-            })
-            .cloned()
-            .collect(),
-        design_parameters: original.design_parameters.clone(),
-        design_configurations: original.design_configurations.clone(),
-        body_native_keys: original.body_native_keys,
-        body_visibilities: original.body_visibilities,
-        edge_continuities: original.edge_continuities,
-        face_sidedness: original.face_sidedness,
-        face_native_keys: original.face_native_keys,
-        mesh_surface_sentinels: original.mesh_surface_sentinels,
-        creation_timestamps: original.creation_timestamps,
-        edge_ownerships: original.edge_ownerships,
-        vertex_ownerships: original.vertex_ownerships,
-        wire_topologies: original.wire_topologies,
-        transform_hints: original.transform_hints,
-        tolerant_edge_tails: original.tolerant_edge_tails,
-        tolerant_vertex_tails: original.tolerant_vertex_tails,
-        tolerant_coedge_parameters: original.tolerant_coedge_parameters,
-        persistent_design_links: original.persistent_design_links,
-        persistent_subentity_tags: original.persistent_subentity_tags,
-        sketch_points: original.sketch_points.clone(),
-        sketch_curve_identities: original.sketch_curve_identities.clone(),
-        sketch_curve_links: original.sketch_curve_links.clone(),
-        sketch_relations: original.sketch_relations.clone(),
-        sketch_texts: original.sketch_texts.clone(),
-        ..F3dNative::default()
-    };
+                })
+                .cloned()
+                .collect(),
+            design_parameters: original.design_parameters.clone(),
+            design_configurations: original.design_configurations.clone(),
+            body_native_keys: original.body_native_keys,
+            body_visibilities: original.body_visibilities,
+            edge_continuities: original.edge_continuities,
+            face_sidedness: original.face_sidedness,
+            face_native_keys: original.face_native_keys,
+            mesh_surface_sentinels: original.mesh_surface_sentinels,
+            creation_timestamps: original.creation_timestamps,
+            edge_ownerships: original.edge_ownerships,
+            vertex_ownerships: original.vertex_ownerships,
+            wire_topologies: original.wire_topologies,
+            transform_hints: original.transform_hints,
+            tolerant_edge_tails: original.tolerant_edge_tails,
+            tolerant_vertex_tails: original.tolerant_vertex_tails,
+            tolerant_coedge_parameters: original.tolerant_coedge_parameters,
+            persistent_design_links: original.persistent_design_links,
+            persistent_subentity_tags: original.persistent_subentity_tags,
+            sketch_points: original.sketch_points.clone(),
+            sketch_curve_identities: original.sketch_curve_identities.clone(),
+            sketch_curve_links: original.sketch_curve_links.clone(),
+            sketch_relations: original.sketch_relations.clone(),
+            sketch_texts: original.sketch_texts.clone(),
+            ..F3dNative::default()
+        };
     retain_mesh_sentinels(target, &mut native);
     super::streams::reconcile(&mut native, losses);
     // Native namespace storage orders every arena by record id, so the

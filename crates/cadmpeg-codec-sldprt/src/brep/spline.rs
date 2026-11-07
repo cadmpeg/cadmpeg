@@ -72,6 +72,7 @@ impl CurveDescriptor {
 
 #[derive(Debug, Clone, Copy)]
 struct SurfaceDescriptor {
+    start: usize,
     end: usize,
     attr: u32,
     u_periodic: bool,
@@ -152,6 +153,7 @@ fn parse_surface_descriptor_at(bytes: &[u8], payload: usize) -> Option<SurfaceDe
     }
 
     Some(SurfaceDescriptor {
+        start: payload,
         end: refs_end,
         attr,
         u_periodic,
@@ -920,11 +922,7 @@ pub(crate) fn patch_nurbs_surface(
         return Ok(None);
     }
     let descriptors = scan_surface_descriptors(bytes);
-    let compact_attrs = descriptors
-        .values()
-        .flat_map(|descriptor| descriptor.refs)
-        .collect::<HashSet<_>>();
-    let arrays = scan_arrays(bytes, Some(&compact_attrs), Some(&compact_attrs));
+    let arrays = scan_surface_arrays(bytes, &descriptors);
     let mut p = wrapper_offset.checked_add(2).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("Parasolid patch wrapper offset overflow")
     })?;
@@ -1003,6 +1001,14 @@ pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> HashMap<u32, CurveCarrier> {
+    scan_curve_carriers_at(bytes, refusals, |_| true)
+}
+
+pub(super) fn scan_curve_carriers_at(
+    bytes: &[u8],
+    refusals: &mut Vec<LossNote>,
+    admitted: impl Fn(usize) -> bool,
+) -> HashMap<u32, CurveCarrier> {
     let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::spatial);
     let referenced_attrs = descriptors
         .values()
@@ -1017,7 +1023,7 @@ pub(crate) fn scan_curve_carriers(
     let arrays = scan_arrays(bytes, Some(&referenced_attrs), None);
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(6).map_or(0, |end| end) {
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) || !admitted(off) {
             continue;
         }
         let Some(p) = wrapper_start(bytes, off, 134, &descriptors) else {
@@ -1191,6 +1197,29 @@ pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u32, PcurveNurbs> {
     out
 }
 
+fn scan_surface_arrays(bytes: &[u8], descriptors: &HashMap<u32, SurfaceDescriptor>) -> Arrays {
+    let attributes = descriptors
+        .values()
+        .flat_map(|descriptor| descriptor.refs)
+        .collect::<HashSet<_>>();
+    let mut spans = descriptors
+        .values()
+        .map(|descriptor| (descriptor.start, descriptor.end))
+        .collect::<Vec<_>>();
+    spans.sort_unstable();
+    for index in 1..spans.len() {
+        spans[index].1 = spans[index].1.max(spans[index - 1].1);
+    }
+    let mut arrays = scan_arrays(bytes, Some(&attributes), Some(&attributes));
+    for candidates in arrays.compact.values_mut() {
+        candidates.retain(|candidate| {
+            let preceding = spans.partition_point(|(start, _)| *start < candidate.values_at);
+            preceding == 0 || candidate.values_at > spans[preceding - 1].1
+        });
+    }
+    arrays
+}
+
 fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u32, SurfaceDescriptor> {
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
@@ -1297,11 +1326,7 @@ pub(crate) fn scan_surface_carriers(
     refusals: &mut Vec<LossNote>,
 ) -> HashMap<u32, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
-    let compact_attrs = descriptors
-        .values()
-        .flat_map(|descriptor| descriptor.refs)
-        .collect::<HashSet<_>>();
-    let arrays = scan_arrays(bytes, Some(&compact_attrs), Some(&compact_attrs));
+    let arrays = scan_surface_arrays(bytes, &descriptors);
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
@@ -1695,6 +1720,27 @@ mod tests {
     fn parasolid_surface_carrier_decodes() {
         let bytes = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
         assert!(scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180));
+    }
+
+    #[test]
+    fn wide_surface_descriptor_references_are_not_compact_arrays() {
+        let mut bytes = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
+        for original in 182_u16..=186 {
+            let reference = original.to_be_bytes();
+            let positions = bytes
+                .windows(reference.len())
+                .enumerate()
+                .filter_map(|(at, value)| (value == reference).then_some(at))
+                .collect::<Vec<_>>();
+            assert_eq!(positions.len(), 2);
+            let mut wide = Vec::new();
+            pointer(&mut wide, 0x1_0000 + u32::from(original));
+            for at in positions.into_iter().rev() {
+                bytes.splice(at..at + reference.len(), wide.iter().copied());
+            }
+        }
+        let decoded = scan_surface_carriers(&bytes, &mut Vec::new());
+        assert!(decoded.contains_key(&180));
     }
 
     #[test]

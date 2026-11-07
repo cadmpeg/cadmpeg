@@ -7,7 +7,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::{tessellation::Tessellation, CadIr};
+use cadmpeg_ir::{
+    tessellation::{Tessellation, TessellationChannel},
+    CadIr,
+};
 
 use crate::loss::SldprtLossCode;
 
@@ -75,10 +78,22 @@ pub(super) fn reduce(
             + mesh.triangle_groups().len()
             + mesh.texture_assignments().len()
             + usize::from(mesh.source_object.is_some());
-        // Writable channels round-trip exactly, so a mesh without unwritable
-        // feature structure and with a consistent auxiliary run keeps them;
-        // only genuinely omitted records are charged. (from_parts drops the
-        // source native_ref, as before.)
+        let channels = mesh
+            .channels()
+            .iter()
+            .map(|channel| {
+                TessellationChannel::new(
+                    channel.addressing().clone(),
+                    channel.item_size(),
+                    channel.kind(),
+                    2,
+                    channel.data().to_vec(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid tessellation channel: {error}"))
+            })?;
         let auxiliary_start =
             usize::from(matches!(mesh.channels(), [strips, positions, normals, ..]
                 if (strips.item_size(), strips.kind()) == (4, 8)
@@ -91,7 +106,7 @@ pub(super) fn reduce(
             .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
-        let auxiliary = &mesh.channels()[auxiliary_start.min(mesh.channels().len())..];
+        let auxiliary = &channels[auxiliary_start.min(channels.len())..];
         let keep_channels = unwritable == 0
             && (auxiliary.is_empty()
                 || crate::tessellation::auxiliary_channels_are_consistent(
@@ -101,11 +116,7 @@ pub(super) fn reduce(
         let clean = Tessellation::from_parts(
             mesh.id.clone(),
             mesh.mesh().clone(),
-            if keep_channels {
-                mesh.channels().to_vec()
-            } else {
-                Vec::new()
-            },
+            if keep_channels { channels } else { Vec::new() },
         )
         .map_err(|error| CodecError::malformed(format_args!("invalid tessellation: {error}")))?
         .with_body(mesh.body.clone());
@@ -113,6 +124,16 @@ pub(super) fn reduce(
         candidate.model.tessellations.push(clean.clone());
         match super::super::tessellation_payload(&candidate, 0.001) {
             Ok(_) => {
+                if keep_channels {
+                    for (index, channel) in mesh.channels().iter().enumerate() {
+                        if channel.flags() != 2 {
+                            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                                "tessellation {} channel {index}: model.tessellations[].channels[].flags normalized from {} to 2",
+                                mesh.id, channel.flags()
+                            )));
+                        }
+                    }
+                }
                 let omitted = if keep_channels {
                     0
                 } else {
@@ -250,13 +271,104 @@ fn appearances(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecEr
     let mut count = 0;
     ir.model.appearance_bindings.retain(|binding| {
         let omitted = matches!(binding.target, AppearanceTarget::Body(_));
+        if omitted {
+            losses.push(
+                SldprtLossCode::WriterAppearanceBindingsOmitted.note(format!(
+                "appearance binding {} omitted when distinct body colors were projected onto faces",
+                binding.id
+            )),
+            );
+        }
         count += usize::from(omitted);
         !omitted
     });
     for body in &mut ir.model.bodies {
-        count += usize::from(body.name.take().is_some());
-        body.color = None;
+        let name = body.name.take().is_some();
+        let color = body.color.take().is_some();
+        count += usize::from(name);
+        if let Some(fields) = match (name, color) {
+            (true, true) => Some("name and color"),
+            (true, false) => Some("name"),
+            (false, true) => Some("color"),
+            (false, false) => None,
+        } {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "body {}: {fields} omitted during material reduction",
+                body.id
+            )));
+        }
     }
     losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!("distinct body materials were reduced to face colors; {count} body material binding/name records omitted")));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::appearances;
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId};
+    use cadmpeg_ir::topology::Color;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn distinct_body_material_reduction_names_each_binding(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut ir = cadmpeg_ir::examples::unit_cube()?;
+        ir.model.bodies[0].name = Some("First body".into());
+        ir.model.bodies[0].color = Color::new(1.0, 0.0, 0.0, 1.0);
+        let body = ir.model.bodies[0].id.clone();
+        let mut second = ir.model.bodies[0].clone();
+        second.id = BodyId::mint("synthetic:test:body#second")?;
+        second.regions.clear();
+        ir.model.bodies.push(second);
+        let mut ids = Vec::new();
+        for (index, color) in [
+            Color::new(1.0, 0.0, 0.0, 1.0).ok_or("red color")?,
+            Color::new(0.0, 0.0, 1.0, 1.0).ok_or("blue color")?,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let appearance = AppearanceId::mint(format!("synthetic:test:appearance#{index}"))?;
+            let binding = AppearanceBindingId::mint(format!("synthetic:test:binding#{index}"))?;
+            ir.model.appearances.push(Appearance {
+                native_ref: None,
+                id: appearance.clone(),
+                name: None,
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: None,
+                category: None,
+                base_color: Some(color),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+            ir.model.appearance_bindings.push(AppearanceBinding {
+                native_ref: None,
+                id: binding.clone(),
+                target: AppearanceTarget::Body(ir.model.bodies[index].id.clone()),
+                appearance,
+                source_entity_id: None,
+                object_type: None,
+                visible: None,
+                channels: BTreeMap::new(),
+            });
+            ids.push(binding);
+        }
+        let mut losses = Vec::new();
+        appearances(&mut ir, &mut losses)?;
+        for id in ids {
+            assert!(losses.iter().any(|loss| {
+                loss.code.local_code() == "writer.appearance-bindings-omitted"
+                    && loss.message.contains(id.as_str())
+            }));
+        }
+        assert!(losses.iter().any(|loss| {
+            loss.code.local_code() == "writer.fields-omitted"
+                && loss.message.contains(body.as_str())
+        }));
+        Ok(())
+    }
 }
