@@ -190,6 +190,8 @@ Records of type `553a6b21d31123656000f587346bfbb0` in the `AmDc` segment start w
 
 A loft result with the `NMx_*` class chains requires a result check for a side face that stores a surface other than a plane, and for a cap or side that a later feature consumed or split.
 
+A line whose stored endpoints differ, with each coordinate difference at most four times the machine epsilon of binary64 times the larger coordinate magnitude of the pair, is read as one position and reports `sketch.line-endpoints-rounding-assumed`. Such a difference requires a rule that proves it is rounding.
+
 DeleteFace Boolean slots 1 and 2 require their construction roles and polarity. Its slot-3 body selection requires operand/result ownership and a body-revision join. Its slot-0 face items require selected-input-face revision joins.
 
 Tagging slot 0 requires its input and result body revisions, its topology-naming effect, and its geometry-effect rule before a neutral construction or a non-modeling history node can represent it. Multiple slot-0 collection members require their body-order and naming rules. The Tagging state, outline value, property-list metadata, collection-list metadata, and other segment versions require their meanings.

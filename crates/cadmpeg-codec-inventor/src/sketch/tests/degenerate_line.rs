@@ -152,8 +152,19 @@ fn endpoints_that_differ_by_rounding_are_one_position() {
             Some([real(x), real(base)])
         }
     };
-    // A difference of four units of rounding is one position.
+    // A difference of four units of rounding is one position under the
+    // rounding reading; exact equality needs no such reading.
     assert!(degenerate_line(line, rounded(4.0)));
+    assert!(crate::sketch::rounded_degenerate_line(line, rounded(4.0)));
+    assert!(degenerate_line(line, rounded(0.0)));
+    assert!(!crate::sketch::rounded_degenerate_line(line, rounded(0.0)));
+    assert!(!crate::sketch::rounded_degenerate_line(line, rounded(8.0)));
+    let note = crate::sketch::rounded_line_loss(2).expect("note");
+    assert_eq!(
+        note.code.local_code(),
+        "sketch.line-endpoints-rounding-assumed"
+    );
+    assert!(crate::sketch::rounded_line_loss(0).is_none());
     // A difference of eight units of rounding is a segment.
     assert!(!degenerate_line(line, rounded(8.0)));
     // A zero coordinate has no rounding allowance.

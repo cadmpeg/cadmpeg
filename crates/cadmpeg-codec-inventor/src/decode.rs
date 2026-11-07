@@ -1058,6 +1058,9 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::degenerate_line_loss(
             unresolved.sketch_degenerate_lines,
         ));
+        losses.extend(crate::sketch::rounded_line_loss(
+            unresolved.sketch_rounded_lines,
+        ));
         losses.extend(crate::sketch::point_tail::paired_association_loss(
             &sketch_inventory,
         ));
@@ -1494,6 +1497,7 @@ struct UnresolvedDesign {
     sketch_axis_distances: usize,
     sketch_carrier_conflicts: usize,
     sketch_degenerate_lines: usize,
+    sketch_rounded_lines: usize,
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1580,6 +1584,7 @@ fn project_design(
         sketch_axis_distances: sketches.native_axis_distances,
         sketch_carrier_conflicts: sketches.native_carrier_conflicts,
         sketch_degenerate_lines: sketches.native_degenerate_lines,
+        sketch_rounded_lines: sketches.native_rounded_lines,
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
         edge_treatment_losses: features.edge_treatment_losses,
