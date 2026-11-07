@@ -3,38 +3,7 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::ArchiveVersion;
-use crate::test_support::test_dump::point;
-
-fn viewport_body() -> Vec<u8> {
-    let mut bytes = vec![0x15];
-    for value in [1_i32, 1, 1, 2] {
-        bytes.extend(value.to_le_bytes());
-    }
-    point(&mut bytes, [1.0, 2.0, 3.0]);
-    for vector in [
-        [0.0, 0.0, -1.0],
-        [0.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-    ] {
-        point(&mut bytes, vector);
-    }
-    for value in [-2.0_f64, 2.0, -1.0, 1.0, 0.1, 100.0] {
-        bytes.extend(value.to_le_bytes());
-    }
-    for value in [0_i32, 1920, 0, 1080, 1, 100] {
-        bytes.extend(value.to_le_bytes());
-    }
-    bytes.extend([0x11; 16]);
-    bytes.extend([1, 0, 1, 0, 1]);
-    point(&mut bytes, [4.0, 5.0, 6.0]);
-    bytes.push(1);
-    for value in [1.0_f64, 2.0, 3.0] {
-        bytes.extend(value.to_le_bytes());
-    }
-    bytes
-}
+use crate::test_support::e2_structure::viewport_body;
 
 fn viewport_userdata_with_options(
     archive: ArchiveVersion,
