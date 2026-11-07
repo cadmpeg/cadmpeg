@@ -213,7 +213,36 @@ pub(super) fn write(
     // (#238 §5.5).
     let mut first_by_provider: HashMap<&String, &cadmpeg_ir::topology::Body> = HashMap::new();
     let mut charged: HashSet<&String> = HashSet::new();
-    for body in &ir.model.bodies {
+    let mut primary_uses = HashSet::new();
+    if let Some(native) = ir.native.namespace("fcstd") {
+        let properties = native.arena_as::<crate::native::PropertyRecord>("properties")?;
+        let payloads = native.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")?;
+        let uses =
+            native.arena_as::<crate::native::source_use::SourceUseSelector>("topology_uses")?;
+        let primary_properties: HashSet<_> = properties
+            .iter()
+            .filter(|property| property.name == "Shape")
+            .map(|property| property.id.as_str())
+            .collect();
+        let primary_payloads: HashSet<_> = payloads
+            .iter()
+            .filter(|payload| primary_properties.contains(payload.property.as_str()))
+            .map(|payload| payload.id.as_str())
+            .collect();
+        primary_uses.extend(
+            uses.into_iter()
+                .filter(|source| primary_payloads.contains(source.owner.as_str()))
+                .map(|source| source.id),
+        );
+    }
+    let mut bodies = ir.model.bodies.iter().collect::<Vec<_>>();
+    bodies.sort_by_key(|body| {
+        !body
+            .native_ref
+            .as_ref()
+            .is_some_and(|id| primary_uses.contains(id))
+    });
+    for body in bodies {
         let Some(name) = body_names.get(body.id.as_str()) else {
             continue;
         };
