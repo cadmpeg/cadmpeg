@@ -732,6 +732,22 @@ impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
     }
 }
 
+fn native_record_error(error: cadmpeg_ir::native::NativeConvertError) -> WriteError {
+    use cadmpeg_ir::native::NativeConvertError;
+    match error {
+        NativeConvertError::Resource(CodecError::ResourceLimit(limit)) => {
+            WriteError::Encode(limit.into())
+        }
+        NativeConvertError::Resource(CodecError::Io(error)) => WriteError::Encode(error.into()),
+        NativeConvertError::Resource(CodecError::UnsupportedTarget(refusal)) => WriteError::Encode(
+            cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(refusal),
+        ),
+        NativeConvertError::Arena { source, .. }
+        | NativeConvertError::WriteRecord { source, .. } => native_record_error(*source),
+        error => WriteError::Omit(error.to_string()),
+    }
+}
+
 /// One carrier resolution naming every wrapper it skipped, so no dropped
 /// wrapper stays silent when its edge is written on the resolved leaf.
 fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {

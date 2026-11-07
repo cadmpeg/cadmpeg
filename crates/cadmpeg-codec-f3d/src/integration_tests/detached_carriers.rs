@@ -56,7 +56,12 @@ fn detached_point_records_survive_in_a_bodyless_document() {
         for (actual, expected) in [actual.x, actual.y, actual.z].into_iter().zip(expected) {
             assert!((actual - expected).abs() < 1e-10);
         }
-        assert!(point.source_object.is_some());
+        let association = point
+            .source_object
+            .as_ref()
+            .expect("detached source identity");
+        let (_, index) = point.id.as_str().rsplit_once('#').expect("record index");
+        assert_eq!(association.object_id.as_str(), format!("ASM:{index}"));
     }
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(decoded

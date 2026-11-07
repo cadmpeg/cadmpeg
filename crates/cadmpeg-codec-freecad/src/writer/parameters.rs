@@ -382,6 +382,12 @@ pub(super) fn write(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut expressions = expressions::native_only(ir, names)?;
+    let native_properties = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::PropertyRecord>("properties"))
+        .transpose()?
+        .unwrap_or_default();
     let mut constraints = HashMap::new();
     let mut omitted_constraints = std::collections::HashSet::new();
     for sketch in &ir.model.sketches {
@@ -522,7 +528,40 @@ pub(super) fn write(
         // Dynamic metadata distinguishes authored scalar parameters from
         // application controls. A literal restates its value lane, so only a
         // formula needs an explicit binding.
-        let property = property.replacen("<Property ", "<Property group=\"Parameters\" ", 1);
+        let property = if let Some(source) = parameter.native_ref.as_ref().and_then(|id| {
+            native_properties
+                .iter()
+                .find(|source| &source.id == id && source.name == property_name)
+        }) {
+            let generated = roxmltree::Document::parse(&property).map_err(CodecError::malformed)?;
+            let generated_root = generated.root_element();
+            let generated_value = generated_root.first_element_child();
+            let mut source = source.clone();
+            let compatible = source.type_name == generated_root.attribute("type").unwrap_or("");
+            let mut restored = None;
+            if let (
+                true,
+                Some(generated_value),
+                Some(crate::native::PropertyBody::Persisted { values, .. }),
+            ) = (compatible, generated_value, &mut source.body)
+            {
+                if let [value] = values.as_mut_slice() {
+                    if value.tag == generated_value.tag_name().name() {
+                        if let Some(text) = generated_value.attribute("value") {
+                            value.attributes.insert("value".into(), text.to_owned());
+                            restored = xml::native_named(
+                                &source,
+                                names,
+                                &std::collections::HashSet::new(),
+                            )?;
+                        }
+                    }
+                }
+            }
+            restored.unwrap_or(property)
+        } else {
+            property.replacen("<Property ", "<Property group=\"Parameters\" ", 1)
+        };
         // Each object's parameter-carrying properties enter the object in
         // ascending parameter ordinal order. A bound control keeps its slot
         // only by moving to its ordinal position with the current value;

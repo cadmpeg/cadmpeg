@@ -451,7 +451,16 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
 
     for target in ["Solid", "Reversed", "Symmetric"] {
         let result = decode(&document(target, None));
-        assert!(result.report().losses.is_empty(), "{target}");
+        assert!(
+            result.ir().scope.design && !result.ir().scope.model,
+            "{target}"
+        );
+        assert_eq!(result.report().losses.len(), 1, "{target}");
+        assert_eq!(
+            result.report().losses[0].code.local_code(),
+            "depth.not-delivered",
+            "{target}"
+        );
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction,
             extent,
@@ -492,7 +501,16 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     ];
     for (target, replacement) in valid {
         let result = decode(&document(target, Some(replacement)));
-        assert!(result.report().losses.is_empty(), "{target}");
+        assert!(
+            result.ir().scope.design && !result.ir().scope.model,
+            "{target}"
+        );
+        assert_eq!(result.report().losses.len(), 1, "{target}");
+        assert_eq!(
+            result.report().losses[0].code.local_code(),
+            "depth.not-delivered",
+            "{target}"
+        );
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction,
             extent,

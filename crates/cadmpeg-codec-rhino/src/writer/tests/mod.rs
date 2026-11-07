@@ -41,6 +41,28 @@ fn frame_admission_refuses_nonfinite_axes() {
 }
 
 #[test]
+fn native_record_errors_keep_nested_resource_limits_and_omit_malformed_values() {
+    use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
+    use cadmpeg_ir::codec::write::EncodeError;
+    use cadmpeg_ir::native::NativeConvertError;
+    let limit = ResourceLimit::allocation_failed(ResourceDimension::Entities, 4, 1, "test");
+    let nested = NativeConvertError::Arena {
+        arena: "hatch_patterns".into(),
+        source: Box::new(NativeConvertError::Resource(
+            cadmpeg_core::CodecError::ResourceLimit(limit),
+        )),
+    };
+    assert!(matches!(
+        super::native_record_error(nested),
+        super::WriteError::Encode(EncodeError::ResourceLimit(actual)) if actual == limit
+    ));
+    assert!(matches!(
+        super::native_record_error(NativeConvertError::NonObject),
+        super::WriteError::Omit(_)
+    ));
+}
+
+#[test]
 fn empty_point_cloud_cannot_emit_infinite_bounds() {
     assert!(super::point_cloud_payload(&[], None).is_err());
 }

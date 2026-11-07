@@ -199,9 +199,13 @@ pub(super) fn encode_design_bulkstream(
         || !native.design_parameter_owners.is_empty()
         || native.design_parameter_scopes.iter().any(|scope| {
             scope.copy_paste_bodies_operation().is_none()
+                && scope.copy_paste_component_operation().is_none()
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::Extrude
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::BaseFeature
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::BaseFlange
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::RemoveBody
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::Form
         })
         || !native.design_sketch_placements.is_empty()
         || native
