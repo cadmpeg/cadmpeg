@@ -156,6 +156,7 @@ mod feature_order;
 mod levels;
 mod native_plane;
 mod native_records;
+mod null_entities;
 mod offset_curve;
 mod offset_surface;
 mod pcurve_admission;
@@ -669,6 +670,9 @@ fn synthesize_with_admission(
     neutral_products::append(ir, &mut graph.entities, version);
     brep_order::apply_topology_sources(ir, &mut graph.entities);
     let mut native_export = native_records::append::append(ir, &mut graph.entities, version);
+    native_export
+        .regenerated
+        .extend(null_entities::append(ir, &mut graph.entities));
     graph.losses.extend(native_export.losses);
     levels::append_level_definitions(ir, &mut graph.entities);
     let mut attribute_export = attributes::append(ir, &mut graph.entities, version);
@@ -1085,9 +1089,6 @@ fn synthesis_graph(
             &mut losses,
         )?
     } else {
-        // This branch writes edges, curves, surfaces and points only. A body
-        // other than the decoder's free-geometry wrapper has nothing here that
-        // carries it.
         if let Some(body) = ir
             .model
             .bodies
@@ -5465,8 +5466,6 @@ impl<'a> PcurveOrientationContext<'a> {
                     self.owner, pcurve.id
                 )));
             }
-            // A non-finite pcurve point is evaluated on the support as a finite
-            // one is.
             let pcurve_point = |parameter, position| match cadmpeg_ir::eval::decode::pcurve_uv(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &pcurve.geometry,
@@ -5496,8 +5495,6 @@ impl<'a> PcurveOrientationContext<'a> {
                 end_uv.u,
                 end_uv.v,
             );
-            // Both ends are refused outside the support before either is
-            // refused as non-finite.
             for (point, position) in [(&start, "start"), (&end, "end")] {
                 if matches!(point, Err(EvaluationFailure::NoValue)) {
                     return Err(CodecError::malformed(format_args!(
@@ -9333,6 +9330,9 @@ impl Entity {
     }
 
     fn parameter_text(&self) -> Vec<u8> {
+        if self.type_code == 0 && self.parameter_body == b";" {
+            return b"0;".to_vec();
+        }
         let mut text = format!("{},", self.type_code).into_bytes();
         text.extend_from_slice(&self.parameter_body);
         text
