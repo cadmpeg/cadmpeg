@@ -80,6 +80,7 @@ enum UsedAsset {
     Document(u64),
     Item(u64),
     Uri(String),
+    ProductReference { reference: u64, source: u64 },
 }
 
 /// Resolve an unresolved child definition to the external reference that
@@ -90,7 +91,46 @@ fn external_prototype(
     exchange: &Exchange,
     externals: &ExternalReferences,
     child: u64,
+    losses: &mut Vec<LossNote>,
 ) -> Option<(ExternalPrototype, UsedAsset)> {
+    if let Some(reference) = exchange
+        .records()
+        .get(&child)
+        .and_then(|record| record.partial("PRODUCT_DEFINITION_REFERENCE"))
+    {
+        let source_id = reference.parameters.first()?.reference()?;
+        let source = externals.sources.get(&source_id)?;
+        let text = |index: usize, losses: &mut Vec<LossNote>| {
+            decode_text(
+                exchange,
+                reference.parameters.get(index)?,
+                losses,
+                child,
+                "external product identifier",
+                StepLossCode::MetadataStringInvalid,
+            )
+        };
+        if !text(1, losses)?.is_empty()
+            || !text(2, losses)?.is_empty()
+            || !matches!(reference.parameters.get(4), Some(Value::Omitted))
+        {
+            return None;
+        }
+        let object = text(3, losses)?;
+        if source.is_empty() {
+            return None;
+        }
+        return Some((
+            ExternalPrototype {
+                document: ExternalDocument::path(source.clone()),
+                object: (!object.is_empty()).then_some(object),
+            },
+            UsedAsset::ProductReference {
+                reference: child,
+                source: source_id,
+            },
+        ));
+    }
     if let Some(&document_id) = externals.document_refs.get(&child) {
         let (identifier, _, _) = externals.documents.get(&document_id)?;
         if identifier.is_empty() {
@@ -167,6 +207,7 @@ fn remove_used_asset(ir: &mut CadIr, used: &UsedAsset) {
                 !matches!(&asset.content, cadmpeg_ir::assets::AssetContent::External { uri: asset_uri } if asset_uri.as_str() == uri)
             });
         }
+        UsedAsset::ProductReference { .. } => {}
     }
 }
 
@@ -589,7 +630,12 @@ pub(super) fn decode(
             let usage = &usages[&usage_id];
             let child = match definition_prototypes.get(&usage.child_definition).cloned() {
                 Some(definition) => ChildPrototype::Local(definition),
-                None => match external_prototype(exchange, externals, usage.child_definition) {
+                None => match external_prototype(
+                    exchange,
+                    externals,
+                    usage.child_definition,
+                    &mut losses,
+                ) {
                     Some((prototype, used)) => ChildPrototype::External(prototype, used),
                     None => {
                         losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -645,6 +691,10 @@ pub(super) fn decode(
             let prototype = match child {
                 ChildPrototype::Local(definition) => PrototypeReference::Local { definition },
                 ChildPrototype::External(prototype, used) => {
+                    if let UsedAsset::ProductReference { reference, source } = &used {
+                        typed.insert(*reference);
+                        typed.insert(*source);
+                    }
                     remove_used_asset(ir, &used);
                     PrototypeReference::External {
                         document: prototype.document,
