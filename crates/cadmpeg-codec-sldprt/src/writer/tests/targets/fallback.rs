@@ -64,8 +64,10 @@ fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_con
         .insert_retained_record(crate::source_image_id(), image)
         .expect("source image identity");
     let records = crate::source_records(&ir, &fidelity);
-    let mut limits = cadmpeg_core::decode::ResourceLimits::default();
-    limits.max_input_bytes = 0;
+    let limits = cadmpeg_core::decode::ResourceLimits {
+        max_input_bytes: 0,
+        ..Default::default()
+    };
     let limited = crate::writer::write_semantic_with_records(
         &ir,
         &fidelity.annotations,
