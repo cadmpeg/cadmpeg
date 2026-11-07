@@ -165,6 +165,10 @@ impl DecodeBudget {
         self.input_bytes.get()
     }
 
+    pub(super) fn inherit_input(&self, input_bytes: u64) {
+        self.input_bytes.set(input_bytes);
+    }
+
     pub(super) fn charge_input(
         &self,
         amount: u64,

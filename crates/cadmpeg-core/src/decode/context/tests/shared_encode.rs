@@ -319,6 +319,7 @@ fn sibling_keeps_the_admitted_root_and_account_at_a_new_depth() {
     assert_eq!(root.depth(), DecodeDepth::Full);
     assert_eq!(sibling.depth(), DecodeDepth::Geometry);
     assert_eq!(sibling.source_digest(), root.source_digest());
+    assert_eq!(sibling.per_expand_allowance(), root.per_expand_allowance());
     assert_eq!(view.window(), b"abc");
     let Err(error) = DecodeContext::for_encode_session_root(&arena, &session, b"x") else {
         panic!("the admitted root consumes the input budget");
