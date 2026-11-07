@@ -304,11 +304,10 @@ fn malformed_original_radial_cycle_is_not_repaired_by_omission() {
         admit(candidate)
     })
     .expect_err("malformed original graph");
-    let WriteError::Fail(error) = error else {
-        panic!("radial inconsistency must fail the write: {error:?}");
+    let WriteError::Omit(error) = error else {
+        panic!("radial inconsistency must omit the body: {error:?}");
     };
-    assert!(matches!(error, CodecError::Malformed(_)));
-    assert!(error.to_string().contains("radial ring"));
+    assert!(error.contains("radial ring"));
     assert_eq!(
         calls.get(),
         0,
@@ -317,11 +316,48 @@ fn malformed_original_radial_cycle_is_not_repaired_by_omission() {
 }
 
 #[test]
+fn face_reduction_rejects_a_radial_cycle_that_misses_the_retained_face() {
+    let mut ir = adjacent_quad_sheet();
+    let uses = ir
+        .model
+        .edges
+        .iter()
+        .find_map(|edge| {
+            let uses = ir
+                .model
+                .coedges
+                .iter()
+                .enumerate()
+                .filter(|(_, coedge)| coedge.edge == edge.id)
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            (uses.len() == 2).then_some(uses)
+        })
+        .expect("shared edge");
+    let owner = ir.model.coedges[uses[0]].owner_loop.clone();
+    let face = ir
+        .model
+        .loops
+        .iter()
+        .find(|row| row.id == owner)
+        .unwrap()
+        .face
+        .clone();
+    let omitted = ir.model.coedges[uses[1]].id.clone();
+    ir.model.coedges[uses[1]].radial_next = omitted;
+    let selected = std::collections::BTreeSet::from([face.as_str()]);
+    assert!(matches!(
+        reduce::retain_faces(&ir, &selected),
+        Err(WriteError::Omit(_))
+    ));
+}
+
+#[test]
 fn dangling_original_radial_reference_is_a_precondition() {
     let mut ir = adjacent_quad_sheet();
     ir.model.coedges[0].radial_next = "cadir:model:coedge#missing".try_into().expect("identity");
     let error = reduce::sheet(&ir, |_| Ok(())).expect_err("dangling radial use");
-    assert!(matches!(error, WriteError::Fail(CodecError::Malformed(_))));
+    assert!(matches!(error, WriteError::Omit(_)));
 }
 
 #[test]
