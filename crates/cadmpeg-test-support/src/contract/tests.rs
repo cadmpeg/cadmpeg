@@ -125,6 +125,39 @@ fn neutral_projection_removes_declared_classes_and_provenance_layer() {
 }
 
 #[test]
+fn written_comparison_preserves_feature_self_selection() {
+    let feature = |scope: &str, selection: &str| {
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:feature#1", "ordinal": 0,
+            "needs_recompute": false, "suppressed": false,
+            "native_ref": scope,
+            "definition": {"definition": "base_feature", "bodies": {
+                "kind": "resolved", "value": {"bodies": [], "native": selection}
+            }}
+        }))
+        .expect("typed Base Feature")
+    };
+    let mut before = CadIr::empty();
+    before
+        .model
+        .features
+        .push(feature("test:design:scope#1", "test:design:scope#1"));
+    let mut after = before.clone();
+    after.model.features[0] = feature("test:design:scope#2", "test:design:scope#2");
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&before, None), TargetRequest::Inherit)
+        .expect("CADIR plan");
+    assert_written_arenas_agree(plan.report(), &before, &after);
+    after.model.features[0] = feature("test:design:scope#2", "test:design:scope#3");
+    assert!(std::panic::catch_unwind(|| assert_written_arenas_agree(
+        plan.report(),
+        &before,
+        &after
+    ))
+    .is_err());
+}
+
+#[test]
 fn written_comparison_observes_only_claimed_arenas() {
     let ir = CadIr::empty();
     let plan = CadirEncoder
