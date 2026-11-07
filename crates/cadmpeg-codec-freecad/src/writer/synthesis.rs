@@ -799,7 +799,17 @@ pub(super) fn write(
     }
     let mut body_names = HashMap::new();
     let mut emitted_topology = Vec::new();
-    let mut shape_groups = BTreeMap::<String, Vec<&cadmpeg_ir::topology::Body>>::new();
+    let source_uses = namespace
+        .map(|namespace| {
+            namespace.arena_as::<crate::native::source_use::SourceUseSelector>("topology_uses")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let shape_payloads = namespace
+        .map(|namespace| namespace.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads"))
+        .transpose()?
+        .unwrap_or_default();
+    let mut shape_groups = BTreeMap::<(String, String), Vec<&cadmpeg_ir::topology::Body>>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
         let proposed = names
             .get(body.id.as_str())
@@ -811,9 +821,28 @@ pub(super) fn write(
             format!("Shape{index}")
         };
         body_names.insert(body.id.as_str().to_owned(), name.clone());
-        shape_groups.entry(name).or_default().push(body);
+        let property = body
+            .native_ref
+            .as_deref()
+            .and_then(|id| source_uses.iter().find(|source| source.id == id))
+            .and_then(|source| {
+                shape_payloads
+                    .iter()
+                    .find(|payload| payload.id == source.owner)
+            })
+            .and_then(|payload| {
+                native_properties
+                    .iter()
+                    .find(|property| property.id == payload.property)
+            })
+            .filter(|property| names.get(&property.owner) == Some(&name))
+            .map_or("Shape", |property| property.name.as_str());
+        shape_groups
+            .entry((name, property.to_owned()))
+            .or_default()
+            .push(body);
     }
-    for (name, bodies) in shape_groups {
+    for ((name, property_name), bodies) in shape_groups {
         // The BRep root location couples with the owner object's Placement:
         // the decode restores an owner's placement from its shape root, so
         // the root carries the owner's occurrence transform (#238 §5.5).
@@ -849,7 +878,7 @@ pub(super) fn write(
                 return None;
             };
             (owner_matches
-                && property.name == "Shape"
+                && property.name == property_name
                 && property.type_name == "Part::PropertyPartShape"
                 && file.to_ascii_lowercase().ends_with(".brp")
                 && entry_names.contains(file)
@@ -880,20 +909,24 @@ pub(super) fn write(
                 body_names.remove(body.id.as_str());
             }
         }
-        brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
+        if property_name == "Shape" {
+            brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
+        }
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("body owner is absent"))?;
         object.set(
-            "Shape",
+            &property_name,
             xml::property(
-                "Shape",
+                &property_name,
                 "Part::PropertyPartShape",
                 &xml::element("Part", &[("file", file)]),
             ),
         );
-        object.mark_geometry_written();
+        if property_name == "Shape" {
+            object.mark_geometry_written();
+        }
         // The Label of a plain `Part::Feature` carrying exactly one body is
         // that body's native home; a body output by a feature, or one of
         // several bodies in one object, has no Label home (#238 §5.5).
