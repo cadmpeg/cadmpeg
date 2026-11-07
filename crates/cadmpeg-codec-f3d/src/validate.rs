@@ -1801,7 +1801,9 @@ fn validate_canvas_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             && scope_unique
             && geometry_unique
             && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
-            && geometry_entities.contains(&(design_segment, u64::from(image.plane_entity_suffix)))
+            && image.plane_entity_suffix.is_none_or(|suffix| {
+                geometry_entities.contains(&(design_segment, u64::from(suffix)))
+            })
             && component_entities
                 .contains(&(design_segment, u64::from(image.component_entity_suffix)));
         if !valid {

@@ -1801,8 +1801,6 @@ fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
     let entry = serde_json::json!({"record_index": 4, "record_reference_offset": 0,
         "ordinal": 1, "ordinal_offset": 0});
     let mut wire = serde_json::json!({"id": "trim", "scope_record_index": 1,
-        "selection_record_index": 2, "selection_byte_offset": 0,
-        "selection_next_record_index": 3, "selection_next_byte_offset": 0,
         "chain_records": [
             {"record_index": 3, "byte_offset": 0, "class_tag": "288", "frame_length": 11},
             {"record_index": 6, "byte_offset": 11, "class_tag": "271", "frame_length": 11}

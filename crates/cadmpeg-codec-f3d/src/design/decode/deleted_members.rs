@@ -205,6 +205,21 @@ fn owner_timestamp_table(bytes: &[u8], owner: u32) -> Option<TimestampTable> {
     tables.next().is_none().then_some(table)
 }
 
+pub(in crate::design::decode) fn timestamp_table_spans_by_owner(
+    bytes: &[u8],
+) -> std::collections::HashMap<u32, Option<std::ops::Range<usize>>> {
+    let mut spans = std::collections::HashMap::new();
+    for (owner, table) in
+        indexed_record_offsets(bytes).filter_map(|header| timestamp_table(bytes, header))
+    {
+        spans
+            .entry(owner)
+            .and_modify(|span| *span = None)
+            .or_insert(Some(table.header.offset..table.end));
+    }
+    spans
+}
+
 /// The owner and layout of a record-timestamp table whose indexed header is
 /// `header`.
 fn timestamp_table(bytes: &[u8], header: IndexedRecordHeader) -> Option<(u32, TimestampTable)> {

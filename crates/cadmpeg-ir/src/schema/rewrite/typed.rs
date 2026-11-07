@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 mod cache;
 pub mod native_fields;
 
-use cache::ReplacementIndex;
+pub use cache::TextReplacements;
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
@@ -61,7 +61,7 @@ pub trait RewriteIdentities: Sized {
 #[derive(Debug)]
 pub struct IdentityMap<'ctx, F> {
     map: F,
-    text_index: Option<ReplacementIndex<'ctx>>,
+    text_index: Option<&'ctx TextReplacements<'ctx>>,
     targets: HashMap<String, crate::ids::Identity>,
     occupied: HashSet<String>,
     refused: Option<String>,
@@ -83,12 +83,10 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 
     /// Also rewrite ordinary text that exactly names an owned source identity.
     /// Source keys must expose unique text in byte order.
-    pub fn with_text_replacements<K: AsRef<str> + 'ctx>(
-        mut self,
-        replacements: impl ExactSizeIterator<Item = (&'ctx K, &'ctx String)>,
-    ) -> Result<Self, CodecError> {
-        self.text_index = Some(ReplacementIndex::build(replacements)?);
-        Ok(self)
+    #[must_use]
+    pub fn with_text_replacements(mut self, replacements: &'ctx TextReplacements<'ctx>) -> Self {
+        self.text_index = Some(replacements);
+        self
     }
 
     fn text(&mut self, source: String) -> Result<String, CodecError> {

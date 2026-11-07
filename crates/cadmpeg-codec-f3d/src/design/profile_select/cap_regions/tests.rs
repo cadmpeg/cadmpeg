@@ -11,7 +11,7 @@ use crate::history_records::{
     AsmHistoricalTopology,
 };
 
-use super::{changed_planes, face_cap, outlines_agree, Sampled};
+use super::{changed_planes, face_cap, outlines_agree, PlaneFrame, Sampled};
 
 const TOLERANCE: f64 = 1e-6;
 /// The cap face every test topology draws.
@@ -32,6 +32,10 @@ fn xy_sketch() -> Sketch {
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     }
+}
+
+fn xy_frame() -> PlaneFrame {
+    PlaneFrame::of_sketch(&xy_sketch()).unwrap()
 }
 
 fn slot(index: usize) -> i64 {
@@ -124,7 +128,7 @@ fn a_loop_whose_first_edge_is_stored_backwards_keeps_every_corner() {
     // 0 -> 1 -> 2 -> 3, so it must be drawn from 0 to 1 before the rest.
     let mut topology = loop_topology(&unit_square_corners(), &[(1, 0), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
-    let cap = face_cap(&xy_sketch(), &topology, CAP, TOLERANCE).unwrap();
+    let cap = face_cap(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
     assert_eq!(cap.loops[0].len(), 4);
     for corner in unit_square_corners() {
         assert!(
@@ -142,7 +146,7 @@ fn a_loop_whose_first_edge_is_stored_backwards_keeps_every_corner() {
 fn a_loop_that_does_not_close_proves_no_cap() {
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 1)]);
     straight_carriers(&mut topology);
-    assert!(face_cap(&xy_sketch(), &topology, CAP, TOLERANCE).is_none());
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 }
 
 #[test]
@@ -151,13 +155,39 @@ fn an_edge_without_a_proven_carrier_proves_no_cap() {
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
     topology.curve_axes.remove(2);
-    assert!(face_cap(&xy_sketch(), &topology, CAP, TOLERANCE).is_none());
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 
     // A curve axis across the chord is a circle's or an ellipse's.
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
     topology.curve_axes[2].direction = Vector3::new(0.0, 0.0, 1.0);
-    assert!(face_cap(&xy_sketch(), &topology, CAP, TOLERANCE).is_none());
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+}
+
+#[test]
+fn an_edge_with_two_rows_of_one_kind_proves_no_cap() {
+    let corners = unit_square_corners();
+    let edges = [(0, 1), (1, 2), (2, 3), (3, 0)];
+    let mut topology = loop_topology(&corners, &edges);
+    straight_carriers(&mut topology);
+    let axis = topology.curve_axes[2].clone();
+    topology.curve_axes.push(axis);
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+
+    let mut topology = loop_topology(&corners, &edges);
+    straight_carriers(&mut topology);
+    let curve = topology.edge_curves[2].clone();
+    topology.edge_curves.push(curve);
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+
+    let mut topology = loop_topology(&corners, &edges);
+    straight_carriers(&mut topology);
+    let point = topology.vertex_points[1].clone();
+    topology.vertex_points.push(AsmHistoricalCarrierBinding {
+        carrier: point.carrier + 5000,
+        ..point
+    });
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 }
 
 #[test]
@@ -195,7 +225,7 @@ fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
         topology
     };
     let cap = face_cap(
-        &xy_sketch(),
+        &xy_frame(),
         &circle_topology(Vector3::new(0.0, 0.0, 1.0)),
         CAP,
         TOLERANCE,
@@ -205,12 +235,18 @@ fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
     assert!((cap.area - circle).abs() < 1e-2 * circle);
     assert!(cap.boundary_distance(Point2::new(1.0, 3.0)) < 1e-12);
     assert!(face_cap(
-        &xy_sketch(),
+        &xy_frame(),
         &circle_topology(Vector3::new(1.0, 0.0, 0.0)),
         CAP,
         TOLERANCE,
     )
     .is_none());
+    // A neighbour face without a surface binding leaves the circle unproven.
+    let mut unbound = circle_topology(Vector3::new(0.0, 0.0, 1.0));
+    unbound
+        .face_surfaces
+        .retain(|binding| binding.entity != 101);
+    assert!(face_cap(&xy_frame(), &unbound, CAP, TOLERANCE).is_none());
 }
 
 /// One region of area 1 sampled at the unit square's centre.
@@ -227,7 +263,7 @@ fn sampled(region: &AtomicSketchRegion) -> Vec<Sampled<'_>> {
 fn regions_of_the_caps_area_must_also_share_its_outline() {
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
-    let cap = face_cap(&xy_sketch(), &topology, CAP, TOLERANCE).unwrap();
+    let cap = face_cap(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
     let square = |du: f64| AtomicSketchRegion {
         boundary: Vec::new(),
         polyline: unit_square_corners()
@@ -281,6 +317,17 @@ fn a_cut_plane_compares_the_faces_it_deleted_with_the_faces_it_inserted() {
     let holds = |point: Point2| plane.after.iter().any(|cap| cap.contains(point));
     assert!(held(Point2::new(1.5, 0.5)) && !holds(Point2::new(1.5, 0.5)));
     assert!(held(Point2::new(0.5, 0.5)) && holds(Point2::new(0.5, 0.5)));
+
+    // A changed face whose surface has two plane rows leaves the planes unread.
+    let mut twice = before.clone();
+    twice
+        .surface_planes
+        .push(crate::history_records::AsmHistoricalPlane {
+            surface: 800,
+            origin: Point3::new(0.0, 0.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        });
+    assert!(changed_planes(&xy_sketch(), (&twice, &after), &faces, TOLERANCE).is_none());
 
     // A changed face on the plane without a proven cap leaves the plane out.
     after.curve_axes.remove(1);
