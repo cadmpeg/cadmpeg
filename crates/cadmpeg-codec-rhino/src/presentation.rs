@@ -1719,6 +1719,7 @@ fn classify_rdk_material_payload(
         reader.skip_remaining()?;
         return Ok(RdkMaterialPayload::Compatibility(None));
     }
+    let xml_offset = reader.position();
     let xml = reader.take(usize::try_from(length).map_err(|_| {
         FramingError::structural(reader.position(), "XML length exceeds address space")
     })?)?;
@@ -1734,8 +1735,17 @@ fn classify_rdk_material_payload(
     let xml = std::str::from_utf8(xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
+    let xml = crate::xml_recovery::recover(ctx, xml, xml_offset, false).map_err(|error| {
+        let CodecError::Malformed(error) = error else {
+            return error.into();
+        };
+        FramingError::structural(
+            payload_range.start,
+            format!("legacy RDK XML is malformed: {error}"),
+        )
+    })?;
     let document = ctx
-        .parse_xml(xml, "Rhino legacy RDK XML tree")
+        .parse_xml(&xml.text, "Rhino legacy RDK XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error.into();
@@ -1785,6 +1795,32 @@ fn classify_rdk_material_payload(
     Ok(RdkMaterialPayload::Compatibility(
         (!instance_id.is_nil()).then_some(instance_id),
     ))
+}
+
+fn damaged_rdk_xml(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    payload_range: Range<usize>,
+) -> Result<Vec<crate::xml_recovery::XmlDamage>, FramingError> {
+    let mut reader = BoundedReader::new(data, payload_range.start, payload_range.end)?;
+    if reader.i32()? != 2 {
+        return Ok(Vec::new());
+    }
+    let length = reader.i32()?;
+    if !(1..=1024).contains(&length) {
+        return Ok(Vec::new());
+    }
+    let offset = reader.position();
+    let bytes = reader.take(
+        usize::try_from(length)
+            .map_err(|_| FramingError::structural(offset, "XML length exceeds address space"))?,
+    )?;
+    if bytes.last() == Some(&0) {
+        return Ok(Vec::new());
+    }
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| FramingError::structural(offset, "legacy RDK XML is not UTF-8"))?;
+    Ok(crate::xml_recovery::recover(ctx, text, offset, false)?.damaged)
 }
 
 fn legacy_rdk_material_instance_id(
@@ -4604,6 +4640,7 @@ pub(crate) fn install(
 
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
+    let mut give_ups = Vec::new();
     for object in &scan.objects {
         if let Some(identity) = object.identity() {
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
@@ -4652,6 +4689,35 @@ pub(crate) fn install(
                     MATERIAL,
                 ))? {
                     let mut material_requires_opaque = false;
+                    let first_xml_part = give_ups.len();
+                    for value in userdata.iter().filter_map(UserdataDescriptor::known) {
+                        if value.class_uuid != RDK_CLASS
+                            || value.item_uuid != RDK_USERDATA
+                            || (value.application_uuid.is_some()
+                                && value.application_uuid != Some(RDK_APPLICATION))
+                        {
+                            continue;
+                        }
+                        match damaged_rdk_xml(ctx, scan.data, value.payload_range.clone()) {
+                            Ok(spans) => {
+                                for damage in spans {
+                                    crate::container::give_up(
+                                        &mut give_ups,
+                                        "rhino.xml_element",
+                                        damage.range,
+                                        scan.data.len(),
+                                        Some(MATERIAL_TABLE),
+                                        Vec::new(),
+                                        format_args!("damaged XML element <{}>", damage.name),
+                                    );
+                                }
+                            }
+                            Err(FramingError::Resource(limit)) => {
+                                return Err(CodecError::ResourceLimit(limit))
+                            }
+                            Err(_) => {}
+                        }
+                    }
                     let legacy_rdk_instance_id =
                         legacy_rdk_material_instance_id(ctx, scan.data, &userdata)?;
                     if rdk_material_userdata_requires_opaque(ctx, scan.data, &userdata)? {
@@ -4701,6 +4767,9 @@ pub(crate) fn install(
                         &mut losses,
                     ) {
                         Ok(mut material) => {
+                            for part in &mut give_ups[first_xml_part..] {
+                                part.containing = Some(material.id.clone());
+                            }
                             if let Some(instance_id) = legacy_rdk_instance_id {
                                 material.plugin_uuid = format!("{UNIVERSAL_RENDER_ENGINE}");
                                 material.rdk_instance_uuid = Some(format!("{instance_id}"));
@@ -5278,7 +5347,7 @@ pub(crate) fn install(
         NativeInstall {
             losses,
             opaque_records,
-            give_ups: Vec::new(),
+            give_ups,
         },
         materials,
     ))

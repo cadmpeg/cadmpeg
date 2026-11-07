@@ -62,6 +62,29 @@ fn loss_codes(result: &DecodeResult) -> Vec<cadmpeg_ir::report::loss::LossKind> 
 }
 
 #[test]
+fn damaged_xml_component_keeps_readable_siblings() {
+    let xml = br#"<PV_FILE type="PVS" version="0302"><section_structure><component name="First"/><component name="Broken" name="duplicate"/><component name="Last"/></section_structure></PV_FILE>"#;
+    let result = decode(&package(&[("model.pvs", xml)]));
+    let names: Vec<_> = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .filter_map(|definition| definition.source_name.as_deref())
+        .collect();
+    assert!(names.contains(&"First"));
+    assert!(names.contains(&"Last"));
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("<component>"));
+}
+
+#[test]
 fn inspect_lists_every_member_with_its_role_and_signature() {
     let bytes = package(&[
         ("model.pvs", PVS_0304),

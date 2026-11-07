@@ -8,17 +8,12 @@
 //! the original member views, so every admitted range keeps its source
 //! offsets and the strict parser still owns XML validity.
 
-use std::collections::BTreeSet;
-
-use cadmpeg_core::decode::{DecodeContext, View, XmlEncoding, XmlFramingIssue, XmlTermination};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
 /// A damaged element's name and its ancestor names, parent first.
 pub(crate) type KindMapper = dyn Fn(&[u8], &[&[u8]]) -> PartSpec;
-
-/// A framed damaged span and the element and ancestor names it covers.
-type DamagedSpan = (usize, usize, Vec<u8>, Vec<Vec<u8>>);
 
 /// Element kinds and ancestors removed by the scanner.
 pub(crate) type Damage = Vec<(
@@ -52,396 +47,58 @@ pub(crate) fn admit_recovering<'s>(
     map_kind: &KindMapper,
     shape_error: &dyn Fn(String) -> CodecError,
 ) -> Result<(View<'s>, roxmltree::Document<'s>, Damage), CodecError> {
-    let XmlSource {
-        member,
-        scan_operation: operation,
-        parse_operation,
-    } = source;
-    let parse = |text: &'s str| match ctx.parse_xml_located(text, parse_operation) {
-        Ok(xml) => Ok(xml),
-        Err((CodecError::Malformed(detail), position)) => Err((shape_error(detail), position)),
-        Err((error, position)) => Err((error, position)),
-    };
-    let scan = ctx.scan_xml_elements(view, XmlEncoding::Utf8, operation)?;
-    let text = std::str::from_utf8(view.window())
-        .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
-    if let Ok(xml) = parse(text) {
-        return Ok((view, xml, Vec::new()));
-    }
-    let mut blanked: Vec<(usize, usize)> = Vec::new();
     let mut damage = Vec::new();
-    loop {
-        let current = reassemble(ctx, view, &blanked, operation)?;
-        let text = std::str::from_utf8(current.window())
-            .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
-        match parse(text) {
-            Ok(xml) => return Ok((current, xml, damage)),
-            Err((error, position)) => {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
-                }
-                let mut fresh = damaged_elements(&scan, &blanked);
-                if fresh.is_empty() {
-                    if let Some(element) = position
-                        .and_then(|position| syntax_damage(&scan, view, text, position, &blanked))
-                    {
-                        fresh.push(element);
-                    } else {
-                        return Err(error);
-                    }
-                }
-                let mut merged = blanked.clone();
-                for (start, end, name, ancestors) in &fresh {
-                    let extent = view.child(*start, *end).ok_or_else(|| {
-                        CodecError::malformed("damaged XML element escapes its member")
-                    })?;
-                    let borrowed: Vec<&[u8]> = ancestors.iter().map(Vec::as_slice).collect();
-                    let spec = map_kind(name, &borrowed);
-                    let detail = format!(
-                        "damaged XML element <{}> cannot be admitted",
-                        String::from_utf8_lossy(name)
-                    );
-                    let stub = spec.unreadable_id(cadmpeg_ir::CodecFormat::Fcstd, extent)?;
-                    ctx.decode_part(stage, extent, spec, |_| {
-                        Err::<(), _>(CodecError::malformed(detail.clone()))
-                    })?;
-                    let identity = if (name == b"Object" || name == b"Feature")
-                        && ancestors.first().is_some_and(|parent| {
-                            parent == b"ObjectData"
-                                || parent == b"FeatureData"
-                                || parent == b"Objects"
-                                || parent == b"Features"
-                        }) {
-                        let element = scan
-                            .elements()
-                            .iter()
-                            .find(|element| element.extent().start() == *start);
-                        let opening_end = element
-                            .and_then(|element| element.framing().nth(1))
-                            .map(cadmpeg_core::decode::View::start);
-                        if let Some(prefix) = opening_end.and_then(|end| view.child(*start, end)) {
-                            let header = ctx.concat_views(&[prefix, View::over_retained(b"/>")])?;
-                            match std::str::from_utf8(header.window()) {
-                                Ok(text) => match ctx
-                                    .parse_xml(text, "recover FreeCAD object identity")
-                                {
-                                    Ok(xml) => {
-                                        xml.root_element().attribute("name").map(str::to_owned)
-                                    }
-                                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                                    Err(_) => None,
-                                },
-                                Err(_) => None,
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    damage.push((name.clone(), ancestors.clone(), identity, stub));
-                    merged.push((*start, *end));
-                }
-                merged.sort_unstable();
-                let mut collapsed: Vec<(usize, usize)> = Vec::new();
-                for (start, end) in merged {
-                    if let Some(last) = collapsed.last_mut() {
-                        if start <= last.1 {
-                            last.1 = last.1.max(end);
-                            continue;
-                        }
-                    }
-                    collapsed.push((start, end));
-                }
-                blanked = collapsed;
-            }
-        }
-    }
-}
-
-/// Rebuild the member with every blanked span replaced by spaces.
-///
-/// Element spans become whitespace between their siblings, so the surviving
-/// structure keeps its well-formedness and every surviving byte keeps its
-/// source offset relative to the rebuilt view's own window.
-fn reassemble<'s>(
-    ctx: &DecodeContext<'s>,
-    view: View<'s>,
-    blanked: &[(usize, usize)],
-    operation: &'static str,
-) -> Result<View<'s>, CodecError> {
-    if blanked.is_empty() {
-        return Ok(view);
-    }
-    let mut cursor = view.start();
-    let mut widest = 0_usize;
-    for (start, end) in blanked {
-        if *start < cursor || *end > view.end() || *start >= *end {
-            return Err(CodecError::malformed(
-                "damaged XML element escapes its member",
-            ));
-        }
-        widest = widest.max(end - start);
-        cursor = cursor.max(*end);
-    }
-    ctx.retain_bytes(cadmpeg_core::decode::u64_from_index(widest), operation)?;
-    let padding = ctx.alloc_filled(widest, b' ', "damaged XML element blanks")?;
-    let mut blanks: Vec<(usize, usize, View<'_>)> = Vec::new();
-    for (start, end) in blanked {
-        let width = end - start;
-        blanks.push((*start, *end, View::over_retained(&padding[..width])));
-    }
-    let mut ordered: Vec<View<'_>> = Vec::new();
-    let mut cursor = view.start();
-    for (start, end, blank) in &blanks {
-        if *start > cursor {
-            let Some(piece) = view.child(cursor, *start) else {
-                return Err(CodecError::malformed(
-                    "surviving XML span escapes its member",
-                ));
-            };
-            ordered.push(piece);
-        }
-        ordered.push(*blank);
-        cursor = cursor.max(*end);
-    }
-    if cursor < view.end() {
-        let Some(piece) = view.child(cursor, view.end()) else {
-            return Err(CodecError::malformed(
-                "surviving XML span escapes its member",
-            ));
-        };
-        ordered.push(piece);
-    }
-    ctx.concat_views(&ordered)
-}
-
-/// Locate a syntax fault inside the innermost framed element. A root fault
-/// has no containing element to preserve, so it remains a document failure.
-fn syntax_damage(
-    scan: &cadmpeg_core::decode::XmlElementScan<'_>,
-    view: View<'_>,
-    text: &str,
-    position: roxmltree::TextPos,
-    blanked: &[(usize, usize)],
-) -> Option<DamagedSpan> {
-    let row = usize::try_from(position.row).ok()?.checked_sub(1)?;
-    let column = usize::try_from(position.col).ok()?.checked_sub(1)?;
-    let mut offset = 0;
-    let line = text
-        .split_inclusive('\n')
-        .enumerate()
-        .find_map(|(index, line)| {
-            if index == row {
-                Some(line)
-            } else {
-                offset += line.len();
-                None
-            }
-        })?;
-    let character = line
-        .char_indices()
-        .nth(column)
-        .map_or(line.len(), |(index, _)| index);
-    let at = view.start().checked_add(offset)?.checked_add(character)?;
-    let elements = scan.elements();
-    let (index, element) = elements
-        .iter()
-        .enumerate()
-        .filter(|(_, element)| {
-            let extent = element.extent();
-            extent.start() <= at
-                && at < extent.end()
-                && !blanked
+    let (view, xml) = cadmpeg_core::decode::parse_xml_recovering(
+        ctx,
+        view,
+        source.member,
+        source.scan_operation,
+        source.parse_operation,
+        shape_error,
+        |extent, name, ancestors, scan| {
+            let borrowed: Vec<&[u8]> = ancestors.iter().map(Vec::as_slice).collect();
+            let spec = map_kind(name, &borrowed);
+            let detail = format!(
+                "damaged XML element <{}> cannot be admitted",
+                String::from_utf8_lossy(name)
+            );
+            let stub = spec.unreadable_id(cadmpeg_ir::CodecFormat::Fcstd, extent)?;
+            ctx.decode_part(stage, extent, spec, |_| {
+                Err::<(), _>(CodecError::malformed(detail.clone()))
+            })?;
+            let identity = if (name == b"Object" || name == b"Feature")
+                && ancestors.first().is_some_and(|parent| {
+                    parent == b"ObjectData"
+                        || parent == b"FeatureData"
+                        || parent == b"Objects"
+                        || parent == b"Features"
+                }) {
+                let element = scan
+                    .elements()
                     .iter()
-                    .any(|(start, end)| *start <= extent.start() && extent.end() <= *end)
-        })
-        .min_by_key(|(_, element)| element.extent().end() - element.extent().start())?;
-    element.parent()?;
-    Some((
-        element.extent().start(),
-        element.extent().end(),
-        element_name(element),
-        ancestors(elements, index),
-    ))
-}
-
-/// Select the damaged elements one recovering pass blanks.
-///
-/// Every fault is charged to its innermost containing element, so a damaged
-/// element costs that element and its children only. A fault strictly between
-/// elements blanks its own span when the span is a complete syntactic unit;
-/// an unterminated fault blanks its innermost element instead. Elements
-/// already blanked never repeat.
-fn damaged_elements(
-    scan: &cadmpeg_core::decode::XmlElementScan<'_>,
-    blanked: &[(usize, usize)],
-) -> Vec<DamagedSpan> {
-    let elements = scan.elements();
-    let contains =
-        |span: (usize, usize), inner: (usize, usize)| span.0 <= inner.0 && inner.1 <= span.1;
-    let is_blanked = |span: (usize, usize)| blanked.iter().any(|blank| contains(*blank, span));
-    let innermost = |span: (usize, usize)| {
-        elements
-            .iter()
-            .enumerate()
-            .filter(|(_, element)| {
-                contains((element.extent().start(), element.extent().end()), span)
-            })
-            .min_by_key(|(_, element)| element.extent().end() - element.extent().start())
-            .map(|(index, _)| index)
-    };
-    let mut selected: BTreeSet<usize> = BTreeSet::new();
-    let mut gap_spans: Vec<(usize, usize)> = Vec::new();
-    for fault in scan.faults() {
-        let span = (fault.extent().start(), fault.extent().end());
-        let Some(index) = innermost(span) else {
-            continue;
-        };
-        let extent = elements[index].extent();
-        let own = (extent.start(), extent.end());
-        if own == span {
-            selected.insert(index);
-            continue;
-        }
-        let inside_child = elements.iter().enumerate().any(|(child, element)| {
-            child != index
-                && element.parent() == Some(index)
-                && contains((element.extent().start(), element.extent().end()), span)
-        });
-        if inside_child {
-            let Some(deep) = innermost(span).and_then(|found| {
-                (found != index
-                    && !is_blanked((
-                        elements[found].extent().start(),
-                        elements[found].extent().end(),
-                    )))
-                .then_some(found)
-            }) else {
-                selected.insert(index);
-                continue;
+                    .find(|element| element.extent().start() == extent.start());
+                let opening_end = element
+                    .and_then(|element| element.framing().nth(1))
+                    .map(cadmpeg_core::decode::View::start);
+                if let Some(prefix) = opening_end.and_then(|end| view.child(extent.start(), end)) {
+                    let header = ctx.concat_views(&[prefix, View::over_retained(b"/>")])?;
+                    match std::str::from_utf8(header.window()) {
+                        Ok(text) => match ctx.parse_xml(text, "recover FreeCAD object identity") {
+                            Ok(xml) => xml.root_element().attribute("name").map(str::to_owned),
+                            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
             };
-            selected.insert(deep);
-            continue;
-        }
-        match fault.issue() {
-            XmlFramingIssue::UnexpectedEndTag
-            | XmlFramingIssue::DeclarationInElement
-            | XmlFramingIssue::MalformedTag => {
-                gap_spans.push(span);
-            }
-            XmlFramingIssue::UnterminatedTag
-            | XmlFramingIssue::UnterminatedMarkup
-            | XmlFramingIssue::UnterminatedDeclaration
-            | XmlFramingIssue::IncompleteCodeUnit => {
-                selected.insert(index);
-            }
-        }
-    }
-    for (index, element) in elements.iter().enumerate() {
-        if matches!(
-            element.termination(),
-            XmlTermination::EndOfInput | XmlTermination::AncestorBoundary
-        ) || element.nesting_damage()
-        {
-            let own = (element.extent().start(), element.extent().end());
-            let faulted = scan
-                .faults()
-                .iter()
-                .any(|fault| contains(own, (fault.extent().start(), fault.extent().end())));
-            if !faulted && element.termination() != XmlTermination::AncestorBoundary {
-                continue;
-            }
-            if is_blanked(own) {
-                continue;
-            }
-            let covered = selected.iter().any(|other| {
-                *other != index
-                    && contains(
-                        own,
-                        (
-                            elements[*other].extent().start(),
-                            elements[*other].extent().end(),
-                        ),
-                    )
-            });
-            if !covered {
-                selected.insert(index);
-            }
-        }
-    }
-    let mut fresh: Vec<DamagedSpan> = Vec::new();
-    for index in selected {
-        let own = (
-            elements[index].extent().start(),
-            elements[index].extent().end(),
-        );
-        if is_blanked(own) {
-            continue;
-        }
-        fresh.push((
-            own.0,
-            own.1,
-            element_name(&elements[index]),
-            ancestors(elements, index),
-        ));
-    }
-    for span in gap_spans {
-        if is_blanked(span) {
-            continue;
-        }
-        if fresh
-            .iter()
-            .any(|existing| contains((existing.0, existing.1), span))
-        {
-            continue;
-        }
-        fresh.push((span.0, span.1, b"markup".to_vec(), Vec::new()));
-    }
-    fresh.sort_unstable();
-    fresh.dedup();
-    fresh
-}
-
-/// The element's tag name without any namespace prefix.
-fn element_name(element: &cadmpeg_core::decode::XmlElement<'_>) -> Vec<u8> {
-    let name = element.name().window();
-    name.rsplit(|byte| *byte == b':')
-        .next()
-        .unwrap_or(name)
-        .to_vec()
-}
-
-/// Ancestor names from the parent up to the root, without namespace prefixes.
-fn ancestors(elements: &[cadmpeg_core::decode::XmlElement<'_>], index: usize) -> Vec<Vec<u8>> {
-    let mut names = Vec::new();
-    let mut parent = elements[index].parent();
-    while let Some(current) = parent {
-        let Some(element) = elements.get(current) else {
-            break;
-        };
-        names.push(element_name(element));
-        parent = element.parent();
-    }
-    names
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
-    #[test]
-    fn missing_child_end_tag_selects_the_child() {
-        let bytes = b"<root><parent><broken></parent><sibling/></root>";
-        let arena = DecodeArena::new();
-        let (ctx, view) =
-            DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-        let scan = ctx
-            .scan_xml_elements(view, XmlEncoding::Utf8, "test")
-            .unwrap();
-        let damaged = damaged_elements(&scan, &[]);
-        assert_eq!(damaged.len(), 1);
-        assert_eq!(&bytes[damaged[0].0..damaged[0].1], b"<broken>");
-    }
+            damage.push((name.to_vec(), ancestors.to_vec(), identity, stub));
+            Ok(())
+        },
+    )?;
+    Ok((view, xml, damage))
 }
