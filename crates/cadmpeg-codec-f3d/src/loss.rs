@@ -188,6 +188,9 @@ pub(crate) enum F3dLossCode {
     FeatureTimelineOwnerUnpaired,
     /// A pasted copy is assumed to keep its source placement.
     FeaturePasteCopyPlacementAssumed,
+    /// A Mirror plane is read from the `WorkPlane` scope after its plane
+    /// selection identity.
+    FeatureMirrorPlaneWorkPlaneAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -581,6 +584,7 @@ impl F3dLossCode {
         Self::FeatureTimelineOwnerCompeting,
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
+        Self::FeatureMirrorPlaneWorkPlaneAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -822,6 +826,7 @@ impl F3dLossCode {
             Self::FeatureTimelineOwnerCompeting => "feature.timeline-owner-competing",
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
+            Self::FeatureMirrorPlaneWorkPlaneAssumed => "feature.mirror-plane-work-plane-assumed",
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
@@ -1091,6 +1096,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerCompeting
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
+            | Self::FeatureMirrorPlaneWorkPlaneAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -1286,6 +1292,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerCompeting
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
+            | Self::FeatureMirrorPlaneWorkPlaneAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -1566,6 +1573,7 @@ mod tests {
                 "feature.timeline-owner-competing",
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
+                "feature.mirror-plane-work-plane-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",

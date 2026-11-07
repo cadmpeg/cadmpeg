@@ -1149,6 +1149,7 @@ pub(crate) fn bind_mirror_selection_planes(
             continue;
         };
         construction.plane = None;
+        construction.assumed_plane_scope = None;
         let (Some(selection_record_index), Some(state_id), Some(previous_state_id)) = (
             construction.plane_selection_record_index,
             history_state_id,
@@ -1236,23 +1237,33 @@ pub(crate) fn bind_mirror_selection_planes(
                     };
                     let primary_candidates =
                         entity_selection_face_candidates(operand.primary_identity, histories);
-                    if primary_candidates.is_empty() && persistent_candidates.is_empty() {
-                        construction.plane_scope_record_index = operand
-                            .compact_identity()
-                            .and_then(|identity| u32::try_from(identity).ok())
-                            .and_then(|identity| identity.checked_add(1))
-                            .map(|value| crate::records::identity::Located {
-                                value,
-                                offset: operand.primary_identity_offset(),
-                            });
-                        continue;
+                    let mut local_ids = vec![operand.primary_identity];
+                    local_ids.extend(
+                        identity
+                            .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity)
+                            .map(|identity| identity.local_id),
+                    );
+                    let mut faces = Vec::new();
+                    for candidate in primary_candidates.iter().chain(&persistent_candidates) {
+                        if !faces.contains(candidate) {
+                            faces.push(candidate.clone());
+                        }
                     }
-                    let Some(candidate) =
+                    let plane =
                         unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
-                    else {
-                        continue;
-                    };
-                    historical_mirror_plane(&candidate, previous_state_id, histories)
+                            .and_then(|candidate| {
+                                historical_mirror_plane(&candidate, previous_state_id, histories)
+                            });
+                    if plane.is_none() && construction.plane_scope_record_index.is_none() {
+                        construction.assumed_plane_scope = assumed_mirror_plane_scope(
+                            operand,
+                            &local_ids,
+                            &faces,
+                            previous_state_id,
+                            histories,
+                        );
+                    }
+                    plane
                 }
             }
         } else if let Some(operand) = matching_face_operand {
@@ -1277,6 +1288,117 @@ pub(crate) fn bind_mirror_selection_planes(
         construction.plane =
             crate::records::feature::patterns::DesignPlane::from_parts(origin, normal);
     }
+}
+
+/// The `WorkPlane` scope after a compact plane-selection identity, when every
+/// face candidate of the selection is readable and gives no plane.
+pub(super) fn assumed_mirror_plane_scope(
+    operand: &crate::records::topology::entity_selection::DesignEntitySelectionOperand,
+    local_ids: &[u64],
+    faces: &[crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate],
+    previous_state_id: i64,
+    histories: &[AsmHistory],
+) -> Option<crate::records::feature::mirror::DesignMirrorAssumedPlaneScope> {
+    use crate::records::feature::mirror::{
+        DesignMirrorAssumedPlaneScope, DesignMirrorPlaneFaceDefect, DesignMirrorUnusablePlaneFace,
+    };
+
+    let scope_record_index = u32::try_from(operand.compact_identity()?)
+        .ok()?
+        .checked_add(1)?;
+    for history in histories {
+        let identities = HistoricalIdentityIndex::build(
+            std::slice::from_ref(history),
+            local_ids.iter().copied(),
+        );
+        if local_ids
+            .iter()
+            .any(|local_id| identities.selection_identity_kind(*local_id).is_some())
+            && !faces.iter().any(|face| face.history_id == history.id)
+        {
+            return None;
+        }
+    }
+    let mut unusable_faces = Vec::with_capacity(faces.len());
+    for face in faces {
+        if historical_mirror_plane(face, previous_state_id, histories).is_some() {
+            return None;
+        }
+        let defect = if !face.historical.state_ids.contains(&previous_state_id) {
+            DesignMirrorPlaneFaceDefect::AbsentFromPrecedingState
+        } else if historical_face_is_not_planar(face, previous_state_id, histories)? {
+            DesignMirrorPlaneFaceDefect::NotPlanar
+        } else {
+            return None;
+        };
+        unusable_faces.push(DesignMirrorUnusablePlaneFace {
+            history_id: face.history_id.clone(),
+            face_slot: face.face_slot,
+            defect,
+        });
+    }
+    Some(DesignMirrorAssumedPlaneScope {
+        scope_record_index,
+        identity_offset: operand.primary_identity_offset(),
+        unusable_faces,
+    })
+}
+
+/// Whether the candidate face lies on one surface that has an analytic
+/// non-plane definition in the state, or `None` when the state is unreadable.
+fn historical_face_is_not_planar(
+    candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
+    state_id: i64,
+    histories: &[AsmHistory],
+) -> Option<bool> {
+    if matches!(
+        candidate.historical.kind,
+        AsmHistoricalEntityKind::Coedge | AsmHistoricalEntityKind::Loop
+    ) {
+        return None;
+    }
+    let mut matching_histories = histories
+        .iter()
+        .filter(|history| history.id == candidate.history_id);
+    let history = matching_histories.next()?;
+    if matching_histories.next().is_some() {
+        return None;
+    }
+    let mut matching_states = history
+        .states()
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    let state = matching_states.next()?;
+    if matching_states.next().is_some() {
+        return None;
+    }
+    let topology = history.topology(state)?;
+    let mut bindings = topology
+        .face_surfaces
+        .iter()
+        .filter(|binding| binding.entity == candidate.face_slot);
+    let surface = bindings.next()?.carrier;
+    if bindings.next().is_some() {
+        return None;
+    }
+    Some(
+        !topology
+            .surface_planes
+            .iter()
+            .any(|plane| plane.surface == surface)
+            && (topology
+                .surface_cylinders
+                .iter()
+                .any(|cylinder| cylinder.surface == surface)
+                || topology
+                    .surface_radii
+                    .iter()
+                    .any(|radius| radius.surface == surface)
+                || topology
+                    .surface_axes
+                    .iter()
+                    .any(|axis| axis.surface == surface)),
+    )
 }
 
 pub(super) fn historical_mirror_face_operand_plane(

@@ -610,6 +610,7 @@ pub(crate) struct ProjectedParameterDesign {
     /// their sheet-metal rule states no thickness.
     pub(crate) unruled_flange_thicknesses: usize,
     pub(crate) hole_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) pattern_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl ProjectedParameterDesign {
@@ -662,6 +663,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         ..
     } = inputs;
     let mut hole_losses = Vec::new();
+    let mut pattern_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
@@ -989,6 +991,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &mut pattern_losses,
                 )
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -1852,6 +1855,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         unordered_parameter_scopes,
         unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
         hole_losses,
+        pattern_losses,
     })
 }
 
@@ -7173,6 +7177,7 @@ fn project_mirror(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
@@ -7223,12 +7228,17 @@ fn project_mirror(
             scopes,
         )
     };
+    let assumed_plane_scope = match (&construction.plane, &construction.plane_scope_record_index) {
+        (None, None) => construction.assumed_plane_scope.as_ref(),
+        _ => None,
+    };
     let (plane_origin, plane_normal, scale_origin) = match construction.plane {
         Some(plane) => (plane.origin().get(), *plane.normal().as_raw(), false),
         None => {
             let plane_scope_record_index = construction
                 .plane_scope_record_index
-                .map(|value| value.value)?;
+                .map(|value| value.value)
+                .or(assumed_plane_scope.map(|assumed| assumed.scope_record_index))?;
             let plane = unique_feature_match(scopes.iter().filter(|candidate| {
                 native_stream(&candidate.id) == Some(stream)
                     && candidate.record_index == plane_scope_record_index
@@ -7257,10 +7267,40 @@ fn project_mirror(
         plane_normal,
     })
     .ok()?;
+    if let Some(assumed) = assumed_plane_scope {
+        losses.push(mirror_plane_work_plane_assumed_loss(scope, assumed));
+    }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern,
     }))
+}
+
+fn mirror_plane_work_plane_assumed_loss(
+    scope: &DesignParameterScope,
+    assumed: &crate::records::feature::mirror::DesignMirrorAssumedPlaneScope,
+) -> cadmpeg_ir::report::loss::LossNote {
+    let faces = if assumed.unusable_faces.is_empty() {
+        "no face candidate".to_owned()
+    } else {
+        assumed
+            .unusable_faces
+            .iter()
+            .map(|face| {
+                format!(
+                    "face {} of history {} ({})",
+                    face.face_slot,
+                    face.history_id,
+                    face.defect.describe()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    crate::loss::F3dLossCode::FeatureMirrorPlaneWorkPlaneAssumed.note(format!(
+        "Mirror scope {} reads its plane from WorkPlane scope {} after its plane selection identity at byte {}; passed-over face candidates: {faces}.",
+        scope.id, assumed.scope_record_index, assumed.identity_offset,
+    ))
 }
 
 pub(super) fn project_fixed_sweep(
