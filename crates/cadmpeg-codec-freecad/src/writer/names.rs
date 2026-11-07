@@ -30,6 +30,7 @@ pub(super) fn prepare(
     ir: &CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    body_properties: &HashMap<String, (String, String)>,
 ) -> HashMap<String, String> {
     let mut names = HashMap::new();
     let mut used = HashSet::new();
@@ -158,7 +159,7 @@ pub(super) fn prepare(
         }
     }
     let mut topology_names =
-        HashMap::<String, (HashSet<String>, HashSet<String>, HashSet<String>)>::new();
+        HashMap::<(String, String), (HashSet<String>, HashSet<String>, HashSet<String>)>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
         let owner = ir
             .model
@@ -274,8 +275,13 @@ pub(super) fn prepare(
                 }
             }
         }
-        let (seen_faces, seen_edges, seen_vertices) =
-            topology_names.entry(owner.clone()).or_default();
+        let property = body_properties
+            .get(body.id.as_str())
+            .filter(|(native_owner, _)| names.get(native_owner) == Some(&owner))
+            .map_or("Shape", |(_, property)| property.as_str());
+        let (seen_faces, seen_edges, seen_vertices) = topology_names
+            .entry((owner.clone(), property.to_owned()))
+            .or_default();
         for (ids, seen, prefix) in [
             (
                 faces
