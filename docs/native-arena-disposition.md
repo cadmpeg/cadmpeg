@@ -19,7 +19,8 @@ A record whose current references cannot be resolved is dropped and reported.
 **W3** reports `Written`, `Regenerated`, or `Dropped` for each native arena, with
 record overrides where an arena contains different cases. The export report is the
 authority for the particular document and output. Foreign or undeclared populated
-arenas are dropped with `export:native.records-omitted` and per-arena counts.
+typed arenas are dropped with `export:native.records-omitted` and per-arena counts.
+Given-up `unknowns` stubs do not incur this loss.
 
 This table states the content and output contract.
 
