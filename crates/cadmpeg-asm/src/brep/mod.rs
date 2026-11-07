@@ -698,12 +698,13 @@ fn decode_with_table(
     let source_object = |identity: &str, detached: &HashSet<i64>| {
         let index = identity.rsplit_once('#')?.1.parse::<i64>().ok()?;
         let source_format = cadmpeg_ir::CodecFormat::parse(&format.to_string())?;
+        let object_id = cadmpeg_core::text::NonBlankString::new(format!("ASM:{index}"))?;
         detached
             .contains(&index)
             .then(|| cadmpeg_ir::SourceObjectAssociation {
                 format: source_format,
                 geometry_role: None,
-                object_id: cadmpeg_core::nonblank_literal!("ASM:{index}"),
+                object_id,
                 instance_path: Vec::new(),
             })
     };
