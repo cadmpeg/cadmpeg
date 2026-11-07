@@ -16,6 +16,24 @@ fn accepts(before: &Value, after: &Value) -> bool {
 }
 
 #[test]
+fn resolved_insert_body_self_references_follow_feature_identity() {
+    let feature = |id: &str, native_ref: &str, selection: &str| {
+        json!({
+            "id": id,
+            "native_ref": native_ref,
+            "definition": {"definition": "insert_bodies", "bodies": {
+                "kind": "resolved", "value": {"native": selection}
+            }}
+        })
+    };
+    let before = json!({"model": {"features": [feature("a", "scope-a", "scope-a")]}, "native": {}});
+    let after = json!({"model": {"features": [feature("b", "scope-b", "scope-b")]}, "native": {}});
+    assert!(accepts(&before, &after));
+    let changed = json!({"model": {"features": [feature("b", "scope-b", "independent-selection")]}, "native": {}});
+    assert!(!accepts(&before, &changed));
+}
+
+#[test]
 fn duplicate_record_removed_fails() {
     let before = document(&json!([{"id":"a","x":1.0},{"id":"b","x":1.0}]));
     let after = document(&json!([{"id":"x","x":1.0}]));
