@@ -1261,6 +1261,7 @@ fn decode_mesh_record_parts<T>(
     source: View<'_>,
     stream: &str,
     frames: Vec<TypedPrimaryFrame<'_>>,
+    unreadable: &mut HashSet<u64>,
     mut parse: impl FnMut(TypedPrimaryFrame<'_>) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
@@ -1297,10 +1298,13 @@ fn decode_mesh_record_parts<T>(
         }
         let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
         if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+            unreadable.insert(frame.entity_id);
             continue;
         }
         if let Some(value) = ctx.decode_part(parts, extent, spec, |_| parse(frame))? {
             out.push(value);
+        } else {
+            unreadable.insert(frame.entity_id);
         }
     }
     Ok(out)
@@ -1321,6 +1325,7 @@ where
     let stream = crate::ids::native_scope(source_entry_name);
     let frames = super::meta::design_primary_frames(bytes, meta)?;
     let records = crate::design::decode::meta::primary_frame_extents(&frames);
+    let mut unreadable = HashSet::new();
     let collection_frames = typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID)?;
     if collection_frames.is_empty() {
         return Ok(Vec::new());
@@ -1331,6 +1336,7 @@ where
         source,
         source_entry_name,
         collection_frames,
+        &mut unreadable,
         |frame| parse_mesh_collection_record(bytes, meta, frame),
     )?
     .into_iter()
@@ -1347,6 +1353,7 @@ where
             source,
             source_entry_name,
             entry_name_frames,
+            &mut unreadable,
             |frame| parse_mesh_entry_name_record(bytes, frame),
         )?,
         |record| record.entry.record().record_index(),
@@ -1360,6 +1367,7 @@ where
             source,
             source_entry_name,
             guid_frames,
+            &mut unreadable,
             |frame| parse_mesh_guid_record(bytes, frame),
         )?,
         |record| record.guid.record().record_index(),
@@ -1373,6 +1381,7 @@ where
             source,
             source_entry_name,
             body_frames,
+            &mut unreadable,
             |frame| parse_mesh_body_record(bytes, frame),
         )?,
         |record| record.placement.record().record_index(),
@@ -1387,6 +1396,7 @@ where
             source,
             source_entry_name,
             texture_table_frames,
+            &mut unreadable,
             |frame| parse_mesh_texture_table_record(bytes, frame),
         )?,
         |record| record.identity.record_index(),
@@ -1400,6 +1410,7 @@ where
             source,
             source_entry_name,
             wrapper_frames,
+            &mut unreadable,
             |frame| parse_mesh_wrapper_record(bytes, frame),
         )?,
         |record| record.identity.record_index(),
@@ -1413,6 +1424,7 @@ where
             source,
             source_entry_name,
             scope_frames,
+            &mut unreadable,
             |frame| parse_mesh_scope_record(bytes, meta, &records, frame),
         )?,
         |record| record.scope.record().record_index(),
@@ -1426,6 +1438,7 @@ where
             source,
             source_entry_name,
             state_frames,
+            &mut unreadable,
             |frame| parse_mesh_scene_state_record(bytes, frame),
         )?,
         |record| record.record().record_index(),
@@ -1439,6 +1452,7 @@ where
             source,
             source_entry_name,
             scene_node_frames,
+            &mut unreadable,
             |frame| parse_scene_node_record(bytes, frame),
         )?,
         |record| record.node.record_index(),
@@ -1457,6 +1471,7 @@ where
         source,
         source_entry_name,
         owner_frames,
+        &mut unreadable,
         |frame| parse_mesh_collection_owner_record(bytes, frame),
     )?
     .into_iter()
@@ -1482,11 +1497,14 @@ where
             .filter(|(_, scope)| scope.body_records == collection.body_records)
             .filter(|(scope_index, _)| {
                 collection.body_records.iter().all(|body_index| {
-                    bodies.get(body_index).is_some_and(|body| {
-                        body.scope_record_index == **scope_index
-                            && body.collection_record_index
-                                == collection.collection.record().record_index()
-                    })
+                    bodies.get(body_index).map_or_else(
+                        || unreadable.contains(&u64::from(*body_index)),
+                        |body| {
+                            body.scope_record_index == **scope_index
+                                && body.collection_record_index
+                                    == collection.collection.record().record_index()
+                        },
+                    )
                 })
             })
             .map(|(record_index, _)| *record_index);
@@ -1572,31 +1590,58 @@ where
         }
 
         let mut feature_bodies = Vec::new();
-        for body_record_index in &collection.body_records {
-            let body = bodies.remove(body_record_index).ok_or_else(|| {
-                stream_error("each collection body reference targets one unused mesh body")
-            })?;
-            let wrapper = wrappers
+        let mut body_ordinals = Vec::new();
+        for (ordinal, body_record_index) in collection.body_records.iter().enumerate() {
+            let Some(body) = bodies.remove(body_record_index) else {
+                if unreadable.contains(&u64::from(*body_record_index)) {
+                    continue;
+                }
+                return Err(stream_error(
+                    "each collection body reference targets one unused mesh body",
+                ));
+            };
+            let Some(wrapper) = wrappers
                 .remove(&body.wrapper_record_index)
                 .filter(|wrapper| {
                     wrapper.body_record_index == body.placement.record().record_index()
                 })
-                .ok_or_else(|| stream_error("each mesh body has one unused reciprocal wrapper"))?;
-            let guid = guids
-                .remove(&body.guid_record_index)
-                .ok_or_else(|| stream_error("each mesh body has one unused GUID record"))?;
-            let entry_name = entry_names
+            else {
+                if unreadable.contains(&u64::from(body.wrapper_record_index)) {
+                    continue;
+                }
+                return Err(stream_error(
+                    "each mesh body has one unused reciprocal wrapper",
+                ));
+            };
+            let Some(guid) = guids.remove(&body.guid_record_index) else {
+                if unreadable.contains(&u64::from(body.guid_record_index)) {
+                    continue;
+                }
+                return Err(stream_error("each mesh body has one unused GUID record"));
+            };
+            let Some(entry_name) = entry_names
                 .remove(&guid.entry_name_record_index)
                 .filter(|entry| entry.guid_record_index == guid.guid.record().record_index())
-                .ok_or_else(|| {
-                    stream_error("each mesh GUID has one unused reciprocal entry-name record")
-                })?;
-            let scene_node = scene_nodes
-                .remove(&body.scene_node_record_index)
-                .ok_or_else(|| stream_error("each mesh body has one unused Scene node"))?;
-            let scene_state = states
-                .remove(&scene_node.state_record_index)
-                .ok_or_else(|| stream_error("each Scene node has one unused Scene state"))?;
+            else {
+                if unreadable.contains(&u64::from(guid.entry_name_record_index)) {
+                    continue;
+                }
+                return Err(stream_error(
+                    "each mesh GUID has one unused reciprocal entry-name record",
+                ));
+            };
+            let Some(scene_node) = scene_nodes.remove(&body.scene_node_record_index) else {
+                if unreadable.contains(&u64::from(body.scene_node_record_index)) {
+                    continue;
+                }
+                return Err(stream_error("each mesh body has one unused Scene node"));
+            };
+            let Some(scene_state) = states.remove(&scene_node.state_record_index) else {
+                if unreadable.contains(&u64::from(scene_node.state_record_index)) {
+                    continue;
+                }
+                return Err(stream_error("each Scene node has one unused Scene state"));
+            };
             let scene_auxiliary_frame = scene_auxiliary_frames
                 .remove(&scene_node.auxiliary_record_index)
                 .ok_or_else(|| {
@@ -1633,6 +1678,9 @@ where
                 owner_record: body_owner,
                 container_mesh_uuid: None,
             });
+            body_ordinals.push(
+                u32::try_from(ordinal).map_err(|_| stream_error("mesh body ordinal fits u32"))?,
+            );
         }
         let scope_offset = usize::try_from(scope.scope.record().byte_offset()).map_err(|_| {
             stream_error("mesh feature scope byte offsets fit the platform address domain")
@@ -1650,6 +1698,7 @@ where
                 })?,
                 collection_owner.owner,
                 feature_bodies,
+                body_ordinals,
             )
             .map_err(|message| malformed_mesh_graph(&stream, &message))?,
         );
@@ -1980,17 +2029,31 @@ mod tests {
                 .unwrap();
         let mut parts =
             cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
-        let entries = super::decode_mesh_record_parts(
+        let mut no_asset = no_texture_asset;
+        let features = super::parse_mesh_design_records(
             &ctx,
             &mut parts,
             source,
+            &graph.meta,
             "Design/BulkStream.dat",
-            frames,
-            |frame| super::parse_mesh_entry_name_record(&graph.bytes, frame),
+            &mut no_asset,
         )
         .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].entry.record().record_index(), 115);
+        assert_eq!(features.len(), 1);
+        assert_eq!(features[0].bodies().len(), 1);
+        assert_eq!(features[0].bodies()[0].entry.record().record_index(), 115);
+        let wire = serde_json::to_value(&features[0]).unwrap();
+        let scope_start = features[0].scope().record().byte_offset()
+            + cadmpeg_core::decode::u64_from_index(
+                crate::layout::paramesh_feature_scope_prefix::LEN,
+            );
+        assert_eq!(
+            wire["scope_body_reference_offsets"],
+            serde_json::json!([scope_start + 11])
+        );
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
         let (_, native, fidelity, losses) = parts.into_parts();
         assert_eq!(
             native.namespace("f3d").unwrap().arenas()["unknowns"].len(),

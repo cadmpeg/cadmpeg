@@ -1382,6 +1382,7 @@ pub(crate) struct DesignMeshFeature {
     pub(crate) collection_owner: DesignMeshCollectionOwner,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBody>,
+    body_ordinals: Vec<u32>,
 }
 
 #[cfg(test)]
@@ -1409,12 +1410,19 @@ impl DesignMeshFeature {
         texture_table: DesignMeshTextureTable,
         collection_owner: DesignMeshCollectionOwner,
         bodies: Vec<DesignMeshBody>,
+        body_ordinals: Vec<u32>,
     ) -> Result<Self, String> {
-        let body_count = u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?;
-        if collection.body_count() != u64::from(body_count) {
-            return Err("bodies count must match collection_record.frame_length".into());
+        if bodies.len() != body_ordinals.len()
+            || body_ordinals
+                .iter()
+                .any(|ordinal| u64::from(*ordinal) >= collection.body_count())
+            || body_ordinals.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err(
+                "bodies count and ordinals must fit the collection and remain ordered".into(),
+            );
         }
-        let scope_body_bytes = u64::from(body_count) * 11;
+        let scope_body_bytes = collection.body_count() * 11;
         let scope_prefix = u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
         let scope_base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
         if scope_body_bytes > scope.record().frame_length() - scope_prefix - scope_base_length {
@@ -1429,6 +1437,7 @@ impl DesignMeshFeature {
             texture_table,
             collection_owner,
             bodies,
+            body_ordinals,
         })
     }
     pub(crate) fn scope(&self) -> &DesignMeshScope {
@@ -1457,13 +1466,17 @@ impl DesignMeshFeature {
     fn scope_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
         let start = self.scope.record().byte_offset()
             + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
-        (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
+        self.body_ordinals
+            .iter()
+            .map(move |ordinal| start + 11 * u64::from(*ordinal))
     }
     fn collection_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
         let start = self.collection.record().byte_offset()
             + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
             + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
-        (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
+        self.body_ordinals
+            .iter()
+            .map(move |ordinal| start + 11 * u64::from(*ordinal))
     }
 }
 
@@ -1530,6 +1543,25 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 "body_record_indices must repeat bodies.body_record.record_index in order".into(),
             );
         }
+        let scope_start = wire
+            .scope_record
+            .byte_offset()
+            .checked_add(u64_from_index(
+                crate::layout::paramesh_feature_scope_prefix::LEN,
+            ))
+            .ok_or("scope body reference start overflows")?;
+        let body_ordinals = wire
+            .scope_body_reference_offsets
+            .iter()
+            .map(|offset| {
+                let distance = offset
+                    .checked_sub(scope_start)
+                    .filter(|distance| distance % 11 == 0)
+                    .ok_or("scope_body_reference_offsets must locate the indexed run")?;
+                u32::try_from(distance / 11)
+                    .map_err(|_| "scope_body_reference_offsets exceed u32 ordinals")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut bodies = {
             let mut storage = Vec::new();
             storage
@@ -1576,6 +1608,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 wire.collection_owner_backlink_offset,
             )?,
             bodies,
+            body_ordinals,
         )?;
         if wire.body_count_offsets != feature.body_count_offsets() {
             return Err("body_count_offsets must locate the scope and collection counts".into());
