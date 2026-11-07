@@ -15,6 +15,88 @@ use xml::Object;
 #[cfg(test)]
 mod tests;
 
+fn unchanged_placement(property: &PropertyRecord, generated: &str) -> bool {
+    if property.name != "Placement" || property.type_name != "App::PropertyPlacement" {
+        return false;
+    }
+    let [value] = property.values() else {
+        return false;
+    };
+    if value.tag != "PropertyPlacement" || value.attributes.len() != 7 || value.text.is_some() {
+        return false;
+    }
+    let Ok(document) = roxmltree::Document::parse(generated) else {
+        return false;
+    };
+    let Some(node) = document
+        .root_element()
+        .children()
+        .find(roxmltree::Node::is_element)
+    else {
+        return false;
+    };
+    if !node.has_tag_name("PropertyPlacement") || node.attributes().len() != 7 {
+        return false;
+    }
+    ["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"]
+        .into_iter()
+        .all(|key| {
+            let source = value
+                .attributes
+                .get(key)
+                .and_then(|s| s.parse::<f64>().ok());
+            let output = node.attribute(key).and_then(|s| s.parse::<f64>().ok());
+            matches!((source, output), (Some(a), Some(b)) if a.is_finite() && a == b)
+        })
+}
+
+fn unchanged_numeric_property(property: &PropertyRecord, generated: &str) -> bool {
+    if !matches!(
+        property.family,
+        crate::native::PropertyFamily::Scalar
+            | crate::native::PropertyFamily::Quantity
+            | crate::native::PropertyFamily::Vector
+            | crate::native::PropertyFamily::Matrix
+    ) {
+        return false;
+    }
+    let [value] = property.values() else {
+        return false;
+    };
+    if value.text.is_some()
+        || value.attributes.is_empty()
+        || !property.side_entries().is_empty()
+        || !property.links().is_empty()
+    {
+        return false;
+    }
+    let Ok(document) = roxmltree::Document::parse(generated) else {
+        return false;
+    };
+    let root = document.root_element();
+    if root.attribute("type") != Some(property.type_name.as_str()) {
+        return false;
+    }
+    let mut children = root.children().filter(roxmltree::Node::is_element);
+    let Some(node) = children.next() else {
+        return false;
+    };
+    if children.next().is_some()
+        || node
+            .children()
+            .any(|child| child.is_element() || child.is_text())
+        || node.tag_name().name() != value.tag
+        || node.attributes().len() != value.attributes.len()
+    {
+        return false;
+    }
+    value.attributes.iter().all(|(key, source)| {
+        node.attribute(key.as_str()).is_some_and(|output| {
+            source == output || ((property.family != crate::native::PropertyFamily::Scalar || property.type_name.contains("Float")) && matches!((source.parse::<f64>(), output.parse::<f64>()), (Ok(a), Ok(b)) if a.is_finite() && a == b))
+        })
+    })
+}
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -354,6 +436,17 @@ pub(super) fn write(
             .and_then(|name| objects.iter_mut().find(|object| object.name == *name));
         if let Some(object) = destination {
             let neutral_owned = !native_names.contains(&object.name);
+            if neutral_owned
+                && object
+                    .properties
+                    .get(&property.name)
+                    .is_some_and(|generated| unchanged_placement(property, generated))
+            {
+                if let Some(original) = xml::native_named(property, &names, &available)? {
+                    object.set(&property.name, original);
+                    continue;
+                }
+            }
             if neutral_owned
                 && (object.properties.contains_key(&property.name)
                     || (crate::property_policy::has_neutral_form(&property.name)
@@ -898,17 +991,20 @@ pub(super) fn write(
                     .count()
                     == 1
                 && !entries.contains_key(file))
-            .then(|| file.clone())
+            .then(|| (file.clone(), property))
         });
-        let file = original_file.unwrap_or_else(|| {
-            let mut file = format!("{name}.brp");
-            let mut suffix = 1;
-            while entries.contains_key(&file) || entry_names.contains(&file) {
-                file = format!("{name}_{suffix}.brp");
-                suffix += 1;
-            }
-            file
-        });
+        let file = original_file.as_ref().map_or_else(
+            || {
+                let mut file = format!("{name}.brp");
+                let mut suffix = 1;
+                while entries.contains_key(&file) || entry_names.contains(&file) {
+                    file = format!("{name}_{suffix}.brp");
+                    suffix += 1;
+                }
+                file
+            },
+            |(file, _)| file.clone(),
+        );
         entries.insert(file.clone(), serialized.bytes);
         for body in &bodies {
             if !serialized
@@ -926,13 +1022,22 @@ pub(super) fn write(
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("body owner is absent"))?;
+        let source_property = if let Some((_, property)) = original_file {
+            let mut available = available.clone();
+            available.insert(file.clone());
+            xml::native_named(property, &names, &available)?
+        } else {
+            None
+        };
         object.set(
             &property_name,
-            xml::property(
-                &property_name,
-                "Part::PropertyPartShape",
-                &xml::element("Part", &[("file", file)]),
-            ),
+            source_property.unwrap_or_else(|| {
+                xml::property(
+                    &property_name,
+                    "Part::PropertyPartShape",
+                    &xml::element("Part", &[("file", file)]),
+                )
+            }),
         );
         if property_name == "Shape" {
             object.mark_geometry_written();
@@ -1335,7 +1440,10 @@ pub(super) fn write(
 
         let mut rank_of: HashMap<&str, (u64, usize)> = HashMap::new();
         for (index, feature) in ir.model.features.iter().enumerate() {
-            if let Some(name) = names.get(feature.id.as_str()) {
+            if let Some(name) = names
+                .get(feature.id.as_str())
+                .filter(|name| !source_order.contains_key(name.as_str()))
+            {
                 rank_of
                     .entry(name.as_str())
                     .or_insert((feature.ordinal, index));
@@ -1348,7 +1456,10 @@ pub(super) fn write(
                 occurrence.parent,
                 cadmpeg_ir::products::OccurrenceParent::Root {}
             ) {
-                if let Some(name) = names.get(occurrence.id.as_str()) {
+                if let Some(name) = names
+                    .get(occurrence.id.as_str())
+                    .filter(|name| !source_order.contains_key(name.as_str()))
+                {
                     roots
                         .entry(name.as_str())
                         .or_insert((u64::from(occurrence.ordinal), index));
@@ -1357,6 +1468,7 @@ pub(super) fn write(
         }
         order_slots(&mut objects, &roots);
     }
+    let emitted_names: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for object in &mut objects {
         let mut originals = native_objects.iter().filter(|original| {
             names.get(original.id().as_str()) == Some(&object.name)
@@ -1365,6 +1477,41 @@ pub(super) fn write(
         if let (Some(original), None) = (originals.next(), originals.next()) {
             object.declaration_id =
                 xml::DeclarationId::Source(original.persistent_id.map(|id| id.to_string()));
+            let neutral_owns_dependencies = ir.model.features.iter().any(|feature| {
+                feature.native_ref.as_deref() == Some(original.id().as_str())
+                    && matches!(
+                        feature.definition().operation(),
+                        FeatureOperation::Native { .. }
+                    )
+            });
+            let mut dependencies = original
+                .dependencies
+                .iter()
+                .filter(|_| !neutral_owns_dependencies)
+                .filter_map(|id| names.get(id))
+                .filter(|name| emitted_names.contains(*name))
+                .cloned()
+                .collect::<Vec<_>>();
+            for dependency in &object.dependencies {
+                if !dependencies.contains(dependency) {
+                    dependencies.push(dependency.clone());
+                }
+            }
+            object.dependencies = dependencies;
+            for property in native_properties
+                .iter()
+                .filter(|property| property.owner == *original.id())
+            {
+                if object
+                    .properties
+                    .get(&property.name)
+                    .is_some_and(|generated| unchanged_numeric_property(property, generated))
+                {
+                    if let Some(source) = xml::native_named(property, &names, &available)? {
+                        object.set(&property.name, source);
+                    }
+                }
+            }
         }
     }
     // The document header preserves the source's producing application and

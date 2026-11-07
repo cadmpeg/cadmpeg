@@ -39,6 +39,32 @@ fn cascade_validation_errors(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::report::check::Check;
+    let definitions = projected
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { .. })
+            )
+            .then_some(feature.id.clone())
+        })
+        .collect::<std::collections::HashSet<_>>();
+    for feature in &mut projected.model.features {
+        if let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+            block: Some(block),
+            ..
+        }) = feature.evaluation.definition()
+        {
+            if definitions.contains(block) && feature.dependencies.insert(block.clone()) {
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "feature {}: block dependency derived from its definition",
+                    feature.id
+                )));
+            }
+        }
+    }
     // Errors the writer carries as stated need no drop: acknowledging the
     // exact finding keeps the cascade from re-finding it on the next pass,
     // while a later finding on the same record still blocks.
@@ -588,10 +614,15 @@ pub(super) fn plan(
         &mut losses,
     )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
-    let mut prepared_native =
-        design::prepare(&slot_context, &mut projected, &mut losses, input.fidelity.is_none())?;
+    let mut prepared_native = design::prepare(
+        &slot_context,
+        &mut projected,
+        &mut losses,
+        input.fidelity.is_none(),
+    )?;
     if projected.scope.model
         && !projected.scope.design
+        && !supported.is_empty()
         && prepared_native.as_ref().is_none_or(|native| {
             native
                 .feature_histories
@@ -915,7 +946,7 @@ fn prepare_native(
             }
         }
     }
-    crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
+    crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native, None)?;
     ir.native = cadmpeg_ir::native::Native::default();
     native.store(&ctx, ir.native.namespace_mut("sldprt"))?;
     // The wipe orphaned references into the removed namespaces; write the

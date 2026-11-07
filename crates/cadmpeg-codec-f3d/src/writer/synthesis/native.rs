@@ -165,7 +165,9 @@ pub(super) fn reconcile(
         design_record_headers: original.design_record_headers.clone(),
         design_material_assignments: original.design_material_assignments.clone(),
         design_canvas_images: original.design_canvas_images.clone(),
+        design_decal_images: original.design_decal_images.clone(),
         design_body_bindings: original.design_body_bindings.clone(),
+        design_feature_timelines: original.design_feature_timelines.clone(),
         design_parameter_scopes: original
             .design_parameter_scopes
             .iter()
@@ -192,6 +194,12 @@ pub(super) fn reconcile(
                                     == crate::records::feature::scope::DesignFeatureKind::Extrude
                             }
                             cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Sketch { .. },
+                            ) => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::Sketch
+                            }
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
                             ) => scope.base_feature_construction().is_some(),
                             cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -214,6 +222,9 @@ pub(super) fn reconcile(
                                 scope.kind()
                                     == crate::records::feature::scope::DesignFeatureKind::Form
                             }
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+                            ) if kind.as_str() == "Decal" => scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal,
                             _ => false,
                         }
                 })
@@ -241,12 +252,13 @@ pub(super) fn reconcile(
                         .any(|operand| operand.native_ref.as_str() == group.id)
                         && target.model.features.iter().any(|feature| {
                             feature.id == input.input_of
-                                && matches!(
+                                && (matches!(
                                     feature.evaluation.definition(),
                                     cadmpeg_ir::features::FeatureDefinition::Operation(
                                         cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
+                                            | cadmpeg_ir::features::FeatureOperation::Extrude { .. }
                                     )
-                                )
+                                ) || matches!(feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. }) if kind.as_str() == "Decal"))
                         })
                 })
             })

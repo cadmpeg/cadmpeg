@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Write exact uniform circle offsets.
+//! Write exact curve offsets.
 
 use super::{
     curve_reference_span, finite, is_support_curve, number, reference_marker, CodecError,
@@ -8,6 +8,452 @@ use super::{
 };
 
 impl CurveEntityEmitter<'_> {
+    pub(super) fn append_offset(
+        &mut self,
+        curve_id: &CurveId,
+        geometry: &CurveGeometry,
+        span: Option<&CurveSpan>,
+        status: EntityStatus,
+    ) -> Result<Option<usize>, CodecError> {
+        if let Some(index) = self.append_linear_line_offset(curve_id, geometry, span, status)? {
+            return Ok(Some(index));
+        }
+        if let Some(index) = self.append_function_line_offset(curve_id, geometry, span, status)? {
+            return Ok(Some(index));
+        }
+        self.append_uniform_circle_offset(curve_id, geometry, span, status)
+    }
+
+    fn append_function_line_offset(
+        &mut self,
+        curve_id: &CurveId,
+        geometry: &CurveGeometry,
+        span: Option<&CurveSpan>,
+        status: EntityStatus,
+    ) -> Result<Option<usize>, CodecError> {
+        use cadmpeg_ir::geometry::{
+            nurbs::{NurbsCurve, NurbsPoles3},
+            CurveOffsetDistanceLaw, CurveOffsetLawBasis, CurveOffsetRange, OffsetSide,
+            ProceduralCurveDefinition,
+        };
+        let Some(procedural) = self
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|record| self.ir.model.procedural_curve_owner(&record.id) == Some(curve_id))
+        else {
+            return Ok(None);
+        };
+        let ProceduralCurveDefinition::Offset(offset) = procedural.definition() else {
+            return Ok(None);
+        };
+        let (
+            Some(CurveOffsetRange::Variable {
+                parameter_range,
+                distance_law:
+                    CurveOffsetDistanceLaw::Coordinate {
+                        function,
+                        coordinate,
+                        basis,
+                        function_parameter_offset,
+                        function_parameter_scale,
+                    },
+            }),
+            OffsetSide::PlaneNormal { normal },
+        ) = (offset.range(), offset.side())
+        else {
+            return Ok(None);
+        };
+        let Some(source) = self
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *offset.source())
+        else {
+            return Ok(None);
+        };
+        let Some(function_curve) = self
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *function)
+        else {
+            return Ok(None);
+        };
+        let (
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            Some(SolvedCurveGeometry::Nurbs(function_nurbs)),
+            Some(SolvedCurveGeometry::Nurbs(current)),
+            Some(span),
+        ) = (
+            &source.geometry,
+            function_curve.geometry.solved(),
+            geometry.solved(),
+            span,
+        )
+        else {
+            return Ok(None);
+        };
+        if !is_support_curve(source)
+            || !is_support_curve(function_curve)
+            || function_nurbs.degree() != 1
+            || function_nurbs.weights().is_some()
+            || function_nurbs.knots().as_slice() != [0.0, 0.0, 1.0, 1.0]
+            || function_curve
+                .parameter_range
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                != Some([0.0, 1.0])
+        {
+            return Ok(None);
+        }
+        let source_span = curve_reference_span(self.ir, &source.id, &source.geometry)?;
+        let range = parameter_range.endpoints();
+        let length = source_span.start.distance(source_span.end);
+        let direction = *line.direction().as_raw();
+        let scale = match basis {
+            CurveOffsetLawBasis::Parameter => 1.0 / length,
+            CurveOffsetLawBasis::ArcLength if length == 1.0 => 1.0,
+            CurveOffsetLawBasis::ArcLength => return Ok(None),
+        };
+        if range != [0.0, length]
+            || span.range.get() != range
+            || source_span.range.get() != range
+            || normal.get().dot(direction) != 0.0
+            || function_parameter_offset.get() != 0.0
+            || function_parameter_scale.get() != scale
+        {
+            return Ok(None);
+        }
+        let controls = function_nurbs.control_points();
+        let [first, last] = controls.as_slice() else {
+            return Ok(None);
+        };
+        let coord = |point: cadmpeg_ir::math::Point3| match coordinate.get() {
+            1 => point.x,
+            2 => point.y,
+            _ => point.z,
+        };
+        let distances = [coord(first.get()), coord(last.get())];
+        let side = normal.get().cross(direction);
+        let points = vec![
+            source_span.start.translated(side, distances[0]),
+            source_span.end.translated(side, distances[1]),
+        ];
+        let Ok(expected_curve) = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, length, length],
+            NurbsPoles3::Polynomial { points },
+            false,
+        ) else {
+            return Ok(None);
+        };
+        let Ok(expected_offset) =
+            cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                source.id.clone(),
+                distances[0],
+                OffsetSide::PlaneNormal {
+                    normal: normal.get(),
+                },
+                offset.range().as_ref().map(CurveOffsetRange::to_raw),
+            )
+        else {
+            return Ok(None);
+        };
+        if &expected_curve != current || &expected_offset != offset {
+            return Ok(None);
+        }
+        let function_span =
+            curve_reference_span(self.ir, &function_curve.id, &function_curve.geometry)?;
+        let source_index = if let Some(index) = self.entities.iter().position(|entity| {
+            entity.type_code == 110
+                && entity.status.is_physically_dependent()
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|id| id == source.id.as_str())
+        }) {
+            index
+        } else {
+            self.append(
+                &source.id,
+                &source.geometry,
+                Some(&source_span),
+                Sense::Forward,
+                EntityStatus::PhysicallyDependent,
+            )?
+        };
+        let function_index = if let Some(index) = self.entities.iter().position(|entity| {
+            entity.type_code == 126
+                && entity.status.is_physically_dependent()
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|id| id == function_curve.id.as_str())
+        }) {
+            index
+        } else {
+            self.append(
+                &function_curve.id,
+                &function_curve.geometry,
+                Some(&function_span),
+                Sense::Forward,
+                EntityStatus::PhysicallyDependent,
+            )?
+        };
+        let (Some(source_pointer), Some(function_pointer)) = (
+            source_index.checked_add(self.reference_offset),
+            function_index.checked_add(self.reference_offset),
+        ) else {
+            return Ok(None);
+        };
+        let basis_code = match basis {
+            CurveOffsetLawBasis::ArcLength => 1,
+            CurveOffsetLawBasis::Parameter => 2,
+        };
+        let mut entity = Entity {
+            structure: None,
+            property_links: Vec::new(),
+            association_links: Vec::new(),
+            line_font: None,
+            source_targets: Vec::new(),
+            type_code: 130,
+            form: 0,
+            label: String::new(),
+            status,
+            subscript: 0,
+            parameter_body: format!(
+                "{},3,{},{},{},0,0,0,0,{},{},{},0,1;",
+                reference_marker(source_pointer),
+                reference_marker(function_pointer),
+                coordinate.get(),
+                basis_code,
+                number(normal.as_point().coordinates()[0]),
+                number(normal.as_point().coordinates()[1]),
+                number(normal.as_point().coordinates()[2])
+            )
+            .into_bytes(),
+            transform: None,
+            transform_link: None,
+        };
+        if let Some(sequence) = self
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| &curve.id == curve_id)
+            .and_then(|curve| curve.source_object.as_ref())
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+        {
+            super::native_records::numeric::retain_directory(
+                self.ir,
+                &format!("iges:entity:directory#{sequence}"),
+                &mut entity,
+            );
+        }
+        let index = self.entities.len();
+        self.entities.push(entity);
+        Ok(Some(index))
+    }
+
+    pub(super) fn append_linear_line_offset(
+        &mut self,
+        curve_id: &CurveId,
+        geometry: &CurveGeometry,
+        span: Option<&CurveSpan>,
+        status: EntityStatus,
+    ) -> Result<Option<usize>, CodecError> {
+        use cadmpeg_ir::geometry::{
+            nurbs::{NurbsCurve, NurbsPoles3},
+            CurveOffsetDistanceLaw, CurveOffsetLawBasis, CurveOffsetRange, OffsetSide,
+            ProceduralCurveDefinition,
+        };
+        let Some(procedural) = self
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|record| self.ir.model.procedural_curve_owner(&record.id) == Some(curve_id))
+        else {
+            return Ok(None);
+        };
+        let ProceduralCurveDefinition::Offset(offset) = procedural.definition() else {
+            return Ok(None);
+        };
+        let (
+            Some(CurveOffsetRange::Variable {
+                parameter_range,
+                distance_law:
+                    CurveOffsetDistanceLaw::Linear {
+                        basis,
+                        distances,
+                        control_range,
+                    },
+            }),
+            OffsetSide::PlaneNormal { normal },
+        ) = (offset.range(), offset.side())
+        else {
+            return Ok(None);
+        };
+        let Some(source) = self
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *offset.source())
+        else {
+            return Ok(None);
+        };
+        let (
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            Some(SolvedCurveGeometry::Nurbs(current)),
+            Some(span),
+        ) = (&source.geometry, geometry.solved(), span)
+        else {
+            return Ok(None);
+        };
+        if !is_support_curve(source) {
+            return Ok(None);
+        }
+        let source_span = curve_reference_span(self.ir, &source.id, &source.geometry)?;
+        let range = parameter_range.endpoints();
+        let length = source_span.end.distance(source_span.start);
+        let direction = *line.direction().as_raw();
+        if range[0] != 0.0
+            || range[1] != length
+            || source_span.range.get() != range
+            || span.range.get() != range
+            || normal.get().dot(direction) != 0.0
+        {
+            return Ok(None);
+        }
+        let control = control_range.endpoints();
+        let distances = [distances[0].get(), distances[1].get()];
+        let law_at = |parameter: f64| {
+            let independent = match basis {
+                CurveOffsetLawBasis::ArcLength => parameter - range[0],
+                CurveOffsetLawBasis::Parameter => parameter,
+            };
+            distances[0]
+                + (independent - control[0]) / (control[1] - control[0])
+                    * (distances[1] - distances[0])
+        };
+        let side = normal.get().cross(direction);
+        let points = vec![
+            source_span.start.translated(side, law_at(range[0])),
+            source_span.end.translated(side, law_at(range[1])),
+        ];
+        let Ok(expected_curve) = NurbsCurve::new(
+            1,
+            vec![range[0], range[0], range[1], range[1]],
+            NurbsPoles3::Polynomial { points },
+            false,
+        ) else {
+            return Ok(None);
+        };
+        let Ok(expected_offset) =
+            cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                source.id.clone(),
+                distances[0],
+                OffsetSide::PlaneNormal {
+                    normal: normal.get(),
+                },
+                offset.range().as_ref().map(CurveOffsetRange::to_raw),
+            )
+        else {
+            return Ok(None);
+        };
+        if &expected_curve != current || &expected_offset != offset {
+            return Ok(None);
+        }
+        let (basis_code, controls) = match basis {
+            CurveOffsetLawBasis::ArcLength => (1, control),
+            CurveOffsetLawBasis::Parameter => (2, control.map(|value| value / length)),
+        };
+        let [Some(d1), Some(c1), Some(d2), Some(c2), Some(nx), Some(ny), Some(nz)] = [
+            distances[0],
+            controls[0],
+            distances[1],
+            controls[1],
+            normal.get().x,
+            normal.get().y,
+            normal.get().z,
+        ]
+        .map(cadmpeg_ir::scalar::FiniteReal::new) else {
+            return Ok(None);
+        };
+        let source_index = if let Some(index) = self.entities.iter().position(|entity| {
+            entity.type_code == 110
+                && entity.status.is_physically_dependent()
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|id| id == source.id.as_str())
+        }) {
+            index
+        } else {
+            self.append(
+                &source.id,
+                &source.geometry,
+                Some(&source_span),
+                Sense::Forward,
+                EntityStatus::PhysicallyDependent,
+            )?
+        };
+        let Some(pointer) = source_index.checked_add(self.reference_offset) else {
+            return Ok(None);
+        };
+        let mut entity = Entity {
+            structure: None,
+            property_links: Vec::new(),
+            association_links: Vec::new(),
+            line_font: None,
+            source_targets: Vec::new(),
+            type_code: 130,
+            form: 0,
+            label: String::new(),
+            status,
+            subscript: 0,
+            parameter_body: format!(
+                "{},2,0,0,{},{},{},{},{},{},{},{},0,1;",
+                reference_marker(pointer),
+                basis_code,
+                number(d1),
+                number(c1),
+                number(d2),
+                number(c2),
+                number(nx),
+                number(ny),
+                number(nz)
+            )
+            .into_bytes(),
+            transform: None,
+            transform_link: None,
+        };
+        if let Some(sequence) = self
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| &curve.id == curve_id)
+            .and_then(|curve| curve.source_object.as_ref())
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+        {
+            super::native_records::numeric::retain_directory(
+                self.ir,
+                &format!("iges:entity:directory#{sequence}"),
+                &mut entity,
+            );
+        }
+        let index = self.entities.len();
+        self.entities.push(entity);
+        Ok(Some(index))
+    }
+
     pub(super) fn append_uniform_circle_offset(
         &mut self,
         curve_id: &CurveId,

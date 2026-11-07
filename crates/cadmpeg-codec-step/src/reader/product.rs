@@ -455,6 +455,20 @@ pub(super) fn decode(
         }
         typed.insert(step_id);
     }
+    let mut occurrence_definitions = BTreeMap::new();
+    for (id, record) in exchange.entities("PRODUCT_DEFINITION_OCCURRENCE") {
+        let Some(definition) = named_parameter(record, "PRODUCT_DEFINITION_OCCURRENCE", 3)
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
+            continue;
+        };
+        occurrence_definitions.insert(id, definition);
+        definition_prototypes.insert(id, prototype);
+        typed.insert(id);
+    }
     let mut product_definition_ids_by_shape = BTreeMap::new();
     for (shape_id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
         let Some(prototype) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
@@ -510,8 +524,16 @@ pub(super) fn decode(
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
     let mut output_truncated_at = None;
-    for &definition in definitions.keys() {
+    let occurrence_prototypes: BTreeSet<_> = occurrence_definitions.values().copied().collect();
+    let usage_definitions: BTreeSet<_> = usages
+        .values()
+        .flat_map(|usage| [usage.parent_definition, usage.child_definition])
+        .collect();
+    for &definition in definitions.keys().chain(occurrence_definitions.keys()) {
         if child_definitions.contains(&definition) {
+            continue;
+        }
+        if occurrence_prototypes.contains(&definition) && !usage_definitions.contains(&definition) {
             continue;
         }
         let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
@@ -536,7 +558,8 @@ pub(super) fn decode(
             },
             parent: OccurrenceParent::Root {},
             ordinal: root_ordinal,
-            transform: Some(Transform::identity()),
+            transform: (!occurrence_definitions.contains_key(&definition))
+                .then(Transform::identity),
             linked_prototype: None,
 
             name: None,

@@ -7,9 +7,18 @@ use crate::test_support::multiple_profiles::fixture;
 fn multiple_sketch_profiles_remain_native_with_one_loss() {
     let (archive, mut scope, headers, entities) = fixture(2);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let losses =
-            bind_sketch_profiles(scan, std::slice::from_mut(&mut scope), &headers, &entities)
-                .unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let losses = bind_sketch_profiles(
+            &ctx,
+            &mut parts,
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+        )
+        .unwrap();
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
@@ -38,11 +47,49 @@ fn multiple_sketch_profiles_remain_native_with_one_loss() {
 fn one_sketch_profile_binds_without_a_native_group_loss() {
     let (archive, mut scope, headers, entities) = fixture(1);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let losses =
-            bind_sketch_profiles(scan, std::slice::from_mut(&mut scope), &headers, &entities)
-                .unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let losses = bind_sketch_profiles(
+            &ctx,
+            &mut parts,
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+        )
+        .unwrap();
         assert!(losses.is_empty());
         assert_eq!(scope.extrude_profile().unwrap().record_index, 100);
         assert!(scope.extrude_native_profiles().is_none());
+    });
+}
+
+#[test]
+fn damaged_sketch_profile_is_given_up_and_sibling_binds() {
+    let (archive, mut scope, headers, entities) =
+        crate::test_support::multiple_profiles::fixture_with_damaged_profile(2, Some(0));
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let losses = bind_sketch_profiles(
+            &ctx,
+            &mut parts,
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+        )
+        .unwrap();
+        assert!(losses.is_empty());
+        assert_eq!(scope.extrude_profile().unwrap().record_index, 200);
+        let (_, native, _, part_losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert_eq!(part_losses.len(), 1);
+        assert_eq!(part_losses[0].code.local_code(), "record.unreadable");
     });
 }
