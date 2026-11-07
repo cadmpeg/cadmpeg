@@ -4689,6 +4689,7 @@ pub(crate) fn install(
                     MATERIAL,
                 ))? {
                     let mut material_requires_opaque = false;
+                    let first_xml_part = give_ups.len();
                     for value in userdata.iter().filter_map(UserdataDescriptor::known) {
                         if value.class_uuid != RDK_CLASS
                             || value.item_uuid != RDK_USERDATA
@@ -4766,6 +4767,9 @@ pub(crate) fn install(
                         &mut losses,
                     ) {
                         Ok(mut material) => {
+                            for part in &mut give_ups[first_xml_part..] {
+                                part.containing = Some(material.id.clone());
+                            }
                             if let Some(instance_id) = legacy_rdk_instance_id {
                                 material.plugin_uuid = format!("{UNIVERSAL_RENDER_ENGINE}");
                                 material.rdk_instance_uuid = Some(format!("{instance_id}"));

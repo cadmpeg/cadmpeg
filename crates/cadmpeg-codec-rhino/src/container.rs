@@ -267,6 +267,8 @@ pub(crate) struct GivenUpPart {
     pub(crate) table: Option<u32>,
     /// The neutral records the part built, for its loss's `dropped` list.
     pub(crate) dropped: Vec<String>,
+    /// Native record that contains the part.
+    pub(crate) containing: Option<String>,
     /// The framing or structural failure that gave the part up.
     pub(crate) error: String,
 }
@@ -490,6 +492,7 @@ pub(crate) fn give_up(
         classes,
         table,
         dropped,
+        containing: None,
         error: error.to_string(),
     });
 }
@@ -631,20 +634,30 @@ pub(crate) fn materialize_give_ups(
             id.clone(),
             offset,
             data,
-            Vec::new(),
+            part.containing.iter().cloned().collect(),
         ));
         let mut provenance = cadmpeg_ir::SourceProvenance::root("rhino", offset);
         let length = u64_from_index(part.range.len());
         if length != 0 {
             provenance = provenance.with_byte_len(length)?;
         }
-        let mut loss = cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
-            .note(format!(
+        let description = if part.label == "rhino.xml_element" {
+            format!(
+                "part {} stream=None offset={offset} length={length} record={id}: {}; dropped=[{}]",
+                part.label,
+                part.error,
+                part.dropped.join(", ")
+            )
+        } else {
+            format!(
                 "part {} stream=None offset={offset} length={length}: {}; dropped=[{}]",
                 part.label,
                 part.error,
                 part.dropped.join(", ")
-            ))
+            )
+        };
+        let mut loss = cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note(description)
             .with_provenance(provenance);
         loss.dropped.clone_from(&part.dropped);
         losses.push(loss);
@@ -1793,6 +1806,10 @@ fn scan_with_record_limit<'a>(
                                 Vec::new(),
                                 format_args!("damaged XML element <{}>", damage.name),
                             );
+                            if let Some(part) = give_ups.last_mut() {
+                                part.containing =
+                                    Some(mint_unknown_id(all_objects.len()).to_string());
+                            }
                         }
                     }
                 }
