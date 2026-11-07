@@ -262,6 +262,7 @@ fn damaged_face_source_identity_keeps_its_indexed_sibling() {
                 source,
                 "Design/BulkStream.dat",
                 frame,
+                (frame.entity_id == 200).then_some(201),
             )
             .unwrap()
         })
@@ -278,4 +279,44 @@ fn damaged_face_source_identity_keeps_its_indexed_sibling() {
         .contains(&cadmpeg_ir::document::ArenaClass::Design));
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
+#[test]
+fn face_source_identity_survives_a_damaged_following_header() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, b"290", 200);
+    bytes.extend_from_slice(&586u64.to_le_bytes());
+    crate::test_support::lp_utf16(&mut bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
+    crate::test_support::lp_utf16(&mut bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 5]);
+    let end = bytes.len();
+    bytes.extend_from_slice(&[0xff; 11]);
+    let frame = crate::metastream::PrimaryRecordFrame {
+        entity_id: 200,
+        start: 0,
+        member_end: end,
+        end,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let member = crate::design::decode::operands::decode_face_source_identity_part(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &frame,
+        Some(201),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(member.local_id, 586);
+    assert_eq!(member.next_record_index, 201);
+    assert_eq!(member.next_byte_offset, u64::try_from(end).unwrap());
+    let (_, _, _, losses) = parts.into_parts();
+    assert!(losses.is_empty());
 }
