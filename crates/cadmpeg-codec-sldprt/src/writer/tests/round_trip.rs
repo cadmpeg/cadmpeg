@@ -459,6 +459,49 @@ fn source_less_partial_knit_surface_remains_an_operation() {
 }
 
 #[test]
+fn source_less_partial_filled_surface_remains_an_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, SurfaceBoundary};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(
+        matches!(&expected, FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+        boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+        support_faces: FaceSelection::Unresolved, continuity, merge_result: None,
+    }) if continuity.resolved().is_none())
+    );
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
 fn source_less_native_spatial_relation_keeps_its_operands() {
     check_native_spatial_relation(true, ["d6", "e1"], 10);
 }

@@ -500,57 +500,56 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            let boundary = edge_selection_value(boundary).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+            require_same_family(existing, &feature.id, &["FilledSurface", "FillSurface"])?;
+            let mut properties = self.base_properties();
+            if let Some(value) = edge_selection_value(boundary) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Boundary"), value);
+            } else if matches!(boundary, EdgeSelection::Unresolved) {
+                properties.remove("Boundary");
+            } else {
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no filled-surface boundary",
-                    feature.id
-                ))
-            })?;
-            let support_faces = face_selection_value(support_faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no filled-surface supports",
-                    feature.id
-                ))
-            })?;
-            let continuity = continuity.resolved().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved filled-surface continuity",
-                    feature.id
-                ))
-            })?;
-            let Some(continuity) = continuity.uniform() else {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has per-boundary filled-surface continuity",
-                    feature.id
-                )));
-            };
-            if continuity.weight().is_some() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has a weighted filled-surface condition",
                     feature.id
                 )));
             }
-            let merge_result = merge_result.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved filled-surface merge state",
+            if let Some(value) = face_selection_value(support_faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("SupportFaces"), value);
+            } else if matches!(support_faces, FaceSelection::Unresolved) {
+                properties.remove("SupportFaces");
+            } else {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} has no filled-surface supports",
                     feature.id
-                ))
-            })?;
-            require_same_family(existing, &feature.id, &["FilledSurface", "FillSurface"])?;
-            let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Boundary"), boundary);
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("SupportFaces"),
-                support_faces,
-            );
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("Continuity"),
-                crate::feature_schema::surface_continuity_token(continuity.continuity()).into(),
-            );
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("MergeResult"),
-                merge_result.to_string(),
-            );
+                )));
+            }
+            if let Some(continuity) = continuity.resolved() {
+                let Some(continuity) = continuity.uniform() else {
+                    return Err(CodecError::UnsupportedContent(format!(
+                        "SLDPRT feature {} has per-boundary filled-surface continuity",
+                        feature.id
+                    )));
+                };
+                if continuity.weight().is_some() {
+                    return Err(CodecError::UnsupportedContent(format!(
+                        "SLDPRT feature {} has a weighted filled-surface condition",
+                        feature.id
+                    )));
+                }
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Continuity"),
+                    crate::feature_schema::surface_continuity_token(continuity.continuity()).into(),
+                );
+            } else {
+                properties.remove("Continuity");
+            }
+            if let Some(merge_result) = merge_result {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("MergeResult"),
+                    merge_result.to_string(),
+                );
+            } else {
+                properties.remove("MergeResult");
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "FilledSurface".into(), |record| record.kind.clone()),
                 parameters: self.base_parameters(),
