@@ -463,6 +463,25 @@ fn graph_without_fill_uses_no_retained_memory_allowance() {
 }
 
 #[test]
+fn sheet_plan_uses_no_retained_memory_allowance_for_temporary_indexes() {
+    let bytes = fixture(FixtureOptions::default());
+    let native = CatiaNative::decode_with_record_ranges(&bytes, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("input fits the independent input limit");
+    assert_eq!(
+        plans(&ctx, source, &native, &ModelingGraphScope::Unscoped, 1.0e-6)
+            .expect("temporary sheet indexes need no retained memory")
+            .len(),
+        1
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
 fn tighter_model_tolerance_withholds_a_source_fitted_sheet() {
     let bytes = fixture(FixtureOptions {
         point_error: 5.0e-7,

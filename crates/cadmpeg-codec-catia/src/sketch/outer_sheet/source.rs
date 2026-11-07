@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-closed outer Fill inputs and directed planar boundary components.
 
-use cadmpeg_core::decode::{index_from_u32, index_from_u64, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, index_from_u64, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -38,10 +38,6 @@ fn allocate<T: Clone>(
     count: usize,
     value: T,
 ) -> Result<Vec<T>, CodecError> {
-    let bytes = u64_from_index(count)
-        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-        .ok_or_else(|| CodecError::malformed("outer sheet allocation exceeds its size lane"))?;
-    ctx.retain_bytes(bytes, RETAIN)?;
     ctx.alloc_filled(count, value, RETAIN)
 }
 
