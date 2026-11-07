@@ -69,7 +69,7 @@ pub(crate) fn bind(
                         || placement.fields.inferred_z_axis.value != 0)
             }) {
                 losses.push(crate::loss::F3dLossCode::WorkPlaneInferredAxisAssumed.note(format!(
-                    "WorkPlane {} takes its frame from the stored matrix of placement {}, whose isInferredXAxis byte is {} and isInferredZAxis byte is {}.",
+                    "WorkPlane {} takes its frame from the stored matrix or identity marker of placement {}, whose isInferredXAxis byte is {} and isInferredZAxis byte is {}.",
                     scope.id,
                     placement.id,
                     placement.fields.inferred_x_axis.value,

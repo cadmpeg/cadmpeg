@@ -127,7 +127,7 @@ pub(crate) const GRAMMAR_FRAME_ROWS: [[f64; 4]; 4] = [
     [0.0, 0.0, 0.0, 1.0],
 ];
 
-pub(crate) fn grammar_frame(version: u32, use_u_direction: u8) -> Vec<u8> {
+fn grammar_frame(version: u32, use_u_direction: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
     super::indexed_header(&mut bytes, *b"328", 41);
     bytes.extend_from_slice(&[0; 10]);
