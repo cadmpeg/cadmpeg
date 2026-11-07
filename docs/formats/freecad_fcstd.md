@@ -730,11 +730,16 @@ collapsed array, element `i` uses `PlacementList[i]` and `ScaleList[i]` when eac
 placement is the identity relative to the scalar link placement; an absent scale is `(1, 1, 1)`.
 Entries beyond the active count do not create occurrences. Inactive carriers remain document data.
 Visibility bits do not determine array cardinality. A missing visibility bit means visible; a scalar
-link does not apply the per-element visibility list. A member with runtime `App::LinkElement` and
-an absent or zero `_LinkOwner` acquires the containing link's persistent object ID at restoration.
-A nonzero `_LinkOwner` retains that owner; another containing list does not replace it. Owned link
-elements do not create independent root occurrences. A member of another runtime remains an
-independent object; membership alone does not make an ordinary `App::Link` an owned element. For an active array, the transform order is
+link does not apply the per-element visibility list. During restoration, a listed `App::LinkElement`
+with an absent or zero `_LinkOwner` acquires the containing link's persistent object ID. A nonzero
+different `_LinkOwner` leaves that owner in place and skips synchronization of the element's
+`LinkedObject` and `LinkTransform` properties. Membership in an `App::Link.ElementList` identifies a
+`LinkElement` as a member of that link, independently of `_LinkOwner`. An unlisted `LinkElement`
+is an independent object, including when `_LinkOwner` identifies an existing object. Each `App::Link`
+uses its own ordered `ElementList` when expanding an array. If several lists contain one `LinkElement`, its
+singular group accessor returns the first containing link in incoming-link order. An `ElementList`
+entry with another runtime type remains an independent object; an ordinary `App::Link` entry remains
+an occurrence. For an active array, the transform order is
 scalar placement, scalar scale, element placement, element scale, and the linked prototype placement
 when `LinkTransform` enables it. A scalar link applies scalar placement and scalar scale before the
 linked prototype placement. Nonuniform scale does not commute with rotation or translation.
