@@ -260,9 +260,9 @@ pub(in crate::writer) fn styles(ir: &CadIr) -> Result<FontExport, WriteError> {
     Ok(output)
 }
 
-pub(in crate::writer) fn style_index(ir: &CadIr, source: i32) -> Result<Option<i32>, WriteError> {
+pub(in crate::writer) fn style_index(ir: &CadIr, fonts: &FontExport, source: i32) -> Option<i32> {
     if source < 0 {
-        return Ok(Some(source));
+        return Some(source);
     }
     let mut matching = records(ir, "text_styles").iter().filter(|record| {
         record
@@ -271,12 +271,12 @@ pub(in crate::writer) fn style_index(ir: &CadIr, source: i32) -> Result<Option<i
             == Some(i64::from(source))
     });
     let Some(record) = matching.next() else {
-        return Ok(None);
+        return None;
     };
     if matching.next().is_some() {
-        return Ok(None);
+        return None;
     }
-    Ok(styles(ir)?.indices.get(record.id()).copied())
+    fonts.indices.get(record.id()).copied()
 }
 
 pub(in crate::writer) fn complete(record: &cadmpeg_ir::NativeRecord) -> bool {

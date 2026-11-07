@@ -75,8 +75,8 @@ fn malformed_style_is_named_and_valid_style_keeps_references() {
     assert!(output.losses.iter().any(|loss| loss.code
         == RhinoLossCode::WriterTextStyleOmitted.kind()
         && loss.message.contains(bad)));
-    assert_eq!(style_index(&ir, 7).unwrap(), Some(0));
-    assert_eq!(style_index(&ir, 0).unwrap(), None);
+    assert_eq!(style_index(&ir, &output, 7), Some(0));
+    assert_eq!(style_index(&ir, &output, 0), None);
 }
 
 #[test]
