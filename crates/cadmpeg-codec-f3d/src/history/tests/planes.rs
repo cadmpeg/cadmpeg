@@ -648,3 +648,234 @@ fn an_origin_plane_identity_keeps_its_plane_when_an_asm_face_shares_it() {
         );
     }
 }
+
+#[test]
+fn a_compact_plane_selection_without_a_usable_face_assumes_the_next_work_plane() {
+    use crate::records::feature::mirror::DesignMirrorPlaneFaceDefect;
+
+    #[derive(Clone, Copy)]
+    enum Surface {
+        Plane,
+        Cylinder,
+        Unbound,
+        Absent,
+    }
+    let construction = |proven_plane_scope: bool| {
+        let mut construction = serde_json::json!({
+            "count": 2, "count_record_index": 11, "count_offset": 0,
+            "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+            "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+            "plane_group_record_index": 30, "plane_selection_record_index": 40
+        });
+        if proven_plane_scope {
+            construction["plane_scope_record_index"] = serde_json::json!(7);
+            construction["plane_reference_offset"] = serde_json::json!(0);
+        }
+        serde_json::from_value::<crate::records::feature::mirror::DesignMirrorConstruction>(
+            construction,
+        )
+        .expect("mirror construction")
+    };
+    let group: crate::records::topology::construction::DesignConstructionOperandGroup =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
+            "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
+            "class_tag": "282", "members": [40], "member_offsets": [0],
+            "frame": {"member_count_offset": 0, "opaque_index": 1,
+                "opaque_index_offset": 18, "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22, "variant": false},
+            "role": 21_474_836_480u64, "role_offset": 0,
+            "paired_class_tag": "261", "paired_byte_offset": 0
+        }))
+        .expect("mirror plane group");
+    let topology = |surface: Surface| match surface {
+        Surface::Absent => AsmHistoricalTopology::default(),
+        Surface::Unbound => AsmHistoricalTopology {
+            faces: vec![10],
+            ..Default::default()
+        },
+        Surface::Plane | Surface::Cylinder => AsmHistoricalTopology {
+            faces: vec![10],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 10,
+                carrier: 20,
+            }],
+            surface_planes: if matches!(surface, Surface::Plane) {
+                vec![crate::history_records::AsmHistoricalPlane {
+                    surface: 20,
+                    origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                }]
+            } else {
+                Vec::new()
+            },
+            surface_radii: if matches!(surface, Surface::Cylinder) {
+                vec![crate::history_records::AsmHistoricalSurfaceRadius {
+                    surface: 20,
+                    radius: 2.0,
+                }]
+            } else {
+                Vec::new()
+            },
+            ..Default::default()
+        },
+    };
+    let history = |id: &str, current: Surface, previous: Surface| {
+        crate::test_support::history::history(
+            id.into(),
+            0,
+            None,
+            false,
+            [(2, current), (1, previous)]
+                .into_iter()
+                .map(|(state_id, surface)| {
+                    (
+                        AsmDeltaState {
+                            id: format!("{id}:state#{state_id}"),
+                            parent: id.into(),
+                            byte_offset: 0,
+                            state_id,
+                            version_flag: 1,
+                            state_flag: 0,
+                            previous_ref: None,
+                            next_ref: (state_id == 2).then_some(1),
+                            node_index: state_id,
+                            partner_ref: None,
+                            owner_ref: 0,
+                            bulletin_boards: Vec::new(),
+                            records: Vec::new(),
+                            transition: None,
+                        },
+                        Some(topology(surface)),
+                        Vec::new(),
+                    )
+                })
+                .collect(),
+        )
+    };
+    let bound = |primary_identity: u64,
+                 histories: &[crate::history_records::AsmHistory],
+                 proven_plane_scope: bool| {
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#42",
+            crate::records::feature::scope::DesignFeatureKind::Mirror,
+            42,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(2);
+                draft.previous_history_state_id = Some(1);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) =
+            scope.payload_mut()
+        {
+            *slot = Some(construction(proven_plane_scope));
+        }
+        let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
+                "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
+                "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+                "asset_id_offset": 0, "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 0,
+                "identity_record_index": 43, "identity_record_offset": 0,
+                "primary_identity": primary_identity, "primary_identity_offset": 21,
+                "next_record_index": 42, "next_byte_offset": 29
+            }))
+            .expect("mirror plane selection");
+        bind_mirror_selection_planes(
+            std::slice::from_mut(&mut scope),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&operand),
+            &[],
+            &[],
+            histories,
+            &crate::test_support::origin_types::origin_design_types(
+                "f3d:Design/MetaStream.dat",
+                39,
+            ),
+        );
+        let construction = scope.mirror_construction().expect("mirror construction");
+        (
+            construction.plane.is_some(),
+            construction.assumed_plane_scope.as_ref().map(|assumed| {
+                (
+                    assumed.scope_record_index,
+                    assumed.identity_offset,
+                    assumed
+                        .unusable_faces
+                        .iter()
+                        .map(|face| (face.history_id.clone(), face.face_slot, face.defect))
+                        .collect::<Vec<_>>(),
+                )
+            }),
+        )
+    };
+    let cylinder = history("history", Surface::Cylinder, Surface::Cylinder);
+    let face = |defect| vec![("history".to_owned(), 10, defect)];
+    assert_eq!(
+        bound(60, std::slice::from_ref(&cylinder), false),
+        (false, Some((61, 21, Vec::new())))
+    );
+    assert_eq!(
+        bound(10, std::slice::from_ref(&cylinder), false),
+        (
+            false,
+            Some((11, 21, face(DesignMirrorPlaneFaceDefect::NotPlanar)))
+        )
+    );
+    assert_eq!(
+        bound(
+            10,
+            &[history("history", Surface::Cylinder, Surface::Absent)],
+            false
+        ),
+        (
+            false,
+            Some((
+                11,
+                21,
+                face(DesignMirrorPlaneFaceDefect::AbsentFromPrecedingState)
+            ))
+        )
+    );
+    assert_eq!(
+        bound(10, std::slice::from_ref(&cylinder), true),
+        (false, None),
+        "a plane reference outranks the assumed WorkPlane"
+    );
+    assert_eq!(
+        bound(
+            10,
+            &[history("history", Surface::Unbound, Surface::Unbound)],
+            false
+        ),
+        (false, None),
+        "an unreadable candidate face voids the assumed WorkPlane"
+    );
+    assert_eq!(
+        bound(
+            10,
+            &[history("history", Surface::Plane, Surface::Plane)],
+            false
+        ),
+        (true, None)
+    );
+    assert_eq!(
+        bound(
+            10,
+            &[
+                cylinder.clone(),
+                history("history-b", Surface::Plane, Surface::Plane)
+            ],
+            false
+        ),
+        (false, None),
+        "a planar candidate face voids the assumed WorkPlane"
+    );
+    assert_eq!(
+        bound(40, std::slice::from_ref(&cylinder), false),
+        (false, None)
+    );
+}
