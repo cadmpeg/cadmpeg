@@ -1134,6 +1134,7 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
 }
 
 mod definition_recovery;
+mod schema_recovery;
 mod generated_appearance;
 
 #[test]

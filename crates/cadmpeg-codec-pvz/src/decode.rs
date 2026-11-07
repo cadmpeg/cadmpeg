@@ -19,6 +19,7 @@ use cadmpeg_ir::document::{CadIr, EntityRewrite, Model, SourceMeta};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::SourceFidelity;
 
 use crate::loss::PvzLossCode;
@@ -49,8 +50,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     ));
     let mut geometry_transferred = false;
     let mut annotations = Annotations::default();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Pvz, ctx);
     if !ctx.container_only() {
-        match crate::pvs::read(ctx, structure_member) {
+        match crate::pvs::read(ctx, structure_member, package.structure_name(), &mut parts) {
             Ok(structure) => {
                 geometry_transferred = decode_model(
                     ctx,
@@ -70,6 +72,20 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             ))),
         }
     }
+    let (_, native, fidelity, part_losses) = parts.into_parts();
+    for (_, mut namespace) in native.0 {
+        let destination = ir.native.namespace_mut("pvz");
+        for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
+            destination
+                .arenas_mut()
+                .entry(arena)
+                .or_default()
+                .append(&mut records);
+        }
+    }
+    losses.extend(part_losses);
+    let mut source_fidelity = SourceFidelity::for_decode(ctx, annotations);
+    source_fidelity.append(fidelity)?;
     ir.scope = ctx.depth().required_scope();
     Ok(Decoded {
         body: DecodeBody {
@@ -80,7 +96,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             })
         },
         ir,
-        source_fidelity: SourceFidelity::for_decode(ctx, annotations),
+        source_fidelity,
     })
 }
 

@@ -607,8 +607,11 @@ pub(super) fn encode(
         body_map: None,
         browser_nodes: None,
     };
-    let meta = encode_design_metastream(&registry, &primary, &secondary)?
-        .ok_or_else(|| CodecError::Malformed("missing generated sketch metadata".into()))?;
+    let meta = encode_design_metastream(&registry, &primary, &secondary)?;
+    debug_assert!(meta.is_some(), "generated sketch registry has fixed types");
+    let Some(meta) = meta else {
+        return Ok(None);
+    };
     Ok(Some(SketchStream {
         bulk,
         meta,

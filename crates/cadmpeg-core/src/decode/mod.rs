@@ -27,6 +27,7 @@ mod unique;
 mod utf16;
 mod view;
 mod whole_input;
+mod xml_recovery;
 mod xml_scan;
 pub mod zstd;
 
@@ -49,6 +50,7 @@ pub use view::{
     bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount, View,
 };
 pub use whole_input::WholeInput;
+pub use xml_recovery::parse_xml_recovering;
 pub use xml_scan::{
     XmlElement, XmlElementScan, XmlEncoding, XmlFramingFault, XmlFramingIssue, XmlTermination,
 };
