@@ -9,6 +9,32 @@ use cadmpeg_ir::codec::write::NativeDisposition;
 use cadmpeg_ir::{CadIr, NativeRecord};
 use serde_json::{json, Map, Value};
 
+#[test]
+fn invalid_setting_color_names_setting_and_preserves_other_fields() {
+    let mut ir = CadIr::empty();
+    let id = "rhino:document:setting#invalid-color";
+    let record = NativeRecord::new(
+        id.try_into().expect("identity"),
+        serde_json::from_value(json!({"current_color":"invalid", "model_url":"example"}))
+            .expect("fields"),
+    )
+    .expect("record");
+    ir.native
+        .namespace_mut("rhino")
+        .arenas_mut()
+        .insert("document_settings".into(), vec![record]);
+    let materials = super::super::materials::MaterialPlan::new(&ir).expect("materials");
+    let mut losses = Vec::new();
+    let output = super::settings(&ir, &materials, &mut losses).expect("settings write");
+    assert_eq!(output.records.len(), 1);
+    assert!(!output.written.contains(id));
+    assert!(!output.regenerated.contains(id));
+    assert!(losses.iter().any(
+        |loss| loss.code == RhinoLossCode::WriterSettingColorReduced.kind()
+            && loss.message.contains(id)
+    ));
+}
+
 fn fields(arena: &str) -> Map<String, Value> {
     serde_json::from_value(match arena {
         "revisions" => json!({"created_by":"Source author","created_utc_fields":[1,2,3,4,5,126,6,127],"last_edited_by":"Source editor","last_edited_utc_fields":[8,9,10,11,5,126,4,158],"revision_count":7}),

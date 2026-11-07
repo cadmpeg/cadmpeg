@@ -213,6 +213,15 @@ impl MaterialPlan {
             let emit_textures = match native {
                 Some(record) => match record.fields() {
                     Ok(fields) => {
+                        let colors = super::invalid_color_fields(&fields);
+                        if !colors.is_empty() {
+                            plan.losses
+                                .push(RhinoLossCode::WriterMaterialColorReduced.note(format!(
+                                    "material {} color fields are omitted: {}",
+                                    record.id(),
+                                    colors.join(", ")
+                                )));
+                        }
                         let complete = super::textures_complete(&fields);
                         if !complete
                             && (fields
@@ -269,6 +278,15 @@ impl MaterialPlan {
                 .push(index);
             let emit_textures = match record.fields() {
                 Ok(fields) => {
+                    let colors = super::invalid_color_fields(&fields);
+                    if !colors.is_empty() {
+                        plan.losses
+                            .push(RhinoLossCode::WriterMaterialColorReduced.note(format!(
+                                "material {} color fields are omitted: {}",
+                                record.id(),
+                                colors.join(", ")
+                            )));
+                    }
                     let complete = super::textures_complete(&fields);
                     if !complete
                         && (fields
