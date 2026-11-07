@@ -573,7 +573,9 @@ pub fn cross_compare(
     let stripped = foreign_native_ids(before, format);
     let mut projected = project_document(before, config.carried, config.fixed_paths, format);
     let required = required_ids_with_source(&projected, before, config.carried, format);
-    prioritize_required(&mut projected, &required);
+    let full_unpaired =
+        unpaired_before_ids(before, &after.ir, &Mode::Cross(CrossProjection::default())).ok();
+    prioritize_required(&mut projected, &required, full_unpaired.as_ref());
     let nulled = null_dangling(&projected, &required);
     let adjusted = apply_reduced(&nulled, config.reduced, true);
     let reduced_after = apply_reduced(&after.ir, config.reduced, false);
@@ -636,13 +638,19 @@ pub fn cross_compare(
     findings
 }
 
-fn prioritize_required(document: &mut Value, required: &BTreeSet<String>) {
+fn prioritize_required(
+    document: &mut Value,
+    required: &BTreeSet<String>,
+    full_unpaired: Option<&BTreeSet<String>>,
+) {
     if let Some(model) = document.get_mut("model").and_then(Value::as_object_mut) {
         for rows in model.values_mut().filter_map(Value::as_array_mut) {
             rows.sort_by_key(|row| {
-                !row.get("id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| required.contains(id))
+                let id = row.get("id").and_then(Value::as_str);
+                (
+                    !id.is_some_and(|id| required.contains(id)),
+                    id.is_none_or(|id| full_unpaired.is_none_or(|ids| ids.contains(id))),
+                )
             });
         }
     }
@@ -1286,6 +1294,17 @@ mod tests {
         .unwrap();
 
         let findings = super::cross_compare(&before, &after, &report, "step", &config);
+        assert_eq!(
+            findings,
+            ["dropped record unsupported is named by no export loss"]
+        );
+        let mut optional = Carried::default();
+        optional.arenas.insert("drawings".into());
+        let optional_config = super::CrossConfig {
+            carried: &optional,
+            ..config.clone()
+        };
+        let findings = super::cross_compare(&before, &after, &report, "step", &optional_config);
         assert_eq!(
             findings,
             ["dropped record unsupported is named by no export loss"]
