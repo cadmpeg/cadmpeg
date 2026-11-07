@@ -502,6 +502,60 @@ fn source_less_partial_filled_surface_remains_an_operation() {
 }
 
 #[test]
+fn source_less_partial_body_retention_remains_an_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection};
+
+    for (tag, kind, expected_mode) in [
+        ("Feature", "Body-Delete/Keep", BodyRetentionMode::Unresolved),
+        (
+            "DeleteBody",
+            "DeleteBody",
+            BodyRetentionMode::DeleteSelected,
+        ),
+        ("KeepBody", "KeepBody", BodyRetentionMode::KeepSelected),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let xml =
+            format!(r#"<Keywords><{tag} Name="Body edit" Type="{kind}" id="20"/></Keywords>"#);
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Keywords",
+            xml.as_bytes(),
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(
+            matches!(&expected, FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+            bodies: BodySelection::Unresolved, mode,
+        }) if *mode == expected_mode)
+        );
+        ir.native = cadmpeg_ir::Native::default();
+        ir.source = None;
+        for feature in &mut ir.model.features {
+            feature.native_ref = None;
+        }
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition() == &expected));
+    }
+}
+
+#[test]
 fn source_less_native_spatial_relation_keeps_its_operands() {
     check_native_spatial_relation(true, ["d6", "e1"], 10);
 }

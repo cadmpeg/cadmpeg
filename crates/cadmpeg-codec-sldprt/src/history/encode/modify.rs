@@ -489,7 +489,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ) {
                     properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), selection);
                 }
-            } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
+            } else if !matches!(bodies, BodySelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported delete-body semantics",
                     feature.id
@@ -497,13 +497,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             match mode {
                 BodyRetentionMode::Unresolved => {
-                    let Some(record) = existing else {
-                        return Err(CodecError::UnsupportedContent(format!(
-                            "SLDPRT feature {} requires a retained unresolved body operation",
-                            feature.id
-                        )));
-                    };
-                    if body_retention_mode(record) != Some(BodyRetentionMode::Unresolved) {
+                    if existing.is_some_and(|record| {
+                        body_retention_mode(record) != Some(BodyRetentionMode::Unresolved)
+                    }) {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} removes a resolved body-retention mode",
                             feature.id
@@ -521,7 +517,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(
                     || match mode {
-                        BodyRetentionMode::Unresolved => "Feature".into(),
+                        BodyRetentionMode::Unresolved => "Body-Delete/Keep".into(),
                         BodyRetentionMode::DeleteSelected => "DeleteBody".into(),
                         BodyRetentionMode::KeepSelected => "KeepBody".into(),
                     },
