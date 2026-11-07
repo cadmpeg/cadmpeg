@@ -220,7 +220,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             cadmpeg_core::nonblank_literal!("Depth")
                         };
                         let value = format_length_like(
-                            (*length).into(),
+                            length.abs().into(),
                             existing
                                 .and_then(|record| record.parameters.get(key.as_str()))
                                 .map(String::as_str),
@@ -297,7 +297,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Depth"),
-                            format_length_mm((*length).into()),
+                            format_length_mm(length.abs().into()),
                         );
                     }
                     _ => return Err(unsupported_extent()),
@@ -308,7 +308,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             cadmpeg_core::nonblank_literal!("EndCondition"),
                             "Symmetric".into(),
                         );
-                        let total = cadmpeg_ir::scalar::Length::new(length.get() * 2.0)
+                        let total = cadmpeg_ir::scalar::Length::new(length.abs().get() * 2.0)
                             .ok_or_else(unsupported_extent)?;
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Depth"),
@@ -329,11 +329,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             );
                             parameters.insert(
                                 cadmpeg_core::nonblank_literal!("Depth"),
-                                format_length_mm((*first).into()),
+                                format_length_mm(first.abs().into()),
                             );
                             parameters.insert(
                                 cadmpeg_core::nonblank_literal!("Depth2"),
-                                format_length_mm((*second).into()),
+                                format_length_mm(second.abs().into()),
                             );
                         }
                         (LinearTermination::ThroughAll {}, LinearTermination::ThroughAll {}) => {

@@ -1995,6 +1995,23 @@ fn report_design_projection_gaps(
                     feature.id
                 )));
         }
+        if scope.extrude_profile().is_some()
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        profile: cadmpeg_ir::features::ProfileRef::Planar(
+                            cadmpeg_ir::features::PlanarProfileRef::Native(id)
+                        ),
+                        ..
+                    }
+                ) if id == &scope.id
+            )
+        {
+            report.losses.push(F3dLossCode::FeatureExtrudeSketchPlacementNative.note(
+                format!("Extrude {} retains its sketch profile in the native scope because its placement is unresolved.", feature.id),
+            ));
+        }
         if prologue.extent()
             == Some(
                 crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll,

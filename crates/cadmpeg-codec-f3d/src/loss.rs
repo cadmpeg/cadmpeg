@@ -307,6 +307,7 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeWallThicknessNative,
     FeatureExtrudeAuxiliarySelectionNative,
     FeatureExtrudeFaceControlAssumed,
+    FeatureExtrudeSketchPlacementNative,
     /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
     FeatureExtrudeProfileFaceOrderAssumed,
     /// An Extrude face profile's end-cap search stopped at a local cap.
@@ -709,6 +710,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeWallThicknessNative,
         Self::FeatureExtrudeAuxiliarySelectionNative,
         Self::FeatureExtrudeFaceControlAssumed,
+        Self::FeatureExtrudeSketchPlacementNative,
         Self::FeatureExtrudeProfileFaceOrderAssumed,
         Self::FeatureExtrudeProfileFaceSearchCapped,
         Self::FeatureExtrudeProfileCapFacesInferred,
@@ -988,6 +990,7 @@ impl F3dLossCode {
                 "feature.extrude-auxiliary-selection-native"
             }
             Self::FeatureExtrudeFaceControlAssumed => "feature.extrude-face-control-assumed",
+            Self::FeatureExtrudeSketchPlacementNative => "feature.extrude-sketch-placement-native",
             Self::FeatureExtrudeProfileFaceOrderAssumed => {
                 "feature.extrude-profile-face-order-assumed"
             }
@@ -1304,6 +1307,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeWallThicknessNative
             | Self::FeatureExtrudeAuxiliarySelectionNative
             | Self::FeatureExtrudeFaceControlAssumed
+            | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -1526,6 +1530,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeWallThicknessNative
             | Self::FeatureExtrudeAuxiliarySelectionNative
             | Self::FeatureExtrudeFaceControlAssumed
+            | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureExtrudeProfileCapFacesInferred
@@ -1844,6 +1849,7 @@ mod tests {
                 "feature.extrude-wall-thickness-native",
                 "feature.extrude-auxiliary-selection-native",
                 "feature.extrude-face-control-assumed",
+                "feature.extrude-sketch-placement-native",
                 "feature.extrude-profile-face-order-assumed",
                 "feature.extrude-profile-face-search-capped",
                 "feature.extrude-profile-cap-faces-inferred",

@@ -8879,13 +8879,15 @@ fn project_extrude(
     } else {
         match scope.extrude_profile() {
             Some(profile) => {
-                let placement = or_none!(placements.iter().find(|placement| {
+                match placements.iter().find(|placement| {
                     native_stream(&placement.id) == native_stream(&scope.id)
                         && placement.entity_id == profile.entity_id
-                }));
-                ProfileRef::Planar(PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(
-                    placement,
-                )))
+                }) {
+                    Some(placement) => ProfileRef::Planar(PlanarProfileRef::Sketch(
+                        crate::ids::neutral_sketch_id(placement),
+                    )),
+                    None => ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())),
+                }
             }
             None => {
                 let [first, rest @ ..] = profile_groups.as_slice() else {
@@ -9222,9 +9224,7 @@ fn project_extrude(
                 && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::OneSided(LinearTermination::Blind {
-                    length: NonZeroLength::from(along.abs()),
-                }),
+                ExtentShape::OneSided(LinearTermination::Blind { length: along }),
                 match along_direction {
                     AlongDirection::SignedDistance => along.get() < 0.0,
                     AlongDirection::PrologueReversal => prologue.direction_reversed(),
@@ -9241,12 +9241,8 @@ fn project_extrude(
         {
             (
                 ExtentShape::TwoSided {
-                    first: LinearTermination::Blind {
-                        length: NonZeroLength::from(along.abs()),
-                    },
-                    second: LinearTermination::Blind {
-                        length: NonZeroLength::from(against.abs()),
-                    },
+                    first: LinearTermination::Blind { length: along },
+                    second: LinearTermination::Blind { length: against },
                 },
                 along.get() < 0.0,
             )
@@ -9262,9 +9258,7 @@ fn project_extrude(
         {
             (
                 ExtentShape::TwoSided {
-                    first: LinearTermination::Blind {
-                        length: NonZeroLength::from(along.abs()),
-                    },
+                    first: LinearTermination::Blind { length: along },
                     second: LinearTermination::ThroughAll {},
                 },
                 along.get() < 0.0,
@@ -9286,9 +9280,7 @@ fn project_extrude(
             };
             (
                 ExtentShape::TwoSided {
-                    first: LinearTermination::Blind {
-                        length: NonZeroLength::from(along.abs()),
-                    },
+                    first: LinearTermination::Blind { length: along },
                     second: LinearTermination::ToFace {
                         face: selected_face(termination)?,
                         offset: side_two_offset.filter(|offset| offset.get() != 0.0),
@@ -9336,9 +9328,7 @@ fn project_extrude(
                     Some(_) => false,
                     None => prologue.side_extent_discriminators() == Some([1, 1]),
                 };
-            let termination = LinearTermination::Blind {
-                length: NonZeroLength::from(along.abs()),
-            };
+            let termination = LinearTermination::Blind { length: along };
             let shape = if each_side {
                 ExtentShape::SymmetricPerSide(termination)
             } else {

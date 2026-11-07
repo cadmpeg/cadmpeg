@@ -289,6 +289,38 @@ fn surface_extrude_retains_the_role_43_group_as_its_native_profile() {
 }
 
 #[test]
+fn signed_distance_retains_the_parameter_and_orients_the_sweep() {
+    use cadmpeg_ir::features::{ExtrudeDirection, ExtrudeExtent, LinearTermination};
+    let scope = scope();
+    let group = profile_group(100, 0);
+    let along = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "value",
+        "AlongDistance",
+        Some("mm"),
+        "d1",
+        -1.5,
+    ))
+    .unwrap();
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(ctx, &scope, &[(0, &along)], &[group], &[], &[], &[])
+    })
+    .unwrap()
+    .expect("signed-distance Extrude");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        direction: ExtrudeDirection::ReversedProfileNormal {},
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = definition
+    else {
+        panic!("signed-distance Extrude definition");
+    };
+    assert!(
+        matches!(side.termination, LinearTermination::Blind { length } if length.get() == -15.0)
+    );
+}
+
+#[test]
 fn wall_thickness_stays_native_while_the_extrude_distance_projects() {
     use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
     let scope = scope();

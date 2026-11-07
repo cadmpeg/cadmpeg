@@ -1117,18 +1117,32 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             *extent = ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0).unwrap(),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(-8.0).unwrap(),
                     },
                     draft: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(-9.0).unwrap(),
                     },
                     draft: None,
                 },
             };
             *op = BooleanOp::Intersect;
+        });
+        ir_edit.model.features[2].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = definition
+            else {
+                panic!("typed extrusion");
+            };
+            *extent = ExtrudeExtent::SymmetricPerSide {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Blind {
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(-2.5).unwrap(),
+                    },
+                    draft: None,
+                },
+            };
         });
         ir_edit.model.features[3].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -1164,6 +1178,8 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert_eq!(native[1].parameters["Depth"], "8mm");
     assert_eq!(native[1].parameters["Depth2"], "9mm");
     assert_eq!(native[1].parameters["Draft"], "0.1rad");
+    assert_eq!(native[2].properties["EndCondition"], "Symmetric");
+    assert_eq!(native[2].parameters["Depth"], "5mm");
     assert_eq!(native[3].properties["EndCondition"], "ThroughAll");
     assert!(!native[3].parameters.contains_key("Depth"));
     assert!(!native[3].parameters.contains_key("Depth2"));

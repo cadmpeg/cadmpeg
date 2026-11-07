@@ -1350,7 +1350,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 op: BooleanOp::Join,
                 ..
-            }) if (native == &profile_group.id) && actual_length.get() == 2.0
+            }) if (native == &profile_group.id) && actual_length.get() == -2.0
         ));
 
         let mut face_group = body_group.clone();
@@ -1473,7 +1473,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 5.5 && actual_length_2.get() == 0.5 && actual_draft.get() == -0.3
+            }) if actual_length.get() == 5.5 && actual_length_2.get() == -0.5 && actual_draft.get() == -0.3
         ));
         set_extrude_direction_reversed(&mut scope, true);
         assert!(
@@ -1519,7 +1519,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 6.0
+            }) if actual_length.get() == -6.0
         ));
 
         set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
@@ -1919,7 +1919,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &start_group.id) && actual_length.get() == 5.5 && actual_length_2.get() == 0.5
+            }) if (id == &start_group.id) && actual_length.get() == 5.5 && actual_length_2.get() == -0.5
         ));
     });
 }

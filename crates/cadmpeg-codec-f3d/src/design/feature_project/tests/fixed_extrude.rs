@@ -275,6 +275,34 @@ fn fixed_distance_and_through_all_project_on_opposite_sides() {
 }
 
 #[test]
+fn unresolved_sketch_placement_retains_the_native_profile() {
+    let scope = fixed_extrude(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(1.5, 11))),
+            ..Default::default()
+        },
+    );
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(ctx, &scope, &[], &[], &[], &[], &[])
+    })
+    .unwrap()
+    .expect("Extrude with unresolved sketch placement");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile: ProfileRef::Planar(PlanarProfileRef::Native(id)),
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = definition
+    else {
+        panic!("Extrude with native profile");
+    };
+    assert_eq!(id, scope.id);
+    assert!(
+        matches!(side.termination, LinearTermination::Blind { length } if length.get() == 15.0)
+    );
+}
+
+#[test]
 fn multiple_native_sketch_profiles_project_with_a_native_profile() {
     let mut scope = fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
