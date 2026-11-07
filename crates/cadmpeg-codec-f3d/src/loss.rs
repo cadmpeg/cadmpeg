@@ -199,6 +199,7 @@ pub(crate) enum F3dLossCode {
     /// A Pipe whose fractions both equal one is assumed to sweep its whole path group.
     FeaturePipeWholePathExtentAssumed,
     SurfacePatchInteriorConstraintAssumed,
+    SurfacePatchUnnamedGroupsAssumedInactive,
     /// A box scope has no fully decoded dimensions and local frame.
     FeatureBoxPrimitiveUnresolved,
     /// Sheet-metal base flanges projected with their stored thickness copy because
@@ -604,6 +605,7 @@ impl F3dLossCode {
         Self::FeaturePipeCircularSectionInferred,
         Self::FeaturePipeWholePathExtentAssumed,
         Self::SurfacePatchInteriorConstraintAssumed,
+        Self::SurfacePatchUnnamedGroupsAssumedInactive,
         Self::FeatureBoxPrimitiveUnresolved,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
@@ -854,6 +856,9 @@ impl F3dLossCode {
             Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
             Self::SurfacePatchInteriorConstraintAssumed => {
                 "feature.surface-patch-interior-constraint-assumed"
+            }
+            Self::SurfacePatchUnnamedGroupsAssumedInactive => {
+                "feature.surface-patch-unnamed-groups-assumed-inactive"
             }
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
@@ -1142,6 +1147,7 @@ impl F3dLossCode {
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
             | Self::SurfacePatchInteriorConstraintAssumed
+            | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
@@ -1345,6 +1351,7 @@ impl F3dLossCode {
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
             | Self::SurfacePatchInteriorConstraintAssumed
+            | Self::SurfacePatchUnnamedGroupsAssumedInactive
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::ThreadLiveFaceUnproven
@@ -1635,6 +1642,7 @@ mod tests {
                 "feature.pipe-circular-section-inferred",
                 "feature.pipe-whole-path-extent-assumed",
                 "feature.surface-patch-interior-constraint-assumed",
+                "feature.surface-patch-unnamed-groups-assumed-inactive",
                 "feature.box-primitive-unresolved",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",

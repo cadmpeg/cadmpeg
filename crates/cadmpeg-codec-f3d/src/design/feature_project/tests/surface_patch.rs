@@ -169,13 +169,27 @@ fn interior_group_form_projects_boundary_continuity_and_interior_constraints() {
 }
 
 #[test]
-fn interior_group_form_with_an_unnamed_interior_role_group_stays_native() {
+fn interior_group_form_treats_unnamed_groups_as_inactive_with_a_loss() {
     let scope = interior_scope(vec![101, 201, 202, 102, 100, 200, 300, 103, 203], vec![101]);
     let mut groups = interior_groups();
     groups.push(group(103, 7, &[203], DesignOperandRole::ROLE_0X21));
     let (projected, losses) = project(&scope, &groups);
-    assert_eq!(projected, None);
-    assert!(losses.is_empty());
+    let Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+        interior_constraints,
+        ..
+    })) = projected
+    else {
+        panic!("interior-group SurfacePatch projects a filled surface");
+    };
+    assert_eq!(
+        interior_constraints,
+        vec![PathRef::Native(groups[0].id.clone())]
+    );
+    assert_eq!(losses.len(), 2);
+    assert_eq!(
+        losses[1].code,
+        crate::loss::F3dLossCode::SurfacePatchUnnamedGroupsAssumedInactive.kind()
+    );
 }
 
 #[test]

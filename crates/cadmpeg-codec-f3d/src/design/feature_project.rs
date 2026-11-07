@@ -7765,7 +7765,7 @@ fn project_surface_patch(
         )));
     }
 
-    let (boundary_groups, interior_groups) =
+    let (boundary_groups, interior_groups, unnamed_groups) =
         if let Some(partition) = surface_patch_interior_groups(ctx, scope, &groups)? {
             partition
         } else {
@@ -7782,7 +7782,7 @@ fn project_surface_patch(
                 }
                 _ => return Ok(None),
             }
-            (groups, Vec::new())
+            (groups, Vec::new(), 0)
         };
     let boundary = if let [boundary] = boundary_groups.as_slice() {
         resolved_loft_path(
@@ -7824,6 +7824,11 @@ fn project_surface_patch(
             )),
         );
     }
+    if unnamed_groups > 0 {
+        losses.push(crate::loss::F3dLossCode::SurfacePatchUnnamedGroupsAssumedInactive.note(
+            format!("SurfacePatch {} has {unnamed_groups} interior-role groups outside its interior list; they are treated as inactive.", scope.id),
+        ));
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Path(boundary),
@@ -7845,6 +7850,7 @@ fn project_surface_patch(
 type SurfacePatchPartition<'a> = (
     Vec<&'a DesignConstructionOperandGroup>,
     Vec<&'a DesignConstructionOperandGroup>,
+    usize,
 );
 
 fn surface_patch_interior_groups<'a>(
@@ -7927,13 +7933,32 @@ fn surface_patch_interior_groups<'a>(
         }
         interior_groups.push(group);
     }
+    let mut unnamed_groups = 0;
+    for group in groups.iter().copied().filter(|group| {
+        group.role() == DesignOperandRole::ROLE_0X21
+            && !selection.interior_groups.contains(&group.record_index)
+    }) {
+        let ordinal = usize::try_from(group.scope_reference_ordinal).ok();
+        if group.members().is_empty() || !claim(ordinal, group.record_index) {
+            return Ok(None);
+        }
+        for (offset, member) in (1..).zip(group.members()) {
+            if !claim(
+                ordinal.and_then(|ordinal| ordinal.checked_add(offset)),
+                member.value,
+            ) {
+                return Ok(None);
+            }
+        }
+        unnamed_groups += 1;
+    }
     let tool_ordinal = references
         .values()
         .position(|record| *record == selection.tool_body);
     if !claim(tool_ordinal, selection.tool_body) || occupied.iter().any(|slot| !slot) {
         return Ok(None);
     }
-    Ok(Some((boundary_groups, interior_groups)))
+    Ok(Some((boundary_groups, interior_groups, unnamed_groups)))
 }
 
 fn project_boundary_fill(
