@@ -934,6 +934,8 @@ pub(super) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> 
 /// Decode paired typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
 pub(crate) fn decode_dimension_locus_pairs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     inputs: &DimensionDecodeInputs<'_>,
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
     let &DimensionDecodeInputs {
@@ -976,6 +978,37 @@ pub(crate) fn decode_dimension_locus_pairs(
             continue;
         };
         let frames = primary_record_extents(bytes, &meta)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("dimension locus source View is missing"))?;
+        for frame in frames
+            .iter()
+            .filter(|frame| frame.start >= start && frame.member_end < end)
+        {
+            let id = design_record_id(
+                &entry.name,
+                ":design-dimension-locus-pair#",
+                u64_from_index(frame.start),
+            );
+            if following_dimension_companion_record_index(
+                &id,
+                u64_from_index(frame.member_end),
+                owners,
+                parameters.values().copied(),
+            )
+            .is_some()
+            {
+                contain_dimension_locus_frame(
+                    ctx,
+                    parts,
+                    source,
+                    &entry.name,
+                    frame,
+                    companion.record_index(),
+                    3,
+                )?;
+            }
+        }
         let Some(mut pair) = find_dimension_locus_pair(
             bytes,
             &frames,
@@ -1041,6 +1074,76 @@ where
         .next()
         .is_none()
         .then_some(owner.companion_record_index())
+}
+
+fn contain_dimension_locus_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: cadmpeg_core::decode::View<'_>,
+    stream: &str,
+    frame: &crate::metastream::PrimaryRecordFrame,
+    companion: u32,
+    count: u32,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let bytes = source.window();
+    let start = frame.start;
+    if bytes.get(start + 11..start + 19) != Some(&[0; 8])
+        || bytes.get(start + 19) != Some(&1)
+        || View::u32_le_at(bytes, start + 20) != Some(count)
+        || bytes.get(start + 24) != Some(&1)
+        || View::u32_le_at(bytes, start + 25) != Some(0)
+        || bytes.get(start + 29..start + 35) != Some(&[0; 6])
+    {
+        return Ok(());
+    }
+    let begin = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("dimension locus start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("dimension locus end overflows"))?;
+    let extent = source
+        .child(begin, end)
+        .ok_or_else(|| CodecError::malformed("dimension locus exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+        stream,
+        ":design-record-header#",
+        u64_from_index(start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(());
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        let mut indices = HashSet::new();
+        if let Some(index) = View::u32_le_at(bytes, start + 40) {
+            indices.insert(index);
+        }
+        if count == 3 {
+            if let Some(index) = View::u32_le_at(bytes, start + 55) {
+                indices.insert(index);
+            }
+        }
+        let parsed = if count == 3 {
+            parse_dimension_locus_pair(bytes, frame, companion, &indices)
+        } else {
+            parse_dimension_null_locus_pair(bytes, frame, companion, &indices)
+        };
+        parsed.ok_or_else(|| CodecError::malformed("invalid dimension locus frame"))
+    })?;
+    Ok(())
 }
 
 fn find_dimension_locus_pair(
@@ -1138,6 +1241,8 @@ fn parse_dimension_locus_pair(
 /// Decode dimension frames whose ordered operand run contains a null record
 /// reference followed by one typed sketch-geometry reference.
 pub(crate) fn decode_dimension_null_locus_pairs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     inputs: &DimensionDecodeInputs<'_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
@@ -1193,6 +1298,37 @@ pub(crate) fn decode_dimension_null_locus_pairs(
             continue;
         };
         let frames = primary_record_extents(bytes, &meta)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("dimension locus source View is missing"))?;
+        for frame in frames
+            .iter()
+            .filter(|frame| frame.start >= start && frame.member_end < end)
+        {
+            let id = design_record_id(
+                &entry.name,
+                ":design-dimension-null-locus-pair#",
+                u64_from_index(frame.start),
+            );
+            if following_dimension_companion_record_index(
+                &id,
+                u64_from_index(frame.member_end),
+                owners,
+                parameters.values().copied(),
+            )
+            .is_some()
+            {
+                contain_dimension_locus_frame(
+                    ctx,
+                    parts,
+                    source,
+                    &entry.name,
+                    frame,
+                    companion.record_index(),
+                    2,
+                )?;
+            }
+        }
         let Some(mut pair) = find_dimension_null_locus_pair(
             bytes,
             &frames,
