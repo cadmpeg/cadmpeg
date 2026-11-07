@@ -15,7 +15,13 @@ fn generated_declaration_ids_do_not_collide_with_source_ids() {
     let mut source = Object::new("Source".into(), "Part::Feature", "Source");
     source.declaration_id = DeclarationId::Source(Some("2".into()));
     let generated = Object::new("Generated".into(), "Part::Feature", "Generated");
-    let xml = super::document_xml(&[source, generated], &Default::default(), "4", None, "1");
+    let xml = super::document_xml(
+        &[source, generated],
+        &indexmap::IndexMap::new(),
+        "4",
+        None,
+        "1",
+    );
     let document = roxmltree::Document::parse(&xml).unwrap();
     let declarations = document
         .descendants()
