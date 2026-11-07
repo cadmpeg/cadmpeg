@@ -60,6 +60,7 @@ use crate::history_records::{
 use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
 };
+use cadmpeg_asm::history::{walk_bulletin_boards, BulletinBoardItem, EntityChange};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -467,73 +468,46 @@ fn bind_snapshot_revision_ids(
     Ok(())
 }
 
-fn is_history_boundary_record(record: &AsmHistoryRecord) -> bool {
-    matches!(
-        record.name(),
-        "End-of-ASM-History-Section" | "End-of-ASM-data"
-    )
+/// Borrowed view of `states` for the shared history walks.
+fn delta_state_views(states: &[AsmDeltaState]) -> Vec<cadmpeg_asm::history::DeltaStateView<'_>> {
+    states
+        .iter()
+        .map(|state| cadmpeg_asm::history::DeltaStateView {
+            node_index: state.node_index,
+            previous_ref: state.previous_ref,
+            next_ref: state.next_ref,
+            changes: state
+                .bulletin_boards
+                .iter()
+                .flat_map(|board| &board.changes)
+                .map(|change| match change.kind {
+                    AsmEntityChangeKind::Insert { new } => EntityChange::Insert { new },
+                    AsmEntityChangeKind::Delete { old } => EntityChange::Delete { old },
+                    AsmEntityChangeKind::Update { old, new } => EntityChange::Update { old, new },
+                })
+                .collect(),
+            records: state
+                .records
+                .iter()
+                .map(|record| cadmpeg_asm::history::StateRecordView {
+                    revision_id: record.revision_id,
+                    byte_offset: record.byte_offset,
+                    raw_bytes: record.raw_bytes.as_slice(),
+                    name: record.name(),
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 pub(crate) fn archived_active_record_count(
     states: &[AsmDeltaState],
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let mut archived = Vec::new();
-    for revision_id in states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter_map(|record| record.revision_id)
-    {
-        archived.push(revision_id);
-    }
-    archived.sort_unstable_by(Ord::cmp);
-    let Some(&active_count) = archived.first() else {
-        return Ok(None);
-    };
-    let count = i64::try_from(archived.len()).map_err(|_| {
-        cadmpeg_core::CodecError::malformed("F3D archived revision count exceeds i64")
-    })?;
-    let Some(end) = active_count.checked_add(count) else {
-        return Ok(None);
-    };
-    if active_count <= 0 || archived.iter().copied().ne(active_count..end) {
-        return Ok(None);
-    }
-    Ok(usize::try_from(active_count).ok())
+    cadmpeg_asm::history::archived_active_record_count(&delta_state_views(states))
 }
 
-/// Return the active `RecordTable` length for a history that has no archived
-/// snapshot. Insert-only chains use the active records themselves as every
-/// revision, so their bulletin-board references must cover every non-header
-/// slot exactly once.
 pub(crate) fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
-    let mut has_boundary_record = false;
-    for record in states.iter().flat_map(|state| &state.records) {
-        if record.revision_id.is_some() || !is_history_boundary_record(record) {
-            return None;
-        }
-        has_boundary_record = true;
-    }
-    if !has_boundary_record {
-        return None;
-    }
-    let mut inserted = BTreeSet::new();
-    for change in states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes)
-    {
-        let new_ref = change.new_ref().filter(|_| change.old_ref().is_none())?;
-        if new_ref <= 0 || inserted.contains(&new_ref) {
-            return None;
-        }
-        inserted.insert(new_ref);
-    }
-    let &last = inserted.last()?;
-    if inserted.iter().copied().ne(1..=last) {
-        return None;
-    }
-    last.checked_add(1)
-        .and_then(|count| usize::try_from(count).ok())
+    cadmpeg_asm::history::insert_only_active_record_count(&delta_state_views(states))
 }
 
 /// Estimated native `asm_delta_states` text bytes per changed record slot.
@@ -604,79 +578,18 @@ pub(crate) fn admit_history_binding(
     Ok(HistoryBindingAdmission::Admitted)
 }
 
-/// Walk the state chain from its head and give each state's entity-to-record
-/// version map to `visit`. Returns false, after a partial walk, when the chain
-/// or a bulletin-board change is inconsistent with the archived revisions.
 pub(crate) fn walk_entity_versions(
     states: &[AsmDeltaState],
     active_count: i64,
     archived_ids: &[i64],
-    mut visit: impl FnMut(usize, &BTreeMap<i64, i64>),
+    visit: impl FnMut(usize, &BTreeMap<i64, i64>),
 ) -> bool {
-    let mut by_node = HashMap::new();
-    for (ordinal, state) in states.iter().enumerate() {
-        by_node.insert(state.node_index, ordinal);
-    }
-    if by_node.len() != states.len() {
-        return false;
-    }
-    let mut heads = states
-        .iter()
-        .enumerate()
-        .filter(|(_, state)| state.previous_ref.is_none())
-        .map(|(ordinal, _)| ordinal);
-    let Some(mut ordinal) = heads.next() else {
-        return false;
-    };
-    if heads.next().is_some() {
-        return false;
-    }
-
-    let mut versions = BTreeMap::new();
-    for id in 0..active_count {
-        versions.insert(id, id);
-    }
-    let mut visited = HashSet::new();
-    loop {
-        let state = &states[ordinal];
-        if !visited.insert(state.node_index) {
-            return false;
-        }
-        visit(ordinal, &versions);
-        for change in state
-            .bulletin_boards
-            .iter()
-            .flat_map(|board| &board.changes)
-        {
-            match change.kind {
-                AsmEntityChangeKind::Update { old, new } => {
-                    if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
-                        return false;
-                    }
-                    versions.insert(new, old);
-                }
-                AsmEntityChangeKind::Insert { new } => {
-                    if versions.remove(&new).is_none() {
-                        return false;
-                    }
-                }
-                AsmEntityChangeKind::Delete { old } => {
-                    if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
-                        return false;
-                    }
-                    versions.insert(old, old);
-                }
-            }
-        }
-        let Some(next) = state.next_ref else {
-            break;
-        };
-        let Some(&next_ordinal) = by_node.get(&next) else {
-            return false;
-        };
-        ordinal = next_ordinal;
-    }
-    visited.len() == states.len() && versions.len() == 1 && versions.get(&0) == Some(&0)
+    cadmpeg_asm::history::walk_entity_versions(
+        &delta_state_views(states),
+        active_count,
+        archived_ids,
+        visit,
+    )
 }
 
 fn bind_complete_record_tables(
@@ -695,76 +608,15 @@ pub(crate) fn decode_record_archive(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<Option<HistoricalRecordArchive>, cadmpeg_core::CodecError> {
-    let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
+    let Some(frames) =
+        cadmpeg_asm::history::decode_record_archive(ctx, &delta_state_views(states), bytes, width)?
+    else {
         return Ok(None);
     };
-    let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
-        Ok(records) => records,
-        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
-        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
-            return Err(error.into_codec_error())
-        }
-        Err(_) => return Ok(None),
-    };
-
-    let insert_only = insert_only_active_record_count(states);
-    let archived_count = archived_active_record_count(states)?;
-    let Some(active_count) = archived_count.or(insert_only) else {
-        return Ok(None);
-    };
-    if insert_only.is_some() && framed.len() != active_count {
-        return Ok(None);
-    }
-    let Some(active_records) = framed.get(..active_count) else {
-        return Ok(None);
-    };
-    let mut archived_frames = HashMap::new();
-    for record in states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter(|record| record.revision_id.is_some())
-    {
-        let Some(revision_id) = record.revision_id else {
-            return Ok(None);
-        };
-        let Some(offset) = usize::try_from(record.byte_offset).ok() else {
-            return Ok(None);
-        };
-        let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
-            return Ok(None);
-        };
-        if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
-            return Ok(None);
-        }
-        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
-            Ok(records) => records,
-            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
-                return Err(error.into())
-            }
-            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
-                return Err(error.into_codec_error())
-            }
-            Err(_) => return Ok(None),
-        };
-        if framed.len() != 1 {
-            return Ok(None);
-        }
-        let Some(framed) = framed.pop() else {
-            return Ok(None);
-        };
-        if framed.name != record.name() {
-            return Ok(None);
-        }
-
-        if archived_frames.insert(revision_id, framed).is_some() {
-            return Ok(None);
-        }
-    }
     Ok(historical_record_archive(
         states,
-        active_records,
-        archived_frames,
+        &frames.active,
+        frames.archived,
     ))
 }
 
@@ -775,13 +627,6 @@ fn historical_record_archive(
     active_records: &[cadmpeg_asm::sab::Record],
     archived_frames: HashMap<i64, cadmpeg_asm::sab::Record>,
 ) -> Option<HistoricalRecordArchive> {
-    if active_records
-        .iter()
-        .enumerate()
-        .any(|(index, record)| record.index != index)
-    {
-        return None;
-    }
     let active_count = i64::try_from(active_records.len()).ok()?;
 
     let mut revision_entities = HashMap::new();
@@ -3182,6 +3027,7 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
+                    crate::design::feature_project::list_thicken_whole_bodies(faces, scope, groups);
                     selection::bind_body_recipe_face_selection(
                         faces,
                         feature_id,
@@ -7497,8 +7343,34 @@ pub(crate) fn bind_edge_operand_history_candidates(
     Vec<crate::records::topology::historical_context::AsmFaceBoundary>,
     cadmpeg_core::CodecError,
 > {
+    bind_edge_operand_history_candidates_with_notes(
+        operands,
+        scopes,
+        recipes,
+        histories,
+        scope_histories,
+    )
+    .map(|(face_boundaries, _)| face_boundaries)
+}
+
+/// [`bind_edge_operand_history_candidates`], with a
+/// `history.edge-selection-inferred` note for each operand whose edge is
+/// read from the faces its recipe names alone.
+pub(crate) fn bind_edge_operand_history_candidates_with_notes(
+    operands: &mut [crate::records::topology::edge_identity::DesignEdgeOperand],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    recipes: &[crate::records::recipes::ConstructionRecipe],
+    histories: BindingHistories<'_>,
+    scope_histories: &HashMap<String, String>,
+) -> Result<
+    (
+        Vec<crate::records::topology::historical_context::AsmFaceBoundary>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     if projection_was_finalized(histories.get()) {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let mut recipe_record_indices = HashMap::new();
     for recipe in recipes {
@@ -7588,6 +7460,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         }
     }
     let mut face_boundaries = FaceBoundaryArena::default();
+    let mut inferred = Vec::new();
     visit_state_groups_oldest_first(
         histories,
         jobs,
@@ -7621,22 +7494,33 @@ pub(crate) fn bind_edge_operand_history_candidates(
                     topology,
                     states: &states,
                 };
-                if let Err(error) = bind_historical_edge_operand(
+                match bind_historical_edge_operand(
                     operand,
                     &transition,
                     &recipe_record_indices,
                     &mut caches,
                     &mut face_boundaries,
                 ) {
-                    keep_first_error(&mut first_error, position, error);
+                    Ok(true) => {
+                        if let Some(edge) = operand.resolved_edge_slot {
+                            inferred.push((position, operand.id.clone(), previous.state_id, edge));
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(error) => keep_first_error(&mut first_error, position, error),
                 }
             }
         },
     );
-    match first_error {
-        Some((_, error)) => Err(error),
-        None => Ok(face_boundaries.into_records()),
+    if let Some((_, error)) = first_error {
+        return Err(error);
     }
+    inferred.sort_by_key(|(position, ..)| *position);
+    let notes = inferred
+        .into_iter()
+        .map(|(_, operand, state, edge)| inferred_edge_selection_note(&operand, state, edge))
+        .collect();
+    Ok((face_boundaries.into_records(), notes))
 }
 
 /// Keep the error of the earliest item, as a pass that stops at its first
@@ -7705,7 +7589,7 @@ fn bind_historical_edge_operand<'a>(
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut EdgeOperandCaches<'a>,
     face_boundaries: &mut FaceBoundaryArena,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let &EdgeOperandTransition {
         scope,
         state,
@@ -7729,14 +7613,14 @@ fn bind_historical_edge_operand<'a>(
     }
     let Some(changed_faces) = face_changes_across_state_chain(state, previous_state_id, states)
     else {
-        return Ok(());
+        return Ok(false);
     };
     let Some(EdgeChanges {
         deleted: chain_deleted_edges,
         updated: chain_updated_edges,
     }) = edge_changes_across_state_chain(state, previous_state_id, states)
     else {
-        return Ok(());
+        return Ok(false);
     };
     let preceding_faces = selection::FamilySlots::new(&topology.faces);
     let inserted_faces = result_topology
@@ -7853,7 +7737,7 @@ fn bind_historical_edge_operand<'a>(
             topology,
             topology_queries,
         );
-        return Ok(());
+        return Ok(false);
     }
     if crate::design::design_feature_family(&scope.kind())
         == Some(crate::design::DesignFeatureFamily::Sweep)
@@ -7879,7 +7763,7 @@ fn bind_historical_edge_operand<'a>(
                 &operand.recipe_selectors,
                 reference_edge_sets.iter().map(Vec::as_slice),
             );
-        return Ok(());
+        return Ok(false);
     }
     if crate::design::design_feature_family(&scope.kind())
         == Some(crate::design::DesignFeatureFamily::Revolve)
@@ -7922,7 +7806,7 @@ fn bind_historical_edge_operand<'a>(
         if let Some(axis) = resolved_axis {
             operand.resolved_axis = Some(axis);
         }
-        return Ok(());
+        return Ok(false);
     }
     let edge_contexts = topology_queries
         .edge_contexts
@@ -7998,35 +7882,59 @@ fn bind_historical_edge_operand<'a>(
             )
         )
     {
-        operand.resolved_edge_slot = side_one_reference_face_edge(
+        if let Some(edge) = side_one_reference_face_edge(
             operand.recipe_structure.as_ref(),
             &operand.recipe_references,
             &operand.preceding_boundary_edge_slots,
             topology,
             topology_queries,
-        );
+        ) {
+            operand.resolved_edge_slot = Some(edge.slot);
+            return Ok(edge.inferred);
+        }
     }
-    Ok(())
+    Ok(false)
+}
+
+/// The note for an edge operand whose edge the faces its recipe's first
+/// side names select alone, off the recipe's candidate faces.
+fn inferred_edge_selection_note(
+    operand: &str,
+    state: i64,
+    edge: i64,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.note(format!(
+        "edge operand {operand} reads edge slot {edge} of history state {state} from the faces its recipe's first side names: they share only that edge. The edge bounds none of the recipe's candidate faces, so the reading assumes those candidates are incomplete."
+    ))
+}
+
+/// An edge read from the faces a recipe's first side names.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct SideOneEdge {
+    pub(crate) slot: i64,
+    /// Whether the edge bounds none of the recipe's candidate faces, so the
+    /// named faces alone select it.
+    pub(crate) inferred: bool,
 }
 
 /// The one edge of `topology` that every face named by the first side of a
 /// standard edge recipe bounds and that the recipe's candidate faces bound.
 ///
 /// Each nonzero first-side value is a one-based prefix-reference ordinal;
-/// every persistent name of a counted operand supplies that ordinal's faces. Each operand must stand
-/// for exactly one face of the topology with complete loops, at least two
-/// distinct faces must be named, and the intersection of their boundary edges
-/// with `candidate_boundary_edges` must hold one edge.
+/// every persistent name of a counted operand supplies that ordinal's faces.
+/// Each operand must stand for exactly one face of the topology with complete
+/// loops, and at least two distinct faces must be named. The edge is proven
+/// when the intersection of their boundary edges with
+/// `candidate_boundary_edges` holds one edge. When that intersection is empty
+/// and the named faces share exactly one edge, that edge is the best reading
+/// and is returned as inferred.
 fn side_one_reference_face_edge<'a>(
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     references: &[crate::records::dimensions::DesignRecipeReference],
     candidate_boundary_edges: &[i64],
     topology: &'a AsmHistoricalTopology,
     topology_queries: &mut TopologyQueryCache<'a>,
-) -> Option<i64> {
-    if candidate_boundary_edges.is_empty() {
-        return None;
-    }
+) -> Option<SideOneEdge> {
     let side = structure.and_then(|structure| structure.sides.first())?;
     let lanes = crate::records::dimensions::reference_lanes(references);
     let mut ordinals = Vec::new();
@@ -8062,8 +7970,8 @@ fn side_one_reference_face_edge<'a>(
     if faces.len() < 2 {
         return None;
     }
-    let mut common: Vec<i64> = candidate_boundary_edges.to_vec();
-    for face in faces {
+    let mut common: Vec<i64> = Vec::new();
+    for (index, face) in faces.into_iter().enumerate() {
         let [boundary] = face_boundary_contexts_for_slots(&[face], topology, topology_queries)
             .try_into()
             .ok()?;
@@ -8075,12 +7983,27 @@ fn side_one_reference_face_edge<'a>(
             .iter()
             .flat_map(|face_loop| face_loop.boundary.coedges().map(|row| row.edge_slot))
             .collect();
-        common.retain(|edge| edges.contains(edge));
+        if index == 0 {
+            common = edges;
+        } else {
+            common.retain(|edge| edges.contains(edge));
+        }
     }
     common.sort_unstable_by(Ord::cmp);
     common.dedup();
-    match common.as_slice() {
-        [edge] => Some(*edge),
+    let mut proven = common
+        .iter()
+        .copied()
+        .filter(|edge| candidate_boundary_edges.contains(edge));
+    match (proven.next(), proven.next(), common.as_slice()) {
+        (Some(slot), None, _) => Some(SideOneEdge {
+            slot,
+            inferred: false,
+        }),
+        (None, _, [slot]) => Some(SideOneEdge {
+            slot: *slot,
+            inferred: true,
+        }),
         _ => None,
     }
 }
@@ -9414,88 +9337,15 @@ pub(crate) fn materialize_record_table(
     versions: &BTreeMap<i64, i64>,
     archive: &HistoricalRecordArchive,
 ) -> Option<Vec<cadmpeg_asm::sab::Record>> {
-    if versions.is_empty() {
-        return None;
-    }
-    let mut records = Vec::new();
-    for (&entity_ref, record_ref) in versions {
-        let record = archive.get(record_ref)?;
-        if i64::try_from(record.index).ok() != Some(entity_ref) {
-            return None;
-        }
-        for token in record.tokens.iter() {
-            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
-                continue;
-            };
-            if *reference >= 0 && !versions.contains_key(reference) {
-                return None;
-            }
-        }
-        records.push(clone_historical_record(record));
-    }
-    records.sort_unstable_by_key(|a| a.index);
-    Some(records)
+    cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
 }
 
-/// One framed item of a `BulletinBoard` chain, in stream order.
-enum BulletinBoardItem {
-    Board {
-        offset: usize,
-        owner_ref: i64,
-        number: i64,
-    },
-    /// A change of the most recent board.
-    Change {
-        offset: usize,
-        kind: AsmEntityChangeKind,
-    },
-}
-
-/// Walk the `BulletinBoard` chain at `position` and return the offset after
-/// it, or `None` when the chain is malformed.
-fn walk_bulletin_boards(
-    bytes: &[u8],
-    mut position: usize,
-    width: RefWidth,
-    mut visit: impl FnMut(BulletinBoardItem),
-) -> Option<usize> {
-    if bytes.get(position) == Some(&0x11) {
-        return Some(position);
+fn entity_change_kind(kind: EntityChange) -> AsmEntityChangeKind {
+    match kind {
+        EntityChange::Insert { new } => AsmEntityChangeKind::Insert { new },
+        EntityChange::Delete { old } => AsmEntityChangeKind::Delete { old },
+        EntityChange::Update { old, new } => AsmEntityChangeKind::Update { old, new },
     }
-    loop {
-        let board_offset = position;
-        let present = take_int(bytes, &mut position, 0x04, width)?;
-        if present == 0 {
-            break;
-        }
-        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
-        let number = take_int(bytes, &mut position, 0x04, width)?;
-        visit(BulletinBoardItem::Board {
-            offset: board_offset,
-            owner_ref,
-            number,
-        });
-        loop {
-            let change_offset = position;
-            let present = take_int(bytes, &mut position, 0x04, width)?;
-            if present == 0 {
-                break;
-            }
-            let old = take_int(bytes, &mut position, 0x0c, width)?;
-            let new = take_int(bytes, &mut position, 0x0c, width)?;
-            let kind = match (old >= 0, new >= 0) {
-                (false, true) => AsmEntityChangeKind::Insert { new },
-                (true, false) => AsmEntityChangeKind::Delete { old },
-                (true, true) => AsmEntityChangeKind::Update { old, new },
-                (false, false) => return None,
-            };
-            visit(BulletinBoardItem::Change {
-                offset: change_offset,
-                kind,
-            });
-        }
-    }
-    Some(position)
 }
 
 fn decode_bulletin_boards(
@@ -9542,7 +9392,7 @@ fn decode_bulletin_boards(
                 id,
                 parent,
                 byte_offset: u64_from_index(offset),
-                kind,
+                kind: entity_change_kind(kind),
             });
         }
     })?;

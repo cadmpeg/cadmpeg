@@ -860,6 +860,19 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         }
         if entity.native_ref.as_deref().is_some_and(|reference| {
             native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::degenerate_line(source, |token, reference| {
+                    sketch_point(&entities, token, reference)
+                })
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sketch entity source is a line whose endpoints coincide".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
                 crate::sketch::construction_carrier_conflict(source, |token, reference| {
                     sketch_point(&entities, token, reference)
                 })
@@ -960,6 +973,9 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                                     entity,
                                     |token, reference| sketch_point(&entities, token, reference),
                                 )
+                                || crate::sketch::degenerate_line(entity, |token, reference| {
+                                    sketch_point(&entities, token, reference)
+                                })
                         })
                 })
             })
@@ -2409,13 +2425,16 @@ fn validate_features(
                     Some(feature.id.as_str().to_owned())));
             }
         }
-        if matches!(family, crate::feature::FeatureFamily::Extrusion)
-            && !labels
-                .get(&(
-                    raw_feature.identity.segment_token.as_str(),
-                    raw_feature.identity.record_ordinal,
-                ))
-                .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
+        if matches!(
+            family,
+            crate::feature::FeatureFamily::Extrusion
+                | crate::feature::FeatureFamily::SurfaceExtrusion
+        ) && !labels
+            .get(&(
+                raw_feature.identity.segment_token.as_str(),
+                raw_feature.identity.record_ordinal,
+            ))
+            .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
         {
             findings.push(finding(
                 Check::NativeLinks,

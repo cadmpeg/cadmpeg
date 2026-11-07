@@ -290,6 +290,161 @@ pub(in crate::feature::loft_sweep) fn loft(
     .then_some(())
 }
 
+/// Loft result check for either attribute carrier. `section_curves` lists the
+/// associative curve names of a section boundary.
+pub(in crate::feature::loft_sweep) fn loft_result(
+    model: &Model,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+) -> Option<()> {
+    loft(model, generator, sections, |section, name| {
+        section_curves(section).contains(&name)
+    })
+    .or_else(|| legacy_loft(model, generator, sections, &section_curves))
+}
+
+const LEGACY_CAP_CLASS: &str =
+    "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
+const LEGACY_SIDE_CLASS: &str =
+    "NMx_Loft_Surface_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
+
+/// A face that carries a generator-owned naming attribute of the legacy class chains.
+struct LegacyFace<'a> {
+    face: &'a Face,
+    cap: bool,
+    tail: Vec<i64>,
+}
+
+/// Faces named by `generator` in a legacy carrier, in model order. The faces
+/// belong to one solid body. Other faces of the body can belong to later features.
+fn legacy_owned_faces(model: &Model, generator: u32) -> Option<Vec<LegacyFace<'_>>> {
+    let mut names = HashMap::new();
+    for attribute in &model.attributes {
+        let AttributeTarget::Face(face) = &attribute.target else {
+            continue;
+        };
+        let cap = match attribute.name.as_str() {
+            LEGACY_CAP_CLASS => true,
+            LEGACY_SIDE_CLASS => false,
+            _ => continue,
+        };
+        let [_, _, _, _, _, AttributeValue::Integer(_), AttributeValue::Integer(count), rest @ ..] =
+            attribute.values.as_slice()
+        else {
+            return None;
+        };
+        let pairs = usize::try_from(*count).ok()?.checked_mul(2)?;
+        let integers = rest
+            .iter()
+            .map(|value| match value {
+                AttributeValue::Integer(value) => Some(*value),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if *count < 1 || pairs > integers.len() {
+            return None;
+        }
+        let (names_part, tail) = integers.split_at(pairs);
+        let named = names_part
+            .chunks_exact(2)
+            .any(|pair| pair[0] == i64::from(generator));
+        if !named {
+            continue;
+        }
+        if *count != 1 || names_part[1] != -1 {
+            return None;
+        }
+        if names.insert(face.as_str(), (cap, tail.to_vec())).is_some() {
+            return None;
+        }
+    }
+    let mut selected = Vec::new();
+    let mut body = None;
+    for face in &model.faces {
+        let Some((cap, tail)) = names.remove(face.id.as_str()) else {
+            continue;
+        };
+        let shell = model.shells.iter().find(|shell| shell.id == face.shell)?;
+        let region = model
+            .regions
+            .iter()
+            .find(|region| region.id == shell.region)?;
+        if body.is_some_and(|body| body != &region.body) {
+            return None;
+        }
+        body = Some(&region.body);
+        selected.push(LegacyFace { face, cap, tail });
+    }
+    let body = body?;
+    (names.is_empty()
+        && model
+            .bodies
+            .iter()
+            .find(|candidate| &candidate.id == body)?
+            .kind
+            == BodyKind::Solid)
+        .then_some(selected)
+}
+
+/// Loft result check for a legacy carrier. The generator names both caps and
+/// one planar side face for each curve of both section boundaries. Later
+/// features can add faces to the body.
+pub(in crate::feature::loft_sweep) fn legacy_loft(
+    model: &Model,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+) -> Option<()> {
+    if sections[0] == sections[1] {
+        return None;
+    }
+    let mut caps = HashSet::new();
+    let mut first_curves = HashSet::new();
+    let mut last_curves = HashSet::new();
+    for named in legacy_owned_faces(model, generator)? {
+        let surface = model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == named.face.surface)?;
+        if !matches!(
+            &surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        ) {
+            return None;
+        }
+        if named.cap {
+            let [0, section, 260] = named.tail[..] else {
+                return None;
+            };
+            if !sections.iter().any(|source| i64::from(*source) == section) || !caps.insert(section)
+            {
+                return None;
+            }
+        } else {
+            let [2, first_curve, first_section, 258, 0, 0, last_curve, last_section, 258, 0, 0] =
+                named.tail[..]
+            else {
+                return None;
+            };
+            if first_section != i64::from(sections[0])
+                || last_section != i64::from(sections[1])
+                || !first_curves.insert(first_curve)
+                || !last_curves.insert(last_curve)
+            {
+                return None;
+            }
+        }
+    }
+    let complete = |found: &HashSet<i64>, section: usize| {
+        let expected = section_curves(section);
+        !expected.is_empty()
+            && found.len() == expected.len()
+            && expected.iter().all(|name| found.contains(name))
+    };
+    (caps.len() == 2 && complete(&first_curves, 0) && complete(&last_curves, 1)).then_some(())
+}
+
 /// The section groups and member index of a loft side-face tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SideTag {
