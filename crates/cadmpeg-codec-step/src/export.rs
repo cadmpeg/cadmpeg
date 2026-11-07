@@ -1490,10 +1490,7 @@ impl<'a> Builder<'a> {
                     self.tessellation_step_refs.get(id).copied(),
                     StyleKind::Surface,
                 ),
-                AppearanceTarget::Occurrence(id) => (
-                    self.occurrence_step_refs.get(id.as_str()).copied(),
-                    StyleKind::Surface,
-                ),
+                AppearanceTarget::Occurrence(_) => (None, StyleKind::Surface),
                 AppearanceTarget::Record { .. } => (None, StyleKind::Surface),
                 AppearanceTarget::Body(_) | AppearanceTarget::TriangleGroup { .. } => continue,
             };
@@ -2665,6 +2662,12 @@ impl<'a> Builder<'a> {
             "PROPERTY_DEFINITION_REPRESENTATION",
             &format!("{property},{representation}"),
         );
+        if matches!(attribute.target, AttributeTarget::Record { .. }) {
+            self.loss(
+                StepLossCode::SourceAttributeTargetNormalized,
+                format!("attribute {} was written with a typed target", attribute.id),
+            );
+        }
         self.consumed_attribute_ids
             .insert(attribute.id.as_str().to_owned());
     }
@@ -8101,6 +8104,27 @@ impl<'a> Builder<'a> {
                     "{} coedge(s) were not emitted as loop members because their loops were unwritten or collapsed to vertices: {}",
                     unemitted_coedges.len(),
                     unemitted_coedges.join(", ")
+                ),
+            );
+        }
+        let reduced_radial_rings: Vec<_> = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| {
+                self.emitted_coedges.contains(coedge.id.as_str())
+                    && !self.emitted_coedges.contains(coedge.radial_next.as_str())
+            })
+            .map(|coedge| format!("{} -> {}", coedge.id, coedge.radial_next))
+            .collect();
+        if !reduced_radial_rings.is_empty() {
+            self.loss(
+                StepLossCode::CoedgeRadialNeighborUnwritten,
+                format!(
+                    "{} coedge radial neighbor(s) were not written: {}",
+                    reduced_radial_rings.len(),
+                    reduced_radial_rings.join(", ")
                 ),
             );
         }

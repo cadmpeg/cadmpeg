@@ -234,6 +234,27 @@ fn append(
             .remove("id")
             .and_then(|id| id.as_str().map(str::to_owned))
             .ok_or_else(|| format!("{arena} has a record without a string id"))?;
+        if arena == "model/features" {
+            let native_ref = value
+                .get("native_ref")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if let Some(bodies) = value
+                .get_mut("definition")
+                .and_then(|definition| definition.get_mut("bodies"))
+            {
+                if bodies.get("kind").and_then(Value::as_str) == Some("resolved") {
+                    if let Some(native) = bodies
+                        .get_mut("value")
+                        .and_then(|value| value.get_mut("native"))
+                    {
+                        if native.as_str() == native_ref.as_deref() && native_ref.is_some() {
+                            *native = Value::Null;
+                        }
+                    }
+                }
+            }
+        }
         value.remove("native_ref");
         value.remove("source");
         // D21 makes the source-object association identity-only, so a

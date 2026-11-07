@@ -795,3 +795,47 @@ fn point_only_tessellation_is_written_as_an_ap242_point_set() {
         })
     }));
 }
+
+#[test]
+fn coedge_losing_a_radial_neighbor_is_named() {
+    use crate::export::write_step;
+    use crate::loss::StepLossCode;
+    use crate::{StepSchema, StepWriteOptions};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let mut ir = unit_cube().expect("unit cube");
+    let omitted_loop = ir.model.faces[0].loops.iter().next().unwrap().clone();
+    let omitted: std::collections::BTreeSet<_> = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.owner_loop == omitted_loop)
+        .map(|coedge| coedge.id.clone())
+        .collect();
+    let survivor = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !omitted.contains(&coedge.id) && omitted.contains(&coedge.radial_next))
+        .expect("adjacent coedge")
+        .id
+        .clone();
+    let target = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == target)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write partial body");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::CoedgeRadialNeighborUnwritten.kind()
+            && loss.message.contains(survivor.as_str())
+    }));
+}
