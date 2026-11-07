@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete body closures before Rhino capability-specific projection.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -277,7 +276,7 @@ dangling_owner!(cadmpeg_ir::topology::Region, body);
 dangling_owner!(cadmpeg_ir::topology::Shell, region);
 dangling_owner!(cadmpeg_ir::topology::Face, shell);
 
-pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), CodecError> {
+pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), super::WriteError> {
     use std::collections::BTreeSet;
 
     let model = &ir.model;
@@ -547,7 +546,14 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
             .collect();
         resolve_wrappers(&mut scoped, &mut losses);
         prune_dangling_topology(&mut scoped, &mut losses);
-        super::reduce::validate(&scoped)?;
+        match super::reduce::validate(&scoped) {
+            Ok(()) => {}
+            Err(super::WriteError::Omit(reason)) => {
+                losses.push(super::omitted_body(&scoped, &reason, &BTreeSet::new()));
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
         let scope = BodyScope::pruned(scoped);
         scopes.push(scope);
     }

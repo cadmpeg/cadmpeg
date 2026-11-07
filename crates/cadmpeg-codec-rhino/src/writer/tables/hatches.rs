@@ -3,7 +3,7 @@
 
 use super::{
     anonymous, anonymous_with_children, class_wrapper_with_direct, component,
-    crc_chunk_with_direct, records, utf16, wire_index, CadIr, CodecError, Value,
+    crc_chunk_with_direct, records, utf16, CadIr, Value,
 };
 use crate::loss::RhinoLossCode;
 use crate::writer::WriteError;
@@ -13,6 +13,13 @@ use std::collections::BTreeSet;
 const PATTERN_CLASS: [u8; 16] = [
     0x91, 0x7c, 0x4e, 0x06, 0xf6, 0x35, 0x34, 0x47, 0xa4, 0x46, 0x79, 0xff, 0x7c, 0xd6, 0x59, 0xe1,
 ];
+
+fn hatch_count(value: usize) -> Result<i32, WriteError> {
+    crate::writer::writable_i32_count(
+        value,
+        "Rhino hatch count exceeds the native index range".into(),
+    )
+}
 
 fn scalar(value: Option<&Value>, name: &str) -> Result<f64, WriteError> {
     value
@@ -39,7 +46,7 @@ fn line(value: &Value) -> Result<Vec<u8>, WriteError> {
         .get("dashes_millimeters")
         .and_then(Value::as_array)
         .ok_or_else(|| WriteError::Omit("Rhino hatch has no typed dash list".into()))?;
-    body.extend(wire_index(dashes.len())?.to_le_bytes());
+    body.extend(hatch_count(dashes.len())?.to_le_bytes());
     for dash in dashes {
         body.extend(scalar(Some(dash), "dash")?.to_le_bytes());
     }
@@ -59,9 +66,19 @@ pub(in crate::writer) fn patterns(ir: &CadIr) -> Result<HatchExport, WriteError>
         losses: Vec::new(),
     };
     for record in records(ir, "hatch_patterns") {
-        match pattern(record, output.records.len()) {
+        let index = match hatch_count(output.records.len()) {
+            Ok(index) => index,
+            Err(WriteError::Omit(reason)) => {
+                output.losses.push(
+                    RhinoLossCode::WriterHatchPatternOmitted
+                        .note(format!("hatch pattern {} omitted: {reason}", record.id())),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        match pattern(record, index) {
             Ok(payload) => {
-                let index = wire_index(output.records.len())?;
                 output.records.push(payload);
                 output.written.insert(record.id().to_owned());
                 if let Some(source) = record
@@ -98,14 +115,10 @@ pub(in crate::writer) fn patterns(ir: &CadIr) -> Result<HatchExport, WriteError>
     Ok(output)
 }
 
-fn pattern(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, WriteError> {
-    let fields = record.fields().map_err(|error| match error {
-        cadmpeg_ir::native::NativeConvertError::Resource(CodecError::ResourceLimit(limit)) => {
-            WriteError::Encode(limit.into())
-        }
-        cadmpeg_ir::native::NativeConvertError::Resource(error) => WriteError::Fail(error),
-        error => WriteError::Omit(error.to_string()),
-    })?;
+fn pattern(record: &cadmpeg_ir::NativeRecord, index: i32) -> Result<Vec<u8>, WriteError> {
+    let fields = record
+        .fields()
+        .map_err(crate::writer::native_record_error)?;
     let name = fields
         .get("name")
         .and_then(Value::as_str)
@@ -123,12 +136,7 @@ fn pattern(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, W
         .ok_or_else(|| {
             WriteError::Omit("Rhino hatch fill type must fit a native integer".into())
         })?;
-    let mut payload = component(
-        record.id(),
-        wire_index(index)?,
-        name,
-        fields.get("source_uuid"),
-    )?;
+    let mut payload = component(record.id(), index, name, fields.get("source_uuid"))?;
     let component_end = payload.len();
     payload.extend(fill_type.to_le_bytes());
     payload.extend(utf16(description)?);
@@ -136,7 +144,7 @@ fn pattern(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, W
         .get("lines")
         .and_then(Value::as_array)
         .ok_or_else(|| WriteError::Omit("Rhino hatch has no typed line list".into()))?;
-    let mut list = wire_index(lines.len())?.to_le_bytes().to_vec();
+    let mut list = hatch_count(lines.len())?.to_le_bytes().to_vec();
     let mut children = Vec::new();
     for value in lines {
         let start = list.len();
@@ -170,6 +178,15 @@ mod tests {
     use cadmpeg_ir::{CadIr, NativeRecord};
     use serde_json::json;
     use std::io::Cursor;
+
+    #[test]
+    fn hatch_count_reports_native_index_overflow_as_an_omission() {
+        let too_many = usize::try_from(i32::MAX).unwrap() + 1;
+        assert!(matches!(
+            super::hatch_count(too_many),
+            Err(crate::writer::WriteError::Omit(_))
+        ));
+    }
 
     #[test]
     fn invalid_pattern_names_its_record_and_keeps_a_valid_sibling() {

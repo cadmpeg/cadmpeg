@@ -9,6 +9,96 @@ use cadmpeg_ir::schema::EntityKind;
 use crate::StepCodec;
 
 #[test]
+fn recovered_free_vertices_keep_shell_member_order() {
+    let mut ir = unit_cube().expect("cube");
+    let order = vec![
+        ir.model.vertices[2].id.clone(),
+        ir.model.vertices[0].id.clone(),
+        ir.model.vertices[1].id.clone(),
+    ];
+    ir.model
+        .vertices
+        .retain(|vertex| order.contains(&vertex.id));
+    let point_ids: Vec<_> = ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect();
+    ir.model
+        .points
+        .retain(|point| point_ids.contains(&point.id));
+    let expected: Vec<_> = order
+        .iter()
+        .map(|id| {
+            let vertex = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| &vertex.id == id)
+                .unwrap();
+            ir.model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap()
+                .position()
+                .get()
+        })
+        .collect();
+    ir.model.coedges.clear();
+    ir.model.loops.clear();
+    ir.model.faces.clear();
+    ir.model.edges.clear();
+    ir.model.curves.clear();
+    ir.model.surfaces.clear();
+    ir.model.shells[0]
+        .edit_topology(|faces, edges, vertices| {
+            faces.clear();
+            edges.clear();
+            *vertices = order;
+        })
+        .expect("free vertices");
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write vertices");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode STEP");
+    let shell = decoded
+        .ir()
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.free_vertices().len() == expected.len())
+        .expect("vertex shell");
+    for (id, expected) in shell.free_vertices().iter().zip(expected) {
+        let vertex = decoded
+            .ir()
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == id)
+            .unwrap();
+        let actual = decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get();
+        assert!((actual.x - expected.x).abs() < 1e-12);
+        assert!((actual.y - expected.y).abs() < 1e-12);
+        assert!((actual.z - expected.z).abs() < 1e-12);
+    }
+}
+
+#[test]
 fn drawing_definition_retains_name_and_description() {
     let source =
         crate::test_support::exchange::decode_inline("#1=DRAWING_DEFINITION('Main','detail');");
@@ -614,6 +704,11 @@ fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
         .iter()
         .any(|loss| loss.severity == Severity::Error
             && loss.code == crate::loss::StepLossCode::UnknownSurfaceFaceOmitted.kind()));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::RegionSolidReducedToSheet.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+            && loss.message.contains(ir.model.regions[0].id.as_str())
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("surface model writes");
     let text = std::str::from_utf8(&bytes).expect("Part 21 text");
