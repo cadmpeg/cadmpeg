@@ -314,6 +314,14 @@ Record 3571 references record 4645, which contains the formatted text `34.8 - 35
 
 **Note.** Twenty typed feature-dimension property lists select 34 feature-dimension records. Their parameter indexes range from 115 through 1346 and select record ordinals 114 through 1345. The two 35.0-valued parameter records are ordinals 1600 and 1617 in the same segment. The typed inbound references to those parameters occur in the parameter table and the name map. Their connection to a feature dimension or PMI annotation remains open. The record at ordinal 1638 has type `a5c245062846bbe61da9eda12072ce35` and a 114-byte payload. The parameter context index 1638 selects the preceding parameter-table record. The `a5c245…` prefix fits both the content-header grammar and a type-2 list following a u32 value. Interpreted as a one-based next reference, the value 5 selects ordinal 4 of type `1a955bd9b244555f52bdc7bdef330683`. Its later list entry is 210; interpreted as a one-based reference, it selects angular parameter ordinal 209. The two unilateral value strings occur in one opaque FBAttribute RSe payload with ten UTF-16 occurrences of `Toleranced Size`. Searches of the complete expanded FBAttribute segment for 25 packed and ordinary reference or type-identifier byte patterns derived from the corrected owners, candidate parameters, and parameter table yield zero occurrences. The value container’s cross-segment linkage remains unclassified. CTC-01's adjacent FBAttribute ReferenceKey candidates differ from its native target face keys. Untyped FBAttribute candidate identifiers have zero native face-key matches in ten NIST Inventor models.
 
+### DE-16. Features without a history state
+
+**Question.** Which records date a Split or Base feature whose source index no naming tag lists, or whose body key does not change between `state_before` and `state_after`?
+
+**Known.** Section 13.10 defines `state_after` as the oldest state in which a live naming tag lists the feature's source index, and `state_before` as the next older state. Split and Base features need a body key that leaves or appears between those states. A feature without a tag, a feature whose tag appears in the oldest state, and a feature whose key does not change stay unbound. Sketches, work planes, and other features without generated names have no naming tag.
+
+**Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

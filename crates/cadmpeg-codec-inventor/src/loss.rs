@@ -250,6 +250,12 @@ pub(crate) enum InventorLossCode {
     KernelHeaderToleranceUnresolved,
     /// The compound container uses an admitted noncanonical encoding.
     ContainerNoncanonical,
+    /// The kernel carrier's `delta_state` chain does not frame or close.
+    KernelHistoryUnclosed,
+    /// The kernel carrier's `delta_state` chain passed the local scan cap.
+    KernelHistoryBounded,
+    /// Split and Base features have no bound history state.
+    FeatureHistoryStateUnbound,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -367,6 +373,9 @@ impl InventorLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::KernelHeaderToleranceUnresolved,
         Self::ContainerNoncanonical,
+        Self::KernelHistoryUnclosed,
+        Self::KernelHistoryBounded,
+        Self::FeatureHistoryStateUnbound,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
     ];
@@ -498,6 +507,9 @@ impl InventorLossCode {
             Self::KernelHeaderMetadataUnresolved => "source.kernel-header-metadata-unresolved",
             Self::KernelHeaderToleranceUnresolved => "source.kernel-header-tolerance-unresolved",
             Self::ContainerNoncanonical => "container.noncanonical",
+            Self::KernelHistoryUnclosed => "source.kernel-history-unclosed",
+            Self::KernelHistoryBounded => "source.kernel-history-bounded",
+            Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
         }
@@ -531,6 +543,7 @@ impl InventorLossCode {
             | Self::RseStreamUnpaired
             | Self::PropertySetStreamMalformed
             | Self::ProteinStreamMalformed
+            | Self::KernelHistoryUnclosed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
             Self::KernelHeaderMetadataUnresolved | Self::ContainerNoncanonical => {
@@ -603,6 +616,8 @@ impl InventorLossCode {
             | Self::FeatureCompositeOperandsNative
             | Self::FeatureCoilOperandsNative
             | Self::FeatureTaggingNative
+            | Self::KernelHistoryBounded
+            | Self::FeatureHistoryStateUnbound
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -773,6 +788,9 @@ mod tests {
                 "source.kernel-header-metadata-unresolved",
                 "source.kernel-header-tolerance-unresolved",
                 "container.noncanonical",
+                "source.kernel-history-unclosed",
+                "source.kernel-history-bounded",
+                "feature.history-state-unbound",
                 "drawing.native-only",
                 "drawing.record-malformed",
             ]
