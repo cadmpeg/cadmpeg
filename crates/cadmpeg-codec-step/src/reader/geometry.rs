@@ -1033,6 +1033,19 @@ pub(super) fn decode(
         }
     }
     let mut curve_parameter_offsets = BTreeMap::<u64, f64>::new();
+    for (id, record) in exchange.entities("CURVE") {
+        if record.simple_name() != Some("CURVE") {
+            continue;
+        }
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            parameter_range: None,
+            id: CurveId::from(ids::data(kind!("curve"), id)),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        typed.insert(id);
+    }
     for (id, record) in exchange.entities_any(LeafCurveEntity::NAMES) {
         let Some(curve_kind) = LeafCurveEntity::of(record) else {
             continue;
@@ -1727,6 +1740,19 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
+    for (id, record) in exchange.entities("SURFACE") {
+        if record.simple_name() != Some("SURFACE") {
+            continue;
+        }
+        ir.model.surfaces.push(Surface {
+            native_ref: None,
+            id: SurfaceId::from(ids::data(kind!("surface"), id)),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        typed.insert(id);
+    }
+
     for (id, record) in exchange.entities_any(LeafSurfaceEntity::NAMES) {
         let Some(surface_kind) = LeafSurfaceEntity::of(record) else {
             continue;
@@ -2359,6 +2385,7 @@ pub(super) fn decode(
         }
     }
     let standalone_pcurves = super::standalone_pcurves(exchange);
+    let surface_curve_pcurves = standalone_surface_curve_pcurves(exchange, ctx)?;
     for (id, record) in exchange.entities("PCURVE") {
         if record.partial("PCURVE").is_none() {
             continue;
@@ -2404,7 +2431,11 @@ pub(super) fn decode(
             )));
             continue;
         };
-        if standalone_pcurves.contains(&id) && !carrier_index.curves.contains_key(&id) {
+        let basis = surface_curve_pcurves.get(&id).copied();
+        let mut inlined = false;
+        if (standalone_pcurves.contains(&id) && !carrier_index.curves.contains_key(&id))
+            || basis.is_some_and(|basis| carrier_index.curves.contains_key(&basis))
+        {
             let range = match &geometry {
                 PcurveGeometry::Nurbs { nurbs } => pcurve_nurbs_parameter_domain(
                     nurbs.degree(),
@@ -2435,20 +2466,23 @@ pub(super) fn decode(
                     range,
                     Default::default(),
                 ) {
-                    let curve = CurveId::from(ids::data(kind!("curve"), id));
+                    let curve = CurveId::from(ids::data(kind!("curve"), basis.unwrap_or(id)));
                     let construction =
                         ProceduralCurveId::from(ids::construction(kind!("pcurve"), id));
-                    let index = CurveIndex(ir.model.curves.len());
-                    ir.model.curves.push(Curve {
-                        native_ref: None,
-                        id: curve.clone(),
-                        parameter_range: None,
-                        geometry: CurveGeometry::Procedural {
-                            construction: construction.clone(),
-                            cache: None,
-                        },
-                        source_object: Some(super::step_source_association(id)),
-                    });
+                    if basis.is_none() {
+                        let index = CurveIndex(ir.model.curves.len());
+                        ir.model.curves.push(Curve {
+                            native_ref: None,
+                            id: curve.clone(),
+                            parameter_range: None,
+                            geometry: CurveGeometry::Procedural {
+                                construction: construction.clone(),
+                                cache: None,
+                            },
+                            source_object: Some(super::step_source_association(id)),
+                        });
+                        carrier_index.curves.insert(id, index);
+                    }
                     let procedural = ProceduralCurve::new(
                         construction,
                         ProceduralCurveDefinition::SurfaceCurve {
@@ -2458,18 +2492,20 @@ pub(super) fn decode(
                             },
                         },
                     );
-                    let _attached =
+                    let attached =
                         procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
-                    carrier_index.curves.insert(id, index);
+                    inlined = basis.is_some() && attached.is_ok();
                 }
             }
         }
-        ir.model.pcurves.push(Pcurve {
-            native_ref: None,
-            id: PcurveId::from(ids::data(kind!("pcurve"), id)),
-            geometry,
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-        });
+        if !inlined {
+            ir.model.pcurves.push(Pcurve {
+                native_ref: None,
+                id: PcurveId::from(ids::data(kind!("pcurve"), id)),
+                geometry,
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            });
+        }
         typed.insert(id);
         if let Some(representation) =
             named_parameter(record, "PCURVE", 2).and_then(Value::reference)
@@ -3702,6 +3738,108 @@ fn surface_curve_associated_geometry(record: &RawRecord) -> Option<&[Value]> {
             .and_then(|partial| partial.parameters.iter().find_map(Value::list))?
     };
     Some(values)
+}
+
+pub(super) fn standalone_surface_curve_pcurves(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, u64>, CodecError> {
+    let topology_curves: BTreeSet<_> = exchange
+        .entities("EDGE_CURVE")
+        .filter_map(|(_, record)| edge_curve_geometry_reference(record))
+        .collect();
+    let mut candidates = BTreeMap::new();
+    let mut ambiguous = BTreeSet::new();
+    for (_, owner) in exchange.entities_any(&[
+        "GEOMETRIC_SET",
+        "GEOMETRIC_CURVE_SET",
+        "SHAPE_REPRESENTATION",
+    ]) {
+        let Some(kind) = entity_type(
+            owner,
+            &[
+                "GEOMETRIC_SET",
+                "GEOMETRIC_CURVE_SET",
+                "SHAPE_REPRESENTATION",
+            ],
+        ) else {
+            continue;
+        };
+        let Some(members) = named_parameter(owner, kind, 1).and_then(Value::list) else {
+            continue;
+        };
+        for member in members.iter().filter_map(Value::reference) {
+            if topology_curves.contains(&member) {
+                continue;
+            }
+            let Some(record) = exchange.records().get(&member) else {
+                continue;
+            };
+            if record.simple_name() != Some("SURFACE_CURVE") {
+                continue;
+            }
+            let Some(basis) = surface_curve_basis(record) else {
+                continue;
+            };
+            if exchange
+                .records()
+                .get(&basis)
+                .is_none_or(|record| record.simple_name() != Some("CURVE"))
+            {
+                continue;
+            }
+            let Some([Value::Reference(pcurve)]) = surface_curve_associated_geometry(record) else {
+                continue;
+            };
+            if exchange
+                .records()
+                .get(pcurve)
+                .is_some_and(|record| record.simple_name() == Some("PCURVE"))
+                && candidates
+                    .insert(*pcurve, (basis, member))
+                    .is_some_and(|previous| previous != (basis, member))
+            {
+                ambiguous.insert(*pcurve);
+            }
+        }
+    }
+    let mut bases = BTreeMap::new();
+    for (&pcurve, &(basis, owner)) in &candidates {
+        if let Some((previous, _)) = bases.insert(basis, (pcurve, owner)) {
+            ambiguous.insert(previous);
+            ambiguous.insert(pcurve);
+        }
+    }
+    if candidates.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    for (&owner, record) in exchange.records() {
+        for value in record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+        {
+            for reference in super::reference::references(value, ctx) {
+                let reference = reference?;
+                if let Some(&(_, expected)) = candidates.get(&reference) {
+                    if owner != expected {
+                        ambiguous.insert(reference);
+                    }
+                }
+                if let Some(&(pcurve, expected)) = bases.get(&reference) {
+                    if owner != expected {
+                        ambiguous.insert(pcurve);
+                    }
+                }
+            }
+        }
+    }
+    Ok(candidates
+        .into_iter()
+        .filter_map(|(pcurve, (basis, _))| {
+            (!ambiguous.contains(&pcurve)).then_some((pcurve, basis))
+        })
+        .collect())
 }
 
 fn resolve_unit_scales(

@@ -133,10 +133,11 @@ fn typed_view_handoff_keeps_source_flags_modes_camera_vectors_and_absence() {
         native.namespace("rhino").unwrap().arenas()["views"][0].id()
     );
     assert!(handoff.has_attributes);
-    assert_eq!(handoff.name, "Source camera");
-    assert!(!handoff.guides.construction_grid);
-    assert!(handoff.guides.construction_axes);
-    assert!(!handoff.guides.world_axes);
+    let record = &native.namespace("rhino").unwrap().arenas()["views"][0];
+    assert_eq!(record.field("name").unwrap(), "Source camera");
+    assert_eq!(record.field("show_construction_grid").unwrap(), false);
+    assert_eq!(record.field("show_construction_axes").unwrap(), true);
+    assert_eq!(record.field("show_world_axes").unwrap(), false);
     assert_eq!(handoff.legacy_display_mode, Some(7));
     assert_eq!(handoff.modern_display_mode.as_deref(), Some("display-uuid"));
     let camera = handoff.camera.unwrap();

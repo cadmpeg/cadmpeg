@@ -169,10 +169,11 @@ pub(super) fn auxiliary(
     target.model.subds = retained;
     let canvas_asset =
         super::super::generate::canvas::select(target, native).map(|canvas| canvas.asset);
-    target
-        .model
-        .assets
-        .retain(|asset| canvas_asset.as_ref() == Some(&asset.id));
+    let decal_asset =
+        super::super::generate::decal::select(target, native).map(|decal| decal.asset);
+    target.model.assets.retain(|asset| {
+        canvas_asset.as_ref() == Some(&asset.id) || decal_asset.as_ref() == Some(&asset.id)
+    });
     target.model.tessellations.clear();
     for face in &mut target.model.faces {
         if matches!(

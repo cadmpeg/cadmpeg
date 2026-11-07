@@ -29,6 +29,24 @@ const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 #[test]
+fn bare_surface_decodes_without_a_geometry_definition() {
+    let result = decode_inline("#1=SURFACE('');#2=GEOMETRIC_SET('',(#1));");
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Unknown { record: None })
+    )));
+}
+
+#[test]
+fn bare_curve_decodes_without_a_geometry_definition() {
+    let result = decode_inline("#1=CURVE('');#2=GEOMETRIC_CURVE_SET('',(#1));");
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry.solved(),
+        Some(SolvedCurveGeometry::Unknown { record: None })
+    )));
+}
+
+#[test]
 fn standalone_pcurve_retains_its_three_dimensional_curve() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
