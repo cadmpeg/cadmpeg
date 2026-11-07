@@ -22,6 +22,21 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_decal_keeps_edited_image_and_target() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_decal.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    edited.model.assets[0].content = cadmpeg_ir::assets::AssetContent::Embedded {
+        data: cadmpeg_ir::assets::AssetData::new(b"edited decal".to_vec()).unwrap(),
+    };
+    let (written, mut report) = super::source_less_analytic::synthesize_document(&edited, None);
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
+}
+
+#[test]
 fn source_less_canvas_keeps_edited_image_bytes() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_canvas.f3d");
     let decoded = F3dCodec
