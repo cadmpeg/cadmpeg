@@ -1681,6 +1681,10 @@ PartDesign additive or subtractive pipes retain the profile plus the complete na
 property, including its ordered subelement selectors. Standalone sweeps distinguish surface from
 solid results through their persisted solid flag; PartDesign pipes are solid and explicitly join
 or cut. Cached result shapes remain outputs and do not replace these construction operands.
+Profile links identify the sketch or wire feature that supplies a section. A spine link with
+ordered `Edge` selectors identifies the corresponding edges of its linked shape in that order.
+Face and edge selectors identify subelements of their linked shapes. A mirror source link
+identifies the shape to reflect.
 
 Loft `Ruled` and `Closed` are exact `App::PropertyBool` carriers with absent defaults `false`.
 Standalone loft `Solid` is an exact `App::PropertyBool` carrier with absent default `true`;
