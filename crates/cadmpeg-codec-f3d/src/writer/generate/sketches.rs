@@ -298,6 +298,20 @@ pub(super) fn encode(
                 reserved_members.insert(ordinal, index);
             }
         }
+        let relation_indices = relations
+            .iter()
+            .map(|relation| {
+                native
+                    .sketch_relations
+                    .iter()
+                    .find(|record| {
+                        relation.native_ref.as_deref() == Some(record.id.as_str())
+                            && record.owner_reference == container
+                    })
+                    .map(|record| record.record_index)
+                    .filter(|index| *index != 0 && occupied.insert(*index))
+            })
+            .collect::<Vec<_>>();
         let count = u32::try_from(members.len())
             .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
         let Some(head) = allocate(&mut occupied, &mut next) else {
@@ -321,8 +335,8 @@ pub(super) fn encode(
             break;
         }
         let mut allocated_relations = Vec::new();
-        for _ in &relations {
-            let Some(index) = allocate(&mut occupied, &mut next) else {
+        for reserved in relation_indices {
+            let Some(index) = reserved.or_else(|| allocate(&mut occupied, &mut next)) else {
                 break;
             };
             allocated_relations.push(index);
