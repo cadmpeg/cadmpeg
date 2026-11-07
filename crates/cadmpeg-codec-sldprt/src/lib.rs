@@ -201,6 +201,7 @@ impl SldprtCodec {
                 records,
                 Some(source_fidelity),
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
+                limits,
                 writer,
             );
         };
@@ -211,6 +212,7 @@ impl SldprtCodec {
                 records,
                 Some(source_fidelity),
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
+                limits,
                 writer,
             );
         };
@@ -236,6 +238,7 @@ impl SldprtCodec {
                 records,
                 Some(source_fidelity),
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
+                limits,
                 writer,
             );
         }
@@ -252,6 +255,7 @@ impl SldprtCodec {
         records: &[SourceRecord<'_>],
         source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
         fidelity: SemanticFidelity,
+        limits: cadmpeg_core::decode::ResourceLimits,
         writer: &mut dyn Write,
     ) -> Result<Written, writer::write_error::WriteError> {
         let writer::SemanticOutput {
@@ -260,7 +264,14 @@ impl SldprtCodec {
             consumed_source_layout,
             omitted_envelope_bytes,
             normalization_losses,
-        } = writer::write_semantic_with_records(ir, annotations, records, source_fidelity, writer)?;
+        } = writer::write_semantic_with_records(
+            ir,
+            annotations,
+            records,
+            source_fidelity,
+            limits,
+            writer,
+        )?;
         Ok(Written::Semantic {
             path: if consumed_source_layout {
                 SemanticPath::Patched

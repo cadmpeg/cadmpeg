@@ -86,6 +86,7 @@ pub(crate) fn native_spatial_relation_supported<U, L>(
 
 /// Author input lanes from canonical sketch content.
 pub(crate) fn prepare_sketches_for_write(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), crate::writer::write_error::WriteError> {
@@ -110,7 +111,7 @@ pub(crate) fn prepare_sketches_for_write(
     native
         .feature_input_lanes
         .retain(|lane| !lane.id.starts_with("sldprt:generated:feature-input#"));
-    let generated = source_less_lanes(ir, native)?;
+    let generated = source_less_lanes(ctx, ir, native)?;
     native.feature_input_lanes.extend(generated);
     Ok(())
 }
@@ -1361,6 +1362,7 @@ pub(crate) fn synthesize_feature_classes(
 }
 
 fn source_less_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<FeatureInputLane>, crate::writer::write_error::WriteError> {
@@ -1393,7 +1395,7 @@ fn source_less_lanes(
         }
         append_generated_sketch_markers(ir, sketch, &mut payload)?;
         let sketch_ir = sketch_brep(ir, sketch)?;
-        let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
+        let body = crate::writer::brep_body(ctx, &sketch_ir, 0.001, false)?;
         let stream = crate::writer::parasolid_stream_named(
             &body,
             "SCH_SW_33103_11000",
