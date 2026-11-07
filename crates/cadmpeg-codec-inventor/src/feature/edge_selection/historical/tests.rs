@@ -101,7 +101,12 @@ fn secondary_names_are_distinct_nonzero_feature_sources_that_leave_the_join_unch
 #[test]
 fn selector_forms_check_array_counts_secondary_names_and_suffix() {
     for version in [19, 23, 29] {
-        for generators in [&[31][..], &[31, 37][..]] {
+        for generators in [
+            &[31][..],
+            &[31, 37][..],
+            &[31, 37, 41][..],
+            &[31, 37, 41, 43][..],
+        ] {
             let bytes = selector_bytes(generators, &[], version);
             let selector = parse(View::over_retained(&bytes), version)
                 .expect("framed")
@@ -124,7 +129,9 @@ fn selector_forms_check_array_counts_secondary_names_and_suffix() {
             (&[][..], &[][..]),
             (&[31, 31], &[]),
             (&[0], &[]),
-            (&[31, 37, 41], &[]),
+            (&[31, 37, 41], &[41]),
+            (&[31, 37, 41, 31], &[]),
+            (&[31, 37, 41, 43, 47], &[]),
             (&[31], &[0]),
             (&[31], &[31]),
             (&[31, 37], &[37]),
@@ -270,7 +277,7 @@ fn each_generator_form_joins_one_stored_edge_with_signed_geometry() {
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
     for schema in [38, 40, 42, 44] {
-        for generators in [&[31][..], &[31, 37][..]] {
+        for generators in [&[31][..], &[31, 37][..], &[31, 37, 41, 43][..]] {
             let bytes = selector_bytes(generators, &[], 29);
             let selector = parse(View::over_retained(&bytes), 29)
                 .expect("framed")

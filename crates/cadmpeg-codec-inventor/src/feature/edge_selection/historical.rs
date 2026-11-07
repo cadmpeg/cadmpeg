@@ -19,6 +19,9 @@ use cadmpeg_ir::{
 use super::{geometry::EdgeGeometry, PmDcFeaturePropertyKind};
 use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcReference};
 
+/// The largest generator array that a direct edge selector stores.
+const MAX_SELECTOR_GENERATORS: usize = 4;
+
 pub(super) struct StoredSelector {
     pub(super) source: u32,
     pub(super) generators: Vec<u32>,
@@ -52,7 +55,7 @@ pub(super) fn parse(
     let generators = u32_list_with_context(ctx, &mut cursor, 8, "edge selector generators")?;
     let secondary = u32_list_with_context(ctx, &mut cursor, 8, "edge selector secondary names")?;
     let mut distinct = HashSet::new();
-    if !matches!(generators.values().len(), 1 | 2)
+    if !(1..=MAX_SELECTOR_GENERATORS).contains(&generators.values().len())
         || generators.values().contains(&0)
         || generators.values().iter().collect::<HashSet<_>>().len() != generators.values().len()
         || secondary.values().contains(&0)
