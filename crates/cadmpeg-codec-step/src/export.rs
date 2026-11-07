@@ -4622,11 +4622,23 @@ impl<'a> Builder<'a> {
             "DEFINITIONAL_REPRESENTATION",
             &format!("'',({curve}),{context}"),
         );
-        let name = Self::carrier_name(&self.carrier_names, curve_id);
-        let reference = self.emitter.emit(
+        let name = Self::carrier_name(&self.carrier_names, curve_id).to_owned();
+        let pcurve = self.emitter.emit(
             "PCURVE",
-            &format!("{},{surface},{representation}", string(name)),
+            &format!("{},{surface},{representation}", string(&name)),
         );
+        let reference = if matches!(
+            self.curves.get(curve_id)?.geometry.solved(),
+            Some(SolvedCurveGeometry::Unknown { .. })
+        ) {
+            let basis = self.emitter.emit("CURVE", &string(&name));
+            self.emitter.emit(
+                "SURFACE_CURVE",
+                &format!("{},{basis},({pcurve}),.PCURVE_S1.", string(&name)),
+            )
+        } else {
+            pcurve
+        };
         self.curve_refs.insert(curve_id.to_owned(), reference);
         if exact_construction {
             self.written_procedural_curves.insert(construction_id);
