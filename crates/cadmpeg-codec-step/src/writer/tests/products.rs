@@ -228,18 +228,25 @@ fn unplaced_occurrences_round_trip_as_product_usages_without_placements() {
 }
 
 #[test]
-fn unplaced_external_paths_round_trip_as_product_definition_references() {
+fn unplaced_external_references_round_trip_as_product_definition_references() {
     use cadmpeg_ir::products::{ExternalDocument, PrototypeReference};
 
     let mut ir = CadIr::empty();
-    for (index, object) in [Some("part"), None].into_iter().enumerate() {
+    for (index, (document, object)) in [
+        (ExternalDocument::path("assembly/part.step"), Some("part")),
+        (ExternalDocument::path("assembly/part.step"), None),
+        (ExternalDocument::Missing {}, Some("unlocated")),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let mut occurrence = unnamed_occurrence(
             &format!("test:model:occurrence#{index}"),
             "test:model:product#unused",
             None,
         );
         occurrence.prototype = PrototypeReference::External {
-            document: ExternalDocument::path("assembly/part.step"),
+            document,
             object: object.map(str::to_owned),
         };
         occurrence.name = Some(format!("External {index}"));
@@ -269,10 +276,10 @@ fn unplaced_external_paths_round_trip_as_product_definition_references() {
                 && loss.message.contains(occurrence.id.as_str()))
         ));
     let text = std::str::from_utf8(&bytes).unwrap();
-    assert_eq!(text.matches(" = PRODUCT_DEFINITION_REFERENCE(").count(), 2);
+    assert_eq!(text.matches(" = PRODUCT_DEFINITION_REFERENCE(").count(), 3);
     assert_eq!(
         text.matches(" = NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),
-        2
+        3
     );
     assert!(!text.contains("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION("));
     let decoded = StepCodec::default()
@@ -289,6 +296,40 @@ fn unplaced_external_paths_round_trip_as_product_definition_references() {
         assert_eq!(written.prototype, original.prototype);
         assert!(written.transform.is_none());
     }
+}
+
+#[test]
+fn external_reference_fixture_round_trip_adds_no_decode_warning() {
+    let codec = StepCodec::default();
+    let source = include_bytes!("../../../tests/fixtures/ap242_external_product_references.p21");
+    let first = codec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode source");
+    let mut bytes = Vec::new();
+    write_step(
+        first.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write source");
+    let after = codec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode output");
+    assert!(
+        after
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::StepLossCode::DecodeWarning.kind())
+            .all(|loss| first
+                .report()
+                .losses
+                .iter()
+                .any(|before| before.code == loss.code)),
+        "{:?}",
+        after.report().losses
+    );
 }
 
 #[test]

@@ -5023,7 +5023,8 @@ mod native_interval_curve_tests {
                         .model
                         .surfaces
                         .iter()
-                        .any(|surface| { surface.geometry.solved_cache() == Some(&held) }),
+                        .any(|surface| surface.geometry
+                            == cadmpeg_ir::geometry::SurfaceGeometry::Solved(held.clone())),
                     "the exact held solved carrier survives the local reduction"
                 );
                 assert_eq!(decoded.ir().model.faces.len(), target.model.faces.len());

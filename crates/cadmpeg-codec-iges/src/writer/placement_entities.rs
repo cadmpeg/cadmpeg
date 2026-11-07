@@ -2,19 +2,17 @@
 //! Emit placement matrices as regular entities so references can be ordered.
 
 use super::{number, Entity, EntityStatus, IgesLossCode, LossNote, Placement};
-use cadmpeg_core::CodecError;
 
-pub(super) fn materialize(entities: &mut Vec<Entity>) -> Result<Vec<LossNote>, CodecError> {
+pub(super) fn materialize(entities: &mut Vec<Entity>) -> Vec<LossNote> {
     let mut losses = Vec::new();
     for index in 0..entities.len() {
         let Some(placement) = entities[index].transform.take() else {
             continue;
         };
-        if entities[index].transform_link.is_some() {
-            return Err(CodecError::malformed(
-                "IGES entity has both a placement and a transformation link",
-            ));
-        }
+        debug_assert!(
+            entities[index].transform_link.is_none(),
+            "IGES entity has either a placement or a transformation link"
+        );
         let Some(form) = matrix_form(placement) else {
             if entities[index].source_targets.is_empty() {
                 losses.push(IgesLossCode::WriterBodyTransformNotApplied.note(format!(
@@ -54,7 +52,7 @@ pub(super) fn materialize(entities: &mut Vec<Entity>) -> Result<Vec<LossNote>, C
             subscript: 0,
         });
     }
-    Ok(losses)
+    losses
 }
 
 // Apply the same declared 17-digit significance and outward rounding used to
