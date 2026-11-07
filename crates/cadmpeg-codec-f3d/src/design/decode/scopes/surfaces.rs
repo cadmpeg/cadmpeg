@@ -63,8 +63,24 @@ pub(super) fn exact_surface_offset_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     recipes: &[ConstructionRecipe],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
-    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope, recipes)? {
+    if let Some((operation, ordinals)) =
+        exact_surface_offset_face_groups(bytes, records, scope, recipes)?
+    {
+        if ordinals.iter().any(|ordinal| *ordinal != ordinals[0]) {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureSurfaceOffsetGroupOrdinalsAssumed.note(format!(
+                    "{} reads support groups with ordinals {} as one support-face selection.",
+                    scope.id,
+                    ordinals
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )),
+            );
+        }
         return Ok(Some(operation));
     }
     let Some(stream) = native_stream(&scope.id) else {
@@ -98,12 +114,13 @@ pub(super) fn exact_surface_offset_operation(
     }))
 }
 
+/// The grouped support form and the ordinal of each of its groups.
 fn exact_surface_offset_face_groups(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     recipes: &[ConstructionRecipe],
-) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
+) -> Result<Option<(DesignSurfaceOffsetOperation, Vec<std::num::NonZeroU32>)>, CodecError> {
     let parsed = (|| {
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::SurfaceOffset) {
             return None;
@@ -121,6 +138,7 @@ fn exact_surface_offset_face_groups(
 
         let mut group_record_indices = Vec::new();
         let mut covered_references = HashSet::new();
+        let mut ordinals = Vec::new();
         for (scope_reference_ordinal, record_index) in scope
             .reference_members()
             .values()
@@ -168,19 +186,23 @@ fn exact_surface_offset_face_groups(
             }
 
             group_record_indices.push(group.record_index);
+            ordinals.push(group.frame.opaque_index);
         }
         if group_record_indices.is_empty() || covered_references.len() != support_reference_count {
             return None;
         }
 
-        Some(Ok(DesignSurfaceOffsetOperation {
-            distance: scalar.value,
-            distance_offset: scalar.value_offset,
-            distance_record_index: *distance_record_index,
-            support: DesignSurfaceOffsetSupport::FaceGroups {
-                group_record_indices,
+        Some(Ok((
+            DesignSurfaceOffsetOperation {
+                distance: scalar.value,
+                distance_offset: scalar.value_offset,
+                distance_record_index: *distance_record_index,
+                support: DesignSurfaceOffsetSupport::FaceGroups {
+                    group_record_indices,
+                },
             },
-        }))
+            ordinals,
+        )))
     })();
     parsed.transpose()
 }
@@ -394,8 +416,7 @@ fn exact_surface_boundary_group(
     let layout = SURFACE_BOUNDARY_TAILS
         .iter()
         .find(|layout| tail.checked_add(layout.len) == Some(end))?;
-    let (class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
     let flag = |at: usize| bytes.get(tail + at).is_some_and(|value| *value <= 1);
     let ordinal = View::u32_le_at(bytes, tail + layout.ordinal)?;
     let complete = after_tag == start + 7

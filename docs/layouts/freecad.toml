@@ -6,9 +6,8 @@ spec = "docs/formats/freecad_fcstd.md"
 endianness = "little"
 note = """
 FCStd is a ZIP of XML plus embedded OCC B-Rep and application side entries. The
-XML layers have no byte layout, but four side entries do, and those are tabled
-here: the mesh-kernel record, the point-kernel record, the packed-colour list,
-and the link-array element list (§11, §9).
+XML layers have no byte layout. The tables cover mesh, point, packed-colour,
+link-array and fillet-edge side entries (§11, §9).
 
 The §11 side entries state that both integer byte orders are accepted for the
 mesh record when its magic and version agree; every other stated width in these
@@ -128,6 +127,51 @@ offset = 0
 type = "u32"
 source = "spec"
 anchor = "Each side entry begins with a little-endian element count"
+
+[[record]]
+name = "fillet_edges_header"
+parsed_by = "crates/cadmpeg-codec-freecad/src/design.rs"
+kind = "byte"
+section = "11"
+anchor = "`Part::PropertyFilletEdges` writes a little-endian `u32` item count followed"
+size = 4
+
+[[record.field]]
+name = "count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a little-endian `u32` item count followed"
+
+[[record]]
+name = "fillet_edge_item"
+parsed_by = "crates/cadmpeg-codec-freecad/src/design.rs"
+kind = "byte"
+section = "11"
+anchor = "by each item's `i32` value and two `f64` values"
+size = 20
+note = "The stride follows from one 32-bit index and two 64-bit values."
+
+[[record.field]]
+name = "edgeid"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "`edgeid` identifies the source `EdgeN` subelement"
+
+[[record.field]]
+name = "radius1"
+offset = 4
+type = "f64"
+source = "spec"
+anchor = "`radius1` and `radius2` are the two radii"
+
+[[record.field]]
+name = "radius2"
+offset = 12
+type = "f64"
+source = "spec"
+anchor = "`radius1` and `radius2` are the two radii"
 
 
 # --- Not tabulated -----------------------------------------------------------

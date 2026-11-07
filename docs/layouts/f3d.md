@@ -939,7 +939,7 @@ Offsets are relative to the legacy Scale scope's primary indexed header. The fra
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | legacy English `Scale` scope has a 307-byte frame |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | legacy `Scale` scope has a 297-byte payload |
 | 21 | 8 | `factor` | `f64` | little | spec | the positive finite f64 uniform factor at offset 21 |
 | 29 | 11 | `center_reference` | `bytes[11]` | little | spec | marked references at offsets 29, 40, and 64 naming the final |
 | 40 | 11 | `factor_reference` | `bytes[11]` | little | spec | marked references at offsets 29, 40, and 64 naming the final, first, and second ordered references |
@@ -954,11 +954,11 @@ Unstated regions:
 - `11..16` (5 B): The legacy fixed operation prefix retains five bytes before the zero run at offsets 16 through 20.
 - `16..21` (5 B): Primary-header offsets 16 through 20 are zero.
 
-## `scale_legacy_uniform_309`
+## `scale_legacy_uniform_head`
 
-Spec §3.1 · layout: byte offsets · size: 309 B
+Spec §3.1 · layout: byte offsets · size: 221 B
 
-Offsets are relative to the primary indexed header. The paired same-index header is outside this frame.
+Offsets are relative to the primary indexed header. The LP-UTF16 kind code units start at offset 221, and `scale_legacy_uniform_tail` gives the offsets after them.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
@@ -973,15 +973,23 @@ Parsed by:
 | 154 | 4 | `reference_count` | `u32` | little | spec | The five-entry ordered reference table starts at offset 154 · value `5` |
 | 158 | 55 | `references` | `bytes[55]` | little | derived | Five eleven-byte references follow the four-byte count. |
 | 213 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 213 |
-| 217 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind code-unit count is at offset 217 · value `5` |
-| 221 | 10 | `kind` | `bytes[10]` | little | spec | `Scale` starts at offset 221 |
-| 231 | 4 | `feature_ordinal` | `u32` | little | spec | The feature ordinal starts the 78-byte fixed tail at offset 231 |
-| 262 | 4 | `previous_history_state_id` | `u32` | little | spec | The preceding history-state identity is at offset 262 |
+| 217 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind code-unit count is at offset 217 |
+
+## `scale_legacy_uniform_tail`
+
+Spec §3.1 · layout: byte offsets · size: 78 B
+
+Offsets are relative to the first byte after the LP-UTF16 kind code units of the 299-byte-payload legacy uniform Scale form, for any kind spelling. The paired same-index header follows the tail.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal is at tail offset 0 |
+| 31 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at tail offset 31 |
 
 Unstated regions:
 
-- `235..262` (27 B): Common fixed-tail fields between the ordinal and preceding history state.
-- `266..309` (43 B): Common fixed-tail fields up to the paired header at offset 309.
+- `4..31` (27 B): Common fixed-tail fields between the ordinal and preceding history state.
+- `35..78` (43 B): Common fixed-tail fields up to the paired header.
 
 ## `design_body_map_prefix_10`
 
