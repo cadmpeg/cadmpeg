@@ -3,6 +3,39 @@
 use super::*;
 
 #[test]
+fn classified_face_loops_are_reported_when_synthesized() {
+    use cadmpeg_ir::codec::write::ArenaDisposition;
+    use cadmpeg_ir::schema::EntityKind;
+    use cadmpeg_ir::topology::FaceLoops;
+
+    let source = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let face = &mut ir.model.faces[0];
+    let loops = face.loops.to_vec();
+    face.loops = FaceLoops::classified(loops[0].clone(), loops[1..].to_vec());
+    let face_id = face.id.clone();
+    let (output, report) = super::super::source_less_analytic::synthesize_document(&ir, None);
+    assert!(matches!(
+        output.ir().model.faces[0].loops,
+        FaceLoops::Unspecified { .. }
+    ));
+    assert_eq!(output.ir().model.faces[0].loops.len(), loops.len());
+    assert_eq!(
+        report.coverage.disposition(EntityKind::Face),
+        ArenaDisposition::Reported
+    );
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::WriterLoopClassificationOmitted.kind()
+            && loss.message.contains(face_id.as_str())
+    }));
+}
+
+#[test]
 fn injected_topology_errors_write_with_named_losses() {
     for smbh in [
         crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
