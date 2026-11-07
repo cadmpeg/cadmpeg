@@ -520,4 +520,4 @@ fn validate_compact_surface_selection_edits(
     Ok(())
 }
 
-mod input_classes;
+pub(super) mod input_classes;

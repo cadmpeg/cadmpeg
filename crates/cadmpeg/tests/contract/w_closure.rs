@@ -11,11 +11,13 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ReducedStorage};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_registry::Format;
 use cadmpeg_test_support::carried::Carried;
-use cadmpeg_test_support::cross_closure::{cross_findings, single_value_paths, CrossConfig};
+use cadmpeg_test_support::cross_closure::{
+    cross_findings, single_value_paths, CrossConfig, ReducedProbe,
+};
 use cadmpeg_test_support::writer_closure::{
     edit_findings, with_fidelity, without_fidelity, Redecoded,
 };
@@ -130,6 +132,17 @@ fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Ve
     let source = codec(format);
     let mut covered = std::collections::BTreeSet::new();
     let mut findings = Vec::new();
+    let reduced = if output == Format::Sldprt {
+        vec![ReducedProbe {
+            path: "model.tessellations[].channels[].flags",
+            storage: ReducedStorage::Normalized {
+                loss: "sldprt/writer.fields-omitted",
+            },
+            normalize: Some(|_| serde_json::json!(2)),
+        }]
+    } else {
+        Vec::new()
+    };
     for path in sampled(format) {
         let bytes = std::fs::read(&path).expect("fixture bytes");
         let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
@@ -144,6 +157,7 @@ fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Ve
             &redecode,
             namespace,
             fidelity,
+            &reduced,
             &mut covered,
         );
         findings.extend(
@@ -297,6 +311,7 @@ fn cadir_edits_reach_the_output() {
                     &redecode,
                     "cadir",
                     &[false],
+                    &[],
                     &mut covered,
                 )
                 .into_iter()

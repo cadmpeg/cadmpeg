@@ -402,7 +402,8 @@ fn decode_result(
     retention.apply(&mut source_fidelity)?;
     // Layout oracles describe the delivered neutral state, including an
     // explicit Container request and derived configuration snapshots.
-    stamp_local_digests(ctx, &mut ir)?;
+    let complete = !body.losses.iter().any(|loss| loss.code.local_code() == "record.unreadable");
+    stamp_local_digests(ctx, &mut ir, complete)?;
     Ok(Decoded {
         ir,
         body,
@@ -1354,7 +1355,7 @@ fn append_design_losses(
                     .assets
                     .iter()
                     .any(|candidate| candidate.id == *asset),
-                FeatureOperation::StoredGeometry {} => state.outputs.is_empty(),
+                FeatureOperation::StoredGeometry {} => false,
                 FeatureOperation::ExtractBody { source } => incomplete_body_selection(source),
                 FeatureOperation::DerivedGeometry { source } => {
                     feature_positions
@@ -2433,9 +2434,13 @@ fn try_decode_brep(
         });
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
+        || !decoded_sites[selected_site].2.curves.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
     let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
-        !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
+        !decoded.faces.is_empty()
+            || !decoded.surfaces.is_empty()
+            || !decoded.curves.is_empty()
+            || !decoded.points.is_empty()
     });
     // Imported bodies stand in for an empty partition/deltas model (spec §3.3).
     let takes_local_bodies =
@@ -5279,12 +5284,19 @@ fn bind_active_configuration_partition(
 }
 
 /// Fingerprint current document state for byte-layout eligibility only.
-fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+fn stamp_local_digests(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    complete: bool,
+) -> Result<(), CodecError> {
     ir.finalize();
     if let Some(source) = ir.source.as_mut() {
         for key in ["block_count", "compound_stream_count"] {
             source.attributes.remove(key);
         }
+    }
+    if !complete {
+        return Ok(());
     }
     let brep = brep_local_sha256_in_place(ctx, ir)?;
     let (swobjects, material, identities) = match (|| -> Result<_, CodecError> {

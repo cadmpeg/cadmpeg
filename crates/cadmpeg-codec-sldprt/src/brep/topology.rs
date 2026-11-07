@@ -157,7 +157,7 @@ struct VertexReading {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Point {
-    attr: u32,
+    pub(super) attr: u32,
     refs: Vec<u32>,
     pub(super) xyz_m: [f64; 3],
     pub(crate) xyz_offset: usize,
@@ -429,7 +429,7 @@ fn parse_vertex_candidates(buf: &[u8], off: usize) -> Vec<VertexReading> {
     out
 }
 
-fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
+pub(super) fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     if prefixed {
         return parse_point_short(buf, off, prefixed);
     }
