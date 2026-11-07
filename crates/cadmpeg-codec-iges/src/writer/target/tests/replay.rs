@@ -177,6 +177,25 @@ fn an_edited_point_does_not_replay_its_source_image() {
 }
 
 #[test]
+fn replay_does_not_depend_on_the_recorded_digest() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+        .expect("point fixture decodes");
+    let mut fidelity = decoded.source_fidelity().clone();
+    fidelity.decode_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(b"other source");
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(&fidelity)),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("the unchanged document plans");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
+}
+
+#[test]
 fn an_altered_source_image_does_not_replay() {
     let decoded = EditableDecodeResult::from(
         IgesCodec
@@ -262,7 +281,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
 }
 
 #[test]
-fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
+fn encode_reports_a_document_mismatch_as_degraded_fidelity() {
     let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
@@ -287,7 +306,10 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         WritePath::Synthesized { .. }
     ));
     let reason = degraded_reason(&plan, "an edited model must degrade");
-    assert!(reason.contains("digest"), "{reason}");
+    assert_eq!(
+        reason,
+        "decoded model no longer matches the preserved IGES source; byte replay skipped"
+    );
 }
 
 #[test]
@@ -303,8 +325,6 @@ fn missing_image_declines_before_digesting_the_document() {
     input.limits.max_recursion_depth = 0;
     assert!(matches!(
         super::super::replay_bytes(input),
-        Ok(super::super::Replay::Declined(
-            super::super::DeclineReason::SourceImageUnavailable
-        ))
+        super::super::Replay::Declined(super::super::DeclineReason::SourceImageUnavailable)
     ));
 }
