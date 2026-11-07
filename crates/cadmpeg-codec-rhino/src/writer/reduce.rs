@@ -3,7 +3,6 @@
 
 use super::WriteError;
 use crate::loss::RhinoLossCode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{BodyKind, Shell};
@@ -12,11 +11,11 @@ use std::collections::{BTreeMap, BTreeSet};
 fn unique<'a>(
     ids: impl Iterator<Item = &'a str>,
     arena: &str,
-) -> Result<BTreeSet<&'a str>, CodecError> {
+) -> Result<BTreeSet<&'a str>, WriteError> {
     let mut result = BTreeSet::new();
     for id in ids {
         if !result.insert(id) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(WriteError::Omit(format!(
                 "duplicate {arena} identifier {id}"
             )));
         }
@@ -26,11 +25,11 @@ fn unique<'a>(
 
 /// Validate the original graph before any omission can hide a malformed edge
 /// use, dangling reference, or disconnected radial cycle.
-pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
+pub(super) fn validate(ir: &CadIr) -> Result<(), WriteError> {
     let model = &ir.model;
     if model.bodies.len() != 1 {
-        return Err(CodecError::malformed(
-            "body projection requires exactly one body",
+        return Err(WriteError::Omit(
+            "body projection requires exactly one body".into(),
         ));
     }
     let regions = unique(model.regions.iter().map(|row| row.id.as_str()), "region")?;
@@ -115,15 +114,15 @@ pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
             .iter()
             .any(|row| !points.contains(row.point.as_str()));
     if missing {
-        return Err(CodecError::malformed(
-            "sheet topology has missing or inconsistent ownership references",
+        return Err(WriteError::Omit(
+            "sheet topology has missing or inconsistent ownership references".into(),
         ));
     }
     validate_loops(ir)?;
     validate_radials(ir)
 }
 
-fn validate_loops(ir: &CadIr) -> Result<(), CodecError> {
+fn validate_loops(ir: &CadIr) -> Result<(), WriteError> {
     use cadmpeg_ir::topology::Sense;
     let coedges: BTreeMap<_, _> = ir
         .model
@@ -142,16 +141,16 @@ fn validate_loops(ir: &CadIr) -> Result<(), CodecError> {
         for (index, id) in ring.iter().enumerate() {
             let current = coedges
                 .get(id.as_str())
-                .ok_or_else(|| CodecError::malformed("loop coedge is missing"))?;
+                .ok_or_else(|| WriteError::Omit("loop coedge is missing".into()))?;
             let next = coedges
                 .get(ring[(index + 1) % ring.len()].as_str())
-                .ok_or_else(|| CodecError::malformed("next loop coedge is missing"))?;
+                .ok_or_else(|| WriteError::Omit("next loop coedge is missing".into()))?;
             let edge = edges
                 .get(current.edge.as_str())
-                .ok_or_else(|| CodecError::malformed("loop edge is missing"))?;
+                .ok_or_else(|| WriteError::Omit("loop edge is missing".into()))?;
             let next_edge = edges
                 .get(next.edge.as_str())
-                .ok_or_else(|| CodecError::malformed("next loop edge is missing"))?;
+                .ok_or_else(|| WriteError::Omit("next loop edge is missing".into()))?;
             let end = if current.sense == Sense::Forward {
                 &edge.end
             } else {
@@ -163,7 +162,7 @@ fn validate_loops(ir: &CadIr) -> Result<(), CodecError> {
                 &next_edge.end
             };
             if end != start {
-                return Err(CodecError::malformed(format_args!(
+                return Err(WriteError::Omit(format!(
                     "loop {} coedge traversal does not close",
                     loop_.id
                 )));
@@ -173,7 +172,7 @@ fn validate_loops(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn validate_radials(ir: &CadIr) -> Result<(), CodecError> {
+fn validate_radials(ir: &CadIr) -> Result<(), WriteError> {
     let by_id: BTreeMap<_, _> = ir
         .model
         .coedges
@@ -198,7 +197,7 @@ fn validate_radials(ir: &CadIr) -> Result<(), CodecError> {
             {
                 continue;
             }
-            return Err(CodecError::malformed(format_args!(
+            return Err(WriteError::Omit(format!(
                 "sheet edge {} has no owning use",
                 edge.id
             )));
@@ -207,18 +206,18 @@ fn validate_radials(ir: &CadIr) -> Result<(), CodecError> {
         let mut current = start;
         for _ in 0..uses.len() {
             if !uses.contains(current) || !visited.insert(current) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(WriteError::Omit(format!(
                     "edge {} radial ring is inconsistent",
                     edge.id
                 )));
             }
             let row = by_id
                 .get(current)
-                .ok_or_else(|| CodecError::malformed("radial reference is missing"))?;
+                .ok_or_else(|| WriteError::Omit("radial reference is missing".into()))?;
             current = row.radial_next.as_str();
         }
         if current != start || visited != uses {
-            return Err(CodecError::malformed(format_args!(
+            return Err(WriteError::Omit(format!(
                 "edge {} radial ring does not close over all uses",
                 edge.id
             )));
@@ -227,7 +226,7 @@ fn validate_radials(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadIr, CodecError> {
+pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadIr, WriteError> {
     let mut result = ir.clone();
     result
         .model
@@ -267,11 +266,17 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
         .collect();
     for coedge in &mut result.model.coedges {
         let mut next = original[coedge.id.as_str()].radial_next.as_str();
+        let mut visited = BTreeSet::new();
         while !kept.contains(next) {
+            if !visited.insert(next) {
+                return Err(WriteError::Omit(
+                    "radial ring does not reach a retained coedge".into(),
+                ));
+            }
             next = original
                 .get(next)
                 .ok_or_else(|| {
-                    CodecError::malformed("radial reference disappeared during sheet reduction")
+                    WriteError::Omit("radial reference disappeared during sheet reduction".into())
                 })?
                 .radial_next
                 .as_str();
@@ -409,7 +414,7 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
         if !faces.is_empty() {
             shells.push(
                 Shell::with_faces(shell.id.clone(), shell.region.clone(), faces)
-                    .map_err(CodecError::malformed)?,
+                    .map_err(|error| WriteError::Omit(error.to_string()))?,
             );
         }
     }
@@ -567,9 +572,9 @@ pub(super) fn sheet(
         .first()
         .is_none_or(|body| body.kind != BodyKind::Sheet)
     {
-        return Err(WriteError::Fail(CodecError::malformed(
-            "sheet reduction requires one sheet body",
-        )));
+        return Err(WriteError::Omit(
+            "sheet reduction requires one sheet body".into(),
+        ));
     }
     validate(ir)?;
     let mut selected = BTreeSet::new();
