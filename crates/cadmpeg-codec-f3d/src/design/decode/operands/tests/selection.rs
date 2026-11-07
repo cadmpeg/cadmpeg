@@ -863,6 +863,81 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     );
 }
 
+#[test]
+fn damaged_entity_selection_is_given_up_and_sibling_decodes() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bytes = Vec::new();
+    let mut headers = Vec::new();
+    for (index, valid) in [(100u32, false), (200, true)] {
+        let start = bytes.len();
+        indexed_header(&mut bytes, *b"333", index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&(index + 3).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+        lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&[1, 0, 0]);
+        indexed_header(&mut bytes, *b"265", index);
+        indexed_header(&mut bytes, *b"301", index + 1);
+        indexed_header(&mut bytes, *b"446", index + 2);
+        indexed_header(&mut bytes, *b"429", index + 3);
+        bytes.push(u8::from(!valid));
+        bytes.extend_from_slice(&[0; 17]);
+        bytes.extend_from_slice(&1331u64.to_le_bytes());
+        bytes.extend_from_slice(&183u64.to_le_bytes());
+        indexed_header(&mut bytes, *b"311", index + 4);
+        headers.push(DesignRecordHeader {
+            id: crate::ids::native_scoped_id(stream, "record", index),
+            record_index: index,
+            class_tag: "333".to_owned().try_into().unwrap(),
+            byte_offset: Some(u64_from_index(start)),
+        });
+    }
+    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        "id": crate::ids::native_scoped_id(stream, "operand-group", 90),
+        "scope_record_index": 80, "scope_reference_ordinal": 0,
+        "record_index": 90, "class_tag": "269", "members": [100, 200],
+        "role": DesignOperandRole::ROLE_0X5.raw(), "paired_class_tag": "265",
+        "frame": {"opaque_index": 1, "opaque_scalar": 0.0, "variant": false}
+    }))
+    .unwrap();
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[100, 101, 102, 103, 104, 200, 201, 202, 203, 204],
+        &[100, 200],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            let operands = crate::design::decode::operands::decode_entity_selection_operands(
+                ctx,
+                &mut parts,
+                scan,
+                &[group],
+                &headers,
+            )
+            .unwrap();
+            assert_eq!(operands.len(), 1);
+            assert_eq!(operands[0].primary_identity, 1331);
+            let (_, native, _, losses) = parts.into_parts();
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        });
+    });
+}
+
 fn region_member(bytes: &mut Vec<u8>, curve_primary_id: u32, incidence: [u32; 3]) {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(&curve_primary_id.to_le_bytes());
