@@ -980,6 +980,8 @@ mod tests {
                 "pmi.swift-feature-walk-capped",
                 "pmi.swift-implicit-nominal-unresolved",
                 "pmi.swift-position-target-unresolved",
+                "pmi.swift-spherical-diameter-count-text-equal-radius-assumed",
+                "pmi.swift-spherical-diameter-target-unresolved",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
