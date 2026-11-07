@@ -128,6 +128,8 @@ pub(in crate::feature) struct SelectedEdge {
     pub(super) owner: i64,
     /// Number of matched owners, all with the same geometry.
     pub(super) owners: usize,
+    /// Length of the generator array of the selector.
+    pub(super) generators: usize,
     pub(super) item: u32,
     pub(super) geometry: EdgeGeometry,
 }
@@ -208,6 +210,7 @@ pub(super) fn selected(
             SelectedEdge {
                 owner,
                 owners: owners.len(),
+                generators: selector.generators.len(),
                 item,
                 geometry,
             },
@@ -564,6 +567,39 @@ pub(super) fn ambiguous_owner_losses(
         Vec::new()
     } else {
         vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
+    }
+}
+
+/// Longest generator array whose selector has no assumption about the extra
+/// generators.
+const PLAIN_SELECTOR_GENERATORS: usize = 2;
+
+/// One note counting the edge-treatment features that select an edge through a
+/// selector with more than two generators.
+pub(super) fn generator_losses(
+    inventory: &crate::feature::FeatureInventory,
+    features: &[Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let long = inventory
+        .edge_inputs
+        .historical
+        .iter()
+        .filter(|(_, edge)| edge.generators > PLAIN_SELECTOR_GENERATORS)
+        .filter_map(|((token, source), _)| edge_id(token, *source).ok())
+        .collect::<HashSet<_>>();
+    let count = features
+        .iter()
+        .filter(|feature| {
+            selections(feature).iter().any(|selection| {
+                matches!(selection, EdgeSelection::Historical { edges, .. }
+                    if edges.iter().any(|edge| long.contains(edge)))
+            })
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureEdgeSelectorGeneratorsAssumed.note(format!("{count} edge-treatment feature(s) select an input edge through a selector with three or four generators; the selection assumes that the extra generators do not change the matched edge."))]
     }
 }
 
