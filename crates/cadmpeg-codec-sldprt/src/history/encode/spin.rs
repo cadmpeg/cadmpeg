@@ -8,7 +8,7 @@ use super::support::{
     resolved_boolean_op,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::{
     features::{
         AngularTermination, BooleanOp, LoftSection, PathRef, PlanarProfileRef, RevolveConstruction,
@@ -67,7 +67,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         construction: &RevolveConstruction,
         op: BooleanOp,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -82,13 +82,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || construction.fuse_order().is_some()
                 || construction.allow_multi_profile_faces().is_some()
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses unsupported revolution construction controls",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_revolve(record)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported revolution semantics",
                     feature.id
                 )));
@@ -141,7 +141,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                     }
                     _ => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} uses a linear revolution extent",
                             feature.id
                         )));
@@ -150,7 +150,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             if let Some(axis) = construction.axis() {
                 if !valid_direction(axis.direction.get()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} has a degenerate revolution axis",
                         feature.id
                     )));
@@ -174,7 +174,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 let profile_source =
                     planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::UnsupportedContent(format!(
+                            WriteError::Decline(format!(
                                 "SLDPRT feature {} references a missing revolution profile",
                                 feature.id
                             ))
@@ -192,7 +192,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_sweep(
         &self,
         definition: SweepDefinition<'_>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let SweepDefinition {
             shape,
             path,
@@ -225,19 +225,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || taper.is_some()
                 || allow_multi_profile_faces.is_some()
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported sweep construction semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_sweep(record)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id
                 )));
             }
             if shape.generated_section().is_some() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses an unsupported generated sweep section",
                     feature.id
                 )));
@@ -259,7 +259,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(profile) => Some(
                     planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::UnsupportedContent(format!(
+                            WriteError::Decline(format!(
                                 "SLDPRT feature {} references a missing sweep profile",
                                 feature.id
                             ))
@@ -270,7 +270,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let path_source = match path {
                 Some(path) => Some(
                     path_source(path, record_sources, sketch_sources).ok_or_else(|| {
-                        CodecError::UnsupportedContent(format!(
+                        WriteError::Decline(format!(
                             "SLDPRT feature {} references a missing sweep path",
                             feature.id
                         ))
@@ -352,7 +352,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_loft(
         &self,
         definition: LoftDefinition<'_>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let LoftDefinition {
             sections,
             guidance,
@@ -368,7 +368,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature_sources = self.feature_sources;
         let sketch_sources = self.sketch_sources;
         let cadmpeg_ir::features::LoftGuidance::Guides(guides) = guidance else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes unsupported loft result semantics",
                 feature.id
             )));
@@ -380,13 +380,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || max_degree.is_some()
                 || allow_multi_profile_faces.is_some()
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported loft result semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_loft(record)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported loft semantics",
                     feature.id
                 )));
@@ -395,7 +395,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .iter()
                 .any(|section| matches!(section, cadmpeg_ir::features::LoftSection::Point(_)))
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses a point loft section",
                     feature.id
                 )));
@@ -411,7 +411,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 })
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    WriteError::Decline(format!(
                         "SLDPRT feature {} references a missing loft profile",
                         feature.id
                     ))
@@ -421,7 +421,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|path| path_source(path, record_sources, sketch_sources))
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    WriteError::Decline(format!(
                         "SLDPRT feature {} references a missing loft guide",
                         feature.id
                     ))

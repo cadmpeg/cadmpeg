@@ -145,6 +145,7 @@ pub(super) fn encode_design_bulkstream(
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
     brep_name: &str,
+    extra_body_pairs: &[(u64, u64)],
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let body_key_bodies = target
         .model
@@ -197,7 +198,10 @@ pub(super) fn encode_design_bulkstream(
         || !native.design_dimension_null_locus_pairs.is_empty()
         || !native.design_dimension_recipe_records.is_empty()
         || !native.design_parameter_owners.is_empty()
-        || !native.design_parameter_scopes.is_empty()
+        || native
+            .design_parameter_scopes
+            .iter()
+            .any(|scope| scope.copy_paste_bodies_operation().is_none())
         || !native.design_sketch_placements.is_empty()
         || native
             .design_entity_headers
@@ -224,10 +228,24 @@ pub(super) fn encode_design_bulkstream(
         native_lp_ascii(&mut out, class_tag)?;
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(body_map.entries.as_map().len())
+        let extra = extra_body_pairs
+            .iter()
+            .filter(|(key, suffix)| body_map.entries.as_map().get(key) != Some(suffix))
+            .collect::<std::collections::BTreeSet<_>>();
+        let total = body_map
+            .entries
+            .as_map()
+            .len()
+            .checked_add(extra.len())
+            .ok_or_else(|| CodecError::InvalidInput("Design body map count overflows".into()))?;
+        let count = u32::try_from(total)
             .map_err(|_| CodecError::InvalidInput("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
         for (&body_key, &entity_suffix) in body_map.entries.as_map() {
+            out.extend_from_slice(&body_key.to_le_bytes());
+            out.extend_from_slice(&entity_suffix.to_le_bytes());
+        }
+        for &&(body_key, entity_suffix) in &extra {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
@@ -321,9 +339,10 @@ pub(super) fn encode_design_bulkstream(
                 .sketch_relations
                 .iter()
                 .any(|record| record.record_index == header.record_index)
-            || native.design_entity_headers.iter().any(|record| {
-                record.entity_id.suffix() == u64::from(header.record_index)
-            })
+            || native
+                .design_entity_headers
+                .iter()
+                .any(|record| record.entity_id.suffix() == u64::from(header.record_index))
             || primary_records
                 .iter()
                 .any(|record| record.entity_id == u64::from(header.record_index));
@@ -517,7 +536,13 @@ pub(super) fn encode_design_bulkstream(
     recipes.sort_by_key(|recipe| recipe.recipe_index);
     let mut recipe_ordinals = std::collections::HashMap::new();
     for recipe in recipes {
-        let key = (recipe.kind, recipe.design.as_ref().map(|design| design.id.value.as_str()));
+        let key = (
+            recipe.kind,
+            recipe
+                .design
+                .as_ref()
+                .map(|design| design.id.value.as_str()),
+        );
         let expected = recipe_ordinals.entry(key).or_insert(0u32);
         if recipe.recipe_index != *expected
             || recipe.record_index.is_none()
@@ -527,9 +552,12 @@ pub(super) fn encode_design_bulkstream(
                     || !design.id.value.bytes().all(|byte| byte.is_ascii_digit())
             })
         {
-            losses.push(crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
-                "construction recipe {} has no representable indexed form", recipe.id
-            )));
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "construction recipe {} has no representable indexed form",
+                    recipe.id
+                )),
+            );
             continue;
         }
         if primary_records.is_empty() {
@@ -570,7 +598,9 @@ pub(super) fn encode_design_bulkstream(
             out.extend_from_slice(&value.to_le_bytes());
         }
         written_recipes.insert(recipe.id.clone());
-        *expected = expected.checked_add(1).ok_or_else(|| CodecError::InvalidInput("F3D recipe count exceeds u32".into()))?;
+        *expected = expected
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("F3D recipe count exceeds u32".into()))?;
     }
     for reference in &native.persistent_references {
         if primary_records.is_empty() {

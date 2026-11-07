@@ -165,6 +165,23 @@ pub(super) fn reconcile(
         design_record_headers: original.design_record_headers.clone(),
         design_material_assignments: original.design_material_assignments.clone(),
         design_body_bindings: original.design_body_bindings.clone(),
+        design_parameter_scopes: original
+            .design_parameter_scopes
+            .iter()
+            .filter(|scope| {
+                scope.copy_paste_bodies_operation().is_some()
+                    && target.model.features.iter().any(|feature| {
+                        feature.native_ref.as_deref() == Some(scope.id.as_str())
+                            && matches!(
+                                feature.evaluation.definition(),
+                                cadmpeg_ir::features::FeatureDefinition::Operation(
+                                    cadmpeg_ir::features::FeatureOperation::InsertBodies { .. }
+                                )
+                            )
+                    })
+            })
+            .cloned()
+            .collect(),
         design_parameters: original.design_parameters.clone(),
         design_configurations: original.design_configurations.clone(),
         body_native_keys: original.body_native_keys,
@@ -606,11 +623,17 @@ pub(super) fn reconcile(
             return false;
         };
         assignment.asm_body_key = key;
-        assignment.visual_preset = target.model.appearances.iter()
+        assignment.visual_preset = target
+            .model
+            .appearances
+            .iter()
             .find(|appearance| appearance.id == binding.appearance)
             .and_then(|appearance| appearance.name.as_ref())
             .filter(|name| name.starts_with("Prism-"))
-            .map(|name| crate::records::identity::RecordedValue { value: name.clone(), offset: None });
+            .map(|name| crate::records::identity::RecordedValue {
+                value: name.clone(),
+                offset: None,
+            });
         true
     });
     native.body_native_keys.retain(|record| {

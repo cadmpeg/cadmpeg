@@ -191,6 +191,9 @@ fn project_document(
                 let Some(record) = row.as_object_mut() else {
                     continue;
                 };
+                if arena == "features" {
+                    super::comparison::graph::normalize_feature_self_reference(record);
+                }
                 let id = record.get("id").cloned();
                 let snapshot = record.clone();
                 let mut kept = serde_json::Map::new();
@@ -1156,6 +1159,35 @@ mod tests {
     }
 
     #[test]
+    fn projection_preserves_feature_self_reference_comparison() {
+        use crate::comparison::{unpaired_before_ids, CrossProjection, Mode};
+        use serde_json::Value;
+        use std::collections::BTreeMap;
+        let feature = |native: &str| {
+            json!({"model":{"features":[{
+            "id":"feature", "native_ref":"scope", "definition":{
+                "definition":"base_feature", "bodies":{
+                    "kind":"resolved", "value":{"native":native}
+                }
+            }
+        }]}, "native":{}})
+        };
+        let original = feature("scope");
+        let projected = super::project_document(
+            &original,
+            &crate::carried::Carried::all(),
+            &BTreeMap::new(),
+            "cadir",
+        );
+        let compare = |after: &Value| {
+            unpaired_before_ids(&projected, after, &Mode::Cross(CrossProjection::default()))
+                .expect("the feature graph is valid")
+        };
+        assert!(compare(&original).is_empty());
+        assert!(compare(&feature("other")).contains("feature"));
+    }
+
+    #[test]
     fn projection_preserves_positions_of_absent_array_values() {
         let before = json!({"model":{"procedural_surfaces":[{
             "id":"surface-construction", "record_bounds":[0.0, 2.0, null, null]
@@ -1549,7 +1581,7 @@ mod tests {
         );
         assert!(
             unpaired_before_ids(&retained, &after, &Mode::Cross(CrossProjection::default()))
-                .unwrap()
+                .expect("the paired graph is valid")
                 .is_empty()
         );
 

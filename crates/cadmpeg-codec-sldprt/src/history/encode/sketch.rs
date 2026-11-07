@@ -6,7 +6,7 @@ use super::support::{face_selection_value, planar_profile_source, require_same_f
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::feature_input_class;
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::features::{FaceSelection, FeatureId, PlanarProfileRef, WrapMode};
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
@@ -28,9 +28,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         block: Option<&FeatureId>,
         placement: Option<&cadmpeg_ir::transform::Transform>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         if block.is_some() || placement.is_some() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} requires a native sketch-block instance record",
                 self.feature.id
             )));
@@ -56,7 +56,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         profile: &PlanarProfileRef,
         face: &FaceSelection,
         mode: &WrapMode,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -67,13 +67,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let profile =
                 planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                     .ok_or_else(|| {
-                        CodecError::UnsupportedContent(format!(
+                        WriteError::Decline(format!(
                             "SLDPRT feature {} references a missing wrap profile",
                             feature.id
                         ))
                     })?;
             let face = face_selection_value(face).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} has no wrap target face",
                     feature.id
                 ))
@@ -110,7 +110,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_sketch(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_sketch(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -123,7 +123,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_spatial_sketch(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_spatial_sketch(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({

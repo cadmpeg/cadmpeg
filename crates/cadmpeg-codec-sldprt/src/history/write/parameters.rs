@@ -536,7 +536,7 @@ fn lane_matches_document_dimension(
         return false;
     };
     let mut paths = Vec::new();
-    if crate::history::encode::bindings::visit_operation_roles(operation, |roles, role_paths| {
+    if crate::history::encode::bindings::visit_operation_roles(operation, |roles, role_paths| -> Result<(), std::convert::Infallible> {
         if roles.contains(&role) {
             paths.extend(role_paths.iter().map(ToString::to_string));
         }
