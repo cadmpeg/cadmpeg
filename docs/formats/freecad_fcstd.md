@@ -1788,9 +1788,8 @@ disabled, and fuzzy tolerance distinguishes modeling-kernel default, automatic d
 an explicit positive tolerance. Wrapping an attributable native operation does not suppress its
 design-domain loss report.
 
-A plain `Part::Feature` is a dumb geometry carrier and creates no neutral history
-node. Generic `PartDesign::Feature` objects represent stored geometry; their exact
-shape payload supplies feature outputs when present. No replay construction is
+`Part::Feature` and generic `PartDesign::Feature` objects represent stored geometry.
+Their exact shape payload supplies feature outputs when present. No replay construction is
 fabricated when a stored feature is empty or frozen. A PartDesign base feature is
 instead a derived-geometry operation whose input is the earlier linked feature. Its `BaseFeature`
 carrier is one `App::PropertyLink` with exactly one target. Another runtime type or multiple targets
