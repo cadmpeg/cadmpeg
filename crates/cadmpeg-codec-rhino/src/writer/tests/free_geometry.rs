@@ -123,6 +123,21 @@ fn capped_extrusion_retains_its_procedure_and_cap_pcurves() {
 }
 
 #[test]
+fn extrusion_hole_has_a_multiple_profile_candidate() {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/extrusion_hole.3dm"
+    ));
+    let source = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let candidate = super::super::extrusion::payload(source.ir(), RhinoArchiveVersion::V8, None)
+        .unwrap()
+        .expect("held profiles form an extrusion candidate");
+    assert_eq!(candidate.profile_count, 2);
+}
+
+#[test]
 fn extrusion_with_hole_retains_both_profiles_and_caps() {
     let bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -145,7 +160,7 @@ fn extrusion_with_hole_retains_both_profiles_and_caps() {
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .unwrap();
-        assert!(plan
+        assert!(!plan
             .report()
             .losses
             .iter()
@@ -157,7 +172,7 @@ fn extrusion_with_hole_retains_both_profiles_and_caps() {
                     .iter()
                     .any(|row| loss.message.contains(row.id.as_str()))));
         for pcurve in &source.ir().model.pcurves {
-            assert!(plan.report().losses.iter().any(|loss| {
+            assert!(!plan.report().losses.iter().any(|loss| {
                 loss.code == crate::loss::RhinoLossCode::WriterPcurveReversalDefaulted.kind()
                     && loss.message.contains(pcurve.id.as_str())
             }));
