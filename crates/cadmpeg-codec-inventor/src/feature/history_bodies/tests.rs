@@ -656,6 +656,7 @@ fn two_requests_give_nests_in_distinct_scopes() {
 #[test]
 fn the_losses_name_each_count() {
     let notes = super::super::history_states::losses(&super::super::history_states::Projection {
+        schema_assumed: 0,
         records: Vec::new(),
         unread: None,
         bodies: Built {
