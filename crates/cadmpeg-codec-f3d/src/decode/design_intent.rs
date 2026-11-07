@@ -1299,7 +1299,7 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &mut design.design_record_headers,
     )?;
-    let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
+    let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
@@ -1679,7 +1679,7 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
     );
-    crate::history::bind_face_operand_history_candidates(
+    profile_losses.extend(crate::history::bind_face_operand_history_candidates(
         ctx,
         &mut design.design_face_operands,
         &design.design_parameter_scopes,
@@ -1687,7 +1687,7 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
-    )?;
+    )?);
     crate::history::selection::bind_mirror_selection_planes(
         &mut design.design_parameter_scopes,
         &design.design_construction_operand_groups,
