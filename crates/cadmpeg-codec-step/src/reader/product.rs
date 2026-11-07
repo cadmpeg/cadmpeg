@@ -565,6 +565,7 @@ pub(super) fn decode(
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
+    let mut attempted_placements = BTreeSet::new();
     let placements = occurrence_placements(
         exchange,
         geometry,
@@ -572,6 +573,7 @@ pub(super) fn decode(
         &mut losses,
         &mut ambiguous_placements,
         &mut competing_placements,
+        &mut attempted_placements,
     )?;
     for (&usage_id, source_ids) in &ambiguous_placements {
         if competing_placements.contains_key(&usage_id) {
@@ -681,7 +683,10 @@ pub(super) fn decode(
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
             let transform = placements.get(&usage_id).copied();
-            if transform.is_none() && missing_placement_reports.insert(usage_id) {
+            if transform.is_none()
+                && attempted_placements.contains(&usage_id)
+                && missing_placement_reports.insert(usage_id)
+            {
                 losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
                     "NAUO #{usage_id} has no resolved occurrence transform; source placement is unknown"
                 )));
@@ -1115,6 +1120,7 @@ fn occurrence_placements(
     losses: &mut Vec<LossNote>,
     ambiguous: &mut BTreeMap<u64, Vec<u64>>,
     competing: &mut BTreeMap<u64, Vec<u64>>,
+    attempted: &mut BTreeSet<u64>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let mut pds = BTreeMap::new();
     for (&id, record) in exchange.records() {
@@ -1137,6 +1143,14 @@ fn occurrence_placements(
     let mut result = BTreeMap::new();
     let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
     for (record_id, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
+        if let Some(usage) = named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)
+            .and_then(ValueExt::reference)
+            .and_then(|shape| pds.get(&shape))
+            .copied()
+            .filter(|usage| usages.contains_key(usage))
+        {
+            attempted.insert(usage);
+        }
         match occurrence_placement(
             record,
             exchange,
@@ -1195,6 +1209,7 @@ fn occurrence_placements(
         let grouped = occurrence_representations.entry(usage).or_default();
 
         grouped.push((record_id, representation));
+        attempted.insert(usage);
     }
     for (&usage_id, representations) in &occurrence_representations {
         let Some(usage) = usages.get(&usage_id) else {
@@ -1331,6 +1346,7 @@ fn occurrence_placements(
                     && mapped_definitions.contains(&usage.child_definition)
                     && !placements.contains(&transform)
                 {
+                    attempted.insert(usage_id);
                     placements.push(transform);
                 }
             }
