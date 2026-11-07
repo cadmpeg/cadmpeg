@@ -1719,7 +1719,7 @@
           "name": "AdditiveCylinder",
           "native_ref": "fcstd:native:object#AdditiveCylinder",
           "needs_recompute": false,
-          "ordinal": 4,
+          "ordinal": 3,
           "outputs": [
             "fcstd:model:body#AdditiveCylinder:AddSubShape:PartShape3.brp:9",
             "fcstd:model:body#AdditiveCylinder:Shape:PartShape4.brp:9%40location1"
@@ -1813,7 +1813,7 @@
           "name": "SketchDatumPoint",
           "native_ref": "fcstd:native:object#SketchDatumPoint",
           "needs_recompute": false,
-          "ordinal": 3,
+          "ordinal": 4,
           "outputs": [
             "fcstd:model:body#SketchDatumPoint:Shape:PartShape5.brp:1%40location1"
           ],

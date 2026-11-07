@@ -3110,7 +3110,7 @@
           "name": "AdditiveBox",
           "native_ref": "fcstd:native:object#AdditiveBox",
           "needs_recompute": false,
-          "ordinal": 3,
+          "ordinal": 1,
           "outputs": [
             "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
             "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1"
@@ -3154,7 +3154,7 @@
           "name": "Sketch",
           "native_ref": "fcstd:native:object#Sketch",
           "needs_recompute": false,
-          "ordinal": 1,
+          "ordinal": 2,
           "source_tag": "Sketcher::SketchObject",
           "suppressed": null
         },
@@ -3171,7 +3171,7 @@
           "name": "SketchDatumPoint",
           "native_ref": "fcstd:native:object#SketchDatumPoint",
           "needs_recompute": false,
-          "ordinal": 2,
+          "ordinal": 3,
           "outputs": [
             "fcstd:model:body#SketchDatumPoint:Shape:PartShape4.brp:1%40location1"
           ],

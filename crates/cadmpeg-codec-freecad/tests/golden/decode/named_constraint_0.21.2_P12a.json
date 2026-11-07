@@ -1048,7 +1048,7 @@
         },
         {
           "base_color": {
-            "a": 1.0,
+            "a": 0.0,
             "b": 0.9803921580314636,
             "g": 0.5882353186607361,
             "r": 0.19607843458652496
@@ -1068,7 +1068,7 @@
         },
         {
           "base_color": {
-            "a": 1.0,
+            "a": 0.0,
             "b": 0.9803921580314636,
             "g": 0.5882353186607361,
             "r": 0.19607843458652496
@@ -1088,7 +1088,7 @@
         },
         {
           "base_color": {
-            "a": 1.0,
+            "a": 0.0,
             "b": 0.0,
             "g": 0.0,
             "r": 1.0
@@ -1108,7 +1108,7 @@
         },
         {
           "base_color": {
-            "a": 1.0,
+            "a": 0.0,
             "b": 0.9803921580314636,
             "g": 0.5882353186607361,
             "r": 0.19607843458652496
@@ -1128,7 +1128,7 @@
         },
         {
           "base_color": {
-            "a": 1.0,
+            "a": 0.0,
             "b": 0.0,
             "g": 1.0,
             "r": 0.0
@@ -1148,7 +1148,7 @@
         },
         {
           "base_color": {
-            "a": 1.0,
+            "a": 0.0,
             "b": 1.0,
             "g": 0.0,
             "r": 0.0
@@ -1714,6 +1714,12 @@
       ],
       "bodies": [
         {
+          "color": {
+            "a": 1.0,
+            "b": 0.800000011920929,
+            "g": 0.800000011920929,
+            "r": 0.800000011920929
+          },
           "id": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
           "kind": "solid",
           "native_ref": "fcstd:native:shape-payload#Body:Shape:PartShape.brp:topology-use:1",
@@ -1732,6 +1738,12 @@
           "visible": false
         },
         {
+          "color": {
+            "a": 1.0,
+            "b": 0.800000011920929,
+            "g": 0.800000011920929,
+            "r": 0.800000011920929
+          },
           "id": "fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1",
           "kind": "solid",
           "native_ref": "fcstd:native:shape-payload#Pad:Shape:PartShape3.brp:topology-use:1",
@@ -1741,6 +1753,12 @@
           "visible": false
         },
         {
+          "color": {
+            "a": 1.0,
+            "b": 0.800000011920929,
+            "g": 0.800000011920929,
+            "r": 0.800000011920929
+          },
           "id": "fcstd:model:body#Sketch:Shape:PartShape1.brp:9%40location1",
           "kind": "wire",
           "native_ref": "fcstd:native:shape-payload#Sketch:Shape:PartShape1.brp:topology-use:1",
