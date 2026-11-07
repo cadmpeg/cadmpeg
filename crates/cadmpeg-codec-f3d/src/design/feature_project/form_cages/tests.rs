@@ -25,7 +25,7 @@ fn form_cage_surface(
         cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let mut parts =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
-    super::form_cage_surface(
+    match super::form_cage_surface(
         &ctx,
         &mut parts,
         source,
@@ -35,6 +35,10 @@ fn form_cage_surface(
         scope,
     )
     .unwrap()
+    {
+        super::FormCageSurface::Resolved(surface) => Some(surface),
+        super::FormCageSurface::Unreadable | super::FormCageSurface::Unresolved => None,
+    }
 }
 
 fn form_cage_surfaces(
@@ -59,7 +63,7 @@ fn form_cage_surfaces(
         scope,
     )
     .unwrap();
-    (!surfaces.is_empty()).then_some(surfaces)
+    surfaces
 }
 
 fn parsed_serializers(
@@ -236,6 +240,7 @@ fn form_cage_surfaces_reject_another_scope() {
     let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
     let records = crate::design::test_support::test_primary_frames(&bytes);
     assert!(form_cage_surfaces(&bytes, &records, &[8300], 2191).is_none());
+    assert!(form_cage_surfaces(&bytes, &records, &[8300, 9999], 2190).is_none());
 }
 
 #[test]
@@ -745,7 +750,7 @@ fn damaged_form_cage_object_keeps_sibling_surface() {
         2190,
     )
     .unwrap();
-    assert_eq!(surfaces, [8304]);
+    assert_eq!(surfaces, Some(vec![8304]));
     let (_, native, fidelity, losses) = parts.into_parts();
     assert_eq!(
         native.namespace("f3d").unwrap().arenas()["unknowns"].len(),

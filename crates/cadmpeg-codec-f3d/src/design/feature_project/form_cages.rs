@@ -188,7 +188,7 @@ pub(crate) fn bind_form_cages(
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
-        let surfaces = form_cage_surfaces(
+        let Some(surfaces) = form_cage_surfaces(
             ctx,
             parts,
             source,
@@ -196,10 +196,10 @@ pub(crate) fn bind_form_cages(
             &records,
             cage_objects,
             scope.record_index,
-        )?;
-        if surfaces.is_empty() && !cage_objects.is_empty() {
+        )?
+        else {
             continue;
-        }
+        };
         let serializers = form_cage_serializers(ctx, parts, source, stream, &records)?;
         let mut resolved = Vec::new();
         for surface in &surfaces {
@@ -809,6 +809,12 @@ fn form_cage_record<T>(
     })
 }
 
+enum FormCageSurface {
+    Resolved(u32),
+    Unreadable,
+    Unresolved,
+}
+
 fn form_cage_surface(
     ctx: &DecodeContext<'_>,
     parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
@@ -817,7 +823,7 @@ fn form_cage_surface(
     records: &[crate::metastream::PrimaryRecordFrame],
     object_record: u32,
     scope_record: u32,
-) -> Result<Option<u32>, CodecError> {
+) -> Result<FormCageSurface, CodecError> {
     let bytes = source.window();
     let unique = |index, class: &[u8; 3]| {
         let mut found = records.iter().filter(|frame| {
@@ -828,17 +834,17 @@ fn form_cage_surface(
         found.next().is_none().then_some(frame)
     };
     let Some(object) = unique(object_record, b"301") else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unresolved);
     };
     let Some(first_index) = form_cage_record(ctx, parts, source, stream, object, |bytes| {
         (bytes.len() == 200 && bytes.get(189) == Some(&1))
             .then(|| u32::try_from(View::u64_le_at(bytes, 190)?).ok())?
     })?
     else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unreadable);
     };
     let Some(first) = unique(first_index, b"373") else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unresolved);
     };
     let Some(second_index) = form_cage_record(ctx, parts, source, stream, first, |bytes| {
         (bytes.len() == 33
@@ -848,23 +854,23 @@ fn form_cage_surface(
             .then(|| u32::try_from(View::u64_le_at(bytes, 22)?).ok())?
     })?
     else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unreadable);
     };
     let Some(second) = unique(second_index, b"362") else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unresolved);
     };
     let Some(carrier_index) = form_cage_record(ctx, parts, source, stream, second, |bytes| {
         (bytes.len() == 29 && bytes.get(11..21)? == [0; 10])
             .then(|| u32::try_from(View::u64_le_at(bytes, 21)?).ok())?
     })?
     else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unreadable);
     };
     let Some(carrier) = unique(carrier_index, b"457") else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unresolved);
     };
     if bytes.get(carrier.member_end + 4..carrier.member_end + 7) != Some(b"264") {
-        return Ok(None);
+        return Ok(FormCageSurface::Unresolved);
     }
     let Some((owner, surface)) = form_cage_record(ctx, parts, source, stream, carrier, |bytes| {
         if bytes.len() != 665 || bytes.get(317) != Some(&1) || bytes.get(339) != Some(&1) {
@@ -876,9 +882,13 @@ fn form_cage_surface(
         ))
     })?
     else {
-        return Ok(None);
+        return Ok(FormCageSurface::Unreadable);
     };
-    Ok((owner == u64::from(scope_record)).then_some(surface))
+    Ok(if owner == u64::from(scope_record) {
+        FormCageSurface::Resolved(surface)
+    } else {
+        FormCageSurface::Unresolved
+    })
 }
 
 fn form_cage_surfaces(
@@ -889,10 +899,11 @@ fn form_cage_surfaces(
     records: &[crate::metastream::PrimaryRecordFrame],
     objects: &[u32],
     scope_record_index: u32,
-) -> Result<Vec<u32>, CodecError> {
+) -> Result<Option<Vec<u32>>, CodecError> {
     let mut surfaces = Vec::new();
+    let mut complete = true;
     for object in objects {
-        if let Some(surface) = form_cage_surface(
+        match form_cage_surface(
             ctx,
             parts,
             source,
@@ -901,10 +912,12 @@ fn form_cage_surfaces(
             *object,
             scope_record_index,
         )? {
-            surfaces.push(surface);
+            FormCageSurface::Resolved(surface) => surfaces.push(surface),
+            FormCageSurface::Unreadable => {}
+            FormCageSurface::Unresolved => complete = false,
         }
     }
-    Ok(surfaces)
+    Ok(complete.then_some(surfaces))
 }
 
 struct FormCageSerializers {
