@@ -50,7 +50,7 @@ fn cascade_validation_errors(
             finding.message.clone(),
         ))
     };
-    for _ in 0..1024 {
+    loop {
         let validation = cadmpeg_ir::validate::validate_neutral(projected, Vec::new())?;
         let errors: Vec<_> = validation
             .findings
@@ -132,9 +132,6 @@ fn cascade_validation_errors(
             }
         }
     }
-    Err(CodecError::Malformed(
-        "SLDPRT synthesis cascade exceeded its work cap".into(),
-    ))
 }
 
 /// Drop one model record by id through JSON, keeping admission order.
