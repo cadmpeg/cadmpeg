@@ -530,6 +530,11 @@ fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
     match (property(properties, "Group"), property(properties, "Model")) {
         (None, None) => true,
         (Some(group), None) | (None, Some(group)) => group.type_name == "App::PropertyLinkList",
+    append_placement_expression_parameters(
+        &mut ir.model.parameters,
+        objects,
+        &properties_by_owner,
+    )?;
         (Some(_), Some(_)) => false,
     }
 }
@@ -2996,6 +3001,204 @@ fn bind_parameter_dependencies(
                 if constraint.is_some() {
                     names.push(format!("Constraints.{source_name}"));
                 }
+struct PlacementExpressionParameter<'a> {
+    object: &'a ObjectRecord,
+    axis: &'static str,
+    expression: Option<(String, String)>,
+}
+
+fn append_placement_expression_parameters(
+    parameters: &mut Vec<DesignParameter>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Result<(), CodecError> {
+    let objects_by_name = objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+        .map(|object| (object.name().as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let mut needs = Vec::<PlacementExpressionParameter<'_>>::new();
+    let mut positions = HashMap::<(&str, &'static str), usize>::new();
+
+    for object in objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+    {
+        let owned = properties_by_owner
+            .get(object.id().as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let Some(engine) = property(owned, "ExpressionEngine") else {
+            continue;
+        };
+        for value in engine
+            .values()
+            .iter()
+            .filter(|value| value.tag == "Expression")
+        {
+            let (Some(path), Some(expression)) = (
+                value.attributes.get("path"),
+                value.attributes.get("expression"),
+            ) else {
+                continue;
+            };
+            if let Some(axis) = path
+                .strip_prefix(".Placement.Base.")
+                .and_then(|axis| match axis {
+                    "x" => Some("x"),
+                    "y" => Some("y"),
+                    "z" => Some("z"),
+                    _ => None,
+                })
+            {
+                request_placement_expression_parameter(
+                    &mut needs,
+                    &mut positions,
+                    object,
+                    axis,
+                    Some((engine.id.as_str(), expression)),
+                );
+            }
+            for (object_name, axis) in placement_component_references(expression) {
+                let Some(referenced_object) = objects_by_name.get(object_name).copied() else {
+                    continue;
+                };
+                request_placement_expression_parameter(
+                    &mut needs,
+                    &mut positions,
+                    referenced_object,
+                    axis,
+                    None,
+                );
+            }
+        }
+    }
+
+    let mut last_ordinals = HashMap::<FeatureId, u32>::new();
+    let mut existing_parameters = HashSet::<(FeatureId, String)>::new();
+    for parameter in parameters.iter() {
+        let Some(owner) = parameter.owner.as_ref() else {
+            continue;
+        };
+        last_ordinals
+            .entry(owner.clone())
+            .and_modify(|ordinal| *ordinal = (*ordinal).max(parameter.ordinal))
+            .or_insert(parameter.ordinal);
+        if parameter.name.starts_with("Placement.Base.") {
+            existing_parameters.insert((owner.clone(), parameter.name.clone()));
+        }
+    }
+    for need in needs {
+        let object = need.object;
+        let owner = feature_id(object)?;
+        let name = format!("Placement.Base.{}", need.axis);
+        if !existing_parameters.insert((owner.clone(), name.clone())) {
+            continue;
+        }
+        let Some(owned) = properties_by_owner.get(object.id().as_str()) else {
+            continue;
+        };
+        let Some(placement) = property(owned, "Placement") else {
+            continue;
+        };
+        let Some(frame) = crate::placement::placement_matrix_unreported(placement) else {
+            continue;
+        };
+        let component = match need.axis {
+            "x" => 0,
+            "y" => 1,
+            "z" => 2,
+            _ => return Err(CodecError::malformed("unknown placement expression axis")),
+        };
+        let raw_name = ["Px", "Py", "Pz"][component];
+        let Some(raw_value) = placement
+            .values()
+            .first()
+            .and_then(|value| value.attributes.get(raw_name))
+        else {
+            continue;
+        };
+        let Some(value) = Length::new(frame.rows()[component][3]) else {
+            continue;
+        };
+        let ordinal = last_ordinals
+            .get(&owner)
+            .map_or(Some(0), |ordinal| ordinal.checked_add(1))
+            .ok_or_else(|| CodecError::malformed("FreeCAD parameter ordinal overflow"))?;
+        last_ordinals.insert(owner.clone(), ordinal);
+        let mut retained = BTreeMap::new();
+        if let Some((native_ref, _)) = &need.expression {
+            retained.insert(
+                cadmpeg_core::nonblank_literal!("expression_native_ref"),
+                native_ref.clone(),
+            );
+        }
+        parameters.push(DesignParameter {
+            product_definition: None,
+            id: ParameterId::mint(design_identity_text(
+                "parameter",
+                object,
+                format_args!(":{}", cadmpeg_ir::ids::IdentityKey::encode_segment(&name)),
+            ))
+            .map_err(CodecError::malformed)?,
+            owner: Some(owner),
+            ordinal,
+            name,
+            expression: need
+                .expression
+                .map_or_else(|| raw_value.clone(), |(_, expression)| expression),
+            display: None,
+            value: Some(ParameterValue::Length(value)),
+            dependencies: DistinctMembers::default(),
+            properties: retained,
+            pmi: None,
+            native_ref: Some(placement.id.clone()),
+        });
+    }
+    Ok(())
+}
+
+fn request_placement_expression_parameter<'a>(
+    needs: &mut Vec<PlacementExpressionParameter<'a>>,
+    positions: &mut HashMap<(&'a str, &'static str), usize>,
+    object: &'a ObjectRecord,
+    axis: &'static str,
+    expression: Option<(&str, &str)>,
+) {
+    let key = (object.id().as_str(), axis);
+    if let Some(index) = positions.get(&key).copied() {
+        if let Some((native_ref, expression)) = expression {
+            if needs[index].expression.is_none() {
+                needs[index].expression = Some((native_ref.to_owned(), expression.to_owned()));
+            }
+        }
+        return;
+    }
+    let expression =
+        expression.map(|(native_ref, expression)| (native_ref.to_owned(), expression.to_owned()));
+    positions.insert(key, needs.len());
+    needs.push(PlacementExpressionParameter {
+        object,
+        axis,
+        expression,
+    });
+}
+
+fn placement_component_references(
+    expression: &str,
+) -> impl Iterator<Item = (&str, &'static str)> + '_ {
+    expression_identifiers(expression)
+        .into_iter()
+        .filter_map(|identifier| {
+            [
+                ("x", ".Placement.Base.x"),
+                ("y", ".Placement.Base.y"),
+                ("z", ".Placement.Base.z"),
+            ]
+            .into_iter()
+            .find_map(|(axis, suffix)| identifier.strip_suffix(suffix).map(|object| (object, axis)))
+        })
+}
+
             }
         }
         candidates.push((parameter.id.clone(), parameter.owner.clone(), names));
@@ -3038,7 +3241,7 @@ fn bind_parameter_dependencies(
         }
     }
     for parameter in parameters.iter_mut() {
-        let mut dependencies = BTreeSet::new();
+        let mut dependencies = Vec::new();
         // A spreadsheet cell without a leading `=` is a literal and names nothing.
         let literal_cell = parameter.properties.contains_key("address")
             && parameter
@@ -3046,7 +3249,10 @@ fn bind_parameter_dependencies(
                 .as_deref()
                 .is_some_and(|native| native.ends_with(":cells"))
             && !parameter.expression.starts_with('=');
-        for identifier in expression_identifiers(&parameter.expression).filter(|_| !literal_cell) {
+        for identifier in expression_identifiers(&parameter.expression)
+            .into_iter()
+            .filter(|_| !literal_cell)
+        {
             let dependency = if let Some(qualified) = qualified.get(identifier) {
                 Some(qualified)
             } else if let Some(owner) = parameter.owner.as_ref() {
@@ -3056,7 +3262,7 @@ fn bind_parameter_dependencies(
             };
             if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
                 if !dependencies.contains(dependency) {
-                    dependencies.insert(dependency.clone());
+                    dependencies.push(dependency.clone());
                 }
             }
         }
@@ -3070,9 +3276,7 @@ fn bind_parameter_dependencies(
             // a history that FreeCAD itself could not topologically sort.
             DistinctMembers::default()
         } else {
-            let mut members = Vec::new();
-            members.extend(dependencies);
-            DistinctMembers::try_from(members).map_err(CodecError::from)?
+            DistinctMembers::try_from(dependencies).map_err(CodecError::from)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
@@ -3181,12 +3385,62 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
     cycle_features
 }
 
-fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
-    expression
-        .split(|character: char| {
-            !character.is_ascii_alphanumeric() && character != '_' && character != '.'
-        })
-        .filter(|identifier| !identifier.is_empty())
+fn expression_identifiers(expression: &str) -> Vec<&str> {
+    let bytes = expression.as_bytes();
+    let mut identifiers = Vec::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if matches!(bytes[cursor], b'\'' | b'"') {
+            let quote = bytes[cursor];
+            cursor += 1;
+            while cursor < bytes.len() {
+                if bytes[cursor] == b'\\' {
+                    cursor += 1;
+                    if cursor < bytes.len() {
+                        cursor += 1;
+                    }
+                } else if bytes[cursor] == quote {
+                    cursor += 1;
+                    break;
+                } else {
+                    cursor += 1;
+                }
+            }
+            continue;
+        }
+        if bytes[cursor..].starts_with(b"<<") {
+            let Some(end) = expression[cursor + 2..]
+                .find(">>")
+                .map(|offset| cursor + 2 + offset)
+            else {
+                break;
+            };
+            cursor = end + 2;
+            if bytes.get(cursor) == Some(&b'.') {
+                cursor += 1;
+                while cursor < bytes.len()
+                    && (bytes[cursor].is_ascii_alphanumeric()
+                        || matches!(bytes[cursor], b'_' | b'.'))
+                {
+                    cursor += 1;
+                }
+            }
+            continue;
+        }
+        if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
+            let start = cursor;
+            cursor += 1;
+            while cursor < bytes.len()
+                && (bytes[cursor].is_ascii_alphanumeric() || matches!(bytes[cursor], b'_' | b'.'))
+            {
+                cursor += 1;
+            }
+            identifiers.push(&expression[start..cursor]);
+            continue;
+        }
+        cursor += 1;
+    }
+    identifiers
 }
 
 fn neutral_constraint(

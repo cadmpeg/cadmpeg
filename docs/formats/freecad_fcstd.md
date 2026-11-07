@@ -576,6 +576,11 @@ identity, expression-engine identity, and dependencies on other decoded paramete
 or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
 not create fabricated parameter identities.
 
+`Placement.Base.x`, `.y`, and `.z` identify the translation components of a
+`PropertyPlacement`; each component is a length in millimetres. An expression target
+`.Placement.Base.<axis>` binds the matching component of the owning object. A qualified
+object-name reference `object.Placement.Base.<axis>` identifies the named object's component.
+
 Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
 parameter whose identity includes its sheet and address. Address and alias remain separate;
 content, display unit, alignment, style, colors, and spans are retained independently. A cell's
