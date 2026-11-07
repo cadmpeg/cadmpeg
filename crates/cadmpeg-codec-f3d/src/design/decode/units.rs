@@ -270,6 +270,10 @@ fn unit_part<T>(
             cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
         )
     };
+    let stub = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if output.fidelity().retained_record(stub.as_str()).is_some() {
+        return Ok(None);
+    }
     ctx.decode_part(output, extent, spec, |_| parse())
 }
 
@@ -452,6 +456,74 @@ pub(crate) mod tests {
             .next()
             .map(|first| first.to_ascii_lowercase().to_string() + chars.as_str())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn repeated_damaged_unit_entry_is_given_up_once() {
+        let (mut bytes, records) =
+            fixture(["centimeter", "millimeter", "meter", "inch", "foot", "foot"]);
+        let system_start = records.iter().find(|(id, _)| *id == 15).unwrap().1;
+        let first = entry_base(5);
+        let target = first + 1;
+        let mut first_reference = Vec::new();
+        reference(&mut first_reference, first);
+        let position = bytes[system_start..]
+            .windows(first_reference.len())
+            .position(|window| window == first_reference)
+            .unwrap()
+            + system_start;
+        bytes[position + 1..position + 5].copy_from_slice(&target.to_le_bytes());
+        let target_start = records.iter().find(|(id, _)| *id == target).unwrap().1;
+        let namespace = bytes[target_start..]
+            .windows(ENTRY_NAMESPACE.len())
+            .position(|window| window == ENTRY_NAMESPACE.as_bytes())
+            .unwrap()
+            + target_start;
+        bytes[namespace] = b'X';
+        let ty = crate::design::test_support::design_type(
+            256,
+            "00000000-0000-0000-0000-000000000001",
+            None,
+            1,
+            "Fusion",
+            Vec::new(),
+        );
+        let class_tag =
+            crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap();
+        let frames: Vec<_> = records
+            .iter()
+            .enumerate()
+            .map(|(ordinal, (id, start))| {
+                let end = records
+                    .get(ordinal + 1)
+                    .map_or(bytes.len(), |(_, end)| *end);
+                crate::design::decode::meta::DesignPrimaryFrame {
+                    entity_id: u64::from(*id),
+                    class_tag: class_tag.clone(),
+                    start: *start,
+                    member_end: end,
+                    end,
+                    design_type: &ty,
+                }
+            })
+            .collect();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut output =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let unit =
+            super::unit_from_frames(&ctx, &mut output, source, "Design/BulkStream.dat", &frames)
+                .unwrap();
+        assert_eq!(unit.as_deref(), Some("foot"));
+        let (_, native, _, losses) = output.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
     }
 
     #[test]
