@@ -250,9 +250,16 @@ fn custom(record: &Record) -> bool {
                 if family == "ATTRIB_CUSTOM" && base == "attrib"))
 }
 
+/// Whether a carrier schema stores the matching attribute `NMx_Matched_Entity`
+/// in the class-chain form. Schema 43 stores it in the form of schemas 38,
+/// 40, and 42, with its own schema number as the stored schema.
+pub(super) const fn class_chain_matched_schema(schema: u32) -> bool {
+    legacy_schema(schema) || schema == 43
+}
+
 fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
     let fields = values(record);
-    let (owner, source, key) = if legacy_schema(schema) {
+    let (owner, source, key) = if class_chain_matched_schema(schema) {
         if legacy_family(record)? != "NMx_Matched_Entity" {
             return None;
         }

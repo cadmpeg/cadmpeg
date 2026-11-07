@@ -289,6 +289,7 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
