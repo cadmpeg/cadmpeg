@@ -610,6 +610,7 @@ fn write_archive_prefix(
     losses.extend(tables::layer_linetype_losses(ir)?);
     losses.extend(tables::layer_material_losses(ir, materials));
     losses.extend(tables::layer_color_losses(ir)?);
+    losses.extend(tables::products::definition_metadata_losses(ir, version));
     losses.extend(linetype_losses);
     losses.extend(font_losses);
     for record in records_in(ir, "object_presentation") {
@@ -1703,7 +1704,10 @@ fn native_dispositions(
         .model
         .product_definitions
         .iter()
-        .filter(|definition| tables::products::definition_written(ir, &referenced, definition))
+        .filter(|definition| {
+            tables::products::definition_written(ir, &referenced, definition)
+                && tables::products::reduced_definition_fields(ir, definition, version).is_empty()
+        })
         .filter_map(|definition| definition.native_ref.as_deref())
         .collect::<std::collections::BTreeSet<_>>();
     for record in records_in(ir, "product_definitions") {
