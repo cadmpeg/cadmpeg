@@ -628,6 +628,11 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                     .losses
                     .iter()
                     .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()));
+            } else {
+                assert!(report.losses.iter().any(|loss| {
+                    loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+                        && loss.message.contains(ir.model.surfaces[0].id.as_str())
+                }));
             }
         }
     }
