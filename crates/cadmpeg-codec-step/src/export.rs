@@ -2450,9 +2450,9 @@ impl<'a> Builder<'a> {
     fn emit_layers(&mut self) {
         for layer in self.ir.model.presentation_layers.clone() {
             let mut assigned = Vec::new();
-            let mut unsupported = 0usize;
+            let mut unsupported = Vec::new();
             for item in layer.items {
-                let references = match item {
+                let references = match &item {
                     PresentationItem::Body { body } => self
                         .body_item_refs
                         .get(body.as_str())
@@ -2522,28 +2522,42 @@ impl<'a> Builder<'a> {
                     PresentationItem::Source { .. } => Vec::new(),
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
-                        .get(&tessellation)
+                        .get(tessellation)
                         .copied()
                         .into_iter()
                         .collect(),
                 };
                 if references.is_empty() {
-                    unsupported += 1;
+                    let id = match &item {
+                        PresentationItem::Body { body } => body.as_str(),
+                        PresentationItem::Face { face } => face.as_str(),
+                        PresentationItem::Edge { edge } => edge.as_str(),
+                        PresentationItem::Vertex { vertex } => vertex.as_str(),
+                        PresentationItem::Point { point } => point.as_str(),
+                        PresentationItem::Curve { curve } => curve.as_str(),
+                        PresentationItem::Surface { surface } => surface.as_str(),
+                        PresentationItem::Product { product } => product.as_str(),
+                        PresentationItem::Occurrence { occurrence } => occurrence.as_str(),
+                        PresentationItem::Pmi { annotation } => annotation.as_str(),
+                        PresentationItem::Tessellation { tessellation } => tessellation.as_str(),
+                        PresentationItem::Source { source_id } => source_id.as_str(),
+                    };
+                    unsupported.push(id.to_owned());
                 } else {
                     assigned.extend(references);
                 }
             }
-            if unsupported > 0 {
+            if !unsupported.is_empty() {
                 self.loss(
                     StepLossCode::LayerItemWithoutCarrier,
                     format!(
-                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier; layer id: {}",
-                        layer.name, layer.id
+                        "layer '{}' has {} item(s) without a writable STEP carrier; layer id: {}; items: {}",
+                        layer.name, unsupported.len(), layer.id, unsupported.join(", ")
                     ),
                 );
             }
             if assigned.is_empty() {
-                if unsupported == 0 {
+                if unsupported.is_empty() {
                     self.loss(
                         StepLossCode::EmptyLayerOmitted,
                         format!("empty presentation layer {} was omitted because STEP requires an assigned item", layer.id),

@@ -702,6 +702,7 @@ fn layer_without_writable_items_is_named_in_the_loss() {
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code == crate::loss::StepLossCode::LayerItemWithoutCarrier.kind()
             && loss.message.contains("test:model:layer#unwritable")
+            && loss.message.contains("test:model:surface#unknown")
     }));
 }
 
