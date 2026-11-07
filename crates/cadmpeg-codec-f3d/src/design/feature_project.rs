@@ -62,6 +62,9 @@ const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
+/// Millimetres of translation along its axis that a `MoveFace` rotation
+/// admits.
+const EPS_MOVE_FACE_SCREW_TRANSLATION: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
 /// Largest `1 - cos` between a rectangular-pattern direction record and the
@@ -8737,19 +8740,16 @@ fn project_split_face(
     )))
 }
 
-/// A `MoveFace` scope projects when its transform is a pure translation.
+/// A `MoveFace` scope projects when its transform is a translation, or a
+/// rotation whose translation is perpendicular to its axis.
 fn project_move_face(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        FaceMotion, FaceSelection, FeatureDefinition, FeatureDirection3, FeatureOperation,
-    };
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let operation = or_none!(scope.move_operation());
-    if !operation.preserves_orientation()
-        || matrix_axis_angle(operation.transform.as_ref()).is_some()
-    {
+    if !operation.preserves_orientation() {
         return Ok(None);
     }
     let group = or_none!(single_operand_group(
@@ -8769,22 +8769,49 @@ fn project_move_face(
     {
         return Ok(None);
     }
-    let translation = Vector3::new(
-        operation.transform[0][3] * 10.0,
-        operation.transform[1][3] * 10.0,
-        operation.transform[2][3] * 10.0,
-    );
-    let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(translation));
-    let distance = or_none!(cadmpeg_ir::scalar::Length::new(translation.norm()));
+    let motion = or_none!(move_face_motion(operation.transform.as_ref()));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MoveFace {
             faces: FaceSelection::Native(group.id.clone()),
-            motion: FaceMotion::Translate {
-                direction: FeatureDirection3::from(direction),
-                distance,
-            },
+            motion,
         },
     )))
+}
+
+/// The face motion of a rigid `MoveFace` matrix in centimetres. A rotation
+/// whose translation has a component along its axis is a screw motion, which
+/// `FaceMotion` cannot state.
+fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::FaceMotion> {
+    use cadmpeg_ir::features::{FaceMotion, FeatureDirection3, FinitePoint3};
+
+    let translation = Vector3::new(
+        transform[0][3] * DESIGN_LENGTH_TO_MILLIMETRE,
+        transform[1][3] * DESIGN_LENGTH_TO_MILLIMETRE,
+        transform[2][3] * DESIGN_LENGTH_TO_MILLIMETRE,
+    );
+    let Some(rotation) = matrix_axis_angle(transform) else {
+        let direction = cadmpeg_ir::units::UnitVector3::normalized(translation)?;
+        let distance = cadmpeg_ir::scalar::Length::new(translation.norm())?;
+        return Some(FaceMotion::Translate {
+            direction: FeatureDirection3::from(direction),
+            distance,
+        });
+    };
+    let axis = rotation.direction.get();
+    if translation.dot(axis).abs() > EPS_MOVE_FACE_SCREW_TRANSLATION {
+        return None;
+    }
+    // For a translation t perpendicular to the unit axis a, the axis point
+    // nearest the origin is (t + cot(angle / 2) a x t) / 2.
+    let cotangent = (rotation.angle.get() * 0.5).tan().recip();
+    let origin = (translation + axis.cross(translation).scale(cotangent)).scale(0.5);
+    Some(FaceMotion::Rotate {
+        axis_origin: FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            origin.x, origin.y, origin.z,
+        ))?,
+        axis_dir: rotation.direction,
+        angle: rotation.angle,
+    })
 }
 
 fn project_delete_face(
