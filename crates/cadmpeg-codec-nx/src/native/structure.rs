@@ -27,7 +27,7 @@ pub(super) struct FastLoadComponentPrototype {
     /// Zero-based position in the serialized prototype table.
     ordinal: u32,
     /// Serialized component name.
-    pub(super) name: String,
+    name: String,
     /// Directory entry containing the roster.
     source_entry: String,
     /// Absolute file offset of the name tag.
@@ -42,7 +42,7 @@ pub(super) struct FastLoadComponentUuid {
     /// Zero-based position in the serialized UUID table.
     ordinal: u32,
     /// Canonical lowercase UUID text.
-    pub(super) uuid: crate::canonical_uuid::CanonicalUuid<String>,
+    uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Directory entry containing the UUID table.
     source_entry: String,
     /// Absolute file offset of the UUID tag.
@@ -148,7 +148,7 @@ pub(super) struct FastLoadComponentOccurrence {
     /// One-based serialized prototype-table index.
     prototype_index: RosterIndex,
     /// Referenced [`FastLoadComponentUuid::id`].
-    pub(super) component_uuid: String,
+    component_uuid: String,
     /// Absolute file offset of the UUID-table index.
     uuid_source_offset: u64,
     /// Directory entry containing the roster.
@@ -161,10 +161,6 @@ impl FastLoadComponentOccurrence {
     /// Referenced fast-load prototype identity.
     fn prototype(&self) -> String {
         format!("nx:fast-load:prototype#{}", self.prototype_index.ordinal())
-    }
-
-    pub(super) fn prototype_index(&self) -> usize {
-        self.prototype_index.ordinal()
     }
 }
 

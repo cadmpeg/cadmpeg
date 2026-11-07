@@ -116,20 +116,10 @@ loss_codes! {
     NonParasolidStreamOmitted => ("stream.non-parasolid-omitted", Info, PassthroughRecordOmitted),
     /// Assembly `.prt` has no inline geometry; children live in external parts.
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
-    /// Recognized assembly uses or placements have no neutral occurrence graph.
+    /// `FastLoad` component uses have no corresponding native placement frames.
     AssemblyOccurrencesUnresolved => ("assembly.occurrences-unresolved", Blocking, AssemblyPlacementsNotTransferred),
-    /// NX assembly placement translations use the assumed millimeter unit.
-    AssemblyPlacementUnitsAssumed => ("assembly.placement-units-assumed", Warning, DecodeDiagnostic),
-    /// NX assembly placement rows are attached directly to a synthetic root.
-    AssemblyHierarchyAssumed => ("assembly.hierarchy-assumed", Warning, DecodeDiagnostic),
-    /// External component filenames join roster names while directories remain unknown.
-    AssemblyExternalFilenameAssumed => ("assembly.external-filename-assumed", Warning, DecodeDiagnostic),
-    /// A roster prototype has no unique retained external document filename.
-    AssemblyExternalDocumentUnresolved => ("assembly.external-document-unresolved", Warning, MetadataNotTransferred),
-    /// One unique prototype is assigned across a placement/use count mismatch.
-    AssemblyPrototypeCountAssumed => ("assembly.prototype-count-assumed", Warning, DecodeDiagnostic),
-    /// A placement UUID group identifies a prototype without an instance join.
-    AssemblyUuidPrototypeAssumed => ("assembly.uuid-prototype-assumed", Warning, DecodeDiagnostic),
+    /// Native assembly placements lack a proven component relation, root frame, or translation unit.
+    AssemblyPlacementFrameUnresolved => ("assembly.placement-frame-unresolved", Blocking, AssemblyPlacementsNotTransferred),
     /// A carrier record of the right family states lanes the IR carrier refuses.
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
     /// A B-spline record stores a control-point weight that is zero or negative.
@@ -253,12 +243,7 @@ mod tests {
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
                 "assembly.occurrences-unresolved",
-                "assembly.placement-units-assumed",
-                "assembly.hierarchy-assumed",
-                "assembly.external-filename-assumed",
-                "assembly.external-document-unresolved",
-                "assembly.prototype-count-assumed",
-                "assembly.uuid-prototype-assumed",
+                "assembly.placement-frame-unresolved",
                 "carrier.lanes-unpaired",
                 "carrier.spline-weight-nonpositive",
                 "carrier.spline-fields-inconsistent",

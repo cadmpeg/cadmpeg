@@ -1,39 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end NX assembly occurrence transfer against its STEP twin.
+//! End-to-end contracts for native-only NX assembly placement frames.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::products::{
-    ExternalDocument, OccurrenceParent, ProductDefinitionKind, PrototypeReference,
-};
+use serde_json::Value;
 
 use crate::loss::NxLossCode;
 use crate::NxCodec;
 
-const STEP_MTC_TYPE_COUNTS: [(&str, usize); 8] = [
-    ("90591A141 HEX NUT", 10),
-    ("91274A118 SHCS", 14),
-    ("91274A141 SHCS", 4),
-    ("91304A112 FHSCS", 4),
-    ("NIST MTC CRADA POLYCARB", 1),
-    ("NIST MTC CRADA COVER", 1),
-    ("NIST MTC CRADA PLATE", 1),
-    ("NIST MTC CRADA BOX", 1),
-];
-
-const STEP_FHSCS_INSTANCE_DISTANCES_MM: [f64; 6] = [
-    60.16,
-    60.16,
-    83.459_999_9,
-    83.459_999_9,
-    102.882_443_513,
-    102.882_443_513,
-];
-const EPS_STEP_INSTANCE_DISTANCE_MM: f64 = 0.003;
-const EPS_NX_PLACEMENT_ROTATION: f64 = 1.0e-4;
-const COUNT_ASSUMPTION_UUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
+const FRAME_UUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
 
 fn append_fastload_string(bytes: &mut Vec<u8>, tag: u8, value: &str) {
     bytes.push(tag);
@@ -42,7 +19,7 @@ fn append_fastload_string(bytes: &mut Vec<u8>, tag: u8, value: &str) {
     bytes.push(0);
 }
 
-fn fastload_structure_with_two_same_prototype_uses() -> Vec<u8> {
+fn fastload_structure_with_two_same_prototype_uses(uuid: &str) -> Vec<u8> {
     let mut bytes = vec![1, 2, 0x42, 0];
     bytes.extend([1, 2]);
     append_fastload_string(&mut bytes, 4, "MODEL");
@@ -51,7 +28,7 @@ fn fastload_structure_with_two_same_prototype_uses() -> Vec<u8> {
     append_fastload_string(&mut bytes, 4, "pin");
     bytes.extend([1, 3, 1, 1]);
     bytes.extend([1, 2, 3, 38]);
-    bytes.extend(COUNT_ASSUMPTION_UUID.as_bytes());
+    bytes.extend(uuid.as_bytes());
     bytes.push(0);
     bytes.extend([1, 3, 1, 1]);
 
@@ -70,162 +47,77 @@ fn placement_with_uuid(uuid: &str) -> Vec<u8> {
     frame
 }
 
+fn assert_frame_loss(result: &cadmpeg_ir::codec::DecodeResult, placements: usize, uses: usize) {
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == NxLossCode::AssemblyPlacementFrameUnresolved.kind())
+        .expect("unproven placement frames have a specific loss");
+    assert!(loss
+        .message
+        .contains(&format!("Withheld {placements} NX placement(s)")));
+    assert!(loss
+        .message
+        .contains(&format!("{uses} FastLoad component use(s)")));
+    assert!(loss.message.contains("placement-to-component association"));
+    assert!(loss.message.contains("assembly root frame"));
+    assert!(loss.message.contains("translation unit"));
+    assert!(loss.message.contains("remain in the NX native namespace"));
+}
+
 #[test]
-fn decode_uses_one_prototype_across_unequal_counts_with_a_loss() {
+fn decode_withholds_unproven_frames_and_retains_native_placement_and_use_records() {
+    let placement = placement_with_uuid(FRAME_UUID);
+    let mut expected_raw_frame = String::new();
+    for byte in &placement {
+        write!(expected_raw_frame, "{byte:02x}").unwrap();
+    }
     let file = crate::test_support::test_prt::prt_with_named_payloads(&[
-        (
-            "/Root/UG_PART/UG_PART",
-            placement_with_uuid(COUNT_ASSUMPTION_UUID),
-        ),
+        ("/Root/UG_PART/UG_PART", placement),
         (
             "/Root/FastLoad/Structure",
-            fastload_structure_with_two_same_prototype_uses(),
+            fastload_structure_with_two_same_prototype_uses(FRAME_UUID),
         ),
     ]);
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let placement = result
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| occurrence.native_ref.is_some())
-        .expect("placement is emitted");
-    assert_eq!(placement.name.as_deref(), Some("pin"));
-    assert!(matches!(
-        &placement.prototype,
-        PrototypeReference::External {
-            document: ExternalDocument::Missing {},
-            object: None,
-        }
-    ));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyPrototypeCountAssumed.kind()));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyUuidPrototypeAssumed.kind()));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyExternalDocumentUnresolved.kind()));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+
+    assert!(result.ir().model.occurrences.is_empty());
+    assert!(result.ir().model.product_definitions.is_empty());
+    let namespace = result.ir().native.namespace("nx").unwrap();
+    let placements: Vec<Value> = namespace.arena_as("assembly_placements").unwrap();
+    let uses: Vec<Value> = namespace
+        .arena_as("fast_load_component_occurrences")
+        .unwrap();
+    assert_eq!(placements.len(), 1);
+    assert_eq!(
+        placements[0]["raw_frame"].as_str(),
+        Some(expected_raw_frame.as_str())
+    );
+    assert_eq!(uses.len(), 2);
+    assert_frame_loss(&result, 1, 2);
 }
 
 #[test]
-fn decode_emits_mtc_external_occurrences_with_step_twin_counts_and_spacing() {
+fn decode_withholds_mtc_placement_frames_and_retains_all_native_records() {
     let bytes = include_bytes!("../../../../corpus/nist-pmi/nx/NIST mtc crada assembly.prt");
     let result = NxCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let model = &result.ir().model;
-    let roots = model
-        .occurrences
-        .iter()
-        .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-        .collect::<Vec<_>>();
-    assert_eq!(roots.len(), 1);
-    let root = roots[0];
-    let children = model
-        .occurrences
-        .iter()
-        .filter(|occurrence| {
-            matches!(
-                &occurrence.parent,
-                OccurrenceParent::Occurrence { occurrence: parent } if parent == &root.id
-            )
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(children.len(), 36);
-    assert_eq!(model.occurrences.len(), 37);
-    assert_eq!(model.product_definitions.len(), 1);
-    assert_eq!(
-        model.product_definitions[0].kind,
-        ProductDefinitionKind::Group
-    );
 
-    let mut type_counts = BTreeMap::new();
-    let mut placement_refs = BTreeSet::new();
-    let mut external_filenames = BTreeSet::new();
-    let mut fhs_positions = Vec::new();
-    for occurrence in &children {
-        let PrototypeReference::External { document, object } = &occurrence.prototype else {
-            panic!("MTC component references are external");
-        };
-        assert!(object.is_none());
-        let name = occurrence
-            .name
-            .as_deref()
-            .expect("FastLoad prototype name is retained as the occurrence name");
-        *type_counts.entry(name).or_insert(0) += 1;
-        let ExternalDocument::Path { path } = document else {
-            panic!("MTC external filename uniquely matches each FastLoad prototype");
-        };
-        assert!(!path.as_str().contains('/'));
-        assert!(!path.as_str().contains('\\'));
-        assert!(path.as_str().eq_ignore_ascii_case(&format!("{name}.prt")));
-        external_filenames.insert(path.as_str());
-
-        let native_ref = occurrence.native_ref.as_deref().unwrap();
-        assert!(native_ref.starts_with("nx:assembly:placement#"));
-        assert!(placement_refs.insert(native_ref));
-        if name == "91304A112 FHSCS" {
-            let rows = occurrence.transform.affine_rows();
-            assert!(rows[0][2].abs() < EPS_NX_PLACEMENT_ROTATION);
-            assert!(rows[1][2].abs() < EPS_NX_PLACEMENT_ROTATION);
-            assert!((rows[2][2] - 1.0).abs() < EPS_NX_PLACEMENT_ROTATION);
-            fhs_positions.push([rows[0][3], rows[1][3], rows[2][3]]);
-        }
-    }
-    assert_eq!(type_counts, BTreeMap::from(STEP_MTC_TYPE_COUNTS));
-    assert_eq!(placement_refs.len(), 36);
-    assert_eq!(external_filenames.len(), 8);
-
-    let mut fhs_distances = Vec::new();
-    for left in 0..fhs_positions.len() {
-        for right in left + 1..fhs_positions.len() {
-            let squared_distance = (0..3)
-                .map(|axis| (fhs_positions[left][axis] - fhs_positions[right][axis]).powi(2))
-                .sum::<f64>();
-            fhs_distances.push(squared_distance.sqrt());
-        }
-    }
-    fhs_distances.sort_by(f64::total_cmp);
-    assert_eq!(fhs_distances.len(), STEP_FHSCS_INSTANCE_DISTANCES_MM.len());
-    for (actual, expected) in fhs_distances.iter().zip(STEP_FHSCS_INSTANCE_DISTANCES_MM) {
-        assert!((actual - expected).abs() < EPS_STEP_INSTANCE_DISTANCE_MM);
-    }
-
-    let losses = &result.report().losses;
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyPlacementUnitsAssumed.kind()));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyHierarchyAssumed.kind()));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyExternalFilenameAssumed.kind()));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyUuidPrototypeAssumed.kind()));
-    assert!(!losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyExternalDocumentUnresolved.kind()));
-    assert!(!losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyPrototypeCountAssumed.kind()));
-    assert!(!losses
-        .iter()
-        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+    assert!(result.ir().model.occurrences.is_empty());
+    assert!(result.ir().model.product_definitions.is_empty());
+    let namespace = result.ir().native.namespace("nx").unwrap();
+    let placements: Vec<Value> = namespace.arena_as("assembly_placements").unwrap();
+    let uses: Vec<Value> = namespace
+        .arena_as("fast_load_component_occurrences")
+        .unwrap();
+    assert_eq!(placements.len(), 36);
+    assert_eq!(uses.len(), 36);
+    assert!(placements.iter().all(|placement| placement["raw_frame"]
+        .as_str()
+        .is_some_and(|frame| !frame.is_empty())));
+    assert_frame_loss(&result, 36, 36);
 }

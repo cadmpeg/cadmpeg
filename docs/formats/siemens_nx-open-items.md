@@ -865,11 +865,11 @@ member as a neutral suppression or visibility state.
 
 ### AM-05. Assembly occurrence placement
 
-**Question.** Which serialized relation binds each placement frame to one child occurrence, and which field defines its translation unit?
+**Question.** Which native relations bind each placement frame to its component occurrence and assembly frame, and which field defines its translation unit?
 
-**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "An assembly placement frame at the start" joins a frame to its bounded object record. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder transfers each placement as an occurrence. It associates a placement with a prototype when its UUID group has one prototype and reports `assembly.uuid-prototype-assumed`. It reports unresolved prototype joins and uses without placements as `assembly.occurrences-unresolved`.
+**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "An assembly placement frame at the start" joins a frame to its bounded object record. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder retains placement frames and FastLoad uses in the NX native namespace. It reports `assembly.placement-frame-unresolved` while their component association, assembly frame, or translation unit remains unresolved. FastLoad uses without placement frames are reported as `assembly.occurrences-unresolved`.
 
-**Need.** Identify the child occurrence and how the placement translations obtain their unit. Compare inch and metric models against independently matching geometry.
+**Need.** Identify generic serialized relations for component ownership and parent placement, and the selector for translation units. Validate the resulting pose reading against independently matching geometry.
 
 **Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The five-byte trailer has no established instance or unit role. The first trailer byte descends from `0x3f` to `0x1c` in placement-record order. The third trailer byte is constant within each UUID group.
 
@@ -889,14 +889,25 @@ root mean square distance error at scales 25.4 and 1/25.4 is approximately
 The serialized unit selector remains unresolved.
 At rotation tolerance `1e-4` and translation tolerance 0.01 mm, one of the
 36 decoded NX placement matrices matches a decoded STEP occurrence matrix.
+At looser tolerances of 0.1 rad and 1 mm, the direct, transposed, full-inverse,
+and inverse-then-transposed matrix variants each match the Box and 0 of 32
+fastener poses. The tested left/right and inverse compositions of the NX and
+STEP Cover frames match at most 3 of 4 `91304A112` poses and 0 of the other 28
+fastener poses. In a representative composition, the first three matches
+differ by 0.0408 to 0.0934 rad and about 0.0501 mm; the fourth differs by
+0.10067 rad and about 0.0500 mm. The fourth pose exceeds the rotation
+tolerance.
 After one translation per prototype, the 26 non-nut placement positions match
 the STEP viewer positions within 0.003 mm. Four of the prototypes are
 singletons. The same test matches three of the ten nut positions. The two
 representations can use different frames.
 For all 36 STEP uses, the relationship endpoints are child then assembly,
 while the transformation items name an assembly-owned frame then the
-child-owned frame. The decoded STEP nut rotations have nine distinct values;
-the NX nut rotations have two.
+child-owned frame. All 36 NX placement owners have zero recognized
+`RecordOrdinal16` parent edges under the bounded same-section ordinal parser;
+unrecognized reference encodings remain possible. The STEP uses place all 36
+components under the assembly root, with Box and Cover as siblings. The decoded
+STEP nut rotations have nine distinct values; the NX nut rotations have two.
 Five FastLoad occurrences of that screw type carry marker `0x31`. The STEP
 assembly includes all 14 occurrences of that type. Treating `0x31` as a
 suppression marker would exclude five occurrences present in the STEP model.
