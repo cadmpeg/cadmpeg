@@ -570,6 +570,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )?;
     design.design_dimension_presentation_frames =
         crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &prereqs.design_entity_headers,
         )?;

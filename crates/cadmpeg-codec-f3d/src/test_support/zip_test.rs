@@ -953,7 +953,12 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
 ) -> Vec<u8> {
     let act = crate::test_support::act_stream_test::generated_single_entity_act_bulkstream();
     f3d_with_smbh_and_instance_properties_and_design_with_act(
-        smbh, properties, design_bulk, design_metastream, extra_entries, &act,
+        smbh,
+        properties,
+        design_bulk,
+        design_metastream,
+        extra_entries,
+        &act,
     )
 }
 
@@ -1284,41 +1289,77 @@ pub(crate) fn f3d_with_generated_sketch_presentation(
     primary: &'static str,
     paired: &'static str,
 ) -> Vec<u8> {
+    sketch_presentation_archive(primary, paired, false)
+}
+
+pub(crate) fn f3d_with_damaged_sketch_presentation_sibling(
+    primary: &'static str,
+    paired: &'static str,
+) -> Vec<u8> {
+    sketch_presentation_archive(primary, paired, true)
+}
+
+fn sketch_presentation_archive(
+    primary: &'static str,
+    paired: &'static str,
+    damaged_sibling: bool,
+) -> Vec<u8> {
     let (mut bulk, mut records) = generated_design_sketch_dimension_bulkstream();
-    let mut frame = Vec::new();
-    crate::test_support::indexed_header(&mut frame, *b"281", 1304);
-    frame.extend_from_slice(&[0; 8]);
-    frame.push(1);
-    frame.extend_from_slice(&2u32.to_le_bytes());
-    for (index, role) in [(1300u32, 0u32), (1302, 1)] {
-        crate::test_support::push_marked_reference(&mut frame, index);
-        frame.extend_from_slice(&role.to_le_bytes());
+    let mut inserted = Vec::new();
+    let mut inserted_offsets = Vec::new();
+    let entities: &[u64] = if damaged_sibling {
+        &[1305, 1304]
+    } else {
+        &[1304]
+    };
+    for &entity in entities {
+        let start = inserted.len();
+        let mut frame = Vec::new();
+        crate::test_support::indexed_header(&mut frame, *b"281", u32::try_from(entity).unwrap());
+        frame.extend_from_slice(&[0; 8]);
+        frame.push(1);
+        frame.extend_from_slice(&(if entity == 1305 { 0u32 } else { 2 }).to_le_bytes());
+        for (index, role) in [(1300u32, 0u32), (1302, 1)] {
+            crate::test_support::push_marked_reference(&mut frame, index);
+            frame.extend_from_slice(&role.to_le_bytes());
+        }
+        frame.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+        let pair = frame.len();
+        crate::test_support::indexed_header(&mut frame, *b"282", u32::try_from(entity).unwrap());
+        frame.extend_from_slice(&[0; 8]);
+        crate::test_support::push_marked_reference(&mut frame, 277);
+        frame.resize(pair + 59, 0);
+        inserted_offsets.push((entity, start));
+        inserted.extend_from_slice(&frame);
     }
-    frame.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
-    let pair = frame.len();
-    crate::test_support::indexed_header(&mut frame, *b"282", 1304);
-    frame.extend_from_slice(&[0; 8]);
-    crate::test_support::push_marked_reference(&mut frame, 277);
-    frame.resize(pair + 59, 0);
     let insertion = records.iter().find(|(id, _)| *id == 1203).unwrap().1;
     let insertion_at = usize::try_from(insertion).unwrap();
-    let frame_len = u64::try_from(frame.len()).unwrap();
+    let frame_len = u64::try_from(inserted.len()).unwrap();
     for (_, offset) in &mut records {
         if *offset >= insertion {
             *offset += frame_len;
         }
     }
-    bulk.splice(insertion_at..insertion_at, frame);
-    records.push((1304, insertion));
+    bulk.splice(insertion_at..insertion_at, inserted);
+    records.extend(
+        inserted_offsets
+            .into_iter()
+            .map(|(entity, offset)| (entity, insertion + u64::try_from(offset).unwrap())),
+    );
     records.sort_by_key(|(_, offset)| *offset);
     let meta = sketch_dimension_metastream(
         &records,
         &[
-            (primary, "", 3, "Fusion", &[1304]),
+            (primary, "", 3, "Fusion", entities),
             (paired, "", 1, "Dimension", &[]),
         ],
     );
-    let meta = fixture_secondary_index(meta, &bulk, &[584, 1100, 1304, 1400, 1600]);
+    let secondary: &[u64] = if damaged_sibling {
+        &[584, 1100, 1304, 1305, 1400, 1600]
+    } else {
+        &[584, 1100, 1304, 1400, 1600]
+    };
+    let meta = fixture_secondary_index(meta, &bulk, secondary);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],

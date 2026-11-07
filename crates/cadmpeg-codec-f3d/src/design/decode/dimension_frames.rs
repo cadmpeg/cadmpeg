@@ -1685,9 +1685,12 @@ fn is_dimension_presentation_type(type_guid: &str) -> bool {
 /// owner. The type table selects the primary and paired classes; no numeric
 /// class tag is treated as a cross-stream type identity.
 pub(crate) fn decode_dimension_presentation_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let &DimensionDecodeInputs {
         scan,
         placements,
@@ -1733,9 +1736,6 @@ pub(crate) fn decode_dimension_presentation_frames(
                 paired_classes.insert(u64::from(*class_tag));
             }
         }
-        if paired_classes.is_empty() {
-            continue;
-        }
         let geometry_indices = dimension_geometry_indices(&stream, points, curves);
         let mut sketch_entities = HashSet::new();
         for entity in entities.iter().filter(|entity| {
@@ -1747,31 +1747,72 @@ pub(crate) fn decode_dimension_presentation_frames(
 
             sketch_entities.insert(index);
         }
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan.entry_view(&entry.name).ok_or_else(|| {
+            CodecError::malformed("dimension presentation source View is missing")
+        })?;
+        let bytes = source.window();
         let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
         for indexed in super::meta::design_primary_frames(bytes, &meta)? {
-            if indexed.member_end == indexed.end {
-                continue;
-            }
             let start = indexed.start;
             let Some(primary_type_guid) = presentation_classes.get(&indexed.class_tag.code())
             else {
                 continue;
             };
-            let Some(parsed) = parse_dimension_presentation_frame(
-                &bytes[..indexed.end],
-                start,
-                indexed.member_end,
-                primary_type_guid,
-                &geometry_indices,
-                &sketch_entities,
-                &paired_classes,
-            ) else {
+            let extent = source
+                .child(
+                    source.start().checked_add(start).ok_or_else(|| {
+                        CodecError::malformed("dimension presentation start overflows")
+                    })?,
+                    source.start().checked_add(indexed.end).ok_or_else(|| {
+                        CodecError::malformed("dimension presentation end overflows")
+                    })?,
+                )
+                .ok_or_else(|| {
+                    CodecError::malformed("dimension presentation extent exceeds its stream")
+                })?;
+            let record_id = cadmpeg_ir::ids::Identity::new(design_record_id(
+                &entry.name,
+                ":design-dimension-presentation-frame#",
+                u64_from_index(start),
+            ))
+            .map_err(CodecError::malformed)?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design])
+                .record_id(record_id);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let Some(mut frame) = ctx.decode_part(parts, extent, spec, |_| {
+                parse_dimension_presentation_payload(
+                    &bytes[..indexed.end],
+                    start,
+                    indexed.member_end,
+                    primary_type_guid,
+                    &paired_classes,
+                )
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "dimension presentation entity {} has an invalid frame",
+                        indexed.entity_id
+                    ))
+                })
+            })?
+            else {
                 continue;
             };
-            let mut frame = parsed;
+            if !sketch_entities.contains(&frame.owner_reference)
+                || frame
+                    .operands
+                    .iter()
+                    .any(|operand| !geometry_indices.contains(&operand.geometry_record_index.get()))
+            {
+                continue;
+            }
             let Some(frame_offset) = frame.byte_offset else {
                 continue;
             };
@@ -1816,6 +1857,7 @@ pub(crate) fn decode_dimension_presentation_frames(
     Ok(out)
 }
 
+#[cfg(test)]
 fn parse_dimension_presentation_frame(
     bytes: &[u8],
     start: usize,
@@ -1823,6 +1865,28 @@ fn parse_dimension_presentation_frame(
     primary_type_guid: &str,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
+    paired_classes: &HashSet<u64>,
+) -> Option<DesignDimensionPresentationFrame> {
+    let frame = parse_dimension_presentation_payload(
+        bytes,
+        start,
+        paired_byte_offset,
+        primary_type_guid,
+        paired_classes,
+    )?;
+    (sketch_entities.contains(&frame.owner_reference)
+        && frame
+            .operands
+            .iter()
+            .all(|operand| geometry_indices.contains(&operand.geometry_record_index.get())))
+    .then_some(frame)
+}
+
+fn parse_dimension_presentation_payload(
+    bytes: &[u8],
+    start: usize,
+    paired_byte_offset: usize,
+    primary_type_guid: &str,
     paired_classes: &HashSet<u64>,
 ) -> Option<DesignDimensionPresentationFrame> {
     if !is_dimension_presentation_type(primary_type_guid) {
@@ -1851,9 +1915,6 @@ fn parse_dimension_presentation_frame(
         }
         let geometry_record_index =
             std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?)?;
-        if !geometry_indices.contains(&geometry_record_index.get()) {
-            return None;
-        }
         operands.push(DesignDimensionPresentationOperand {
             geometry_record_index,
             geometry_reference_offset: Some(u64::try_from(position + 1).ok()?),
@@ -1880,9 +1941,6 @@ fn parse_dimension_presentation_frame(
         return None;
     }
     let owner_reference = View::u32_le_at(bytes, paired_byte_offset + 20)?;
-    if !sketch_entities.contains(&owner_reference) {
-        return None;
-    }
     let presentation_bytes = bytes
         .get(presentation_byte_offset..paired_byte_offset)?
         .to_vec();
