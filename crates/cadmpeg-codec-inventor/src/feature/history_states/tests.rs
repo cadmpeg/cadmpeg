@@ -318,7 +318,7 @@ fn read(bytes: &[u8], width: RefWidth, limit: usize) -> Reading {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("context");
-    read_states_within(&ctx, bytes, width, limit).expect("read")
+    read_states_within(&ctx, bytes, width, 44, limit).expect("read")
 }
 
 #[test]
@@ -339,6 +339,8 @@ fn the_state_index_gives_the_oldest_state_of_each_source_in_both_reference_width
         assert_eq!(index.first.get(&5), Some(&1));
         assert_eq!(index.first.get(&6), Some(&2));
         assert_eq!(index.first.len(), 2);
+        // The fixture reads as a schema-44 carrier, and the tag of source 5 stores 38.
+        assert_eq!(index.schema_mismatch, BTreeSet::from([5]));
     }
 }
 
@@ -405,6 +407,7 @@ fn index() -> StateIndex {
             },
         ],
         first: HashMap::from([(5, 1), (6, 2), (8, 0)]),
+        schema_mismatch: BTreeSet::new(),
     }
 }
 
@@ -731,6 +734,38 @@ fn a_validated_arena_refuses_a_forged_record() {
     assert_eq!(selected(&no_state).len(), 1);
 }
 
+/// The source indices of a naming tag, without its stored schema.
+fn naming_sources(record: &Record) -> Option<Vec<u32>> {
+    naming_tag(record).map(|(_, sources)| sources)
+}
+
+#[test]
+fn a_binding_through_a_tag_of_another_schema_states_the_assumption() {
+    // A tag keeps its stored schema, which classify reports with its sources.
+    let tag = tagged(
+        "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib",
+        &[
+            Token::Long(99),
+            Token::Long(1),
+            Token::Long(7),
+            Token::Long(-1),
+        ],
+    );
+    assert_eq!(naming_tag(&tag), Some((99, vec![7])));
+    assert_eq!(classify(&tag), Some(Class::Naming(99, vec![7])));
+    let notes = losses(&Projection {
+        records: Vec::new(),
+        unread: None,
+        schema_assumed: 2,
+    });
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        notes[0].code.local_code(),
+        "source.kernel-history-tag-schema-assumed"
+    );
+    assert!(notes[0].message.starts_with("2 feature(s)"));
+}
+
 #[test]
 fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     let mut record = blank(1);
@@ -742,12 +777,14 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     let notes = losses(&Projection {
         records: vec![record, plain],
         unread: None,
+        schema_assumed: 0,
     });
     assert_eq!(notes.len(), 1);
     assert_eq!(notes[0].code.local_code(), "feature.history-state-unbound");
     let unread = losses(&Projection {
         records: Vec::new(),
         unread: Some(Unread::Unclosed),
+        schema_assumed: 0,
     });
     assert_eq!(
         unread[0].code.local_code(),
@@ -756,6 +793,7 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     let bounded = losses(&Projection {
         records: Vec::new(),
         unread: Some(Unread::Bounded),
+        schema_assumed: 0,
     });
     assert_eq!(
         bounded[0].code.local_code(),
@@ -763,7 +801,8 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     );
     assert!(losses(&Projection {
         records: Vec::new(),
-        unread: None
+        unread: None,
+        schema_assumed: 0,
     })
     .is_empty());
 }

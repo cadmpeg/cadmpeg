@@ -254,6 +254,8 @@ pub(crate) enum InventorLossCode {
     KernelHistoryUnclosed,
     /// The kernel carrier's `delta_state` chain passed the local scan cap.
     KernelHistoryBounded,
+    /// A feature binds through a naming tag whose stored schema differs from the carrier schema.
+    KernelHistoryTagSchemaAssumed,
     /// Split and Base features have no bound history state.
     FeatureHistoryStateUnbound,
     /// Drawing records retain unresolved semantics natively.
@@ -375,6 +377,7 @@ impl InventorLossCode {
         Self::ContainerNoncanonical,
         Self::KernelHistoryUnclosed,
         Self::KernelHistoryBounded,
+        Self::KernelHistoryTagSchemaAssumed,
         Self::FeatureHistoryStateUnbound,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
@@ -509,6 +512,7 @@ impl InventorLossCode {
             Self::ContainerNoncanonical => "container.noncanonical",
             Self::KernelHistoryUnclosed => "source.kernel-history-unclosed",
             Self::KernelHistoryBounded => "source.kernel-history-bounded",
+            Self::KernelHistoryTagSchemaAssumed => "source.kernel-history-tag-schema-assumed",
             Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
@@ -617,6 +621,7 @@ impl InventorLossCode {
             | Self::FeatureCoilOperandsNative
             | Self::FeatureTaggingNative
             | Self::KernelHistoryBounded
+            | Self::KernelHistoryTagSchemaAssumed
             | Self::FeatureHistoryStateUnbound
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
@@ -790,6 +795,7 @@ mod tests {
                 "container.noncanonical",
                 "source.kernel-history-unclosed",
                 "source.kernel-history-bounded",
+                "source.kernel-history-tag-schema-assumed",
                 "feature.history-state-unbound",
                 "drawing.native-only",
                 "drawing.record-malformed",

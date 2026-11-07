@@ -318,7 +318,7 @@ Record 3571 references record 4645, which contains the formatted text `34.8 - 35
 
 **Question.** Which records date a Split or Base feature whose source index no naming tag lists, or whose body key does not change between `state_before` and `state_after`?
 
-**Known.** Section 13.10 defines `state_after` as the oldest state in which a live naming tag lists the feature's source index, and `state_before` as the next older state. Split and Base features need a body key that leaves or appears between those states. A feature without a tag, a feature whose tag appears in the oldest state, and a feature whose key does not change stay unbound. Sketches, work planes, and other features without generated names have no naming tag.
+**Known.** Section 13.10 defines `state_after` as the oldest state in which a live naming tag lists the feature's source index, and `state_before` as the next older state. Split and Base features need a body key that leaves or appears between those states. A feature without a tag, a feature whose tag appears in the oldest state, and a feature whose key does not change stay unbound. Sketches, work planes, and other features without generated names have no naming tag. A naming tag whose stored `schema` differs from the carrier schema still lists its source indices, and a feature bound through it reports `source.kernel-history-tag-schema-assumed`.
 
 **Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag.
 

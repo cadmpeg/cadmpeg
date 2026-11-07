@@ -68,6 +68,9 @@ pub(crate) struct StateIndex {
     /// Oldest-first ordinal of the oldest state whose live naming attributes
     /// list the source index.
     pub(crate) first: HashMap<u32, u32>,
+    /// Source indices that a live naming attribute lists with a stored schema
+    /// other than the carrier schema.
+    pub(crate) schema_mismatch: BTreeSet<u32>,
 }
 
 /// Why a state index could not be read.
@@ -96,8 +99,8 @@ pub(crate) enum Reading {
 enum Class {
     /// A body record with its key.
     Body(i64),
-    /// A naming attribute with the source indices it lists.
-    Naming(Vec<u32>),
+    /// A naming attribute with its stored schema and the source indices it lists.
+    Naming(i64, Vec<u32>),
 }
 
 /// The integer at payload position `index`.
@@ -125,9 +128,9 @@ fn pairs(record: &Record, count_at: usize) -> Option<Vec<u32>> {
     Some(sources)
 }
 
-/// Source indices that a naming attribute lists, or `None` when the record is
-/// not a naming tag of a recognized form.
-pub(crate) fn naming_sources(record: &Record) -> Option<Vec<u32>> {
+/// The stored schema and the source indices of a naming attribute, or `None`
+/// when the record is not a naming tag of a recognized form.
+pub(crate) fn naming_tag(record: &Record) -> Option<(i64, Vec<u32>)> {
     if record.name == "ATTRIB_CUSTOM-attrib" {
         let Some(Token::Str(family)) = record.chunk(5) else {
             return None;
@@ -142,11 +145,10 @@ pub(crate) fn naming_sources(record: &Record) -> Option<Vec<u32>> {
         {
             return None;
         }
-        return pairs(record, 8);
+        return Some((44, pairs(record, 8)?));
     }
     if record.name.starts_with("NMx_") && record.name.ends_with(NAMING_TAG_SUFFIX) {
-        long(record, 5)?;
-        return pairs(record, 6);
+        return Some((long(record, 5)?, pairs(record, 6)?));
     }
     None
 }
@@ -156,7 +158,7 @@ fn classify(record: &Record) -> Option<Class> {
     if record.head() == "body" {
         return Some(Class::Body(long(record, 1).filter(|key| *key >= 0)?));
     }
-    naming_sources(record).map(Class::Naming)
+    naming_tag(record).map(|(schema, sources)| Class::Naming(schema, sources))
 }
 
 /// Read the state index of the history that follows the solved records of a
@@ -167,8 +169,9 @@ pub(crate) fn read_states(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     width: RefWidth,
+    schema: u32,
 ) -> Result<Reading, CodecError> {
-    read_states_within(ctx, bytes, width, MAX_STATE_SCAN_WORK)
+    read_states_within(ctx, bytes, width, schema, MAX_STATE_SCAN_WORK)
 }
 
 /// [`read_states`] with a work cap of `limit` live records inspected.
@@ -176,6 +179,7 @@ fn read_states_within(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     width: RefWidth,
+    schema: u32,
     limit: usize,
 ) -> Result<Reading, CodecError> {
     let chain = match frame_history_chain(ctx, bytes, width)? {
@@ -222,6 +226,7 @@ fn read_states_within(
     let work = WorkBudget::new(limit);
     let mut scanned = Vec::<IndexedState>::new();
     let mut latest = HashMap::<u32, usize>::new();
+    let mut schema_mismatch = BTreeSet::new();
     let mut bounded = false;
     let closed = walk_entity_versions(&views, active_count, &archived_ids, |ordinal, versions| {
         if bounded {
@@ -236,9 +241,12 @@ fn read_states_within(
         for revision in versions.values() {
             match classes.get(revision) {
                 Some(Class::Body(key)) => body_keys.push(*key),
-                Some(Class::Naming(sources)) => {
+                Some(Class::Naming(stored, sources)) => {
                     for &source in sources {
                         latest.insert(source, visit);
+                        if *stored != i64::from(schema) {
+                            schema_mismatch.insert(source);
+                        }
                     }
                 }
                 None => {}
@@ -268,6 +276,7 @@ fn read_states_within(
     Ok(Reading::Read(StateIndex {
         states: scanned,
         first,
+        schema_mismatch,
     }))
 }
 
@@ -542,6 +551,9 @@ pub(crate) struct Projection {
     pub(crate) records: Vec<FeatureHistoryState>,
     /// Unread reading, if any.
     pub(crate) unread: Option<Unread>,
+    /// Bound features whose source index a naming tag lists with a stored
+    /// schema other than the carrier schema.
+    pub(crate) schema_assumed: usize,
 }
 
 /// Read the history of the active carrier and join the features to it.
@@ -553,6 +565,7 @@ pub(crate) fn project(
     let none = Projection {
         records: Vec::new(),
         unread: None,
+        schema_assumed: 0,
     };
     if carrier.family != crate::kernel::KernelFamily::Asm {
         return Ok(none);
@@ -560,11 +573,12 @@ pub(crate) fn project(
     let Ok(header) = carrier.header.as_ref() else {
         return Ok(none);
     };
-    match read_states(ctx, carrier.bytes.window(), header.width)? {
+    match read_states(ctx, carrier.bytes.window(), header.width, carrier.schema)? {
         Reading::Absent => Ok(none),
         Reading::Unread(reason) => Ok(Projection {
             records: Vec::new(),
             unread: Some(reason),
+            schema_assumed: 0,
         }),
         Reading::Read(index) => {
             let records = join(&index, inputs);
@@ -572,9 +586,24 @@ pub(crate) fn project(
                 cadmpeg_core::decode::u64_from_index(records.len()),
                 "join Inventor features to history states",
             )?;
+            let sources = inputs
+                .features
+                .iter()
+                .map(|feature| (feature.id(), feature.header.source_index))
+                .collect::<HashMap<_, _>>();
+            let schema_assumed = records
+                .iter()
+                .filter(|record| {
+                    matches!(record.binding, Binding::Bound)
+                        && sources
+                            .get(&record.feature)
+                            .is_some_and(|source| index.schema_mismatch.contains(source))
+                })
+                .count();
             Ok(Projection {
                 records,
                 unread: None,
+                schema_assumed,
             })
         }
     }
@@ -593,6 +622,12 @@ pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
             "The kernel carrier's delta_state chain passed the local scan cap; features have no history states.",
         )),
         None => {}
+    }
+    if projection.schema_assumed > 0 {
+        notes.push(InventorLossCode::KernelHistoryTagSchemaAssumed.note(format!(
+            "{} feature(s) bind through a naming tag whose stored schema differs from the carrier schema; the binding assumes that the tag still names the feature.",
+            projection.schema_assumed
+        )));
     }
     let mut counts = [0_usize; 4];
     for record in &projection.records {
