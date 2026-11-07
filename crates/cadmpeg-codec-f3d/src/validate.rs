@@ -5422,7 +5422,6 @@ fn is_path_seed_group(
                 .iter()
                 .map(|record| record.value))
         && group.frame.trailing_records().len() == 1
-        && !group.frame.variant
 }
 
 /// Validate path-feature operand roles against the scope construction.

@@ -717,13 +717,13 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** The two bytes can be a grounding or visibility state of the occurrence.
 
-### DR-84. Occurrence identity pairs of a typed path
+### DR-84. Occurrence identity lists of a typed path
 
-**Question.** What do the occurrence identity pairs after a typed occurrence path's identity GUIDs name?
+**Question.** What do the occurrence identity lists after a typed occurrence path's identity GUIDs name?
 
-**Known.** `f3d.md` "Assembly operands" gives the pair list. In one assembly, the paths of four of its six joints carry the same single pair: a decimal occurrence key and an occurrence GUID that name two different local occurrences. The paths of the other two joints, and a path continuation, carry no pairs. The pair is not the joint's own operand pair.
+**Known.** `f3d.md` "Assembly operands" gives the lists. In one assembly, the paths of four of its six joints carry the same single list of two keys: a decimal occurrence key and an occurrence GUID that name two different local occurrences. The paths of the other two joints, and a path continuation, carry no lists. That list is not the joint's own operand pair. In another assembly, lists hold three or four occurrence GUIDs, and the leading keys of a list can equal the leading occurrence GUIDs of the path that stores it.
 
-**Need.** A writer must know when to emit a pair and which occurrences it names.
+**Need.** A writer must know when to emit a list and which occurrences it names.
 
 ### XR-01. `neutronData` with a different GUID
 
@@ -1662,15 +1662,15 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-311. Extension method of a SurfaceExtend scope
 
-**Question.** Which field of a `SurfaceExtend` scope stores the extension method: natural, tangent, or perpendicular?
+**Question.** Which field of a `SurfaceExtend` scope stores the extension method, and which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?
 
-**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. The candidate fields are the boolean of a compact flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope.
+**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. The candidate fields are the boolean of a compact flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`.
 
-**Need.** Three saves that extend the same edge by the same distance, one with each extension method, compared byte for byte.
+**Need.** Three saves that extend the same edge by the same distance, one with each extension method, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation.
 
 **Conflict.** None.
 
-**Note.** The decoder projects each `SurfaceExtend` scope with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`.
+**Note.** The decoder projects each `SurfaceExtend` scope with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. It retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
 
 ### DR-312. Negative SurfaceExtend distance
 
@@ -1684,14 +1684,14 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder keeps the signed distance in the native operation, keeps the scope native, and reports `feature.surface-extend-distance-nonpositive`.
 
-### DR-323. Surface boundary carrier trailing reference
+### DR-323. Suppression columns that name no feature
 
-**Question.** Which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?
+**Question.** Which feature does a suppression column of a configuration table name when its target resolves to no neutral feature?
 
-**Known.** The carrier stores one marked trailing reference. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`.
+**Known.** `f3d.md` §3.1 gives the table's rows and columns. A feature suppressed in the current model with no resolved column gets a suppressed state in the active configuration. When the active row also has a suppression column with no resolved feature, that column could name the same feature with another state. The decoder keeps the inferred state and reports `configuration.suppression-inferred`.
 
-**Need.** Controlled saves and record comparisons that establish the target record forms and their effect on the operation.
+**Need.** Saves of one design with a suppression column on a feature kind that has no neutral feature, in each active row, with the column target and the feature state recorded.
 
 **Conflict.** None.
 
-**Note.** The decoder retains the boundary operation and reports `feature.surface-boundary-flag-record-assumed` when the reference does not name a compact flag record.
+**Note.** None.

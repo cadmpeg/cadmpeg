@@ -156,7 +156,7 @@ fn surface_boundary_flag_loss(
     if !matches {
         losses.push(
             crate::loss::F3dLossCode::FeatureSurfaceBoundaryFlagRecordAssumed.note(format!(
-                "{} retains boundary reference {} without a matching compact flag record (DR-323).",
+                "{} retains boundary reference {} without a matching compact flag record (DR-311).",
                 scope.id, reference
             )),
         );

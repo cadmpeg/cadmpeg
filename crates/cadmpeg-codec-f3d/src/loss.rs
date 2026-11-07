@@ -56,6 +56,8 @@ pub(crate) enum F3dLossCode {
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     ConstructionClosingFlagAssumed,
+    /// A Chamfer's non-face group is read as its edge group despite its role.
+    ChamferEdgeRoleAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -64,6 +66,9 @@ pub(crate) enum F3dLossCode {
     ConfigurationParameterOverrideUnbound,
     /// Design configuration feature states have no feature identity.
     ConfigurationFeatureSuppressionUnbound,
+    /// An active configuration's suppressed state is inferred while a
+    /// suppression column of its row names no feature.
+    ConfigurationSuppressionInferred,
     /// Design configuration root records name no active row of a unique table document.
     ConfigurationActiveRowUnbound,
     /// ACT component links have no resolved neutral product role.
@@ -587,10 +592,12 @@ impl F3dLossCode {
         Self::CylinderPlacementUnbound,
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
+        Self::ChamferEdgeRoleAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
+        Self::ConfigurationSuppressionInferred,
         Self::ConfigurationActiveRowUnbound,
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
@@ -844,6 +851,7 @@ impl F3dLossCode {
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
+            Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -852,6 +860,7 @@ impl F3dLossCode {
             Self::ConfigurationFeatureSuppressionUnbound => {
                 "configuration.feature-suppression-unbound"
             }
+            Self::ConfigurationSuppressionInferred => "configuration.suppression-inferred",
             Self::ConfigurationActiveRowUnbound => "configuration.active-row-unbound",
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
@@ -1187,10 +1196,12 @@ impl F3dLossCode {
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
+            | Self::ChamferEdgeRoleAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ConfigurationSuppressionInferred
             | Self::ConfigurationActiveRowUnbound
             | Self::ActComponentLinkUnresolved
             | Self::ComponentBodyOwnerUnresolved
@@ -1414,6 +1425,7 @@ impl F3dLossCode {
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
+            | Self::ChamferEdgeRoleAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
@@ -1421,6 +1433,7 @@ impl F3dLossCode {
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ConfigurationSuppressionInferred
             | Self::ConfigurationActiveRowUnbound
             | Self::DrawingDocumentOmitted
             | Self::XrefPlacementMetadataNative
@@ -1716,10 +1729,12 @@ mod tests {
                 "feature.cylinder-placement-unbound",
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
+                "feature.chamfer-edge-role-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
+                "configuration.suppression-inferred",
                 "configuration.active-row-unbound",
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
