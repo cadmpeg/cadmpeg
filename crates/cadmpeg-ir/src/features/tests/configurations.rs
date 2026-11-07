@@ -209,6 +209,29 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].active = false;
     ir.model.features[0].suppressed = Some(false);
 
+    ir.model.configurations[0].active = true;
+    ir.model.features[0].suppressed = None;
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        first_feature.clone(),
+        ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Suppressed {},
+            dependencies: DistinctMembers::default(),
+            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            }),
+        },
+    )]);
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == "active configuration suppression disagrees with current feature state"
+    }));
+    ir.model.configurations[0].active = false;
+    ir.model.features[0].suppressed = Some(false);
+    ir.model.configurations[0].feature_states.clear();
+
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         later_feature.clone(),
         ConfigurationFeatureState {

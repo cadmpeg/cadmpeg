@@ -2059,16 +2059,17 @@ Offsets are relative to the class-329 primary indexed scope header. The variable
 
 Spec §3.1 · layout: byte offsets · size: 58 B
 
-Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length.
+Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
-| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20, the zero-based operation |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 and the property-block presence byte |
+| 20 | 1 | `property_presence` | `u8` | little | spec | the property-block presence byte at offset 20 |
 | 21 | 4 | `operation` | `u32` | little | spec | the zero-based operation u32 at offset 21 |
-| 25 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 25 through 28 |
+| 25 | 4 | `companion_count` | `u32` | little | spec | the companion count u32 at offset 25 |
 | 29 | 1 | `keep_tools` | `u8` | little | spec | the keep-tools Boolean at offset 29 |
-| 30 | 1 | `zero_flag` | `u8` | little | spec | zero at byte 30 |
+| 30 | 1 | `new_component` | `u8` | little | spec | the new-component Boolean at offset 30 |
 | 31 | 4 | `constant_one` | `u32` | little | spec | u32 one at offset 31, a marked nonzero |
 | 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
 | 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
@@ -6673,7 +6674,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 76 B
 
-Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72.
+Offsets are relative to the identity record indexed header; the counted region groups begin at offset 72.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -6682,7 +6683,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 | 21 | 51 | `selection_reference` | `bytes[51]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
-| 72 | 4 | `first_region_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+| 72 | 4 | `region_group_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 
 Unstated regions:
 
@@ -7269,8 +7270,8 @@ The reference starts at offset 36 relative to the Geometry-member indexed header
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `marker` | `u8` | little | spec | byte 36 is `01` · value `1` |
-| 1 | 8 | `target` | `u64` | little | spec | its u64 target at member offset 37 names the ordinal collection |
-| 9 | 2 | `flags` | `bytes[2]` | little | spec | When it is `01`, its u64 target at member offset 37 names the ordinal collection. |
+| 1 | 8 | `target` | `u64` | little | spec | its u64 target at member offset 37 names the direct container of the sketch |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | When it is `01`, its u64 target at member offset 37 names the direct container of the sketch |
 
 ## `sketch_ordinal_collection_prefix`
 
@@ -7284,6 +7285,22 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` |
 | 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` |
+
+## `sketch_folder_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 32 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes. |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes. |
+| 20 | 1 | `marker` | `u8` | little | spec | Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes. |
+| 21 | 5 | `zero_run_2` | `bytes[5]` | little | spec | Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes. |
+| 26 | 1 | `flag` | `u8` | little | spec | Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes. |
+| 27 | 5 | `zero_run_3` | `bytes[5]` | little | spec | Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes. |
 
 ## `assembly_as_built_scope_378`
 
@@ -9052,6 +9069,60 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `path_pattern_settings`
+
+Spec §Assembly operands · layout: byte offsets · size: 267 B
+
+Offsets are relative to the record's indexed header; the next indexed header follows at offset 267.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 24 | `seed_reference_point` | `f64[3]` | little | spec | the seed reference point as three f64 model coordinates in centimetres at offset 55 |
+| 79 | 1 | `settings_marker` | `u8` | little | spec | u8 `1` at offset 79 · value `1` |
+| 80 | 1 | `flipped` | `u8` | little | spec | the flip flag at offset 80 |
+| 81 | 1 | `path_oriented` | `u8` | little | spec | the orientation flag at offset 81 |
+| 83 | 11 | `path_group_reference` | `bytes[11]` | little | spec | a marked reference to the path group at offset 83 |
+| 94 | 8 | `scalar_94` | `f64` | little | spec | an f64 at offset 94 |
+| 124 | 8 | `scalar_124` | `f64` | little | spec | an f64 at offset 124 |
+| 152 | 4 | `distance_type_marker` | `bytes[4]` | little | spec | bytes `ff ff ff ff` at offset 152 |
+| 156 | 1 | `distance_type` | `u8` | little | spec | the distance-type byte at offset 156 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+- `11..55` (44 B): The specification states no field in this range.
+- `82..83` (1 B): The specification states no field in this range.
+- `102..124` (22 B): The specification states no field in this range.
+- `132..152` (20 B): The specification states no field in this range.
+- `157..267` (110 B): The specification states no field in this range.
+
+## `path_pattern_start`
+
+Spec §Assembly operands · layout: byte offsets · size: 197 B
+
+Offsets are relative to the record's indexed header; the next indexed header follows at offset 197.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 8 | `start_parameter` | `f64` | little | spec | the path parameter of the pattern start point as an f64 at offset 25 |
+| 42 | 8 | `start_point_x` | `f64` | little | spec | the start point's first two model coordinates in centimetres at offsets 42 and 50 |
+| 50 | 8 | `start_point_y` | `f64` | little | spec | the start point's first two model coordinates in centimetres at offsets 42 and 50 |
+| 66 | 4 | `path_curve_kind` | `u32` | little | spec | a u32 path-curve kind at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+- `11..25` (14 B): The specification states no field in this range.
+- `33..42` (9 B): The specification states no field in this range.
+- `58..66` (8 B): The specification states no field in this range.
+- `70..197` (127 B): The specification states no field in this range.
 
 ## `surface_trim_cell_table_prefix`
 

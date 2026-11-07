@@ -1007,11 +1007,11 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-124. Partial-curve operands in profile selections
 
-**Question.** How do the three u32 operands of a typed profile curve entry and the incidence words of a counted profile member select a partial curve?
+**Question.** How do the three u32 operands of a typed profile curve entry and the two nonzero incidence words of a counted profile member select a partial curve, and which curve's direction sets the direction flag of the members of a coincident edge?
 
-**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. Counted profile members store a primary curve identity, one Boolean incidence word, and two nonzero incidence words. A complete neutral loop match, a unique atomic arrangement boundary program, or a unique boundary multiset resolves the selected region.
+**Known.** The identity record stores region groups. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. Counted profile members store a primary curve identity, a direction flag, and two nonzero incidence words. A complete neutral loop match, a unique atomic arrangement boundary program, or unique directed boundary rings resolve the selected region. The decoder builds the member-ring arrangement from lines, circles, circular arcs, bounded ellipses, and nonperiodic NURBS. A bounded ellipse leaves the arrangement undefined, because its edges have no certified pieces. The nodes are the end points of these curves and the intersection points of every two lines, circular arcs, or circles that are not collinear line segments. A node splits a line, circular arc, or circle that passes through it; a NURBS splits only at its end points. Edges leave a node in the counterclockwise order of their departure tangents, each turned by half its exact curvature over the linear tolerance. The tangents are exact for lines, circular arcs, and clamped NURBS ends with positive weights. Equal tangents order by signed curvature. A clamped NURBS end has only the sign of its curvature, so two equal signs leave the arrangement undefined, as do two equal exact curvatures. Another edge leaves along the first chord of its polyline, and a node with such a departure and more than two edges leaves the arrangement undefined. The selection stays native with `feature.profile-selection-native` when two edges meet away from their common nodes, as where a NURBS crosses another curve, or when one curve runs twice along one edge or in both directions along one fragment. The exact lines and circular arcs and the certified NURBS tubes of a face boundary, each in the direction of its walk, decide whether a point lies inside the face. A face holds a component when it holds the first node of the component that lies farther than the linear tolerance from every boundary piece. An island lies in each face that holds its component, and the innermost of these faces holds it; one face lies inside another when the other face holds its component. When no node of the component clears the pieces of a face, or no face that holds the island is the innermost, that face and the faces that hold the island have unknown islands. When the island has no unique outer walk, the innermost face and the island's own faces have unknown islands. A selection of a face with unknown islands stays native. A projected point within the linear tolerance of a NURBS tube of a face boundary takes the side of the face polyline, and the selection reports `feature.profile-polyline-side-assumed`. For member lists, projected points, curve programs, and self-crossing loops in the arrangement of every non-construction curve, a non-construction full ellipse or periodic NURBS without a negative weight has a box that holds it: the exact axis-aligned box of the ellipse, or the box of the control points of the NURBS. The box of a face holds its lines and circular arcs exactly and its NURBS edges within their certified tube bounds. The curve lies outside a face when its box misses the face box by more than the linear tolerance, or when its box, widened by the linear tolerance, meets and holds no boundary piece of the face and the box centre lies outside the face. When the widened box meets and holds no boundary piece of any face, the curve lies in the region of the smallest face that holds the box centre, and that face then bounds no arrangement region. For every other face that holds or can hold such a curve, and for every face and every other non-construction curve outside these families, the decoder takes the face without an island of that curve and reports `feature.profile-island-absence-assumed`. A selection whose profile takes no sketch regions reports neither loss. For a walk with an edge of coincident curves, the decoder accepts the edge when one distinct member that names one of its curves has that curve's traversal direction, and it checks no flag of the edge's other members. This filter can choose one of several walks with the list's curve identities and multiplicities, and it can reject the only such walk. The decoder reports `feature.profile-coincident-direction-assumed` for each bound selection in which a walk with such an edge has a list's curve identities and multiplicities. The member-ring search charges the arrangement work budget, and an exhausted budget leaves the selection native with `feature.profile-arrangement-capped`. The decoder matches a boundary program against the arrangement of the curves of the Sketch's profile loops, or of every non-construction curve when the Sketch has no profile loop.
 
-**Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds. Selections with the same curve-identity multiset must vary the selected portions independently.
+**Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds. Selections with the same curve-identity multiset must vary the selected portions independently. Controlled selections of one region whose boundary edge is two coincident curves drawn in opposite directions, with each curve created first in turn, bind the direction flag of a coincident edge.
 
 **Conflict.** None.
 
@@ -1159,7 +1159,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples. When the referenced faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the decoder reads that edge and reports `history.edge-selection-inferred`. Whether a recipe's candidate faces can omit the selected edge is open.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -1232,6 +1232,30 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
+
+### DR-271. List that a two-list Combine prologue omits
+
+**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
+
+**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that is empty or names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope. The decoder reads every tool of such a `Combine` as removed. It compares the browser nodes that the tool selections name with the browser nodes that the body selections in the companion reference tables name. When the two sets differ, or a companion has no single reference table after the GUID or a selection without one browser node, it reports `feature.combine-tool-consumption-assumed`, whose note lists the tool selections that no companion selection confirms and the companion selections that name no tool. With the new-component Boolean zero, the reading of every stored field is the same for each omitted list; with the Boolean one, only the omitted browser-node list is consistent. The decoder reads a two-list prologue with a companion and two empty lists, and reports `feature.combine-new-component-native` when the Boolean is one.
+
+**Need.** A two-list prologue with a nonempty list between the tool list and the target list, or the Fusion version that adds the third list.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-272. Prologue of a Combine frame whose byte 20 is one
+
+**Question.** Which prologue does a `Combine` frame store when byte 20 is one and its fixed fields match both the standard and the operand-list prologue?
+
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24, and such an operand-list prologue without a companion also stores zero at offsets 26 through 32, as the standard prologue does. When the standard prologue reads such a frame, the decoder reads it in that prologue and reports `feature.combine-prologue-assumed`, whose note says whether the lists name the scope's operation-identity records. Otherwise the decoder reads the frame in the operand-list prologue when its lists name those records, its counted GUID and three zero bytes end at its reference table, its other fields hold, and its new-component Boolean is zero. A frame that neither prologue reads stays native: it reports `feature.combine-new-component-native` when its new-component Boolean is one, and `feature.combine-operand-list-refused` when its lists name its operands and its other fields contradict the operand-list prologue or cannot be checked.
+
+**Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ### DR-202. Fields of the older Shell frames
 
@@ -1575,6 +1599,40 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`.
+
+### DR-286. Sketch folder flag byte, tail zero run, and closing reference
+
+**Question.** What do the flag byte at sketch folder record offset 26 and the length of the zero run between the parent collection reference and the closing reference select, and which record does the closing reference name?
+
+**Known.** The flag byte is `0` or `1`. Folders with either value carry sketch runs and a parent collection reference of the same form. The zero run is four bytes in a folder with an empty name and eight bytes in named folders. The closing reference is a non-null marked reference that ends the folder frame. The decoder reads the run as zero bytes of any length that ends at the closing reference, reads the closing reference target, and reports the target in `sketch.folder-closing-reference`.
+
+**Need.** Two saves of one folder that differ only in a folder property, folders that differ only in the zero-run length, the record type of the closing reference target, and saves of one design that change the component or the folder set of a sketch folder.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-287. Sketches omitted from their collection run
+
+**Question.** Which stored value selects the sketches whose Geometry member names an ordinal collection that does not list them?
+
+**Known.** Such sketches carry unique ordinals in the collection namespace, a Sketch feature scope, and a Sketch browser node. Their Sketch features follow every Sketch feature of a listed sketch in the timeline. The 960-byte timeline record does not distinguish them.
+
+**Need.** The record that stores the timeline end position.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-290. PathPattern settings scalars at offsets 94 and 124
+
+**Question.** What do the f64 values at offsets 94 and 124 of a path-pattern settings record encode?
+
+**Known.** `f3d.md` §3.1 gives the path-pattern settings record. The f64 at offset 94 is 3.0 on four line paths whose adjacent spacing is 3 cm and whose start point is at path parameter 0. It is −1.92699 on a circular-arc path of radius 5 cm with a 2 cm spacing and its start point at path parameter π/4. The f64 at offset 124 is 0.5 on that arc path and zero on the line paths. The decoder reads neither value.
+
+**Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
+
+**Conflict.** None.
 
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
