@@ -235,7 +235,10 @@ fn decode_surface_record(
                 surf_ref,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)),
             );
-            if surf_rec.head() == "spline" && !procedural_surface_defs.contains_key(&surf_ref) {
+            if surf_rec.head() == "spline"
+                && !procedural_surface_defs.contains_key(&surf_ref)
+                && nurbs::toks::owned_construction_subtype(&surf_rec.tokens).is_some()
+            {
                 cached_unknown_procedural_surfaces.insert(surf_ref);
                 count_kind(
                     &mut out.stats.other_record_kinds,
