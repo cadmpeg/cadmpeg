@@ -14,7 +14,7 @@ pub(super) struct Reach {
     pub(super) surfaces: HashSet<String>,
 }
 impl Reach {
-    pub(super) fn bodies(ir: &CadIr, bodies: &[&Body]) -> Self {
+    fn rooted(ir: &CadIr, bodies: &[&Body]) -> Self {
         let regions: HashSet<_> = bodies.iter().flat_map(|body| &body.regions).collect();
         let shells: HashSet<_> = ir
             .model
@@ -41,6 +41,63 @@ impl Reach {
                 .extend(shell.free_vertices().iter().map(ToString::to_string));
         }
         output.complete(ir);
+        output
+    }
+
+    pub(super) fn bodies(ir: &CadIr, bodies: &[&Body]) -> Self {
+        let mut output = Self::rooted(ir, bodies);
+        let other_bodies: Vec<_> = ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| !bodies.iter().any(|selected| selected.id == body.id))
+            .collect();
+        let other = Self::rooted(ir, &other_bodies);
+        let other_curve_layouts: HashSet<_> = ir
+            .model
+            .curves
+            .iter()
+            .filter(|curve| other.curves.contains(curve.id.as_str()))
+            .map(|curve| super::super::geometry::curve_layout_key(ir, curve))
+            .collect();
+        let other_surface_layouts: HashSet<_> = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| other.surfaces.contains(surface.id.as_str()))
+            .map(|surface| super::super::geometry::surface_layout_key(ir, surface))
+            .collect();
+        let earlier_bodies: Vec<_> = ir
+            .model
+            .bodies
+            .iter()
+            .take_while(|body| !bodies.iter().any(|selected| selected.id == body.id))
+            .collect();
+        let earlier = Self::rooted(ir, &earlier_bodies);
+        let earlier_owners: HashSet<_> = ir
+            .model
+            .curves
+            .iter()
+            .filter(|curve| earlier.curves.contains(curve.id.as_str()))
+            .filter_map(|curve| {
+                curve
+                    .source_object
+                    .as_ref()
+                    .map(|source| source.object_id.as_str())
+            })
+            .chain(
+                ir.model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| earlier.surfaces.contains(surface.id.as_str()))
+                    .filter_map(|surface| {
+                        surface
+                            .source_object
+                            .as_ref()
+                            .map(|source| source.object_id.as_str())
+                    }),
+            )
+            .collect();
         // A source object's standalone carrier records are held independently
         // of its rooted topology. Keep those rows in that object's table too.
         let owners: HashSet<_> = ir
@@ -76,6 +133,12 @@ impl Reach {
                         .source_object
                         .as_ref()
                         .is_some_and(|source| owners.contains(source.object_id.as_str()))
+                        && !other.curves.contains(curve.id.as_str())
+                        && !other_curve_layouts
+                            .contains(&super::super::geometry::curve_layout_key(ir, curve))
+                        && !curve.source_object.as_ref().is_some_and(|source| {
+                            earlier_owners.contains(source.object_id.as_str())
+                        })
                 })
                 .map(|curve| curve.id.to_string()),
         );
@@ -88,6 +151,12 @@ impl Reach {
                         .source_object
                         .as_ref()
                         .is_some_and(|source| owners.contains(source.object_id.as_str()))
+                        && !other.surfaces.contains(surface.id.as_str())
+                        && !other_surface_layouts
+                            .contains(&super::super::geometry::surface_layout_key(ir, surface))
+                        && !surface.source_object.as_ref().is_some_and(|source| {
+                            earlier_owners.contains(source.object_id.as_str())
+                        })
                 })
                 .map(|surface| surface.id.to_string()),
         );
