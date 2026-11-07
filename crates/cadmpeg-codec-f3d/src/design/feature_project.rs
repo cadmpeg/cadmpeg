@@ -8804,6 +8804,38 @@ fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::F
     })
 }
 
+/// The frame of a `DeleteFace` scope whose references are typed: 51 bytes per
+/// reference-table entry, with the count at offset 163 or 167 and the typed
+/// scope tail. `None` for any other frame.
+fn typed_delete_face_frame(scope: &DesignParameterScope) -> Option<()> {
+    if scope.kind_name() != "DeleteFace"
+        || !matches!(
+            scope
+                .reference_count_offset()
+                .checked_sub(scope.byte_offset())?,
+            163 | 167
+        )
+    {
+        return None;
+    }
+    let reference_bytes = u64::try_from(scope.reference_members().len())
+        .ok()?
+        .checked_mul(u64::try_from(crate::bytes::TYPED_LOCAL_REFERENCE_LEN).ok()?)?;
+    let kind_offset = scope
+        .reference_count_offset()
+        .checked_add(12)?
+        .checked_add(reference_bytes)?;
+    let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
+        .ok()?
+        .checked_mul(2)?;
+    (scope.kind_offset() == kind_offset
+        && scope.paired_byte_offset()
+            == kind_offset.checked_add(kind_bytes)?.checked_add(
+                u64::try_from(crate::layout::typed_reference_parameter_scope_tail::LEN).ok()?,
+            )?)
+    .then_some(())
+}
+
 fn project_delete_face(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -8812,15 +8844,22 @@ fn project_delete_face(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let reference_count = scope.reference_members().len();
-    let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
-    let heal = match scope.kind_name() {
-        "DeleteFace" if matches!(count_offset, 123 | 127 | 131) => true,
-        "SurfaceDeleteFace" if matches!(count_offset, 123 | 127 | 131 | 134 | 138 | 142) => false,
-        _ => return Ok(None),
+    let heal = if typed_delete_face_frame(scope).is_some() {
+        true
+    } else {
+        let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
+        let heal = match scope.kind_name() {
+            "DeleteFace" if matches!(count_offset, 123 | 127 | 131) => true,
+            "SurfaceDeleteFace" if matches!(count_offset, 123 | 127 | 131 | 134 | 138 | 142) => {
+                false
+            }
+            _ => return Ok(None),
+        };
+        if !matches!(tail_length, 77 | 78) {
+            return Ok(None);
+        }
+        heal
     };
-    if !matches!(tail_length, 77 | 78) {
-        return Ok(None);
-    }
     if reference_count < 2 {
         return Ok(None);
     }

@@ -286,6 +286,52 @@ fn delete_face_falls_back_to_group_id() {
 }
 
 #[test]
+fn delete_face_with_typed_references_projects() {
+    let scope = |count_offset: u64| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#77",
+            crate::records::feature::scope::DesignFeatureKind::DeleteFace,
+            77,
+        );
+        scope
+            .try_edit(|draft| {
+                let start = draft.byte_offset;
+                let kind = count_offset + 12 + 2 * 51;
+                draft.kind_offset = start + kind;
+                draft.frame_length = kind + 20 + 196;
+                draft.feature_ordinal_offset = start + kind + 20;
+                draft.paired_byte_offset = start + draft.frame_length;
+                draft.reference_count_offset = start + count_offset;
+                draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+                    vec![100, 200],
+                    vec![start + count_offset + 5, start + count_offset + 56],
+                    "reference_members",
+                )
+                .unwrap();
+            })
+            .unwrap();
+        scope
+    };
+    let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
+    for (count_offset, admitted) in [(163, true), (167, true), (159, false)] {
+        let projected =
+            project_delete_face(&scope(count_offset), std::slice::from_ref(&selected), &[])
+                .unwrap();
+        assert_eq!(
+            matches!(
+                projected,
+                Some(FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+                    heal: true,
+                    ..
+                }))
+            ),
+            admitted,
+            "count offset {count_offset}"
+        );
+    }
+}
+
+#[test]
 fn surface_delete_face_layouts_project_with_other_class_tags() {
     let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
     for (base_frame_length, base_kind_offset) in
