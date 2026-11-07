@@ -534,6 +534,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ),
     );
     crate::design::decode::operands::bind_work_point_input_carriers(
+        (ctx, &mut design_parts),
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,

@@ -372,6 +372,10 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
 
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
 pub(crate) fn bind_work_point_input_carriers(
+    decode: (
+        &DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    ),
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -379,6 +383,7 @@ pub(crate) fn bind_work_point_input_carriers(
     edge_operands: &[DesignEdgeOperand],
     sketch_points: &[SketchPoint],
 ) -> Result<(), CodecError> {
+    let (ctx, parts) = decode;
     let mut header_index = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -449,7 +454,23 @@ pub(crate) fn bind_work_point_input_carriers(
             let Some(header) = header_index.get(&(stream.as_str(), input.record_index())) else {
                 continue;
             };
-            if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing work point operand stream"))?;
+            if let Some(recipe) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream: &stream,
+                    records,
+                    recipes,
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Vertex],
+                },
+                || parse_vertex_recipe(bytes, records, &stream, header, recipes).map(Ok),
+            )? {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                         recipe,
