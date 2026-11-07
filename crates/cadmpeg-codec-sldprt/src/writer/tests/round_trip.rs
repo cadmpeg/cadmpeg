@@ -70,9 +70,7 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
 }
 
 fn check_spatial_point_line_distance_reaches_output(
-    construction: bool,
-    point_construction: bool,
-    second_point_construction: bool,
+    [construction, point_construction, second_point_construction]: [bool; 3],
     reference: bool,
 ) {
     use cadmpeg_ir::codec::write::Encoder;
@@ -388,28 +386,28 @@ fn check_spatial_point_line_distance_reaches_output(
 
 #[test]
 fn source_less_spatial_point_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(false, false, false, false);
+    check_spatial_point_line_distance_reaches_output([false, false, false], false);
 }
 
 #[test]
 fn source_less_spatial_construction_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, false, false, false);
+    check_spatial_point_line_distance_reaches_output([true, false, false], false);
 }
 
 #[test]
 fn source_less_spatial_construction_point_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, true, true, false);
+    check_spatial_point_line_distance_reaches_output([true, true, true], false);
 }
 
 #[test]
 fn source_less_spatial_mixed_point_roles_reach_output() {
-    check_spatial_point_line_distance_reaches_output(true, true, false, false);
-    check_spatial_point_line_distance_reaches_output(true, false, true, false);
+    check_spatial_point_line_distance_reaches_output([true, true, false], false);
+    check_spatial_point_line_distance_reaches_output([true, false, true], false);
 }
 
 #[test]
 fn source_less_spatial_reference_point_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(false, false, false, true);
+    check_spatial_point_line_distance_reaches_output([false, false, false], true);
 }
 
 #[test]
