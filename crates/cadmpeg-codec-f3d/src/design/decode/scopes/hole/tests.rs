@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
 use super::HOLE_POINT_DATA_TYPE_GUID;
@@ -11,6 +10,32 @@ use crate::test_support::lp_utf16;
 use std::collections::HashMap;
 
 const EPS_HOLE_TEST_VALUE: f64 = 1.0e-12;
+
+fn exact_hole_construction_with_ctx(
+    bytes: &[u8],
+    records: &[crate::metastream::PrimaryRecordFrame],
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+    kind: &crate::records::feature::scope::DesignFeatureKind,
+) -> Result<Option<crate::records::feature::hole::DesignHoleConstruction>, cadmpeg_core::CodecError>
+{
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    super::exact_hole_construction(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        records,
+        scope,
+        stream_types,
+        kind,
+    )
+}
 
 fn exact_hole_construction(
     bytes: &[u8],
@@ -705,4 +730,151 @@ fn hole_extent_uses_the_admitted_scope_frame_without_a_point_carrier() {
             expected
         );
     }
+}
+
+#[test]
+fn damaged_hole_carrier_keeps_its_valid_sibling_and_is_retained_once() {
+    let (good, mut scope, position_at, _) = hole_point_stream();
+    let mut bad = good.clone();
+    let mut header = Vec::new();
+    indexed_header(&mut header, *b"282", 55);
+    let id_offset = header.len() - std::mem::size_of::<u32>();
+    bad[id_offset..id_offset + 4].copy_from_slice(&56u32.to_le_bytes());
+    let mut paired = Vec::new();
+    indexed_header(&mut paired, *b"259", 55);
+    let paired_at = bad.len() - paired.len();
+    bad[paired_at + id_offset..paired_at + id_offset + 4].copy_from_slice(&56u32.to_le_bytes());
+    let direction_at = position_at + 3 * std::mem::size_of::<f64>();
+    bad[direction_at..direction_at + 8].copy_from_slice(&2.0f64.to_le_bytes());
+    let bad_length = bad.len();
+    let good_pair = good.len() - paired.len();
+    bad.extend_from_slice(&good);
+    let records = [
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 56,
+            start: 0,
+            member_end: paired_at,
+            end: bad_length,
+        },
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 55,
+            start: bad_length,
+            member_end: bad_length + good_pair,
+            end: bad.len(),
+        },
+    ];
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![56, 55]);
+            draft.layout_fixture_references();
+        })
+        .unwrap();
+    let types = HashMap::from([
+        (56_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+        (55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bad, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    for _ in 0..2 {
+        let result = super::exact_hole_construction(
+            &ctx,
+            &mut parts,
+            source,
+            "Design/BulkStream.dat",
+            &records,
+            &scope,
+            &types,
+            &crate::records::feature::scope::DesignFeatureKind::Hole,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.point_record_index, 55);
+    }
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    let location = losses[0].provenance.as_ref().unwrap();
+    assert_eq!(location.offset, 0);
+    assert_eq!(
+        location.byte_len(),
+        Some(u64::try_from(bad_length).unwrap())
+    );
+}
+
+#[test]
+fn ambiguous_valid_hole_carriers_do_not_hide_a_damaged_sibling() {
+    let (good, mut scope, position_at, _) = hole_point_stream();
+    let mut primary = Vec::new();
+    indexed_header(&mut primary, *b"282", 55);
+    let mut paired = Vec::new();
+    indexed_header(&mut paired, *b"259", 55);
+    let id_at = primary.len() - std::mem::size_of::<u32>();
+    let paired_at = good.len() - paired.len();
+    let make_record = |entity: u32, damaged: bool| {
+        let mut record = good.clone();
+        record[id_at..id_at + 4].copy_from_slice(&entity.to_le_bytes());
+        record[paired_at + id_at..paired_at + id_at + 4].copy_from_slice(&entity.to_le_bytes());
+        if damaged {
+            let direction = position_at + 3 * std::mem::size_of::<f64>();
+            record[direction..direction + 8].copy_from_slice(&2.0f64.to_le_bytes());
+        }
+        record
+    };
+    let mut bytes = Vec::new();
+    let mut records = Vec::new();
+    for (entity, damaged) in [(55, false), (57, false), (56, true)] {
+        let start = bytes.len();
+        bytes.extend_from_slice(&make_record(entity, damaged));
+        records.push(crate::metastream::PrimaryRecordFrame {
+            entity_id: u64::from(entity),
+            start,
+            member_end: start + paired_at,
+            end: bytes.len(),
+        });
+    }
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![55, 57, 56]);
+            draft.layout_fixture_references();
+        })
+        .unwrap();
+    let types = HashMap::from([
+        (55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+        (57_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+        (56_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let result = super::exact_hole_construction(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &records,
+        &scope,
+        &types,
+        &crate::records::feature::scope::DesignFeatureKind::Hole,
+    )
+    .unwrap();
+    assert!(result.is_none());
+    let (_, _, _, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
 }
