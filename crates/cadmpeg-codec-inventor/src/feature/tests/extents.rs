@@ -2,6 +2,7 @@
 //! Extrusion extents and the records their targets use.
 
 use super::*;
+use crate::feature::extrusion::Output;
 
 const EPS_SAME_COORDINATE: f64 = 1e-12;
 
@@ -116,6 +117,52 @@ fn placed_extent_extrusion(
         Option<&Feature>,
     ),
 ) -> Option<Feature> {
+    build_extent_extrusion(
+        ExtentCase {
+            output: Output::Solid,
+            operation: 3,
+            extent,
+            symmetric,
+        },
+        slots,
+        extra,
+        matrix,
+        configure,
+        check,
+    )
+}
+
+/// The body kind, part operation, extent, and symmetric Boolean of an extent
+/// fixture.
+#[derive(Clone, Copy)]
+struct ExtentCase {
+    output: Output,
+    operation: u16,
+    extent: u16,
+    symmetric: bool,
+}
+
+/// The extent fixture of either body kind. A surface extrusion has the
+/// surface part operation, its result in slot 16, and a null slot 26.
+fn build_extent_extrusion(
+    case: ExtentCase,
+    slots: &[(usize, u32)],
+    extra: Vec<PmDcFeatureProperty>,
+    matrix: [[f64; 4]; 4],
+    configure: impl FnOnce(&mut crate::feature::ProjectionIndex<'_>),
+    check: impl FnOnce(
+        &PmDcFeature,
+        &PmDcFeatureLabel,
+        &crate::feature::ProjectionIndex<'_>,
+        Option<&Feature>,
+    ),
+) -> Option<Feature> {
+    let ExtentCase {
+        output,
+        operation,
+        extent,
+        symmetric,
+    } = case;
     let raw_parameters = vec![
         raw_parameter(70),
         raw_parameter(71),
@@ -265,7 +312,7 @@ fn placed_extent_extrusion(
             PmDcFeaturePropertyKind::Enumeration {
                 family: PmDcFeatureEnumFamily::PartOperation,
                 type_value: 5,
-                value: 3,
+                value: operation,
             },
         ),
         test_property(
@@ -346,11 +393,24 @@ fn placed_extent_extrusion(
         (6, 5),
         (7, 6),
         (23, 2),
-        (26, 7),
+        if output == Output::Surface {
+            (16, 8)
+        } else {
+            (26, 7)
+        },
     ];
     all_slots.extend_from_slice(slots);
     let feature = test_feature(100, 30, &all_slots);
-    let label = test_label(100, 5, EXTRUSION_CLASS_ID, &[51]);
+    let label = test_label(
+        100,
+        5,
+        if output == Output::Surface {
+            SURFACE_EXTRUSION_CLASS_ID
+        } else {
+            EXTRUSION_CLASS_ID
+        },
+        &[51],
+    );
     let planes = vec![work_plane(40), work_plane(41)];
     let mut index = test_projection_index(
         &properties,
@@ -377,8 +437,35 @@ fn placed_extent_extrusion(
         .expect("projection context");
     configure(&mut index);
     let mut losses = Vec::new();
-    let projected = crate::feature::extrusion::project(&ctx, &feature, &label, &index, &mut losses)
-        .map(|projected| projected.expect("extrusion projection").0);
+    let projected = match output {
+        Output::Solid => {
+            crate::feature::extrusion::project(&ctx, &feature, &label, &index, &mut losses)
+        }
+        Output::Surface => {
+            crate::feature::extrusion::project_surface(&ctx, &feature, &label, &index, &mut losses)
+        }
+    }
+    .map(|projected| projected.expect("extrusion projection"))
+    .map(|(feature, result)| {
+        if output == Output::Surface {
+            let wrapper = test_property(
+                8,
+                PmDcFeaturePropertyKind::SurfaceBody {
+                    body: reference(30),
+                },
+            )
+            .id();
+            assert_eq!(
+                result
+                    .bodies()
+                    .iter()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    .collect::<Vec<_>>(),
+                [wrapper.as_str()]
+            );
+        }
+        feature
+    });
     let face_targets = if projected.is_some() && matches!(extent, 6 | 7) {
         let slots = feature.properties.references();
         usize::from(slots[13].index() != 0 && slots[18].index() != 0)
@@ -398,7 +485,17 @@ fn placed_extent_extrusion(
         note.code.local_code()
             != crate::loss::InventorLossCode::FeatureExtrusionTargetFaceNative.code()
     });
-    if projected.as_ref().is_some_and(|feature| {
+    if output == Output::Surface {
+        let profile_losses = losses
+            .iter()
+            .filter(|note| {
+                note.code.local_code()
+                    == crate::loss::InventorLossCode::FeatureExtrusionProfileNative.code()
+            })
+            .count();
+        assert_eq!(losses.len(), profile_losses);
+        assert_eq!(profile_losses, usize::from(projected.is_some()));
+    } else if projected.as_ref().is_some_and(|feature| {
         crate::feature::extrusion::has_native_profile(feature.evaluation.definition())
     }) {
         assert!(losses.iter().any(|note| note.code.local_code()
@@ -410,11 +507,13 @@ fn placed_extent_extrusion(
         assert!(losses.is_empty());
     }
     if let Some(projected) = projected.as_ref().filter(|feature| {
-        !crate::feature::extrusion::has_native_profile(feature.evaluation.definition())
+        output == Output::Surface
+            || !crate::feature::extrusion::has_native_profile(feature.evaluation.definition())
     }) {
         let mut model = cadmpeg_ir::document::Model::default();
         model.parameters.extend(neutral_parameters.iter().cloned());
         model.sketches.push(neutral_sketch.clone());
+        let link = entity_link_record();
         let validation = crate::feature::extrusion::ValidationIndex::new(
             &crate::feature::extrusion::ValidationRecords {
                 properties: &properties,
@@ -423,7 +522,7 @@ fn placed_extent_extrusion(
                 directions: &directions,
                 transforms: std::slice::from_ref(&transform),
                 planes: &planes,
-                entity_links: &[],
+                entity_links: std::slice::from_ref(&link),
                 kernel_links: &[],
                 model: &model,
             },
@@ -432,6 +531,30 @@ fn placed_extent_extrusion(
     }
     check(&feature, &label, &index, projected.as_ref());
     projected
+}
+
+/// The entity link that the profile selection of the extent fixture names.
+fn entity_link_record() -> PmDcEntityStyleLink {
+    Located::new(
+        PmDcEntityStyleLinkPayload {
+            save_version_major: 19,
+            header: PmDcLinkedHeader {
+                header_value: 0,
+                header_id: 0,
+                values: [0; 2],
+                flags_extension: None,
+                owner: reference(0),
+                parent: reference(0),
+                next: reference(0),
+            },
+            value: 0,
+            associative_id: 1,
+            entity_type: 1,
+        },
+        crate::record_identity::RecordTypeId::from_bytes(ENTITY_STYLE_LINK_TYPE),
+        segment(),
+        51,
+    )
 }
 
 fn extrude_definition(feature: &Feature) -> (&ExtrudeExtent, &cadmpeg_ir::features::ExtrudeStart) {
@@ -1633,4 +1756,5 @@ fn parses_work_point_across_header_and_value_count_forms() {
 }
 
 mod plane_controls;
+mod surface;
 mod work_point;
