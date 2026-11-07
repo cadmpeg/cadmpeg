@@ -257,6 +257,8 @@ pub(crate) enum RhinoLossCode {
     WriterProductMetadataReduced,
     /// An embedded image cannot be written.
     WriterImageOmitted,
+    /// An object display order cannot fit its native field.
+    WriterObjectDisplayOrderReduced,
     /// A native light has incomplete or unrepresentable fields.
     WriterLightOmitted,
     /// A light's stored archive index changes to its emitted table position.
@@ -419,6 +421,7 @@ impl RhinoLossCode {
         Self::WriterTextStyleReferenceReduced,
         Self::WriterProductMetadataReduced,
         Self::WriterImageOmitted,
+        Self::WriterObjectDisplayOrderReduced,
         Self::WriterLightOmitted,
         Self::WriterLightIndexReassigned,
         Self::WriterLightAttributeIndexReassigned,
@@ -523,6 +526,7 @@ impl RhinoLossCode {
             Self::WriterTextStyleReferenceReduced => "writer.text-style-reference-reduced",
             Self::WriterProductMetadataReduced => "writer.product-metadata-reduced",
             Self::WriterImageOmitted => "writer.image-omitted",
+            Self::WriterObjectDisplayOrderReduced => "writer.object-display-order-reduced",
             Self::WriterLightOmitted => "writer.light-omitted",
             Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
             Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
@@ -682,6 +686,7 @@ impl RhinoLossCode {
             | Self::WriterTextStyleReferenceReduced
             | Self::WriterProductMetadataReduced
             | Self::WriterImageOmitted
+            | Self::WriterObjectDisplayOrderReduced
             | Self::WriterLightOmitted
             | Self::WriterLightIndexReassigned
             | Self::WriterLightAttributeIndexReassigned
@@ -809,6 +814,7 @@ mod tests {
                 "writer.text-style-reference-reduced",
                 "writer.product-metadata-reduced",
                 "writer.image-omitted",
+                "writer.object-display-order-reduced",
                 "writer.light-omitted",
                 "writer.light-index-reassigned",
                 "writer.light-attribute-index-reassigned",
