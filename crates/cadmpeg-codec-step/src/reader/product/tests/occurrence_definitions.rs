@@ -5,6 +5,22 @@
 use crate::test_support::exchange::decode_inline;
 
 #[test]
+fn standalone_occurrence_definition_has_no_placement() {
+    let decoded = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('PART','Part','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('part','',#4,#5);
+#7=PRODUCT_DEFINITION_OCCURRENCE('instance',$,$,#6,$);",
+    );
+    let occurrences = &decoded.ir().model.occurrences;
+    assert_eq!(occurrences.len(), 1);
+    assert!(occurrences[0].transform.is_none());
+}
+
+#[test]
 fn occurrence_definitions_preserve_reused_prototype_paths() {
     use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 

@@ -62,6 +62,8 @@ impl std::fmt::Display for WriteError {
     }
 }
 
+impl std::error::Error for WriteError {}
+
 impl From<std::io::Error> for WriteError {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error)
