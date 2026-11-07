@@ -20,6 +20,62 @@ use crate::native::PropertyRecord;
 
 type Properties<'a> = BTreeMap<&'a str, Vec<&'a PropertyRecord>>;
 
+pub(crate) fn recover_templates<'a>(
+    ctx: &DecodeContext<'a>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    objects: &[crate::native::ObjectRecord],
+    properties: &[PropertyRecord],
+    entries: &BTreeMap<String, View<'a>>,
+) -> Result<BTreeMap<String, View<'a>>, CodecError> {
+    let mut recovered = entries.clone();
+    let mut visited = std::collections::BTreeSet::new();
+    for object in objects
+        .iter()
+        .filter(|object| object.type_name == "TechDraw::DrawSVGTemplate")
+    {
+        for property in properties.iter().filter(|property| {
+            &property.owner == object.id()
+                && matches!(property.name.as_str(), "PageResult" | "Template")
+                && property.type_name == "App::PropertyFileIncluded"
+        }) {
+            for name in property.side_entries() {
+                if !visited.insert(name) {
+                    continue;
+                }
+                let Some(view) = entries.get(name.as_str()).copied() else {
+                    continue;
+                };
+                let Some(stream) = cadmpeg_ir::StreamName::member(name) else {
+                    continue;
+                };
+                let parsed = crate::xml_recovery::admit_recovering(
+                    ctx,
+                    parts,
+                    view,
+                    crate::xml_recovery::XmlSource {
+                        member: "FreeCAD SVG",
+                        scan_operation: "recover FreeCAD SVG elements",
+                        parse_operation: "FreeCAD SVG XML tree",
+                    },
+                    &move |_, _| {
+                        crate::container::parts::part("freecad.svg_element")
+                            .in_stream(stream.clone())
+                    },
+                    &|detail| CodecError::malformed(format_args!("invalid FreeCAD SVG: {detail}")),
+                );
+                match parsed {
+                    Ok((view, _, _)) => {
+                        recovered.insert(name.clone(), view);
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+    Ok(recovered)
+}
+
 pub(super) fn transfer(
     ctx: &DecodeContext<'_>,
     model: &mut Model,
