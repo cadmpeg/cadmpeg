@@ -34,6 +34,33 @@ fn surface_body(ordinal: u32) -> PmDcFeatureProperty {
 }
 
 #[test]
+fn a_surface_extrusion_with_slot_3_set_states_the_assumed_reversal() {
+    // `build_extent_extrusion` counts the note against the slot-3 record.
+    let reversed = surface_extrusion(
+        5,
+        5,
+        &[(3, SURFACE_REVERSAL_RECORD)],
+        vec![test_property(
+            SURFACE_REVERSAL_RECORD,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: true,
+            },
+        )],
+    )
+    .expect("reversed surface");
+    let direction = |feature: &Feature| match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) => {
+            direction.clone()
+        }
+        _ => panic!("not an extrusion"),
+    };
+    let plain = surface_extrusion(5, 5, &[], Vec::new()).expect("plain surface");
+    assert_ne!(direction(&reversed), direction(&plain));
+}
+
+#[test]
 fn through_all_surface_extrusion_is_a_new_sheet_with_a_selected_profile() {
     let feature = surface_extrusion(5, 5, &[], Vec::new()).expect("through-all surface");
     let FeatureDefinition::Operation(FeatureOperation::Extrude {

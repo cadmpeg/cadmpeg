@@ -75,6 +75,11 @@ pub(super) fn project_surface(
                 "Extrusion target retains its stored planar face geometry; its body-face identity remains unresolved.",
             ));
         }
+        if boolean(source, 3, index) == Some(true) {
+            losses.push(crate::loss::InventorLossCode::FeatureSurfaceExtrusionReversalAssumed.note(
+                "Surface extrusion with Boolean slot 3 set reverses its direction; the projection assumes the polarity of the solid extrusion form.",
+            ));
+        }
     }
     projected
 }
