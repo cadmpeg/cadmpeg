@@ -4078,7 +4078,8 @@ pub(super) fn project_thicken(
     else {
         return Ok(None);
     };
-    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
+    let faces = if let Some(mut faces) = direct_face_selection(scope, operands) {
+        list_thicken_whole_bodies(&mut faces, scope, groups);
         faces
     } else {
         let mut candidates = groups.iter().filter(|group| {
@@ -4109,6 +4110,56 @@ pub(super) fn project_thicken(
             }),
         },
     )))
+}
+
+pub(crate) fn list_thicken_whole_bodies(
+    selection: &mut cadmpeg_ir::features::FaceSelection,
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) {
+    use cadmpeg_ir::features::FaceSelection;
+
+    let (state, faces, mut unresolved, native) = match &*selection {
+        FaceSelection::Historical {
+            state,
+            faces,
+            native,
+        } => (state, faces.as_slice(), Vec::new(), native),
+        FaceSelection::HistoricalPartial {
+            state,
+            faces,
+            unresolved,
+            native,
+        } => (
+            state,
+            faces.as_slice(),
+            unresolved.as_slice().to_vec(),
+            native,
+        ),
+        _ => return,
+    };
+    let listed = unresolved.len();
+    for group in groups.iter().filter(|group| {
+        native_stream(&group.id) == native_stream(&scope.id)
+            && group.scope_record_index == scope.record_index
+            && group.role() == DesignOperandRole::ROLE_0X5
+            && !group.members().is_empty()
+    }) {
+        if !unresolved.contains(&group.id) {
+            unresolved.push(group.id.clone());
+        }
+    }
+    if unresolved.len() == listed {
+        return;
+    }
+    let partial = FaceSelection::historical_partial(
+        state.clone(),
+        faces.to_vec(),
+        unresolved,
+        native.to_string(),
+    )
+    .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()));
+    *selection = partial;
 }
 
 pub(super) fn project_shell(
