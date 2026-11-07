@@ -302,7 +302,9 @@ fn check_spatial_point_line_distance_reaches_output(
             .iter()
             .find(|scalar| {
                 Some(scalar.id.as_str())
-                    == relation.parameter_scalar_ref().or_else(|| relation.display_scalar_ref())
+                    == relation
+                        .parameter_scalar_ref()
+                        .or_else(|| relation.display_scalar_ref())
             })
             .unwrap();
         let name = lane
@@ -408,6 +410,52 @@ fn source_less_spatial_mixed_point_roles_reach_output() {
 #[test]
 fn source_less_spatial_reference_point_line_distance_reaches_output() {
     check_spatial_point_line_distance_reaches_output(false, false, false, true);
+}
+
+#[test]
+fn source_less_partial_knit_surface_remains_an_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><KnitSurface Name="Knit" Type="Knit" id="34"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(matches!(
+        expected,
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+            faces: FaceSelection::Unresolved,
+            merge_entities: None,
+            create_solid: None,
+            gap_tolerance: None,
+        })
+    ));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
 }
 
 #[test]
