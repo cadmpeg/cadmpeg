@@ -268,6 +268,107 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 }
 
 #[test]
+fn damaged_xml_element_preserves_sibling_configurations() {
+    let xml = r#"<Keywords><Configuration Name="First"/><Configuration Name="Broken" Name="duplicate"/><Configuration Name="Last"/></Keywords>"#;
+    for utf16 in [false, true] {
+        let payload = if utf16 {
+            let mut bytes = vec![0x86, 0xff, 0xfe];
+            bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
+            bytes
+        } else {
+            xml.as_bytes().to_vec()
+        };
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(0x42, "Contents/Keywords", &payload));
+        let result = decode(source);
+        let native = sldprt_native(result.ir());
+        let names: Vec<_> = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| {
+                history
+                    .configurations
+                    .iter()
+                    .map(|configuration| configuration.name.as_str())
+            })
+            .collect();
+        assert_eq!(names, ["First", "Last"]);
+        let losses: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code.local_code() == "record.unreadable"
+                    && loss.message.contains("<Configuration>")
+            })
+            .collect();
+        assert_eq!(losses.len(), 1);
+        let damaged = r#"<Configuration Name="Broken" Name="duplicate"/>"#;
+        let expected: Vec<u8> = if utf16 {
+            damaged.encode_utf16().flat_map(u16::to_le_bytes).collect()
+        } else {
+            damaged.as_bytes().to_vec()
+        };
+        let (part_id, _) = result
+            .source_fidelity()
+            .retained_records()
+            .iter()
+            .find(|(_, record)| record.data() == Some(expected.as_slice()))
+            .expect("retained damaged element");
+        let unknowns: Vec<cadmpeg_ir::NativeUnknownRecord> = result
+            .ir()
+            .native
+            .namespace("sldprt")
+            .expect("native namespace")
+            .arena_as("unknowns")
+            .expect("unknown records");
+        let part = unknowns
+            .iter()
+            .find(|record| &record.id == part_id)
+            .expect("element stub");
+        assert_eq!(part.links.len(), 1);
+        assert_eq!(part.links[0].as_str(), native.feature_histories[0].id);
+        assert_valid(&result);
+    }
+}
+
+#[test]
+fn damaged_nested_xml_element_links_its_feature() {
+    let xml = r#"<Keywords><Feature Name="Owner"><Dimension Name="Bad" Name="Duplicate"/><Dimension Name="Good"/></Feature></Keywords>"#;
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let result = decode(source);
+    let native = sldprt_native(result.ir());
+    let history = &native.feature_histories[0];
+    let feature = history
+        .features
+        .iter()
+        .find(|feature| feature.name == "Owner")
+        .expect("owner feature");
+    let damaged = br#"<Dimension Name="Bad" Name="Duplicate"/>"#;
+    let (part_id, _) = result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .find(|(_, record)| record.data() == Some(damaged.as_slice()))
+        .expect("retained dimension");
+    let unknowns: Vec<cadmpeg_ir::NativeUnknownRecord> = result
+        .ir()
+        .native
+        .namespace("sldprt")
+        .expect("native namespace")
+        .arena_as("unknowns")
+        .expect("unknown records");
+    let part = unknowns
+        .iter()
+        .find(|record| &record.id == part_id)
+        .expect("dimension stub");
+    assert_eq!(part.links.len(), 1);
+    assert_eq!(part.links[0].as_str(), feature.id);
+    assert_valid(&result);
+}
+
+#[test]
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
     let mut decoded = decoded;

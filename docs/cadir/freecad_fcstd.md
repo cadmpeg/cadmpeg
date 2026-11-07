@@ -37,7 +37,7 @@ neutral display names while stable declaration names carry references.
 XML 1.0-forbidden characters in emitted labels and scalar text are replaced with
 U+FFFD, with a Warning naming the affected output property and reported arena
 coverage. Legal tabs, newlines, and literal character-reference text are preserved.
-A plain `Part::Feature` is a geometry carrier and creates no feature-history node.
+A `Part::Feature` geometry carrier projects to a stored-geometry feature.
 
 Exact shapes use generated OCCT text BRep tables with subshape-first topology and
 independent roots. Analytic and NURBS carriers, supported procedural trim/offset/

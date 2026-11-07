@@ -170,12 +170,15 @@ mod tests {
     fn each_record_has_its_own_physical_pages() {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + 2 * crate::PAGE_SIZE];
         let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
-        bytes[offset..offset + 4]
-            .copy_from_slice(&u32::try_from(crate::PAGE_SIZE).unwrap().to_le_bytes());
+        bytes[offset..offset + 4].copy_from_slice(
+            &u32::try_from(crate::PAGE_SIZE)
+                .expect("page size fits u32")
+                .to_le_bytes(),
+        );
         for page in bytes[crate::STREAM_HEADER_LEN..].chunks_exact_mut(crate::PAGE_SIZE) {
             page[..crate::TERMINAL_MARKER.len()].copy_from_slice(crate::TERMINAL_MARKER);
         }
-        let frames = super::record_frames(&bytes).unwrap();
+        let frames = super::record_frames(&bytes).expect("valid terminal pages");
         assert_eq!(frames.len(), 2);
         assert_eq!(
             frames[0].source_range(),
@@ -192,15 +195,18 @@ mod tests {
     fn multi_page_record_range_covers_all_of_its_pages() {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + 3 * crate::PAGE_SIZE];
         let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
-        bytes[offset..offset + 4]
-            .copy_from_slice(&u32::try_from(crate::PAGE_SIZE).unwrap().to_le_bytes());
+        bytes[offset..offset + 4].copy_from_slice(
+            &u32::try_from(crate::PAGE_SIZE)
+                .expect("page size fits u32")
+                .to_le_bytes(),
+        );
         let pages = &mut bytes[crate::STREAM_HEADER_LEN..];
         pages[4..8].copy_from_slice(crate::RECORD_MARKER);
         pages[crate::PAGE_SIZE + 4..crate::PAGE_SIZE + 8]
             .copy_from_slice(crate::CONTINUATION_MARKER);
         pages[2 * crate::PAGE_SIZE..2 * crate::PAGE_SIZE + 4]
             .copy_from_slice(crate::TERMINAL_MARKER);
-        let frames = super::record_frames(&bytes).unwrap();
+        let frames = super::record_frames(&bytes).expect("valid multi-page record");
         assert_eq!(frames.len(), 1);
         assert_eq!(
             frames[0].source_range(),

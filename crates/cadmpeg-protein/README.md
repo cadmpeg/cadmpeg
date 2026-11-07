@@ -43,7 +43,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instance_view = root.child(protein_len, input.len()).ok_or_else(|| {
         std::io::Error::other("instance range is outside the input")
     })?;
-    let outcome = decode_detailed(&ctx, protein_view, instance_view)?;
+    let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let outcome = decode_detailed(&ctx, protein_view, instance_view, &mut parts, "appearance.protein")?;
 
     for record in &outcome.records {
         println!(

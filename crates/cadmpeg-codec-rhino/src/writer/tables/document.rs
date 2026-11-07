@@ -3,8 +3,8 @@
 
 use super::super::WriteError;
 use super::{
-    color, crc_chunk, integer, records, short_chunk, utf16, wire_index, CadIr, CodecError,
-    LossNote, Map, RhinoLossCode, Value,
+    color, crc_chunk, integer, records, short_chunk, utf16, wire_index, CadIr, LossNote, Map,
+    RhinoLossCode, Value,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 
@@ -120,10 +120,20 @@ fn current_fields(
             [Some(AttributeValue::Boolean(value))] => Value::Bool(*value),
             [Some(AttributeValue::Integer(value))] => (*value).into(),
             [Some(AttributeValue::Float(value))] => {
-                serde_json::to_value(value).map_err(CodecError::malformed)?
+                serde_json::to_value(value).map_err(|error| {
+                    WriteError::Omit(format!(
+                        "attribute {} cannot serialize its {arena}.{role} value: {error}",
+                        attribute.id
+                    ))
+                })?
             }
             [Some(AttributeValue::Vector(values))] => {
-                serde_json::to_value(values).map_err(CodecError::malformed)?
+                serde_json::to_value(values).map_err(|error| {
+                    WriteError::Omit(format!(
+                        "attribute {} cannot serialize its {arena}.{role} value: {error}",
+                        attribute.id
+                    ))
+                })?
             }
             _ => {
                 return Err(WriteError::Omit(format!(
@@ -833,7 +843,8 @@ pub(in crate::writer) fn settings(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
     losses: &mut Vec<LossNote>,
-) -> Result<SettingsExport, CodecError> {
+) -> Result<SettingsExport, WriteError> {
+    let fonts = super::fonts::styles(ir)?;
     let mut output = SettingsExport {
         records: Vec::new(),
         regenerated: std::collections::BTreeSet::new(),
@@ -842,6 +853,7 @@ pub(in crate::writer) fn settings(
     for setting in records(ir, "document_settings") {
         let fields = setting.fields()?;
         let mut neutral = false;
+        let mut reference_changed = false;
         let before = output.records.len();
         if let Some(url) = fields.get("model_url").and_then(Value::as_str) {
             output.records.push(crc_chunk(0x2000_8131, &utf16(url)?)?);
@@ -850,7 +862,22 @@ pub(in crate::writer) fn settings(
             output.records.push(short_chunk(0xa000_003c, value));
         }
         if let Some(index) = fields.get("current_font_index").and_then(Value::as_i64) {
-            output.records.push(short_chunk(0xa000_0132, index));
+            let target = match i32::try_from(index) {
+                Ok(source) => super::fonts::style_index(ir, &fonts, source),
+                Err(_) => None,
+            };
+            if let Some(target) = target {
+                output
+                    .records
+                    .push(short_chunk(0xa000_0132, i64::from(target)));
+            }
+            if target.map(i64::from) != Some(index) {
+                losses.push(RhinoLossCode::WriterTextStyleReferenceReduced.note(format!(
+                    "document setting {} current font index {index} is written as {target:?}",
+                    setting.id()
+                )));
+                reference_changed = true;
+            }
         }
         if fields
             .get("current_color")
@@ -905,10 +932,12 @@ pub(in crate::writer) fn settings(
             }
             continue;
         }
-        if neutral {
-            output.regenerated.insert(setting.id().to_owned());
-        } else {
-            output.written.insert(setting.id().to_owned());
+        if !reference_changed {
+            if neutral {
+                output.regenerated.insert(setting.id().to_owned());
+            } else {
+                output.written.insert(setting.id().to_owned());
+            }
         }
     }
     Ok(output)

@@ -450,24 +450,40 @@ fn parse_xml_userdata(
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<(i32, String), FramingError> {
+    let (version, xml) = parse_xml_userdata_recovering(ctx, bytes, payload_range)?;
+    Ok((version, xml.text))
+}
+
+fn parse_xml_userdata_recovering(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    payload_range: std::ops::Range<usize>,
+) -> Result<(i32, crate::xml_recovery::RecoveredXml), FramingError> {
     let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
     let xml_version = reader.i32()?;
-    let xml = match xml_version {
+    let (xml, source_offset, utf16) = match xml_version {
         1 => {
             let bytes = settings::utf16_payload(&mut reader)?;
-            ctx.utf16le_text(
-                bytes,
-                bytes.len() / 2,
-                false,
-                "Rhino mesh modifier XML text",
-            )
-            .map_err(|error| {
-                if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) {
-                    error.into()
-                } else {
-                    FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence")
-                }
-            })?
+            let source_offset =
+                reader.position() - bytes.len() - usize::from(!bytes.is_empty()) * 2;
+            let text = ctx
+                .utf16le_text(
+                    bytes,
+                    bytes.len() / 2,
+                    false,
+                    "Rhino mesh modifier XML text",
+                )
+                .map_err(|error| {
+                    if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) {
+                        error.into()
+                    } else {
+                        FramingError::structural(
+                            reader.position(),
+                            "invalid UTF-16 surrogate sequence",
+                        )
+                    }
+                })?;
+            (text, source_offset, true)
         }
         XML_USERDATA_VERSION => {
             let length_offset = reader.position();
@@ -488,7 +504,7 @@ fn parse_xml_userdata(
 
             let text = std::str::from_utf8(raw)
                 .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?;
-            text.to_owned()
+            (text.to_owned(), length_offset + 4, false)
         }
         version => {
             return Err(FramingError::structural(
@@ -498,7 +514,33 @@ fn parse_xml_userdata(
         }
     };
     reader.skip_remaining()?;
+    let xml = crate::xml_recovery::recover(ctx, &xml, source_offset, utf16)?;
     Ok((xml_version, xml))
+}
+
+pub(crate) fn damaged_attribute_xml(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    descriptors: &[AttributeUserdataDescriptor],
+) -> Result<Vec<crate::xml_recovery::XmlDamage>, FramingError> {
+    let mut damaged = Vec::new();
+    for (class, item) in [
+        (DISPLACEMENT_CLASS, DISPLACEMENT_ITEM),
+        (EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM),
+        (THICKENING_CLASS, THICKENING_ITEM),
+        (CURVE_PIPING_CLASS, CURVE_PIPING_ITEM),
+        (SHUT_LINING_CLASS, SHUT_LINING_ITEM),
+    ] {
+        let Some(descriptor) = first_matching_descriptor(descriptors, class, item) else {
+            continue;
+        };
+        match parse_xml_userdata_recovering(ctx, bytes, descriptor.payload_range.clone()) {
+            Ok((_, xml)) => damaged.extend(xml.damaged),
+            Err(error @ FramingError::Resource(_)) => return Err(error),
+            Err(_) => {}
+        }
+    }
+    Ok(damaged)
 }
 
 fn parse_xml(

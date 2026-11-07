@@ -662,14 +662,27 @@ pub(in crate::writer) fn styles(
     version: crate::RhinoArchiveVersion,
 ) -> Result<DimStyleExport, WriteError> {
     let modern_target = version != crate::RhinoArchiveVersion::V5;
+    let fonts = super::fonts::styles(ir)?;
     let mut output = DimStyleExport {
         records: Vec::new(),
         written: std::collections::BTreeSet::new(),
         losses: Vec::new(),
     };
-    for (position, record) in records(ir, "dimension_styles").iter().enumerate() {
-        let index = wire_index(position).map_err(WriteError::Fail)?;
-        let fields = record.fields()?;
+    for record in records(ir, "dimension_styles") {
+        let index = wire_index(output.records.len()).map_err(WriteError::Fail)?;
+        let mut fields = record.fields()?;
+        let mut reference_change = None;
+        if let Some(source) = fields
+            .get("text_style_index")
+            .and_then(Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+        {
+            let target = super::fonts::style_index(ir, &fonts, source).unwrap_or(-1);
+            if source != target {
+                fields.insert("text_style_index".into(), Value::from(target));
+                reference_change = Some((source, target));
+            }
+        }
         let v5_record = fields
             .get("controls")
             .and_then(Value::as_object)
@@ -709,7 +722,28 @@ pub(in crate::writer) fn styles(
         match written {
             Ok(payload) => {
                 output.records.push(payload?);
-                output.written.insert(record.id().to_owned());
+                let source_index = fields.get("archive_index").and_then(Value::as_i64);
+                let index_changed = source_index.is_some_and(|source| source != i64::from(index));
+                if let Some(source) = source_index.filter(|source| *source != i64::from(index)) {
+                    output
+                        .losses
+                        .push(
+                            RhinoLossCode::WriterDimensionStyleIndexReassigned.note(format!(
+                                "dimension style {} archive index {source} is written as {index}",
+                                record.id()
+                            )),
+                        );
+                }
+                if let Some((source, target)) = reference_change {
+                    output
+                        .losses
+                        .push(RhinoLossCode::WriterTextStyleReferenceReduced.note(format!(
+                            "dimension style {} text style index {source} is written as {target}",
+                            record.id()
+                        )));
+                } else if !index_changed {
+                    output.written.insert(record.id().to_owned());
+                }
             }
             Err(WriteError::Omit(reason)) => output.losses.push(
                 RhinoLossCode::WriterAttributesOmitted.note(format!("{}: {reason}", record.id())),

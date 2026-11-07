@@ -77,7 +77,7 @@ fn validate_recipe_class_headers<'a>(
             .iter()
             .filter_map(|edit| edit.design_id.as_ref())
         {
-            let length = u64::try_from(edit.value.len()).map_err(CodecError::malformed)?;
+            let length = cadmpeg_core::decode::u64_from_index(edit.value.len());
             let end = edit.offset.checked_add(length).ok_or_else(|| {
                 CodecError::UnsupportedContent("F3D recipe identity extent overflows".into())
             })?;

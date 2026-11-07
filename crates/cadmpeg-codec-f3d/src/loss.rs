@@ -401,6 +401,8 @@ pub(crate) enum F3dLossCode {
     WriterDesignRecordsOmitted,
     /// Content that the synthesized writer cannot represent.
     WriterGeometryOmitted,
+    /// A face's outer and inner loop classification is omitted.
+    WriterLoopClassificationOmitted,
     /// Content that the synthesized writer cannot represent.
     WriterAuxiliaryOmitted,
     /// Content that the synthesized writer cannot represent.
@@ -605,6 +607,7 @@ impl F3dLossCode {
         Self::WriterNativeRecordsOmitted,
         Self::WriterDesignRecordsOmitted,
         Self::WriterGeometryOmitted,
+        Self::WriterLoopClassificationOmitted,
         Self::WriterAuxiliaryOmitted,
         Self::WriterProceduralReduced,
         Self::WriterNoExportableSolids,
@@ -815,6 +818,7 @@ impl F3dLossCode {
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterDesignRecordsOmitted => "writer.design-records-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterLoopClassificationOmitted => "writer.loop-classification-omitted",
             Self::WriterAuxiliaryOmitted => "writer.auxiliary-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::WriterNoExportableSolids => "writer.no-exportable-solids",
@@ -838,6 +842,7 @@ impl F3dLossCode {
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::WriterDesignRecordsOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Error,
+            Self::WriterLoopClassificationOmitted => Severity::Warning,
             Self::WriterAuxiliaryOmitted => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterNoExportableSolids => Severity::Warning,
@@ -1030,6 +1035,7 @@ impl F3dLossCode {
             Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterLoopClassificationOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterAuxiliaryOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -1437,6 +1443,7 @@ mod tests {
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
                 "writer.geometry-omitted",
+                "writer.loop-classification-omitted",
                 "writer.auxiliary-omitted",
                 "writer.procedural-reduced",
                 "writer.no-exportable-solids",

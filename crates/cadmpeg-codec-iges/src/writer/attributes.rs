@@ -181,7 +181,7 @@ fn hollerith(value: &str) -> Result<String, String> {
 
 fn typed_value(value: &AttributeValue, targets: &Targets) -> Result<(i64, String), String> {
     Ok(match value {
-        AttributeValue::Integer(value) => (1, value.to_string()),
+        AttributeValue::Integer(value) => (1, integer_parameter(*value)?),
         AttributeValue::Float(value) => (2, super::number(*value)),
         AttributeValue::String(value) => (3, hollerith(value)?),
         AttributeValue::Boolean(value) => (6, i64::from(*value).to_string()),
@@ -210,6 +210,13 @@ fn typed_value(value: &AttributeValue, targets: &Targets) -> Result<(i64, String
             );
         }
     })
+}
+
+fn integer_parameter(value: i64) -> Result<String, String> {
+    if value == i64::MIN {
+        return Err("integer magnitude exceeds the declared IGES integer representation".into());
+    }
+    Ok(value.to_string())
 }
 
 fn entity(type_code: u32, form: i64, parameters: String) -> Entity {

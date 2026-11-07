@@ -538,6 +538,7 @@ fn write_archive_prefix(
     let mut light_losses = Vec::new();
     let mut linetype_losses = Vec::new();
     let mut hatch_losses = Vec::new();
+    let mut font_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -561,7 +562,11 @@ fn write_archive_prefix(
                 light_losses.extend(exported.losses);
                 exported.records
             }
-            TCODE_FONT_TABLE => tables::fonts::styles(ir)?,
+            TCODE_FONT_TABLE => {
+                let exported = tables::fonts::styles(ir)?;
+                font_losses.extend(exported.losses);
+                exported.records
+            }
             TCODE_HATCH_PATTERN_TABLE => {
                 let exported = tables::hatches::patterns(ir)?;
                 hatch_losses.extend(exported.losses);
@@ -604,7 +609,9 @@ fn write_archive_prefix(
     losses.extend(setting_losses);
     losses.extend(tables::layer_linetype_losses(ir)?);
     losses.extend(tables::layer_material_losses(ir, materials));
+    losses.extend(tables::layer_color_losses(ir)?);
     losses.extend(linetype_losses);
+    losses.extend(font_losses);
     for record in records_in(ir, "object_presentation") {
         if let Some(source) = record
             .field("linetype_index")
@@ -1463,7 +1470,9 @@ fn native_dispositions(
                     let (source, target) = tables::layer_linetype(ir, value)?;
                     let (material_source, material_target) =
                         tables::layer_material(ir, value, &materials);
-                    unchanged |= source == target && material_source == material_target;
+                    unchanged |= source == target
+                        && material_source == material_target
+                        && tables::layer_colors_complete(ir, value)?;
                 }
             }
             if unchanged && tables::native_layer_complete(record) {
@@ -1477,6 +1486,7 @@ fn native_dispositions(
         }
     }
     let emitted_linetypes = tables::native::linetypes(ir)?;
+    let emitted_fonts = tables::fonts::styles(ir)?;
     if let Some(namespace) = ir.native.namespace("rhino") {
         for arena in ["groups", "linetypes", "materials", "text_styles"] {
             for record in namespace.arenas().get(arena).into_iter().flatten() {
@@ -1497,7 +1507,17 @@ fn native_dispositions(
                     {
                         NativeDisposition::Written
                     }
-                    "text_styles" if tables::fonts::complete(record) => NativeDisposition::Written,
+                    "text_styles"
+                        if tables::fonts::complete(record)
+                            && emitted_fonts.indices.get(record.id()).is_some_and(|index| {
+                                record
+                                    .field("archive_index")
+                                    .and_then(|value| value.as_i64())
+                                    .is_none_or(|source| source == i64::from(*index))
+                            }) =>
+                    {
+                        NativeDisposition::Written
+                    }
                     "materials"
                         if ir.model.appearances.iter().any(|appearance| {
                             appearance.native_ref.as_deref() == Some(record.id())
