@@ -339,6 +339,27 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn recognizes_nested_attribute_value_variants() {
+        let row = json!({
+            "id": "test:model:attribute#1",
+            "target": {"kind": "document"},
+            "name": "metadata",
+            "values": [{"kind": "map", "value": []}]
+        });
+        let found = super::record("attributes", &row);
+        assert!(
+            found.variants.contains("AttributeTarget::Document"),
+            "{:?}",
+            found.variants
+        );
+        assert!(
+            found.variants.contains("AttributeValue::Map"),
+            "{:?}",
+            found.variants
+        );
+    }
+
+    #[test]
     fn distinguishes_enum_fields_from_unrelated_strings() {
         let row = json!({"id":"test:model:drawing#1", "kind":"dimension", "runtime_type":"view"});
         let found = super::record("drawings", &row);
