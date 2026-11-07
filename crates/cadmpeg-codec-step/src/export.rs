@@ -3754,8 +3754,9 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::RegionEdgesRecovered,
                 format!(
-                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
+                    "region {} of body {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
                     region.id,
+                    region.body,
                     edges.len()
                 ),
             );
