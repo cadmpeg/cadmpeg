@@ -24046,7 +24046,7 @@ anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
 name = "sketch_geometry_ordinal_collection_reference"
 kind = "byte"
 section = "3.1"
-anchor = "When it is `01`, its u64 target at member offset 37 names the ordinal collection."
+anchor = "When it is `01`, its u64 target at member offset 37 names the direct container of the sketch"
 size = 11
 note = "The reference starts at offset 36 relative to the Geometry-member indexed header."
 
@@ -24063,14 +24063,14 @@ name = "target"
 offset = 1
 type = "u64"
 source = "spec"
-anchor = "its u64 target at member offset 37 names the ordinal collection"
+anchor = "its u64 target at member offset 37 names the direct container of the sketch"
 
 [[record.field]]
 name = "flags"
 offset = 9
 type = "bytes[2]"
 source = "spec"
-anchor = "When it is `01`, its u64 target at member offset 37 names the ordinal collection."
+anchor = "When it is `01`, its u64 target at member offset 37 names the direct container of the sketch"
 
 [[record]]
 name = "sketch_ordinal_collection_prefix"
@@ -24093,6 +24093,56 @@ offset = 11
 type = "bytes[9]"
 source = "spec"
 anchor = "Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx`"
+
+[[record]]
+name = "sketch_folder_prefix"
+kind = "byte"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"]
+section = "3.1"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+size = 32
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "zero_run_2"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "flag"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "zero_run_3"
+offset = 27
+type = "bytes[5]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
 
 [[record]]
 name = "assembly_as_built_scope_378"
