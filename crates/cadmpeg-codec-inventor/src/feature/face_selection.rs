@@ -67,7 +67,40 @@ pub(in crate::feature) struct SelectedFace {
     /// A generated-name family of the owner shares no feature source index
     /// with the generator array, and another family of the owner does.
     pub(super) unshared_family: bool,
+    /// The pair has several matched owners with identical surface geometry
+    /// and sense, and `owner` is the one with the lowest entity index.
+    pub(super) identical_owners: bool,
+    /// Surface class of the owner.
+    pub(super) surface: Surface,
 }
+
+/// Surface class of a selected face revision.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::feature) enum Surface {
+    /// The face stores no surface this reader classifies.
+    Other,
+    Plane,
+    /// A cone with unit axis ratio within `EPS_CONE_RATIO`, or a non-finite
+    /// ratio that `assumption_losses` names. `sine` is the sine
+    /// of the half-angle, and within `EPS_CYLINDER_SINE` of zero for a cylinder;
+    /// `radius` is the length of the stored major axis, in the length unit of
+    /// the archive.
+    Cone {
+        ratio: f64,
+        sine: f64,
+        radius: f64,
+    },
+}
+
+/// Largest `sine` magnitude of a cone that counts as a cylinder.
+const EPS_CYLINDER_SINE: f64 = 1e-9;
+/// Largest difference between a cylinder diameter and a stated thread
+/// diameter, in millimetres.
+const EPS_THREAD_DIAMETER_MM: f64 = 1e-6;
+/// Millimetres per unit of the archive length.
+const MM_PER_ARCHIVE_LENGTH: f64 = 10.0;
+/// Largest difference of the axis ratio of a cone from one.
+const EPS_CONE_RATIO: f64 = 1e-9;
 
 /// Parses a face selector, or `None` for another selector form.
 pub(super) fn parse(
@@ -154,6 +187,82 @@ pub(super) fn links(
         && target(selector.context, CONTEXT_TYPE)
 }
 
+/// Whether the record is a surface of kind `kind`, directly or as a history
+/// snapshot.
+fn is_surface(record: &Record, kind: &str) -> bool {
+    record.head() == kind
+        || (record.name == "End-of-ASM-History-Section"
+            && matches!(record.tokens.first(), Some(Token::Ident(name)) if name == kind))
+}
+
+/// The surface record of a face revision. Field 7 of a face is its surface.
+fn surface_record<'a>(
+    face: &Record,
+    by_index: &HashMap<i64, Option<&'a Record>>,
+) -> Option<&'a Record> {
+    let Some(Token::Ref(index)) = face.chunk(7) else {
+        return None;
+    };
+    by_index.get(index).copied().flatten()
+}
+
+/// Classifies the surface of a face revision. Fields 3 to 5 of a cone are its
+/// origin, axis, and major axis, field 6 is the axis ratio, and field 9 is the
+/// sine of the half-angle.
+fn classify_surface(face: &Record, by_index: &HashMap<i64, Option<&Record>>) -> Surface {
+    let Some(surface) = surface_record(face, by_index) else {
+        return Surface::Other;
+    };
+    if is_surface(surface, "plane") {
+        return Surface::Plane;
+    }
+    if !is_surface(surface, "cone") {
+        return Surface::Other;
+    }
+    let (Some(Token::Vector3(major)), Some(Token::Double(ratio)), Some(Token::Double(sine))) =
+        (surface.chunk(5), surface.chunk(6), surface.chunk(9))
+    else {
+        return Surface::Other;
+    };
+    // A non-finite ratio stays a cone, and `assumption_losses` names it.
+    if ratio.is_finite() && (ratio - 1.0).abs() > EPS_CONE_RATIO {
+        return Surface::Other;
+    }
+    let radius = major.iter().map(|axis| axis * axis).sum::<f64>().sqrt();
+    if radius.is_finite() && radius > 0.0 && sine.is_finite() {
+        Surface::Cone {
+            ratio: *ratio,
+            sine: *sine,
+            radius,
+        }
+    } else {
+        Surface::Other
+    }
+}
+
+/// Surface record kinds that a face revision can name.
+const SURFACE_KINDS: [&str; 5] = ["plane", "cone", "sphere", "torus", "spline"];
+
+/// The surface fields and the sense of a face revision, for the comparison of
+/// the owners of one selector pair. `None` when the face stores no surface
+/// record or no sense.
+fn surface_signature(face: &Record, by_index: &HashMap<i64, Option<&Record>>) -> Option<String> {
+    let surface = surface_record(face, by_index)?;
+    if !SURFACE_KINDS.iter().any(|kind| is_surface(surface, kind)) {
+        return None;
+    }
+    let sense = face
+        .chunk(8)
+        .filter(|token| matches!(token, Token::True | Token::False))?;
+    let fields = surface
+        .chunks()
+        .skip(3)
+        .chain(std::iter::once(sense))
+        .map(|token| format!("{token:?}"))
+        .collect::<Vec<_>>();
+    (fields.len() > 3).then(|| format!("{}:{}", surface.head(), fields.join(",")))
+}
+
 fn is_face(record: &Record) -> bool {
     record.head() == "face"
         || (record.name == "End-of-ASM-History-Section"
@@ -162,13 +271,15 @@ fn is_face(record: &Record) -> bool {
 
 /// Selects the face revision that each selector names.
 ///
-/// A selector selects a face when its source index and key have one matched
-/// owner, the owner is a face revision, the matching attribute carries the
-/// face qualifier, and a generated-name family of the owner, if it has any,
-/// includes a generator of the selector. A pair with several matched owners,
-/// or with an owner of another kind or qualifier, selects nothing. The result
-/// states when the pair repeats its attribute on the owner, and when another
-/// family of the owner shares no generator.
+/// A selector selects a face when every matched owner of its source index and
+/// key is a face revision, the matching attributes carry the face qualifier,
+/// and a generated-name family of each owner, if it has any, includes a
+/// generator of the selector. Several matched owners select the owner with the
+/// lowest entity index when their surface records and senses are identical.
+/// A pair with several owners of different or unstored surfaces, or with an
+/// owner of another kind or qualifier, selects nothing. The result states when
+/// the pair repeats its attribute on an owner, when another family of an owner
+/// shares no generator, and when several owners were identical.
 pub(super) fn selected(
     records: &[Record],
     selectors: &[FaceSelector],
@@ -213,33 +324,64 @@ pub(super) fn selected(
         let Some(owners) = matches.get(&(selector.source, selector.key)) else {
             continue;
         };
-        let mut distinct = owners.iter();
-        let (Some((&(owner, FACE_QUALIFIER), &attributes)), None) =
-            (distinct.next(), distinct.next())
-        else {
+        let mut ids = Vec::new();
+        let mut repeated_attribute = false;
+        for (&(owner, qualifier), &attributes) in owners {
+            if qualifier != FACE_QUALIFIER {
+                ids.clear();
+                break;
+            }
+            ids.push(owner);
+            repeated_attribute |= attributes > 1;
+        }
+        ids.sort_unstable();
+        let mut revisions = Vec::new();
+        for owner in &ids {
+            match by_index.get(owner) {
+                Some(Some(revision)) if is_face(revision) => revisions.push(*revision),
+                _ => break,
+            }
+        }
+        let Some(&first) = revisions.first() else {
             continue;
         };
-        let owner = &owner;
-        let Some(Some(revision)) = by_index.get(owner) else {
-            continue;
-        };
-        if !is_face(revision) {
+        if revisions.len() != ids.len() {
             continue;
         }
-        let families = generated.get(owner);
-        let shared = families.map_or(0, |families| {
-            families
-                .values()
-                .filter(|sources| {
-                    selector
-                        .generators
-                        .iter()
-                        .any(|generator| sources.contains(generator))
-                })
-                .count()
-        });
-        let family_count = families.map_or(0, HashMap::len);
-        if family_count > 0 && shared == 0 {
+        let identical_owners = revisions.len() > 1;
+        if identical_owners {
+            let signature = surface_signature(first, &by_index);
+            if signature.is_none()
+                || revisions
+                    .iter()
+                    .any(|revision| surface_signature(revision, &by_index) != signature)
+            {
+                continue;
+            }
+        }
+        let mut unshared_family = false;
+        let mut named = true;
+        for owner in &ids {
+            let families = generated.get(owner);
+            let shared = families.map_or(0, |families| {
+                families
+                    .values()
+                    .filter(|sources| {
+                        selector
+                            .generators
+                            .iter()
+                            .any(|generator| sources.contains(generator))
+                    })
+                    .count()
+            });
+            let family_count = families.map_or(0, HashMap::len);
+            if family_count > 0 && shared == 0 {
+                named = false;
+                break;
+            }
+            unshared_family |= shared < family_count;
+        }
+        if !named {
             continue;
         }
         let Some(item) = selector.item.record_ordinal() else {
@@ -248,10 +390,12 @@ pub(super) fn selected(
         faces.push((
             selector.source,
             SelectedFace {
-                owner: *owner,
+                owner: ids[0],
                 item,
-                repeated_attribute: attributes > 1,
-                unshared_family: shared < family_count,
+                repeated_attribute,
+                unshared_family,
+                identical_owners,
+                surface: classify_surface(first, &by_index),
             },
         ));
     }
@@ -273,66 +417,178 @@ fn face_id(token: &str, source: u32) -> Result<HistoricalFaceId, CodecError> {
         .map_err(CodecError::malformed)
 }
 
+/// The face collections that a native face selection names. A Move Face,
+/// Shell, or Thread selection is one face collection. A Thicken selection is
+/// a selection list whose members each name one face collection.
+fn face_collections<'a>(
+    collection: &'a PmDcFeatureProperty,
+    property: &impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> Option<Vec<&'a PmDcFeatureProperty>> {
+    match &collection.kind {
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::FaceCollection,
+            ..
+        } => Some(vec![collection]),
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::SelectionList,
+            items,
+        } => {
+            let mut collections = Vec::new();
+            for reference in items.references() {
+                let PmDcFeaturePropertyKind::ThickenSelection { faces, .. } =
+                    &property(*reference)?.kind
+                else {
+                    return None;
+                };
+                collections.push(property(*faces)?);
+            }
+            (!collections.is_empty()).then_some(collections)
+        }
+        _ => None,
+    }
+}
+
 /// The `(face item ordinal, selector source index)` operands of a face
-/// collection in source order, or `None` for another form or a collection
+/// selection in source order, or `None` for another form or a selection
 /// that selects no face.
 pub(crate) fn selection_sources<'a>(
-    collection: &PmDcFeatureProperty,
+    collection: &'a PmDcFeatureProperty,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
 ) -> Option<Vec<(u32, u32)>> {
-    let PmDcFeaturePropertyKind::References {
-        family: PmDcFeatureReferenceFamily::FaceCollection,
-        items,
-    } = &collection.kind
-    else {
-        return None;
-    };
-    if items.references().is_empty() {
-        return None;
-    }
     let mut sources = Vec::new();
-    for reference in items.references() {
-        let item = property(*reference)?;
-        let PmDcFeaturePropertyKind::FaceItem {
-            index_references, ..
-        } = &item.kind
-        else {
+    for collection in face_collections(collection, &property)? {
+        let PmDcFeaturePropertyKind::References { items, .. } = &collection.kind else {
             return None;
         };
-        // An item with an empty index list selects no face.
-        for source in index_references.values() {
-            if sources.iter().any(|(_, previous)| previous == source) {
+        if items.references().is_empty() {
+            return None;
+        }
+        for reference in items.references() {
+            let item = property(*reference)?;
+            let PmDcFeaturePropertyKind::FaceItem {
+                index_references, ..
+            } = &item.kind
+            else {
                 return None;
+            };
+            // An item with an empty index list selects no face.
+            for source in index_references.values() {
+                if sources.iter().any(|(_, previous)| previous == source) {
+                    return None;
+                }
+                sources.push((item.identity.record_ordinal, *source));
             }
-            sources.push((item.identity.record_ordinal, *source));
         }
     }
     (!sources.is_empty()).then_some(sources)
 }
 
-/// Source tag of a face-motion feature.
-const SOURCE_TAG: &str = "move_face";
+/// Feature kinds whose face operands take the join.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// Move Face; the face collection is the native selection.
+    MoveFace,
+    /// Shell; the removed faces are the native selection.
+    Shell,
+    /// Thread annotation; the single threaded face is the native selection.
+    Thread,
+    /// Thicken without the face-offset form; the selection list is the native selection.
+    Thicken,
+}
 
 fn selections_mut(definition: &mut FeatureDefinition) -> Option<&mut FaceSelection> {
     match definition {
-        FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => Some(faces),
+        FeatureDefinition::Operation(
+            FeatureOperation::MoveFace { faces, .. }
+            | FeatureOperation::Thicken { faces, .. }
+            | FeatureOperation::Shell {
+                removed_faces: faces,
+                ..
+            }
+            | FeatureOperation::CosmeticThread { face: faces, .. },
+        ) => Some(faces),
         _ => None,
     }
 }
 
-fn selection(feature: &Feature) -> Option<&FaceSelection> {
-    if feature.source_tag.as_deref() != Some(SOURCE_TAG) {
-        return None;
+/// The kind and face selection of a feature that takes the join. A Thicken
+/// feature in the face-offset form, which is a Move Face operation that
+/// carries the Thicken source tag, keeps its native selection.
+fn selection(feature: &Feature) -> Option<(Kind, &FaceSelection)> {
+    let tag = feature.source_tag.as_deref();
+    match (tag, feature.evaluation.definition()) {
+        (
+            Some("move_face"),
+            FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }),
+        ) => Some((Kind::MoveFace, faces)),
+        (
+            Some("shell"),
+            FeatureDefinition::Operation(FeatureOperation::Shell { removed_faces, .. }),
+        ) => Some((Kind::Shell, removed_faces)),
+        (
+            Some("thread"),
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }),
+        ) => Some((Kind::Thread, face)),
+        (
+            Some("thicken"),
+            FeatureDefinition::Operation(FeatureOperation::Thicken { faces, .. }),
+        ) => Some((Kind::Thicken, faces)),
+        _ => None,
     }
+}
+
+/// The stated nominal diameter of a thread annotation, in millimetres.
+fn thread_diameter(feature: &Feature) -> Option<f64> {
     match feature.evaluation.definition() {
-        FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => Some(faces),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { diameter, .. }) => {
+            diameter.map(cadmpeg_ir::scalar::PositiveLength::get)
+        }
         _ => None,
     }
 }
 
-/// Replaces the native face selection of each Move Face feature whose face
-/// operands join stored face revisions, and returns the input states that
-/// hold those faces.
+/// Whether the surface of a joined face admits a thread annotation. The face
+/// is a cylinder or a cone. A cylinder agrees with the stated diameter.
+fn thread_surface_admitted(surface: Surface, diameter: Option<f64>) -> bool {
+    match surface {
+        Surface::Cone { sine, radius, .. } if sine.abs() > EPS_CYLINDER_SINE && radius > 0.0 => {
+            true
+        }
+        Surface::Cone { radius, .. } => diameter.is_none_or(|diameter| {
+            (2.0 * radius * MM_PER_ARCHIVE_LENGTH - diameter).abs() <= EPS_THREAD_DIAMETER_MM
+        }),
+        Surface::Plane | Surface::Other => false,
+    }
+}
+
+/// Whether a thread face that the tolerances admit differs from the exact form:
+/// a unit axis ratio, a zero sine for a cylinder, and the stated diameter.
+fn thread_tolerance_used(surface: Surface, diameter: Option<f64>) -> bool {
+    let Surface::Cone {
+        ratio,
+        sine,
+        radius,
+    } = surface
+    else {
+        return false;
+    };
+    let cylinder = sine.abs() <= EPS_CYLINDER_SINE;
+    (ratio.is_finite() && ratio != 1.0)
+        || (cylinder && sine != 0.0)
+        || (cylinder
+            && diameter.is_some_and(|diameter| 2.0 * radius * MM_PER_ARCHIVE_LENGTH != diameter))
+}
+
+/// Whether a thread face stores a cone axis ratio that is not a finite number.
+fn thread_ratio_nonfinite(surface: Surface) -> bool {
+    matches!(surface, Surface::Cone { ratio, .. } if !ratio.is_finite())
+}
+
+/// Replaces the native face selection of each Move Face, Shell, Thread, and
+/// Thicken feature whose face operands join stored face revisions, and
+/// returns the input states that hold those faces. Only Move Face keeps a
+/// partly joined collection. A Thread annotation joins one face whose surface
+/// is a cone or a cylinder of the stated diameter.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     features: &mut [Feature],
@@ -364,10 +620,11 @@ pub(crate) fn project(
     }));
     let mut states = Vec::new();
     for feature in features {
-        let Some(FaceSelection::Native(native)) = selection(feature) else {
+        let Some((kind, FaceSelection::Native(native))) = selection(feature) else {
             continue;
         };
         let native = native.clone();
+        let diameter = thread_diameter(feature);
         let Some(Some(source)) = feature
             .native_ref
             .as_deref()
@@ -392,6 +649,10 @@ pub(crate) fn project(
         let mut unresolved = Vec::new();
         let mut owners = HashSet::new();
         let mut conflict = false;
+        let admitted_count = match kind {
+            Kind::Thread => operands.len() == 1,
+            _ => true,
+        };
         for (item, selector) in operands {
             let selected = inventory
                 .edge_inputs
@@ -401,6 +662,8 @@ pub(crate) fn project(
             match selected {
                 Some(face) => {
                     conflict |= !owners.insert(face.owner);
+                    conflict |=
+                        kind == Kind::Thread && !thread_surface_admitted(face.surface, diameter);
                     faces.push(face_id(token, selector)?);
                 }
                 None => {
@@ -413,7 +676,11 @@ pub(crate) fn project(
                 }
             }
         }
-        if conflict || faces.is_empty() {
+        if conflict
+            || faces.is_empty()
+            || !admitted_count
+            || (kind != Kind::MoveFace && !unresolved.is_empty())
+        {
             continue;
         }
         let state = state_id(source)?;
@@ -455,18 +722,25 @@ pub(crate) fn valid<'a>(
     property: impl Fn(&str) -> Option<&'a PmDcFeatureProperty>,
     property_at: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
 ) -> bool {
-    let (state, faces, native, unresolved) = match selection(feature) {
-        Some(FaceSelection::Historical {
-            state,
-            faces,
-            native,
-        }) => (state, faces.as_slice(), native.as_str(), None),
-        Some(FaceSelection::HistoricalPartial {
-            state,
-            faces,
-            unresolved,
-            native,
-        }) => (
+    let (kind, state, faces, native, unresolved) = match selection(feature) {
+        Some((
+            kind,
+            FaceSelection::Historical {
+                state,
+                faces,
+                native,
+            },
+        )) => (kind, state, faces.as_slice(), native.as_str(), None),
+        Some((
+            kind,
+            FaceSelection::HistoricalPartial {
+                state,
+                faces,
+                unresolved,
+                native,
+            },
+        )) => (
+            kind,
             state,
             faces.as_slice(),
             native.as_str(),
@@ -474,6 +748,13 @@ pub(crate) fn valid<'a>(
         ),
         _ => return true,
     };
+    // Only Move Face keeps a partly joined collection, and a Thread
+    // annotation selects one face.
+    if (kind != Kind::MoveFace && unresolved.is_some())
+        || (kind == Kind::Thread && faces.len() != 1)
+    {
+        return false;
+    }
     let token = source.identity.segment_token.as_str();
     let Some(collection) = property(native) else {
         return false;
@@ -550,7 +831,10 @@ pub(crate) fn native_losses(features: &[Feature]) -> Vec<cadmpeg_ir::report::los
         .filter(|feature| {
             matches!(
                 selection(feature),
-                Some(FaceSelection::Native(_) | FaceSelection::HistoricalPartial { .. })
+                Some((
+                    Kind::MoveFace,
+                    FaceSelection::Native(_) | FaceSelection::HistoricalPartial { .. }
+                ))
             )
         })
         .count();
@@ -561,9 +845,10 @@ pub(crate) fn native_losses(features: &[Feature]) -> Vec<cadmpeg_ir::report::los
     }
 }
 
-/// Notes counting the Move Face features whose selected faces rest on a reading:
-/// that a matched revision is the input face of the feature, of a repeated
-/// matching attribute, or of an unshared generated-name family.
+/// Notes counting the face-selecting features whose selected faces rest on a
+/// reading: that a matched revision is the input face of the feature, of a
+/// repeated matching attribute, of an unshared generated-name family, or of
+/// several owners of identical surface geometry.
 pub(crate) fn assumption_losses(
     features: &[Feature],
     inventory: &crate::feature::FeatureInventory,
@@ -582,8 +867,8 @@ pub(crate) fn assumption_losses(
             .iter()
             .filter(|feature| {
                 let faces = match selection(feature) {
-                    Some(FaceSelection::Historical { faces, .. }) => faces.as_slice(),
-                    Some(FaceSelection::HistoricalPartial { faces, .. }) => faces.as_slice(),
+                    Some((_, FaceSelection::Historical { faces, .. })) => faces.as_slice(),
+                    Some((_, FaceSelection::HistoricalPartial { faces, .. })) => faces.as_slice(),
                     _ => return false,
                 };
                 faces.iter().any(|face| ids.contains(face))
@@ -597,19 +882,55 @@ pub(crate) fn assumption_losses(
         .filter(|feature| {
             matches!(
                 selection(feature),
-                Some(FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. })
+                Some((
+                    _,
+                    FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. }
+                ))
             )
         })
         .count();
+    let identical = count(&ids(|face| face.identical_owners));
+    let thread_count = |flag: &dyn Fn(Surface, Option<f64>) -> bool| {
+        features
+            .iter()
+            .filter(|feature| {
+                let Some((Kind::Thread, FaceSelection::Historical { faces, .. })) =
+                    selection(feature)
+                else {
+                    return false;
+                };
+                inventory
+                    .edge_inputs
+                    .faces
+                    .iter()
+                    .any(|((token, source), face)| {
+                        flag(face.surface, thread_diameter(feature))
+                            && face_id(token, *source)
+                                .is_ok_and(|id| faces.as_slice().contains(&id))
+                    })
+            })
+            .count()
+    };
+    let tolerated = thread_count(&thread_tolerance_used);
+    let nonfinite = thread_count(&|surface, _| thread_ratio_nonfinite(surface));
     let mut notes = Vec::new();
     if selecting > 0 {
-        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinInputRevisionAssumed.note(format!("{selecting} Move Face feature(s) keep historical face selections; the join does not establish the stored body state of a matched revision, so the selection assumes that the revision represents the input face of the feature.")));
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinInputRevisionAssumed.note(format!("{selecting} face-selecting feature(s) keep historical face selections; the join does not establish the stored body state of a matched revision, so the selection assumes that the revision represents the input face of the feature.")));
     }
     if repeated > 0 {
-        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinRepeatedAttribute.note(format!("{repeated} Move Face feature(s) select a face through a matching attribute that repeats on its owner; the selection assumes that the copies state one selection.")));
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinRepeatedAttribute.note(format!("{repeated} face-selecting feature(s) select a face through a matching attribute that repeats on its owner; the selection assumes that the copies state one selection.")));
     }
     if unshared > 0 {
-        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinUnsharedFamily.note(format!("{unshared} Move Face feature(s) select a face with a generated-name family that shares no feature with the selector; the selection assumes that another family of the face identifies it.")));
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinUnsharedFamily.note(format!("{unshared} face-selecting feature(s) select a face with a generated-name family that shares no feature with the selector; the selection assumes that another family of the face identifies it.")));
+    }
+    if nonfinite > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinThreadRatioNonfinite.note(format!("{nonfinite} Thread feature(s) select a cone face whose stored axis ratio is not a finite number; the selection assumes that the face is a circular cone.")));
+    }
+    if tolerated > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinThreadToleranceAssumed.note(format!("{tolerated} Thread feature(s) select a face within the tolerances of the cone axis ratio, the cylinder sine, or the stated diameter; the selection assumes that the difference is rounding.")));
+    }
+    if identical > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinIdenticalOwners.note(format!("{identical} face-selecting feature(s) select a face through a selector pair with several matched owners of identical surface geometry; the selection takes the owner with the lowest entity index.")));
     }
     notes
 }

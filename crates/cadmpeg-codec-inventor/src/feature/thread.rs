@@ -201,7 +201,7 @@ impl DefinitionPayload {
 
 pub(crate) fn partial_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
     (count != 0).then(|| crate::loss::InventorLossCode::FeatureThreadDefinitionPartial.note(format!(
-        "Transferred {count} Inventor thread annotation(s) with native face selections; class, unresolved sizing, handedness, and termination operands remain native."
+        "Transferred {count} Inventor thread annotation(s) with face selections that are native or historical; class, unresolved sizing, handedness, and termination operands remain native."
     )))
 }
 
