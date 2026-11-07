@@ -140,26 +140,23 @@ pub(super) fn append_color_definitions(
                             .and_then(|namespace| namespace.arenas().get("entities"))
                             .and_then(|records| records.iter().find(|entry| entry.id() == source))
                         {
-                            if let Some(label) =
-                                directory
-                                    .field("label")
-                                    .and_then(|value| {
-                                        serde_json::from_value::<
+                            if let Some(label) = directory
+                                .field("label")
+                                .and_then(|value| {
+                                    serde_json::from_value::<
                                             cadmpeg_ir::native::bytes::NativeBytes,
                                         >(value)
                                         .ok()
-                                    })
-                                    .and_then(|bytes| {
-                                        String::from_utf8(bytes.as_ref().to_vec()).ok()
-                                    })
-                                    .filter(|label| {
-                                        label.len() <= 8
-                                            && label
-                                                .bytes()
-                                                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-                                    })
+                                })
+                                .and_then(|bytes| String::from_utf8(bytes.as_ref().to_vec()).ok())
+                                .filter(|label| {
+                                    label.len() <= 8
+                                        && label
+                                            .bytes()
+                                            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+                                })
                             {
-                                definition.label = label.trim().to_owned();
+                                label.trim().clone_into(&mut definition.label);
                             }
                         }
                         definition.source_targets.push(source);
