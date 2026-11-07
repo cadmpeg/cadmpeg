@@ -39,7 +39,7 @@ pub(crate) struct FeatureInputRename {
 fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<Vec<FeatureInputRename>, WriteError> {
     // A history-only document has no serialized feature-input names to
     // synchronize. Its current history name is still authored below, without
     // turning an unrelated metadata edit into a refusal of retained B-rep.
@@ -81,12 +81,12 @@ fn synchronize_feature_input_names(
             }
         }
         let [(lane_index, name_index)] = matches.as_slice() else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
             )));
         };
         let value = cadmpeg_core::text::NonBlankString::new(new_name).ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
             ))
         })?;
@@ -633,7 +633,7 @@ fn synchronize_features(
             )));
         }
         let suppressed = feature.suppressed.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "SLDPRT feature {} has unresolved suppression",
                 feature.id
             ))
