@@ -215,6 +215,7 @@ fn write_buffered<'budget>(
         reduced.model.pcurves.clear();
         reduced.model.procedural_curves.clear();
         reduced.model.procedural_surfaces.clear();
+        reduced.model.tessellations.clear();
         reduced
     });
     let mut plan = prepare_write(ctx, reduced.as_ref().unwrap_or(ir), version, session)?;
