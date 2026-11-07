@@ -590,8 +590,17 @@ pub(in crate::writer) fn records(
                 annotation.id
             )));
         }
-        let attributes =
+        let mut attributes =
             object_attributes_payload(ir, annotation.id.as_str(), None, None, None, materials)?;
+        if native
+            .as_ref()
+            .and_then(|fields| fields.get("source_uuid"))
+            .and_then(Value::as_str)
+            .and_then(crate::presentation::parse_uuid_text)
+            .is_some_and(|uuid| uuid.is_nil())
+        {
+            attributes[1..17].fill(0);
+        }
         output.push(framed_object_record(
             if is_dot { 0x2000 } else { 0x200 },
             class,
