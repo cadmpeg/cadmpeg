@@ -1255,8 +1255,61 @@ fn mesh_filename_entries(
     entries
 }
 
+fn decode_mesh_record_parts<T>(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frames: Vec<TypedPrimaryFrame<'_>>,
+    mut parse: impl FnMut(TypedPrimaryFrame<'_>) -> Result<T, CodecError>,
+) -> Result<Vec<T>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let mut out = Vec::new();
+    for frame in frames {
+        let start = source
+            .start()
+            .checked_add(frame.start)
+            .ok_or_else(|| CodecError::malformed("mesh Design record start overflows"))?;
+        let end = source
+            .start()
+            .checked_add(frame.end)
+            .ok_or_else(|| CodecError::malformed("mesh Design record end overflows"))?;
+        let extent = source
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("mesh Design record exceeds its stream"))?;
+        let id = cadmpeg_ir::ids::Identity::new(crate::design::decode::text::design_record_id(
+            stream,
+            ":design-record-header#",
+            u64_from_index(frame.start),
+        ))
+        .map_err(CodecError::malformed)?;
+        let mut spec = PartSpec::new("f3d.bulk_record")
+            .holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ])
+            .record_id(id);
+        if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+            spec = spec.in_stream(
+                cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                    .map_err(CodecError::malformed)?,
+            );
+        }
+        let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+        if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+            continue;
+        }
+        if let Some(value) = ctx.decode_part(parts, extent, spec, |_| parse(frame))? {
+            out.push(value);
+        }
+    }
+    Ok(out)
+}
+
 fn parse_mesh_design_records<F>(
-    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
     meta: &crate::metastream::MetaStream,
     source_entry_name: &str,
     asset_for_filename: &mut F,
@@ -1264,6 +1317,7 @@ fn parse_mesh_design_records<F>(
 where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
+    let bytes = source.window();
     let stream = crate::ids::native_scope(source_entry_name);
     let frames = super::meta::design_primary_frames(bytes, meta)?;
     let records = crate::design::decode::meta::primary_frame_extents(&frames);
@@ -1271,86 +1325,122 @@ where
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
-    let collections = collection_frames
-        .into_iter()
-        .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let collections = decode_mesh_record_parts(
+        ctx,
+        parts,
+        source,
+        source_entry_name,
+        collection_frames,
+        |frame| parse_mesh_collection_record(bytes, meta, frame),
+    )?
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
     if collections.is_empty() {
         return Ok(Vec::new());
     }
     let entry_name_frames = typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID)?;
     let mut entry_names = unique_record_map(
-        entry_name_frames
-            .into_iter()
-            .map(|frame| parse_mesh_entry_name_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            entry_name_frames,
+            |frame| parse_mesh_entry_name_record(bytes, frame),
+        )?,
         |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
     let guid_frames = typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID)?;
     let mut guids = unique_record_map(
-        guid_frames
-            .into_iter()
-            .map(|frame| parse_mesh_guid_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            guid_frames,
+            |frame| parse_mesh_guid_record(bytes, frame),
+        )?,
         |record| record.guid.record().record_index(),
         "mesh-GUID",
     )?;
     let body_frames = typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID)?;
     let mut bodies = unique_record_map(
-        body_frames
-            .into_iter()
-            .map(|frame| parse_mesh_body_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            body_frames,
+            |frame| parse_mesh_body_record(bytes, frame),
+        )?,
         |record| record.placement.record().record_index(),
         "mesh-body",
     )?;
     let texture_table_frames = typed_primary_frames(bytes, meta, MESH_TEXTURE_TABLE_TYPE_GUID)?;
     let collection_record_indices = mesh_collection_indices(&collections);
     let mut texture_tables = unique_record_map(
-        texture_table_frames
-            .into_iter()
-            .map(|frame| parse_mesh_texture_table_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            texture_table_frames,
+            |frame| parse_mesh_texture_table_record(bytes, frame),
+        )?,
         |record| record.identity.record_index(),
         "mesh-texture-table",
     )?;
     let wrapper_frames = typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID)?;
     let mut wrappers = unique_record_map(
-        wrapper_frames
-            .into_iter()
-            .map(|frame| parse_mesh_wrapper_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            wrapper_frames,
+            |frame| parse_mesh_wrapper_record(bytes, frame),
+        )?,
         |record| record.identity.record_index(),
         "mesh-wrapper",
     )?;
     let scope_frames = typed_primary_frames(bytes, meta, MESH_FEATURE_SCOPE_TYPE_GUID)?;
     let mut scopes = unique_record_map(
-        scope_frames
-            .into_iter()
-            .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            scope_frames,
+            |frame| parse_mesh_scope_record(bytes, meta, &records, frame),
+        )?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
     let state_frames = typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID)?;
     let mut states = unique_record_map(
-        state_frames
-            .into_iter()
-            .map(|frame| parse_mesh_scene_state_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            state_frames,
+            |frame| parse_mesh_scene_state_record(bytes, frame),
+        )?,
         |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
     let scene_node_frames = typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID)?;
     let mut scene_nodes = unique_record_map(
-        scene_node_frames
-            .into_iter()
-            .map(|frame| parse_scene_node_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        decode_mesh_record_parts(
+            ctx,
+            parts,
+            source,
+            source_entry_name,
+            scene_node_frames,
+            |frame| parse_scene_node_record(bytes, frame),
+        )?,
         |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
@@ -1361,11 +1451,19 @@ where
     let filename_frames = typed_frame_map(texture_filename_frames, "mesh-texture-filename")?;
     let owner_frames = typed_primary_frames(bytes, meta, MESH_COLLECTION_OWNER_TYPE_GUID)?;
     let mut owner_records = Vec::new();
-    for frame in owner_frames {
-        if let Some(owner) = parse_mesh_collection_owner_record(bytes, frame)? {
-            if collection_record_indices.contains(&owner.collection_record_index) {
-                owner_records.push(owner);
-            }
+    for owner in decode_mesh_record_parts(
+        ctx,
+        parts,
+        source,
+        source_entry_name,
+        owner_frames,
+        |frame| parse_mesh_collection_owner_record(bytes, frame),
+    )?
+    .into_iter()
+    .flatten()
+    {
+        if collection_record_indices.contains(&owner.collection_record_index) {
+            owner_records.push(owner);
         }
     }
     let mut collection_owners = unique_record_map(
@@ -1572,6 +1670,8 @@ where
 }
 
 fn decode_mesh_design_records(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<Vec<DesignMeshFeature>>, CodecError> {
     let mut out = Vec::new();
@@ -1584,8 +1684,13 @@ fn decode_mesh_design_records(
             continue;
         };
         let mut asset_for_filename = |filename: &str| mesh_image_asset(scan, filename);
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("mesh Design source View is missing"))?;
         let records = parse_mesh_design_records(
-            scan.entry_bytes(&entry.name)?,
+            ctx,
+            parts,
+            source,
             &meta,
             &entry.name,
             &mut asset_for_filename,
@@ -1665,10 +1770,10 @@ pub(crate) fn decode_mesh_bodies(
         ),
         Unjoined(crate::paramesh::MeshContainer),
     }
-    let mut design_records = decode_mesh_design_records(scan)?;
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+    let mut design_records = decode_mesh_design_records(ctx, &mut parts, scan)?;
     let mut outcomes = Vec::new();
     let mut joins = Vec::new();
-    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
     for entry in scan
         .entries
         .iter()
@@ -1807,7 +1912,95 @@ mod tests {
     where
         F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
     {
-        super::parse_mesh_design_records(bytes, meta, source_entry_name, asset_for_filename)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        super::parse_mesh_design_records(
+            &ctx,
+            &mut parts,
+            source,
+            meta,
+            source_entry_name,
+            asset_for_filename,
+        )
+    }
+
+    fn assert_unreadable_mesh_collection(graph: &SyntheticMeshGraph) {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&graph.bytes, &arena, &policy)
+                .unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let mut no_asset = no_texture_asset;
+        let features = super::parse_mesh_design_records(
+            &ctx,
+            &mut parts,
+            source,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .unwrap();
+        assert!(features.is_empty());
+        let (_, native, fidelity, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Design));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        assert!(losses[0]
+            .provenance
+            .as_ref()
+            .unwrap()
+            .byte_len()
+            .is_some_and(|length| length > 0));
+    }
+
+    #[test]
+    fn damaged_mesh_entry_keeps_its_indexed_sibling() {
+        let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
+        let frames =
+            typed_primary_frames(&graph.bytes, &graph.meta, super::MESH_ENTRY_NAME_TYPE_GUID)
+                .unwrap();
+        assert_eq!(frames.len(), 2);
+        graph.bytes[frames[0].start + super::entry_name_prefix::ZERO_RUN_10] = 1;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&graph.bytes, &arena, &policy)
+                .unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let entries = super::decode_mesh_record_parts(
+            &ctx,
+            &mut parts,
+            source,
+            "Design/BulkStream.dat",
+            frames,
+            |frame| super::parse_mesh_entry_name_record(&graph.bytes, frame),
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].entry.record().record_index(), 115);
+        let (_, native, fidelity, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Design));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
     }
 
     #[test]
@@ -1916,14 +2109,7 @@ mod tests {
         let mut graph = synthetic_mesh_graph_with_collection(false, 0, CollectionForm::OwnerGap);
         let owner_gap = 38 + 11 + 9 + 4;
         graph.bytes[owner_gap] = 1;
-        let mut no_asset = no_texture_asset;
-        assert!(parse_mesh_design_records(
-            &graph.bytes,
-            &graph.meta,
-            "Synthetic/BulkStream.dat",
-            &mut no_asset,
-        )
-        .is_err());
+        assert_unreadable_mesh_collection(&graph);
     }
 
     /// An empty collection can store a flag byte and a u32 that move the rest
@@ -1943,14 +2129,7 @@ mod tests {
         assert!(design.is_empty());
 
         let graph = synthetic_mesh_graph_with_collection(false, 1, CollectionForm::Flagged(1));
-        let mut no_asset = no_texture_asset;
-        assert!(parse_mesh_design_records(
-            &graph.bytes,
-            &graph.meta,
-            "Synthetic/BulkStream.dat",
-            &mut no_asset,
-        )
-        .is_err());
+        assert_unreadable_mesh_collection(&graph);
     }
 
     #[test]
@@ -2131,21 +2310,12 @@ mod tests {
     }
 
     #[test]
-    fn mesh_graph_rejects_body_count_disagreement() {
+    fn mesh_graph_gives_up_collection_with_body_count_disagreement() {
         let mut graph = synthetic_mesh_graph(false);
         graph.bytes[mesh_collection::LEN + mesh_collection_base::BODY_COUNT
             ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT + 4]
             .copy_from_slice(&2u32.to_le_bytes());
-        let mut no_asset = no_texture_asset;
-        assert!(matches!(
-            parse_mesh_design_records(
-                &graph.bytes,
-                &graph.meta,
-                "Synthetic/BulkStream.dat",
-                &mut no_asset,
-            ),
-            Err(CodecError::Malformed(_))
-        ));
+        assert_unreadable_mesh_collection(&graph);
     }
 
     #[test]
