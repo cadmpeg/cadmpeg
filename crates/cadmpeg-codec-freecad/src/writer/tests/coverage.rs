@@ -425,3 +425,62 @@ fn datum_placement_keeps_native_property_metadata() {
         .unwrap();
     assert_eq!(placement(output.ir()).values()[0].attributes["Px"], "9");
 }
+
+#[test]
+fn gui_provider_and_property_source_order_survives() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object name="Z" type="App::Feature"/><Object name="A" type="App::Feature"/></Objects><ObjectData Count="2"><Object name="Z"><Properties Count="0"/></Object><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<GuiDocument SchemaVersion="1"><ViewProviderData Count="2"><ViewProvider name="Z"><Properties Count="3"><Property name="LineWidth" type="App::PropertyFloatConstraint" status="128"><Float value="2.0"/></Property><Property name="Zeta" type="App::PropertyString"><String value="z"/></Property><Property name="Alpha" type="App::PropertyString"><String value="a"/></Property></Properties></ViewProvider><ViewProvider name="A"><Properties Count="1"><Property name="Note" type="App::PropertyString"><String value="a"/></Property></Properties></ViewProvider></ViewProviderData></GuiDocument>"#;
+    let bytes = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", document),
+        ("GuiDocument.xml", gui),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for arena in ["gui_view_providers", "gui_properties"] {
+        let records = |ir: &cadmpeg_ir::CadIr| {
+            ir.native
+                .namespace("fcstd")
+                .unwrap()
+                .arenas()
+                .get(arena)
+                .unwrap()
+                .iter()
+                .map(|record| serde_json::to_value(record).unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(records(input.ir()), records(output.ir()), "{arena}");
+    }
+    let mut edited = input.ir().clone();
+    let view = edited
+        .model
+        .view_presentations
+        .iter_mut()
+        .find(|view| view.line_width.is_some())
+        .unwrap();
+    view.line_width = cadmpeg_ir::scalar::NonNegativeReal::new(5.0);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .view_presentations
+        .iter()
+        .find(|view| view.line_width.is_some())
+        .unwrap();
+    assert!((view.line_width.unwrap().get() - 5.0).abs() < 1e-12);
+}
