@@ -175,10 +175,26 @@ pub(super) fn write_with_limits(
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
     }
-    let generated_features = features::encode(target, &output_ctx)?;
+    let mut written_sketches = sketches::encode(target, &output_ctx)?;
     let mut design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
+    let brep_name = source_brep_name(
+        &native,
+        design_registry.body_map.is_some() || !native.design_parameter_scopes.is_empty(),
+    );
+    let mut generated_features = features::encode(
+        target,
+        &native,
+        &attributes,
+        brep_name,
+        &design_registry,
+        &output_ctx,
+        written_sketches.as_mut(),
+    )?;
     if !records::needs_design_bulk(target, &native) {
-        if let Some((_, meta, _, _, _)) = &generated_features {
+        if let Some((_, meta)) = generated_features
+            .as_ref()
+            .and_then(|features| features.stream.as_ref())
+        {
             let generated = crate::metastream::parse(meta, "generated feature MetaStream")?;
             let mut ordinal = 0;
             design_registry.types.retain(|_| {
@@ -201,7 +217,6 @@ pub(super) fn write_with_limits(
             });
         }
     }
-    let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
     let smbh = encode_smbh(target, &native, &attributes, limits, &output_ctx)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
@@ -359,14 +374,45 @@ pub(super) fn write_with_limits(
     }
     // The parameter segment owns its independent dynamic class tags. Browser
     // and geometry metadata use the main Design segment's generated registry.
-    let design_bulk = encode_design_bulkstream(
+    let extra_body_pairs = generated_features
+        .as_ref()
+        .and_then(|features| features.append.as_ref())
+        .map_or(&[][..], |append| append.body_pairs.as_slice());
+    let mut design_bulk = encode_design_bulkstream(
         &output_ctx,
         target,
         &native,
         &design_registry,
         Vec::new(),
         brep_name,
+        extra_body_pairs,
     )?;
+    let mut design_secondary = Vec::new();
+    if let Some(append) = generated_features
+        .as_mut()
+        .and_then(|features| features.append.take())
+    {
+        let bulk = design_bulk.as_mut().ok_or_else(|| {
+            CodecError::Malformed("missing Design stream for body feature".into())
+        })?;
+        let offset = cadmpeg_core::decode::u64_from_index(bulk.bytes.len());
+        bulk.bytes.extend_from_slice(&append.bulk);
+        for mut record in append.primary {
+            record.bulk_offset = record
+                .bulk_offset
+                .checked_add(offset)
+                .ok_or_else(|| CodecError::InvalidInput("F3D Design stream exceeds u64".into()))?;
+            bulk.primary_records.push(record);
+        }
+        for mut record in append.secondary {
+            record.bulk_offset = record
+                .bulk_offset
+                .checked_add(offset)
+                .ok_or_else(|| CodecError::InvalidInput("F3D Design stream exceeds u64".into()))?;
+            design_secondary.push(record);
+        }
+        design_registry.types.extend(append.types);
+    }
     if let Some(bulk_stream) = &design_bulk {
         residual_losses.extend(bulk_stream.losses.iter().cloned());
         archive
@@ -379,7 +425,8 @@ pub(super) fn write_with_limits(
     let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
         bulk_stream.primary_records.as_slice()
     });
-    let design_meta = encode_design_metastream(&design_registry, primary_records, &[])?;
+    let design_meta =
+        encode_design_metastream(&design_registry, primary_records, &design_secondary)?;
     if let Some(meta_stream) = design_meta {
         if design_bulk.is_none() {
             archive
@@ -401,24 +448,29 @@ pub(super) fn write_with_limits(
         )));
     }
     let mut written_owned_parameters = Vec::new();
-    if let Some((bulk, meta, ids, parameter_ids, collection_index)) = generated_features {
-        written_features = ids;
-        written_owned_parameters = parameter_ids;
+    if let Some(features) = generated_features {
+        written_features = features.features;
+        written_owned_parameters = features.parameters;
         residual_losses.push(collection_residual(
-            "FusionDesignSegmentType3",
-            collection_index,
+            if features.stream.is_none() {
+                "FusionDesignSegmentType4"
+            } else {
+                "FusionDesignSegmentType3"
+            },
+            features.collection_index,
         ));
-        for (name, data) in [("BulkStream.dat", bulk), ("MetaStream.dat", meta)] {
-            archive
-                .start_file(
-                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType3/{name}"),
-                    options,
-                )
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
-            archive.write_all(&data)?;
+        if let Some((bulk, meta)) = features.stream {
+            for (name, data) in [("BulkStream.dat", bulk), ("MetaStream.dat", meta)] {
+                archive
+                    .start_file(
+                        format!("{DESIGN_FOLDER}/FusionDesignSegmentType3/{name}"),
+                        options,
+                    )
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+                archive.write_all(&data)?;
+            }
         }
     }
-    let written_sketches = sketches::encode(target, &output_ctx)?;
     if let Some(sketches) = &written_sketches {
         for (name, data) in [
             ("BulkStream.dat", &sketches.bulk),
@@ -559,6 +611,43 @@ pub(super) fn write_with_limits(
             };
     }
     if !written_features.is_empty() {
+        let kind = |feature: &cadmpeg_ir::features::Feature| match feature.evaluation.definition() {
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Primitive { .. },
+            ) => Some("CylinderPrimitive"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Block { .. },
+            ) => Some("BoxPrimitive"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch { .. },
+            ) => Some("Sketch"),
+            _ => None,
+        };
+        let written = written_features
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut ordered = target.model.features.iter().collect::<Vec<_>>();
+        ordered.sort_by_key(|feature| feature.ordinal);
+        let mut family_counts = std::collections::BTreeMap::<&str, u64>::new();
+        let mut family_ranks = std::collections::BTreeMap::new();
+        let mut timeline_ranks = std::collections::BTreeMap::new();
+        let mut timeline = 0u64;
+        for feature in ordered {
+            let is_written = written.contains(&feature.id);
+            if let Some(kind) = kind(feature) {
+                if is_written || kind == "Sketch" {
+                    let rank = family_counts.entry(kind).or_default();
+                    *rank += 1;
+                    if is_written {
+                        family_ranks.insert(&feature.id, *rank);
+                    }
+                }
+            }
+            if is_written {
+                timeline_ranks.insert(&feature.id, timeline);
+                timeline += 1;
+            }
+        }
         let mut partial = false;
         for feature in &target.model.features {
             if !written_features.contains(&feature.id) {
@@ -570,21 +659,25 @@ pub(super) fn write_with_limits(
             }
             if feature.needs_recompute {
                 partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} recompute state is not encoded", feature.id),
+                ));
             }
-            let kind = match feature.evaluation.definition() {
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Primitive { .. },
-                ) => Some("CylinderPrimitive"),
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Block { .. },
-                ) => Some("BoxPrimitive"),
-                _ => None,
-            };
-            if kind.is_some_and(|kind| {
-                feature
-                    .name
-                    .as_ref()
-                    .is_some_and(|name| name != &format!("{kind} {}", feature.ordinal + 1))
+            if timeline_ranks
+                .get(&feature.id)
+                .is_some_and(|ordinal| *ordinal != feature.ordinal)
+            {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} uses a generated timeline ordinal", feature.id),
+                ));
+            }
+            if kind(feature).is_some_and(|kind| {
+                feature.name.as_ref().is_some_and(|name| {
+                    family_ranks
+                        .get(&feature.id)
+                        .is_some_and(|rank| name != &format!("{kind} {rank}"))
+                })
             }) {
                 partial = true;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(

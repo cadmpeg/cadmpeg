@@ -10,7 +10,7 @@ use super::support::{
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
@@ -41,7 +41,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         role: FeatureTreeNodeRole,
         _children: &[FeatureId],
         active_child: Option<&FeatureId>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         let retained_tree_node_roles = self.retained_tree_node_roles;
@@ -50,13 +50,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 && crate::history::write::input_classes::class(feature.definition().operation())
                     .is_none()
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has no source-less keyword form for tree role {role:?}",
                     feature.id
                 )));
             }
             if active_child.is_some() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} selects an active tree child",
                     feature.id
                 )));
@@ -64,7 +64,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if existing
                 .is_some_and(|record| retained_tree_node_roles.get(&record.id) != Some(&role))
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes feature-tree node role",
                     feature.id
                 )));
@@ -86,19 +86,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         diameter: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
         extent: Option<&CosmeticThreadExtent>,
         has_extended_fields: bool,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             if has_extended_fields {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has unsupported cosmetic-thread fields",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| classify(record) != Some(FeatureClass::CosmeticThread))
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes its cosmetic-thread family",
                     feature.id
                 )));
@@ -140,7 +140,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 != Some(cadmpeg_ir::scalar::Length::ZERO)
                     });
                     if !unresolved {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} has an unresolved cosmetic-thread extent",
                             feature.id
                         )));
@@ -151,7 +151,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(value) = face_selection_value(face) {
                 properties.insert(cadmpeg_core::nonblank_literal!("Face"), value);
             } else if !matches!(face, FaceSelection::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes cosmetic-thread face selection",
                     feature.id
                 )));
@@ -172,7 +172,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             cadmpeg_core::text::NonBlankString,
             cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>,
         >,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let mut rendered = BTreeMap::new();
         for (name, dimension) in parameters {
             let expression = self.dimension(dimension)?;
@@ -200,7 +200,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     Some(crate::history::parameters::render_identifier(&name))
                 })
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    WriteError::Decline(format!(
                 "SLDPRT native feature {} references a missing canonical expression operand",
                 self.feature.id
             ))
@@ -223,25 +223,25 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         }
     }
 
-    pub(super) fn encode_derived_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_derived_geometry(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses unsupported copied-geometry semantics",
             feature.id
         )))
     }
 
-    pub(super) fn encode_imported_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_imported_geometry(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses unsupported external-import semantics",
             feature.id
         )))
     }
 
-    pub(super) fn encode_primitive(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_primitive(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses unsupported analytic-primitive semantics",
             feature.id
         )))
@@ -250,7 +250,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_equation_curve(
         &self,
         curve: &cadmpeg_ir::features::FeatureEquationCurve,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -301,20 +301,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         target_faces: &FaceSelection,
         direction: &CurveProjectionDirection,
         bidirectional: Option<bool>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
         Ok({
             let source = path_source(source, record_sources, sketch_sources).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} references a missing projection source",
                     feature.id
                 ))
             })?;
             let target_faces = face_selection_value(target_faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} has no projection target faces",
                     feature.id
                 ))
@@ -344,7 +344,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.remove("Direction");
                 }
                 CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} has unresolved projection direction",
                         feature.id
                     )));
@@ -363,14 +363,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         segments: &[PathRef],
         closed: bool,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
         Ok({
             if segments.is_empty() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has no composite-curve segments",
                     feature.id
                 )));
@@ -380,7 +380,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .iter()
                 .map(|segment| {
                     path_source(segment, record_sources, sketch_sources).ok_or_else(|| {
-                        CodecError::UnsupportedContent(format!(
+                        WriteError::Decline(format!(
                             "SLDPRT feature {} references a missing composite segment",
                             feature.id
                         ))
@@ -408,7 +408,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_helix(
         &self,
         definition: HelixDefinition<'_>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let HelixDefinition {
             axis_origin,
             axis_direction,
@@ -426,13 +426,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 law: cadmpeg_ir::features::HelixLaw::PitchRevolutions { pitch, revolutions },
             } = shape
             else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses unsupported helix construction controls",
                     feature.id
                 )));
             };
             if segment_turns.is_some() || construction_style.is_some() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses unsupported helix construction controls",
                     feature.id
                 )));
@@ -442,13 +442,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 cadmpeg_ir::features::FiniteVector3::new(*axis_direction)
                     .filter(|direction| valid_direction(direction.get())),
             ) else {
-                return Err(CodecError::malformed(format_args!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has invalid helix geometry",
                     feature.id
                 )));
             };
             if existing.is_some_and(|record| !is_helix(record)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id
                 )));
@@ -497,59 +497,59 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         _law: &cadmpeg_ir::features::HelixLaw,
         _start_angle: Angle,
         _clockwise: bool,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         // (P/S-entity): this native axis envelope has no decoded serializer for
         // its authoring-law discriminator. Synthesis omits this operation with
         // a named loss while preserving independently exportable geometry.
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} cannot encode the native-axis helix authoring law",
             self.feature.id
         )))
     }
 
-    pub(super) fn encode_offset_shape(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_offset_shape(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses unsupported whole-shape offset semantics",
             feature.id
         )))
     }
 
-    pub(super) fn encode_post_process(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_post_process(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses unsupported topology post-processing semantics",
             feature.id
         )))
     }
 
-    pub(super) fn encode_curve_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_curve_geometry(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses unsupported construction-geometry semantics",
             feature.id
         )))
     }
 
-    pub(super) fn encode_shape_operation(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_shape_operation(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses unsupported derived-shape semantics",
             feature.id
         )))
     }
 
-    pub(super) fn encode_binder(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_binder(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses design-binder semantics that cannot be written",
             feature.id
         )))
     }
 
-    pub(super) fn encode_unsupported(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_unsupported(&self) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} uses semantics that cannot be written",
             feature.id
         )))
