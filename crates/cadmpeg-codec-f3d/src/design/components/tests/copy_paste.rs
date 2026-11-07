@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    carrier, identity_matrix, placed, BTreeMap, DesignComponentOccurrencePlacement,
-    DesignParameterScope, Feature, FeatureDefinition, FeatureId, FeatureOperation, DOCUMENT_ROOT,
-    STREAM,
+    carrier, identity_matrix, placed, BTreeMap, DesignComponentOccurrence,
+    DesignComponentOccurrencePlacement, DesignParameterScope, Feature, FeatureDefinition,
+    FeatureId, FeatureOperation, Occurrence, DOCUMENT_ROOT, STREAM,
 };
 use crate::records::feature::occurrence_transfer::{
     DesignOccurrenceTransfer, DesignOccurrenceTransferSource, DesignPasteOwner,
@@ -43,9 +43,42 @@ fn copy_scope(target: [[f64; 4]; 4]) -> DesignParameterScope {
     scope
 }
 
+fn source() -> DesignComponentOccurrence {
+    carrier(
+        253,
+        SOURCE,
+        DesignComponentOccurrencePlacement::Base,
+        DOCUMENT_ROOT,
+    )
+}
+
+fn copy() -> DesignComponentOccurrence {
+    carrier(345, COPY, placed(2, translated(6.0)), DOCUMENT_ROOT)
+}
+
+fn product_occurrence(carrier: &DesignComponentOccurrence) -> Occurrence {
+    serde_json::from_value(serde_json::json!({
+        "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
+        "prototype": {"scope": "local", "definition": "f3d:model:component#copied"},
+        "parent": {"kind": "root"},
+        "ordinal": 0,
+        "transform": [[1.0, 0.0, 0.0, 60.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
+        "scale": [1.0, 1.0, 1.0],
+    }))
+    .unwrap()
+}
+
+fn native() -> FeatureDefinition {
+    FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: "CopyPaste".into(),
+        parameters: BTreeMap::new(),
+    })
+}
+
 fn project(
     scope: &DesignParameterScope,
-    carriers: &[crate::records::feature::assembly_features::DesignComponentOccurrence],
+    carriers: &[DesignComponentOccurrence],
+    projected: &[Occurrence],
 ) -> FeatureDefinition {
     let mut feature = Feature {
         product_definition: None,
@@ -58,38 +91,29 @@ fn project(
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: "CopyPaste".into(),
-                parameters: BTreeMap::new(),
-            }),
-        ),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(native()),
         native_ref: Some(scope.id.clone()),
     };
     super::super::project_copy_paste_transfer_features(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(scope),
         carriers,
+        projected,
     );
     feature.evaluation.definition().clone()
 }
 
 #[test]
 fn a_copy_transfer_inserts_the_carrier_its_relation_names() {
-    let moved = translated(6.0);
-    let carriers = [
-        carrier(
-            253,
-            SOURCE,
-            DesignComponentOccurrencePlacement::Base,
-            DOCUMENT_ROOT,
-        ),
-        carrier(345, COPY, placed(2, moved), DOCUMENT_ROOT),
-    ];
+    let projected = [product_occurrence(&copy())];
     assert_eq!(
-        project(&copy_scope(moved), &carriers),
+        project(
+            &copy_scope(translated(6.0)),
+            &[source(), copy()],
+            &projected
+        ),
         FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-            occurrence: crate::ids::neutral_component_occurrence_id(&carriers[1].occurrence_guid),
+            occurrence: projected[0].id.clone(),
         })
     );
 }
@@ -97,29 +121,65 @@ fn a_copy_transfer_inserts_the_carrier_its_relation_names() {
 #[test]
 fn a_copy_transfer_stays_native_without_a_source_of_its_definition_or_its_placement() {
     let moved = translated(6.0);
-    let source = || {
-        carrier(
-            253,
-            SOURCE,
-            DesignComponentOccurrencePlacement::Base,
-            DOCUMENT_ROOT,
-        )
-    };
-    let copy = || carrier(345, COPY, placed(2, moved), DOCUMENT_ROOT);
-    let native = FeatureDefinition::Operation(FeatureOperation::Native {
-        kind: "CopyPaste".into(),
-        parameters: BTreeMap::new(),
-    });
+    let projected = [product_occurrence(&copy())];
 
     let mut new_definition = copy();
     new_definition.component_record_index = 160;
     assert_eq!(
-        project(&copy_scope(moved), &[source(), new_definition]),
-        native
+        project(&copy_scope(moved), &[source(), new_definition], &projected),
+        native()
     );
-    assert_eq!(project(&copy_scope(moved), &[copy()]), native);
+    assert_eq!(project(&copy_scope(moved), &[copy()], &projected), native());
+    let later_source = carrier(
+        400,
+        SOURCE,
+        DesignComponentOccurrencePlacement::Base,
+        DOCUMENT_ROOT,
+    );
     assert_eq!(
-        project(&copy_scope(translated(5.0)), &[source(), copy()]),
-        native
+        project(&copy_scope(moved), &[copy(), later_source], &projected),
+        native()
+    );
+    assert_eq!(
+        project(
+            &copy_scope(translated(5.0)),
+            &[source(), copy()],
+            &projected
+        ),
+        native()
+    );
+}
+
+#[test]
+fn a_copy_transfer_stays_native_for_a_repeated_unprojected_or_disagreeing_carrier() {
+    let moved = translated(6.0);
+    let projected = [product_occurrence(&copy())];
+
+    let mut repeated = carrier(
+        360,
+        "00000000-0000-4000-8000-000000000360",
+        placed(3, moved),
+        DOCUMENT_ROOT,
+    );
+    repeated.record_index = 345;
+    assert_eq!(
+        project(
+            &copy_scope(moved),
+            &[source(), copy(), repeated],
+            &projected
+        ),
+        native()
+    );
+    assert_eq!(
+        project(&copy_scope(moved), &[source(), copy()], &[]),
+        native()
+    );
+    let mut disagreeing = copy_scope(moved);
+    if let Some(transfer) = disagreeing.occurrence_transfer.as_mut() {
+        transfer.component_record_index = 160;
+    }
+    assert_eq!(
+        project(&disagreeing, &[source(), copy()], &projected),
+        native()
     );
 }

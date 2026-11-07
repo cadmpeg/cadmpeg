@@ -301,3 +301,20 @@ fn the_shared_paste_type_keeps_a_cut_or_changed_copy_prefix_native() {
         assert_eq!(changed.kind(), native("CopierColler"));
     }
 }
+
+#[test]
+fn the_58_byte_relation_is_admitted_for_a_copy_and_refused_for_a_cut() {
+    for cut in [false, true] {
+        let (mut bytes, scope) = fixture(cut, false, 0);
+        let relation_at = IndexedRecordOffsets::build(&bytes)
+            .first_at_or_after(0, 14)
+            .unwrap();
+        bytes.insert(relation_at + 32, 1);
+        let scope = parse(&bytes, scope.byte_offset() + 1, false).unwrap();
+        let records = IndexedRecordOffsets::build(&bytes);
+        assert_eq!(
+            exact_occurrence_transfer(&bytes, &records, &scope, &types()).is_some(),
+            !cut
+        );
+    }
+}

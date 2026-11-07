@@ -1543,6 +1543,7 @@ pub(crate) fn project_copy_paste_transfer_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     occurrences: &[DesignComponentOccurrence],
+    projected: &[Occurrence],
 ) {
     for scope in scopes {
         let Some(transfer) = scope.occurrence_transfer.as_ref() else {
@@ -1554,11 +1555,13 @@ pub(crate) fn project_copy_paste_transfer_features(
         ) {
             continue;
         }
-        let stream = crate::ids::native_stream(&scope.id);
+        let Some(stream) = crate::ids::native_stream(&scope.id) else {
+            continue;
+        };
         let carriers = || {
             occurrences
                 .iter()
-                .filter(|occurrence| crate::ids::native_stream(&occurrence.id) == stream)
+                .filter(|occurrence| crate::ids::native_stream(&occurrence.id) == Some(stream))
         };
         let mut named = carriers()
             .filter(|occurrence| occurrence.record_index == transfer.occurrence_record_index);
@@ -1569,7 +1572,10 @@ pub(crate) fn project_copy_paste_transfer_features(
             crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
             |frame| frame.value,
         );
+        let occurrence = crate::ids::neutral_component_occurrence_id(&copied.occurrence_guid);
         if placement != transfer.target_transform
+            || copied.component_record_index != transfer.component_record_index
+            || !projected.iter().any(|candidate| candidate.id == occurrence)
             || !carriers().any(|source| {
                 source.byte_offset() < copied.byte_offset()
                     && source.occurrence_ordinal() == 1
@@ -1593,11 +1599,7 @@ pub(crate) fn project_copy_paste_transfer_features(
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
-                FeatureOperation::InsertComponent {
-                    occurrence: crate::ids::neutral_component_occurrence_id(
-                        &copied.occurrence_guid,
-                    ),
-                },
+                FeatureOperation::InsertComponent { occurrence },
             ));
     }
 }

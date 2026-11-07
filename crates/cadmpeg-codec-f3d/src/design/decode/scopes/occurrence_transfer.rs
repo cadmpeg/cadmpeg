@@ -126,7 +126,7 @@ pub(super) struct CompactCopyPastePrefix {
     source_transform: SketchPlacementMatrix,
     target_at: usize,
     target_transform: SketchPlacementMatrix,
-    table_at: usize,
+    pub(super) table_at: usize,
 }
 
 /// Read the compact `CopyPaste` prefix, or its form with four more prologue
@@ -299,7 +299,8 @@ pub(super) fn exact_occurrence_transfer(
             },
         )
     } else {
-        let prefix = compact_copy_paste_prefix(bytes, start)?;
+        let paired_at = usize::try_from(scope.paired_byte_offset()).ok()?;
+        let prefix = compact_copy_paste_prefix(bytes.get(..paired_at)?, start)?;
         if prefix.relation_record_index != relation_index {
             return None;
         }
