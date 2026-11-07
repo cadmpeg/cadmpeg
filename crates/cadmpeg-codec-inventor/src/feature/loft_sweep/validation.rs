@@ -105,20 +105,21 @@ impl<'a> ValidationIndex<'a> {
         let [first, last] = selected.as_slice() else {
             return false;
         };
-        evidence::loft(
+        evidence::loft_result(
             self.model,
             source.header.source_index,
             [first.0.header.source_index, last.0.header.source_index],
-            |section, name| {
-                selected.get(section).is_some_and(|(raw, sketch, profile)| {
-                    self.profiles.contains_curve_name(
-                        token,
-                        raw.identity.record_ordinal,
-                        sketch,
-                        profile,
-                        name,
-                    )
-                })
+            |section| {
+                selected
+                    .get(section)
+                    .map_or_else(Vec::new, |(raw, sketch, profile)| {
+                        self.profiles.curve_names(
+                            token,
+                            raw.identity.record_ordinal,
+                            sketch,
+                            profile,
+                        )
+                    })
             },
         )
         .is_some()

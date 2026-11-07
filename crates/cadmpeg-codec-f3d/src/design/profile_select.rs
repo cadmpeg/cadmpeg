@@ -3672,7 +3672,7 @@ fn resolve_profile_curve_regions(
         if !selection.valid_layout() {
             return None;
         }
-        for loops in selection.loop_lists.iter().flatten() {
+        for loops in selection.regions() {
             let mut outer = None;
             let mut holes = Vec::new();
             let mut used = HashSet::new();
@@ -3753,7 +3753,7 @@ fn resolve_profile_curve_arrangement_regions(
         if !selection.valid_layout() {
             return Ok(None);
         }
-        for loops in selection.loop_lists.iter().flatten() {
+        for loops in selection.regions() {
             let [loop_] = loops.as_slice() else {
                 return Ok(None);
             };
@@ -3825,7 +3825,7 @@ fn resolve_profile_curve_path(
                 && selection.scope_record_index == group.scope_record_index
                 && selection.group_record_index == group.record_index
         })
-        .flat_map(|selection| selection.loop_lists.iter().flatten())
+        .flat_map(crate::records::topology::entity_selection::DesignProfileCurveSelection::regions)
         .any(|loops| !matches!(loops.as_slice(), [loop_] if loop_.outer))
     {
         return None;
@@ -3908,9 +3908,7 @@ fn profile_curve_selection_curves(
     let mut curves = Vec::new();
     for entry in selections.iter().flat_map(|selection| {
         selection
-            .loop_lists
-            .iter()
-            .flatten()
+            .regions()
             .flatten()
             .flat_map(|loop_| &loop_.entries)
     }) {

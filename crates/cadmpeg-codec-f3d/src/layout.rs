@@ -1818,19 +1818,21 @@ pub(crate) mod combine_extended_reference_operation_prefix {
 /// Spec §3.1. Record length 58 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length.
+/// Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length.
 /// ```
 pub(crate) mod combine_operand_list_operation_prefix {
-    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `property_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_PRESENCE: usize = 20;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 21;
-    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_4: usize = 25;
+    /// Offset of `companion_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPANION_COUNT: usize = 25;
     /// Offset of `keep_tools` (`u8`). Spec §3.1.
     pub(crate) const KEEP_TOOLS: usize = 29;
-    /// Offset of `zero_flag` (`u8`). Spec §3.1.
-    pub(crate) const ZERO_FLAG: usize = 30;
+    /// Offset of `new_component` (`u8`). Spec §3.1.
+    pub(crate) const NEW_COMPONENT: usize = 30;
     /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
     pub(crate) const CONSTANT_ONE: usize = 31;
     /// Offset of `reference_marker` (`u8`). Spec §3.1.
@@ -6640,15 +6642,15 @@ pub(crate) mod typed_reference_profile_chain_record {
 /// Spec §3.1. Record length 76 B.
 ///
 /// ```text
-/// Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72.
+/// Offsets are relative to the identity record indexed header; the counted region groups begin at offset 72.
 /// ```
 pub(crate) mod typed_reference_profile_identity_record {
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `selection_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const SELECTION_REFERENCE: usize = 21;
-    /// Offset of `first_region_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIRST_REGION_COUNT: usize = 72;
+    /// Offset of `region_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REGION_GROUP_COUNT: usize = 72;
 }
 
 /// Byte offsets for the `typed_reference_companion_prefix` record.
@@ -7158,6 +7160,24 @@ pub(crate) mod sketch_ordinal_collection_prefix {
     pub(crate) const LEN: usize = 20;
     /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
     pub(crate) const ZERO_RUN: usize = 11;
+}
+
+/// Byte offsets for the `sketch_folder_prefix` record.
+///
+/// Spec §3.1. Record length 32 B.
+pub(crate) mod sketch_folder_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Offset of `zero_run_2` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_2: usize = 21;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 26;
+    /// Offset of `zero_run_3` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 27;
 }
 
 /// Byte offsets for the `assembly_as_built_scope_378` record.

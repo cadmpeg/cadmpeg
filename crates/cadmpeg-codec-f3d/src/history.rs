@@ -60,6 +60,7 @@ use crate::history_records::{
 use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
 };
+use cadmpeg_asm::history::{walk_bulletin_boards, BulletinBoardItem, EntityChange};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -7498,8 +7499,34 @@ pub(crate) fn bind_edge_operand_history_candidates(
     Vec<crate::records::topology::historical_context::AsmFaceBoundary>,
     cadmpeg_core::CodecError,
 > {
+    bind_edge_operand_history_candidates_with_notes(
+        operands,
+        scopes,
+        recipes,
+        histories,
+        scope_histories,
+    )
+    .map(|(face_boundaries, _)| face_boundaries)
+}
+
+/// [`bind_edge_operand_history_candidates`], with a
+/// `history.edge-selection-inferred` note for each operand whose edge is
+/// read from the faces its recipe names alone.
+pub(crate) fn bind_edge_operand_history_candidates_with_notes(
+    operands: &mut [crate::records::topology::edge_identity::DesignEdgeOperand],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    recipes: &[crate::records::recipes::ConstructionRecipe],
+    histories: BindingHistories<'_>,
+    scope_histories: &HashMap<String, String>,
+) -> Result<
+    (
+        Vec<crate::records::topology::historical_context::AsmFaceBoundary>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     if projection_was_finalized(histories.get()) {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let mut recipe_record_indices = HashMap::new();
     for recipe in recipes {
@@ -7589,6 +7616,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         }
     }
     let mut face_boundaries = FaceBoundaryArena::default();
+    let mut inferred = Vec::new();
     visit_state_groups_oldest_first(
         histories,
         jobs,
@@ -7622,22 +7650,33 @@ pub(crate) fn bind_edge_operand_history_candidates(
                     topology,
                     states: &states,
                 };
-                if let Err(error) = bind_historical_edge_operand(
+                match bind_historical_edge_operand(
                     operand,
                     &transition,
                     &recipe_record_indices,
                     &mut caches,
                     &mut face_boundaries,
                 ) {
-                    keep_first_error(&mut first_error, position, error);
+                    Ok(true) => {
+                        if let Some(edge) = operand.resolved_edge_slot {
+                            inferred.push((position, operand.id.clone(), previous.state_id, edge));
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(error) => keep_first_error(&mut first_error, position, error),
                 }
             }
         },
     );
-    match first_error {
-        Some((_, error)) => Err(error),
-        None => Ok(face_boundaries.into_records()),
+    if let Some((_, error)) = first_error {
+        return Err(error);
     }
+    inferred.sort_by_key(|(position, ..)| *position);
+    let notes = inferred
+        .into_iter()
+        .map(|(_, operand, state, edge)| inferred_edge_selection_note(&operand, state, edge))
+        .collect();
+    Ok((face_boundaries.into_records(), notes))
 }
 
 /// Keep the error of the earliest item, as a pass that stops at its first
@@ -7706,7 +7745,7 @@ fn bind_historical_edge_operand<'a>(
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut EdgeOperandCaches<'a>,
     face_boundaries: &mut FaceBoundaryArena,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let &EdgeOperandTransition {
         scope,
         state,
@@ -7730,14 +7769,14 @@ fn bind_historical_edge_operand<'a>(
     }
     let Some(changed_faces) = face_changes_across_state_chain(state, previous_state_id, states)
     else {
-        return Ok(());
+        return Ok(false);
     };
     let Some(EdgeChanges {
         deleted: chain_deleted_edges,
         updated: chain_updated_edges,
     }) = edge_changes_across_state_chain(state, previous_state_id, states)
     else {
-        return Ok(());
+        return Ok(false);
     };
     let preceding_faces = selection::FamilySlots::new(&topology.faces);
     let inserted_faces = result_topology
@@ -7854,7 +7893,7 @@ fn bind_historical_edge_operand<'a>(
             topology,
             topology_queries,
         );
-        return Ok(());
+        return Ok(false);
     }
     if crate::design::design_feature_family(&scope.kind())
         == Some(crate::design::DesignFeatureFamily::Sweep)
@@ -7880,7 +7919,7 @@ fn bind_historical_edge_operand<'a>(
                 &operand.recipe_selectors,
                 reference_edge_sets.iter().map(Vec::as_slice),
             );
-        return Ok(());
+        return Ok(false);
     }
     if crate::design::design_feature_family(&scope.kind())
         == Some(crate::design::DesignFeatureFamily::Revolve)
@@ -7923,7 +7962,7 @@ fn bind_historical_edge_operand<'a>(
         if let Some(axis) = resolved_axis {
             operand.resolved_axis = Some(axis);
         }
-        return Ok(());
+        return Ok(false);
     }
     let edge_contexts = topology_queries
         .edge_contexts
@@ -7999,35 +8038,59 @@ fn bind_historical_edge_operand<'a>(
             )
         )
     {
-        operand.resolved_edge_slot = side_one_reference_face_edge(
+        if let Some(edge) = side_one_reference_face_edge(
             operand.recipe_structure.as_ref(),
             &operand.recipe_references,
             &operand.preceding_boundary_edge_slots,
             topology,
             topology_queries,
-        );
+        ) {
+            operand.resolved_edge_slot = Some(edge.slot);
+            return Ok(edge.inferred);
+        }
     }
-    Ok(())
+    Ok(false)
+}
+
+/// The note for an edge operand whose edge the faces its recipe's first
+/// side names select alone, off the recipe's candidate faces.
+fn inferred_edge_selection_note(
+    operand: &str,
+    state: i64,
+    edge: i64,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.note(format!(
+        "edge operand {operand} reads edge slot {edge} of history state {state} from the faces its recipe's first side names: they share only that edge. The edge bounds none of the recipe's candidate faces, so the reading assumes those candidates are incomplete."
+    ))
+}
+
+/// An edge read from the faces a recipe's first side names.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct SideOneEdge {
+    pub(crate) slot: i64,
+    /// Whether the edge bounds none of the recipe's candidate faces, so the
+    /// named faces alone select it.
+    pub(crate) inferred: bool,
 }
 
 /// The one edge of `topology` that every face named by the first side of a
 /// standard edge recipe bounds and that the recipe's candidate faces bound.
 ///
 /// Each nonzero first-side value is a one-based prefix-reference ordinal;
-/// every persistent name of a counted operand supplies that ordinal's faces. Each operand must stand
-/// for exactly one face of the topology with complete loops, at least two
-/// distinct faces must be named, and the intersection of their boundary edges
-/// with `candidate_boundary_edges` must hold one edge.
+/// every persistent name of a counted operand supplies that ordinal's faces.
+/// Each operand must stand for exactly one face of the topology with complete
+/// loops, and at least two distinct faces must be named. The edge is proven
+/// when the intersection of their boundary edges with
+/// `candidate_boundary_edges` holds one edge. When that intersection is empty
+/// and the named faces share exactly one edge, that edge is the best reading
+/// and is returned as inferred.
 fn side_one_reference_face_edge<'a>(
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     references: &[crate::records::dimensions::DesignRecipeReference],
     candidate_boundary_edges: &[i64],
     topology: &'a AsmHistoricalTopology,
     topology_queries: &mut TopologyQueryCache<'a>,
-) -> Option<i64> {
-    if candidate_boundary_edges.is_empty() {
-        return None;
-    }
+) -> Option<SideOneEdge> {
     let side = structure.and_then(|structure| structure.sides.first())?;
     let lanes = crate::records::dimensions::reference_lanes(references);
     let mut ordinals = Vec::new();
@@ -8063,8 +8126,8 @@ fn side_one_reference_face_edge<'a>(
     if faces.len() < 2 {
         return None;
     }
-    let mut common: Vec<i64> = candidate_boundary_edges.to_vec();
-    for face in faces {
+    let mut common: Vec<i64> = Vec::new();
+    for (index, face) in faces.into_iter().enumerate() {
         let [boundary] = face_boundary_contexts_for_slots(&[face], topology, topology_queries)
             .try_into()
             .ok()?;
@@ -8076,12 +8139,27 @@ fn side_one_reference_face_edge<'a>(
             .iter()
             .flat_map(|face_loop| face_loop.boundary.coedges().map(|row| row.edge_slot))
             .collect();
-        common.retain(|edge| edges.contains(edge));
+        if index == 0 {
+            common = edges;
+        } else {
+            common.retain(|edge| edges.contains(edge));
+        }
     }
     common.sort_unstable_by(Ord::cmp);
     common.dedup();
-    match common.as_slice() {
-        [edge] => Some(*edge),
+    let mut proven = common
+        .iter()
+        .copied()
+        .filter(|edge| candidate_boundary_edges.contains(edge));
+    match (proven.next(), proven.next(), common.as_slice()) {
+        (Some(slot), None, _) => Some(SideOneEdge {
+            slot,
+            inferred: false,
+        }),
+        (None, _, [slot]) => Some(SideOneEdge {
+            slot: *slot,
+            inferred: true,
+        }),
         _ => None,
     }
 }
@@ -9415,88 +9493,15 @@ pub(crate) fn materialize_record_table(
     versions: &BTreeMap<i64, i64>,
     archive: &HistoricalRecordArchive,
 ) -> Option<Vec<cadmpeg_asm::sab::Record>> {
-    if versions.is_empty() {
-        return None;
-    }
-    let mut records = Vec::new();
-    for (&entity_ref, record_ref) in versions {
-        let record = archive.get(record_ref)?;
-        if i64::try_from(record.index).ok() != Some(entity_ref) {
-            return None;
-        }
-        for token in record.tokens.iter() {
-            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
-                continue;
-            };
-            if *reference >= 0 && !versions.contains_key(reference) {
-                return None;
-            }
-        }
-        records.push(clone_historical_record(record));
-    }
-    records.sort_unstable_by_key(|a| a.index);
-    Some(records)
+    cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
 }
 
-/// One framed item of a `BulletinBoard` chain, in stream order.
-enum BulletinBoardItem {
-    Board {
-        offset: usize,
-        owner_ref: i64,
-        number: i64,
-    },
-    /// A change of the most recent board.
-    Change {
-        offset: usize,
-        kind: AsmEntityChangeKind,
-    },
-}
-
-/// Walk the `BulletinBoard` chain at `position` and return the offset after
-/// it, or `None` when the chain is malformed.
-fn walk_bulletin_boards(
-    bytes: &[u8],
-    mut position: usize,
-    width: RefWidth,
-    mut visit: impl FnMut(BulletinBoardItem),
-) -> Option<usize> {
-    if bytes.get(position) == Some(&0x11) {
-        return Some(position);
+fn entity_change_kind(kind: EntityChange) -> AsmEntityChangeKind {
+    match kind {
+        EntityChange::Insert { new } => AsmEntityChangeKind::Insert { new },
+        EntityChange::Delete { old } => AsmEntityChangeKind::Delete { old },
+        EntityChange::Update { old, new } => AsmEntityChangeKind::Update { old, new },
     }
-    loop {
-        let board_offset = position;
-        let present = take_int(bytes, &mut position, 0x04, width)?;
-        if present == 0 {
-            break;
-        }
-        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
-        let number = take_int(bytes, &mut position, 0x04, width)?;
-        visit(BulletinBoardItem::Board {
-            offset: board_offset,
-            owner_ref,
-            number,
-        });
-        loop {
-            let change_offset = position;
-            let present = take_int(bytes, &mut position, 0x04, width)?;
-            if present == 0 {
-                break;
-            }
-            let old = take_int(bytes, &mut position, 0x0c, width)?;
-            let new = take_int(bytes, &mut position, 0x0c, width)?;
-            let kind = match (old >= 0, new >= 0) {
-                (false, true) => AsmEntityChangeKind::Insert { new },
-                (true, false) => AsmEntityChangeKind::Delete { old },
-                (true, true) => AsmEntityChangeKind::Update { old, new },
-                (false, false) => return None,
-            };
-            visit(BulletinBoardItem::Change {
-                offset: change_offset,
-                kind,
-            });
-        }
-    }
-    Some(position)
 }
 
 fn decode_bulletin_boards(
@@ -9543,7 +9548,7 @@ fn decode_bulletin_boards(
                 id,
                 parent,
                 byte_offset: u64_from_index(offset),
-                kind,
+                kind: entity_change_kind(kind),
             });
         }
     })?;

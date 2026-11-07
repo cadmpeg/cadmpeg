@@ -362,22 +362,89 @@ fn move_face_stays_native_without_a_translation_or_its_exact_group() {
     let mut other_member = faces.clone();
     other_member.record_index = 101;
     assert!(refused(translation, &[other_member]));
-    for transform in [
-        [
-            [1., 0., 0., 0.],
-            [0., 1., 0., 0.],
-            [0., 0., 1., 0.],
-            [0., 0., 0., 1.],
-        ],
-        [
-            [0., 1., 0., 0.25],
-            [-1., 0., 0., 0.],
-            [0., 0., 1., 0.],
-            [0., 0., 0., 1.],
-        ],
+    let identity = [
+        [1., 0., 0., 0.],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ];
+    assert!(refused(identity, std::slice::from_ref(&faces)));
+}
+
+#[test]
+fn move_face_projects_a_rotation_about_the_axis_point_nearest_the_origin() {
+    use cadmpeg_ir::features::FaceMotion;
+    const EPS_ROTATION_FIELD: f64 = 1.0e-9;
+    let (sine, cosine) = 5f64.to_radians().sin_cos();
+    // A rotation about +X through (0, 1.5, 2) cm stores t = p - R p.
+    let (y, z) = (1.5, 2.0);
+    let five_degrees = [
+        [1., 0., 0., 0.],
+        [0., cosine, -sine, y - (cosine * y - sine * z)],
+        [0., sine, cosine, z - (sine * y + cosine * z)],
+        [0., 0., 0., 1.],
+    ];
+    let quarter_turn = [
+        [0., 1., 0., 0.25],
+        [-1., 0., 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ];
+    let faces = group(DesignOperandRole::ROLE_0X10);
+    for (transform, origin, axis, degrees) in [
+        (five_degrees, [0., 15., 20.], [1., 0., 0.], 5.),
+        (quarter_turn, [1.25, -1.25, 0.], [0., 0., -1.], 90.),
     ] {
-        assert!(refused(transform, std::slice::from_ref(&faces)));
+        let FeatureOperation::MoveFace {
+            faces: selected,
+            motion:
+                FaceMotion::Rotate {
+                    axis_origin,
+                    axis_dir,
+                    angle,
+                },
+        } = projected_operation(super::super::project_move_face(
+            &move_face_scope(transform),
+            std::slice::from_ref(&faces),
+        ))
+        else {
+            panic!("expected a face rotation");
+        };
+        assert_eq!(selected, FaceSelection::Native(faces.id.clone()));
+        let point = axis_origin.get();
+        let direction = axis_dir.get();
+        for (actual, expected) in [point.x, point.y, point.z]
+            .into_iter()
+            .zip(origin)
+            .chain(
+                [direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .zip(axis),
+            )
+            .chain([(angle.get(), f64::to_radians(degrees))])
+        {
+            assert!(
+                (actual - expected).abs() <= EPS_ROTATION_FIELD,
+                "{actual} {expected}"
+            );
+        }
     }
+}
+
+#[test]
+fn move_face_stays_native_for_a_screw_motion() {
+    let screw = [
+        [0., 1., 0., 0.25],
+        [-1., 0., 0., 0.],
+        [0., 0., 1., 0.25],
+        [0., 0., 0., 1.],
+    ];
+    assert!(super::super::project_move_face(
+        &move_face_scope(screw),
+        std::slice::from_ref(&group(DesignOperandRole::ROLE_0X10)),
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
