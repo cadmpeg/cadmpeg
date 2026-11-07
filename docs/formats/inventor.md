@@ -53,6 +53,24 @@ versioned_trailer bytes[]
 
 The selector low byte indexes the section 4 type table, so a record selects one of the first 256 type descriptors. `trailing_payload_len` is zero or equals `block.payload_len`. Segment major versions above 18 have an extended trailer. Its presence byte selects an empty trailer or a typed property and reference list. After all records, the expanded stream has a u32 `0xffffffff` marker and a retained trailer. The stream is exhausted exactly.
 
+In PmDc and PmBRep segments of major versions 16, 17, 22, 25, and 28, records with type identifier `a5c245062846bbe61da9eda12072ce35` start with this payload prefix:
+
+```text
+header_value u32
+header_id u16
+word_a u32 = 5
+word_b u32 = 0x30000002
+word_c u32 = 0
+zero_values u32[5] = [0, 0, 0, 0, 0]
+word_d u32
+zero_value u32 = 0
+list_marker u16 = 2
+list_signature u16 = 0x3000
+list_count u32 >= 1
+```
+
+Two u32 metadata values and `list_count` u32 entries follow. The entries are followed by `list_count - 1` u32 values whose high 16 bits are zero, a u32 `0xffffffff` marker, and a trailing payload.
+
 ## 5. Active part kernel carrier
 
 The active part kernel carrier is the sole record with type identifier `5c5945f6d5113313100060a6bba647b5` in the sole `PmBRep` segment. The record payload starts with u32 header state, u16 header kind, u32 header value, and u32 schema. The kernel bytes start at payload offset 14.
@@ -353,6 +371,10 @@ A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A n
 
 Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bit `0x8000` of a line marks an axis line for distance dimensions. Entity-flag bits `0x40`, `0x1000`, and `0x40000` do not mark construction geometry. Bit `0x80000` of a circle, ellipse, or spline, bit `0x200` of a line or circle, and bit `0x8000` of a line do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry. Bits `0x80000` and `0x200000` of a line mark construction geometry: a construction line bounds no profile loop. A line stores a carrier (`origin` and `direction`) and two endpoint point references. The carrier and the endpoint positions agree when the endpoint span is parallel to the direction and the first endpoint lies on the carrier. A construction line whose carrier and endpoint positions disagree has no neutral geometry: the reader keeps the record native, projects no line from either the carrier or the endpoints, and keeps every relation that names the line native. It reports the lines with the loss `sketch.construction-carrier-conflict`. Because a construction line bounds no profile, the rest of the sketch projects and closes. A line without a construction bit whose carrier and endpoint positions disagree has no neutral projection and leaves its sketch open. A line with a zero-length endpoint span or a zero direction is not a carrier conflict.
 
+A line whose two endpoint references resolve to one position stores no segment, whatever its carrier. It bounds no profile loop. The reader keeps the record native, projects no line, keeps every relation that names the line native, and reports the lines with the loss `sketch.degenerate-line-native`. The rest of the sketch projects and closes. A profile ring that passed through the line is open without it and forms no profile.
+
+Types `013cbb1fd2114d68a0009e9a3c3aa076`, `7f341025ae4a79961d9047869d5f4e48`, and `0ead987ab9495ceefc186787a2a20643` are text member records of a planar sketch. The first stores a text; the second binds a text to a sketch point; the third groups the box points and lines of a text. None stores a curve. The points and lines that they name are ordinary planar entity records, and the box lines carry bit `0x80000`. A sketch that lists a text member record is not open because of it: the record stays native, the named entities project as sketch entities, and no text outline enters a profile. The reader reports the records with the loss `sketch.text-member-native`.
+
 The planar entity types are:
 
 - `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional association tail.
@@ -553,6 +575,33 @@ next_reference u32
 
 The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The label's code units can include unpaired surrogates. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
 
+In PmDc segment major versions 25 and 28, a feature-label owner of type `751ade16744fe94fc498a8a8e89f29dd` has the state content header. Its `next` reference selects the label, whose owner reference selects this record. The body after the header contains:
+
+```text
+state i32 = -1
+first_reference u32
+work_plane u32
+value u32
+empty_list_marker u32 = 0x30000002  in version 28
+empty_list_count u32 = 0            in version 28
+references u32[5]
+```
+
+The first reference is null or selects type `1f96e5bede4c9ce1cfa35a9bdfda0947`. The work-plane reference selects type `42df52ced011d0d20008ccbc0663dc09`. The five references select types `303e4a7fd211d65e6000b3856c2387b0`, `1f02e78b324548a6bd6d4c90711db6d0`, `b431796169449384e3ad409bdebf7e05`, and `ae38b999d211c35b6000b3856c2387b0` twice, in order. Each non-null reference is qualified. The record ends after the references.
+
+In PmDc segment major versions 25 and 28, type `cf2b17de9c46a894e06459a70546aa94` has a state content header with flags `0x200`. Its `next` reference selects a feature label and its context selects a parameter table. The header is followed by `state:i32 = -1` and a sequence of u32 values.
+
+In PmDc segment major versions 25 and 28, type `c6b25a40954bd1c3e7ca9ca365917af4` has a state content header with a null `next` reference and a context that selects a parameter table. Its body after the header contains:
+
+```text
+state i32
+sketch u32
+second_reference u32
+third_reference u32
+```
+
+The state is −1 or 0. The three references are qualified. The sketch reference selects type `114d8790d011f8d10008cabc0663dc09`. The second reference selects type `e096df74d11169e0800066b1e13554c7` or `58850511d211e39560000cb38932edb0`. The third reference selects type `751ade16744fe94fc498a8a8e89f29dd` or `e1c36665d24968ac24cea9b3cc6055cd`. The record ends after the third reference.
+
 Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. An entity-style link whose owner is a planar sketch entity gives that entity its associative identifier within the sketch. Entity type 1 marks a point, entity type 2 marks a curve, and entity type `0x08000000` marks a sketch block instance. A profile-selection record selects an entity-style link or a kernel-entity link through its entity-link reference.
 
 Type `21750fccd1112780e38619962259017a` is a kernel-entity link. Its payload contains:
@@ -631,13 +680,13 @@ The fixed selector prefix after the content header contains `state:i32`, `enable
 
 The selector's edge-item reference selects its owning edge-item record in the same PmDc segment. An edge item with an empty index-reference list can be the target of this reference. The body, edge-item, and context references of the qualified direct form are qualified non-null references. Their target types are `474d8790d011f8d10008cabc0663dc09`, `82695c37d111516b0008a1ba32a3dc09`, and `4220e9ccd111c5710008a7ba32a3dc09`, respectively. An explicit edge item has a nonempty index-reference list, index-reference value −1, and final value 0. Each selected source index identifies a selector whose edge-item reference selects that item.
 
-In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body.
+In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body. The first record of the archive snapshot is a `body`, `edge`, or `face` record wrapped by the name chain `End-of-ASM-History-Section`.
 
 In a schema-44 carrier, generated naming families `INV_NMX_GEN_TAG`, `INV_NMX_SWEEPGENERATED_TAG`, `INV_NMX_BLEND_TAG`, `INV_NMX_FLANGE_TAG`, and `INV_NMX_BEND_TAG` have the same five common attribute fields. Their family values start with 1, 44, 1, `feature_source_index`, and −1. The source index names the generating feature, including a plate, bend, or corner. The owning entity reference names the attributed face, edge, or vertex. The remaining integers are part of the generated name. A generated source index identifies a naming contribution; it does not identify a browser history position or a body revision.
 
 Family `INV_NMX_DUP` stores the integers 1 and 44, then four opaque integer key values. It has no feature-source field. Its owner also has a separate generated-name attribute, which supplies the feature source. The four key values form an ordered opaque tuple, separate from that source name.
 
-In schema-38, schema-40, and schema-42 carriers, class `NMx_Matched_Entity-NamingMatching-attrib` has five common attribute fields followed by the integers `schema`, 1, `selector_source_index`, −1, `key`, and `qualifier`, where `schema` is the carrier schema. It joins the direct edge selector as family `INV_NMX_MATCHED_ATTRIB` does in a schema-44 carrier. In schema-38, schema-40, and schema-42 carriers, the class chains `NMx_Generated_Brep_tag`, `NMx_Sweep_Generated_Brep_tag`, `NMx_flange_tag`, `NMx_blend_tag`, `NMx_bend_tag`, and `NMx_Hole_Brep_tag` continue with `NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib`. After the five common attribute fields they store the carrier schema, a positive source-name count, that many ordered `(feature_source_index, name_value)` integer pairs, and a family-specific integer tail. The tail lengths are 3, 10, 7, 7, 8, and 2 respectively, in the class order stated above. A source index in any pair names a feature in that generated entity name. `name_value` is a signed naming value. Its value can be −1. The source-name count bounds the pair vector; the tail is not part of that vector.
+In schema-38, schema-40, schema-42, and schema-43 carriers, class `NMx_Matched_Entity-NamingMatching-attrib` has five common attribute fields followed by the integers `schema`, 1, `selector_source_index`, −1, `key`, and `qualifier`, where `schema` is the carrier schema. It joins the direct edge selector as family `INV_NMX_MATCHED_ATTRIB` does in a schema-44 carrier. In schema-38, schema-40, and schema-42 carriers, the class chains `NMx_Generated_Brep_tag`, `NMx_Sweep_Generated_Brep_tag`, `NMx_flange_tag`, `NMx_blend_tag`, `NMx_bend_tag`, and `NMx_Hole_Brep_tag` continue with `NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib`. After the five common attribute fields they store the carrier schema, a positive source-name count, that many ordered `(feature_source_index, name_value)` integer pairs, and a family-specific integer tail. The tail lengths are 3, 10, 7, 7, 8, and 2 respectively, in the class order stated above. A source index in any pair names a feature in that generated entity name. `name_value` is a signed naming value. Its value can be −1. The source-name count bounds the pair vector; the tail is not part of that vector.
 
 A generated name on that same owning edge identifies the edge in the generating feature's result. Family `INV_NMX_GEN_TAG` stores 1, 44, 1, `feature_source_index`, −1, `associative_id`, 0, and `role`. Edge roles are 2, 10, and 18. Family `INV_NMX_SWEEPGENERATED_TAG` stores the same first seven integers followed by `role` and seven zero integers. Edge roles 10 and 18 are distinct names. `feature_source_index` equals the generator value in the selector. The associative identifier names an entity-style link in the sketch consumed by that feature. Role 18 uses a point link; roles 2 and 10 use a curve link. The family, associative identifier, qualifier, and role together form a feature-local persistent name. The name is scoped to the generating feature's result. The matching attribute selects the stored owning edge revision. Its start and end vertex references select the stored point revisions; its curve reference and parameter endpoints select its carrier interval. A straight carrier uses its stored origin and direction, with the edge sense applied to the parameters. The midpoint of the interval supplies an interior point, and the signed carrier direction supplies its unit tangent. These references identify geometry at the selected history input independently of the active body's edge records. The construction-history record framing and entity-revision namespace follow [asm.md §3.2](asm.md#32-delta_state-records).
 
@@ -883,6 +932,8 @@ Schema-44 generated-face attributes use type `ATTRIB_CUSTOM-attrib`. Five common
 Family `INV_NMX_SWEEPGENERATED_TAG` then stores `section`, `span`, `role`, and seven zero integers. Role 20 identifies a side face; `section` and `span` identify the associative names of its section curve and path curve. Roles 4 and 12 identify the two terminal cap faces and have zero `section` and `span` values.
 
 Family `INV_NMX_GEN_TAG` with the trailing integers 0, `section`, 260 identifies a loft cap. Family `INV_NMX_ORDERED_GEN_TAG` with the trailing integer 2 and two section groups identifies a loft side face. Each group is a curve name, a section, 258, and two tail integers. The first group names `curve` and `first_section`, and the second group names `last_curve` and `last_section`. One group has the tail 0, 0, and the other group has the tail 4, `member`. The cap `section` and the side `first_section` and `last_section` are source indices of the section sketches. `member` is the one-based side-face member index. In the positional form, `curve` is the associative name of a curve in the selected first-section boundary. `last_curve` is the associative name of a curve in the selected last-section boundary. The side face stores a procedural loft surface. Its ordered profile members state any support surfaces and directions; a null support surface and an absent direction impose neither support continuity nor a direction constraint. The cap and side attributes refer to the same generating feature.
+
+In a carrier with the `NMx_*` class chains of section 13, a loft cap carries class `NMx_Generated_Brep_tag` and a loft side face carries class `NMx_Loft_Surface_Brep_tag`, both with the legacy naming-attribute prefix of section 13: five common fields, the carrier schema, a source-name count, and that many `(feature_source_index, name_value)` pairs. A name that the loft generates has count 1 and `feature_source_index` equal to the loft content-header source index, with `name_value` −1. The cap tail is 0, `section`, 260, as in the family `INV_NMX_GEN_TAG`. The side tail is 2, `first_curve`, `first_section`, 258, 0, 0, `last_curve`, `last_section`, 258, 0, 0. It carries no member index, and both groups end with 0, 0. `first_section` and `last_section` are the source indices of the first and last section sketches, and the curve names are associative names of curves in the selected boundaries of those sections. The positional two-section loft names exactly two caps, one for each section sketch, and one side face for each curve of the first section boundary and for each curve of the last section boundary. The side faces are distinct, and the curve names of the side faces equal the complete curve names of the two boundaries. The caps store planes, and a side face can store a plane. Features after the loft can add other faces to the body.
 
 A sweep path selection uses the profile-selection grammar. Its kernel-entity link selects one keyed wire. The wire's ordered edges are the complete selected chain. A path wire can be open. Its edge naming attributes use the same naming-type and associative-name grammar as section boundaries.
 

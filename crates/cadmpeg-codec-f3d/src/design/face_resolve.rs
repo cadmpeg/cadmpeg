@@ -1001,7 +1001,7 @@ fn historical_face_selection_in_state(
     historical_face_selection_with_native(scope, previous_state_id, faces, native)
 }
 
-fn historical_face_selection_with_native(
+pub(crate) fn historical_face_selection_with_native(
     scope: &DesignParameterScope,
     previous_state_id: i64,
     faces: Vec<i64>,
