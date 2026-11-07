@@ -13,6 +13,7 @@ type StandardProcedureOutputs = Result<
 >;
 type NativeEndpointEvidenceOutput = Result<Option<Vec<Option<[usize; 2]>>>, &'static str>;
 
+mod counted_owner;
 mod edge_geometry;
 mod surface_membership;
 use edge_geometry::{
@@ -2671,6 +2672,15 @@ fn try_decode_standard_population(
     };
     let owner_binding_budget =
         cadmpeg_core::decode::WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+    let a5_carriers = match crate::families::a5a8::records::a5_surfaces_from_records(
+        &scan.data,
+        &consolidated_records,
+        refusal,
+    ) {
+        Ok(carriers) => carriers,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
     consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
         ctx,
         &mut ir,
@@ -2681,12 +2691,29 @@ fn try_decode_standard_population(
         },
         &face_bounds,
         &owner_binding_budget,
-        refusal,
+        &a5_carriers,
     ) {
         Ok(bound) => bound,
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
         Err(_) => return None,
     };
+    consolidated_curve_bindings.standard_face_surfaces +=
+        match counted_owner::bind_counted_owner_surfaces(
+            ctx,
+            &mut ir,
+            &mut annotations,
+            StandardConsolidatedSource {
+                data: &scan.data,
+                records: &consolidated_records,
+            },
+            &face_bounds,
+            &owner_binding_budget,
+            &a5_carriers,
+        ) {
+            Ok(bound) => bound,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+            Err(_) => return None,
+        };
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -5967,6 +5994,7 @@ fn attach_standard_topology(
             annotations,
             bindings,
             brep,
+            face_bounds: face_bounds.unwrap_or(&[]),
             surface_indices: &surface_indices,
             supports: &supports,
             edge_vertices: &edge_vertices,
@@ -6166,6 +6194,7 @@ struct EmitStandardTopologyInputs<
     annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     bindings: &'input2 [(SurfaceId, bool, usize)],
     brep: &'input3 [u8],
+    face_bounds: &'input3 [Option<crate::families::standard::records::StandardFaceBounds>],
     surface_indices: &'input4 HashMap<SurfaceId, usize>,
     supports: &'input5 [crate::families::standard::records::StandardCurveSupport],
     edge_vertices: &'input6 [[usize; 2]],
@@ -6206,6 +6235,7 @@ fn emit_standard_topology(
         annotations,
         bindings,
         brep,
+        face_bounds,
         surface_indices,
         supports,
         edge_vertices,
@@ -6258,6 +6288,7 @@ fn emit_standard_topology(
                 bindings,
                 surface_indices,
                 brep,
+                face_bounds,
                 support,
                 points: [start_point, end_point],
                 native_support,
@@ -6369,14 +6400,48 @@ fn emit_standard_topology(
                     .curve()
                     .and_then(|id| curve_indices.get(id))
                     .map(|index| &ir.model.curves[*index].geometry);
+                let bounds_witness =
+                    match (edge_curve, ir.model.edges[edge_use.edge_row].param_range()) {
+                        (
+                            Some(
+                                curve @ CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+                            ),
+                            Some(range),
+                        ) if matches!(
+                            support.geometry,
+                            crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+                        ) && edge_geometry::arc_bounds::bounded_circle_branch(
+                            circle.center().get(),
+                            circle.radius().get(),
+                            *circle.frame().axis(),
+                            [start, end],
+                            &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
+                        )
+                        .is_some_and(|(axis, _, bounded_range)| {
+                            axis == *circle.frame().axis() && bounded_range == range.get()
+                        }) =>
+                        {
+                            let [lower, upper] = range.get();
+                            cadmpeg_ir::eval::finite_or_refusal(
+                                cadmpeg_ir::eval::decode::outer_refusal(
+                                    cadmpeg_ir::eval::decode::curve_point(
+                                        ctx,
+                                        curve,
+                                        lower.midpoint(upper),
+                                    ),
+                                )?,
+                            )?
+                        }
+                        _ => None,
+                    };
                 let pcurve_id = standard_pcurve_geometry(ctx,
 &ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry,
 support,
 (start, end),
-crate::families::standard::records::standard_face_witness(
+bounds_witness.or_else(|| crate::families::standard::records::standard_face_witness(
                         brep,
                         bindings[face_index].2,
-                    ),
+                    )),
 edge_curve,
 refusal)?
                 .map(|(geometry, range)| -> Result<_, cadmpeg_core::CodecError> {
@@ -8188,11 +8253,9 @@ fn bind_standard_a5_owner_surfaces(
     source: StandardConsolidatedSource<'_>,
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget,
-    refusal: &mut crate::nurbs::LaneRefusals,
+    carriers: &[crate::families::a5a8::records::FreeformSurface],
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let StandardConsolidatedSource { data, records } = source;
-    let carriers =
-        crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal)?;
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records)
         .collect::<Vec<_>>();
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {

@@ -3869,7 +3869,7 @@
           "id": "fcstd:model:occurrence#Cut:container",
           "name": "fcstd:native:object#Cut",
           "native_ref": "fcstd:native:object#Cut",
-          "ordinal": 1,
+          "ordinal": 2,
           "parent": {
             "kind": "occurrence",
             "occurrence": "fcstd:model:occurrence#Product:container"
@@ -3908,7 +3908,7 @@
           "id": "fcstd:model:occurrence#Cylinder:container",
           "name": "fcstd:native:object#Cylinder",
           "native_ref": "fcstd:native:object#Cylinder",
-          "ordinal": 2,
+          "ordinal": 1,
           "parent": {
             "kind": "occurrence",
             "occurrence": "fcstd:model:occurrence#Product:container"
@@ -3947,7 +3947,7 @@
           "id": "fcstd:model:occurrence#DesignedFeature:container",
           "name": "fcstd:native:object#DesignedFeature",
           "native_ref": "fcstd:native:object#DesignedFeature",
-          "ordinal": 3,
+          "ordinal": 4,
           "parent": {
             "kind": "occurrence",
             "occurrence": "fcstd:model:occurrence#Product:container"
@@ -4099,7 +4099,7 @@
           "id": "fcstd:model:occurrence#Profile:container",
           "name": "fcstd:native:object#Profile",
           "native_ref": "fcstd:native:object#Profile",
-          "ordinal": 4,
+          "ordinal": 3,
           "parent": {
             "kind": "occurrence",
             "occurrence": "fcstd:model:occurrence#Product:container"

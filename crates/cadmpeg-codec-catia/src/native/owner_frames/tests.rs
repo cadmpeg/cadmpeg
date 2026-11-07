@@ -145,3 +145,44 @@ fn counted_incidence_requires_two_pairs_and_one_final_reference() {
         );
     }
 }
+
+#[test]
+fn counted_numeric_bounds_round_trip_and_reject_changed_projection() {
+    let mut bytes = b2_adjacent_face_counted_owner_stream();
+    let owner_start = 5 + usize::from(bytes[3]);
+    let old_tail_len = 5;
+    bytes.truncate(bytes.len() - old_tail_len);
+    let tail_start = bytes.len();
+    bytes.extend_from_slice(&[0x83, 0x41, 0, 0, 0x0d]);
+    for value in [0.0_f64, -1.0, 2.0, 3.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(1);
+    for value in [-2.0_f32, 2.0, -3.0, 3.0, -4.0, 4.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let new_tail_len = bytes.len() - tail_start;
+    bytes[owner_start + 3] =
+        u8::try_from(usize::from(bytes[owner_start + 3]) - old_tail_len + new_tail_len)
+            .expect("small owner frame");
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let packet = &native.consolidated_owner_packets[0];
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert!(wire["payload"]["numeric_bounds"].is_object());
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire.clone())
+            .expect("valid wire"),
+        *packet
+    );
+    let mut invalid = wire.clone();
+    invalid["payload"]["numeric_bounds"]["upper"][0] = serde_json::json!(1.0);
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err()
+    );
+    let mut absent = wire;
+    absent["payload"]
+        .as_object_mut()
+        .expect("payload object")
+        .remove("numeric_bounds");
+    assert!(serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(absent).is_err());
+}

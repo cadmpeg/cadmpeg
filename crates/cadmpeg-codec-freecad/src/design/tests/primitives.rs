@@ -16,6 +16,81 @@ const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
 const EPS_REVOLUTION_TWO_SIDED_ANGLES: f64 = 1.0e-12;
 
 #[test]
+fn indexed_edges_resolve_only_one_topology_identity() {
+    use crate::topology_transfer::TopologyOccurrence;
+    let occurrence = |property: &str, index, topology_id: &str| TopologyOccurrence {
+        property: property.to_owned(),
+        indexed_name: "Edge",
+        source_index: index,
+        topology_id: topology_id.to_owned(),
+    };
+    let mut occurrences = vec![
+        occurrence("base", 1, "first"),
+        occurrence("base", 1, "first"),
+        occurrence("base", 2, "second"),
+        occurrence("other", 1, "other"),
+    ];
+    let index = super::super::index_occurrences(&occurrences);
+    assert_eq!(
+        index.get(&("base", "Edge", 1)).copied().flatten(),
+        Some("first")
+    );
+    assert_eq!(
+        index.get(&("base", "Edge", 2)).copied().flatten(),
+        Some("second")
+    );
+    assert_eq!(index.get(&("base", "Edge", 3)).copied().flatten(), None);
+    occurrences.push(occurrence("base", 1, "ambiguous"));
+    let index = super::super::index_occurrences(&occurrences);
+    assert_eq!(index.get(&("base", "Edge", 1)).copied().flatten(), None);
+}
+
+#[test]
+fn part_fillet_uses_the_stored_edge_index() {
+    use crate::test_support::test_archive::{rewrite_entry, CORE_OPERATIONS};
+    use cadmpeg_ir::features::EdgeSelection;
+
+    let selected = |indices: &[i32]| {
+        let archive = rewrite_entry(CORE_OPERATIONS, "Edges", |_| {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&u32::try_from(indices.len()).unwrap().to_le_bytes());
+            for index in indices {
+                bytes.extend_from_slice(&index.to_le_bytes());
+                bytes.extend_from_slice(&2.0_f64.to_le_bytes());
+                bytes.extend_from_slice(&2.0_f64.to_le_bytes());
+            }
+            bytes
+        });
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+            definition(&decoded, "PartFillet")
+        else {
+            panic!("fillet")
+        };
+        groups.as_slice()[0].edges.clone()
+    };
+    let EdgeSelection::Resolved { edges: first, .. } = selected(&[1]) else {
+        panic!("Edge1")
+    };
+    let EdgeSelection::Resolved { edges: second, .. } = selected(&[2]) else {
+        panic!("Edge2")
+    };
+    assert_eq!(first.len(), 1);
+    assert_eq!(second.len(), 1);
+    assert_ne!(first, second);
+    let EdgeSelection::Resolved { edges: both, .. } = selected(&[2, 1]) else {
+        panic!("two edges")
+    };
+    assert_eq!(both, [second[0].clone(), first[0].clone()]);
+    assert!(matches!(selected(&[1, 1]), EdgeSelection::Native(_)));
+    assert!(matches!(selected(&[0]), EdgeSelection::Native(_)));
+    assert!(matches!(selected(&[-1]), EdgeSelection::Native(_)));
+    assert!(matches!(selected(&[i32::MAX]), EdgeSelection::Native(_)));
+}
+
+#[test]
 fn part_fillet_and_chamfer_edge_values_admit_positive_lengths_once() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">

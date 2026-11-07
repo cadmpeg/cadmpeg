@@ -560,7 +560,7 @@ pub(super) fn transfer_fc05_cap_circles(
             reference,
             axis_sign,
         );
-        let witness = crate::decode::analytic::planes::fc05_cylinder_model_witness(
+        let witness = crate::decode::analytic::planes::fc05_cylinder_resolved_plane_witness(
             scan,
             cylinder_id,
             crate::decode::analytic::equations::CylinderEquation {
@@ -569,6 +569,8 @@ pub(super) fn transfer_fc05_cap_circles(
                 ref_direction: legacy_frame.2,
                 radius: circle.radius_mm,
             },
+            ir,
+            source_carriers,
         );
         let mut surface_origin = witness.origin;
         if let Some(frame) = pair_frame {

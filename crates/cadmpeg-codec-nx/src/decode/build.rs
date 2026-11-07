@@ -330,6 +330,7 @@ pub(super) fn try_decode_geometry(
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
+        let mut reversed_analytic_surfaces = BTreeSet::new();
         let mut curves_by_xmt = BTreeMap::new();
         let mut pcurves_by_xmt = BTreeMap::new();
         let mut pcurve_supports_by_xmt: BTreeMap<u32, SurfaceId> = BTreeMap::new();
@@ -389,6 +390,12 @@ pub(super) fn try_decode_geometry(
             }
             let id: SurfaceId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("surf"), fi)?;
+            if node
+                .common_header()
+                .is_some_and(|(sense, _)| sense == cadmpeg_ir::topology::Sense::Reversed)
+            {
+                reversed_analytic_surfaces.insert(id.clone());
+            }
             annotate_node(
                 &mut annotations,
                 id.as_str(),
@@ -1151,6 +1158,7 @@ pub(super) fn try_decode_geometry(
                 graph,
                 points: &points_by_xmt,
                 surfaces: &surfaces_by_xmt,
+                reversed_analytic_surfaces: &reversed_analytic_surfaces,
                 curves: &curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
                 pcurve_supports: &pcurve_supports_by_xmt,
