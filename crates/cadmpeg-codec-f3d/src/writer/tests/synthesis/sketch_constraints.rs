@@ -9,6 +9,173 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_sketch_and_primitive_features_share_the_timeline() {
+    use cadmpeg_ir::features::{
+        BooleanOp, Dimension, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+        FeatureId, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind, RadialDimension,
+        SketchFeatureBinding,
+    };
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchPlacement,
+        SketchProfiles,
+    };
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#1".try_into().unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Sketch_1".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#1".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(2.0, 3.0),
+        })
+        .unwrap(),
+    ));
+    let feature = |ordinal, name: &str, tag: &str, definition| Feature {
+        product_definition: None,
+        id: FeatureId::mint(format!("authored:model:feature#{ordinal}")).unwrap(),
+        ordinal,
+        name: Some(name.into()),
+        suppressed: Some(false),
+        needs_recompute: false,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: Some(tag.into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        0,
+        "Sketch 1",
+        "Sketch",
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(ir.model.sketches[0].id.clone())),
+        }),
+    ));
+    ir.model.features.push(feature(
+        1,
+        "CylinderPrimitive 1",
+        "CylinderPrimitive",
+        FeatureDefinition::Operation(FeatureOperation::Primitive {
+            placement: None,
+            solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
+                radius: RadialDimension::Diameter(Dimension::Literal(Length::new(20.0).unwrap())),
+                height: Dimension::Literal(Length::new(30.0).unwrap()),
+                angle: cadmpeg_ir::scalar::Angle::FULL_TURN.into(),
+            })
+            .unwrap(),
+            op: BooleanOp::NewBody,
+        }),
+    ));
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.features.len(), 2);
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    let sketch_feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.ordinal == 0)
+        .unwrap();
+    let primitive_feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.ordinal == 1)
+        .unwrap();
+    assert!(
+        matches!(sketch_feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch {
+        sketch: SketchFeatureBinding::Planar(Some(id)),
+    }) if id == &decoded.ir().model.sketches[0].id)
+    );
+    assert!(matches!(
+        primitive_feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Primitive { .. })
+    ));
+    assert_eq!(sketch_feature.name.as_deref(), Some("Sketch 1"));
+    assert_eq!(
+        primitive_feature.name.as_deref(),
+        Some("CylinderPrimitive 1")
+    );
+    ir.model.features[0].ordinal = 1;
+    ir.model.features[1].ordinal = 0;
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.ordinal == 0
+            && matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Primitive { .. })
+            )));
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.ordinal == 1
+            && matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: SketchFeatureBinding::Planar(Some(_))
+                })
+            )));
+    ir.model.features.pop();
+    ir.model.features[0].ordinal = 0;
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let [feature] = decoded.ir().model.features.as_slice() else {
+        panic!("expected one sketch feature")
+    };
+    assert!(
+        matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(id)) }) if id == &decoded.ir().model.sketches[0].id)
+    );
+}
+
+#[test]
 fn source_less_native_point_relation_preserves_reference_runs() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
