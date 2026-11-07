@@ -434,24 +434,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let selection = face_selection_value(faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no knit-surface input faces",
-                    feature.id
-                ))
-            })?;
-            let merge_entities = merge_entities.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved knit merge state",
-                    feature.id
-                ))
-            })?;
-            let create_solid = create_solid.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved knit solid state",
-                    feature.id
-                ))
-            })?;
             require_same_family(existing, &feature.id, &["KnitSurface", "Knit"])?;
             let mut parameters = self.base_parameters();
             match gap_tolerance {
@@ -462,19 +444,38 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
                 None => {
-                    parameters.remove("GapTolerance");
+                    if parameters.contains_key("GapTolerance") {
+                        return Err(CodecError::UnsupportedContent(format!(
+                            "SLDPRT feature {} has a gap parameter but no knit tolerance",
+                            feature.id
+                        )));
+                    }
                 }
             }
             let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("MergeEntities"),
-                merge_entities.to_string(),
-            );
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("CreateSolid"),
-                create_solid.to_string(),
-            );
+            if let Some(selection) = face_selection_value(faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
+            } else if matches!(faces, FaceSelection::Unresolved) {
+                properties.remove("Faces");
+            } else {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} has no knit-surface input faces",
+                    feature.id
+                )));
+            }
+            for (key, value) in [
+                (
+                    cadmpeg_core::nonblank_literal!("MergeEntities"),
+                    merge_entities,
+                ),
+                (cadmpeg_core::nonblank_literal!("CreateSolid"), create_solid),
+            ] {
+                if let Some(value) = value {
+                    properties.insert(key, value.to_string());
+                } else {
+                    properties.remove(key.as_str());
+                }
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "KnitSurface".into(), |record| record.kind.clone()),
                 parameters,
