@@ -3,9 +3,10 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use super::fixtures::{anonymous_major, plane};
+use super::fixtures::anonymous_major;
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
+use crate::test_support::e2_structure::plane;
 use crate::test_support::test_archive as support;
 use crate::wire::Uuid;
 

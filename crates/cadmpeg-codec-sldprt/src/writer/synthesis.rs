@@ -310,8 +310,7 @@ pub(super) fn plan(
     // The encode session ceiling bounds the work on the input document: charge
     // its records so a caller ceiling refuses instead of truncating (#217).
     slot_context.charge_entities(
-        u64::try_from(input.ir.model.entity_count())
-            .map_err(|_| CodecError::Malformed("SLDPRT model entity count exceeds u64".into()))?,
+        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
         "sldprt synthesis",
     )?;
     prepare_native(&mut projected, &mut losses)?;
@@ -357,11 +356,11 @@ pub(super) fn plan(
             )));
             continue;
         }
-        match geometry::preflight(&projected, &body) {
+        match geometry::preflight(&slot_context, &projected, &body) {
             Ok(()) => supported.push(body.id.clone()),
             Err(super::write_error::WriteError::Decline(reason)) => {
                 if body.kind == cadmpeg_ir::topology::BodyKind::Sheet
-                    && geometry::reduce_sheet(&mut projected, &body, &mut losses)?
+                    && geometry::reduce_sheet(&slot_context, &mut projected, &body, &mut losses)?
                 {
                     supported.push(body.id.clone());
                 } else {
@@ -534,7 +533,8 @@ pub(super) fn plan(
     )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
-        design::prepare(&mut projected, &mut losses, input.fidelity.is_none())?;
+        design::prepare(&slot_context, &mut projected, &mut losses, input.fidelity.is_none())?;
+    slot_context.finish_session()?;
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
         let mut declared = NativeDispositions::for_namespace(
@@ -630,6 +630,7 @@ pub(super) fn plan(
             sw_version: declaration,
             prepared_native,
             source_trust,
+            limits: input.limits,
         },
         &mut bytes,
     )?;
