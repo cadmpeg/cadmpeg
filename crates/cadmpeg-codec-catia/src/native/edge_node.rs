@@ -249,7 +249,7 @@ fn joined_vertices<'a>(
     node: &CatiaConsolidatedEdgeNode,
     index: &HashMap<IdentityKey<'_>, &'a str>,
 ) -> [&'a str; 2] {
-    if node.endpoint_records.is_none() && node.uses.is_none() {
+    if !has_vertex_identity(node) {
         return ["", ""];
     }
     std::array::from_fn(|endpoint| {
@@ -258,6 +258,10 @@ fn joined_vertices<'a>(
             .copied()
             .unwrap_or("")
     })
+}
+
+fn has_vertex_identity(node: &CatiaConsolidatedEdgeNode) -> bool {
+    node.endpoint_records.is_some() || (node.uses.is_some() && node.parameter_selectors == [2, 1])
 }
 
 pub(super) fn edge_node_wires(
@@ -308,7 +312,7 @@ pub(super) fn consolidated_vertex_identities(
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
     for node in nodes {
-        if node.endpoint_records.is_none() && node.uses.is_none() {
+        if !has_vertex_identity(node) {
             continue;
         }
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
