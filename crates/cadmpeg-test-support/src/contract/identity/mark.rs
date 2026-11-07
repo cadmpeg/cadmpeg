@@ -102,6 +102,37 @@ pub(in crate::contract) fn model(ir: &CadIr) -> (Value, Value, Markers) {
             if let Some(id) = native_ref.filter(|id| Some(*id) == selection) {
                 target["definition"]["bodies"]["value"]["native"] = Value::String(mark.marker(id));
             }
+            if record
+                .pointer("/definition/bodies/kind")
+                .and_then(Value::as_str)
+                == Some("native")
+            {
+                let selection = record
+                    .pointer("/definition/bodies/value")
+                    .and_then(Value::as_str);
+                let matched = original
+                    .get("feature_input_topologies")
+                    .and_then(Value::as_array)
+                    .is_some_and(|inputs| {
+                        inputs
+                            .iter()
+                            .filter(|input| input.get("input_of") == record.get("id"))
+                            .flat_map(|input| {
+                                input
+                                    .get("operands")
+                                    .and_then(Value::as_array)
+                                    .into_iter()
+                                    .flatten()
+                            })
+                            .any(|operand| {
+                                operand.get("native_ref").and_then(Value::as_str) == selection
+                                    && selection.is_some()
+                            })
+                    });
+                if let Some(id) = selection.filter(|_| matched) {
+                    target["definition"]["bodies"]["value"] = Value::String(mark.marker(id));
+                }
+            }
         }
     }
     // These five entity owners explicitly declare SourceObjectAssociation.
