@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod integer;
+mod surface_closure;
 mod wire;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
@@ -666,6 +668,56 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     assert!(entities.iter().any(|record| {
         record.field("entity_type").and_then(|value| value.as_i64()) == Some(128)
     }));
+}
+
+#[test]
+fn encode_writes_rigidly_placed_cylinder() {
+    let basis = SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [0.0, -1.0, 0.0, 10.0],
+        [1.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 30.0],
+    ])
+    .unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: SurfaceId::mint("test:model:surface#placed").unwrap(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform).unwrap(),
+        )),
+        source_object: None,
+    });
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.surfaces.len(), 1);
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) =
+        decoded.ir().model.surfaces[0].geometry.solved()
+    else {
+        panic!("expected cylinder");
+    };
+    assert_eq!(cylinder.origin().get(), Point3::new(8.0, 21.0, 33.0));
+    assert_eq!(
+        *cylinder.frame().axis().as_raw(),
+        Vector3::new(0.0, 0.0, 1.0)
+    );
+    assert_eq!(
+        *cylinder.frame().reference().as_raw(),
+        Vector3::new(0.0, 1.0, 0.0)
+    );
+    assert_eq!(cylinder.radius().magnitude().get(), 2.0);
 }
 
 #[test]

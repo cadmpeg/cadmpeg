@@ -55,10 +55,7 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
     let mut body_keys = Vec::with_capacity(target.model.bodies.len());
     let mut body_visibilities = Vec::new();
     for (ordinal, body) in target.model.bodies.iter_mut().enumerate() {
-        let default_key = u64::try_from(ordinal)
-            .ok()
-            .and_then(|value| value.checked_add(1))
-            .ok_or_else(|| CodecError::InvalidInput("F3D body ordinal exceeds u64".into()))?;
+        let default_key = cadmpeg_core::decode::u64_from_index(ordinal) + 1;
         let original = key_for(&native.body_native_keys, body).cloned();
         let preferred = original.as_ref().and_then(|record| record.asm_body_key);
         let key = if original.is_some() && preferred.is_none() && body.visible.is_none() {

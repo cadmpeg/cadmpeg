@@ -652,7 +652,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 return Ok(None);
             };
             let catalog = definition_catalog(ctx, protein, &entry.name, stage)?;
-            let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
+            let schema_catalog =
+                cadmpeg_protein::SchemaCatalog::load(ctx, protein, stage, &entry.name)?;
             let appearances = if let Some(mut schema_catalog) = schema_catalog {
                 let mut records = Vec::new();
                 let mut accepted_frames = Vec::new();
