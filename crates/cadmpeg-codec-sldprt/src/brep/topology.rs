@@ -157,7 +157,7 @@ struct VertexReading {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Point {
-    attr: u32,
+    pub(super) attr: u32,
     refs: Vec<u32>,
     pub(super) xyz_m: [f64; 3],
     pub(crate) xyz_offset: usize,
@@ -429,7 +429,7 @@ fn parse_vertex_candidates(buf: &[u8], off: usize) -> Vec<VertexReading> {
     out
 }
 
-fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
+pub(super) fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     if prefixed {
         return parse_point_short(buf, off, prefixed);
     }
@@ -4108,7 +4108,7 @@ mod tests {
         assert_eq!(decoded.ir().model.faces.len(), 1);
         assert_eq!(decoded.ir().model.loops.len(), 1);
         assert_eq!(decoded.ir().model.coedges.len(), 3);
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(&cadmpeg_core::decode::DecodeContext::for_encode(&cadmpeg_core::decode::DecodeArena::new(), &cadmpeg_core::decode::DecodePolicy::desktop()), decoded.ir(), 0.001, false).unwrap();
         let original = scan(&body);
         assert_eq!(original.edge_uses.len(), 3);
         let edge = original

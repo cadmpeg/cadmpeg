@@ -32,6 +32,7 @@ fn cube() -> CadIr {
 
 #[test]
 fn omitted_wire_body_names_each_lost_topology_record() {
+    const EPS_WIRE_POINT_MM: f64 = 1e-9;
     let mut ir = cube();
     ir.model.bodies[0].kind = BodyKind::Wire;
     let edge = ir.model.edges[0].clone();
@@ -64,8 +65,6 @@ fn omitted_wire_body_names_each_lost_topology_record() {
         .chain(ir.model.shells.iter().map(|record| record.id.to_string()))
         .chain(ir.model.edges.iter().map(|record| record.id.to_string()))
         .chain(ir.model.vertices.iter().map(|record| record.id.to_string()))
-        .chain(ir.model.points.iter().map(|record| record.id.to_string()))
-        .chain(ir.model.curves.iter().map(|record| record.id.to_string()))
         .collect::<Vec<_>>();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -78,6 +77,22 @@ fn omitted_wire_body_names_each_lost_topology_record() {
                 .any(|loss| loss.message.contains(&id)),
             "missing loss for {id}"
         );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.points.len(), ir.model.points.len());
+    assert_eq!(decoded.ir().model.curves.len(), ir.model.curves.len());
+    for point in &ir.model.points {
+        let expected = point.position().get();
+        assert!(decoded.ir().model.points.iter().any(|actual| {
+            let actual = actual.position().get();
+            (actual.x - expected.x).abs() < EPS_WIRE_POINT_MM
+                && (actual.y - expected.y).abs() < EPS_WIRE_POINT_MM
+                && (actual.z - expected.z).abs() < EPS_WIRE_POINT_MM
+        }));
     }
 }
 
@@ -329,7 +344,16 @@ fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
     for kind in [BodyKind::Wire, BodyKind::General] {
         let mut ir = cube();
         ir.model.bodies[0].kind = kind;
-        let error = crate::writer::brep_body(&ir, 0.001, false).unwrap_err();
+        let error = crate::writer::brep_body(
+            &cadmpeg_core::decode::DecodeContext::for_encode(
+                &cadmpeg_core::decode::DecodeArena::new(),
+                &cadmpeg_core::decode::DecodePolicy::desktop(),
+            ),
+            &ir,
+            0.001,
+            false,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("as a solid lump"));
     }
 }
@@ -364,7 +388,16 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     ir.model.pcurves.push(pcurve);
     // The topology writer ignores the shell members and the coedge relation;
     // accounting belongs to that write, irrespective of neutral admission.
-    crate::writer::brep_body(&ir, 0.001, false).unwrap();
+    crate::writer::brep_body(
+        &cadmpeg_core::decode::DecodeContext::for_encode(
+            &cadmpeg_core::decode::DecodeArena::new(),
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        ),
+        &ir,
+        0.001,
+        false,
+    )
+    .unwrap();
     let losses = super::super::accounting::losses(&ir, true);
     for (code, field) in [
         (

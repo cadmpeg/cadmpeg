@@ -13,8 +13,8 @@ fn missing() -> CodecError {
 
 pub(super) fn vertex_body_owners(
     ir: &CadIr,
-    body_attrs: &HashMap<BodyId, u16>,
-) -> Result<HashMap<VertexId, u16>, CodecError> {
+    body_attrs: &HashMap<BodyId, u32>,
+) -> Result<HashMap<VertexId, u32>, CodecError> {
     let regions = ir
         .model
         .regions

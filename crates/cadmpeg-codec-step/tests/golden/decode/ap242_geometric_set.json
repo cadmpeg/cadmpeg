@@ -7,6 +7,19 @@
       "assembly_joints": [],
       "attributes": [
         {
+          "id": "step:data:file-description#00000000000000000000",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "bounded surface set"
+            }
+          ]
+        },
+        {
           "id": "step:data:file-name#author",
           "name": "author",
           "target": {
@@ -146,6 +159,20 @@
             {
               "kind": "string",
               "value": ""
+            }
+          ]
+        },
+        {
+          "id": "step:data:geometry-name#11-12",
+          "name": "name",
+          "target": {
+            "id": "step:data:surface#11",
+            "kind": "surface"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "disc"
             }
           ]
         }

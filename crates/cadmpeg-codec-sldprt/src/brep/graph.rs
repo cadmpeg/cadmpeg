@@ -52,6 +52,8 @@ use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
+mod standalone;
+
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
 const EPS_GEOMETRY_RESIDUAL: f64 = 1.0e-9;
@@ -2335,6 +2337,14 @@ pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let standalone = if let [(payload, header)] = bodies {
+        standalone::decode(ctx, header_body(payload, header)?, stream)?
+    } else {
+        None
+    };
+    if let Some(brep) = standalone {
+        return Ok(brep);
+    }
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
@@ -2411,7 +2421,40 @@ pub(crate) fn decode_bodies(
             append_entity_facts(&mut facts, scanned_facts);
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
+    let mut decoded = decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)?;
+    if let (false, [(payload, header)]) = (decoded.bodies.is_empty(), bodies) {
+        let existing = decoded
+            .curves
+            .iter()
+            .map(|curve| curve.id.clone())
+            .collect::<HashSet<_>>();
+        let existing_points = decoded
+            .points
+            .iter()
+            .map(|point| point.id.clone())
+            .collect::<HashSet<_>>();
+        if let Some(mut prefix) = standalone::decode_prefix(
+            ctx,
+            header_body(payload, header)?,
+            stream,
+            &existing,
+            &existing_points,
+        )? {
+            let added = prefix
+                .curves
+                .iter()
+                .map(|curve| curve.id.as_str())
+                .chain(prefix.points.iter().map(|point| point.id.as_str()))
+                .collect::<HashSet<_>>();
+            prefix
+                .annotations
+                .retain_provenance(|id| added.contains(id));
+            decoded.annotations.append(prefix.annotations)?;
+            decoded.curves.append(&mut prefix.curves);
+            decoded.points.append(&mut prefix.points);
+        }
+    }
+    Ok(decoded)
 }
 
 fn decode_body(
@@ -2419,6 +2462,9 @@ fn decode_body(
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    if let Some(brep) = standalone::decode(ctx, body, stream)? {
+        return Ok(brep);
+    }
     let mut carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
@@ -2731,7 +2777,7 @@ fn decode_graph(
     };
     let mut annotations = AnnotationBuilder::new();
     let source_stream = StreamHandle::new(stream.clone());
-    if t.bridges().is_empty() {
+    if t.bridges().is_empty() && body_records.is_empty() {
         return Ok(out);
     }
 
@@ -4041,7 +4087,7 @@ fn decode_graph(
     derive_nurbs_isoparametric_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     prune_rejected_topology(&mut out);
 
-    if out.faces.is_empty() {
+    if out.faces.is_empty() && body_records.is_empty() {
         return Ok(Brep {
             losses: out.losses,
             stats: out.stats,
@@ -8168,9 +8214,10 @@ fn synthesize_sphere_seams(
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
         });
-        let bounds = out.edges[edge_index]
-            .param_range()
-            .map_or([0.0, std::f64::consts::TAU], cadmpeg_ir::units::FiniteVector::get);
+        let bounds = out.edges[edge_index].param_range().map_or(
+            [0.0, std::f64::consts::TAU],
+            cadmpeg_ir::units::FiniteVector::get,
+        );
         out.edges[edge_index].carrier =
             cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(bounds))
                 .map_err(cadmpeg_core::CodecError::malformed)?;

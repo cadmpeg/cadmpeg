@@ -883,9 +883,24 @@ pub(in crate::writer) fn settings(
             .get("current_color")
             .is_some_and(|value| !value.is_null())
         {
-            let mut body = color(Some(&fields), "current_color")?.to_vec();
-            body.extend(integer(Some(&fields), "current_color_source", 0).to_le_bytes());
-            output.records.push(crc_chunk(0x2000_803a, &body)?);
+            match color(Some(&fields), "current_color") {
+                Ok(color) => {
+                    let mut body = color.to_vec();
+                    body.extend(integer(Some(&fields), "current_color_source", 0).to_le_bytes());
+                    output.records.push(crc_chunk(0x2000_803a, &body)?);
+                }
+                Err(
+                    cadmpeg_core::CodecError::Malformed(reason)
+                    | cadmpeg_core::CodecError::InvalidInput(reason),
+                ) => {
+                    losses.push(RhinoLossCode::WriterSettingColorReduced.note(format!(
+                        "document setting {} current_color is omitted: {reason}",
+                        setting.id()
+                    )));
+                    reference_changed = true;
+                }
+                Err(error) => return Err(error.into()),
+            }
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {
             if let Some(record) = records(ir, "layers").iter().find(|record| {

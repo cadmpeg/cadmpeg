@@ -469,6 +469,38 @@ fn writer_folds_document_attributes_into_file_name() {
 }
 
 #[test]
+fn document_author_losses_name_values_not_projected_back() {
+    let mut ir = unit_cube().expect("unit cube");
+    ir.model.attributes.extend([
+        document_attribute("test:model:attribute#first", "author", "anne"),
+        document_attribute("test:model:attribute#second", "author", "beth"),
+        document_attribute("test:model:attribute#third", "LastModifiedBy", "chris"),
+    ]);
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write header");
+    let losses: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::StepLossCode::SourceAttributeNotWritten.kind())
+        .collect();
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:attribute#second")));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:attribute#third")));
+    assert!(losses
+        .iter()
+        .all(|loss| !loss.message.contains("test:model:attribute#first")));
+}
+
+#[test]
 fn iges_document_timestamp_uses_step_syntax_and_names_the_normalization() {
     let mut ir = unit_cube().expect("unit cube");
     let id = "test:model:attribute#date";
@@ -714,8 +746,11 @@ fn product_scalar_attributes_are_step_properties_of_their_owner() {
     assert!(!report
         .losses
         .iter()
-        .any(|loss| loss.message.contains("test:model:attribute#first")
-            || loss.message.contains("test:model:attribute#second")));
+        .any(|loss| loss.message.contains("test:model:attribute#first")));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::SourceAttributeTargetNormalized.kind()
+            && loss.message.contains("test:model:attribute#second")
+    }));
 }
 
 #[test]
@@ -747,6 +782,169 @@ fn older_step_schema_reports_unwritten_product_boolean() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("test:model:attribute#flag")));
+}
+
+#[test]
+fn distinct_product_source_name_is_reported_with_its_occurrence() {
+    let mut ir = unit_cube().expect("cube");
+    let product_id = "test:model:product-definition#part";
+    let mut product = unnamed_definition(product_id, vec![ir.model.bodies[0].id.clone()]);
+    product.label = Some("Displayed label".into());
+    product.source_name = Some("Source name".into());
+    ir.model.product_definitions = vec![product];
+    let occurrence = unnamed_occurrence("test:model:occurrence#part", product_id, None);
+    let occurrence_id = occurrence.id.clone();
+    ir.model.occurrences = vec![occurrence];
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::ProductSourceNameReduced.kind()
+            && loss.message.contains(product_id)
+            && loss.message.contains(occurrence_id.as_str())
+    }));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode product");
+    assert!(decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|product| product.source_name.as_deref() == Some("Displayed label")));
+}
+
+#[test]
+fn assembly_occurrences_keep_sibling_order() {
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product-definition#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product-definition#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#assembly",
+        None,
+    );
+    let mut later = unnamed_occurrence(
+        "test:model:occurrence#later",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    later.name = Some("Later".into());
+    later.ordinal = 1;
+    let mut earlier = unnamed_occurrence(
+        "test:model:occurrence#earlier",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    earlier.name = Some("Earlier".into());
+    ir.model.occurrences = vec![root, later, earlier];
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode assembly");
+    let ordinal = |name: &str| {
+        decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.name.as_deref() == Some(name))
+            .expect("named occurrence")
+            .ordinal
+    };
+    assert_eq!(ordinal("Earlier"), 0);
+    assert_eq!(ordinal("Later"), 1);
+}
+
+#[test]
+fn occurrence_style_without_a_writable_carrier_is_reported() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::topology::Color;
+
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product-definition#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product-definition#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#assembly",
+        None,
+    );
+    let child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    let appearance = "test:model:appearance#material".try_into().unwrap();
+    ir.model.appearances.push(Appearance {
+        id: appearance,
+        native_ref: None,
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(Color::new(0.25, 0.5, 0.75, 1.0).unwrap()),
+        properties: std::collections::BTreeMap::default(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:model:binding#occurrence".try_into().unwrap(),
+        native_ref: None,
+        target: AppearanceTarget::Occurrence(child.id.clone()),
+        appearance: "test:model:appearance#material".try_into().unwrap(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::default(),
+    });
+    ir.model.occurrences = vec![root, child];
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::DisplayColorUnstyled.kind()
+            && loss.message.contains("test:model:binding#occurrence")
+    }));
+    let text = String::from_utf8(output).unwrap();
+    let usage = text
+        .lines()
+        .find(|line| line.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE('test:model:occurrence#child'"))
+        .unwrap()
+        .split_once(" = ")
+        .unwrap()
+        .0;
+    assert!(!text
+        .lines()
+        .any(|line| line.contains("STYLED_ITEM(") && line.contains(&format!(",{usage})"))));
 }
 
 #[test]

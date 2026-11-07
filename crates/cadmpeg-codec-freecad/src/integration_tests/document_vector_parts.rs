@@ -402,3 +402,32 @@ fn missing_template_member_reports_the_derived_drawing_fields() {
         std::collections::BTreeSet::from(["sheet", "template_geometry"])
     );
 }
+
+#[test]
+fn malformed_svg_element_is_given_up_and_sibling_geometry_survives() {
+    let xml = "<Document SchemaVersion='4' FileVersion='1'><Properties Count='0'/><Objects Count='1'><Object name='Template' type='TechDraw::DrawSVGTemplate'/></Objects><ObjectData Count='1'><Object name='Template'><Properties Count='1'><Property name='Template' type='App::PropertyFileIncluded'><FileIncluded file='sheet.svg'/></Property></Properties></Object></ObjectData></Document>";
+    let bad = "<circle r='1' r='2'/>";
+    let svg = format!("<svg xmlns='http://www.w3.org/2000/svg' width='210mm' height='297mm' viewBox='0 0 210 297'><line x2='10'/>{bad}<line y2='20'/></svg>");
+    let source = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", xml.as_bytes()),
+        RawEntry::stored("sheet.svg", svg.as_bytes()),
+    ]);
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let drawing = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::Template)
+        .unwrap();
+    assert_eq!(drawing.template_geometry.as_ref().unwrap().curves.len(), 2);
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    assert!(parts
+        .iter()
+        .any(|(_, bytes)| bytes.data() == Some(bad.as_bytes())));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "record.unreadable" && loss.message.contains("circle")
+    }));
+}

@@ -259,7 +259,8 @@ fn shape_color_and_single_shape_material_keep_separate_appearances() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let body = &decoded.ir().model.bodies[0];
-    assert!(body.color.is_none());
+    let body_color = body.color.unwrap();
+    assert!(body_color.g() > body_color.r());
     let bindings: Vec<_> = decoded
         .ir()
         .model
@@ -296,7 +297,7 @@ fn shape_color_and_single_shape_material_keep_separate_appearances() {
         .find(|appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider ShapeMaterial"))
         .unwrap();
     let color = object.base_color.unwrap();
-    assert!(color.r() > color.b());
+    assert!(color.b() > color.r());
     assert_eq!(object.properties["shininess"].get(), 0.25);
     assert!(object.properties.contains_key("diffuse_packed"));
     let effective = decoded

@@ -13,52 +13,63 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
+    surface_trim_selection_and_cell_table_with_base(0)
+}
+
+fn surface_trim_selection_and_cell_table_with_base(base: u32) -> (Vec<u8>, DesignParameterScope) {
     let mut bytes = Vec::new();
-    indexed_header(&mut bytes, *b"344", 811);
+    indexed_header(&mut bytes, *b"344", base + 811);
     bytes.extend_from_slice(&[0; 11]);
     bytes.push(1);
-    bytes.extend_from_slice(&814u32.to_le_bytes());
+    bytes.extend_from_slice(&(base + 814).to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
     lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
-    indexed_header(&mut bytes, *b"257", 811);
+    indexed_header(&mut bytes, *b"257", base + 811);
     bytes.extend_from_slice(&[0; 10]);
-    indexed_header(&mut bytes, *b"358", 812);
+    indexed_header(&mut bytes, *b"358", base + 812);
     bytes.extend_from_slice(&[0; 10]);
-    indexed_header(&mut bytes, *b"272", 813);
+    indexed_header(&mut bytes, *b"272", base + 813);
     bytes.extend_from_slice(&[0; 10]);
-    indexed_header(&mut bytes, *b"344", 814);
+    indexed_header(&mut bytes, *b"344", base + 814);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&123u64.to_le_bytes());
-    indexed_header(&mut bytes, *b"288", 815);
-    indexed_header(&mut bytes, *b"271", 816);
-    indexed_header(&mut bytes, *b"325", 817);
+    indexed_header(&mut bytes, *b"288", base + 815);
+    indexed_header(&mut bytes, *b"271", base + 816);
+    indexed_header(&mut bytes, *b"325", base + 817);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     for (record_index, ordinal) in [(819u32, 1u64), (820, 4)] {
         bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&(base + record_index).to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         bytes.extend_from_slice(&ordinal.to_le_bytes());
     }
     bytes.extend_from_slice(&5u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
-    indexed_header(&mut bytes, *b"257", 817);
-    indexed_header(&mut bytes, *b"286", 819);
-    indexed_header(&mut bytes, *b"351", 820);
+    indexed_header(&mut bytes, *b"257", base + 817);
+    indexed_header(&mut bytes, *b"286", base + 819);
+    indexed_header(&mut bytes, *b"351", base + 820);
 
     let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#800",
+        &format!(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#{}",
+            base + 800
+        ),
         crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
-        800,
+        base + 800,
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![801, 804, 808, 811]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                base + 801,
+                base + 804,
+                base + 808,
+                base + 811,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -91,7 +102,12 @@ fn surface_trim_output_carries_its_scope_identifier() {
     zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let operations = super::decode_surface_trim_operations(scan, &[scope.clone()]).unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let operations =
+            super::decode_surface_trim_operations(&ctx, &mut parts, scan, &[scope.clone()])
+                .unwrap();
         assert_eq!(operations.len(), 1);
         assert_eq!(
             operations[0].id,
@@ -184,4 +200,76 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
         &scope
     )
     .is_none());
+}
+
+#[test]
+fn damaged_cell_table_gives_up_only_its_record_and_keeps_sibling() {
+    const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let (mut damaged, mut damaged_scope) = surface_trim_selection_and_cell_table_with_base(0);
+    let (good, mut good_scope) = surface_trim_selection_and_cell_table_with_base(1000);
+    for scope in [&mut damaged_scope, &mut good_scope] {
+        scope.id = format!(
+            "{}:design-parameter-scope#{}",
+            crate::ids::native_scope(ENTRY),
+            scope.record_index
+        );
+    }
+    let mut paired = Vec::new();
+    indexed_header(&mut paired, *b"257", 817);
+    let paired_at = damaged
+        .windows(paired.len())
+        .position(|window| window == paired)
+        .unwrap();
+    let tail = paired_at - std::mem::size_of::<u32>();
+    damaged[tail] = 1;
+    let good_start = damaged.len();
+    damaged.extend_from_slice(&good);
+    let records = [
+        811, 812, 813, 814, 815, 816, 817, 819, 820, 1811, 1812, 1813, 1814, 1815, 1816, 1817,
+        1819, 1820,
+    ];
+    let meta = crate::test_support::zip_test::indexed_fixture_metastream(
+        &damaged,
+        &records,
+        &[811, 817, 1811, 1817],
+    );
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&damaged).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let operations = super::decode_surface_trim_operations(
+        &ctx,
+        &mut parts,
+        &scan,
+        &[damaged_scope.clone(), good_scope, damaged_scope],
+    )
+    .unwrap();
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0].cell_table_record_index, 1817);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    let location = losses[0].provenance.as_ref().unwrap();
+    assert_eq!(location.stream_name(), Some(ENTRY));
+    assert!(location.offset < u64::try_from(good_start).unwrap());
+    assert!(location.byte_len().is_some_and(|length| length > 0));
 }

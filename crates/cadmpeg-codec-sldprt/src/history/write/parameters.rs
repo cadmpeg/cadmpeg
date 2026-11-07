@@ -2,6 +2,7 @@
 //! Parameter records for native write.
 
 use crate::records::FeatureContent;
+use crate::writer::write_error::WriteError;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterId, ParameterValue};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -43,7 +44,7 @@ pub(super) fn synchronize_dimension_properties(
 pub(crate) fn synchronize_parameter_records(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     if !ir.scope.design {
         return Ok(());
     }
@@ -62,7 +63,7 @@ pub(crate) fn is_pmi_parameter(
 fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let parameters = &ir.model.parameters;
     let feature_names = ir
         .model
@@ -79,7 +80,8 @@ fn sync_neutral_parameters(
     if parameters_with_incoherent_dependencies(parameters, &feature_names, &global_owners) > 0 {
         return Err(CodecError::malformed(
             "SLDPRT parameter expressions reference missing canonical identities",
-        ));
+        )
+        .into());
     }
     let aliases = parameters
         .iter()
@@ -117,7 +119,9 @@ fn sync_neutral_parameters(
                     let target = parameters.iter().find(|target| &target.id == id)?;
                     let alias = aliases.get(id).map(String::as_str);
                     let mut name = alias
-                        .map_or(target.name.as_str(), |alias| alias.split('@').next().unwrap_or(alias))
+                        .map_or(target.name.as_str(), |alias| {
+                            alias.split('@').next().unwrap_or(alias)
+                        })
                         .to_owned();
                     if (alias.is_some()
                         || (target.owner != parameter.owner
@@ -165,18 +169,33 @@ fn sync_neutral_parameters(
         .filter_map(|constraint| {
             use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput;
             let definition = constraint.definition.kind();
-            if !crate::resolved_features::write_prepare::native_spatial_relation_supported(
-                definition, parameters,
-            ) {
-                return None;
-            }
             match definition {
                 SpatialSketchConstraintDefinitionInput::Native {
                     parameter: Some(id),
                     ..
-                } => parameters
-                    .iter()
-                    .find(|parameter| &parameter.id == id && !parameter.driving),
+                } if crate::resolved_features::write_prepare::native_spatial_relation_supported(
+                    definition, parameters,
+                ) =>
+                {
+                    parameters
+                        .iter()
+                        .find(|parameter| &parameter.id == id && !parameter.driving)
+                }
+                SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(id),
+                    ..
+                } => parameters.iter().find(|parameter| {
+                    &parameter.id == id
+                        && !parameter.driving
+                        && parameter
+                            .name
+                            .strip_suffix("@reference")
+                            .is_some_and(|name| !name.is_empty())
+                        && matches!(
+                            parameter.value,
+                            Some(cadmpeg_ir::features::ParameterValue::Length(_))
+                        )
+                }),
                 _ => None,
             }
         })
@@ -197,7 +216,7 @@ fn sync_neutral_parameters(
             continue;
         }
         let Some(owner_id) = parameter.owner.as_ref() else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "global SLDPRT parameter {} cannot be written to a feature record",
                 parameter.id.as_str()
             )));
@@ -206,7 +225,8 @@ fn sync_neutral_parameters(
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references a missing feature",
                 parameter.id
-            )));
+            ))
+            .into());
         }
         let owner_parameters = desired.entry(owner_id.clone()).or_default();
         if owner_parameters
@@ -216,7 +236,8 @@ fn sync_neutral_parameters(
             return Err(CodecError::malformed(format_args!(
                 "duplicate SLDPRT parameter {} on feature {}",
                 parameter.name, owner_id
-            )));
+            ))
+            .into());
         }
         if owner_parameters
             .iter()
@@ -225,12 +246,13 @@ fn sync_neutral_parameters(
             return Err(CodecError::malformed(format_args!(
                 "duplicate SLDPRT parameter ordinal {} on feature {}",
                 parameter.ordinal, owner_id
-            )));
+            ))
+            .into());
         }
         owner_parameters.push(parameter);
     }
     let Some(native) = native.as_mut() else {
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Decline(
             "SLDPRT parameters require feature records".into(),
         ));
     };
@@ -246,7 +268,7 @@ fn sync_neutral_parameters(
                         && record.id == generated_feature_record_id(feature_id))
             })
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT parameters for feature {feature_id} require a retained feature record"
                 ))
             })?;
@@ -282,7 +304,8 @@ fn sync_neutral_parameters(
                     native_literal.unwrap_or_else(|| rendered[&parameter.id].clone()),
                 )
             }),
-        )?;
+        )
+        .map_err(CodecError::from)?;
         record.parameters.extend(canonical);
         record.dimension_properties = parameters
             .iter()
@@ -363,7 +386,8 @@ fn sync_neutral_parameters(
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references missing scalar {native_ref}",
                 parameter.id.as_str()
-            )));
+            ))
+            .into());
         };
         let lane = &mut native.feature_input_lanes[lane_index];
         let scalar_name = lane
@@ -373,7 +397,7 @@ fn sync_neutral_parameters(
             .map(|name| name.value.as_str());
         if scalar_name != Some(parameter.name.as_str()) {
             // (P): changing a counted scalar name relocates following lane records.
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT canonical parameter {} was renamed; input lanes require regeneration",
                 parameter.id
             )));
@@ -385,13 +409,13 @@ fn sync_neutral_parameters(
             Some(ParameterValue::Real(value)) => value.get(),
             Some(ParameterValue::Integer(value)) => cadmpeg_core::convert::f64_from_i64(*value)
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    WriteError::Decline(format!(
                         "SLDPRT scalar {} cannot exactly encode integer {value}",
                         scalar.id
                     ))
                 })?,
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT scalar {} requires a real-valued parameter",
                     scalar.id
                 )));
@@ -531,12 +555,15 @@ fn lane_matches_document_dimension(
         return false;
     };
     let mut paths = Vec::new();
-    if crate::history::encode::bindings::visit_operation_roles(operation, |roles, role_paths| {
-        if roles.contains(&role) {
-            paths.extend(role_paths.iter().map(ToString::to_string));
-        }
-        Ok(())
-    })
+    if crate::history::encode::bindings::visit_operation_roles(
+        operation,
+        |roles, role_paths| -> Result<(), std::convert::Infallible> {
+            if roles.contains(&role) {
+                paths.extend(role_paths.iter().map(ToString::to_string));
+            }
+            Ok(())
+        },
+    )
     .is_err()
     {
         return false;
