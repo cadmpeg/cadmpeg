@@ -1697,3 +1697,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** `f3d.md` §3.1 requires a radius law for every `Fillet` group. This scope stores none.
 
 **Note.** None.
+
+### DR-322. Selected-face Extrude start without a start group
+
+**Question.** What does start-support byte `2` mean for an `Extrude` scope that stores no start-face group?
+
+**Known.** `f3d.md` §3.1 gives start-support byte `2` as a selected-face start that stores a `ProfileOffset` and a profile-from-entity reference, and adds one start group to the scope. A new-body `Extrude` scope exists with start-support byte `2`, one-sided distance extent, and a `ProfileOffset` owner, whose reference table holds three fixed scalar lanes, one further record, the profile group, and its profile. It stores no start group of any role. Its reference slots and frame length are those of an offset-profile-plane new-body scope with the same reference count. Selected-face start scopes of other operations store the start group. The decoder keeps the feature native and the native check reports that the start conflicts with the face operands.
+
+**Need.** Saves of a new-body `Extrude` that start from a selected face, from an offset plane, and from a selected face that is later deleted, each with the start-support byte and the scope reference table recorded.
+
+**Conflict.** `f3d.md` §3.1 requires a start group when the start support is a selected face. This scope stores none.
+
+**Note.** None.
