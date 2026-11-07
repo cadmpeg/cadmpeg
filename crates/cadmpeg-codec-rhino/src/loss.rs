@@ -247,6 +247,8 @@ pub(crate) enum RhinoLossCode {
     WriterMaterialUuidReassigned,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// A dimension style archive index changes.
+    WriterDimensionStyleIndexReassigned,
     /// A text style has no writable native record.
     WriterTextStyleOmitted,
     /// A text style reference is reduced or reassigned.
@@ -406,6 +408,7 @@ impl RhinoLossCode {
         Self::WriterMaterialTextureOmitted,
         Self::WriterMaterialUuidReassigned,
         Self::WriterAttributesOmitted,
+        Self::WriterDimensionStyleIndexReassigned,
         Self::WriterTextStyleOmitted,
         Self::WriterTextStyleReferenceReduced,
         Self::WriterLightOmitted,
@@ -506,6 +509,7 @@ impl RhinoLossCode {
             Self::WriterMaterialTextureOmitted => "writer.material-texture-omitted",
             Self::WriterMaterialUuidReassigned => "writer.material-uuid-reassigned",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterDimensionStyleIndexReassigned => "writer.dimension-style-index-reassigned",
             Self::WriterTextStyleOmitted => "writer.text-style-omitted",
             Self::WriterTextStyleReferenceReduced => "writer.text-style-reference-reduced",
             Self::WriterLightOmitted => "writer.light-omitted",
@@ -660,6 +664,7 @@ impl RhinoLossCode {
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAttributesOmitted
+            | Self::WriterDimensionStyleIndexReassigned
             | Self::WriterTextStyleOmitted
             | Self::WriterTextStyleReferenceReduced
             | Self::WriterLightOmitted
@@ -784,6 +789,7 @@ mod tests {
                 "writer.material-texture-omitted",
                 "writer.material-uuid-reassigned",
                 "writer.attributes-omitted",
+                "writer.dimension-style-index-reassigned",
                 "writer.text-style-omitted",
                 "writer.text-style-reference-reduced",
                 "writer.light-omitted",
