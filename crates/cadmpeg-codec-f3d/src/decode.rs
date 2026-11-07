@@ -3162,6 +3162,12 @@ impl<'a> F3dDecodeSession<'a> {
                 let xref = prereqs.store(&mut self.native);
                 let projected = match design {
                     DesignState::Projected(design) => {
+                        report_unresolved_configuration_rules(
+                            &mut self.report,
+                            &design.design_configurations,
+                            design.configuration_roots_unbound,
+                            &self.ir,
+                        );
                         design.store(&mut self.native);
                         crate::design::decode::sketch_owners::attach(
                             ctx,
