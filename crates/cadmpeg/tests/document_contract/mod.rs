@@ -19,6 +19,8 @@ mod mixed_design;
 mod one_fact;
 #[cfg(feature = "rhino")]
 mod rhino;
+#[cfg(feature = "fcstd")]
+mod stale_sidecar;
 #[cfg(any(
     feature = "iges",
     feature = "inventor",
