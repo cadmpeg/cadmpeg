@@ -240,6 +240,82 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     })
 }
 
+pub(super) fn contain_legacy_as_built_solved_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    records: &[crate::metastream::PrimaryRecordFrame],
+    scope: &DesignParameterScope,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt {
+        return Ok(());
+    }
+    let Some(generation) = scope.frame_length().and_then(|length| {
+        crate::design::assembly::legacy_as_built_421_generation(
+            length,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+        )
+    }) else {
+        return Ok(());
+    };
+    let Some(index) = scope.reference_members().values().nth(8).copied() else {
+        return Ok(());
+    };
+    let bytes = source.window();
+    let mut candidates = records.iter().filter(|frame| {
+        frame.entity_id == u64::from(index)
+            && exact_indexed_header_at(bytes, frame.start, index).as_deref()
+                == Some(generation.frame_class_tag())
+    });
+    let Some(frame) = candidates.next() else {
+        return Ok(());
+    };
+    if candidates.next().is_some() {
+        return Ok(());
+    }
+    let start = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("assembly frame start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("assembly frame end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("assembly frame exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(super::text::design_record_id(
+        stream,
+        ":design-record-header#",
+        cadmpeg_core::decode::u64_from_index(frame.start),
+    ))
+    .map_err(cadmpeg_core::CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(());
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        let bounded = bytes.get(..frame.end).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("assembly frame exceeds its stream")
+        })?;
+        exact_legacy_as_built_421_solved_frame(bounded, records, scope)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("invalid assembly solved frame"))
+    })?;
+    Ok(())
+}
+
 /// Maximum component error accepted when a legacy hole direction is compared
 /// with the solved connector frame's third basis column.
 const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
