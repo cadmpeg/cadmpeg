@@ -24,6 +24,7 @@ fn loft_input(
             draft.payload = DesignScopePayload::Loft(Some(DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 128,
+                reference_target: None,
             }));
         })
         .unwrap();
