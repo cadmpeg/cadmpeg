@@ -1639,6 +1639,9 @@
             "id": "f3d:source:part#488e0939d8aecd6798c9ffa37d14f56f4dce4e37ae03a718364273cfffe958cf"
           },
           {
+            "id": "f3d:source:part#7682a34f3cbe633be1274f0b2ee9803d061611a1757f321071bbb97c7b316bcb"
+          },
+          {
             "id": "f3d:source:part#c10a99a6b40c1e7ba66089e414b7ec8af179a50bac8418bab1df64b0f134c789"
           }
         ],
@@ -1772,6 +1775,23 @@
         },
         "severity": "warning",
         "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070 has no placement for owner 277."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "decode",
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "strict_floor": "error"
+        },
+        "severity": "error",
+        "message": "part f3d.bulk_record stream=\"f3d:FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3317 length=223 record=f3d:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3317: malformed container: invalid operand recipe; dropped=[]",
+        "provenance": {
+          "format": "f3d",
+          "stream": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat",
+          "offset": 3317,
+          "byte_len": 223
+        }
       },
       {
         "code": {
@@ -2253,6 +2273,17 @@
         },
         "untyped": [
           "model",
+          "design"
+        ]
+      },
+      "f3d:source:part#7682a34f3cbe633be1274f0b2ee9803d061611a1757f321071bbb97c7b316bcb": {
+        "stream": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 3317,
+        "bytes": {
+          "retention": "inline",
+          "data": "AwAAADI2OEAGAAAAAAAAAAAAAAAAAQAAANkDAAAAAAAAAwAAAAFDBgAAAAAAAAAAAQAAACQAAAAxADEAMQAxADEAMQAxADEALQAyADIAMgAyAC0AMwAzADMAMwAtADQANAA0ADQALQA1ADUANQA1ADUANQA1ADUANQA1ADUANQAkAAAAYQBhAGEAYQBhAGEAYQBhAC0AYgBiAGIAYgAtAGMAYwBjAGMALQBkAGQAZABkAC0AZQBlAGUAZQBlAGUAZQBlAGUAZQBlAGUAAgAAAAAAAAADAAAAMjY5QAYAAA=="
+        },
+        "untyped": [
           "design"
         ]
       },
