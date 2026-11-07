@@ -106,6 +106,84 @@ fn product_descriptions_transfer_from_product_and_definition() {
 }
 
 #[test]
+fn nauo_without_placement_decodes_as_an_unplaced_occurrence() {
+    let decoded = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('ROOT','Root','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('root','',#4,#5);
+#7=PRODUCT('CHILD','Child','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('child','',#8,#5);
+#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('use','Unplaced','',#6,#9,$);",
+    );
+    let occurrence = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Unplaced"))
+        .expect("unplaced usage");
+    assert!(occurrence.transform.is_none());
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+    assert!(matches!(
+        occurrence.parent,
+        cadmpeg_ir::products::OccurrenceParent::Occurrence { .. }
+    ));
+    assert!(matches!(
+        occurrence.prototype,
+        cadmpeg_ir::products::PrototypeReference::Local { .. }
+    ));
+}
+
+#[test]
+fn product_definition_reference_decodes_as_an_external_occurrence() {
+    use cadmpeg_ir::products::{ExternalDocument, PrototypeReference};
+    let decoded = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('ROOT','Root','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('root','',#4,#5);
+#7=EXTERNAL_SOURCE(IDENTIFIER('parts/part.step'));
+#8=PRODUCT_DEFINITION_REFERENCE(#7,'','','part',$);
+#9=NEXT_ASSEMBLY_USAGE_OCCURRENCE('use','External child','',#6,#8,$);",
+    );
+    let occurrence = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|row| row.name.as_deref() == Some("External child"))
+        .expect("external occurrence");
+    assert_eq!(
+        occurrence.prototype,
+        PrototypeReference::External {
+            document: ExternalDocument::path("parts/part.step"),
+            object: Some("part".into())
+        }
+    );
+    assert!(occurrence.transform.is_none());
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("unknowns")
+        .iter()
+        .all(|record| !record
+            .id
+            .as_str()
+            .contains("product_definition_reference#8")
+            && !record.id.as_str().contains("external_source#7")));
+}
+
+#[test]
 fn product_definition_views_keep_distinct_prototypes_and_metadata() {
     use cadmpeg_ir::products::PrototypeReference;
 
@@ -371,7 +449,7 @@ fn occurrence_transform_accepts_cartesian_operator_endpoints() {
 }
 
 #[test]
-fn unresolved_occurrence_transform_is_reported_as_error() {
+fn absent_occurrence_transform_is_not_a_decode_loss() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
 #2=PRODUCT_CONTEXT('',#1,'mechanical');
@@ -385,11 +463,20 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
 #10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u','child instance','',#6,#9,$);",
     );
 
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains("NAUO #10")
-    }));
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .any(
+            |occurrence| occurrence.name.as_deref() == Some("child instance")
+                && occurrence.transform.is_none()
+        ));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 }
 
 #[test]
@@ -1096,11 +1183,11 @@ fn unrelated_representation_mapping_does_not_place_an_occurrence() {
         .find(|occurrence| occurrence.id.as_str().contains("#16"))
         .expect("child occurrence");
     assert_eq!(occurrence.transform, None);
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains("NAUO #16")
-    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 }
 
 #[test]
