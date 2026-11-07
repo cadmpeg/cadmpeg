@@ -458,4 +458,53 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn resource_refusal_does_not_give_up_an_xml_element() {
+        use std::fmt::Write;
+
+        let mut xml = String::from("<root><large");
+        for index in 0..257 {
+            write!(xml, " a{index}='x'").expect("write attribute");
+        }
+        xml.push_str("/></root>");
+        let arena = DecodeArena::new();
+        let (ctx, view) =
+            DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service())
+                .expect("create decode context");
+        let mut given_up = false;
+        let outcome = ctx
+            .run_part(|| {
+                parse_xml_recovering(
+                    &ctx,
+                    view,
+                    "test XML",
+                    "scan test XML",
+                    "parse test XML",
+                    &|detail| CodecError::malformed(detail),
+                    |_, _, _, _| {
+                        given_up = true;
+                        Ok(())
+                    },
+                )
+                .map(|_| ())
+            })
+            .expect("part refusal is recoverable");
+        assert!(matches!(outcome, Err(CodecError::ResourceLimit(_))));
+        assert!(!given_up);
+        let good = View::over_retained(b"<root><sibling/></root>");
+        let (_, document) = parse_xml_recovering(
+            &ctx,
+            good,
+            "test XML",
+            "scan test XML",
+            "parse test XML",
+            &|detail| CodecError::malformed(detail),
+            |_, _, _, _| Ok(()),
+        )
+        .expect("decode next part");
+        assert!(document
+            .descendants()
+            .any(|node| node.has_tag_name("sibling")));
+    }
 }
