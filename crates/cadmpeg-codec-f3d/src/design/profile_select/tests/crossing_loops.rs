@@ -71,21 +71,23 @@ fn loop_selection(
         sketch_scope_offset: 300,
         identity_record_offset: 500,
         identity_end_offset: 0,
-        loop_lists: [
-            vec![vec![DesignProfileCurveLoop {
-                outer: true,
-                entries: primaries
-                    .iter()
-                    .zip(0u64..)
-                    .map(|(primary, index)| DesignProfileCurveEntry {
-                        primary_id: *primary,
-                        primary_id_offset: 588 + 40 * index,
-                        secondary_id: 0,
-                        entry_fields: [1, 1, 1],
-                    })
-                    .collect(),
-            }]],
-            vec![],
+        groups: vec![
+            crate::records::topology::entity_selection::DesignProfileRegionGroup {
+                region: vec![DesignProfileCurveLoop {
+                    outer: true,
+                    entries: primaries
+                        .iter()
+                        .zip(0u64..)
+                        .map(|(primary, index)| DesignProfileCurveEntry {
+                            primary_id: *primary,
+                            primary_id_offset: 588 + 40 * index,
+                            secondary_id: 0,
+                            entry_fields: [1, 1, 1],
+                        })
+                        .collect(),
+                }],
+                further: vec![],
+            },
         ],
     };
     selection.identity_end_offset = selection.lists_end().unwrap();
