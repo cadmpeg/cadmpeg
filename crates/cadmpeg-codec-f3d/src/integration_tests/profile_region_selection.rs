@@ -12,11 +12,13 @@ use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::{
     bind_extrude_profile_selections, ExtrudeProfileResolution, SketchCurveSelectionResolution,
 };
+use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{
     DesignExtrudeScope, DesignParameterScope, DesignScopePayload,
 };
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
+use cadmpeg_ir::report::loss::LossNote;
 
 const REGION_TOLERANCE: f64 = 1.0e-7;
 const ANGULAR_TOLERANCE: f64 = 1.0e-9;
@@ -47,6 +49,25 @@ fn fixture_with(
     geometry: Vec<serde_json::Value>,
     profile_entities: &[&[usize]],
     members: &[u32],
+) -> (
+    Sketch,
+    Vec<SketchEntity>,
+    Vec<SketchCurveIdentity>,
+    DesignParameterScope,
+) {
+    let members = members
+        .iter()
+        .map(|primary| (*primary, false))
+        .collect::<Vec<_>>();
+    fixture_with_flags(geometry, profile_entities, &members)
+}
+
+/// The fixture whose counted members carry a primary curve identity and the
+/// first incidence value.
+fn fixture_with_flags(
+    geometry: Vec<serde_json::Value>,
+    profile_entities: &[&[usize]],
+    members: &[(u32, bool)],
 ) -> (
     Sketch,
     Vec<SketchEntity>,
@@ -103,10 +124,11 @@ fn fixture_with(
     };
     let members = members
         .iter()
-        .map(|primary| {
+        .map(|(primary, reversed)| {
             json!({
                 "kind": 3, "kind_offset": 0, "curve_primary_id": primary,
-                "curve_primary_id_offset": 4, "incidence_words": [0, 0, 0, 0, 3, 8, 0, 0],
+                "curve_primary_id_offset": 4,
+                "incidence_words": [0, 0, 0, u32::from(*reversed), 3, 8, 0, 0],
                 "incidence_words_offset": 8,
             })
         })
@@ -139,13 +161,26 @@ fn bound_profile(members: &[u32]) -> ProfileRef {
 }
 
 fn bound_fixture(
-    (sketch, entities, curves, scope): (
+    fixture: (
         Sketch,
         Vec<SketchEntity>,
         Vec<SketchCurveIdentity>,
         DesignParameterScope,
     ),
 ) -> ProfileRef {
+    bound_fixture_with_losses(fixture).0
+}
+
+/// `bound_fixture` with the losses of its profile geometry work.
+fn bound_fixture_with_losses(
+    (sketch, entities, curves, scope): (
+        Sketch,
+        Vec<SketchEntity>,
+        Vec<SketchCurveIdentity>,
+        DesignParameterScope,
+    ),
+) -> (ProfileRef, Vec<LossNote>) {
+    let work = ProfileGeometryWork::new();
     let mut feature: Feature = serde_json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id,
@@ -157,7 +192,6 @@ fn bound_fixture(
     crate::test_support::with_decode_context(|ctx| {
         let sketches = [sketch];
         let scopes = [scope];
-        let work = ProfileGeometryWork::new();
         bind_extrude_profile_selections(
             std::slice::from_mut(&mut feature),
             &scopes,
@@ -196,7 +230,7 @@ fn bound_fixture(
     else {
         panic!("Extrude");
     };
-    profile
+    (profile, work.losses())
 }
 
 #[test]
@@ -334,6 +368,90 @@ fn counted_members_name_both_curves_of_a_coincident_boundary_stretch() {
 }
 
 #[test]
+fn a_selection_through_a_coincident_edge_reports_the_direction_assumption() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 1.0}, "end": {"u": 2.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 1.0}, "end": {"u": 2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 2.0}, "end": {"u": 0.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 2.0}, "end": {"u": 0.0, "v": 1.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0, 1, 2, 3], &[4, 5, 6, 7]];
+    let (profile, losses) =
+        bound_fixture_with_losses(fixture_with(geometry, loops, &[1, 2, 3, 3, 5, 4]));
+    assert!(matches!(
+        profile,
+        ProfileRef::Planar(PlanarProfileRef::SketchRegions { .. })
+    ));
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureProfileCoincidentDirectionAssumed.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "1 extrude profile selection(s) depended on the member flags of an edge of coincident curves: a selected ring has such an edge, or a ring with such an edge has the curves of a member list. The reading accepts such an edge when one distinct member that names one of its curves has that curve's traversal direction, and it checks no flag of the edge's other members; which curve's direction sets the flag is open (DR-124)."
+    );
+
+    let (profile, losses) = bound_fixture_with_losses(fixture(&[2, 2, 4, 2, 6, 3, 5, 2]));
+    assert!(matches!(
+        profile,
+        ProfileRef::Planar(PlanarProfileRef::SketchRegions { .. })
+    ));
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_selection_beside_a_full_ellipse_reports_the_island_absence_assumption() {
+    // A thin ellipse across the diagonal beyond the corner (1, 1): its
+    // exact box spans u and v from 0.915, across the corner, so the
+    // square's sides cross the box.
+    let ellipse =
+        SketchGeometry::try_from(cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
+            center: Point2::new(1.2, 1.2),
+            major_angle: cadmpeg_ir::scalar::Angle::new(-std::f64::consts::FRAC_PI_4).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: cadmpeg_ir::scalar::Length::new(0.4).unwrap(),
+                minor_radius: cadmpeg_ir::scalar::Length::new(0.05).unwrap(),
+            },
+            bounds: None,
+        })
+        .unwrap();
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": -2.0}, "end": {"u": 0.0, "v": -1.0}}),
+        serde_json::to_value(ellipse).unwrap(),
+    ];
+    let (profile, losses) =
+        bound_fixture_with_losses(fixture_with(geometry, &[&[0, 1, 2, 3]], &[1, 1, 2, 3, 4]));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("square region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        hole_boundaries, ..
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureProfileIslandAbsenceAssumed.kind()
+    );
+}
+
+#[test]
 fn counted_members_match_a_region_whose_edge_two_profiles_share() {
     let geometry = vec![
         json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 0.0, "v": -1.0}}),
@@ -409,6 +527,38 @@ fn counted_members_name_each_coincident_uncut_circle_once() {
     assert!(hole_boundaries.is_empty());
     assert!(matches!(
         bound_fixture(fixture_with(geometry, loops, &[1, 2, 2])),
+        ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
+    ));
+}
+
+#[test]
+fn a_counted_member_flag_states_a_traversal_against_the_curve_direction() {
+    // A 4 x 3 rectangle with one profile loop, and a diagonal from its
+    // lower-left corner that ends on the top side at (2, 3).
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 4.0, "v": 0.0}}),
+        json!({"kind": "line", "start": {"u": 4.0, "v": 0.0}, "end": {"u": 4.0, "v": 3.0}}),
+        json!({"kind": "line", "start": {"u": 4.0, "v": 3.0}, "end": {"u": 0.0, "v": 3.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 3.0}, "end": {"u": 0.0, "v": 0.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 2.0, "v": 3.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0, 1, 2, 3]];
+    let members = |diagonal_reversed| [(1, false), (2, false), (3, false), (5, diagonal_reversed)];
+    let profile = bound_fixture(fixture_with_flags(geometry.clone(), loops, &members(true)));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("the region right of the diagonal: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert_eq!(outer_boundary.len(), 4);
+    assert!(matches!(
+        bound_fixture(fixture_with_flags(geometry, loops, &members(false))),
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
 }
