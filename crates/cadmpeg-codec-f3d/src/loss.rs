@@ -51,6 +51,8 @@ pub(crate) enum F3dLossCode {
     PlacementConstructionUntyped,
     /// A work plane has no unique checked solved placement.
     WorkPlaneFrameUnbound,
+    /// A work plane takes its stored matrix despite nonzero inferred-axis bytes.
+    WorkPlaneInferredAxisAssumed,
     /// A cylinder primitive has no unique checked solved placement.
     CylinderPlacementUnbound,
     /// A construction tracking path has no matching indexed type registration.
@@ -512,6 +514,7 @@ impl F3dLossCode {
         Self::BodyRecipeSerializationFormAssumed,
         Self::PlacementConstructionUntyped,
         Self::WorkPlaneFrameUnbound,
+        Self::WorkPlaneInferredAxisAssumed,
         Self::CylinderPlacementUnbound,
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
@@ -736,6 +739,7 @@ impl F3dLossCode {
             Self::BodyRecipeSerializationFormAssumed => "body-recipe.serialization-form-assumed",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
+            Self::WorkPlaneInferredAxisAssumed => "work-plane.inferred-axis-assumed",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
@@ -1018,6 +1022,7 @@ impl F3dLossCode {
             | Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::WorkPlaneFrameUnbound
+            | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
@@ -1275,6 +1280,7 @@ impl F3dLossCode {
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
+            | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
@@ -1483,6 +1489,7 @@ mod tests {
                 "body-recipe.serialization-form-assumed",
                 "placement.construction-untyped",
                 "work-plane.frame-unbound",
+                "work-plane.inferred-axis-assumed",
                 "feature.cylinder-placement-unbound",
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",

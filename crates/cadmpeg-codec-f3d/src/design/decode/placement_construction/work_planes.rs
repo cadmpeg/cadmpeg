@@ -24,10 +24,10 @@ fn references(scope: &DesignParameterScope, placement: &DesignPlacementConstruct
             .any(|index| u64::from(*index) == placement.record_index)
 }
 
-pub(crate) fn solved_frame(
+fn unique_placement<'a>(
     scope: &DesignParameterScope,
-    placements: &[DesignPlacementConstruction],
-) -> Option<DesignWorkPlaneTransform> {
+    placements: &'a [DesignPlacementConstruction],
+) -> Option<&'a DesignPlacementConstruction> {
     if scope.kind() != DesignFeatureKind::WorkPlane {
         return None;
     }
@@ -35,10 +35,14 @@ pub(crate) fn solved_frame(
         .iter()
         .filter(|placement| references(scope, placement));
     let placement = candidates.next()?;
-    if candidates.next().is_some() {
-        return None;
-    }
-    let frame = super::checked_solved_frame(placement)?;
+    candidates.next().is_none().then_some(placement)
+}
+
+pub(crate) fn solved_frame(
+    scope: &DesignParameterScope,
+    placements: &[DesignPlacementConstruction],
+) -> Option<DesignWorkPlaneTransform> {
+    let frame = super::checked_solved_frame(unique_placement(scope, placements)?)?;
     let (matrix, offset) = (frame.value, frame.offset);
     Some(DesignWorkPlaneTransform {
         work_plane_transform: matrix,
@@ -59,6 +63,19 @@ pub(crate) fn bind(
         }
         if has_operand(scope, placements) {
             let frame = solved_frame(scope, placements);
+            if let Some(placement) = unique_placement(scope, placements).filter(|placement| {
+                frame.is_some()
+                    && (placement.fields.inferred_x_axis.value != 0
+                        || placement.fields.inferred_z_axis.value != 0)
+            }) {
+                losses.push(crate::loss::F3dLossCode::WorkPlaneInferredAxisAssumed.note(format!(
+                    "WorkPlane {} takes its frame from the stored matrix of placement {}, whose isInferredXAxis byte is {} and isInferredZAxis byte is {}.",
+                    scope.id,
+                    placement.id,
+                    placement.fields.inferred_x_axis.value,
+                    placement.fields.inferred_z_axis.value
+                )));
+            }
             if let DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
                 *slot = frame;
             }
