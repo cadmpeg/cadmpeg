@@ -1452,3 +1452,81 @@ fn authored_block_instance_retains_definition_reference_and_placement() {
         matches!(instance.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) }) if block == &definition.id && placement == &expected_placement)
     );
 }
+
+#[test]
+fn source_less_sketch_block_retains_definition_reference_and_placement() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Block" Type="SketchBlockDefinition" id="101"/><Feature Name="Use" Type="SketchBlockInstance" id="102" BlockDefinition="101" BlockOrigin="10mm,20mm,30mm"/></Keywords>"#));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[
+            ("moSketchBlockDef_c", "Block", 101),
+            ("moSketchBlockInst_c", "Use", 102),
+        ]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let definition = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+        block: Some(block),
+        placement: Some(placement),
+    }) = instance.evaluation.definition()
+    else {
+        panic!("block instance");
+    };
+    assert_eq!(block, &definition.id);
+    let expected_placement = *placement;
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let definition = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    assert!(
+        matches!(instance.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) }) if block == &definition.id && placement == &expected_placement)
+    );
+}
+
