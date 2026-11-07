@@ -30,6 +30,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 pub(crate) mod curve;
 pub(crate) mod point_tail;
+pub(crate) mod text;
 
 use point_tail::PointPairedAssociation;
 
@@ -119,6 +120,27 @@ pub(crate) fn construction_carrier_conflict(
         return false;
     }
     !line_carrier_matches(origin.map(FiniteReal::get), direction, start, end)
+}
+
+/// Whether the record is a line whose first two point references resolve to
+/// one position. The span has no length, so the line has no neutral geometry
+/// and bounds no profile; the stored carrier does not define a segment. `point`
+/// resolves a point reference of the entity's segment to its position.
+pub(crate) fn degenerate_line(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> bool {
+    let PmDcSketchEntityKind::Line { points, .. } = &entity.kind else {
+        return false;
+    };
+    let [start, end, ..] = points.references() else {
+        return false;
+    };
+    let token = entity.identity.segment_token.as_str();
+    let (Some(start), Some(end)) = (point(token, start.index()), point(token, end.index())) else {
+        return false;
+    };
+    start.map(FiniteReal::get) == end.map(FiniteReal::get)
 }
 
 /// Whether the record is a curve whose entity flags carry a bit with an
@@ -236,6 +258,8 @@ pub(crate) struct SketchInventory {
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) directions: Vec<PmDcDirection>,
     pub(crate) constraints: Vec<PmDcSketchConstraint>,
+    /// Text member records. They store no curve and close their sketch.
+    pub(crate) text_members: Vec<text::TextMember>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -416,6 +440,8 @@ pub(crate) struct SketchProjection {
     /// Construction lines whose carrier and endpoints disagree; they stay
     /// native.
     pub(crate) native_carrier_conflicts: usize,
+    /// Lines whose endpoints coincide; they stay native.
+    pub(crate) native_degenerate_lines: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -729,6 +755,7 @@ pub(crate) fn inventory(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -748,6 +775,14 @@ pub(crate) fn inventory(
             continue;
         };
         for record in &table.records {
+            if text::is_text_member_type(record.type_id) {
+                ctx.charge_entities(1, "admit Inventor PmDc sketch text member")?;
+                inventory.text_members.push(text::TextMember {
+                    segment_token: segment.pair.token.key().clone(),
+                    record_ordinal: record.ordinal,
+                });
+                continue;
+            }
             let Some(tag) = SketchRecordTag::from_type_id(record.type_id) else {
                 continue;
             };
@@ -1599,20 +1634,32 @@ pub(crate) fn project(
             record,
         )
     }));
-    let conflicted_construction = inventory
-        .entities
-        .iter()
-        .filter(|entity| {
-            construction_carrier_conflict(entity, |token, reference| {
-                resolve_point(token, reference, &raw_entities)
+    let line_keys = |matches: &dyn Fn(&PmDcSketchEntity) -> bool| {
+        inventory
+            .entities
+            .iter()
+            .filter(|entity| matches(entity))
+            .map(|entity| {
+                (
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                )
             })
+            .collect::<HashSet<_>>()
+    };
+    let conflicted_lines = line_keys(&|entity| {
+        construction_carrier_conflict(entity, |token, reference| {
+            resolve_point(token, reference, &raw_entities)
         })
-        .map(|entity| {
-            (
-                entity.identity.segment_token.as_str(),
-                entity.identity.record_ordinal,
-            )
+    });
+    let degenerate_lines = line_keys(&|entity| {
+        degenerate_line(entity, |token, reference| {
+            resolve_point(token, reference, &raw_entities)
         })
+    });
+    let native_lines = conflicted_lines
+        .union(&degenerate_lines)
+        .copied()
         .collect::<HashSet<_>>();
     let native_constraint_keys = raw_constraints
         .iter()
@@ -1627,7 +1674,7 @@ pub(crate) fn project(
                     .and_then(Option::as_ref)
                     .is_some_and(|entity| {
                         curve::is_non_geometric(entity)
-                            || conflicted_construction.contains(&(
+                            || native_lines.contains(&(
                                 entity.identity.segment_token.as_str(),
                                 entity.identity.record_ordinal,
                             ))
@@ -1635,6 +1682,11 @@ pub(crate) fn project(
             })
             .then_some(*key)
         })
+        .collect::<HashSet<_>>();
+    let text_keys = inventory
+        .text_members
+        .iter()
+        .map(|member| (member.segment_token.as_str(), member.record_ordinal))
         .collect::<HashSet<_>>();
     let mut parameter_index = HashMap::new();
     for parameter in parameters {
@@ -1648,6 +1700,7 @@ pub(crate) fn project(
     let mut block_curves = Vec::new();
     let mut unresolved_entities = 0usize;
     let mut carrier_conflicts = Vec::new();
+    let mut degenerate = Vec::new();
     for entity in &inventory.entities {
         let key = (
             entity.identity.segment_token.as_str(),
@@ -1692,11 +1745,15 @@ pub(crate) fn project(
             }
             continue;
         }
-        if conflicted_construction.contains(&key) {
+        if native_lines.contains(&key) {
             // The line stays native: no neutral geometry and no guessed line.
             unresolved_entities += 1;
             if let Some(id) = sketch_id(sketch) {
-                carrier_conflicts.push(id);
+                if degenerate_lines.contains(&key) {
+                    degenerate.push(id);
+                } else {
+                    carrier_conflicts.push(id);
+                }
             }
             continue;
         }
@@ -1747,7 +1804,7 @@ pub(crate) fn project(
                     .copied()
             }) {
                 if !curve::is_non_geometric(raw)
-                    && !conflicted_construction.contains(&(
+                    && !native_lines.contains(&(
                         raw.identity.segment_token.as_str(),
                         raw.identity.record_ordinal,
                     ))
@@ -1931,8 +1988,9 @@ pub(crate) fn project(
                     .get(&key)
                     .and_then(Option::as_ref)
                     .is_some_and(|source| curve::is_non_geometric(source))
-                || conflicted_construction.contains(&key)
+                || native_lines.contains(&key)
                 || native_constraint_keys.contains(&key)
+                || text_keys.contains(&key)
         })
     });
     unresolved_sketches =
@@ -1997,6 +2055,10 @@ pub(crate) fn project(
         .iter()
         .filter(|sketch| closed_sketch_ids.contains(sketch))
         .count();
+    let native_degenerate_lines = degenerate
+        .iter()
+        .filter(|sketch| closed_sketch_ids.contains(sketch))
+        .count();
     let unresolved_construction = projected_entities
         .iter()
         .filter(|entity| {
@@ -2016,6 +2078,7 @@ pub(crate) fn project(
         unresolved_construction,
         native_axis_distances,
         native_carrier_conflicts,
+        native_degenerate_lines,
     })
 }
 
@@ -2025,6 +2088,15 @@ pub(crate) fn carrier_conflict_loss(count: usize) -> Option<cadmpeg_ir::report::
     (count != 0).then(|| {
         crate::loss::InventorLossCode::SketchConstructionCarrierConflict.note(format!(
             "Retained {count} Inventor construction line(s) natively: the stored carrier and the endpoint positions disagree, and neither is applied. Construction lines bound no profile."
+        ))
+    })
+}
+
+/// The loss for lines whose endpoints coincide.
+pub(crate) fn degenerate_line_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchDegenerateLineNative.note(format!(
+            "Retained {count} Inventor line(s) natively: the endpoints share one position, so the record stores no segment, and a zero-length line bounds no profile."
         ))
     })
 }
@@ -3486,6 +3558,7 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -3531,6 +3604,7 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -3581,6 +3655,7 @@ mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -3646,6 +3721,7 @@ mod tests {
                 1,
             )],
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
@@ -4434,6 +4510,7 @@ mod tests {
             transforms: vec![transform],
             directions: vec![direction],
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         (inventory, sketch)
@@ -5334,8 +5411,10 @@ mod tests {
     mod axis_distance;
     mod carrier_conflict;
     mod construction_flags;
+    mod degenerate_line;
     mod member_curve;
     mod non_geometric;
     mod point_tail_projection;
     mod serialization;
+    mod text_member;
 }

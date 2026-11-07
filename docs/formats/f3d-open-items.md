@@ -1159,7 +1159,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples. When the referenced faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the decoder reads that edge and reports `history.edge-selection-inferred`. Whether a recipe's candidate faces can omit the selected edge is open.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -1232,6 +1232,30 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
+
+### DR-271. List that a two-list Combine prologue omits
+
+**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
+
+**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that is empty or names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope. The decoder reads every tool of such a `Combine` as removed. It compares the browser nodes that the tool selections name with the browser nodes that the body selections in the companion reference tables name. When the two sets differ, or a companion has no single reference table after the GUID or a selection without one browser node, it reports `feature.combine-tool-consumption-assumed`, whose note lists the tool selections that no companion selection confirms and the companion selections that name no tool. With the new-component Boolean zero, the reading of every stored field is the same for each omitted list; with the Boolean one, only the omitted browser-node list is consistent. The decoder reads a two-list prologue with a companion and two empty lists, and reports `feature.combine-new-component-native` when the Boolean is one.
+
+**Need.** A two-list prologue with a nonempty list between the tool list and the target list, or the Fusion version that adds the third list.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-272. Prologue of a Combine frame whose byte 20 is one
+
+**Question.** Which prologue does a `Combine` frame store when byte 20 is one and its fixed fields match both the standard and the operand-list prologue?
+
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24, and such an operand-list prologue without a companion also stores zero at offsets 26 through 32, as the standard prologue does. When the standard prologue reads such a frame, the decoder reads it in that prologue and reports `feature.combine-prologue-assumed`, whose note says whether the lists name the scope's operation-identity records. Otherwise the decoder reads the frame in the operand-list prologue when its lists name those records, its counted GUID and three zero bytes end at its reference table, its other fields hold, and its new-component Boolean is zero. A frame that neither prologue reads stays native: it reports `feature.combine-new-component-native` when its new-component Boolean is one, and `feature.combine-operand-list-refused` when its lists name its operands and its other fields contradict the operand-list prologue or cannot be checked.
+
+**Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ### DR-202. Fields of the older Shell frames
 
@@ -1576,25 +1600,37 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`.
 
-### DR-315. Offset-21 Boolean of the compact, marked, and counted Shell prefixes
+### DR-286. Sketch folder flag byte, tail zero run, and closing reference
 
-**Question.** Which `Shell` option does the Boolean at primary-header offset 21 of the compact, marked, and counted prefixes store?
+**Question.** What do the flag byte at sketch folder record offset 26 and the length of the zero run between the parent collection reference and the closing reference select, and which record does the closing reference name?
 
-**Known.** `f3d.md` §3.1 "One of four prefixes precedes the slots" defines the four prefixes. The byte is `0` or `1`. The present wall slot sets the wall direction: inside-slot scopes with either value of the byte add their walls inside the kept faces. The cornered prefix stores the tangent-chain Boolean at the same offset. The scope frame retains the byte.
+**Known.** The flag byte is `0` or `1`. Folders with either value carry sketch runs and a parent collection reference of the same form. The zero run is four bytes in a folder with an empty name and eight bytes in named folders. The closing reference is a non-null marked reference that ends the folder frame. The decoder reads the run as zero bytes of any length that ends at the closing reference, reads the closing reference target, and reports the target in `sketch.folder-closing-reference`.
 
-**Need.** Controlled saves of one `Shell` in each prefix that change only the tangent-chain option, and saves that change only the corner type, with the byte compared across each pair.
+**Need.** Two saves of one folder that differ only in a folder property, folders that differ only in the zero-run length, the record type of the closing reference target, and saves of one design that change the component or the folder set of a sketch folder.
 
 **Conflict.** None.
 
 **Note.** None.
 
-### DR-316. Auxiliary references of the counted Shell prefix
+### DR-287. Sketches omitted from their collection run
 
-**Question.** What do the counted auxiliary references after the wall slots of the counted `Shell` prefix name, and do they change the walls?
+**Question.** Which stored value selects the sketches whose Geometry member names an ordinal collection that does not list them?
 
-**Known.** `f3d.md` §3.1 "In the counted prefix" defines the count and the eleven-byte marked references, which are outside the ordered reference table. Each referenced record stores a 36-code-unit LP-UTF16 GUID, a marked reference, and a marked reference to the owning `Shell` scope. The decoder keeps their record indices in `auxiliary_references`, projects the `Shell` from its wall slot and face group, and reports `feature.shell-auxiliary-references-native`.
+**Known.** Such sketches carry unique ordinals in the collection namespace, a Sketch feature scope, and a Sketch browser node. Their Sketch features follow every Sketch feature of a listed sketch in the timeline. The 960-byte timeline record does not distinguish them.
 
-**Need.** Controlled saves of one `Shell` with zero, one, and two auxiliary references, with the result bodies, that show the user action which adds each reference.
+**Need.** The record that stores the timeline end position.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-290. PathPattern settings scalars at offsets 94 and 124
+
+**Question.** What do the f64 values at offsets 94 and 124 of a path-pattern settings record encode?
+
+**Known.** `f3d.md` §3.1 gives the path-pattern settings record. The f64 at offset 94 is 3.0 on four line paths whose adjacent spacing is 3 cm and whose start point is at path parameter 0. It is −1.92699 on a circular-arc path of radius 5 cm with a 2 cm spacing and its start point at path parameter π/4. The f64 at offset 124 is 0.5 on that arc path and zero on the line paths. The decoder reads neither value.
+
+**Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
 
 **Conflict.** None.
 
@@ -1624,6 +1660,18 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder projects the scope from its ordered reference table and keeps these lanes in the native scope bytes.
 
+### DR-315. Offset-21 Boolean of the compact, marked, and counted Shell prefixes
+
+**Question.** Which `Shell` option does the Boolean at primary-header offset 21 of the compact, marked, and counted prefixes store?
+
+**Known.** `f3d.md` §3.1 "One of four prefixes precedes the slots" defines the four prefixes. The byte is `0` or `1`. The present wall slot sets the wall direction: inside-slot scopes with either value of the byte add their walls inside the kept faces. The cornered prefix stores the tangent-chain Boolean at the same offset. The scope frame retains the byte.
+
+**Need.** Controlled saves of one `Shell` in each prefix that change only the tangent-chain option, and saves that change only the corner type, with the byte compared across each pair.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-317. Unregistered source of an attributed occurrence
 
 **Question.** What type does the local source reference of an attributed occurrence name when its target has no type registration?
@@ -1631,6 +1679,18 @@ when the operation transition carries no candidate for the group members?
 **Known.** `f3d.md` defines the local source reference and its expected type. The decoder reads an unregistered source with that type and reports `assembly.local-occurrence-source-unregistered`.
 
 **Need.** A Design stream with an unregistered source and an independent identification of the referenced record.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-316. Auxiliary references of the counted Shell prefix
+
+**Question.** What do the counted auxiliary references after the wall slots of the counted `Shell` prefix name, and do they change the walls?
+
+**Known.** `f3d.md` §3.1 "In the counted prefix" defines the count and the eleven-byte marked references, which are outside the ordered reference table. Each referenced record stores a 36-code-unit LP-UTF16 GUID, a marked reference, and a marked reference to the owning `Shell` scope. The decoder keeps their record indices in `auxiliary_references`, projects the `Shell` from its wall slot and face group, and reports `feature.shell-auxiliary-references-native`.
+
+**Need.** Controlled saves of one `Shell` with zero, one, and two auxiliary references, with the result bodies, that show the user action which adds each reference.
 
 **Conflict.** None.
 

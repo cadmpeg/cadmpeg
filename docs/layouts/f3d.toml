@@ -5940,9 +5940,9 @@ anchor = "a two-byte zero trailing field"
 name = "combine_operand_list_operation_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "It stores ten zero bytes at offsets 11 through 20, the zero-based operation u32 at offset 21"
+anchor = "It stores nine zero bytes at offsets 11 through 19 and the property-block presence byte at offset 20"
 size = 58
-note = "Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length."
+note = "Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length."
 
 [[record.field]]
 name = "indexed_header"
@@ -5952,11 +5952,18 @@ source = "spec"
 anchor = "An indexed Design record header is `u32 class_tag_length`"
 
 [[record.field]]
-name = "zero_run_10"
+name = "zero_run_9"
 offset = 11
-type = "bytes[10]"
+type = "bytes[9]"
 source = "spec"
-anchor = "ten zero bytes at offsets 11 through 20, the zero-based operation"
+anchor = "nine zero bytes at offsets 11 through 19 and the property-block presence byte"
+
+[[record.field]]
+name = "property_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "the property-block presence byte at offset 20"
 
 [[record.field]]
 name = "operation"
@@ -5966,11 +5973,11 @@ source = "spec"
 anchor = "the zero-based operation u32 at offset 21"
 
 [[record.field]]
-name = "zero_run_4"
+name = "companion_count"
 offset = 25
-type = "bytes[4]"
+type = "u32"
 source = "spec"
-anchor = "four zero bytes at offsets 25 through 28"
+anchor = "the companion count u32 at offset 25"
 
 [[record.field]]
 name = "keep_tools"
@@ -5980,11 +5987,11 @@ source = "spec"
 anchor = "the keep-tools Boolean at offset 29"
 
 [[record.field]]
-name = "zero_flag"
+name = "new_component"
 offset = 30
 type = "u8"
 source = "spec"
-anchor = "zero at byte 30"
+anchor = "the new-component Boolean at offset 30"
 
 [[record.field]]
 name = "constant_one"
@@ -21812,7 +21819,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The identity record at the record index plus three stores ten zero bytes"
 size = 76
-note = "Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72."
+note = "Offsets are relative to the identity record indexed header; the counted region groups begin at offset 72."
 
 [[record.gap]]
 offset = 0
@@ -21834,7 +21841,7 @@ source = "spec"
 anchor = "The identity record at the record index plus three stores ten zero bytes"
 
 [[record.field]]
-name = "first_region_count"
+name = "region_group_count"
 offset = 72
 type = "u32"
 source = "spec"
@@ -23946,7 +23953,7 @@ anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
 name = "sketch_geometry_ordinal_collection_reference"
 kind = "byte"
 section = "3.1"
-anchor = "When it is `01`, its u64 target at member offset 37 names the ordinal collection."
+anchor = "When it is `01`, its u64 target at member offset 37 names the direct container of the sketch"
 size = 11
 note = "The reference starts at offset 36 relative to the Geometry-member indexed header."
 
@@ -23963,14 +23970,14 @@ name = "target"
 offset = 1
 type = "u64"
 source = "spec"
-anchor = "its u64 target at member offset 37 names the ordinal collection"
+anchor = "its u64 target at member offset 37 names the direct container of the sketch"
 
 [[record.field]]
 name = "flags"
 offset = 9
 type = "bytes[2]"
 source = "spec"
-anchor = "When it is `01`, its u64 target at member offset 37 names the ordinal collection."
+anchor = "When it is `01`, its u64 target at member offset 37 names the direct container of the sketch"
 
 [[record]]
 name = "sketch_ordinal_collection_prefix"
@@ -23993,6 +24000,56 @@ offset = 11
 type = "bytes[9]"
 source = "spec"
 anchor = "Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx`"
+
+[[record]]
+name = "sketch_folder_prefix"
+kind = "byte"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"]
+section = "3.1"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+size = 32
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "zero_run_2"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "flag"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
+
+[[record.field]]
+name = "zero_run_3"
+offset = 27
+type = "bytes[5]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes."
 
 [[record]]
 name = "assembly_as_built_scope_378"
@@ -30480,6 +30537,171 @@ anchor = "The scope uses the common 77-byte tail."
 offset = 454
 size = 42
 note = "Common scope-tail lanes after the preceding-history identity."
+
+[[record]]
+name = "path_pattern_settings"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A path-pattern settings record has type GUID"
+size = 267
+note = "Offsets are relative to the record's indexed header; the next indexed header follows at offset 267."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs"
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.gap]]
+offset = 11
+size = 44
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "seed_reference_point"
+offset = 55
+type = "f64[3]"
+source = "spec"
+anchor = "the seed reference point as three f64 model coordinates in centimetres at offset 55"
+
+[[record.field]]
+name = "settings_marker"
+offset = 79
+type = "u8"
+value = 1
+source = "spec"
+anchor = "u8 `1` at offset 79"
+
+[[record.field]]
+name = "flipped"
+offset = 80
+type = "u8"
+source = "spec"
+anchor = "the flip flag at offset 80"
+
+[[record.field]]
+name = "path_oriented"
+offset = 81
+type = "u8"
+source = "spec"
+anchor = "the orientation flag at offset 81"
+
+[[record.gap]]
+offset = 82
+size = 1
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "path_group_reference"
+offset = 83
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to the path group at offset 83"
+
+[[record.field]]
+name = "scalar_94"
+offset = 94
+type = "f64"
+source = "spec"
+anchor = "an f64 at offset 94"
+
+[[record.gap]]
+offset = 102
+size = 22
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "scalar_124"
+offset = 124
+type = "f64"
+source = "spec"
+anchor = "an f64 at offset 124"
+
+[[record.gap]]
+offset = 132
+size = 20
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "distance_type_marker"
+offset = 152
+type = "bytes[4]"
+source = "spec"
+anchor = "bytes `ff ff ff ff` at offset 152"
+
+[[record.field]]
+name = "distance_type"
+offset = 156
+type = "u8"
+source = "spec"
+anchor = "the distance-type byte at offset 156"
+
+[[record.gap]]
+offset = 157
+size = 110
+note = "The specification states no field in this range."
+
+[[record]]
+name = "path_pattern_start"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A path-start record in the scope reference table has type GUID"
+size = 197
+note = "Offsets are relative to the record's indexed header; the next indexed header follows at offset 197."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs"
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.gap]]
+offset = 11
+size = 14
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "start_parameter"
+offset = 25
+type = "f64"
+source = "spec"
+anchor = "the path parameter of the pattern start point as an f64 at offset 25"
+
+[[record.gap]]
+offset = 33
+size = 9
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "start_point_x"
+offset = 42
+type = "f64"
+source = "spec"
+anchor = "the start point's first two model coordinates in centimetres at offsets 42 and 50"
+
+[[record.field]]
+name = "start_point_y"
+offset = 50
+type = "f64"
+source = "spec"
+anchor = "the start point's first two model coordinates in centimetres at offsets 42 and 50"
+
+[[record.gap]]
+offset = 58
+size = 8
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "path_curve_kind"
+offset = 66
+type = "u32"
+source = "spec"
+anchor = "a u32 path-curve kind at offset 66"
+
+[[record.gap]]
+offset = 70
+size = 127
+note = "The specification states no field in this range."
 
 [[record]]
 name = "surface_trim_cell_table_prefix"
