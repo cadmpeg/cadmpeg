@@ -281,6 +281,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_PROPERTIES`                          | `65_536`                                                | 2    | Section property count, dictionary entry count and vector element count. Excess is `Malformed`; entries are read one at a time against the section window.                                                                                                                   |
 | `cadmpeg-codec-inventor` | `src/feature/history_states.rs`                    | `MAX_STATE_SCAN_WORK`                     | `1 << 24`                                               | 4    | Live records inspected by one state-index read of the active carrier history: the state count times the live record count. A scan that passes it yields no states and reports `source.kernel-history-bounded`.                                                               |
 | `cadmpeg-codec-inventor` | `src/feature/edge_selection/historical.rs`         | `MAX_SELECTOR_GENERATORS`                 | `4`                                                     | 1    | Generator array length of a direct edge selector. A longer array is another selector form, and its feature keeps a native selection. |
+| `cadmpeg-codec-inventor` | `src/feature/history_bodies.rs`                    | `MAX_HISTORY_BODIES`                      | `8`                                                     | 4    | History bodies of one part. Each materializes and decodes a whole history state. A request past the cap gets no history body and `feature.history-body-bounded` counts it. |
+| `cadmpeg-codec-inventor` | `src/feature/history_bodies.rs`                    | `MAX_HISTORY_BODY_WORK`                   | `1 << 21`                                               | 4    | Records materialized for the history bodies of one part, a `WorkBudget`. A state that passes it gets no history body and `feature.history-body-bounded` counts it. |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Per-sketch `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                            |
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
@@ -551,23 +553,23 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 336.
+Production `MAX_*` constants: 338.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 166   |
+| 4    | Local work cap             | 168   |
 | N    | Not a decode bound         | 52    |
-|      | Total                      | 336   |
+|      | Total                      | 338   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
-`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
+`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 7,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 37,
 `cadmpeg-codec-catia` 78, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and

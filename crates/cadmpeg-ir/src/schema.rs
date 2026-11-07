@@ -111,6 +111,8 @@ pub enum EntityKind {
     DeclaredMeasure,
     /// Point cloud.
     PointCloud,
+    /// History body.
+    HistoryBody,
 }
 
 impl EntityKind {
@@ -167,11 +169,12 @@ impl EntityKind {
             Self::SolverSettings => 47,
             Self::DeclaredMeasure => 48,
             Self::PointCloud => 49,
+            Self::HistoryBody => 50,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 50] = [
+    pub const ALL: [Self; 51] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -222,6 +225,7 @@ impl EntityKind {
         Self::SolverSettings,
         Self::DeclaredMeasure,
         Self::PointCloud,
+        Self::HistoryBody,
     ];
 }
 
@@ -410,6 +414,7 @@ impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gr
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
 impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, provenance, source_error, label, native_ref);
 impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, product_definition, name, sensor, positions, normals, colors, channels, native_ref);
+impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state, topology);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 
 #[cfg(test)]

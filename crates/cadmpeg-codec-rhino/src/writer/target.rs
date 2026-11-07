@@ -150,7 +150,7 @@ pub(crate) fn plan(
 /// `points` and `curves` are `Reported` because
 /// `WriterSupportGeometryWithheld` accounts for withheld support records.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -189,6 +189,7 @@ const COVERAGE: ArenaDispositions = {
         view_presentations: Omitted,
         tessellations: Written,
         point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Dropped,
         appearance_bindings: Dropped,
         attributes: Dropped,

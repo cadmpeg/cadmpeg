@@ -189,7 +189,7 @@ fn body(
 /// and free points or vertices, respectively; `procedural_surfaces` is `Reported`
 /// because `ProceduralReduced` accounts for definitions reduced to solved carriers.
 const SYNTHESIS_COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -228,6 +228,7 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         view_presentations: Dropped,
         tessellations: Dropped,
         point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Dropped,
         appearance_bindings: Dropped,
         attributes: Dropped,
