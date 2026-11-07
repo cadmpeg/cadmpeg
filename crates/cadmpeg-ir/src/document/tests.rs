@@ -232,6 +232,11 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
         .collect::<Vec<_>>();
     assert_eq!(&diff_kinds[..ArenaName::ALL.len()], arena_names);
     for name in &arena_names {
+        // The census of a document with no history body omits that arena.
+        if *name == "history_bodies" {
+            assert!(!report.entity_counts.contains_key(*name));
+            continue;
+        }
         assert!(
             report.entity_counts.contains_key(*name),
             "entity counts omitted registered arena {name}"
@@ -875,6 +880,7 @@ fn every_design_arena_is_classified_design() {
             "spatial_sketch_entities",
             "spatial_sketch_constraints",
             "spreadsheets",
+            "history_bodies",
         ]
     );
 }

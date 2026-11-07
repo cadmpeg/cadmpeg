@@ -72,6 +72,58 @@ type FaceDef = (
     [(usize, bool); 4],
 );
 
+/// [`unit_cube`] with one history body: a second copy of the cube, held in a
+/// nest whose identities are in the `history-body` scope. The model arenas hold
+/// the first copy only.
+pub fn unit_cube_with_history_body() -> Result<CadIr, ExampleError> {
+    use crate::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
+    let mut ir = unit_cube()?;
+    let model = ir.model.clone();
+    let body = model
+        .bodies
+        .into_iter()
+        .next()
+        .ok_or(ExampleError::Geometry("the cube has a body"))?;
+    let mut nest = BodyTopology::new(body);
+    nest.regions = model.regions;
+    nest.shells = model.shells;
+    nest.faces = model.faces;
+    nest.loops = model.loops;
+    nest.coedges = model.coedges;
+    nest.edges = model.edges;
+    nest.vertices = model.vertices;
+    nest.surfaces = model.surfaces;
+    nest.curves = model.curves;
+    nest.pcurves = model.pcurves;
+    nest.points = model.points;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let mut map = IdentityMap::new(|id: &str| Ok(id.replacen(":cube:", ":history-body:", 1)));
+    let nest = nest.rewrite_identities(&ctx, &mut map)?;
+    map.finish()?;
+    ctx.finish_session()?;
+    ir.model.history_bodies.push(HistoryBody {
+        id: crate::ids::HistoryBodyId::compose(
+            &crate::identity_namespace!("synthetic", "history-body", "nest"),
+            crate::identity_key!("0"),
+        ),
+        produced_by: None,
+        consumed_by: None,
+        state: HistoryStateRef {
+            ordinal: 0,
+            identifier: 1,
+        },
+        topology: Box::new(nest),
+    });
+    Ok(ir)
+}
+
 /// A `10 mm` axis-aligned cube spanning the origin to `(10, 10, 10)`.
 pub fn unit_cube() -> Result<CadIr, ExampleError> {
     let s = 10.0_f64;
