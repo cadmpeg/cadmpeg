@@ -531,7 +531,6 @@ pub(super) fn plan(
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
         design::prepare(&slot_context, &mut projected, &mut losses, input.fidelity.is_none())?;
-    slot_context.finish_session()?;
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
         let mut declared = NativeDispositions::for_namespace(
@@ -619,6 +618,7 @@ pub(super) fn plan(
         });
     let declaration = source_declaration.or(target.write_declaration());
     let output = super::write_semantic_at(
+        &slot_context,
         &projected,
         &Annotations::default(),
         &[],
@@ -627,10 +627,10 @@ pub(super) fn plan(
             sw_version: declaration,
             prepared_native,
             source_trust,
-            limits: input.limits,
         },
         &mut bytes,
     )?;
+    slot_context.finish_session()?;
     debug_assert_eq!(
         output.dialect,
         *resolved.target_id(),

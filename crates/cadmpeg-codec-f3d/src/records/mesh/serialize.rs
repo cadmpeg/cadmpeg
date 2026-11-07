@@ -210,14 +210,18 @@ impl Serialize for TextureRows<'_> {
     }
 }
 
-struct BodyReferenceOffsets {
+struct BodyReferenceOffsets<'a> {
     start: u64,
-    count: u32,
+    ordinals: &'a [u32],
 }
 
-impl Serialize for BodyReferenceOffsets {
+impl Serialize for BodyReferenceOffsets<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq((0..self.count).map(|index| self.start + 11 * u64::from(index)))
+        serializer.collect_seq(
+            self.ordinals
+                .iter()
+                .map(|index| self.start + 11 * u64::from(*index)),
+        )
     }
 }
 
@@ -233,8 +237,8 @@ impl Serialize for DesignMeshFeature {
             texture_table_record: RecordRef<'a>,
             body_count_offsets: [u64; 3],
             body_record_indices: SliceColumn<'a, DesignMeshBody, u32>,
-            scope_body_reference_offsets: BodyReferenceOffsets,
-            collection_body_reference_offsets: BodyReferenceOffsets,
+            scope_body_reference_offsets: BodyReferenceOffsets<'a>,
+            collection_body_reference_offsets: BodyReferenceOffsets<'a>,
             texture_table_reference_offset: u64,
             collection_owner_record: RecordRef<'a>,
             collection_owner_reference_offset: u64,
@@ -251,8 +255,6 @@ impl Serialize for DesignMeshFeature {
         let collection_start = self.collection.record().byte_offset()
             + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
             + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
-        let body_count = u32::try_from(self.bodies.len())
-            .map_err(|_| serde::ser::Error::custom("mesh body count exceeds u32"))?;
         Wire {
             id: &self.id,
             scope_record: RecordRef::from_identity(self.scope.record()),
@@ -266,11 +268,11 @@ impl Serialize for DesignMeshFeature {
             }),
             scope_body_reference_offsets: BodyReferenceOffsets {
                 start: scope_start,
-                count: body_count,
+                ordinals: &self.body_ordinals,
             },
             collection_body_reference_offsets: BodyReferenceOffsets {
                 start: collection_start,
-                count: body_count,
+                ordinals: &self.body_ordinals,
             },
             texture_table_reference_offset: self.collection.texture_table_reference_offset(),
             collection_owner_record: RecordRef::from_identity(&self.collection_owner.record),

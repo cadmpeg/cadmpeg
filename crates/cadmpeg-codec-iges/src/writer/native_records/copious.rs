@@ -31,7 +31,9 @@ pub(in crate::writer) fn matching_points(
     }
     let tuples = record.field("tuples")?;
     let tuples = tuples.as_array()?;
-    if record.field("declared_tuple_count")?.as_u64()? != u64::try_from(tuples.len()).ok()? {
+    if record.field("declared_tuple_count")?.as_u64()?
+        != cadmpeg_core::decode::u64_from_index(tuples.len())
+    {
         return None;
     }
     let mut ids = Vec::new();

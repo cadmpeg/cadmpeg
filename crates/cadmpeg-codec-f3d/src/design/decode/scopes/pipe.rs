@@ -63,9 +63,7 @@ pub(crate) fn bind_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Ok(frames) = design_primary_frames(bytes, &meta) else {
-            continue;
-        };
+        let frames = design_primary_frames(bytes, &meta)?;
         // A record repeated in the primary index has no unique frame.
         let mut indexed = HashMap::new();
         for frame in &frames {

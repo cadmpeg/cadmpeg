@@ -315,18 +315,24 @@ pub(super) fn exact_component_insert_construction(
                     .iter()
                     .filter(|at| scope.frame_length() == Some(404) && **at < relation_at)
                 {
-                    for at in carrier_at + 11..relation_at {
-                        let Some(after_role) = fixed_guid_end(bytes, at) else {
+                    let end = records
+                        .iter()
+                        .find(|frame| (frame.start..frame.end).contains(&carrier_at))?
+                        .end
+                        .min(relation_at);
+                    let carrier_bytes = bytes.get(..end)?;
+                    for at in carrier_at + 11..end {
+                        let Some(after_role) = fixed_guid_end(carrier_bytes, at) else {
                             continue;
                         };
-                        if bytes.get(after_role..after_role + 12)
+                        if carrier_bytes.get(after_role..after_role + 12)
                             != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
                         {
                             continue;
                         }
                         for transform_at in carrier_at + 11..at {
-                            if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                                let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
+                            if rigid_transform_at(carrier_bytes, transform_at) == Some(transform) {
+                                let role = lp_utf16_bounded(carrier_bytes, at, 36..=36)?.0;
                                 placements.push((role, at + 4, Some(transform_at)));
                             }
                         }
@@ -443,26 +449,32 @@ pub(super) fn exact_component_insert_construction(
                             .collect::<Vec<_>>(),
                     )
                 } else {
+                    let carrier_end = records
+                        .iter()
+                        .find(|frame| (frame.start..frame.end).contains(&carrier_at))?
+                        .end
+                        .min(relation_at);
+                    let carrier_bytes = bytes.get(..carrier_end)?;
                     let mut placements = Vec::new();
-                    for at in carrier_at + 11..relation_at {
-                        let Some(after_role) = relaxed_guid_end(bytes, at) else {
+                    for at in carrier_at + 11..carrier_end {
+                        let Some(after_role) = relaxed_guid_end(carrier_bytes, at) else {
                             continue;
                         };
-                        if bytes.get(after_role..after_role + 2) != Some(&[0, 0]) {
+                        if carrier_bytes.get(after_role..after_role + 2) != Some(&[0, 0]) {
                             continue;
                         }
                         let transform_at = after_role.checked_add(2)?;
-                        if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                            let role = lp_utf16_bounded(bytes, at, 36..=38)?.0;
+                        if rigid_transform_at(carrier_bytes, transform_at) == Some(transform) {
+                            let role = lp_utf16_bounded(carrier_bytes, at, 36..=38)?.0;
 
                             placements.push((role, at + 4, Some(transform_at)));
                         }
                     }
                     if scope.frame_length() == Some(381) {
                         let legacy = legacy_component_insert_placements(
-                            bytes,
+                            carrier_bytes,
                             carrier_at,
-                            relation_at,
+                            carrier_end,
                             carrier_record_index,
                             transform,
                         );

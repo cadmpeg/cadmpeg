@@ -15,6 +15,19 @@ const SECOND_ID: &str = "test:appearance:material#second";
 const FIRST_UUID: &str = "50d0cc16-7836-e3b4-caf0-6e6e4181dbe7";
 const SECOND_UUID: &str = "cbc7fd19-eef2-dede-1edc-12cb2ea8efb2";
 
+#[test]
+fn display_color_binding_does_not_hide_a_material_binding() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let source = include_bytes!("../../../../../tests/golden/fixtures/e2_structure.3dm");
+    let decoded = crate::RhinoCodec
+        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+        .expect("decode structure");
+    let ir = decoded.ir();
+    let identity = "rhino:object:point#51515151-5151-5151-5151-515151515151";
+    let plan = MaterialPlan::new(ir).expect("material plan");
+    assert_eq!(written_binding_index(ir, &plan, identity), 0);
+}
+
 fn records(ir: &CadIr) -> Vec<&NativeRecord> {
     let archive_index = |record: &NativeRecord| {
         record

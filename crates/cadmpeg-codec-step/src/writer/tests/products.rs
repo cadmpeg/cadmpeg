@@ -469,6 +469,38 @@ fn writer_folds_document_attributes_into_file_name() {
 }
 
 #[test]
+fn document_author_losses_name_values_not_projected_back() {
+    let mut ir = unit_cube().expect("unit cube");
+    ir.model.attributes.extend([
+        document_attribute("test:model:attribute#first", "author", "anne"),
+        document_attribute("test:model:attribute#second", "author", "beth"),
+        document_attribute("test:model:attribute#third", "LastModifiedBy", "chris"),
+    ]);
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write header");
+    let losses: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::StepLossCode::SourceAttributeNotWritten.kind())
+        .collect();
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:attribute#second")));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:attribute#third")));
+    assert!(losses
+        .iter()
+        .all(|loss| !loss.message.contains("test:model:attribute#first")));
+}
+
+#[test]
 fn iges_document_timestamp_uses_step_syntax_and_names_the_normalization() {
     let mut ir = unit_cube().expect("unit cube");
     let id = "test:model:attribute#date";
