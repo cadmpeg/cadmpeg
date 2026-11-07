@@ -1563,3 +1563,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `mesh.scope-prefix-uninterpreted`.
+
+### DR-327. Mesh body payload fields
+
+**Question.** What do the remaining version-6 mesh-body payload fields mean?
+
+**Known.** A version-6 body stores placement matrices, graph references, a display name, and additional bytes. The decoder retains the complete native frame.
+
+**Need.** Controlled saves that vary one body property at a time and identify the remaining fields.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `mesh.body-bytes-uninterpreted`.

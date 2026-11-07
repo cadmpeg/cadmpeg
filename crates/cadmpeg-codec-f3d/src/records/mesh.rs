@@ -860,6 +860,8 @@ pub(crate) struct DesignMeshPlacement {
     record: DesignMeshRecordIdentity,
     transform: MeshAffineTransform,
     flagged: bool,
+    body_name: Option<String>,
+    native_frame: Option<NativeBytes>,
 }
 
 impl DesignMeshPlacement {
@@ -875,7 +877,35 @@ impl DesignMeshPlacement {
             record,
             transform,
             flagged,
+            body_name: None,
+            native_frame: None,
         })
+    }
+    pub(crate) fn with_native_frame(
+        mut self,
+        body_name: String,
+        native_frame: NativeBytes,
+    ) -> Result<Self, String> {
+        if self.flagged
+            || u64::try_from(native_frame.len()).ok() != Some(self.record.frame_length())
+        {
+            return Err("native mesh-body frame must match its record extent".into());
+        }
+        let (stored_name, end) = crate::bytes::lp_utf16_bounded(
+            native_frame.as_ref(),
+            MeshBodyLayout::of(false).len,
+            0..=native_frame.len(),
+        )
+        .ok_or("native mesh-body frame must contain a body name")?;
+        if stored_name != body_name || end > native_frame.len() - 11 {
+            return Err("body_name must match the native mesh-body frame".into());
+        }
+        self.body_name = Some(body_name);
+        self.native_frame = Some(native_frame);
+        Ok(self)
+    }
+    pub(crate) fn native_frame(&self) -> Option<&NativeBytes> {
+        self.native_frame.as_ref()
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
@@ -943,6 +973,10 @@ pub(crate) struct DesignMeshBody {
 struct DesignMeshBodyWire {
     /// Mesh-body record carrying placement and graph references.
     body_record: DesignMeshRecordIdentity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    body_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    body_native_frame: Option<NativeBytes>,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
     entry_name_record: DesignMeshRecordIdentity,
     /// GUID record joining the body to the container's `fusion_uuid`.
@@ -1060,6 +1094,8 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             value.scene_node.into_wire();
         Self {
             body_record: value.placement.record,
+            body_name: value.placement.body_name,
+            body_native_frame: value.placement.native_frame,
             entry_name_record: value.entry.record,
             guid_record: value.guid.record,
             wrapper_record: value.wrapper_record.into(),
@@ -1150,6 +1186,11 @@ impl DesignMeshBody {
             == value.body_record.byte_offset()
                 + u64_from_index(MeshBodyLayout::of(true).first_transform);
         let placement = DesignMeshPlacement::new(value.body_record, value.transform, flagged)?;
+        let placement = match (value.body_name, value.body_native_frame) {
+            (Some(name), Some(frame)) => placement.with_native_frame(name, frame)?,
+            (None, None) => placement,
+            _ => return Err("body_name and body_native_frame must appear together".into()),
+        };
         if placement.transform_offsets() != value.transform_offsets {
             return Err("transform_offsets must match body_record layout".into());
         }
