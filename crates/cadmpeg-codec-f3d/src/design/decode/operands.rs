@@ -90,7 +90,9 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{
+    bounded_len, index_from_u32, u64_from_index, DecodeContext, View, WorkBudget,
+};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -1129,6 +1131,7 @@ pub(crate) fn decode_face_operands(
 /// Decode ordered sheet-metal source-region identities.
 pub(crate) fn decode_face_source_groups(
     ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     types: &[SegmentType],
     scopes: &[DesignParameterScope],
@@ -1156,7 +1159,10 @@ pub(crate) fn decode_face_source_groups(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("face-source stream View is missing"))?;
+        let bytes = source.window();
         let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
@@ -1165,6 +1171,9 @@ pub(crate) fn decode_face_source_groups(
             &entry.name,
         )?
         else {
+            continue;
+        };
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
         let Ok(scope_start) = usize::try_from(
@@ -1217,10 +1226,21 @@ pub(crate) fn decode_face_source_groups(
             ) {
                 continue;
             }
-            let Some(source_reference_offsets) = parse_face_source_carrier_prefix(
+            let Some(frame) = records
+                .iter()
+                .find(|frame| frame.start == *carrier_byte_offset)
+            else {
+                continue;
+            };
+            if *paired_byte_offset > frame.end {
+                continue;
+            }
+            let Some(source_reference_offsets) = decode_face_source_carrier_part(
                 ctx,
-                bytes,
-                *carrier_byte_offset,
+                parts,
+                source,
+                &entry.name,
+                frame,
                 *paired_byte_offset,
                 scope.record_index,
             )?
@@ -1244,7 +1264,10 @@ pub(crate) fn decode_face_source_groups(
                         lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
                     let source_class = source_class_tag;
                     if !face_source_record_is_registered(types, &scope.id, source_record_index, source_class, FaceSourceType::Identity) { return Ok(None); }
-                    let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset, None) else { return Ok(None); };
+                    let Some(frame) = records.iter().find(|frame| frame.start == source_byte_offset) else { return Ok(None); };
+                    let next_index = meta.records.iter().find(|next| usize::try_from(next.bulk_offset).ok() == Some(frame.end))
+                        .and_then(|next| u32::try_from(next.entity_id).ok());
+                    let Some(member) = decode_face_source_identity_part(ctx, parts, source, &entry.name, frame, next_index)? else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
                     let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(source_class_tag) else { return Ok(None); };
@@ -1272,15 +1295,10 @@ pub(crate) fn decode_face_source_groups(
                     }))
                 });
             let mut source_members = Vec::new();
-            let mut complete = true;
             for member in parsed_source_members {
-                match member? {
-                    Some(member) => source_members.push(member),
-                    None => complete = false,
+                if let Some(member) = member? {
+                    source_members.push(member);
                 }
-            }
-            if !complete {
-                continue;
             }
             let Ok(carrier_reference_ordinal) = u32::try_from(carrier_ordinal) else {
                 continue;
@@ -1317,6 +1335,111 @@ pub(crate) fn decode_face_source_groups(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn decode_face_source_carrier_part(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: &crate::metastream::PrimaryRecordFrame,
+    paired: usize,
+    scope_index: u32,
+) -> Result<Option<Vec<(usize, u32)>>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let begin = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("face-source carrier start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("face-source carrier end overflows"))?;
+    let extent = source
+        .child(begin, end)
+        .ok_or_else(|| CodecError::malformed("face-source carrier exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+        stream,
+        ":design-record-header#",
+        u64_from_index(frame.start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(None);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        parse_face_source_carrier_prefix(ctx, source.window(), frame.start, paired, scope_index)?
+            .ok_or_else(|| CodecError::malformed("invalid face-source carrier"))
+    })
+}
+
+fn decode_face_source_identity_part(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: &crate::metastream::PrimaryRecordFrame,
+    next_index: Option<u32>,
+) -> Result<Option<ParsedExtrudeIdentityMember>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let begin = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("face-source identity start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("face-source identity end overflows"))?;
+    let extent = source
+        .child(begin, end)
+        .ok_or_else(|| CodecError::malformed("face-source identity exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+        stream,
+        ":design-record-header#",
+        u64_from_index(frame.start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(None);
+    }
+    let bytes = source.window();
+    if frame.end < bytes.len() && next_index.is_none() {
+        return Ok(None);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        let input = bytes
+            .get(..frame.end)
+            .ok_or_else(|| CodecError::malformed("face-source identity exceeds its stream"))?;
+        let mut member = parse_extrude_identity_member(input, frame.start, None)
+            .filter(|member| {
+                usize::try_from(member.next_byte_offset).is_ok_and(|end| end <= frame.end)
+            })
+            .ok_or_else(|| CodecError::malformed("invalid face-source identity"))?;
+        if usize::try_from(member.next_byte_offset).ok() == Some(frame.end) {
+            if let Some(next) = next_index {
+                member.next_record_index = next;
+            }
+        }
+        Ok(member)
+    })
 }
 
 struct FaceSourceReferenceHeader<'a> {

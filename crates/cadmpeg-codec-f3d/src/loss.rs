@@ -74,6 +74,10 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrencePathUnresolved,
     /// A sketch collection owner does not bind one component definition.
     SketchOwnerUnresolved,
+    /// A sketch point's owner has no placement.
+    SketchPointOwnerUnresolved,
+    /// An input operand's scope has no projected feature.
+    FeatureInputOwnerUnresolved,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -453,6 +457,8 @@ impl F3dLossCode {
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
+        Self::SketchPointOwnerUnresolved,
+        Self::FeatureInputOwnerUnresolved,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
@@ -647,6 +653,8 @@ impl F3dLossCode {
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
+            Self::SketchPointOwnerUnresolved => "sketch.point-owner-unresolved",
+            Self::FeatureInputOwnerUnresolved => "feature.input-owner-unresolved",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
@@ -899,6 +907,8 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
+            | Self::SketchPointOwnerUnresolved
+            | Self::FeatureInputOwnerUnresolved
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
@@ -1165,6 +1175,8 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
+            | Self::SketchPointOwnerUnresolved
+            | Self::FeatureInputOwnerUnresolved
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -1281,6 +1293,8 @@ mod tests {
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
+                "sketch.point-owner-unresolved",
+                "feature.input-owner-unresolved",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",

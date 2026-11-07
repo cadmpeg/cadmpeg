@@ -13,6 +13,40 @@ use cadmpeg_ir::{
 };
 
 #[test]
+fn recovered_bounded_surface_does_not_add_an_opaque_representation() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_geometric_set.p21");
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode bounded surface");
+    let mut bytes = Vec::new();
+    write_step(
+        decoded.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write bounded surface");
+    let written = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written surface");
+    assert_eq!(
+        written.ir().model.faces.len(),
+        decoded.ir().model.faces.len()
+    );
+    assert!(written
+        .report()
+        .losses
+        .iter()
+        .all(|loss| { loss.code != StepLossCode::OpaqueRecordPreserved.kind() }));
+}
+
+#[test]
 fn degraded_compound_surface_keeps_its_support_carriers() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::{
