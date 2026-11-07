@@ -2778,7 +2778,7 @@ fn decode_graph(
     };
     let mut annotations = AnnotationBuilder::new();
     let source_stream = StreamHandle::new(stream.clone());
-    if t.bridges().is_empty() {
+    if t.bridges().is_empty() && body_records.is_empty() {
         return Ok(out);
     }
 
@@ -4088,7 +4088,7 @@ fn decode_graph(
     derive_nurbs_isoparametric_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     prune_rejected_topology(&mut out);
 
-    if out.faces.is_empty() {
+    if out.faces.is_empty() && body_records.is_empty() {
         return Ok(Brep {
             losses: out.losses,
             stats: out.stats,

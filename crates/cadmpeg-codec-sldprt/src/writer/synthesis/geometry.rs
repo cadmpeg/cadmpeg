@@ -139,11 +139,15 @@ fn resolve_curve(placed: &PlacedCurve) -> Option<SolvedCurveGeometry> {
 }
 
 fn moved_point(transform: Transform, point: Point3) -> Option<Point3> {
-    transform.apply_point(point).map(cadmpeg_ir::features::FinitePoint3::get)
+    transform
+        .apply_point(point)
+        .map(cadmpeg_ir::features::FinitePoint3::get)
 }
 
 fn moved_direction(transform: Transform, direction: Vector3) -> Option<Vector3> {
-    transform.apply_vector(direction).map(cadmpeg_ir::features::FiniteVector3::get)
+    transform
+        .apply_vector(direction)
+        .map(cadmpeg_ir::features::FiniteVector3::get)
 }
 
 fn apply_surface_transform(
@@ -303,9 +307,6 @@ pub(super) fn reduce_sheet(
             Err(error) => return Err(error),
         }
     }
-    if kept.is_empty() {
-        return Ok(false);
-    }
     retain_faces(ir, &body.id, &kept);
     match preflight(ir, body) {
         Ok(()) => Ok(true),
@@ -320,13 +321,6 @@ fn retain_faces(ir: &mut CadIr, body: &BodyId, kept: &HashSet<FaceId>) {
         .regions
         .iter()
         .filter(|region| &region.body == body)
-        .map(|region| region.id.clone())
-        .collect::<HashSet<_>>();
-    let originally_empty = ir
-        .model
-        .regions
-        .iter()
-        .filter(|region| &region.body == body && region.shells.is_empty())
         .map(|region| region.id.clone())
         .collect::<HashSet<_>>();
     let mut shells = Vec::new();
@@ -351,22 +345,9 @@ fn retain_faces(ir: &mut CadIr, body: &BodyId, kept: &HashSet<FaceId>) {
         .iter()
         .map(|shell| shell.id.clone())
         .collect::<HashSet<_>>();
-    ir.model.regions.retain_mut(|region| {
-        if &region.body != body {
-            return true;
-        }
-        region.shells.retain(|shell| shells.contains(shell));
-        !region.shells.is_empty() || originally_empty.contains(&region.id)
-    });
-    let regions = ir
-        .model
-        .regions
-        .iter()
-        .map(|region| region.id.clone())
-        .collect::<HashSet<_>>();
-    for candidate in &mut ir.model.bodies {
-        if &candidate.id == body {
-            candidate.regions.retain(|region| regions.contains(region));
+    for region in &mut ir.model.regions {
+        if &region.body == body {
+            region.shells.retain(|shell| shells.contains(shell));
         }
     }
 }

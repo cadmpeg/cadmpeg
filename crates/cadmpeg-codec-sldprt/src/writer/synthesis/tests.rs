@@ -144,9 +144,11 @@ fn design_only_configuration_does_not_create_a_model_partition() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
     assert!(!ir.scope.model);
-    assert!(!plan.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::SldprtLossCode::WriterNoExportableSolids.kind()
-    }));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == crate::loss::SldprtLossCode::WriterNoExportableSolids.kind() }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
@@ -450,6 +452,41 @@ fn unsupported_sheet_face_does_not_discard_the_other_faces() {
         "export losses: {export_losses:?}; decoded losses: {:?}",
         written.report().losses
     );
+}
+
+#[test]
+fn unsupported_sole_sheet_face_keeps_the_body_and_region() -> Result<(), Box<dyn std::error::Error>>
+{
+    let source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    let decoded = SldprtCodec.decode(&mut Cursor::new(source), &DecodeOptions::default())?;
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    ir.model.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let body_id = ir.model.bodies[0].id.clone();
+    let face_id = ir.model.faces[0].id.clone();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)?;
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(face_id.as_str())));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(body_id.as_str())
+            && loss.message.contains("body")
+            && loss.message.contains("omitted")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)?;
+    let output = SldprtCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())?;
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(output.ir().model.regions.len(), 1);
+    assert!(output.ir().model.faces.is_empty());
+    Ok(())
 }
 
 #[test]
