@@ -5644,6 +5644,9 @@ fn give_up_xml_elements(
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => continue,
         };
+        if damaged.is_empty() {
+            continue;
+        }
         let Some(source) = scan.section_view(section) else {
             continue;
         };
