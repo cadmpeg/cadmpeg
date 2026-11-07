@@ -4,7 +4,7 @@
 use super::{Entity, EntityStatus};
 
 pub(super) fn ensure_nonempty(entities: &mut Vec<Entity>, version: crate::IgesVersion) {
-    if !entities.is_empty() {
+    if entities.iter().any(|entity| entity.type_code != 0) {
         return;
     }
     if version == crate::IgesVersion::V4_0 {
