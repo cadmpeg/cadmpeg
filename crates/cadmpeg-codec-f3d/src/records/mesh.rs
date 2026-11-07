@@ -912,9 +912,48 @@ impl DesignMeshPlacement {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub(crate) enum DesignMeshBodyWords {
+    Plain { body_word: u32 },
+    Flagged { flagged_word: u32, body_word: u32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFaceGroup {
+    pub(crate) key: u32,
+    pub(crate) guid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFaceGroups {
+    pub(crate) declared_count: u32,
+    pub(crate) entries: Vec<DesignMeshFaceGroup>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshHistoryStream {
+    pub(crate) name: String,
+    pub(crate) encoding: NativeBytes<[u8; 2]>,
+    pub(crate) decoded_length: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshSplitStream {
+    pub(crate) name: String,
+    pub(crate) descriptor: NativeBytes<Vec<u8>>,
+}
+
 /// One mesh body and its complete Design identity graph.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignMeshBodyWire")]
 pub(crate) struct DesignMeshBody {
+    pub(crate) scope_record_index: u32,
+    pub(crate) scope_body_ordinal: Option<u32>,
+    pub(crate) words: DesignMeshBodyWords,
+    pub(crate) split_streams: Vec<DesignMeshSplitStream>,
+    pub(crate) history_streams: Vec<DesignMeshHistoryStream>,
+    pub(crate) face_group_metadata: Option<DesignMeshFaceGroups>,
     /// Mesh-body record carrying placement and graph references.
     pub(crate) placement: DesignMeshPlacement,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
@@ -941,6 +980,17 @@ pub(crate) struct DesignMeshBody {
 
 #[derive(Serialize, Deserialize)]
 struct DesignMeshBodyWire {
+    scope_record_index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scope_body_ordinal: Option<u32>,
+    body_words: DesignMeshBodyWords,
+    body_words_offset: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    split_streams: Vec<DesignMeshSplitStream>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    history_streams: Vec<DesignMeshHistoryStream>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    face_group_metadata: Option<DesignMeshFaceGroups>,
     /// Mesh-body record carrying placement and graph references.
     body_record: DesignMeshRecordIdentity,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
@@ -1059,6 +1109,14 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
         let (scene_node_record, scene_node_bounds, scene_node_transform) =
             value.scene_node.into_wire();
         Self {
+            scope_record_index: value.scope_record_index,
+            scope_body_ordinal: value.scope_body_ordinal,
+            body_words_offset: value.placement.record().byte_offset()
+                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD),
+            body_words: value.words,
+            split_streams: value.split_streams,
+            history_streams: value.history_streams,
+            face_group_metadata: value.face_group_metadata,
             body_record: value.placement.record,
             entry_name_record: value.entry.record,
             guid_record: value.guid.record,
@@ -1092,6 +1150,13 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             scene_auxiliary_reference_offset,
             tessellation_id: value.tessellation_id,
         }
+    }
+}
+
+impl TryFrom<DesignMeshBodyWire> for DesignMeshBody {
+    type Error = String;
+    fn try_from(value: DesignMeshBodyWire) -> Result<Self, String> {
+        Self::from_wire(value)
     }
 }
 
@@ -1149,6 +1214,17 @@ impl DesignMeshBody {
         let flagged = value.transform_offsets[0]
             == value.body_record.byte_offset()
                 + u64_from_index(MeshBodyLayout::of(true).first_transform);
+        if value.body_words_offset
+            != value.body_record.byte_offset()
+                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD)
+            || !matches!(
+                (&value.body_words, flagged),
+                (DesignMeshBodyWords::Plain { .. }, false)
+                    | (DesignMeshBodyWords::Flagged { .. }, true)
+            )
+        {
+            return Err("body_words must match the body layout".into());
+        }
         let placement = DesignMeshPlacement::new(value.body_record, value.transform, flagged)?;
         if placement.transform_offsets() != value.transform_offsets {
             return Err("transform_offsets must match body_record layout".into());
@@ -1172,6 +1248,12 @@ impl DesignMeshBody {
             return Err("collection_reference_offset must match body_record layout".into());
         }
         Ok(Self {
+            scope_record_index: value.scope_record_index,
+            scope_body_ordinal: value.scope_body_ordinal,
+            words: value.body_words,
+            split_streams: value.split_streams,
+            history_streams: value.history_streams,
+            face_group_metadata: value.face_group_metadata,
             placement,
             entry,
             guid,
@@ -1398,6 +1480,21 @@ impl DesignMeshScope {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFlaggedEntry {
+    pub(crate) body_record_index: u32,
+    pub(crate) reference_offset: u64,
+    pub(crate) value: u32,
+    pub(crate) value_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshFlaggedCollection {
+    pub(crate) word: u32,
+    pub(crate) word_offset: u64,
+    pub(crate) entries: Vec<DesignMeshFlaggedEntry>,
+}
+
 /// Mesh collection with its same-index nested base and complete body-reference run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignMeshCollection {
@@ -1405,6 +1502,7 @@ pub(crate) struct DesignMeshCollection {
     base_class_tag: DesignClassTag,
     body_count: u32,
     flagged: bool,
+    pub(crate) flagged_data: Option<DesignMeshFlaggedCollection>,
 }
 
 impl DesignMeshCollection {
@@ -1412,6 +1510,7 @@ impl DesignMeshCollection {
         record: DesignMeshRecordIdentity,
         base_record: DesignMeshRecordIdentity,
         body_count: u32,
+        flagged_data: Option<DesignMeshFlaggedCollection>,
     ) -> Result<Self, String> {
         let plain_prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
         let flagged_prefix =
@@ -1423,6 +1522,32 @@ impl DesignMeshCollection {
         let flagged = prefix == flagged_prefix;
         if prefix != plain_prefix && !flagged {
             return Err("collection base offset must match its layout".into());
+        }
+        if flagged != flagged_data.is_some() {
+            return Err("flagged collection data must match the collection layout".into());
+        }
+        if let Some(data) = &flagged_data {
+            let word_offset = record.byte_offset()
+                + u64_from_index(
+                    crate::layout::paramesh_flagged_mesh_collection_prefix::FLAGGED_WORD,
+                );
+            let entry_start = record.byte_offset()
+                + prefix
+                + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN)
+                + u64::from(body_count) * 11
+                + 4;
+            if data.word_offset != word_offset
+                || (data.entries.len() != 0
+                    && data.entries.len()
+                        != usize::try_from(body_count).map_err(|_| "body count exceeds usize")?)
+                || data.entries.iter().enumerate().any(|(ordinal, entry)| {
+                    entry.reference_offset != entry_start + u64_from_index(ordinal) * 15
+                        || entry.value_offset != entry.reference_offset + 11
+                        || entry.value != 1
+                })
+            {
+                return Err("flagged collection fields must match the collection layout".into());
+            }
         }
         let fixed_length =
             prefix + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN) + 11;
@@ -1450,6 +1575,7 @@ impl DesignMeshCollection {
             base_class_tag: base_record.class_tag,
             body_count,
             flagged,
+            flagged_data,
         })
     }
     fn prefix_len(&self) -> u64 {
@@ -1483,6 +1609,32 @@ impl DesignMeshCollection {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshSourceRecord {
+    pub(crate) record: DesignMeshRecordIdentity,
+    pub(crate) type_guid: DesignGuidText,
+    pub(crate) bytes: NativeBytes<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshOperationInput {
+    pub(crate) scope_reference_offset: u64,
+    pub(crate) guid: DesignMeshSourceRecord,
+    pub(crate) entry: DesignMeshSourceRecord,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignMeshOperationBody {
+    pub(crate) scope: DesignMeshSourceRecord,
+    pub(crate) group: DesignMeshSourceRecord,
+    pub(crate) member: DesignMeshSourceRecord,
+    pub(crate) scope_group_reference_offset: u64,
+    pub(crate) group_member_reference_offset: u64,
+    pub(crate) member_body_reference_offset: u64,
+    pub(crate) inputs: Vec<DesignMeshOperationInput>,
+    pub(crate) body: DesignMeshBody,
+}
+
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "DesignMeshFeatureWire")]
@@ -1491,8 +1643,7 @@ pub(crate) struct DesignMeshFeature {
     clone_probe: MeshFeatureCloneProbe,
     /// Globally unique deterministic identity keyed by the feature-scope record.
     pub(crate) id: String,
-    /// Feature scope and its closing owner reference.
-    scope: DesignMeshScope,
+    scopes: Vec<DesignMeshScope>,
     /// Mesh collection and its nested base.
     collection: DesignMeshCollection,
     /// Typed `ParaMesh` texture-table record owned by the collection.
@@ -1501,6 +1652,7 @@ pub(crate) struct DesignMeshFeature {
     pub(crate) collection_owner: DesignMeshCollectionOwner,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBody>,
+    pub(crate) operation_bodies: Vec<DesignMeshOperationBody>,
 }
 
 #[cfg(test)]
@@ -1523,7 +1675,7 @@ impl Clone for MeshFeatureCloneProbe {
 impl DesignMeshFeature {
     pub(crate) fn new(
         id: String,
-        scope: DesignMeshScope,
+        scopes: Vec<DesignMeshScope>,
         collection: DesignMeshCollection,
         texture_table: DesignMeshTextureTable,
         collection_owner: DesignMeshCollectionOwner,
@@ -1533,25 +1685,73 @@ impl DesignMeshFeature {
         if collection.body_count() != u64::from(body_count) {
             return Err("bodies count must match collection_record.frame_length".into());
         }
-        let scope_body_bytes = u64::from(body_count) * 11;
-        let scope_prefix = u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
-        let scope_base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
-        if scope_body_bytes > scope.record().frame_length() - scope_prefix - scope_base_length {
-            return Err("bodies reference run must end before scope_base_record".into());
+        if scopes.is_empty() {
+            return Err("a mesh collection must name at least one scope".into());
+        }
+        let mut scope_ids = std::collections::HashSet::new();
+        for owner in &scopes {
+            let index = owner.record().record_index();
+            if !scope_ids.insert(index) {
+                return Err("scope records must be unique".into());
+            }
+            let mut ordinals = bodies
+                .iter()
+                .filter(|body| body.scope_record_index == index)
+                .map(|body| {
+                    body.scope_body_ordinal
+                        .ok_or("collection body must carry a scope ordinal")
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            ordinals.sort_unstable();
+            if !ordinals
+                .iter()
+                .copied()
+                .eq(0..u32::try_from(ordinals.len())
+                    .map_err(|_| "scope body count must fit u32")?)
+            {
+                return Err("scope body ordinals must form an ordered run".into());
+            }
+            let body_bytes = u64_from_index(ordinals.len()) * 11;
+            let scope_prefix = u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
+            let scope_base_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
+            if body_bytes > owner.record().frame_length() - scope_prefix - scope_base_length {
+                return Err("bodies reference run must end before scope_base_record".into());
+            }
+        }
+        if let Some(data) = &collection.flagged_data {
+            let mut ids = bodies
+                .iter()
+                .map(|body| body.placement.record().record_index())
+                .collect::<std::collections::HashSet<_>>();
+            if !data.entries.is_empty()
+                && data
+                    .entries
+                    .iter()
+                    .any(|entry| !ids.remove(&entry.body_record_index))
+            {
+                return Err("flagged entries must reference distinct collection bodies".into());
+            }
+        }
+        if bodies
+            .iter()
+            .any(|body| !scope_ids.contains(&body.scope_record_index))
+        {
+            return Err("each body must name a collection scope".into());
         }
         Ok(Self {
             #[cfg(test)]
             clone_probe: MeshFeatureCloneProbe,
             id,
-            scope,
+            scopes,
             collection,
             texture_table,
             collection_owner,
             bodies,
+            operation_bodies: Vec::new(),
         })
     }
-    pub(crate) fn scope(&self) -> &DesignMeshScope {
-        &self.scope
+    pub(crate) fn scopes(&self) -> impl Iterator<Item = &DesignMeshScope> {
+        self.scopes.iter()
     }
     pub(crate) fn collection(&self) -> &DesignMeshCollection {
         &self.collection
@@ -1559,13 +1759,31 @@ impl DesignMeshFeature {
     pub(crate) fn bodies(&self) -> &[DesignMeshBody] {
         &self.bodies
     }
-    pub(crate) fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
-        &mut self.bodies
+    pub(crate) fn all_bodies(&self) -> impl Iterator<Item = &DesignMeshBody> {
+        self.bodies.iter().chain(
+            self.operation_bodies
+                .iter()
+                .map(|operation| &operation.body),
+        )
     }
-    fn body_count_offsets(&self) -> [u64; 3] {
+    pub(crate) fn body_at(&self, ordinal: usize) -> Option<&DesignMeshBody> {
+        self.bodies.get(ordinal).or_else(|| {
+            self.operation_bodies
+                .get(ordinal.checked_sub(self.bodies.len())?)
+                .map(|operation| &operation.body)
+        })
+    }
+    pub(crate) fn body_at_mut(&mut self, ordinal: usize) -> Option<&mut DesignMeshBody> {
+        if ordinal < self.bodies.len() {
+            self.bodies.get_mut(ordinal)
+        } else {
+            self.operation_bodies
+                .get_mut(ordinal - self.bodies.len())
+                .map(|operation| &mut operation.body)
+        }
+    }
+    fn body_count_offsets(&self) -> [u64; 2] {
         [
-            self.scope.record().byte_offset()
-                + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
             self.collection.record().byte_offset()
                 + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::BODY_COUNT),
             self.collection.record().byte_offset()
@@ -1574,9 +1792,15 @@ impl DesignMeshFeature {
         ]
     }
     fn scope_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
-        let start = self.scope.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
-        (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
+        self.bodies.iter().map(|body| {
+            let owner = self
+                .scopes()
+                .find(|scope| scope.record().record_index() == body.scope_record_index)
+                .expect("validated mesh scope");
+            owner.record().byte_offset()
+                + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN)
+                + 11 * u64::from(body.scope_body_ordinal.expect("validated scope ordinal"))
+        })
     }
     fn collection_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
         let start = self.collection.record().byte_offset()
@@ -1586,22 +1810,66 @@ impl DesignMeshFeature {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct MeshScopeWire {
+    scope_record: DesignMeshRecordIdentity,
+    scope_base_record: DesignMeshRecordIdentity,
+    scope_owner_record_index: u32,
+    scope_owner_reference_offset: u64,
+    scope_body_count_offset: u64,
+}
+
+impl TryFrom<MeshScopeWire> for DesignMeshScope {
+    type Error = String;
+    fn try_from(wire: MeshScopeWire) -> Result<Self, String> {
+        let scope = Self::new(
+            wire.scope_record,
+            wire.scope_base_record,
+            wire.scope_owner_record_index,
+        )?;
+        if scope.record().byte_offset()
+            + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT)
+            != wire.scope_body_count_offset
+        {
+            return Err("scope_body_count_offset must locate the scope body count".into());
+        }
+        if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
+            return Err(
+                "scope_owner_reference_offset must locate the closing base owner reference".into(),
+            );
+        }
+        Ok(scope)
+    }
+}
+
+impl From<DesignMeshScope> for MeshScopeWire {
+    fn from(scope: DesignMeshScope) -> Self {
+        Self {
+            scope_record: scope.record().clone(),
+            scope_base_record: scope.base_record(),
+            scope_owner_record_index: scope.owner_record_index(),
+            scope_owner_reference_offset: scope.owner_reference_offset(),
+            scope_body_count_offset: scope.record().byte_offset()
+                + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
+        }
+    }
+}
+
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Serialize, Deserialize)]
 struct DesignMeshFeatureWire {
     /// Globally unique deterministic identity keyed by the feature-scope record.
     id: String,
-    /// Typed `Base Mesh Feature` scope record.
-    scope_record: DesignMeshRecordIdentity,
-    /// Paired same-index base record closing the feature scope.
-    scope_base_record: DesignMeshRecordIdentity,
+    scopes: Vec<MeshScopeWire>,
     /// Typed `ParaMesh` body-collection record.
     collection_record: DesignMeshRecordIdentity,
     /// Paired same-index base record inside the collection.
     collection_base_record: DesignMeshRecordIdentity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collection_flagged_data: Option<DesignMeshFlaggedCollection>,
     /// Typed `ParaMesh` texture-table record owned by the collection.
     texture_table_record: DesignMeshRecordIdentity,
-    body_count_offsets: [u64; 3],
+    body_count_offsets: [u64; 2],
     /// Ordered mesh-body record identities owned by the feature.
     body_record_indices: Vec<u32>,
     /// Scope body-reference offsets parallel to `body_record_indices`.
@@ -1618,10 +1886,6 @@ struct DesignMeshFeatureWire {
     collection_owner_backlink_offset: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     collection_owner_name_count: Option<u32>,
-    /// Design owner of the feature scope.
-    scope_owner_record_index: u32,
-    /// Byte offset of the paired scope record's owner reference.
-    scope_owner_reference_offset: u64,
     /// Byte offset of the texture flags-map count.
     texture_flags_count_offset: u64,
     /// Byte offset of the texture filename-map count.
@@ -1630,6 +1894,8 @@ struct DesignMeshFeatureWire {
     bodies: Vec<DesignMeshBodyWire>,
     /// Texture resources in flags-map order.
     textures: Vec<DesignMeshTextureResourceWire>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    operation_bodies: Vec<DesignMeshOperationBody>,
 }
 
 impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
@@ -1660,20 +1926,11 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         for body in wire.bodies {
             bodies.push(DesignMeshBody::from_wire(body)?);
         }
-        let scope = DesignMeshScope::new(
-            wire.scope_record,
-            wire.scope_base_record,
-            wire.scope_owner_record_index,
-        )?;
-        if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
-            return Err(
-                "scope_owner_reference_offset must locate the closing base owner reference".into(),
-            );
-        }
         let collection = DesignMeshCollection::new(
             wire.collection_record,
             wire.collection_base_record,
             u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?,
+            wire.collection_flagged_data,
         )?;
         if collection.texture_table_reference_offset() != wire.texture_table_reference_offset {
             return Err(
@@ -1684,9 +1941,12 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         if collection.owner_reference_offset() != wire.collection_owner_reference_offset {
             return Err("collection_owner_reference_offset must locate the terminal collection owner reference".into());
         }
-        let feature = Self::new(
+        let mut feature = Self::new(
             wire.id,
-            scope,
+            wire.scopes
+                .into_iter()
+                .map(DesignMeshScope::try_from)
+                .collect::<Result<Vec<_>, _>>()?,
             collection,
             DesignMeshTextureTable::from_wire(
                 wire.texture_table_record,
@@ -1701,8 +1961,15 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             )?,
             bodies,
         )?;
+        feature.operation_bodies = wire.operation_bodies;
+        if feature.operation_bodies.iter().any(|operation| {
+            operation.body.scope_record_index != operation.scope.record.record_index()
+                || operation.body.scope_body_ordinal.is_some()
+        }) {
+            return Err("operation bodies must name their operation scope without a collection-scope ordinal".into());
+        }
         if wire.body_count_offsets != feature.body_count_offsets() {
-            return Err("body_count_offsets must locate the scope and collection counts".into());
+            return Err("body_count_offsets must locate the collection counts".into());
         }
         if !wire
             .scope_body_reference_offsets
@@ -1747,15 +2014,16 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             textures,
         ) = value.texture_table.into_wire();
         Self {
+            operation_bodies: value.operation_bodies,
             body_record_indices,
             scope_body_reference_offsets,
             collection_body_reference_offsets,
             bodies,
             id: value.id,
-            scope_record: value.scope.record().clone(),
-            scope_base_record: value.scope.base_record(),
+            scopes: value.scopes.into_iter().map(MeshScopeWire::from).collect(),
             collection_record: value.collection.record().clone(),
             collection_base_record: value.collection.base_record(),
+            collection_flagged_data: value.collection.flagged_data.clone(),
             texture_table_record,
             body_count_offsets,
             texture_table_reference_offset: value.collection.texture_table_reference_offset(),
@@ -1763,8 +2031,6 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_owner_reference_offset: value.collection.owner_reference_offset(),
             collection_owner_backlink_offset,
             collection_owner_name_count,
-            scope_owner_record_index: value.scope.owner_record_index(),
-            scope_owner_reference_offset: value.scope.owner_reference_offset(),
             texture_flags_count_offset,
             texture_filename_count_offset,
             textures,
@@ -1832,7 +2098,7 @@ impl DesignMeshRecordIdentity {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
-    fn frame_length(&self) -> u64 {
+    pub(crate) fn frame_length(&self) -> u64 {
         self.frame_length
     }
 }

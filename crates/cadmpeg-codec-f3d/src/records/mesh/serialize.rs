@@ -67,6 +67,17 @@ impl Serialize for BodyRef<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
+            scope_record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            scope_body_ordinal: Option<u32>,
+            body_words: &'a super::DesignMeshBodyWords,
+            body_words_offset: u64,
+            #[serde(skip_serializing_if = "<[super::DesignMeshSplitStream]>::is_empty")]
+            split_streams: &'a [super::DesignMeshSplitStream],
+            #[serde(skip_serializing_if = "<[super::DesignMeshHistoryStream]>::is_empty")]
+            history_streams: &'a [super::DesignMeshHistoryStream],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            face_group_metadata: Option<&'a super::DesignMeshFaceGroups>,
             body_record: RecordRef<'a>,
             entry_name_record: RecordRef<'a>,
             guid_record: RecordRef<'a>,
@@ -114,6 +125,14 @@ impl Serialize for BodyRef<'_> {
         };
         let node_transform = body.scene_node.transform();
         Wire {
+            scope_record_index: body.scope_record_index,
+            scope_body_ordinal: body.scope_body_ordinal,
+            body_words: &body.words,
+            body_words_offset: body.placement.record().byte_offset()
+                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD),
+            split_streams: &body.split_streams,
+            history_streams: &body.history_streams,
+            face_group_metadata: body.face_group_metadata.as_ref(),
             body_record: RecordRef::from_identity(&body.placement.record),
             entry_name_record: RecordRef::from_identity(&body.entry.record),
             guid_record: RecordRef::from_identity(&body.guid.record),
@@ -154,6 +173,12 @@ impl Serialize for BodyRef<'_> {
             tessellation_id: body.tessellation_id.as_ref(),
         }
         .serialize(serializer)
+    }
+}
+
+impl Serialize for DesignMeshBody {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        BodyRef(self).serialize(serializer)
     }
 }
 
@@ -230,19 +255,51 @@ impl Serialize for BodyReferenceOffsets {
     }
 }
 
+struct ScopeRows<'a>(&'a [DesignMeshScope]);
+
+impl Serialize for ScopeRows<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            scope_record: RecordRef<'a>,
+            scope_base_record: RecordRef<'a>,
+            scope_owner_record_index: u32,
+            scope_owner_reference_offset: u64,
+            scope_body_count_offset: u64,
+        }
+        serializer.collect_seq(self.0.iter().map(|scope| Wire {
+            scope_record: RecordRef::from_identity(scope.record()),
+            scope_base_record: RecordRef::scope_base(scope),
+            scope_owner_record_index: scope.owner_record_index(),
+            scope_owner_reference_offset: scope.owner_reference_offset(),
+            scope_body_count_offset: scope.record().byte_offset()
+                + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
+        }))
+    }
+}
+
+struct ScopeOffsets<'a>(&'a DesignMeshFeature);
+
+impl Serialize for ScopeOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.scope_body_reference_offsets())
+    }
+}
+
 impl Serialize for DesignMeshFeature {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
             id: &'a str,
-            scope_record: RecordRef<'a>,
-            scope_base_record: RecordRef<'a>,
+            scopes: ScopeRows<'a>,
             collection_record: RecordRef<'a>,
             collection_base_record: RecordRef<'a>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            collection_flagged_data: Option<&'a super::DesignMeshFlaggedCollection>,
             texture_table_record: RecordRef<'a>,
-            body_count_offsets: [u64; 3],
+            body_count_offsets: [u64; 2],
             body_record_indices: SliceColumn<'a, DesignMeshBody, u32>,
-            scope_body_reference_offsets: BodyReferenceOffsets,
+            scope_body_reference_offsets: ScopeOffsets<'a>,
             collection_body_reference_offsets: BodyReferenceOffsets,
             texture_table_reference_offset: u64,
             collection_owner_record: RecordRef<'a>,
@@ -250,15 +307,13 @@ impl Serialize for DesignMeshFeature {
             collection_owner_backlink_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
             collection_owner_name_count: Option<u32>,
-            scope_owner_record_index: u32,
-            scope_owner_reference_offset: u64,
             texture_flags_count_offset: u64,
             texture_filename_count_offset: u64,
             bodies: SliceColumn<'a, DesignMeshBody, BodyRef<'a>>,
             textures: TextureRows<'a>,
+            #[serde(skip_serializing_if = "<[super::DesignMeshOperationBody]>::is_empty")]
+            operation_bodies: &'a [super::DesignMeshOperationBody],
         }
-        let scope_start = self.scope.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
         let collection_start = self.collection.record().byte_offset()
             + self.collection.prefix_len()
             + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
@@ -266,19 +321,16 @@ impl Serialize for DesignMeshFeature {
             .map_err(|_| serde::ser::Error::custom("mesh body count exceeds u32"))?;
         Wire {
             id: &self.id,
-            scope_record: RecordRef::from_identity(self.scope.record()),
-            scope_base_record: RecordRef::scope_base(&self.scope),
+            scopes: ScopeRows(&self.scopes),
             collection_record: RecordRef::from_identity(self.collection.record()),
             collection_base_record: RecordRef::collection_base(&self.collection),
+            collection_flagged_data: self.collection.flagged_data.as_ref(),
             texture_table_record: RecordRef::from_identity(self.texture_table.record()),
             body_count_offsets: self.body_count_offsets(),
             body_record_indices: SliceColumn::new(&self.bodies, |body| {
                 body.placement.record.record_index()
             }),
-            scope_body_reference_offsets: BodyReferenceOffsets {
-                start: scope_start,
-                count: body_count,
-            },
+            scope_body_reference_offsets: ScopeOffsets(self),
             collection_body_reference_offsets: BodyReferenceOffsets {
                 start: collection_start,
                 count: body_count,
@@ -288,12 +340,11 @@ impl Serialize for DesignMeshFeature {
             collection_owner_reference_offset: self.collection.owner_reference_offset(),
             collection_owner_backlink_offset: self.collection_owner.backlink_offset(),
             collection_owner_name_count: self.collection_owner.name_count(),
-            scope_owner_record_index: self.scope.owner_record_index(),
-            scope_owner_reference_offset: self.scope.owner_reference_offset(),
             texture_flags_count_offset: self.texture_table.flags_count_offset(),
             texture_filename_count_offset: self.texture_table.filename_count_offset(),
             bodies: SliceColumn::new(&self.bodies, BodyRef),
             textures: TextureRows(&self.texture_table),
+            operation_bodies: &self.operation_bodies,
         }
         .serialize(serializer)
     }

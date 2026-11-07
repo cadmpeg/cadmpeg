@@ -857,6 +857,24 @@ pub(crate) mod paramesh_entry_name_prefix {
     pub(crate) const GUID_RECORD_REFERENCE: usize = 21;
 }
 
+/// Byte offsets for the `paramesh_operation_member_prefix` record.
+///
+/// Spec §3.1. Record length 32 B.
+///
+/// ```text
+/// Offsets are relative to the mesh operation member's indexed header.
+/// ```
+pub(crate) mod paramesh_operation_member_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `body_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE: usize = 21;
+}
+
 /// Byte offsets for the `paramesh_guid_join_prefix` record.
 ///
 /// Spec §3.1. Record length 83 B.
@@ -893,6 +911,10 @@ pub(crate) mod paramesh_flagged_mesh_body_join_prefix {
     pub(crate) const FLAG: usize = 20;
     /// Stated value of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG_VALUE: u8 = 1;
+    /// Offset of `flagged_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FLAGGED_WORD: usize = 21;
+    /// Offset of `body_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_WORD: usize = 25;
     /// Offset of `first_transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const FIRST_TRANSFORM: usize = 46;
     /// Offset of `second_transform` (`f64[16]`, little-endian). Spec §3.1.
@@ -921,6 +943,8 @@ pub(crate) mod paramesh_mesh_body_join_prefix {
     pub(crate) const LEN: usize = 564;
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `body_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_WORD: usize = 21;
     /// Offset of `first_transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const FIRST_TRANSFORM: usize = 42;
     /// Offset of `second_transform` (`f64[16]`, little-endian). Spec §3.1.
@@ -6387,6 +6411,8 @@ pub(crate) mod paramesh_flagged_mesh_collection_prefix {
     pub(crate) const FLAG: usize = 20;
     /// Stated value of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG_VALUE: u8 = 1;
+    /// Offset of `flagged_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FLAGGED_WORD: usize = 25;
     /// Offset of `constant_01_01` (`bytes[2]`). Spec §3.1.
     pub(crate) const CONSTANT_01_01: usize = 29;
     /// Offset of `texture_table_reference` (`bytes[11]`). Spec §3.1.

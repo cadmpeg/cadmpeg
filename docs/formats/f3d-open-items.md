@@ -339,25 +339,25 @@ travel.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, establishes the meanings of both words.
 
-### DR-292. Mesh-GUID bytes 21 through 31
+### DR-292. Mesh Design record words
 
-**Question.** What do the eleven bytes at offsets 21 through 31 of a mesh-GUID record store?
+**Question.** What do the mesh-GUID bytes at offsets 21 through 31 the mesh-body prefix words, and the remaining mesh-operation member fields store?
 
-**Known.** `f3d.md` §3.1 "The direct join from a mesh geometry container" gives the record layout. The eleven bytes are zero in some records. Records in designs with flagged mesh collections (DR-85) store bytes that are not all zero, for example `82 8a 25 de 59 63 f1 c0 00 01 00`, `ed 26 6f 61 9f 3f cc 40 01 01 00`, `a0 20 d1 cd 5a 7c f2 bf 00 00 61`, and `fa 8a f5 c8 c9 44 28 c1 00 00 00`. Read as a little-endian f64, the first eight bytes of these examples are finite: -71221.6, 14463.2, -1.15536, and -795236.9. The decoder keeps nonzero bytes in the native mesh-GUID record and reports `mesh.guid-bytes-uninterpreted`.
+**Known.** The mesh-GUID record carries eleven bytes. A mesh body carries one prefix word; a flagged mesh body carries two. The operation member references a mesh body. The decoder retains the words and the operation source records and reports `mesh.guid-bytes-uninterpreted`, `mesh.body-words-native`, and `mesh.operation-records-native`.
 
-**Need.** A design whose mesh bodies are inserted, moved, and scaled one step at a time, saved after each step, shows which operation writes the bytes and whether the first eight bytes are one f64 and the last three are flags.
+**Need.** A design saved after individual body insert, move, and scale operations establishes the meanings of these fields. A controlled mesh operation establishes the remaining member fields.
 
 **Conflict.** None.
 
 **Note.** None.
 
-### DR-293. Flagged mesh-body words
+### DR-293. Mesh stream metadata
 
-**Question.** What does the u32 at offset 21 of a flagged mesh body store, and what does the u32 at offset 25 that follows it store?
+**Question.** What component order does a split mesh stream use, what history bound does its compression encoding state, and what does the mesh face-group registry value count?
 
-**Known.** `f3d.md` §3.1 "The mesh-body class" gives the flagged layout. The u32 at offset 21 is `0` in every flagged mesh body. The u32 at offset 25 takes values from 1 through 5. An unflagged mesh body can store `1` in the u32 at offset 21. The decoder reads neither word.
+**Known.** A split stream stores two, three, or four equal-length f32 segments. The decoder retains its descriptor, reads the segments in stored order, and reports `mesh.split-stream-assumed`. It uses the larger of 1 MiB and the declared output length as the LZMA history bound and reports `mesh.history-window-assumed`. A face-group channel lists key and GUID entries. The decoder retains field 9 and all entries, uses the triangle selectors, and reports `mesh.face-groups-assumed` when the count differs or a group has no triangles.
 
-**Need.** The flagged mesh-collection words (DR-85) can count the same events. A design in which mesh bodies are inserted and removed one at a time, saved after each step, shows whether the words count bodies, edits, or versions.
+**Need.** A mesh with distinct known coordinates establishes the component order. A documented encoding rule establishes the history bound. A controlled face-group edit establishes the meaning of field 9.
 
 **Conflict.** None.
 

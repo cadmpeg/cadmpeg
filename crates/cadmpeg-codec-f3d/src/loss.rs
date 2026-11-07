@@ -363,6 +363,12 @@ pub(crate) enum F3dLossCode {
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
+    MeshSplitStreamAssumed,
+    MeshHistoryWindowAssumed,
+    MeshOperationRecordsNative,
+    MeshFaceGroupsAssumed,
+    MeshBodyWordsNative,
+    MeshCollectionWordsNative,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
@@ -684,6 +690,12 @@ impl F3dLossCode {
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
+        Self::MeshSplitStreamAssumed,
+        Self::MeshHistoryWindowAssumed,
+        Self::MeshOperationRecordsNative,
+        Self::MeshFaceGroupsAssumed,
+        Self::MeshBodyWordsNative,
+        Self::MeshCollectionWordsNative,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
         Self::XrefOccurrenceUnplaced,
@@ -951,6 +963,12 @@ impl F3dLossCode {
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
+            Self::MeshSplitStreamAssumed => "mesh.split-stream-assumed",
+            Self::MeshHistoryWindowAssumed => "mesh.history-window-assumed",
+            Self::MeshOperationRecordsNative => "mesh.operation-records-native",
+            Self::MeshFaceGroupsAssumed => "mesh.face-groups-assumed",
+            Self::MeshBodyWordsNative => "mesh.body-words-native",
+            Self::MeshCollectionWordsNative => "mesh.collection-words-native",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
@@ -1220,6 +1238,12 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
+            | Self::MeshSplitStreamAssumed
+            | Self::MeshHistoryWindowAssumed
+            | Self::MeshOperationRecordsNative
+            | Self::MeshFaceGroupsAssumed
+            | Self::MeshBodyWordsNative
+            | Self::MeshCollectionWordsNative
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
             | Self::XrefOccurrenceUnplaced
@@ -1314,6 +1338,12 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
+            | Self::MeshSplitStreamAssumed
+            | Self::MeshHistoryWindowAssumed
+            | Self::MeshOperationRecordsNative
+            | Self::MeshFaceGroupsAssumed
+            | Self::MeshBodyWordsNative
+            | Self::MeshCollectionWordsNative
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1713,6 +1743,12 @@ mod tests {
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
+                "mesh.split-stream-assumed",
+                "mesh.history-window-assumed",
+                "mesh.operation-records-native",
+                "mesh.face-groups-assumed",
+                "mesh.body-words-native",
+                "mesh.collection-words-native",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
                 "xref.occurrence-unplaced",

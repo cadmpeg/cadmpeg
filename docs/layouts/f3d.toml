@@ -3323,6 +3323,35 @@ source = "spec"
 anchor = "a marked same-segment reference to the GUID record at offset 21"
 
 [[record]]
+name = "paramesh_operation_member_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes and a marked same-segment mesh-body reference at offset 21."
+size = 32
+note = "Offsets are relative to the mesh operation member's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes and a marked same-segment mesh-body reference at offset 21."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes and a marked same-segment mesh-body reference at offset 21."
+
+[[record.field]]
+name = "body_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment mesh-body reference at offset 21"
+
+[[record]]
 name = "paramesh_guid_join_prefix"
 kind = "byte"
 section = "3.1"
@@ -3400,11 +3429,18 @@ name = "flagged_word"
 offset = 21
 type = "u32"
 source = "spec"
-anchor = "and a u32 at offset 21. In this flagged form"
+anchor = "and a u32 at offset 21."
+
+[[record.field]]
+name = "body_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "another u32 at offset 25"
 
 [[record.gap]]
-offset = 25
-size = 21
+offset = 29
+size = 17
 note = "The remaining mesh-body prologue is outside this fixed join table."
 
 [[record.field]]
@@ -3493,9 +3529,16 @@ type = "bytes[10]"
 source = "spec"
 anchor = "Its indexed header is followed by ten zero bytes."
 
-[[record.gap]]
+[[record.field]]
+name = "body_word"
 offset = 21
-size = 21
+type = "u32"
+source = "spec"
+anchor = "It stores a u32 at offset 21."
+
+[[record.gap]]
+offset = 25
+size = 17
 note = "The remaining mesh-body prologue is outside this fixed join table."
 
 [[record.field]]
@@ -3527,28 +3570,28 @@ name = "feature_scope_reference"
 offset = 508
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.field]]
 name = "wrapper_reference"
 offset = 519
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.field]]
 name = "body_owner_reference"
 offset = 530
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.field]]
 name = "container_guid_reference"
 offset = 541
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.gap]]
 offset = 552
@@ -3560,7 +3603,7 @@ name = "scene_node_reference"
 offset = 553
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record]]
 name = "paramesh_mesh_collection_prefix"
