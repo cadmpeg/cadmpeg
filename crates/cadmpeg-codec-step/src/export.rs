@@ -1490,10 +1490,7 @@ impl<'a> Builder<'a> {
                     self.tessellation_step_refs.get(id).copied(),
                     StyleKind::Surface,
                 ),
-                AppearanceTarget::Occurrence(id) => (
-                    self.occurrence_step_refs.get(id.as_str()).copied(),
-                    StyleKind::Surface,
-                ),
+                AppearanceTarget::Occurrence(_) => (None, StyleKind::Surface),
                 AppearanceTarget::Record { .. } => (None, StyleKind::Surface),
                 AppearanceTarget::Body(_) | AppearanceTarget::TriangleGroup { .. } => continue,
             };

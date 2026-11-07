@@ -785,6 +785,80 @@ fn older_step_schema_reports_unwritten_product_boolean() {
 }
 
 #[test]
+fn occurrence_style_without_a_writable_carrier_is_reported() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::topology::Color;
+
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product-definition#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product-definition#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#assembly",
+        None,
+    );
+    let child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    let appearance = "test:model:appearance#material".try_into().unwrap();
+    ir.model.appearances.push(Appearance {
+        id: appearance,
+        native_ref: None,
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(Color::new(0.25, 0.5, 0.75, 1.0).unwrap()),
+        properties: std::collections::BTreeMap::default(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:model:binding#occurrence".try_into().unwrap(),
+        native_ref: None,
+        target: AppearanceTarget::Occurrence(child.id.clone()),
+        appearance: "test:model:appearance#material".try_into().unwrap(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::default(),
+    });
+    ir.model.occurrences = vec![root, child];
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::DisplayColorUnstyled.kind()
+            && loss.message.contains("test:model:binding#occurrence")
+    }));
+    let text = String::from_utf8(output).unwrap();
+    let usage = text
+        .lines()
+        .find(|line| line.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE('test:model:occurrence#child'"))
+        .unwrap()
+        .split_once(" = ")
+        .unwrap()
+        .0;
+    assert!(!text
+        .lines()
+        .any(|line| line.contains("STYLED_ITEM(") && line.contains(&format!(",{usage})"))));
+}
+
+#[test]
 fn occurrence_scalar_properties_reference_the_assembly_usage() {
     let mut ir = unit_cube().expect("cube");
     ir.model.product_definitions = vec![
