@@ -17,6 +17,7 @@ use crate::native::SldprtNative;
 use crate::writer::write_error::WriteError;
 
 pub(super) fn prepare(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     repair: bool,
@@ -43,10 +44,10 @@ pub(super) fn prepare(
                 ))
             })?;
     synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
-    sketches(ir, native.as_ref(), losses)?;
+    sketches(ctx, ir, native.as_ref(), losses)?;
     // A dropped sketch retains its feature and solved output, with an explicit loss.
     synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ctx, ir, &mut native)?;
     crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
     let all_bodies = ir
         .model
@@ -457,6 +458,7 @@ fn append_feature(
 }
 
 fn sketches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: Option<&SldprtNative>,
     losses: &mut Vec<LossNote>,
@@ -464,7 +466,11 @@ fn sketches(
     let original = ir.clone();
     let try_sketch = |candidate: &CadIr| {
         let mut native = native.cloned();
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(candidate, &mut native)
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(
+            ctx,
+            candidate,
+            &mut native,
+        )
     };
     let mut dropped = HashSet::new();
     for sketch in ir.model.sketches.clone() {

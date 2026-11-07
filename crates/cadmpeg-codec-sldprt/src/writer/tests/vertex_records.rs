@@ -13,7 +13,16 @@ fn emitted_vertex_records_keep_body_ownership_and_optional_tolerance() {
         for vertex in &mut ir.model.vertices {
             vertex.tolerance = tolerance;
         }
-        let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            &cadmpeg_core::decode::DecodeContext::for_encode(
+                &cadmpeg_core::decode::DecodeArena::new(),
+                &cadmpeg_core::decode::DecodePolicy::desktop(),
+            ),
+            &ir,
+            0.001,
+            false,
+        )
+        .unwrap();
         let native = crate::test_support::container::sldprt_with_body(&body);
         let decoded = crate::SldprtCodec
             .decode(&mut Cursor::new(native), &DecodeOptions::default())
@@ -57,7 +66,16 @@ fn topology_with_wide_references_redecodes() {
         .collect::<Vec<_>>();
     points.append(&mut ir.model.points);
     ir.model.points = points;
-    let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
+    let body = crate::writer::brep_body(
+        &cadmpeg_core::decode::DecodeContext::for_encode(
+            &cadmpeg_core::decode::DecodeArena::new(),
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        ),
+        &ir,
+        0.001,
+        false,
+    )
+    .unwrap();
     let source = crate::test_support::container::sldprt_with_body(&body);
     let output = crate::SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
