@@ -270,9 +270,7 @@ pub(in crate::writer) fn style_index(ir: &CadIr, fonts: &FontExport, source: i32
             .and_then(|value| value.as_i64())
             == Some(i64::from(source))
     });
-    let Some(record) = matching.next() else {
-        return None;
-    };
+    let record = matching.next()?;
     if matching.next().is_some() {
         return None;
     }
