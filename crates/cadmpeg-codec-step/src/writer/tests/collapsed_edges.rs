@@ -318,8 +318,38 @@ fn writer_leaves_an_edge_collapsed_to_one_vertex_out_of_its_loop() {
     let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
     assert_eq!((plain.faces, plain.vertex_loops), (6, 0));
     assert!(plain.losses.is_empty(), "{:?}", plain.losses);
-    // The collapsed edge and its carrier are left out without a loss.
-    assert_eq!(written(&cube_with_a_collapsed_edge(Ring::Beside)), plain);
+    let source = cube_with_a_collapsed_edge(Ring::Beside);
+    let collapsed = written(&source);
+    assert_eq!(
+        (
+            collapsed.oriented_edges,
+            collapsed.seam_edges,
+            collapsed.faces,
+            collapsed.vertex_loops
+        ),
+        (
+            plain.oriented_edges,
+            plain.seam_edges,
+            plain.faces,
+            plain.vertex_loops
+        )
+    );
+    let report = write_step(
+        &source,
+        &mut Vec::new(),
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("the cube writes");
+    for id in [
+        "test:model:edge#collapsed",
+        "test:model:coedge#collapsed",
+        "test:model:curve#collapsed",
+    ] {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == crate::loss::StepLossCode::LoopCollapsedEdgeOmitted.kind()
+            && loss.message.contains(id)));
+    }
     let kept = written(&cube_with_a_collapsed_edge(Ring::BetweenVertices));
     assert_ne!(
         kept, plain,

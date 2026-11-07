@@ -193,6 +193,8 @@ pub(crate) enum StepLossCode {
     BodyWithoutProductRepresentation,
     /// Solid and sheet shells do not retain wire members within the shell.
     SurfaceShellWireTopologyOmitted,
+    /// A mixed surface and wire region was split into separate STEP items.
+    MixedRegionSplit,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
     /// Tessellation feature-edge classification is not represented.
@@ -303,6 +305,8 @@ pub(crate) enum StepLossCode {
     AppearanceBindingBodyFallback,
     /// Source attribute records were not written.
     SourceAttributeNotWritten,
+    /// A generic attribute target was written as a typed STEP target.
+    SourceAttributeTargetNormalized,
     /// A document timestamp uses STEP's extended syntax.
     TimestampNormalized,
     /// Procedural definitions were reduced to STEP carriers.
@@ -373,6 +377,10 @@ pub(crate) enum StepLossCode {
     /// A coedge was not emitted as a loop member because its loop was
     /// unwritten or collapsed to a vertex.
     CoedgeLoopMemberUnwritten,
+    /// A written coedge lost a radial neighbor.
+    CoedgeRadialNeighborUnwritten,
+    /// A degenerate edge was removed from a loop with other edges.
+    LoopCollapsedEdgeOmitted,
     /// A loop cannot be ordered because a coedge occurs more than once.
     LoopDuplicateCoedge,
     /// A loop cannot be ordered because a coedge is missing.
@@ -505,6 +513,7 @@ impl StepLossCode {
         Self::WireShellNoWritableEdges,
         Self::BodyWithoutProductRepresentation,
         Self::SurfaceShellWireTopologyOmitted,
+        Self::MixedRegionSplit,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
         Self::TessellationCornerNormals,
@@ -559,6 +568,7 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
+        Self::SourceAttributeTargetNormalized,
         Self::TimestampNormalized,
         Self::ProceduralReducedToCarrier,
         Self::ProceduralCurveCacheToleranceOmitted,
@@ -592,6 +602,8 @@ impl StepLossCode {
         Self::LoopEdgeNotWritable,
         Self::LoopNoWritableEdges,
         Self::CoedgeLoopMemberUnwritten,
+        Self::CoedgeRadialNeighborUnwritten,
+        Self::LoopCollapsedEdgeOmitted,
         Self::LoopDuplicateCoedge,
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
@@ -712,6 +724,7 @@ impl StepLossCode {
             Self::HiddenPmiVisibilityUnsupported => "pmi.hidden-visibility-unsupported",
             Self::BodyWithoutProductRepresentation => "product.body-without-representation",
             Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
+            Self::MixedRegionSplit => "topology.mixed-region-split",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::WireShellNoWritableEdges => "topology.wire-shell-no-writable-edges",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
@@ -770,6 +783,7 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
+            Self::SourceAttributeTargetNormalized => "attribute.target-normalized",
             Self::TimestampNormalized => "attribute.timestamp-normalized",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::ProceduralCurveCacheToleranceOmitted => {
@@ -809,6 +823,8 @@ impl StepLossCode {
             Self::LoopEdgeNotWritable => "topology.loop-edge-not-writable",
             Self::LoopNoWritableEdges => "topology.loop-no-writable-edges",
             Self::CoedgeLoopMemberUnwritten => "topology.coedge-loop-member-unwritten",
+            Self::CoedgeRadialNeighborUnwritten => "topology.coedge-radial-neighbor-unwritten",
+            Self::LoopCollapsedEdgeOmitted => "topology.loop-collapsed-edge-omitted",
             Self::LoopDuplicateCoedge => "topology.loop-duplicate-coedge",
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
@@ -896,6 +912,7 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
+            | Self::SourceAttributeTargetNormalized
             | Self::TimestampNormalized
             | Self::ProceduralReducedToCarrier
             | Self::ProceduralCurveCacheToleranceOmitted
@@ -967,6 +984,7 @@ impl StepLossCode {
             | Self::DrawingPresentationRecordsOmitted
             | Self::DisplayColorUnstyled
             | Self::SourceAttributeNotWritten
+            | Self::SourceAttributeTargetNormalized
             | Self::TimestampNormalized => LossTaxonomy::AttributesNotTransferred,
             Self::PlacementReferenceInferred => LossTaxonomy::CarrierAxisInferred,
             Self::ConflictingRepresentationUnits
@@ -990,6 +1008,7 @@ impl StepLossCode {
             | Self::WireShellNoWritableEdges
             | Self::BodyWithoutProductRepresentation
             | Self::SurfaceShellWireTopologyOmitted
+            | Self::MixedRegionSplit
             | Self::TessellationBodyLinkUnwritable
             | Self::TopologyUnreachableFromRegion
             | Self::RegionNoShellList
@@ -1017,6 +1036,8 @@ impl StepLossCode {
             | Self::LoopEdgeNotWritable
             | Self::LoopNoWritableEdges
             | Self::CoedgeLoopMemberUnwritten
+            | Self::CoedgeRadialNeighborUnwritten
+            | Self::LoopCollapsedEdgeOmitted
             | Self::LoopDuplicateCoedge
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
@@ -1213,6 +1234,7 @@ mod tests {
                 "topology.wire-shell-no-writable-edges",
                 "product.body-without-representation",
                 "topology.surface-shell-wire-omitted",
+                "topology.mixed-region-split",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
                 "tessellation.corner-normals",
@@ -1267,6 +1289,7 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
+                "attribute.target-normalized",
                 "attribute.timestamp-normalized",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.procedural-curve-cache-tolerance-omitted",
@@ -1300,6 +1323,8 @@ mod tests {
                 "topology.loop-edge-not-writable",
                 "topology.loop-no-writable-edges",
                 "topology.coedge-loop-member-unwritten",
+                "topology.coedge-radial-neighbor-unwritten",
+                "topology.loop-collapsed-edge-omitted",
                 "topology.loop-duplicate-coedge",
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",
