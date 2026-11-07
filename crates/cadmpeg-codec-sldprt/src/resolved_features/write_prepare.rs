@@ -1321,6 +1321,7 @@ fn generated_sketch_owner_id(
 /// Author validated native class/name identities without retained lane bytes.
 pub(crate) fn synthesize_feature_classes(
     native: &mut crate::native::SldprtNative,
+    features: Option<&[cadmpeg_ir::features::Feature]>,
 ) -> Result<std::collections::BTreeSet<String>, crate::writer::write_error::WriteError> {
     const LANE_ID: &str = "sldprt:generated:feature-class-input#0";
     native.feature_input_lanes.retain(|lane| lane.id != LANE_ID);
@@ -1344,11 +1345,76 @@ pub(crate) fn synthesize_feature_classes(
         feature.source_id = Some(source);
     }
     let mut payload = Vec::new();
+    let mut block_records = std::collections::HashSet::new();
+    let mut block_objects = std::collections::HashMap::new();
+    let mut archive_index = 1_u64;
+    if let Some(features) = features {
+        let record_ids = crate::history::write::features::feature_record_ids(features);
+        let records = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|record| (record.id.as_str(), record))
+            .collect::<std::collections::HashMap<_, _>>();
+        for feature in features {
+            let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+                block: Some(block),
+                placement: Some(placement),
+            }) = feature.evaluation.definition()
+            else {
+                continue;
+            };
+            let instance = records
+                .get(record_ids[&feature.id].as_str())
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("SLDPRT block instance record is absent")
+                })?;
+            let definition = records.get(record_ids[block].as_str()).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SLDPRT block definition record is absent")
+            })?;
+            let previous = block_objects.get(block).copied();
+            let value = previous.map_or(archive_index + 5, u64::from);
+            const BLOCK_REFERENCE: cadmpeg_ir::codec::write::CapacityField =
+                cadmpeg_ir::codec::write::CapacityField {
+                    field: "sketch_block.object_reference",
+                    limit: 0x7ffe,
+                    source: "docs/formats/sldprt.md §2.3: short CArchive object references",
+                    helper: "append_block_instance",
+                };
+            if value > BLOCK_REFERENCE.limit {
+                return Err(crate::writer::write_error::WriteError::Capacity {
+                    field: &BLOCK_REFERENCE,
+                    value,
+                });
+            }
+            let local_id = u16::try_from(value).map_err(|_| {
+                crate::writer::write_error::WriteError::Capacity {
+                    field: &BLOCK_REFERENCE,
+                    value,
+                }
+            })?;
+            append_block_instance(
+                &mut payload,
+                instance,
+                definition,
+                *placement,
+                local_id,
+                previous.is_some(),
+            )?;
+            block_objects.insert(block, local_id);
+            archive_index += if previous.is_some() { 6 } else { 10 };
+            block_records.insert(instance.id.clone());
+            block_records.insert(definition.id.clone());
+        }
+    }
     for feature in native
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
     {
+        if block_records.contains(&feature.id) {
+            continue;
+        }
         let Some(class) = &feature.input_class else {
             continue;
         };
@@ -1373,6 +1439,88 @@ pub(crate) fn synthesize_feature_classes(
     let written = lane.classes.iter().map(|class| class.id.clone()).collect();
     native.feature_input_lanes.push(lane);
     Ok(written)
+}
+
+fn append_block_instance(
+    payload: &mut Vec<u8>,
+    instance: &crate::records::Feature,
+    definition: &crate::records::Feature,
+    placement: cadmpeg_ir::transform::Transform,
+    local_id: u16,
+    reference: bool,
+) -> Result<(), crate::writer::write_error::WriteError> {
+    fn class(
+        payload: &mut Vec<u8>,
+        name: &str,
+    ) -> Result<(), crate::writer::write_error::WriteError> {
+        let length = crate::writer::field_u16(
+            &crate::writer::CAPACITY_FIELDS[28],
+            cadmpeg_core::decode::u64_from_index(name.len()),
+        )?;
+        payload.extend_from_slice(super::CLASS_MARKER);
+        payload.extend_from_slice(&length.to_le_bytes());
+        payload.extend_from_slice(name.as_bytes());
+        Ok(())
+    }
+    fn named(
+        payload: &mut Vec<u8>,
+        feature: &crate::records::Feature,
+    ) -> Result<(), crate::writer::write_error::WriteError> {
+        class(payload, "moNodeName_c")?;
+        let id = feature.source_value().ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("SLDPRT block feature has no source identity")
+        })?;
+        let mut name = Vec::new();
+        append_generated_object_name(&mut name, &feature.name, id)?;
+        payload.extend_from_slice(&name[2..]);
+        payload.extend_from_slice(&[0; 4]);
+        payload.extend_from_slice(&super::NAME_MARKER[2..]);
+        payload.push(0);
+        Ok(())
+    }
+    fn tail(payload: &mut Vec<u8>, local_id: u32) {
+        payload.extend_from_slice(&[0; 47]);
+        payload.extend_from_slice(&super::NAME_MARKER[2..]);
+        payload.push(0);
+        let start = payload.len();
+        payload.resize(start + 68, 0);
+        payload[start..start + 5].copy_from_slice(&[0, 0xff, 0xff, 0, 0]);
+        payload[start + 5] = 1;
+        payload[start + 6..start + 14].fill(0xff);
+        payload[start + 14..start + 18].copy_from_slice(&(-1.0_f32).to_le_bytes());
+        payload[start + 46..start + 50].fill(0xff);
+        payload[start + 54..start + 56].copy_from_slice(&2_u16.to_le_bytes());
+        if local_id != 0 {
+            payload[start + 58] = 2;
+        }
+        payload[start + 64..start + 68].copy_from_slice(&local_id.to_le_bytes());
+    }
+    class(payload, "moSketchBlockInst_c")?;
+    named(payload, instance)?;
+    payload.extend_from_slice(&[0; 6]);
+    payload.extend_from_slice(&1_u16.to_le_bytes());
+    if reference {
+        payload.extend_from_slice(&local_id.to_le_bytes());
+    } else {
+        class(payload, "moSketchBlockDef_c")?;
+        named(payload, definition)?;
+        payload.extend_from_slice(&[0; 8]);
+        tail(payload, 0);
+        payload.extend_from_slice(&[0; 37]);
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+    }
+    let trailer = payload.len();
+    payload.resize(trailer + 31, 0);
+    payload[trailer + 3] = 2;
+    tail(payload, u32::from(local_id));
+    payload.extend_from_slice(&[0; 18]);
+    payload.extend_from_slice(&[0, 0, 1, 0]);
+    class(payload, "moAbsolutePoint_c")?;
+    for row in placement.affine_rows() {
+        payload.extend_from_slice(&(row[3] * 0.001).to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 160]);
+    Ok(())
 }
 
 fn source_less_lanes(
