@@ -22,6 +22,26 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_surface_stitch_keeps_its_input_and_gap() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_surface_stitch.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let (written, mut report) =
+        super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterDesignRecordsOmitted.kind()));
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        decoded.ir(),
+        written.ir(),
+    );
+}
+
+#[test]
 fn source_less_remove_body_keeps_group_without_untyped_member() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_remove_body.f3d");
     let decoded = F3dCodec
