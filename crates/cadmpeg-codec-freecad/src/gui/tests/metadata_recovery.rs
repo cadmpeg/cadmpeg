@@ -163,11 +163,11 @@ fn material_list_without_shape_keeps_each_appearance_without_bindings() {
 }
 
 #[test]
-fn missing_archive_tail_reports_unavailable_body_visibility() {
+fn missing_archive_tail_reports_unavailable_body_style() {
     use cadmpeg_test_support::zip_fixture::{self, RawEntry};
     let document = b"<Document SchemaVersion='4' FileVersion='1'><Objects Count='1'><Object name='Thing' type='Part::Feature'/></Objects><ObjectData Count='1'><Object name='Thing'><Properties Count='1'><Property name='Shape' type='Part::PropertyPartShape'><Part file='shape.brp'/></Property></Properties></Object></ObjectData></Document>";
     let shape = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 1\nVe 0.001 0 0 0 0 0 1001000 *\n+1 0 *";
-    let gui = b"<Document SchemaVersion='1'><ViewProviderData Count='1'><ViewProvider name='Thing'><Properties Count='1'><Property name='Visibility' type='App::PropertyBool'><Bool value='false'/></Property></Properties></ViewProvider></ViewProviderData></Document>";
+    let gui = b"<Document SchemaVersion='1'><ViewProviderData Count='1'><ViewProvider name='Thing'><Properties Count='2'><Property name='Visibility' type='App::PropertyBool'><Bool value='false'/></Property><Property name='ShapeColor' type='App::PropertyColor'><PropertyColor value='4278190335'/></Property></Properties></ViewProvider></ViewProviderData></Document>";
     let source = zip_fixture::archive(&[
         RawEntry::stored("Document.xml", document),
         RawEntry::stored("shape.brp", shape),
@@ -177,6 +177,10 @@ fn missing_archive_tail_reports_unavailable_body_visibility() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(full.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(
+        full.ir().model.bodies[0].color,
+        Some(cadmpeg_ir::topology::Color::from_rgba8(255, 0, 0, 255))
+    );
     let name = source
         .windows(b"GuiDocument.xml".len())
         .position(|window| window == b"GuiDocument.xml")
@@ -187,6 +191,7 @@ fn missing_archive_tail_reports_unavailable_body_visibility() {
         .unwrap();
     let body = &cut.ir().model.bodies[0];
     assert!(body.visible.is_none());
+    assert!(body.color.is_none());
     assert!(cut
         .report()
         .losses
@@ -196,6 +201,15 @@ fn missing_archive_tail_reports_unavailable_body_visibility() {
             .dropped_fields
             .iter()
             .any(|field| field.record == body.id.as_str() && field.field == "visible")));
+    assert!(cut
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .any(|loss| loss
+            .dropped_fields
+            .iter()
+            .any(|field| field.record == body.id.as_str() && field.field == "color")));
 }
 
 #[test]
