@@ -175,7 +175,17 @@ That GROUP instance precedes the PMARK section. If each FACE map entry uses
 the latest matching instance before the map, the resulting 34 FACE node IDs
 equal the primary GROUP's members. The later map after PMARK 6089 names GROUP
 2437 and carries no instance offset to select one of its four revisions. The
-action on the members remains unresolved.
+visible `previous` targets of all four revisions link back to XMT 2437, so
+reciprocity does not select one revision.
+
+The primary solid has 139 faces; the STEP twin has 120. GROUP 2562's 34
+members are primary-solid faces. Removing them leaves 105. Four older GROUPs
+contain 15 distinct faces outside GROUP 2562, but all 15 are already in the
+primary solid. Adding them after that removal leaves the face count at 105.
+The next serialized PMARK, 5899, is the graph predecessor of PMARK 5898. It
+has 35 deleted nodes, the sum of those 34 faces and one GROUP record. The map
+has 1090 entries, equal to PMARK 5898's new-node count. The association of that
+map with a delta edge remains unresolved.
 The counts of map entries and typed PMARK-section instances can differ from
 the adjacent PMARK's new-node and deleted-node counts in closed sections.
 
