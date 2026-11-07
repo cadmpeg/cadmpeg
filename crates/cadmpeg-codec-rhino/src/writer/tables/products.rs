@@ -196,49 +196,39 @@ fn occurrence_written(ir: &CadIr, graph: &AssemblyGraph<'_>, occurrence: &Occurr
             .is_ok_and(|transform| transform.is_some())
 }
 
-fn admitted_occurrences(ir: &CadIr) -> Result<Vec<Occurrence>, AssemblyGraphError> {
+fn with_occurrence_graph<R>(ir: &CadIr, use_graph: impl FnOnce(&AssemblyGraph<'_>) -> R) -> R {
     let mut occurrences = ir.model.occurrences.clone();
     loop {
-        match AssemblyGraph::new(&occurrences) {
-            Ok(_) => return Ok(occurrences),
-            Err(AssemblyGraphError::Transform { occurrence, .. }) => {
-                let Some(row) = occurrences.iter_mut().find(|row| row.id == occurrence) else {
-                    return Ok(occurrences);
-                };
-                if row.transform.is_none() {
-                    return Ok(occurrences);
-                }
-                row.transform = None;
-            }
-            Err(
-                AssemblyGraphError::DuplicateOccurrence(id) | AssemblyGraphError::ParentCycle(id),
-            ) => {
-                occurrences.retain(|row| row.id != id);
-            }
-            Err(AssemblyGraphError::MissingParent { occurrence, .. }) => {
-                occurrences.retain(|row| row.id != occurrence);
-            }
+        let error = match AssemblyGraph::new(&occurrences) {
+            Ok(graph) => return use_graph(&graph),
+            Err(error) => error,
+        };
+        let before = occurrences.len();
+        let id = match error {
+            AssemblyGraphError::Transform { occurrence, .. }
+            | AssemblyGraphError::MissingParent { occurrence, .. } => occurrence,
+            AssemblyGraphError::DuplicateOccurrence(id) | AssemblyGraphError::ParentCycle(id) => id,
+        };
+        occurrences.retain(|row| row.id != id);
+        if occurrences.len() == before {
+            occurrences.clear();
         }
     }
 }
 
 /// Definitions named by a writable occurrence decode with placed members.
 pub(in crate::writer) fn referenced_definitions(ir: &CadIr) -> BTreeSet<String> {
-    let Ok(occurrences) = admitted_occurrences(ir) else {
-        return BTreeSet::new();
-    };
-    let Ok(graph) = AssemblyGraph::new(&occurrences) else {
-        return BTreeSet::new();
-    };
-    ir.model
-        .occurrences
-        .iter()
-        .filter(|occurrence| occurrence_written(ir, &graph, occurrence))
-        .filter_map(|occurrence| match &occurrence.prototype {
-            PrototypeReference::Local { definition } => Some(definition.as_str().to_owned()),
-            _ => None,
-        })
-        .collect()
+    with_occurrence_graph(ir, |graph| {
+        ir.model
+            .occurrences
+            .iter()
+            .filter(|occurrence| occurrence_written(ir, graph, occurrence))
+            .filter_map(|occurrence| match &occurrence.prototype {
+                PrototypeReference::Local { definition } => Some(definition.as_str().to_owned()),
+                _ => None,
+            })
+            .collect()
+    })
 }
 
 pub(in crate::writer) fn definition_written(
@@ -349,113 +339,113 @@ pub(in crate::writer) fn definitions(
     written_bodies: &std::collections::BTreeSet<String>,
     version: crate::RhinoArchiveVersion,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let occurrences = admitted_occurrences(ir).map_err(CodecError::malformed)?;
-    let graph = AssemblyGraph::new(&occurrences).map_err(CodecError::malformed)?;
-    let referenced = referenced_definitions(ir);
-    let mut result = Vec::new();
-    for (ordinal, definition) in ir.model.product_definitions.iter().enumerate() {
-        if !definition_written(ir, &referenced, definition) {
-            continue;
-        }
-        let native = definition
-            .native_ref
-            .as_deref()
-            .and_then(|id| {
-                records(ir, "product_definitions")
-                    .iter()
-                    .find(|record| record.id() == id)
-            })
-            .map(cadmpeg_ir::NativeRecord::fields)
-            .transpose()?;
-        let members = definition
-            .bodies
-            .iter()
-            .filter(|body| written_bodies.contains(body.as_str()))
-            .map(|body| neutral_object_uuid(body.as_str()))
-            .chain(children(ir, &graph, definition).iter().map(|occurrence| {
-                occurrence_uuid(ir, occurrence.id.as_str())
-                    .unwrap_or_else(|| neutral_object_uuid(occurrence.id.as_str()))
-            }))
-            .collect::<Vec<_>>();
-        if version != crate::RhinoArchiveVersion::V5 {
-            let index = match native
-                .as_ref()
-                .and_then(|fields| fields.get("archive_index"))
-                .and_then(Value::as_i64)
-            {
-                Some(value) => match i32::try_from(value) {
-                    Ok(index) => index,
-                    Err(_) => wire_index(ordinal)?,
-                },
-                None => wire_index(ordinal)?,
-            };
-            result.push(modern_definition(
-                definition,
-                index,
-                &members,
-                native.as_ref(),
-            )?);
-            continue;
-        }
-        let mut payload = vec![0x16];
-        payload.extend(product_uuid(ir, definition));
-        payload.extend(wire_index(members.len())?.to_le_bytes());
-        for member in members {
-            payload.extend(member);
-        }
-        payload.extend(utf16(
-            definition
-                .label
+    with_occurrence_graph(ir, |graph| {
+        let referenced = referenced_definitions(ir);
+        let mut result = Vec::new();
+        for (ordinal, definition) in ir.model.product_definitions.iter().enumerate() {
+            if !definition_written(ir, &referenced, definition) {
+                continue;
+            }
+            let native = definition
+                .native_ref
                 .as_deref()
-                .or(definition.source_name.as_deref())
-                .unwrap_or(""),
-        )?);
-        payload.extend(utf16(definition.description.as_deref().unwrap_or(""))?);
-        for name in ["url", "url_tag"] {
-            payload.extend(utf16(
-                native
+                .and_then(|id| {
+                    records(ir, "product_definitions")
+                        .iter()
+                        .find(|record| record.id() == id)
+                })
+                .map(cadmpeg_ir::NativeRecord::fields)
+                .transpose()?;
+            let members = definition
+                .bodies
+                .iter()
+                .filter(|body| written_bodies.contains(body.as_str()))
+                .map(|body| neutral_object_uuid(body.as_str()))
+                .chain(children(ir, graph, definition).iter().map(|occurrence| {
+                    occurrence_uuid(ir, occurrence.id.as_str())
+                        .unwrap_or_else(|| neutral_object_uuid(occurrence.id.as_str()))
+                }))
+                .collect::<Vec<_>>();
+            if version != crate::RhinoArchiveVersion::V5 {
+                let index = match native
                     .as_ref()
-                    .and_then(|fields| fields.get(name))
-                    .and_then(Value::as_str)
+                    .and_then(|fields| fields.get("archive_index"))
+                    .and_then(Value::as_i64)
+                {
+                    Some(value) => match i32::try_from(value) {
+                        Ok(index) => index,
+                        Err(_) => wire_index(ordinal)?,
+                    },
+                    None => wire_index(ordinal)?,
+                };
+                result.push(modern_definition(
+                    definition,
+                    index,
+                    &members,
+                    native.as_ref(),
+                )?);
+                continue;
+            }
+            let mut payload = vec![0x16];
+            payload.extend(product_uuid(ir, definition));
+            payload.extend(wire_index(members.len())?.to_le_bytes());
+            for member in members {
+                payload.extend(member);
+            }
+            payload.extend(utf16(
+                definition
+                    .label
+                    .as_deref()
+                    .or(definition.source_name.as_deref())
                     .unwrap_or(""),
             )?);
-        }
-        unset_bounds(&mut payload);
-        payload.extend(0u32.to_le_bytes());
-        payload.extend(utf16("")?);
-        payload.extend([0; 48]);
-        let (unit_system, meters_per_unit, units) = definition_units(native.as_ref())?;
-        payload.extend(unit_system.to_le_bytes());
-        payload.extend(meters_per_unit.to_le_bytes());
-        payload.push(0);
-        let child_start = payload.len();
-        payload.extend(anonymous(1, 0, &units)?);
-        let child_end = payload.len();
-        payload.extend(0i32.to_le_bytes());
-        payload.extend(0u32.to_le_bytes());
-        let direct = [&payload[..child_start], &payload[child_end..]].concat();
-        result.push(crc_chunk_with_direct(
-            0x2000_8076,
-            &class_wrapper_with_direct(DEFINITION_CLASS, &payload, &direct)?,
-            &[],
-        )?);
-    }
-    let mut external_ids = BTreeSet::new();
-    for occurrence in &ir.model.occurrences {
-        if !occurrence_written(ir, &graph, occurrence) {
-            continue;
-        }
-        if let Some(external) = external_definition(ir, &graph, occurrence) {
-            if external_ids.insert(external.uuid) {
-                result.push(linked_definition(
-                    external,
-                    wire_index(result.len())?,
-                    version,
+            payload.extend(utf16(definition.description.as_deref().unwrap_or(""))?);
+            for name in ["url", "url_tag"] {
+                payload.extend(utf16(
+                    native
+                        .as_ref()
+                        .and_then(|fields| fields.get(name))
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
                 )?);
             }
+            unset_bounds(&mut payload);
+            payload.extend(0u32.to_le_bytes());
+            payload.extend(utf16("")?);
+            payload.extend([0; 48]);
+            let (unit_system, meters_per_unit, units) = definition_units(native.as_ref())?;
+            payload.extend(unit_system.to_le_bytes());
+            payload.extend(meters_per_unit.to_le_bytes());
+            payload.push(0);
+            let child_start = payload.len();
+            payload.extend(anonymous(1, 0, &units)?);
+            let child_end = payload.len();
+            payload.extend(0i32.to_le_bytes());
+            payload.extend(0u32.to_le_bytes());
+            let direct = [&payload[..child_start], &payload[child_end..]].concat();
+            result.push(crc_chunk_with_direct(
+                0x2000_8076,
+                &class_wrapper_with_direct(DEFINITION_CLASS, &payload, &direct)?,
+                &[],
+            )?);
         }
-    }
-    Ok(result)
+        let mut external_ids = BTreeSet::new();
+        for occurrence in &ir.model.occurrences {
+            if !occurrence_written(ir, graph, occurrence) {
+                continue;
+            }
+            if let Some(external) = external_definition(ir, graph, occurrence) {
+                if external_ids.insert(external.uuid) {
+                    result.push(linked_definition(
+                        external,
+                        wire_index(result.len())?,
+                        version,
+                    )?);
+                }
+            }
+        }
+        Ok(result)
+    })
 }
 
 fn modern_definition(
@@ -615,9 +605,8 @@ pub(in crate::writer) fn references(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
 ) -> Result<ReferenceExport, CodecError> {
-    let occurrences = admitted_occurrences(ir).map_err(CodecError::malformed)?;
-    let graph = AssemblyGraph::new(&occurrences).map_err(CodecError::malformed)?;
-    let mut losses = ir
+    with_occurrence_graph(ir, |graph| {
+        let mut losses = ir
         .model
         .occurrences
         .iter()
@@ -629,130 +618,131 @@ pub(in crate::writer) fn references(
             ))
         })
         .collect::<Vec<_>>();
-    let mut result = Vec::new();
-    let mut written = std::collections::BTreeSet::new();
-    let mut selected = ir
-        .model
-        .occurrences
-        .iter()
-        .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-        .collect::<Vec<_>>();
-    for definition in &ir.model.product_definitions {
-        selected.extend(children(ir, &graph, definition));
-    }
-    selected.sort_by(|left, right| left.id.cmp(&right.id));
-    selected.dedup_by(|left, right| left.id == right.id);
-    for occurrence in selected {
-        if graph.effective_transform(&occurrence.id).is_none() {
-            continue;
+        let mut result = Vec::new();
+        let mut written = std::collections::BTreeSet::new();
+        let mut selected = ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .collect::<Vec<_>>();
+        for definition in &ir.model.product_definitions {
+            selected.extend(children(ir, graph, definition));
         }
-        let definition = match &occurrence.prototype {
-            PrototypeReference::Local { definition } => match ir
-                .model
-                .product_definitions
-                .iter()
-                .find(|row| row.id == *definition)
-            {
-                Some(row) => product_uuid(ir, row),
-                None => {
-                    losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                        "occurrence {} omitted: its prototype does not resolve to a held definition",
-                        occurrence.id
-                    )));
-                    continue;
-                }
-            },
-            PrototypeReference::External { .. } => {
-                match external_definition(ir, &graph, occurrence) {
-                    Some(external) => {
-                        losses.push(
-                            cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable
-                                .note(format!(
-                        "external occurrence {} uses an unavailable linked-file checksum",
-                        occurrence.id
-                    )),
-                        );
-                        external.uuid
-                    }
+        selected.sort_by(|left, right| left.id.cmp(&right.id));
+        selected.dedup_by(|left, right| left.id == right.id);
+        for occurrence in selected {
+            if graph.effective_transform(&occurrence.id).is_none() {
+                continue;
+            }
+            let definition = match &occurrence.prototype {
+                PrototypeReference::Local { definition } => match ir
+                    .model
+                    .product_definitions
+                    .iter()
+                    .find(|row| row.id == *definition)
+                {
+                    Some(row) => product_uuid(ir, row),
                     None => {
                         losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                        "occurrence {} omitted: its external prototype has no unique 3DM path and UUID",
+                        "occurrence {} omitted: its prototype does not resolve to a held definition",
                         occurrence.id
                     )));
                         continue;
                     }
+                },
+                PrototypeReference::External { .. } => {
+                    match external_definition(ir, graph, occurrence) {
+                        Some(external) => {
+                            losses.push(
+                                cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable
+                                    .note(format!(
+                        "external occurrence {} uses an unavailable linked-file checksum",
+                        occurrence.id
+                    )),
+                            );
+                            external.uuid
+                        }
+                        None => {
+                            losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                        "occurrence {} omitted: its external prototype has no unique 3DM path and UUID",
+                        occurrence.id
+                    )));
+                            continue;
+                        }
+                    }
                 }
-            }
-            PrototypeReference::Unresolved {} => {
-                losses.push(
-                    crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                PrototypeReference::Unresolved {} => {
+                    losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(
+                        format!(
                     "occurrence {} omitted: its prototype does not resolve to a held definition",
                     occurrence.id
-                )),
-                );
-                continue;
-            }
-        };
-        let mut payload = vec![0x10];
-        payload.extend(definition);
-        let transform = match occurrence.effective_transform() {
-            Ok(Some(transform)) => transform,
-            Ok(None) => {
-                losses.push(
-                    crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                        "occurrence {} omitted because its own placement is unknown",
-                        occurrence.id
-                    )),
-                );
-                continue;
-            }
-            Err(error) => {
-                losses.push(
-                    crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                ),
+                    ));
+                    continue;
+                }
+            };
+            let mut payload = vec![0x10];
+            payload.extend(definition);
+            let transform = match occurrence.effective_transform() {
+                Ok(Some(transform)) => transform,
+                Ok(None) => {
+                    losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(
+                        format!(
+                            "occurrence {} omitted because its own placement is unknown",
+                            occurrence.id
+                        ),
+                    ));
+                    continue;
+                }
+                Err(error) => {
+                    losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(
+                        format!(
                         "occurrence {} omitted because its placement cannot be composed: {error}",
                         occurrence.id
-                    )),
-                );
-                continue;
+                    ),
+                    ));
+                    continue;
+                }
+            };
+            for value in transform.rows().iter().flatten() {
+                payload.extend(value.to_le_bytes());
             }
-        };
-        for value in transform.rows().iter().flatten() {
-            payload.extend(value.to_le_bytes());
-        }
-        unset_bounds(&mut payload);
-        let display = crate::writer::presentation::display(
-            ir,
-            &cadmpeg_ir::appearance::AppearanceTarget::Occurrence(occurrence.id.clone()),
-            None,
-        );
-        let no_attributes = matches!(occurrence.parent, OccurrenceParent::Root {})
-            && occurrence_uuid(ir, occurrence.id.as_str()) == Some([0; 16])
-            && display.name.is_none()
-            && display.color.is_none()
-            && display.visible.is_none()
-            && super::layer_index(ir, occurrence.id.as_str())? == -1
-            && materials
-                .material_index(ir, occurrence.id.as_str())
-                .is_none();
-        result.push(if no_attributes {
-            framed_object_record(0x1000, REFERENCE_CLASS, &payload, None, None)?
-        } else {
-            attributed_object_record(
+            unset_bounds(&mut payload);
+            let display = crate::writer::presentation::display(
                 ir,
-                0x1000,
-                REFERENCE_CLASS,
-                &payload,
-                occurrence.id.as_str(),
-                display,
-                materials,
-            )?
-        });
-        written.insert(occurrence.id.to_string());
-    }
-    Ok(ReferenceExport {
-        records: result,
-        losses,
-        written,
+                &cadmpeg_ir::appearance::AppearanceTarget::Occurrence(occurrence.id.clone()),
+                None,
+            );
+            let no_attributes = matches!(occurrence.parent, OccurrenceParent::Root {})
+                && occurrence_uuid(ir, occurrence.id.as_str()) == Some([0; 16])
+                && display.name.is_none()
+                && display.color.is_none()
+                && display.visible.is_none()
+                && super::layer_index(ir, occurrence.id.as_str())? == -1
+                && materials
+                    .material_index(ir, occurrence.id.as_str())
+                    .is_none();
+            result.push(if no_attributes {
+                framed_object_record(0x1000, REFERENCE_CLASS, &payload, None, None)?
+            } else {
+                attributed_object_record(
+                    ir,
+                    0x1000,
+                    REFERENCE_CLASS,
+                    &payload,
+                    occurrence.id.as_str(),
+                    display,
+                    materials,
+                )?
+            });
+            written.insert(occurrence.id.to_string());
+        }
+        Ok(ReferenceExport {
+            records: result,
+            losses,
+            written,
+        })
     })
 }
 
