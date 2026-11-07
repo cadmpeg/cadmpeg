@@ -166,6 +166,7 @@ pub(crate) enum F3dLossCode {
     HistoryOnlyBodyOmitted,
     /// Reference-image timeline objects retain native Canvas records.
     ReferenceImageNativeRetained,
+    ReferenceImageFlagAssumed,
     /// Decal timeline objects retain native image and mapping records.
     DecalNativeRetained,
     /// Source parametric edge references marked lost have no independent proof.
@@ -336,6 +337,8 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeExtentNative,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
+    /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
+    FeatureMoveTransformAssumed,
     /// A standard `Loft` scope stores a non-null marked reference whose target and setting are unresolved.
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
@@ -344,8 +347,14 @@ pub(crate) enum F3dLossCode {
     FeatureSurfaceExtendMethodUnresolved,
     /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
     FeatureSurfaceExtendDistanceNonpositive,
+    /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
+    FeatureThickenFlagsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
+    /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
+    FeatureTrimCellTableNative,
+    /// `SurfaceTrim` group members without a decoded operand record project by group role.
+    FeatureTrimMemberTypeAssumed,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -590,6 +599,7 @@ impl F3dLossCode {
         Self::DesignBodyBindingUnresolved,
         Self::HistoryOnlyBodyOmitted,
         Self::ReferenceImageNativeRetained,
+        Self::ReferenceImageFlagAssumed,
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
@@ -673,11 +683,15 @@ impl F3dLossCode {
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureRevolveLayoutAssumed,
+        Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSurfaceExtendDistanceNonpositive,
+        Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
+        Self::FeatureTrimCellTableNative,
+        Self::FeatureTrimMemberTypeAssumed,
         Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -842,6 +856,7 @@ impl F3dLossCode {
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
             Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
+            Self::ReferenceImageFlagAssumed => "appearance.reference-image-flag-assumed",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
@@ -939,6 +954,7 @@ impl F3dLossCode {
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
+            Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureSurfaceExtendMethodUnresolved => {
@@ -947,7 +963,10 @@ impl F3dLossCode {
             Self::FeatureSurfaceExtendDistanceNonpositive => {
                 "feature.surface-extend-distance-nonpositive"
             }
+            Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
+            Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
+            Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
             }
@@ -1066,7 +1085,8 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveUnprofiledSelected
-            | Self::ThreadLiveFaceUnproven => Severity::Info,
+            | Self::ThreadLiveFaceUnproven
+            | Self::ReferenceImageFlagAssumed => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -1216,11 +1236,15 @@ impl F3dLossCode {
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureTrimCellTableNative
+            | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1419,11 +1443,15 @@ impl F3dLossCode {
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureTrimCellTableNative
+            | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1470,6 +1498,7 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ReferenceImageNativeRetained
+            | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
             | Self::MeshAttributeNotTransferred
@@ -1627,6 +1656,7 @@ mod tests {
                 "design.body-binding-unresolved",
                 "design.history-only-body-omitted",
                 "appearance.reference-image-native",
+                "appearance.reference-image-flag-assumed",
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
@@ -1710,11 +1740,15 @@ mod tests {
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.revolve-layout-assumed",
+                "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
                 "feature.surface-extend-method-unresolved",
                 "feature.surface-extend-distance-nonpositive",
+                "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
+                "feature.trim-cell-table-native",
+                "feature.trim-member-type-assumed",
                 "feature.face-operand-fallback-contradicted",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
