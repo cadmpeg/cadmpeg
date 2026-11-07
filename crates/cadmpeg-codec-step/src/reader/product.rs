@@ -117,9 +117,6 @@ fn external_prototype(
             return None;
         }
         let object = text(3, losses)?;
-        if source.is_empty() {
-            return None;
-        }
         return Some((
             ExternalPrototype {
                 document: ExternalDocument::path(source.clone()),
