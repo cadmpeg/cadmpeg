@@ -208,6 +208,23 @@ fn move_face_decodes_both_prologues_and_refuses_broken_links() {
 }
 
 #[test]
+fn move_face_transform_can_be_the_first_reference() {
+    for marker_one in [true, false] {
+        let (bytes, mut scope, _) = move_face_fixture(marker_one);
+        let start = usize::try_from(scope.byte_offset()).unwrap();
+        let count = if marker_one { 131 } else { 127 };
+        lay_out_move_face(&mut scope, start, count, vec![71, 50, 60]);
+        let decoded = decoded_move_face(&bytes, &scope).unwrap();
+        assert_eq!(decoded.transform_record_index, 71);
+
+        for references in [vec![71, 60, 50], vec![60, 50, 71], vec![60, 71, 50]] {
+            lay_out_move_face(&mut scope, start, count, references);
+            assert!(decoded_move_face(&bytes, &scope).is_none());
+        }
+    }
+}
+
+#[test]
 fn move_face_transform_is_selected_by_its_reference_not_by_class_or_length() {
     let kind = DesignFeatureKind::MoveFace;
     for (class, length) in [("313", 256), ("396", 256), ("999", 300), ("433", 253)] {
