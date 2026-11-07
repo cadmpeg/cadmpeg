@@ -47,6 +47,18 @@ fn bare_curve_decodes_without_a_geometry_definition() {
 }
 
 #[test]
+fn malformed_bare_carriers_are_reported_without_inventing_geometry() {
+    let result = decode_inline("#1=CURVE(12);#2=SURFACE();");
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::DecodeWarning.kind()));
+}
+
+#[test]
 fn standalone_pcurve_retains_its_three_dimensional_curve() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
