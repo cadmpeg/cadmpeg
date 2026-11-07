@@ -1283,27 +1283,73 @@ fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
 }
 
 /// Decode the concatenated `<Attrib>` XML fragments named by the registry.
-fn attribute_names(
-    ctx: &DecodeContext<'_>,
+fn attribute_names<'a>(
+    ctx: &DecodeContext<'a>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    stream_name: &str,
     stream: Option<&MeshStream>,
 ) -> Result<std::collections::BTreeMap<String, RegisteredAttributeName>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let Some(stream) = stream else {
         return Ok(std::collections::BTreeMap::new());
     };
     require_layout(stream, StreamLayout::Byte)?;
-
-    let xml = std::str::from_utf8(&stream.bytes)
-        .map_err(|_| CodecError::malformed("paramesh attribute-name stream is not UTF-8"))?;
-    let body = xml.strip_prefix("<?xml version=\"1.0\"?>").ok_or_else(|| {
+    const DECLARATION: &[u8] = b"<?xml version=\"1.0\"?>";
+    const PREFIX: &[u8] = b"<Root>";
+    let body = stream.bytes.strip_prefix(DECLARATION).ok_or_else(|| {
         CodecError::malformed("paramesh attribute-name stream has no XML declaration")
     })?;
-    let wrapped = format!("<Root>{body}</Root>");
-    let document =
-        ctx.parse_xml(&wrapped, "parse paramesh XML tree")
-            .map_err(|error| match error {
-                CodecError::ResourceLimit(_) => error,
-                _ => CodecError::malformed("paramesh attribute-name stream is not XML"),
+    let original = ctx.concat_views(&[View::over_retained(&stream.bytes)])?;
+    let wrapped = ctx.concat_views(&[
+        View::over_retained(PREFIX),
+        View::over_retained(body),
+        View::over_retained(b"</Root>"),
+    ])?;
+    let stream =
+        cadmpeg_ir::StreamName::try_from(stream_name.to_owned()).map_err(CodecError::malformed)?;
+    let source_extent = |start: usize, end: usize| {
+        let start = start
+            .checked_sub(PREFIX.len())?
+            .checked_add(DECLARATION.len())?;
+        let end = end
+            .checked_sub(PREFIX.len())?
+            .checked_add(DECLARATION.len())?;
+        original.child(start, end)
+    };
+    let xml_spec = |name: &str, extent: View<'_>| -> Result<PartSpec, CodecError> {
+        let id = cadmpeg_ir::ids::Identity::new(crate::ids::native_scoped_id(
+            stream_name,
+            "paramesh-xml-element",
+            format_args!("{name}-{}", extent.start()),
+        ))
+        .map_err(CodecError::malformed)?;
+        Ok(PartSpec::new("f3d.paramesh_xml_element")
+            .holding([cadmpeg_ir::document::ArenaClass::Model])
+            .in_stream(stream.clone())
+            .dropping(id))
+    };
+    let mut damaged = Vec::new();
+    let (_, document) = cadmpeg_core::decode::parse_xml_recovering(
+        ctx,
+        wrapped,
+        "paramesh attribute-name stream",
+        "scan paramesh XML elements",
+        "parse paramesh XML tree",
+        &CodecError::malformed,
+        |extent, name, _, _| {
+            let source = source_extent(extent.start(), extent.end())
+                .ok_or_else(|| CodecError::malformed("paramesh XML element escapes its stream"))?;
+            let spec = xml_spec(&String::from_utf8_lossy(name), source)?;
+            ctx.decode_part(parts, source, spec, |_| {
+                Err::<(), _>(CodecError::malformed(format_args!(
+                    "damaged ParaMesh XML element <{}>",
+                    String::from_utf8_lossy(name)
+                )))
             })?;
+            damaged.push((extent.start(), extent.end()));
+            Ok(())
+        },
+    )?;
     let root = document.root_element();
     if root.tag_name().name() != "Root"
         || root.attributes().next().is_some()
@@ -1316,96 +1362,119 @@ fn attribute_names(
             "paramesh attribute-name stream has an invalid fragment envelope",
         ));
     }
-
     let mut names = std::collections::BTreeMap::new();
+    let mut given_up = !damaged.is_empty();
     for attribute in root.children().filter(roxmltree::Node::is_element) {
-        if attribute.tag_name().name() != "Attrib"
-            || attribute.attributes().next().is_some()
-            || attribute.children().any(|node| {
-                !node.is_element()
-                    && (!node.is_text() || node.text().is_some_and(|text| !text.trim().is_empty()))
-            })
+        let range = attribute.range();
+        if damaged
+            .iter()
+            .any(|(start, end)| range.start <= *start && *end <= range.end)
         {
-            return Err(CodecError::malformed(
-                "paramesh attribute-name stream has an undefined element",
-            ));
+            continue;
         }
-        let mut children = attribute.children().filter(roxmltree::Node::is_element);
-        let (Some(triangle_name), Some(authored_name), None) =
-            (children.next(), children.next(), children.next())
-        else {
-            return Err(CodecError::malformed(
-                "paramesh attribute-name record does not have two members",
-            ));
-        };
-        if triangle_name.tag_name().name() != "TriName"
-            || authored_name.tag_name().name() != "AmtName"
-            || triangle_name.attributes().next().is_some()
-            || authored_name.attributes().next().is_some()
-        {
-            return Err(CodecError::malformed(
-                "paramesh attribute-name record has an undefined member",
-            ));
-        }
-        if triangle_name.children().any(|node| !node.is_text())
-            || authored_name.children().any(|node| !node.is_text())
-        {
-            return Err(CodecError::malformed(
-                "paramesh attribute-name record member is not text",
-            ));
-        }
-        let triangle_name = triangle_name
-            .text()
-            .ok_or_else(|| CodecError::malformed("paramesh TriName is empty"))?;
-        let authored_name = authored_name
-            .text()
-            .filter(|name| !name.is_empty())
-            .ok_or_else(|| CodecError::malformed("paramesh AmtName is empty"))?;
-        if !triangle_name.is_ascii() {
-            return Err(CodecError::malformed("paramesh TriName is not ASCII"));
-        }
-        let guid_at = triangle_name
-            .len()
-            .checked_sub(36)
-            .ok_or_else(|| CodecError::malformed("paramesh TriName has no channel GUID"))?;
-        let (prefix, resource_guid) = triangle_name.split_at(guid_at);
-        let kind = match prefix {
-            "color_tt" => AttributeNameKind::Color,
-            "grp_tt" => AttributeNameKind::Group,
-            "tco_tt" => AttributeNameKind::TextureCoordinate,
-            _ => {
+        let extent = source_extent(range.start, range.end)
+            .ok_or_else(|| CodecError::malformed("paramesh XML element escapes its stream"))?;
+        let spec = xml_spec(attribute.tag_name().name(), extent)?;
+        let Some((key, name)) = ctx.decode_part(parts, extent, spec, |_| {
+            let (key, name) = parse_attribute_name(attribute)?;
+            if names.contains_key(&key) {
                 return Err(CodecError::malformed(
-                    "paramesh TriName has an undefined form",
-                ))
+                    "paramesh attribute-name stream repeats a channel GUID",
+                ));
             }
+            Ok((key, name))
+        })?
+        else {
+            given_up = true;
+            continue;
         };
-        if !crate::bytes::is_guid_hyphenated(resource_guid) {
-            return Err(CodecError::malformed(
-                "paramesh TriName has an undefined form",
-            ));
-        }
-        let mut key = resource_guid.to_owned();
-        key.make_ascii_uppercase();
-        if names.contains_key(&key) {
-            return Err(CodecError::malformed(
-                "paramesh attribute-name stream repeats a channel GUID",
-            ));
-        }
-        let authored_name = authored_name.to_owned();
-        names.insert(
-            key,
-            RegisteredAttributeName {
-                kind,
-                authored_name,
-            },
-        );
+        names.insert(key, name);
     }
-    if names.is_empty() {
+    if names.is_empty() && !given_up {
         return Err(CodecError::malformed(
             "paramesh attribute-name stream has no attribute records",
         ));
     }
     Ok(names)
+}
+
+fn parse_attribute_name(
+    attribute: roxmltree::Node<'_, '_>,
+) -> Result<(String, RegisteredAttributeName), CodecError> {
+    if attribute.tag_name().name() != "Attrib"
+        || attribute.attributes().next().is_some()
+        || attribute.children().any(|node| {
+            !node.is_element()
+                && (!node.is_text() || node.text().is_some_and(|text| !text.trim().is_empty()))
+        })
+    {
+        return Err(CodecError::malformed(
+            "paramesh attribute-name stream has an undefined element",
+        ));
+    }
+    let mut children = attribute.children().filter(roxmltree::Node::is_element);
+    let (Some(triangle_name), Some(authored_name), None) =
+        (children.next(), children.next(), children.next())
+    else {
+        return Err(CodecError::malformed(
+            "paramesh attribute-name record does not have two members",
+        ));
+    };
+    if triangle_name.tag_name().name() != "TriName"
+        || authored_name.tag_name().name() != "AmtName"
+        || triangle_name.attributes().next().is_some()
+        || authored_name.attributes().next().is_some()
+    {
+        return Err(CodecError::malformed(
+            "paramesh attribute-name record has an undefined member",
+        ));
+    }
+    if triangle_name.children().any(|node| !node.is_text())
+        || authored_name.children().any(|node| !node.is_text())
+    {
+        return Err(CodecError::malformed(
+            "paramesh attribute-name record member is not text",
+        ));
+    }
+    let triangle_name = triangle_name
+        .text()
+        .ok_or_else(|| CodecError::malformed("paramesh TriName is empty"))?;
+    let authored_name = authored_name
+        .text()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| CodecError::malformed("paramesh AmtName is empty"))?;
+    if !triangle_name.is_ascii() {
+        return Err(CodecError::malformed("paramesh TriName is not ASCII"));
+    }
+    let guid_at = triangle_name
+        .len()
+        .checked_sub(36)
+        .ok_or_else(|| CodecError::malformed("paramesh TriName has no channel GUID"))?;
+    let (prefix, resource_guid) = triangle_name.split_at(guid_at);
+    let kind = match prefix {
+        "color_tt" => AttributeNameKind::Color,
+        "grp_tt" => AttributeNameKind::Group,
+        "tco_tt" => AttributeNameKind::TextureCoordinate,
+        _ => {
+            return Err(CodecError::malformed(
+                "paramesh TriName has an undefined form",
+            ))
+        }
+    };
+    if !crate::bytes::is_guid_hyphenated(resource_guid) {
+        return Err(CodecError::malformed(
+            "paramesh TriName has an undefined form",
+        ));
+    }
+    let mut key = resource_guid.to_owned();
+    key.make_ascii_uppercase();
+    Ok((
+        key,
+        RegisteredAttributeName {
+            kind,
+            authored_name: authored_name.to_owned(),
+        },
+    ))
 }
 
 /// One f32 coordinate triple per vertex.
@@ -1851,6 +1920,8 @@ enum MeshChunkState {
 /// Decode one `.paramesh` container entry.
 pub(crate) fn decode_mesh_container(
     ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    stream_name: &str,
     bytes: &[u8],
 ) -> Result<MeshContainer, CodecError> {
     let header = ParamMeshHeader::parse(bytes)?;
@@ -1950,7 +2021,14 @@ pub(crate) fn decode_mesh_container(
             })
         })
         .transpose()?;
-    let attribute_names = attribute_names(ctx, attribute_name_stream)?;
+    let names_stream = format!(
+        "{stream_name}/{}",
+        registry
+            .attribute_name_stream
+            .as_deref()
+            .unwrap_or("attributes")
+    );
+    let attribute_names = attribute_names(ctx, parts, &names_stream, attribute_name_stream)?;
     let attributes = registry_attributes(
         message,
         &name_table,
@@ -2286,7 +2364,13 @@ mod tests {
     };
     use cadmpeg_core::CodecError;
     fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, CodecError> {
-        crate::test_support::with_decode_context(|ctx| super::decode_mesh_container(ctx, bytes))
+        crate::test_support::with_decode_context(|ctx| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            super::decode_mesh_container(ctx, &mut parts, "Synthetic.paramesh", bytes)
+        })
     }
     fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
         super::message_pack_name_table(bytes).map(|table| table.entries)
@@ -3099,7 +3183,7 @@ mod tests {
                  <AmtName>tid</AmtName></Attrib>"
             ),
         ] {
-            assert_malformed(decode_mesh_container(&container_with_registry(
+            let mesh = decode_mesh_container(&container_with_registry(
                 &TWO_TRIANGLE_VERTICES,
                 &TWO_TRIANGLE_CORNERS,
                 &registry,
@@ -3107,8 +3191,59 @@ mod tests {
                     ("r0", delta_descriptor(), terminal_delta_values(&[0, 2])),
                     ("names", byte_descriptor(), invalid_xml.into_bytes()),
                 ],
-            )));
+            ))
+            .unwrap();
+            assert!(mesh.attributes[0].authored_name.is_none());
         }
+    }
+
+    #[test]
+    fn damaged_paramesh_xml_element_keeps_sibling_attribute() {
+        const RESOURCE: &str = "2060d08b-7434-4786-9506-b0ee951bb9dc";
+        let mut registry = resource_channel_entry(
+            REGISTRY_TRIANGLE_CHANNEL,
+            1,
+            RESOURCE,
+            ELEMENT_TRIANGLE_DELTA,
+            "r0",
+        );
+        registry.extend(stream_property("attname.amt.autodesk", "names"));
+        let xml = format!("<?xml version=\"1.0\"?><Attrib><TriName>broken &bad;</TriName><AmtName>bad</AmtName></Attrib><Attrib><TriName>grp_tt{RESOURCE}</TriName><AmtName>tid</AmtName></Attrib>");
+        let damaged_at = xml.find("<TriName>").unwrap();
+        let bytes = container_with_registry(
+            &TWO_TRIANGLE_VERTICES,
+            &TWO_TRIANGLE_CORNERS,
+            &registry,
+            &[
+                ("r0", delta_descriptor(), terminal_delta_values(&[0, 2])),
+                ("names", byte_descriptor(), xml.into_bytes()),
+            ],
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let mesh =
+            super::decode_mesh_container(&ctx, &mut parts, "Synthetic.paramesh", &bytes).unwrap();
+        assert_eq!(mesh.attributes[0].authored_name.as_deref(), Some("tid"));
+        assert_eq!(mesh.texture_ids, Some(vec![0, 2]));
+        let (_, native, _, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        assert_eq!(
+            losses[0].dropped,
+            [crate::ids::native_scoped_id(
+                "Synthetic.paramesh/names",
+                "paramesh-xml-element",
+                format_args!("TriName-{damaged_at}"),
+            )]
+        );
     }
 
     /// A known vertex-domain channel must carry exactly one value per vertex.
@@ -3247,7 +3382,16 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_decompressed_bytes_total = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            assert_malformed(super::decode_mesh_container(ctx, &bytes));
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            assert_malformed(super::decode_mesh_container(
+                ctx,
+                &mut parts,
+                "Synthetic.paramesh",
+                &bytes,
+            ));
             assert!(ctx.resource_refusal().is_none());
         });
     }
