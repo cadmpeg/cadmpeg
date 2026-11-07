@@ -299,6 +299,40 @@ fn unplaced_external_references_round_trip_as_product_definition_references() {
 }
 
 #[test]
+fn external_reference_fixture_round_trip_adds_no_decode_warning() {
+    let codec = StepCodec::default();
+    let source = include_bytes!("../../../tests/fixtures/ap242_external_product_references.p21");
+    let first = codec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode source");
+    let mut bytes = Vec::new();
+    write_step(
+        first.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write source");
+    let after = codec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode output");
+    assert!(
+        after
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::StepLossCode::DecodeWarning.kind())
+            .all(|loss| first
+                .report()
+                .losses
+                .iter()
+                .any(|before| before.code == loss.code)),
+        "{:?}",
+        after.report().losses
+    );
+}
+
+#[test]
 fn writer_leaves_ambiguous_fallback_names_empty() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
