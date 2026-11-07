@@ -18,6 +18,18 @@ pub(crate) fn fixture(
     Vec<DesignRecordHeader>,
     Vec<DesignEntityHeader>,
 ) {
+    fixture_with_damaged_profile(count, None)
+}
+
+pub(crate) fn fixture_with_damaged_profile(
+    count: u32,
+    damaged_ordinal: Option<u32>,
+) -> (
+    Vec<u8>,
+    DesignParameterScope,
+    Vec<DesignRecordHeader>,
+    Vec<DesignEntityHeader>,
+) {
     let stream = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut bytes = Vec::new();
     let mut headers = Vec::new();
@@ -34,7 +46,11 @@ pub(crate) fn fixture(
         bytes.extend_from_slice(&1u32.to_le_bytes());
         lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
         lp_utf16(&mut bytes, &entity.to_string());
-        bytes.extend_from_slice(&[0; 94]);
+        bytes.extend_from_slice(if damaged_ordinal == Some(ordinal) {
+            &[0; 93]
+        } else {
+            &[0; 94]
+        });
         indexed_header(&mut bytes, *b"259", record);
         headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{start}"),

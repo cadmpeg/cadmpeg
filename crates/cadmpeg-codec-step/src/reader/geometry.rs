@@ -1037,6 +1037,11 @@ pub(super) fn decode(
         if record.simple_name() != Some("CURVE") {
             continue;
         }
+        if !matches!(record.parameters(), [Value::String(_)]) {
+            losses
+                .push(StepLossCode::DecodeWarning.note(format!("CURVE #{id} has an invalid name")));
+            continue;
+        }
         ir.model.curves.push(Curve {
             native_ref: None,
             parameter_range: None,
@@ -1742,6 +1747,12 @@ pub(super) fn decode(
 
     for (id, record) in exchange.entities("SURFACE") {
         if record.simple_name() != Some("SURFACE") {
+            continue;
+        }
+        if !matches!(record.parameters(), [Value::String(_)]) {
+            losses.push(
+                StepLossCode::DecodeWarning.note(format!("SURFACE #{id} has an invalid name")),
+            );
             continue;
         }
         ir.model.surfaces.push(Surface {

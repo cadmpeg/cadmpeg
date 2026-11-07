@@ -241,7 +241,7 @@ fn dimension_drawing_and_annotation_round_trip_together() {
 
 #[test]
 fn primitive_feature_and_shape_round_trip_together() {
-    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Box" name="Box" id="42"/></Objects><ObjectData Count="1"><Object name="Box"><Properties Count="5"><Property name="Label" type="App::PropertyString"><String value="Box"/></Property><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="4"/></Property><Property name="Height" type="App::PropertyLength"><Float value="5"/></Property><Property name="Shape" type="Part::PropertyPartShape"><Part file="Box.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Box" name="Box" id="42"/></Objects><ObjectData Count="1"><Object name="Box"><Properties Count="5"><Property name="Label" type="App::PropertyString"><String value="Box"/></Property><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="4"/></Property><Property name="Height" type="App::PropertyLength"><Float value="5"/></Property><Property name="Shape" type="Part::PropertyPartShape" status="128"><Part file="Box.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 1\nFa 0 0.001 1 0 1001000 *\n+1 0 *";
     let source = crate::test_support::test_archive::archive_entries(&[
         ("Document.xml", xml),
@@ -369,4 +369,59 @@ fn forward_dependency_keeps_source_declaration_order() {
             .ordinal
     };
     assert!(rank(output.ir(), "Driver") < rank(output.ir(), "Consumer"));
+}
+
+#[test]
+fn datum_placement_keeps_native_property_metadata() {
+    use cadmpeg_ir::features::{FeatureDatumPlaneFrame, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="PartDesign::Plane" name="Plane" id="1"/></Objects><ObjectData Count="1"><Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement" status="128"><PropertyPlacement Px="1.0" Py="2.0" Pz="3.0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object></ObjectData></Document>"#;
+    let bytes = crate::test_support::test_archive::archive(document);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let placement = |ir: &cadmpeg_ir::CadIr| {
+        ir.native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap()
+            .into_iter()
+            .find(|property| property.name == "Placement")
+            .unwrap()
+    };
+    assert_eq!(
+        serde_json::to_value(placement(input.ir())).unwrap(),
+        serde_json::to_value(placement(output.ir())).unwrap()
+    );
+    let frame = FeatureDatumPlaneFrame::new(
+        Point3::new(9.0, 2.0, 3.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .unwrap();
+    let mut edited = input.ir().clone();
+    edited.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+            frame,
+        }));
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(placement(output.ir()).values()[0].attributes["Px"], "9");
 }

@@ -2857,7 +2857,7 @@ impl<'a> Builder<'a> {
                 && (occurrence_products.contains_key(&occurrence.id)
                     || writable_external(occurrence))
                 && occurrence.effective_transform().is_ok_and(|transform| {
-                    transform.is_none_or(|transform| transform.is_proper_rigid())
+                    transform.is_none_or(|transform| geometry::is_similarity_transform(&transform))
                 })
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
@@ -2906,6 +2906,7 @@ impl<'a> Builder<'a> {
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
+        let mut mapped_occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
             let parent_product = match &occurrence.parent {
                 OccurrenceParent::Occurrence { occurrence: parent } => {
@@ -2935,6 +2936,11 @@ impl<'a> Builder<'a> {
                 }
             };
             let Some(frame) = transform.proper_rigid_frame() else {
+                if let Some(target) =
+                    geometry::transformation_operator(&mut self.emitter, transform)
+                {
+                    mapped_occurrence_placements.insert(occurrence.id.clone(), (from, target));
+                }
                 continue;
             };
             let rows = transform.rows();
@@ -2955,7 +2961,10 @@ impl<'a> Builder<'a> {
         }
         let required_representations: BTreeSet<_> = occurrences
             .iter()
-            .filter(|occurrence| occurrence_placements.contains_key(&occurrence.id))
+            .filter(|occurrence| {
+                occurrence_placements.contains_key(&occurrence.id)
+                    || mapped_occurrence_placements.contains_key(&occurrence.id)
+            })
             .filter_map(|occurrence| occurrence_products.get(&occurrence.id).cloned())
             .chain(representation_placements.keys().cloned())
             .collect();
@@ -3108,6 +3117,74 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
+        let occurrence_specific = matches!(
+            self.schema,
+            StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
+        ) && occurrences.iter().any(|parent| {
+            occurrences.iter().any(|other| {
+                other.id != parent.id
+                    && occurrence_products.contains_key(&other.id)
+                    && occurrence_products.get(&other.id) == occurrence_products.get(&parent.id)
+            }) && occurrences.iter().any(|child| {
+                matches!(&child.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &parent.id)
+            })
+        });
+        let mut occurrence_definitions = HashMap::<OccurrenceId, (Ref, Ref)>::new();
+        if occurrence_specific {
+            for occurrence in occurrences {
+                if matches!(occurrence.parent, OccurrenceParent::Root {}) && assembly_root.is_none()
+                {
+                    continue;
+                }
+                let Some(product_id) = occurrence_products.get(&occurrence.id) else {
+                    continue;
+                };
+                let (Some(&definition), Some(product), Some(&origin)) = (
+                    definitions.get(product_id),
+                    products.iter().find(|product| &product.id == product_id),
+                    product_origins.get(product_id),
+                ) else {
+                    continue;
+                };
+                let occurrence_definition = self.emitter.emit(
+                    "PRODUCT_DEFINITION_OCCURRENCE",
+                    &format!("{},$,$,{definition},$", string(occurrence.id.as_str())),
+                );
+                let shape = self.emitter.emit(
+                    "PRODUCT_DEFINITION_SHAPE",
+                    &format!("'','',{occurrence_definition}"),
+                );
+                let body_items = product
+                    .bodies
+                    .iter()
+                    .flat_map(|body| {
+                        self.body_item_refs
+                            .get(body.as_str())
+                            .into_iter()
+                            .flatten()
+                            .copied()
+                    })
+                    .collect::<Vec<_>>();
+                let mut placements = vec![origin];
+                placements.extend(occurrences.iter().filter_map(|child| {
+                    if matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id) {
+                        occurrence_placements.get(&child.id).map(|&(_, to)| to)
+                    } else {
+                        None
+                    }
+                }));
+                let representation =
+                    self.emit_shape_representation("", body_items, placements, context);
+                self.emitter.emit(
+                    "SHAPE_DEFINITION_REPRESENTATION",
+                    &format!("{shape},{representation}"),
+                );
+                occurrence_definitions.insert(
+                    occurrence.id.clone(),
+                    (occurrence_definition, representation),
+                );
+            }
+        }
         let mut ordered_occurrences: Vec<_> = occurrences.iter().zip(&occurrence_names).collect();
         ordered_occurrences.sort_by_key(|(occurrence, _)| occurrence.ordinal);
         for (occurrence, &occurrence_name) in ordered_occurrences {
@@ -3138,7 +3215,10 @@ impl<'a> Builder<'a> {
                     let Some(parent) = definitions.get(parent_product).copied() else {
                         continue;
                     };
-                    (parent, representations.get(parent_product).copied())
+                    occurrence_definitions.get(&parent_occurrence.id).map_or(
+                        (parent, representations.get(parent_product).copied()),
+                        |&(definition, representation)| (definition, Some(representation)),
+                    )
                 }
                 (OccurrenceParent::Root {}, Some(assembly_root)) if placed_root(occurrence) => {
                     assembly_root
@@ -3180,7 +3260,9 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if transform.is_some_and(|transform| !transform.is_proper_rigid()) {
+            if transform.is_some_and(|transform| !transform.is_proper_rigid())
+                && !mapped_occurrence_placements.contains_key(&occurrence.id)
+            {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -3193,7 +3275,10 @@ impl<'a> Builder<'a> {
                 let Some(&definition) = definitions.get(child_product) else {
                     continue;
                 };
-                (definition, representations.get(child_product).copied())
+                occurrence_definitions.get(&occurrence.id).map_or(
+                    (definition, representations.get(child_product).copied()),
+                    |&(definition, representation)| (definition, Some(representation)),
+                )
             } else if writable_external(occurrence) {
                 let PrototypeReference::External { document, object } = &occurrence.prototype
                 else {
@@ -3237,6 +3322,28 @@ impl<'a> Builder<'a> {
             );
             self.occurrence_step_refs
                 .insert(occurrence.id.as_str().to_owned(), usage);
+            if let Some(&(origin, target)) = mapped_occurrence_placements.get(&occurrence.id) {
+                let Some(child_representation) = child_representation else {
+                    continue;
+                };
+                let map = self.emitter.emit(
+                    "REPRESENTATION_MAP",
+                    &format!("{origin},{child_representation}"),
+                );
+                let item = self
+                    .emitter
+                    .emit("MAPPED_ITEM", &format!("'',{map},{target}"));
+                let representation =
+                    self.emit_shape_representation("", vec![item], Vec::new(), context);
+                let usage_shape = self
+                    .emitter
+                    .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
+                self.emitter.emit(
+                    "SHAPE_DEFINITION_REPRESENTATION",
+                    &format!("{usage_shape},{representation}"),
+                );
+                continue;
+            }
             let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
                 continue;
             };
