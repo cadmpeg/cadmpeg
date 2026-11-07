@@ -99,17 +99,8 @@ struct ViewRecord {
     parse_warnings: Vec<String>,
 }
 
-/// Construction-grid and axis visibility of one view.
-pub(crate) struct ViewGuides {
-    pub(crate) construction_grid: bool,
-    pub(crate) construction_axes: bool,
-    pub(crate) world_axes: bool,
-}
-
 pub(crate) struct ViewProjection {
     pub(crate) native_id: String,
-    pub(crate) name: String,
-    pub(crate) guides: ViewGuides,
     pub(crate) legacy_display_mode: Option<i64>,
     pub(crate) modern_display_mode: Option<String>,
     pub(crate) has_attributes: bool,
@@ -130,12 +121,6 @@ impl From<ViewRecord> for ViewProjection {
         let has_attributes = view.attributes.is_some();
         Self {
             native_id: view.id,
-            name: view.name,
-            guides: ViewGuides {
-                construction_grid: view.show_construction_grid,
-                construction_axes: view.show_construction_axes,
-                world_axes: view.show_world_axes,
-            },
             legacy_display_mode: view.legacy_display_mode,
             modern_display_mode: view.attributes.and_then(|attributes| attributes.display),
             has_attributes,

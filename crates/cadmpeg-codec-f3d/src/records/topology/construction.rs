@@ -233,6 +233,9 @@ impl DesignConstructionOperandGroup {
     pub(crate) fn members(&self) -> &[Located<u32, Option<u64>>] {
         &self.members
     }
+    pub(crate) fn paired_class_tag(&self) -> &DesignClassTag {
+        &self.paired_class_tag
+    }
 
     /// Checked replacement of the operand-reference run.
     #[cfg(test)]

@@ -206,6 +206,8 @@ pub(super) fn encode_design_bulkstream(
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::RemoveBody
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::Form
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::Canvas
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::Decal
         })
         || !native.design_sketch_placements.is_empty()
         || native
