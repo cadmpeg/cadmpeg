@@ -210,7 +210,14 @@ fn admitted_occurrences(ir: &CadIr) -> Result<Vec<Occurrence>, AssemblyGraphErro
                 }
                 row.transform = None;
             }
-            Err(error) => return Err(error),
+            Err(
+                AssemblyGraphError::DuplicateOccurrence(id) | AssemblyGraphError::ParentCycle(id),
+            ) => {
+                occurrences.retain(|row| row.id != id);
+            }
+            Err(AssemblyGraphError::MissingParent { occurrence, .. }) => {
+                occurrences.retain(|row| row.id != occurrence);
+            }
         }
     }
 }
@@ -617,7 +624,7 @@ pub(in crate::writer) fn references(
         .filter(|occurrence| graph.effective_transform(&occurrence.id).is_none())
         .map(|occurrence| {
             crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                "occurrence {} omitted because its placement or an ancestor placement is unknown or cannot be composed",
+                "occurrence {} omitted because its placement or occurrence graph cannot be resolved",
                 occurrence.id
             ))
         })

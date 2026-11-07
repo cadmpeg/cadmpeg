@@ -242,6 +242,65 @@ fn overflowing_occurrence_placement_names_only_the_unwritable_record() {
 }
 
 #[test]
+fn invalid_occurrence_graph_names_removed_records_and_keeps_sibling() {
+    let mut ir = CadIr::empty();
+    let definition: cadmpeg_ir::ids::ProductDefinitionId =
+        "test:model:product#part".try_into().unwrap();
+    ir.model.product_definitions.push(ProductDefinition {
+        id: definition.clone(),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::default(),
+        bodies: vec![],
+        sketches: Vec::new(),
+        native_ref: None,
+    });
+    for (name, parent) in [
+        ("valid", None),
+        ("missing", Some("absent")),
+        ("cycle-a", Some("cycle-b")),
+        ("cycle-b", Some("cycle-a")),
+        ("duplicate", None),
+        ("duplicate", None),
+    ] {
+        ir.model.occurrences.push(Occurrence {
+            id: format!("test:model:occurrence#{name}").try_into().unwrap(),
+            prototype: PrototypeReference::Local {
+                definition: definition.clone(),
+            },
+            parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
+                OccurrenceParent::Occurrence {
+                    occurrence: format!("test:model:occurrence#{parent}")
+                        .try_into()
+                        .unwrap(),
+                }
+            }),
+            ordinal: 0,
+            transform: Some(Transform::identity()),
+            linked_prototype: None,
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        });
+    }
+    let plan = super::super::materials::MaterialPlan::new(&ir).unwrap();
+    let output = super::references(&ir, &plan).unwrap();
+    assert!(output.written.contains("test:model:occurrence#valid"));
+    for name in ["missing", "cycle-a", "cycle-b", "duplicate"] {
+        let id = format!("test:model:occurrence#{name}");
+        assert!(
+            output.losses.iter().any(|loss| loss.message.contains(&id)),
+            "{id}"
+        );
+        assert!(!output.written.contains(&id));
+    }
+}
+
+#[test]
 fn unrepresentable_product_metadata_names_definition_and_keeps_sibling() {
     let mut ir = CadIr::empty();
     let native_id = "rhino:product:definition#bad";
