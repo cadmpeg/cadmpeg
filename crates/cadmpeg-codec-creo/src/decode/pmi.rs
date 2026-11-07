@@ -366,9 +366,15 @@ fn add_attribute<'a>(tolerance: &mut Tolerance<'a>, attribute: Attribute<'a>) {
             }
         }
         (name, _) => match name {
-            b"PTC_GTOL_TYPE" => { tolerance.issues.insert(ToleranceIssue::Kind); }
-            b"PTC_GTOL_PRIMARY_TOL" => { tolerance.issues.insert(ToleranceIssue::Magnitude); }
-            b"PTC_GTOL_2_TOL_STRING" => { tolerance.issues.insert(ToleranceIssue::Secondary); }
+            b"PTC_GTOL_TYPE" => {
+                tolerance.issues.insert(ToleranceIssue::Kind);
+            }
+            b"PTC_GTOL_PRIMARY_TOL" => {
+                tolerance.issues.insert(ToleranceIssue::Magnitude);
+            }
+            b"PTC_GTOL_2_TOL_STRING" => {
+                tolerance.issues.insert(ToleranceIssue::Secondary);
+            }
             _ => {
                 if let Some((segment, _)) = datum_field(name) {
                     tolerance.issues.insert(ToleranceIssue::Datum(segment));
