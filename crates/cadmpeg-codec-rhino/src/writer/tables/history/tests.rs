@@ -350,3 +350,58 @@ fn history_feature_without_structured_values_stays_omitted() {
         .message
         .contains("has no reconstructible content"));
 }
+
+#[test]
+fn history_parameter_without_structured_type_is_named_in_omission() {
+    use cadmpeg_ir::features::{Dimension, Expression};
+    let mut ir = document();
+    let feature = &mut ir.model.features[0];
+    feature.evaluation = FeatureEvaluation::new(
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "06d2b948-7388-4634-9f7b-6bd6543d0b44".to_owned().into(),
+            parameters: BTreeMap::from([(
+                cadmpeg_core::text::NonBlankString::new("value_9").unwrap(),
+                Dimension::Literal(Expression::text("3.5")),
+            )]),
+        }),
+        cadmpeg_ir::features::DistinctMembers::default(),
+    );
+    let exported = records(&ir).unwrap();
+    assert!(exported.records.is_empty());
+    assert!(exported
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("rhino:history:feature#test")
+            && loss.message.contains("value_9")));
+}
+
+#[test]
+fn history_reference_parameter_conflict_is_named() {
+    use cadmpeg_ir::features::{Dimension, Expression};
+    let mut ir = document();
+    let feature = &mut ir.model.features[0];
+    let parameter = |value: &str| {
+        FeatureEvaluation::new(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "06d2b948-7388-4634-9f7b-6bd6543d0b44".to_owned().into(),
+                parameters: BTreeMap::from([(
+                    cadmpeg_core::text::NonBlankString::new("value_1").unwrap(),
+                    Dimension::Literal(Expression::text(value)),
+                )]),
+            }),
+            cadmpeg_ir::features::DistinctMembers::default(),
+        )
+    };
+    feature.evaluation = parameter(
+        "43cff9a6-c650-440c-af75-addf5585d7a0@0:-1,e06de8c1-f86e-4f2f-a4d8-06d491888fdc@-1:4",
+    );
+    assert_eq!(records(&ir).unwrap().records.len(), 1);
+    ir.model.features[0].evaluation = parameter("edited reference");
+    let exported = records(&ir).unwrap();
+    assert!(exported.records.is_empty());
+    assert!(exported
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("rhino:history:feature#test")
+            && loss.message.contains("value_1")));
+}
