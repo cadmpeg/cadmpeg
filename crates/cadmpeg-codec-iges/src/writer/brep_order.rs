@@ -46,6 +46,25 @@ fn directory_source(
     Some((id, label.trim().to_owned()))
 }
 
+pub(super) fn boundary_source(ir: &cadmpeg_ir::CadIr, loop_id: &str) -> Option<(String, String)> {
+    let (face, index) = loop_id.strip_prefix("iges:model:loop#D")?.split_once(':')?;
+    let index = index.parse::<usize>().ok()?;
+    let face = format!("iges:entity:directory#{face}");
+    let records = ir.native.namespace("iges")?.arenas().get("entities")?;
+    let face = records.iter().find(|record| record.id() == face)?;
+    if face.field("entity_type")?.as_i64()? != 143 {
+        return None;
+    }
+    let parameters = face.field("parameters")?;
+    let sequence = parameters
+        .as_array()?
+        .get(index.checked_add(4)?)?
+        .get("value")?
+        .get("value")?
+        .as_u64()?;
+    directory_source(ir, u32::try_from(sequence).ok()?, 141)
+}
+
 fn apply_topology_source(
     ir: &cadmpeg_ir::CadIr,
     id: &str,
