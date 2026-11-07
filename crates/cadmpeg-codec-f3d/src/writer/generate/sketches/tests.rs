@@ -21,17 +21,18 @@ fn sketch_records_share_the_existing_output_allowance() {
         native_ref: None,
     });
     let arena = cadmpeg_core::decode::DecodeArena::new();
+    let native = crate::native::F3dNative::default();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_entities = 5;
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     ctx.charge_entities(2, "earlier output records").unwrap();
-    assert!(super::encode(&document, &ctx).unwrap().is_some());
+    assert!(super::encode(&document, &native, &ctx).unwrap().is_some());
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     policy.limits.max_entities = 4;
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     ctx.charge_entities(2, "earlier output records").unwrap();
-    let Err(error) = super::encode(&document, &ctx) else {
+    let Err(error) = super::encode(&document, &native, &ctx) else {
         panic!("the third record must exceed the shared allowance");
     };
     assert!(

@@ -47,7 +47,7 @@ fn normalized_edits_require_the_named_loss_and_use_the_declared_value() {
         "mesh#1",
         &[note("mesh#1 flag normalized")],
     )
-    .unwrap();
+    .expect("declared loss permits normalization");
     assert_eq!(candidate.pointer(pointer), Some(&json!(2)));
 }
 
