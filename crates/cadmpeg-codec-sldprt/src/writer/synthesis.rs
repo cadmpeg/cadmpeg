@@ -594,6 +594,28 @@ pub(super) fn plan(
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
         design::prepare(&mut projected, &mut losses, input.fidelity.is_none())?;
+    if projected.scope.model
+        && !projected.scope.design
+        && prepared_native.as_ref().is_none_or(|native| {
+            native
+                .feature_histories
+                .iter()
+                .all(|history| history.configurations.is_empty())
+        })
+    {
+        let mut carrier = projected.clone();
+        carrier.scope.design = true;
+        crate::history::write::configurations::ensure_default_configuration(
+            &mut carrier,
+            &supported,
+            &mut losses,
+        )?;
+        super::assign_configuration_indices(&mut carrier.model.configurations)?;
+        crate::history::write::configurations::sync_neutral_configurations(
+            &carrier.model.configurations,
+            &mut prepared_native,
+        );
+    }
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
         let mut declared = NativeDispositions::for_namespace(
