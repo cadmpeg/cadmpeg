@@ -530,6 +530,7 @@ fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTerm
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
         LinearTermination::Blind { .. }
+        | LinearTermination::BlindZero { .. }
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}

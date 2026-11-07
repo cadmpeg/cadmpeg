@@ -320,6 +320,7 @@ rewrite_enum!(InsertedBodies, []; {
 rewrite_enum!(LinearTermination, []; {
     Unresolved {  },
     Blind { length },
+    BlindZero { length },
     ThroughAll {  },
     ThroughNext {  },
     ToFirst {  },

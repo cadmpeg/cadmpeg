@@ -8808,7 +8808,7 @@ fn project_extrude(
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
         FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
-    use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength};
+    use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength, ZeroLength};
     // Per-side terminations without side-local modifiers; drafts and offsets
     // are attached below once they are resolved.
     enum ExtentShape {
@@ -9233,18 +9233,24 @@ fn project_extrude(
         }
         (
             DesignExtrudeExtent::TwoSidedDistance,
-            Some((Some(along), AlongDirection::SignedDistance)),
-            Some(Some(against)),
+            Some((along, AlongDirection::SignedDistance)),
+            Some(against),
         ) if !prologue.direction_reversed()
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
+            let termination = |length| match length {
+                Some(length) => LinearTermination::Blind { length },
+                None => LinearTermination::BlindZero {
+                    length: ZeroLength::ZERO,
+                },
+            };
             (
                 ExtentShape::TwoSided {
-                    first: LinearTermination::Blind { length: along },
-                    second: LinearTermination::Blind { length: against },
+                    first: termination(along),
+                    second: termination(against),
                 },
-                along.get() < 0.0,
+                along.is_some_and(|length| length.get() < 0.0),
             )
         }
         (

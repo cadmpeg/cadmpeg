@@ -161,7 +161,7 @@ pub(super) fn termination_is_incomplete(termination: &LinearTermination) -> bool
         },
         LinearTermination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
         LinearTermination::ToShape { target } => face_selection_is_incomplete(target),
-        LinearTermination::Blind { .. } => false,
+        LinearTermination::Blind { .. } | LinearTermination::BlindZero { .. } => false,
         LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}

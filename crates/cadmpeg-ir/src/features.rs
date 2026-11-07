@@ -14,7 +14,7 @@ use crate::math::{Point2, Point3, Vector3};
 use crate::products::JointId;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonZeroLength,
-    NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
+    NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle, ZeroLength,
 };
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
@@ -7237,6 +7237,11 @@ pub enum LinearTermination {
     Blind {
         /// Fixed travel distance.
         length: NonZeroLength,
+    },
+    #[doc = "A fixed zero travel distance."]
+    BlindZero {
+        #[doc = "The zero travel distance."]
+        length: ZeroLength,
     },
     /// Extends through all material.
     ThroughAll {},

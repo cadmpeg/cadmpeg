@@ -724,6 +724,7 @@ fn scale_linear_termination(
         }
         LinearTermination::ToPlane { plane, .. } => scale_support_plane_frame(plane, scale)?,
         LinearTermination::Unresolved {}
+        | LinearTermination::BlindZero { .. }
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}

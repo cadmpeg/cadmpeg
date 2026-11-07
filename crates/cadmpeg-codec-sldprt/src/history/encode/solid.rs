@@ -207,6 +207,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match extent {
                 ExtrudeExtent::OneSided { side } => match &side.termination {
                     LinearTermination::Unresolved {} => {}
+                    LinearTermination::BlindZero { .. } => return Err(unsupported_extent()),
                     LinearTermination::Blind { length } => {
                         if properties.contains_key("EndCondition") || existing.is_none() {
                             properties.insert(

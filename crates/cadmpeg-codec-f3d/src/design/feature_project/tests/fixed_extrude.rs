@@ -244,6 +244,56 @@ fn fixed_symmetric_distance_projects_equal_side_distances() {
 }
 
 #[test]
+fn two_sided_distance_keeps_a_zero_side() {
+    let scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters::default(),
+    );
+    let parameter = |kind: &str, value| {
+        crate::design::decode::parameters::parse_design_parameter_record(
+            &crate::design::test_support::parameter_record(
+                Some(44),
+                "value",
+                kind,
+                Some("mm"),
+                "d1",
+                value,
+            ),
+        )
+        .unwrap()
+    };
+    let along = parameter("AlongDistance", 0.0);
+    let against = parameter("AgainstDistance", 1.2);
+    let placement = placement();
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(
+            ctx,
+            &scope,
+            &[(0, &along), (1, &against)],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+            &[],
+        )
+    })
+    .unwrap()
+    .expect("two-sided Extrude with zero first side");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    }) = definition
+    else {
+        panic!("two-sided Extrude definition");
+    };
+    assert!(
+        matches!(first.termination, LinearTermination::BlindZero { length } if length.get() == 0.0)
+    );
+    assert!(
+        matches!(second.termination, LinearTermination::Blind { length } if length.get() == 12.0)
+    );
+}
+
+#[test]
 fn fixed_distance_and_through_all_project_on_opposite_sides() {
     let scope = fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistanceThroughAll,

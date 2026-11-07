@@ -1221,6 +1221,7 @@ fn append_design_losses(
         | LinearTermination::ToShape { target: face } => incomplete_face_selection(face),
         LinearTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
         LinearTermination::Blind { .. }
+        | LinearTermination::BlindZero { .. }
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
