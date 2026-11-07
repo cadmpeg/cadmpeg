@@ -749,6 +749,7 @@ fn decode_container<'a>(
                 )?;
             }
             losses.extend(crate::feature::history_states::losses(&history));
+            ir.model.history_bodies = history.bodies.bodies;
         }
         losses.extend(crate::feature::body_selection::native_losses(
             &ir.model, &joined,

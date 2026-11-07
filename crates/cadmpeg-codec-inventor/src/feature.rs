@@ -46,6 +46,7 @@ pub(crate) mod edge_selection;
 pub(crate) mod extrusion;
 pub(crate) mod fillet;
 pub(crate) mod history;
+pub(crate) mod history_bodies;
 pub(crate) mod history_states;
 mod hole;
 pub(crate) mod loft_sweep;

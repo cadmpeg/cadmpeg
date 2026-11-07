@@ -314,18 +314,29 @@ fn carrier(width: RefWidth, flaw: Break) -> Vec<u8> {
     out
 }
 
-fn read(bytes: &[u8], width: RefWidth, limit: usize) -> Reading {
+/// The state index of a stream, or `None` when it holds no `delta_state`.
+fn read(bytes: &[u8], width: RefWidth, limit: usize) -> Option<Reading> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("context");
-    read_states_within(&ctx, bytes, width, limit).expect("read")
+    let framed = match frame_chain(&ctx, bytes, width).expect("frame") {
+        Framing::Framed(chain) => chain,
+        Framing::Absent => return None,
+        Framing::Unread(reason) => return Some(Reading::Unread(reason)),
+    };
+    Some(
+        match prepare(&ctx, &framed, bytes, width).expect("prepare") {
+            Prepared::Unread(reason) => Reading::Unread(reason),
+            Prepared::Ready(chain) => index_chain(&chain, limit),
+        },
+    )
 }
 
 #[test]
 fn the_state_index_gives_the_oldest_state_of_each_source_in_both_reference_widths() {
     for width in [RefWidth::Four, RefWidth::Eight] {
         let bytes = carrier(width, Break::default());
-        let Reading::Read(index) = read(&bytes, width, MAX_STATE_SCAN_WORK) else {
+        let Some(Reading::Read(index)) = read(&bytes, width, MAX_STATE_SCAN_WORK) else {
             panic!("chain did not read at {width:?}");
         };
         let ids: Vec<i64> = index.states.iter().map(|state| state.state_id).collect();
@@ -347,7 +358,7 @@ fn a_stream_without_states_is_absent() {
     for width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = header(width);
         put_record(&mut bytes, width, "asmheader", &[]);
-        assert_eq!(read(&bytes, width, MAX_STATE_SCAN_WORK), Reading::Absent);
+        assert_eq!(read(&bytes, width, MAX_STATE_SCAN_WORK), None);
     }
 }
 
@@ -363,7 +374,7 @@ fn a_chain_that_does_not_close_or_frame_is_unread() {
         );
         assert_eq!(
             read(&open, width, MAX_STATE_SCAN_WORK),
-            Reading::Unread(Unread::Unclosed)
+            Some(Reading::Unread(Unread::Unclosed))
         );
         let broken = carrier(
             width,
@@ -374,7 +385,7 @@ fn a_chain_that_does_not_close_or_frame_is_unread() {
         );
         assert_eq!(
             read(&broken, width, MAX_STATE_SCAN_WORK),
-            Reading::Unread(Unread::Unclosed)
+            Some(Reading::Unread(Unread::Unclosed))
         );
     }
 }
@@ -384,7 +395,7 @@ fn a_scan_over_the_work_cap_is_bounded() {
     let bytes = carrier(RefWidth::Eight, Break::default());
     assert_eq!(
         read(&bytes, RefWidth::Eight, 1),
-        Reading::Unread(Unread::Bounded)
+        Some(Reading::Unread(Unread::Bounded))
     );
 }
 
@@ -417,6 +428,7 @@ fn blank(source_index: u32) -> FeatureHistoryState {
         state_after: None,
         state_before: None,
         body_key: None,
+        history_body: None,
         binding: Binding::Bound,
     }
 }
@@ -651,7 +663,7 @@ fn the_join_resolves_split_and_base_body_keys_through_their_links() {
     let carrier = ActiveCarrierRecord::NotApplicable {
         id: "fixture".to_owned(),
     };
-    assert!(validate(&records, &features, &carrier)
+    assert!(validate(&records, &features, &carrier, &[])
         .iter()
         .all(|finding| finding.contains("active carrier")));
 
@@ -703,10 +715,10 @@ fn a_validated_arena_refuses_a_forged_record() {
         detail: "none".to_owned(),
     };
     let records = join(&index(), &inputs);
-    let ok: Vec<_> = validate(&records, &features, &carrier);
+    let ok: Vec<_> = validate(&records, &features, &carrier, &[]);
     assert_eq!(ok.len(), 1, "{ok:?}");
     let selected = |records: &[FeatureHistoryState]| {
-        validate(records, &features, &carrier)
+        validate(records, &features, &carrier, &[])
             .into_iter()
             .filter(|finding| !finding.contains("active carrier"))
             .collect::<Vec<_>>()
@@ -742,12 +754,14 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     let notes = losses(&Projection {
         records: vec![record, plain],
         unread: None,
+        bodies: crate::feature::history_bodies::Built::default(),
     });
     assert_eq!(notes.len(), 1);
     assert_eq!(notes[0].code.local_code(), "feature.history-state-unbound");
     let unread = losses(&Projection {
         records: Vec::new(),
         unread: Some(Unread::Unclosed),
+        bodies: crate::feature::history_bodies::Built::default(),
     });
     assert_eq!(
         unread[0].code.local_code(),
@@ -756,6 +770,7 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     let bounded = losses(&Projection {
         records: Vec::new(),
         unread: Some(Unread::Bounded),
+        bodies: crate::feature::history_bodies::Built::default(),
     });
     assert_eq!(
         bounded[0].code.local_code(),
@@ -763,7 +778,8 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     );
     assert!(losses(&Projection {
         records: Vec::new(),
-        unread: None
+        unread: None,
+        bodies: crate::feature::history_bodies::Built::default(),
     })
     .is_empty());
 }

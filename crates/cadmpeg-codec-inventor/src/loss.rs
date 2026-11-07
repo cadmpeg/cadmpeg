@@ -256,6 +256,14 @@ pub(crate) enum InventorLossCode {
     KernelHistoryBounded,
     /// Split and Base features have no bound history state.
     FeatureHistoryStateUnbound,
+    /// A history state could not be materialized or decoded to the body of a
+    /// Base or Split feature.
+    FeatureHistoryBodyUndecoded,
+    /// The body of a Base or Split feature in its history state is not a closed
+    /// manifold solid.
+    FeatureHistoryBodyNotClosed,
+    /// A part passed the local cap of history bodies or of their materialization work.
+    FeatureHistoryBodyBounded,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -376,6 +384,9 @@ impl InventorLossCode {
         Self::KernelHistoryUnclosed,
         Self::KernelHistoryBounded,
         Self::FeatureHistoryStateUnbound,
+        Self::FeatureHistoryBodyUndecoded,
+        Self::FeatureHistoryBodyNotClosed,
+        Self::FeatureHistoryBodyBounded,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
     ];
@@ -510,6 +521,9 @@ impl InventorLossCode {
             Self::KernelHistoryUnclosed => "source.kernel-history-unclosed",
             Self::KernelHistoryBounded => "source.kernel-history-bounded",
             Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
+            Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
+            Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
+            Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
         }
@@ -618,6 +632,9 @@ impl InventorLossCode {
             | Self::FeatureTaggingNative
             | Self::KernelHistoryBounded
             | Self::FeatureHistoryStateUnbound
+            | Self::FeatureHistoryBodyUndecoded
+            | Self::FeatureHistoryBodyNotClosed
+            | Self::FeatureHistoryBodyBounded
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -791,6 +808,9 @@ mod tests {
                 "source.kernel-history-unclosed",
                 "source.kernel-history-bounded",
                 "feature.history-state-unbound",
+                "feature.history-body-undecoded",
+                "feature.history-body-not-closed",
+                "feature.history-body-bounded",
                 "drawing.native-only",
                 "drawing.record-malformed",
             ]
