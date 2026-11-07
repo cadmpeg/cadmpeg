@@ -556,6 +556,66 @@ fn source_less_partial_body_retention_remains_an_operation() {
 }
 
 #[test]
+fn source_less_feature_tree_nodes_keep_their_native_roles() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::FeatureTreeNodeRole;
+
+    for (class, role) in [
+        ("moHistoryFolder_c", FeatureTreeNodeRole::History),
+        ("moCommentsFolder_c", FeatureTreeNodeRole::Comments),
+        ("moFtrFolder_c", FeatureTreeNodeRole::FeatureFolder),
+        ("moSolidBodyFolder_c", FeatureTreeNodeRole::SolidBodies),
+        ("moSurfaceBodyFolder_c", FeatureTreeNodeRole::SurfaceBodies),
+        ("moDetailCabinet_c", FeatureTreeNodeRole::Annotations),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="Folder" Type="Folder" id="42"/></Keywords>"#,
+        ));
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+                class, "Folder", 42,
+            )]),
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(
+            matches!(&expected, FeatureDefinition::Operation(FeatureOperation::TreeNode { role: actual, .. }) if *actual == role),
+            "{class}: {expected:?}"
+        );
+        ir.native = cadmpeg_ir::Native::default();
+        ir.source = None;
+        for feature in &mut ir.model.features {
+            feature.native_ref = None;
+        }
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            output
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.evaluation.definition() == &expected),
+            "{class}"
+        );
+    }
+}
+
+#[test]
 fn source_less_native_spatial_relation_keeps_its_operands() {
     check_native_spatial_relation(true, ["d6", "e1"], 10);
 }
