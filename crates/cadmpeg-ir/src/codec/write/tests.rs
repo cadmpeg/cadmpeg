@@ -369,6 +369,22 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
 }
 
 #[test]
+fn an_ignored_arena_charges_no_loss_when_it_holds_a_record() {
+    let ir = crate::examples::unit_cube_with_history_body().expect("valid fixture");
+    assert_eq!(ir.model.history_bodies.len(), 1);
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.history_bodies = ArenaDisposition::Ignored;
+    assert!(
+        coverage_losses(&ir, ArenaCoverage::Declared(dispositions)).is_empty(),
+        "an ignored arena is not an omission"
+    );
+    assert!(!ArenaDisposition::Ignored.carries());
+    dispositions.history_bodies = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+}
+
+#[test]
 fn written_reported_dropped_and_complete_coverage_charge_no_loss() {
     let ir = unit_cube().expect("valid unit cube fixture");
     for coverage in [
@@ -471,6 +487,7 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
         (ArenaDisposition::Reported, true),
         (ArenaDisposition::Dropped, false),
         (ArenaDisposition::Omitted, false),
+        (ArenaDisposition::Ignored, false),
     ] {
         let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
         dispositions.faces = disposition;
