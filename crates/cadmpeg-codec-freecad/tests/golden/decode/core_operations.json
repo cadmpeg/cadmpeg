@@ -2413,42 +2413,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#SymmetricExtrusion:LengthFwd:property",
-          "name": "LengthFwd",
-          "native_ref": "fcstd:native:property#SymmetricExtrusion:LengthFwd",
-          "target": {
-            "id": {
-              "arena": "features",
-              "id": "fcstd:design:feature#SymmetricExtrusion"
-            },
-            "kind": "record"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 0.0
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#SymmetricExtrusion:LengthRev:property",
-          "name": "LengthRev",
-          "native_ref": "fcstd:native:property#SymmetricExtrusion:LengthRev",
-          "target": {
-            "id": {
-              "arena": "features",
-              "id": "fcstd:design:feature#SymmetricExtrusion"
-            },
-            "kind": "record"
-          },
-          "values": [
-            {
-              "kind": "float",
-              "value": 0.0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#SymmetricExtrusion:Visibility:property",
           "name": "Visibility",
           "native_ref": "fcstd:native:property#SymmetricExtrusion:Visibility",
