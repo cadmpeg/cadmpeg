@@ -364,6 +364,7 @@ pub(crate) enum F3dLossCode {
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
     MeshBodyBytesUninterpreted,
+    MeshOwnerBytesUninterpreted,
     MeshScopePrefixUninterpreted,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
@@ -687,6 +688,7 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
         Self::MeshBodyBytesUninterpreted,
+        Self::MeshOwnerBytesUninterpreted,
         Self::MeshScopePrefixUninterpreted,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
@@ -956,6 +958,7 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
             Self::MeshBodyBytesUninterpreted => "mesh.body-bytes-uninterpreted",
+            Self::MeshOwnerBytesUninterpreted => "mesh.owner-bytes-uninterpreted",
             Self::MeshScopePrefixUninterpreted => "mesh.scope-prefix-uninterpreted",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
@@ -1063,6 +1066,7 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel
             | Self::MeshGuidBytesUninterpreted
             | Self::MeshBodyBytesUninterpreted
+            | Self::MeshOwnerBytesUninterpreted
             | Self::MeshScopePrefixUninterpreted
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveUnprofiledSelected
@@ -1323,6 +1327,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
             | Self::MeshBodyBytesUninterpreted
+            | Self::MeshOwnerBytesUninterpreted
             | Self::MeshScopePrefixUninterpreted
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
@@ -1724,6 +1729,7 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
                 "mesh.body-bytes-uninterpreted",
+                "mesh.owner-bytes-uninterpreted",
                 "mesh.scope-prefix-uninterpreted",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",

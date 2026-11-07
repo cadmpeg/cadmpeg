@@ -1296,6 +1296,8 @@ impl From<MeshAffineTransform> for [[f64; 4]; 4] {
     }
 }
 
+pub(crate) const MESH_COLLECTION_ENTRY_NAME: &str = "netfabb.mesh_body";
+
 /// Collection-owner record with a fixed-prefix or terminal backlink.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignMeshCollectionOwner {
@@ -1303,12 +1305,13 @@ pub(crate) struct DesignMeshCollectionOwner {
     backlink: DesignMeshCollectionBacklink,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum DesignMeshCollectionBacklink {
     Fixed241,
     Fixed262,
     Terminal,
     AfterName { count: u32 },
+    NamedEntry { relative: u64, frame: NativeBytes },
 }
 
 impl DesignMeshCollectionOwner {
@@ -1347,11 +1350,51 @@ impl DesignMeshCollectionOwner {
         };
         Ok(Self { record, backlink })
     }
+    pub(crate) fn new_named(
+        record: DesignMeshRecordIdentity,
+        backlink_offset: u64,
+        frame: NativeBytes,
+    ) -> Result<Self, String> {
+        let relative = backlink_offset
+            .checked_sub(record.byte_offset())
+            .ok_or("collection owner reference precedes its frame")?;
+        let reference =
+            usize::try_from(relative).map_err(|_| "owner reference offset exceeds usize")?;
+        if u64::try_from(frame.len()).ok() != Some(record.frame_length()) {
+            return Err("collection owner frame length must match its record".into());
+        }
+        let name_bytes = MESH_COLLECTION_ENTRY_NAME.encode_utf16().count() * 2 + 4;
+        let name_at = reference
+            .checked_sub(name_bytes)
+            .ok_or("collection entry name is truncated")?;
+        let (name, end) = crate::bytes::lp_utf16_bounded(frame.as_ref(), name_at, 17..=17)
+            .ok_or("collection entry name is invalid")?;
+        if name != MESH_COLLECTION_ENTRY_NAME || end != reference {
+            return Err("collection owner reference must follow the collection entry name".into());
+        }
+        let mut cursor = reference;
+        let target = crate::bytes::take_reference(frame.as_ref(), &mut cursor)
+            .and_then(|value| value.local().map(|target| target.0))
+            .ok_or("collection owner reference must be local")?;
+        if target == 0 || cursor != reference + 11 {
+            return Err("collection owner reference must be a complete local reference".into());
+        }
+        Ok(Self {
+            record,
+            backlink: DesignMeshCollectionBacklink::NamedEntry { relative, frame },
+        })
+    }
+    pub(crate) fn native_frame(&self) -> Option<&NativeBytes> {
+        match &self.backlink {
+            DesignMeshCollectionBacklink::NamedEntry { frame, .. } => Some(frame),
+            _ => None,
+        }
+    }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
     pub(crate) fn backlink_offset(&self) -> u64 {
-        let relative = match self.backlink {
+        let relative = match &self.backlink {
             DesignMeshCollectionBacklink::Fixed241 => {
                 u64_from_index(crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK)
             }
@@ -1359,13 +1402,14 @@ impl DesignMeshCollectionOwner {
                 crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK,
             ),
             DesignMeshCollectionBacklink::Terminal => self.record.frame_length() - 11,
-            DesignMeshCollectionBacklink::AfterName { count } => Self::after_name_backlink(count),
+            DesignMeshCollectionBacklink::AfterName { count } => Self::after_name_backlink(*count),
+            DesignMeshCollectionBacklink::NamedEntry { relative, .. } => *relative,
         };
         self.record.byte_offset() + relative
     }
     pub(crate) fn name_count(&self) -> Option<u32> {
-        match self.backlink {
-            DesignMeshCollectionBacklink::AfterName { count } => Some(count),
+        match &self.backlink {
+            DesignMeshCollectionBacklink::AfterName { count } => Some(*count),
             _ => None,
         }
     }
@@ -1673,6 +1717,8 @@ struct DesignMeshFeatureWire {
     collection_owner_backlink_offset: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     collection_owner_name_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collection_owner_native_frame: Option<NativeBytes>,
     /// Design owner of the feature scope.
     scope_owner_record_index: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1752,11 +1798,21 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 wire.texture_filename_count_offset,
                 wire.textures,
             )?,
-            DesignMeshCollectionOwner::new(
-                wire.collection_owner_record,
-                wire.collection_owner_backlink_offset,
-                wire.collection_owner_name_count,
-            )?,
+            match wire.collection_owner_native_frame {
+                Some(frame) if wire.collection_owner_name_count.is_none() => {
+                    DesignMeshCollectionOwner::new_named(
+                        wire.collection_owner_record,
+                        wire.collection_owner_backlink_offset,
+                        frame,
+                    )?
+                }
+                None => DesignMeshCollectionOwner::new(
+                    wire.collection_owner_record,
+                    wire.collection_owner_backlink_offset,
+                    wire.collection_owner_name_count,
+                )?,
+                Some(_) => return Err("collection owner frame and name count conflict".into()),
+            },
             bodies,
         )?;
         if wire.body_count_offsets != feature.body_count_offsets() {
@@ -1798,6 +1854,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
         }
         let collection_owner_backlink_offset = value.collection_owner.backlink_offset();
         let collection_owner_name_count = value.collection_owner.name_count();
+        let collection_owner_native_frame = value.collection_owner.native_frame().cloned();
         let (
             texture_table_record,
             texture_flags_count_offset,
@@ -1821,6 +1878,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_owner_reference_offset: value.collection.owner_reference_offset(),
             collection_owner_backlink_offset,
             collection_owner_name_count,
+            collection_owner_native_frame,
             scope_owner_record_index: value.scope.owner_record_index(),
             scope_flagged_word: value.scope.flagged_word(),
             scope_owner_reference_offset: value.scope.owner_reference_offset(),
