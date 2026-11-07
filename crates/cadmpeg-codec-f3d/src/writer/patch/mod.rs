@@ -113,6 +113,7 @@ fn validate_recipe_class_headers<'a>(
 /// this binary, which is the only setting in which
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
+#[cfg(test)]
 pub(crate) fn write_semantic(
     target: &CadIr,
     source_image: &[u8],
@@ -144,7 +145,7 @@ pub(crate) fn write_semantic(
     result
 }
 
-fn write_with_context<'a>(
+pub(crate) fn write_with_context<'a>(
     target: &CadIr,
     source_image: &[u8],
     writer: &mut dyn Write,

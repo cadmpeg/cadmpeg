@@ -203,6 +203,22 @@ fn retain_surface_numbers(entity: &mut Entity, surface: &Surface, parameters: &[
 }
 
 pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, base: usize) {
+    if let [entity] = entities.as_mut_slice() {
+        if entity.type_code == 128 {
+            if let Some(sequence) = surface
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == CodecFormat::Iges)
+                .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+            {
+                super::native_records::numeric::retain_directory(
+                    ir,
+                    &format!("iges:entity:directory#{sequence}"),
+                    entity,
+                );
+            }
+        }
+    }
     if entities.len() != 4 {
         return;
     }
