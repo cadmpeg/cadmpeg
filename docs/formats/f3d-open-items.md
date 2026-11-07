@@ -337,7 +337,7 @@ travel.
 
 **Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in every empty flagged collection, and in collections with bodies it takes values from 1 through 6 that differ from the body count. Every body entry stores `1`.
 
-**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
+**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, establishes the meanings of both words.
 
 ### DR-292. Mesh-GUID bytes 21 through 31
 
