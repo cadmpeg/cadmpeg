@@ -1507,6 +1507,10 @@ The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`. `GdtCounterBore`
 and `GdtCounterSinkDiameter` state diameters.
 
+A `GdtDiameter` with one direct feature reference whose declared class matches
+the referenced `GdtSphere` entity defines a spherical diameter. A `GdtRadius`
+with one such direct feature reference defines a spherical radius.
+
 `GdtPosition.ZoneType` value `2` defines a spherical tolerance zone.
 
 `GdtParallelism.IsTangentPlane` stores the tangent-plane modifier state: `0`

@@ -84,6 +84,10 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftImplicitNominalUnresolved,
     /// A SWIFT position retains a source `ShapeAspect` when its target is unresolved.
     PmiSwiftPositionTargetUnresolved,
+    /// Counted spherical-diameter text selects a second sphere by equal radius.
+    PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
+    /// A counted spherical-diameter display has no unique resolved sphere target set.
+    PmiSwiftSphericalDiameterTargetUnresolved,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -313,6 +317,8 @@ impl SldprtLossCode {
         Self::PmiSwiftFeatureWalkCapped,
         Self::PmiSwiftImplicitNominalUnresolved,
         Self::PmiSwiftPositionTargetUnresolved,
+        Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
+        Self::PmiSwiftSphericalDiameterTargetUnresolved,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -420,6 +426,12 @@ impl SldprtLossCode {
             Self::PmiSwiftFeatureWalkCapped => "pmi.swift-feature-walk-capped",
             Self::PmiSwiftImplicitNominalUnresolved => "pmi.swift-implicit-nominal-unresolved",
             Self::PmiSwiftPositionTargetUnresolved => "pmi.swift-position-target-unresolved",
+            Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed => {
+                "pmi.swift-spherical-diameter-count-text-equal-radius-assumed"
+            }
+            Self::PmiSwiftSphericalDiameterTargetUnresolved => {
+                "pmi.swift-spherical-diameter-target-unresolved"
+            }
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -568,6 +580,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftFeatureWalkCapped
             | Self::PmiSwiftImplicitNominalUnresolved
             | Self::PmiSwiftPositionTargetUnresolved
+            | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
+            | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -733,9 +747,10 @@ impl SldprtLossCode {
             | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            Self::PmiSwiftImplicitNominalUnresolved | Self::PmiSwiftPositionTargetUnresolved => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::PmiSwiftImplicitNominalUnresolved
+            | Self::PmiSwiftPositionTargetUnresolved
+            | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
+            | Self::PmiSwiftSphericalDiameterTargetUnresolved => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -965,6 +980,8 @@ mod tests {
                 "pmi.swift-feature-walk-capped",
                 "pmi.swift-implicit-nominal-unresolved",
                 "pmi.swift-position-target-unresolved",
+                "pmi.swift-spherical-diameter-count-text-equal-radius-assumed",
+                "pmi.swift-spherical-diameter-target-unresolved",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",

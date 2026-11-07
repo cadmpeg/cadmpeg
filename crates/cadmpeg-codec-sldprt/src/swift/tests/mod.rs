@@ -11,6 +11,7 @@ use cadmpeg_ir::pmi::PmiValue;
 mod identity;
 mod nominals;
 mod parsing;
+mod spherical;
 
 fn length(value: f64) -> Option<PmiValue> {
     pmi_value(value, PmiQuantity::Length)

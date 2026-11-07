@@ -1546,9 +1546,16 @@ fn compound_hole_applied_and_cad_reference_caps_retain_position_and_record_the_c
                 .collect(),
             work_limit,
         );
-        let projection =
-            crate::swift::project_with_feature_index(&ctx, &root, None, &[], &projection_index)
-                .expect("relation cap preserves the position annotation");
+        let projection = crate::swift::project_with_feature_index_and_displays(
+            &ctx,
+            &root,
+            None,
+            &[],
+            &projection_index,
+            &[],
+            &[],
+        )
+        .expect("relation cap preserves the position annotation");
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
@@ -1651,9 +1658,16 @@ fn compound_hole_applied_child_scan_cap_retains_position_and_records_the_cap() {
         11,
     );
 
-    let projection =
-        crate::swift::project_with_feature_index(&ctx, &root, None, &[], &feature_index)
-            .expect("applied-child work cap is a projection result");
+    let projection = crate::swift::project_with_feature_index_and_displays(
+        &ctx,
+        &root,
+        None,
+        &[],
+        &feature_index,
+        &[],
+        &[],
+    )
+    .expect("applied-child work cap is a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
@@ -1728,9 +1742,16 @@ fn multi_compound_pattern_global_cap_keeps_existing_unsupported_behavior() {
         15,
     );
 
-    let projection =
-        crate::swift::project_with_feature_index(&ctx, &root, None, &[], &feature_index)
-            .expect("global pattern work cap is a projection result");
+    let projection = crate::swift::project_with_feature_index_and_displays(
+        &ctx,
+        &root,
+        None,
+        &[],
+        &feature_index,
+        &[],
+        &[],
+    )
+    .expect("global pattern work cap is a projection result");
     assert!(projection.annotations.is_empty());
     assert_eq!(projection.unsupported.get("GdtPosition"), Some(&1));
     assert_eq!(projection.walk_caps.work, 1);
