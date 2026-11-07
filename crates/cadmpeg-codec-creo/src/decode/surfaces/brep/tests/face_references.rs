@@ -7,7 +7,7 @@ use super::super::BrepFaceReferences;
 
 fn references_result() -> Result<BrepFaceReferences, CodecError> {
     BrepFaceReferences::from_loops(
-        5,
+        5.into(),
         &ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1),
         2,
     )

@@ -1346,6 +1346,12 @@ A `GdtPattern` owns its ordered members through the `SubFeatures`
 the pattern applies to these member feature identities in collection order.
 Nested patterns apply the same rule recursively.
 
+A `GdtPosition` that references a `GdtCompoundHole` selects the non-empty
+`CadIdentifier` values owned by its applied `GdtCylinder` children in
+`SubFeatures`. The compound's `CadReferences` collection aggregates child
+identifiers. Each child feature's class determines its role. Repeated paths to
+one child identify the same feature.
+
 GDT-analysis double fields use millimetres for lengths and radians for angles.
 `Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
 `UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A
@@ -1385,16 +1391,8 @@ the unrounded evaluated geometry. A compound stack containing different
 diameters remains unresolved; the decoder does not select one contributor by
 position or magnitude. An empty `SubFeatures` collection contributes no
 geometry. A `CadRef` whose `CadIdentifier` string is empty contributes no
-topology identity or nominal geometry. A rendered literal cannot bind without
-applied nominal geometry or a resolved native-history nominal.
-
-An empty `GdtPattern` applied-feature graph may recover a diameter through the
-native feature history only when its object name is `Hole PatternN`, the history
-contains exactly one native `LPatternN` with one feature seed, and exactly one
-later native Hole feature consumes that seed and carries a positive diameter.
-The Hole diameter is the evaluated nominal and remains subject to the rendered
-literal precedence rule. A missing, multiply named, multiply seeded, or
-multiply consuming join leaves the nominal absent.
+topology identity or nominal geometry. A rendered literal binds to applied
+nominal geometry.
 
 The non-empty `CadIdentifier` form is `<lane>:<suffix>`. The lane prefix is
 local to the SWIFT schema lane. The active partition contributes one sequence
@@ -1506,7 +1504,14 @@ The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtCircularRunout`, and `GdtTotalRunout`. Dimension classes include
 `GdtDiameter`, `GdtRadius`, `GdtAngle`, `GdtAngleBetween`,
 `GdtCounterSinkAngle`, `GdtDistanceBetween`, `GdtWidth`, `GdtLength`,
-`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`.
+`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`. `GdtCounterBore`
+and `GdtCounterSinkDiameter` state diameters.
+
+`GdtPosition.ZoneType` value `2` defines a spherical tolerance zone.
+
+`GdtParallelism.IsTangentPlane` stores the tangent-plane modifier state: `0`
+clears it, and `1` sets it. `GdtParallelism.IsFreeState` stores the free-state
+modifier with the same encoding for values `0` and `1`.
 
 The integer field `Modifier` uses `0` for no material requirement, `1` for
 maximum material requirement, and `2` for least material requirement. The same
@@ -3160,6 +3165,10 @@ Every property set has unnamed PID 1 with type VT_I2 as its codepage control. Th
 VT_EMPTY (type 0) and VT_NULL (type 1) have no scalar payload. Their XML forms are empty `vt:empty` and `vt:null` elements. Each states a present property with no scalar value, distinct from an absent property record and from zero-length text.
 
 The native default dictionary permits multiple names for one PID and an administrative empty-name PID 0 entry. These extend the generic MS-OLEPS dictionary rules. Retain all alias entries. A name identifies a saved default value only when it selects one PID and that PID has one usable typed value. Names, whitespace and parenthesized suffixes remain exact source text. An alias with an empty or absent saved value does not select another PID by similarity. A name assigned to conflicting PIDs supplies no unique value. Saved values and formula companions are distinct records; a stored snapshot does not establish live calculation or cache freshness.
+
+An `SW-MassProp-Config-N` value with 14 comma-separated decimal fields, each with six fractional digits, stores a saved mass-properties vector for `Config-N`. Its first twelve values follow the metric mass-properties order: center-of-mass x, y and z in metres; volume in cubic metres; surface area in square metres; mass in kilograms; and six moments of inertia in kilogram square metres. Each recognized value has a source representation bound of one half unit in its last decimal place.
+
+The f64 density fields in `moPart_c` and `moDensityParameter_c` are in kilograms per cubic metre. The latter is referenced by `moMaterial_c`.
 
 ## 9. Units
 

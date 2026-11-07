@@ -1109,6 +1109,45 @@ fn decode_emits_the_same_brep_without_a_footer_region() {
 }
 
 #[test]
+fn face_orientation_composes_with_analytic_surface_sense() {
+    use cadmpeg_ir::topology::Sense;
+
+    let stream = topology_partition_stream();
+    let graph = crate::topology::Graph::parse_source(&stream).unwrap();
+    let face = graph.get(NodeKind::Face, 4).unwrap();
+    let face_bytes = &stream[face.pos()..face.end()];
+    let face_signs = face_bytes
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, byte)| (*byte == b'+').then_some(offset))
+        .collect::<Vec<_>>();
+    let [face_sign] = face_signs.as_slice() else {
+        panic!("the synthetic face has one sense marker");
+    };
+    let face_at = face.pos() + face_sign;
+    let surface = graph.get(NodeKind::Plane, 6).unwrap();
+    let surface_at = surface.pos() + surface.common_header().unwrap().1 - 1;
+
+    for (face_sign, surface_sign, expected) in [
+        (b'+', b'+', Sense::Forward),
+        (b'-', b'+', Sense::Reversed),
+        (b'+', b'-', Sense::Reversed),
+        (b'-', b'-', Sense::Forward),
+    ] {
+        let mut input = stream.clone();
+        input[face_at] = face_sign;
+        input[surface_at] = surface_sign;
+        let decoded = NxCodec
+            .decode(
+                &mut Cursor::new(prt_with_partition(&input)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(decoded.ir().model.faces[0].sense, expected);
+    }
+}
+
+#[test]
 fn decode_emits_connected_primitive_brep() {
     let mut cur = Cursor::new(topology_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
@@ -1221,6 +1260,54 @@ fn decode_reports_external_assembly_boundary_without_inline_geometry() {
         .losses
         .iter()
         .any(|loss| loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+}
+
+#[test]
+fn decode_reports_untransferred_assembly_placement() {
+    let mut frame = crate::layout::assembly_placement_prefix::MAGIC_VALUE.to_vec();
+    frame.extend([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+    frame.extend([0, 0, 0, 1, 1, 0xf0, 0, 0, 0]);
+    frame.extend(b"\x03\x03A\0\x03\x2601234567-89ab-cdef-0123-456789abcdef\0");
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", frame)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+}
+
+#[test]
+fn decode_reports_untransferred_repeated_component_uses() {
+    let mut roster = vec![1, 2, 0x42, 0, 1, 2, 4, 7];
+    roster.extend(b"MODEL\0");
+    roster.extend([1, 3, 0, 0, 1, 3, b'9', b'9']);
+    roster.extend([1, 2, 0xff, 0xff, 0xff, 0xff, 1, 2, 4, 5]);
+    roster.extend(b"pin\0");
+    roster.extend([1, 3, 1, 1, 1, 2, 3, 38]);
+    roster.extend(b"01234567-89ab-cdef-0123-456789abcdef\0");
+    roster.extend([1, 3, 1, 1]);
+    let mut structure = vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
+    structure.extend(u32::try_from(roster.len()).unwrap().to_be_bytes());
+    structure.extend(roster);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", structure)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
 }
 
 mod document_metadata;

@@ -1,67 +1,243 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::exact_path_feature_construction;
+use super::{exact_path_feature_construction, loft_reference_loss, three_flag_loft_settings_loss};
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use cadmpeg_core::decode::u64_from_index;
 
-#[test]
-fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() {
-    for class_tag in ["301", "449"] {
-        let mut bytes = Vec::new();
-        let class_tag_bytes = class_tag
-            .as_bytes()
-            .try_into()
-            .expect("three-byte class tag");
-        indexed_header(&mut bytes, class_tag_bytes, 20);
-        bytes.resize(128, 0);
+fn loft_prefix(operation_offset: usize, standard: bool, three_flags: bool) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"449", 20);
+    bytes.resize(128, 0);
+    if standard {
+        bytes[20] = 1;
+    } else if three_flags {
+        bytes[21..24].copy_from_slice(&[1, 1, 0]);
+    } else {
         bytes[21..25].fill(1);
-        bytes[25..29].copy_from_slice(&1u32.to_le_bytes());
-        bytes[30..34].fill(0xff);
+    }
+    bytes[operation_offset..operation_offset + 4].copy_from_slice(&1u32.to_le_bytes());
+    bytes[operation_offset + 5..operation_offset + 9].fill(0xff);
+    bytes
+}
 
-        let mut scope = DesignParameterScope::empty(
-            "generated:loft#20",
-            crate::records::feature::scope::DesignFeatureKind::Loft,
-            20,
-        );
-        scope.class_tag =
-            crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
-        scope
-            .try_edit(|draft| {
-                draft.frame_length = 128;
-                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        let construction = exact_path_feature_construction(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &[],
+fn loft_scope() -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        "generated:loft#20",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        20,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 128;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+fn decoded_loft(
+    bytes: &[u8],
+) -> Option<crate::records::feature::path_features::DesignLoftConstruction> {
+    match exact_path_feature_construction(
+        bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        &loft_scope(),
+        &[],
+    )? {
+        DesignPathFeatureConstruction::Loft(construction) => Some(construction),
+        _ => None,
+    }
+}
+
+fn assert_loft_operation(bytes: &[u8], offset: u64) {
+    assert_eq!(
+        decoded_loft(bytes),
+        Some(
+            crate::records::feature::path_features::DesignLoftConstruction {
+                operation: DesignExtrudeOperation::Join,
+                operation_offset: offset,
+                reference_target: None,
+            }
         )
-        .expect("compact Loft operation");
-        assert_eq!(
-            construction,
-            DesignPathFeatureConstruction::Loft(
-                crate::records::feature::path_features::DesignLoftConstruction {
-                    operation: DesignExtrudeOperation::Join,
-                    operation_offset: 25,
-                }
-            )
-        );
+    );
+}
 
-        bytes[24] = 0;
+#[test]
+fn compact_loft_reads_operation() {
+    assert_loft_operation(&loft_prefix(25, false, false), 25);
+}
+
+#[test]
+fn three_flag_compact_loft_reads_operation() {
+    let mut bytes = loft_prefix(24, false, true);
+    assert_loft_operation(&bytes, 24);
+    bytes[23] = 1;
+    assert_loft_operation(&bytes, 24);
+}
+
+#[test]
+fn standard_loft_reads_operation() {
+    assert_loft_operation(&loft_prefix(29, true, false), 29);
+}
+
+#[test]
+fn three_flag_standard_loft_reads_operation() {
+    assert_loft_operation(&loft_prefix(28, true, true), 28);
+}
+
+#[test]
+fn standard_loft_reads_marked_group_reference() {
+    let mut bytes = loft_prefix(29, true, false);
+    bytes[33..38].copy_from_slice(&[0, 1, 0, 0, 0]);
+    assert_loft_operation(&bytes, 29);
+
+    bytes[33] = 1;
+    bytes[34..42].copy_from_slice(&16015u64.to_le_bytes());
+    bytes[42..48].copy_from_slice(&[0, 0, 0xff, 0xff, 0xff, 0xff]);
+    let construction = decoded_loft(&bytes).expect("standard Loft with a marked reference");
+    assert_eq!(
+        construction,
+        crate::records::feature::path_features::DesignLoftConstruction {
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 29,
+            reference_target: Some(16015),
+        }
+    );
+    let loss = loft_reference_loss(&loft_scope(), &construction).expect("reference loss");
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureLoftReferenceUnresolved.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the target and the Loft setting it selects are unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false."
+    );
+
+    let scope = DesignParameterScope::empty(
+        "generated:loft#20",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        20,
+    );
+    for reference in [
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0x8f, 0x3e, 0, 0, 0, 0, 0, 0, 1, 0],
+        [2, 0x8f, 0x3e, 0, 0, 0, 0, 0, 0, 0, 0],
+    ] {
+        bytes[33..44].copy_from_slice(&reference);
         assert_eq!(
             exact_path_feature_construction(
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &scope,
-                &[],
+                &[]
             ),
             None
         );
     }
+}
+
+#[test]
+fn null_reference_loft_has_no_reference_loss() {
+    let construction = decoded_loft(&loft_prefix(29, true, false)).expect("standard Loft");
+    assert_eq!(loft_reference_loss(&loft_scope(), &construction), None);
+}
+
+#[test]
+fn three_flag_standard_loft_with_zero_byte_33_reads_operation_at_28() {
+    for (value, operation) in [
+        (1u32, DesignExtrudeOperation::Join),
+        (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+        (4, DesignExtrudeOperation::NewBody),
+    ] {
+        let mut bytes = loft_prefix(28, true, true);
+        bytes[28..32].copy_from_slice(&value.to_le_bytes());
+        bytes[32..34].fill(0);
+        assert_eq!(
+            decoded_loft(&bytes),
+            Some(
+                crate::records::feature::path_features::DesignLoftConstruction {
+                    operation,
+                    operation_offset: 28,
+                    reference_target: None,
+                }
+            )
+        );
+    }
+}
+
+#[test]
+fn three_flag_standard_loft_requires_null_reference() {
+    let mut bytes = loft_prefix(28, true, true);
+    bytes[32] = 0;
+    assert_loft_operation(&bytes, 28);
+    bytes[32] = 1;
+    let scope = DesignParameterScope::empty(
+        "generated:loft#20",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        20,
+    );
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &[]
+        ),
+        None
+    );
+}
+
+#[test]
+fn loft_forms_reject_invalid_operations() {
+    for (offset, standard, three_flags) in [
+        (25, false, false),
+        (24, false, true),
+        (29, true, false),
+        (28, true, true),
+    ] {
+        let mut bytes = loft_prefix(offset, standard, three_flags);
+        let scope = DesignParameterScope::empty(
+            "generated:loft#20",
+            crate::records::feature::scope::DesignFeatureKind::Loft,
+            20,
+        );
+        for value in [0u32, 5] {
+            bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            assert_eq!(
+                exact_path_feature_construction(
+                    &bytes,
+                    &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                    &scope,
+                    &[]
+                ),
+                None
+            );
+        }
+    }
+}
+
+#[test]
+fn unrecognized_loft_has_no_construction() {
+    let mut bytes = loft_prefix(25, false, false);
+    bytes[21] = 2;
+    let scope = DesignParameterScope::empty(
+        "generated:loft#20",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        20,
+    );
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &[]
+        ),
+        None
+    );
 }
 
 #[test]
@@ -291,4 +467,48 @@ fn compact_two_lane_sweep_pins_admission_rules_and_rejects_mutations() {
         exact_path_feature_construction(&mutated, &mutated_records, &scope, &[]),
         None
     );
+}
+
+fn settings_loss_message(bytes: &[u8]) -> Option<String> {
+    let construction = decoded_loft(bytes).expect("Loft construction");
+    three_flag_loft_settings_loss(bytes, &loft_scope(), &construction).map(|loss| {
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureLoftSettingsAssumed.kind()
+        );
+        loss.message
+    })
+}
+
+#[test]
+fn three_flag_compact_loft_reports_assumed_settings() {
+    let mut bytes = loft_prefix(24, false, true);
+    assert_loft_operation(&bytes, 24);
+    assert_eq!(
+        settings_loss_message(&bytes).as_deref(),
+        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 00 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+    );
+    bytes[23] = 1;
+    assert_loft_operation(&bytes, 24);
+    assert_eq!(
+        settings_loss_message(&bytes).as_deref(),
+        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 01 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+    );
+}
+
+#[test]
+fn three_flag_standard_loft_reports_assumed_settings() {
+    let mut bytes = loft_prefix(28, true, true);
+    bytes[25..28].copy_from_slice(&[1, 0, 1]);
+    assert_loft_operation(&bytes, 28);
+    assert_eq!(
+        settings_loss_message(&bytes).as_deref(),
+        Some("Loft scope generated:loft#20 stores the three-flag standard prefix with flag bytes 01 00 01 at prefix offset 25; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+    );
+}
+
+#[test]
+fn four_flag_loft_forms_have_no_settings_loss() {
+    assert_eq!(settings_loss_message(&loft_prefix(25, false, false)), None);
+    assert_eq!(settings_loss_message(&loft_prefix(29, true, false)), None);
 }
