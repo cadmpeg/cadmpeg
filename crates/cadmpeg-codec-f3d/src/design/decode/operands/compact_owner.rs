@@ -73,9 +73,7 @@ pub(crate) fn source_selectors(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Ok(frames) = design_primary_frames(bytes, &meta) else {
-            continue;
-        };
+        let frames = design_primary_frames(bytes, &meta)?;
         for identity in identities
             .iter()
             .filter(|identity| native_stream(&identity.id) == Some(entry.name.as_str()))

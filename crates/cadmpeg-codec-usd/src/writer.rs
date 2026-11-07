@@ -134,6 +134,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(ExportBody, Vec<Member>), cadmpeg_ir::codec::write::EncodeError> {
     let index = match target.target() {
         ResolvedTarget::Explicit { index, .. }
@@ -148,14 +149,8 @@ pub(crate) fn plan(
         .get(index)
         .copied()
         .unwrap_or(crate::TARGET_VERSIONS[0]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy {
-        limits: input.limits,
-        ..Default::default()
-    };
-    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
-    let emitter_session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
+    let emitter_session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
     let mut writer = Writer::new(input.ir, version, session, emitter_session);
     if packaged {
         writer.package = Some(Vec::new());

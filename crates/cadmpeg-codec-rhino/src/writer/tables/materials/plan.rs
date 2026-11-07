@@ -2,7 +2,7 @@
 //! Current material records have one shared authoring identity allocation.
 
 use super::{
-    bound_appearance, encode_material, native_base_complete, own_material, records, wire_index,
+    binding_targets, encode_material, native_base_complete, own_material, records, wire_index,
     CadIr, CodecError, Value,
 };
 use crate::loss::RhinoLossCode;
@@ -213,6 +213,15 @@ impl MaterialPlan {
             let emit_textures = match native {
                 Some(record) => match record.fields() {
                     Ok(fields) => {
+                        let colors = super::invalid_color_fields(&fields);
+                        if !colors.is_empty() {
+                            plan.losses
+                                .push(RhinoLossCode::WriterMaterialColorReduced.note(format!(
+                                    "material {} color fields are omitted: {}",
+                                    record.id(),
+                                    colors.join(", ")
+                                )));
+                        }
                         let complete = super::textures_complete(&fields);
                         if !complete
                             && (fields
@@ -269,6 +278,15 @@ impl MaterialPlan {
                 .push(index);
             let emit_textures = match record.fields() {
                 Ok(fields) => {
+                    let colors = super::invalid_color_fields(&fields);
+                    if !colors.is_empty() {
+                        plan.losses
+                            .push(RhinoLossCode::WriterMaterialColorReduced.note(format!(
+                                "material {} color fields are omitted: {}",
+                                record.id(),
+                                colors.join(", ")
+                            )));
+                    }
                     let complete = super::textures_complete(&fields);
                     if !complete
                         && (fields
@@ -344,8 +362,11 @@ impl MaterialPlan {
     }
 
     pub(in crate::writer) fn material_index(&self, ir: &CadIr, identity: &str) -> Option<i32> {
-        let appearance = bound_appearance(ir, identity)?;
-        self.appearance_index(appearance.id.as_str())
+        ir.model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding_targets(ir, binding, identity))
+            .find_map(|binding| self.appearance_index(binding.appearance.as_str()))
     }
     pub(in crate::writer) fn native_targets(&self, id: &str) -> &[i32] {
         self.native_targets.get(id).map_or(&[], Vec::as_slice)

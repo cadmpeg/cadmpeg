@@ -16,7 +16,7 @@ use crate::loss::StepLossCode;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
-fn a_solid_with_unwritable_faces_keeps_the_other_faces_as_a_sheet() {
+fn a_solid_with_a_carrierless_edge_keeps_its_faces_as_a_sheet() {
     let mut ir = unit_cube().expect("unit cube");
     let removed_curve = ir.model.edges[0].curve().expect("curve").clone();
     ir.model.edges[0].carrier = EdgeCarrier::Free;
@@ -40,11 +40,22 @@ fn a_solid_with_unwritable_faces_keeps_the_other_faces_as_a_sheet() {
         .expect("partial STEP decodes");
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(decoded.ir().model.faces.len(), 4);
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+    assert_eq!(decoded.ir().model.edges.len(), 12);
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve().is_none())
+            .count(),
+        1
+    );
 }
 
 #[test]
-fn recovered_wire_keeps_its_body_placement() {
+fn carrierless_edges_keep_their_body_placement() {
     let mut ir = unit_cube().unwrap();
     let retained = ir.model.edges[0].curve().unwrap().clone();
     for edge in ir.model.edges.iter_mut().skip(1) {
@@ -70,23 +81,30 @@ fn recovered_wire_keeps_its_body_placement() {
     assert!(report
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::RegionEdgesRecovered.kind()));
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::RegionVerticesRecovered.kind()));
+        .any(|loss| loss.code == StepLossCode::RegionSolidReducedToSheet.kind()));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
-    let wire = decoded
+    let sheet = decoded
         .ir()
         .model
         .bodies
         .iter()
-        .find(|body| body.kind == BodyKind::Wire)
+        .find(|body| body.kind == BodyKind::Sheet)
         .unwrap();
-    assert_eq!(wire.transform, ir.model.bodies[0].transform);
-    assert_eq!(decoded.ir().model.edges.len(), 1);
+    assert_eq!(sheet.transform, ir.model.bodies[0].transform);
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+    assert_eq!(decoded.ir().model.edges.len(), 12);
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve().is_none())
+            .count(),
+        11
+    );
 }
 
 #[test]

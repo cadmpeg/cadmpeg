@@ -29,8 +29,7 @@
             "r": 0.8999999761581421
           },
           "id": "step:presentation:appearance#40",
-          "name": "override red",
-          "schema": "step_surface_style"
+          "name": "override red"
         },
         {
           "base_color": {
@@ -40,12 +39,24 @@
             "r": 0.20000000298023224
           },
           "id": "step:presentation:appearance#60",
-          "name": "blue green",
-          "schema": "step_surface_style"
+          "name": "blue green"
         }
       ],
       "assembly_joints": [],
       "attributes": [
+        {
+          "id": "step:data:file-description#00000000000000000000",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "triangular sheet"
+            }
+          ]
+        },
         {
           "id": "step:data:file-name#author",
           "name": "author",

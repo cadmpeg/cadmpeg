@@ -83,13 +83,13 @@ fn synthesized_body(
     let synthesis_cause = cause.report_cause();
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy {
         limits: input.limits,
         ..cadmpeg_core::decode::DecodePolicy::default()
     };
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(&ctx, input.ir)?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let synthesis =
         super::synthesize_with_admission(&ctx, &recovered.document, version, |entities| {

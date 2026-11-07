@@ -110,12 +110,20 @@ pub(crate) fn write_semantic_with_records(
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+    limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, write_error::WriteError> {
     let trust = source_fidelity.map_or(SourceTrust::Authored, |fidelity| {
         trust_source_image(&fidelity.decode_digest, source_image(retained_records))
     });
-    write_semantic_at(
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits,
+        ..DecodePolicy::desktop()
+    };
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let output = write_semantic_at(
+        &ctx,
         ir,
         annotations,
         retained_records,
@@ -130,7 +138,9 @@ pub(crate) fn write_semantic_with_records(
             source_trust: trust,
         },
         writer,
-    )
+    )?;
+    ctx.finish_session()?;
+    Ok(output)
 }
 
 /// Validation Errors the writer carries as stated instead of refusing.
@@ -197,6 +207,7 @@ pub(super) struct SemanticOptions<'a> {
 
 /// Author the selected version envelope without consuming retained bytes.
 pub(super) fn write_semantic_at(
+    digest_ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
@@ -210,9 +221,8 @@ pub(super) fn write_semantic_at(
         source_trust,
     } = options;
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
-    let digest_arena = DecodeArena::new();
-    let (digest_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(digest_ctx)
+        .map_err(CodecError::from)?;
     let mut native = match prepared_native {
         Some(native) => Some(native),
         None => ir
@@ -281,7 +291,10 @@ pub(super) fn write_semantic_at(
     let ir = &normalized;
     let source_arena = DecodeArena::new();
     let source_context = source_image(retained_records)
-        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
+        .map(|bytes| {
+            DecodeContext::for_encode_session_root(&source_arena, &session, bytes)
+                .map_err(CodecError::from)
+        })
         .transpose()?;
     let source_scan = source_context
         .as_ref()
@@ -296,8 +309,8 @@ pub(super) fn write_semantic_at(
         Vec::new()
     } else {
         let feature_input_renames =
-            crate::history::write::synchronize_feature_records(&digest_ctx, ir, &mut native)?;
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
+            crate::history::write::synchronize_feature_records(digest_ctx, ir, &mut native)?;
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(digest_ctx, ir, &mut native)?;
         crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
         crate::history::write::configurations::synchronize_configuration_records(
             ir,
@@ -342,14 +355,14 @@ pub(super) fn write_semantic_at(
         // without carrying any geometry.
         Vec::new()
     } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale)?
+        configuration_partitions(digest_ctx, ir, length_scale)?
     } else {
         let schema_32001 = ir
             .model
             .bodies
             .iter()
             .any(|body| body.kind == BodyKind::Sheet);
-        let body = brep_body(ir, length_scale, schema_32001)?;
+        let body = brep_body(digest_ctx, ir, length_scale, schema_32001)?;
         let schema = if schema_32001 {
             "SCH_SW_32001_11000"
         } else {
@@ -366,14 +379,14 @@ pub(super) fn write_semantic_at(
         // is model-scoped: emit an empty partition so the re-decode keeps
         // model scope instead of dropping it and charging the missing
         // stream. The no-exportable-solids loss already names the absence.
-        let body = brep_body(ir, length_scale, false)?;
+        let body = brep_body(digest_ctx, ir, length_scale, false)?;
         partition_sections.push((
             "Contents/Config-0-Partition".to_string(),
             parasolid_stream(&body, "SCH_SW_33103_11000")?,
         ));
     }
     let written_classes = if !retain_native_brep && ir.scope.design {
-        remap_written_geometry_references(ir, &partition_sections, &mut native)?
+        remap_written_geometry_references(digest_ctx, ir, &partition_sections, &mut native)?
     } else {
         BTreeSet::new()
     };
@@ -393,15 +406,15 @@ pub(super) fn write_semantic_at(
             .as_ref()
             .and_then(|native| native.decode_baselines.first());
         let baseline = baselines.and_then(|baselines| baselines.swobjects.as_ref());
-        let current = swobjects_local_sha256(&digest_ctx, ir)?;
+        let current = swobjects_local_sha256(digest_ctx, ir)?;
         if baseline != Some(&current) {
             let material_baseline =
                 baselines.and_then(|baselines| baselines.swobjects_material.as_ref());
             let identity_baseline =
                 baselines.and_then(|baselines| baselines.swobjects_metadata_identity.as_ref());
-            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?)
+            if material_baseline != Some(&swobjects_material_local_sha256(digest_ctx, ir)?)
                 || identity_baseline
-                    != Some(&swobjects_metadata_identity_local_sha256(&digest_ctx, ir)?)
+                    != Some(&swobjects_metadata_identity_local_sha256(digest_ctx, ir)?)
             {
                 return Err(CodecError::UnsupportedContent(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
@@ -688,6 +701,7 @@ pub(super) fn write_semantic_at(
             omitted_envelope_bytes: 0,
         }
     };
+    session.finish().map_err(CodecError::from)?;
     writer.write_all(&envelope.bytes)?;
     Ok(SemanticOutput {
         dialect: written_dialect,
@@ -1475,6 +1489,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
 /// Generated geometry chooses its own node identities. Feature output scopes
 /// must address those emitted nodes rather than the document's earlier layout.
 fn remap_written_geometry_references(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     partitions: &[(String, Vec<u8>)],
     native: &mut Option<crate::native::SldprtNative>,
@@ -1532,12 +1547,10 @@ fn remap_written_geometry_references(
                 CodecError::malformed("generated SLDPRT block extent exceeds the address space")
             })?;
     }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let mut model = ir.model.clone();
     macro_rules! remap_arena {
         ($($arena:ident),* $(,)?) => {$ (
-            model.$arena = cadmpeg_ir::schema::rewrite::identities(&ctx, model.$arena, |id|
+            model.$arena = cadmpeg_ir::schema::rewrite::identities(ctx, model.$arena, |id|
                 Ok(mapping.get(id).cloned().unwrap_or_else(|| id.to_owned())))?;
         )*};
     }
@@ -1648,6 +1661,7 @@ fn canonicalize_resolved_selection_spelling(value: &mut serde_json::Value) {
 }
 
 fn configuration_partitions(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<Vec<(String, Vec<u8>)>, write_error::WriteError> {
@@ -1697,7 +1711,7 @@ fn configuration_partitions(
                 .bodies
                 .iter()
                 .any(|body| body.kind == BodyKind::Sheet);
-            let body = brep_body(&subset, length_scale, schema_32001)?;
+            let body = brep_body(ctx, &subset, length_scale, schema_32001)?;
             let schema = if schema_32001 {
                 "SCH_SW_32001_11000"
             } else {
@@ -3973,6 +3987,7 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::Wr
 }
 
 pub(crate) fn brep_body(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     length_scale: f64,
     schema_32001: bool,
@@ -4018,8 +4033,6 @@ pub(crate) fn brep_body(
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let mut bounded_curves = HashMap::new();
     for edge in &ir.model.edges {
         if edge.param_range().is_none() {
@@ -4028,7 +4041,7 @@ pub(crate) fn brep_body(
         if bounded_curve::derived_sphere_seam(ir, edge) {
             continue;
         }
-        let bounded = bounded_curve::from_edge(&ctx, ir, edge, length_scale)?.ok_or_else(|| {
+        let bounded = bounded_curve::from_edge(ctx, ir, edge, length_scale)?.ok_or_else(|| {
             CodecError::UnsupportedContent(format!(
                 "SLDPRT edge {} has no writable bounded curve",
                 edge.id
@@ -4043,7 +4056,6 @@ pub(crate) fn brep_body(
         }
         bounded_curves.insert(edge.id.clone(), (take_attr(&mut next)?, bounded));
     }
-    ctx.finish_session()?;
     let points = ir
         .model
         .points
