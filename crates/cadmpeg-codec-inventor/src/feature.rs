@@ -4704,6 +4704,7 @@ pub(crate) mod tests {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();

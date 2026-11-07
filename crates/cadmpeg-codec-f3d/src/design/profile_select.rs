@@ -370,6 +370,63 @@ pub(crate) fn bind_split_face_sketch_selections(
     }
 }
 
+/// Resolve `PathPattern` path groups to ordered curves in one sketch.
+pub(crate) fn bind_path_pattern_sketch_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &SketchCurveSelectionResolution<'_>,
+) {
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternTransform},
+        FeatureDefinition, FeatureOperation, PathRef,
+    };
+
+    let path_resolution = resolution.path_resolution();
+    for feature in features {
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                definition
+            else {
+                break 'feature_edit;
+            };
+            let PatternTransform::CurveDriven {
+                path: Some(PathRef::Native(group_id)),
+                spacing,
+                count,
+            } = pattern.definition()
+            else {
+                break 'feature_edit;
+            };
+            let mut matching_groups = resolution.groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.role() == DesignOperandRole::ROLE_0X5
+                    && !group.members().is_empty()
+                    && resolution.scopes.iter().any(|scope| {
+                        scope.kind()
+                            == crate::records::feature::scope::DesignFeatureKind::PathPattern
+                            && scope.record_index == group.scope_record_index
+                            && native_stream(&scope.id) == native_stream(&group.id)
+                    })
+            });
+            let Some(group) = matching_groups.next() else {
+                break 'feature_edit;
+            };
+            if matching_groups.next().is_some() {
+                break 'feature_edit;
+            }
+            let Some(path) = resolve_entity_selection_path(group, &path_resolution) else {
+                break 'feature_edit;
+            };
+            if let Ok(resolved) = PatternKind::new(PatternTransform::CurveDriven {
+                path: Some(path),
+                spacing: *spacing,
+                count: *count,
+            }) {
+                *pattern = resolved;
+            }
+        });
+    }
+}
+
 /// Resolve `SurfaceTrim` curve-tool groups to ordered curves in one sketch.
 pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -3615,7 +3672,7 @@ fn resolve_profile_curve_regions(
         if !selection.valid_layout() {
             return None;
         }
-        for loops in selection.loop_lists.iter().flatten() {
+        for loops in selection.regions() {
             let mut outer = None;
             let mut holes = Vec::new();
             let mut used = HashSet::new();
@@ -3696,7 +3753,7 @@ fn resolve_profile_curve_arrangement_regions(
         if !selection.valid_layout() {
             return Ok(None);
         }
-        for loops in selection.loop_lists.iter().flatten() {
+        for loops in selection.regions() {
             let [loop_] = loops.as_slice() else {
                 return Ok(None);
             };
@@ -3768,7 +3825,7 @@ fn resolve_profile_curve_path(
                 && selection.scope_record_index == group.scope_record_index
                 && selection.group_record_index == group.record_index
         })
-        .flat_map(|selection| selection.loop_lists.iter().flatten())
+        .flat_map(crate::records::topology::entity_selection::DesignProfileCurveSelection::regions)
         .any(|loops| !matches!(loops.as_slice(), [loop_] if loop_.outer))
     {
         return None;
@@ -3851,9 +3908,7 @@ fn profile_curve_selection_curves(
     let mut curves = Vec::new();
     for entry in selections.iter().flat_map(|selection| {
         selection
-            .loop_lists
-            .iter()
-            .flatten()
+            .regions()
             .flatten()
             .flat_map(|loop_| &loop_.entries)
     }) {
