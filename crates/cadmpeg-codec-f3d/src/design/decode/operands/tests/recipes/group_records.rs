@@ -387,3 +387,104 @@ fn malformed_vertex_recipe_is_given_up_and_sibling_survives() {
         });
     });
 }
+
+#[test]
+fn work_point_gives_up_broken_vertex_and_keeps_sibling() {
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use crate::records::feature::work_geometry::{
+        DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+        DesignWorkPointRule,
+    };
+    let mut bytes = Vec::new();
+    let mut headers = Vec::new();
+    let mut recipes = Vec::new();
+    for (base, valid) in [(100u32, false), (200, true)] {
+        let start = bytes.len();
+        indexed_header(&mut bytes, *b"369", base);
+        indexed_header(&mut bytes, *b"261", base);
+        indexed_header(&mut bytes, *b"408", base + 1);
+        indexed_header(&mut bytes, *b"414", base + 2);
+        indexed_header(&mut bytes, *b"423", base + 3);
+        let recipe_at = bytes.len() + 4;
+        bytes.extend_from_slice(&18u32.to_le_bytes());
+        bytes.extend_from_slice(b"vertex_recipe_data");
+        if valid {
+            for value in [-1i32, 3, 1, -1, 2, -1, 0, -1, 0, 0] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        indexed_header(&mut bytes, *b"370", base + 5);
+        headers.push(DesignRecordHeader {
+            id: format!("{STREAM}:design-record-header#{base}"),
+            record_index: base,
+            class_tag: "369".to_owned().try_into().unwrap(),
+            byte_offset: Some(u64::try_from(start).unwrap()),
+        });
+        recipes.push(ConstructionRecipe {
+            id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+            byte_offset: Some(u64::try_from(recipe_at).unwrap()),
+            kind: ConstructionRecipeKind::Vertex,
+            design: None,
+            recipe_index: 9,
+            record_index: None,
+        });
+    }
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#50"),
+        DesignFeatureKind::WorkPoint,
+        50,
+    );
+    let inputs = [100, 200]
+        .into_iter()
+        .map(|index| DesignWorkPointInput::try_new(index, None, None).unwrap())
+        .collect();
+    let rule = DesignWorkPointRule::from_serialized(99, inputs).unwrap();
+    let DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() else {
+        panic!("work point fixture")
+    };
+    *slot = Some(DesignWorkPointConstruction {
+        point_record_index: 50,
+        point_record_byte_offset: None,
+        position: crate::test_support::reals([0.0, 0.0, 0.0]),
+        position_offset: None,
+        rule,
+        reference_type_offset: None,
+    });
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[100, 101, 102, 103, 105, 200, 201, 202, 203, 205],
+        &[100, 200],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            crate::design::decode::operands::bind_work_point_input_carriers(
+                (ctx, &mut parts),
+                scan,
+                std::slice::from_mut(&mut scope),
+                &headers,
+                &recipes,
+                &[],
+                &[],
+            )
+            .unwrap();
+            let inputs = scope.work_point_construction().unwrap().rule.inputs();
+            assert!(inputs[0].carrier().is_none());
+            assert!(matches!(
+                inputs[1].carrier(),
+                Some(DesignWorkPointInputCarrier::VertexRecipe { .. })
+            ));
+            let (_, native, _, losses) = parts.into_parts();
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        });
+    });
+}
