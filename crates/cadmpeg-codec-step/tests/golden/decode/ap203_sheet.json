@@ -161,6 +161,34 @@
               "value": ""
             }
           ]
+        },
+        {
+          "id": "step:data:geometry-name#34-12",
+          "name": "name",
+          "target": {
+            "id": "step:data:curve#34",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "first edge"
+            }
+          ]
+        },
+        {
+          "id": "step:data:geometry-name#37-13",
+          "name": "name",
+          "target": {
+            "id": "step:data:surface#37",
+            "kind": "surface"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "bounded plane"
+            }
+          ]
         }
       ],
       "bodies": [
