@@ -4,6 +4,27 @@ use super::*;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 
 #[test]
+fn minimum_integer_attribute_reports_the_record() {
+    let mut ir = CadIr::empty();
+    let point: cadmpeg_ir::ids::PointId = "test:model:point#owner".try_into().unwrap();
+    let id: cadmpeg_ir::ids::AttributeId = "test:model:attribute#minimum".try_into().unwrap();
+    ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
+        id: id.clone(),
+        target: AttributeTarget::Point(point.clone()),
+        name: "minimum".into(),
+        values: vec![Some(AttributeValue::Integer(i64::MIN))],
+    });
+    let mut owner = entity(116, 0, "0,0,0;".into());
+    owner.source_targets.push(point.to_string());
+    let result = append(&ir, &mut vec![owner], crate::IgesVersion::V5_3);
+    assert!(result
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())));
+}
+
+#[test]
 fn generic_attribute_uses_current_name_values_and_exact_owner_identity() {
     let mut ir = CadIr::empty();
     let point: cadmpeg_ir::ids::PointId = "test:model:point#owner"
