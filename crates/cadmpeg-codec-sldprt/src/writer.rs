@@ -333,8 +333,10 @@ pub(super) fn write_semantic_at(
     check_semantic_support(ir)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
-    let patched_partition = if retained_partition.is_none() {
-        crate::writer_patch::patch_partition(ir, annotations, retained_records, length_scale)?
+    let patched_partition = if let (None, Some((ctx, _)), Some(scan)) =
+        (&retained_partition, &source_context, &source_scan)
+    {
+        crate::writer_patch::patch_partition(ctx, scan, ir, annotations, length_scale)?
     } else {
         None
     };
