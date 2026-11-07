@@ -560,9 +560,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         curves: &design.sketch_curve_identities,
     };
     design.design_dimension_locus_pairs =
-        crate::design::decode::dimension_frames::decode_dimension_locus_pairs(&dimension_inputs)?
-            .try_into()
-            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
+        crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
+            ctx,
+            &mut design_parts,
+            &dimension_inputs,
+        )?
+        .try_into()
+        .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
     design.design_dimension_annotation_frames =
         crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
             ctx,
@@ -584,6 +588,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )?;
     design.design_dimension_null_locus_pairs =
         crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &design.design_dimension_locus_pairs,
             &design.design_dimension_locus_groups,
