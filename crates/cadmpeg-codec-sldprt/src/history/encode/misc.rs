@@ -46,7 +46,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         let retained_tree_node_roles = self.retained_tree_node_roles;
         Ok({
-            if existing.is_none() && role != FeatureTreeNodeRole::Equations {
+            if existing.is_none()
+                && crate::history::write::input_classes::class(feature.definition().operation())
+                    .is_none()
+            {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no source-less keyword form for tree role {role:?}",
                     feature.id

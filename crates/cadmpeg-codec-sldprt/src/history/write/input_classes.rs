@@ -5,7 +5,7 @@ use cadmpeg_ir::features::{
     BooleanOp, FeatureOperation, FeatureTreeNodeRole, SketchFeatureBinding,
 };
 
-pub(super) fn class(operation: &FeatureOperation) -> Option<&'static str> {
+pub(in crate::history) fn class(operation: &FeatureOperation) -> Option<&'static str> {
     Some(match operation {
         FeatureOperation::Extrude {
             solid: Some(false), ..
