@@ -1144,7 +1144,8 @@ impl<'a> Builder<'a> {
                 && matches!(
                     &occurrence.prototype,
                     PrototypeReference::External {
-                        document: cadmpeg_ir::products::ExternalDocument::Path { .. },
+                        document: cadmpeg_ir::products::ExternalDocument::Path { .. }
+                            | cadmpeg_ir::products::ExternalDocument::Missing {},
                         ..
                     }
                 )
@@ -2842,7 +2843,8 @@ impl<'a> Builder<'a> {
                 && matches!(
                     &occurrence.prototype,
                     PrototypeReference::External {
-                        document: cadmpeg_ir::products::ExternalDocument::Path { .. },
+                        document: cadmpeg_ir::products::ExternalDocument::Path { .. }
+                            | cadmpeg_ir::products::ExternalDocument::Missing {},
                         ..
                     }
                 )
@@ -3201,16 +3203,18 @@ impl<'a> Builder<'a> {
                 };
                 (definition, Some(representation))
             } else if writable_external(occurrence) {
-                let PrototypeReference::External {
-                    document: cadmpeg_ir::products::ExternalDocument::Path { path },
-                    object,
-                } = &occurrence.prototype
+                let PrototypeReference::External { document, object } = &occurrence.prototype
                 else {
                     continue;
                 };
+                let location = match document {
+                    cadmpeg_ir::products::ExternalDocument::Path { path } => path.as_str(),
+                    cadmpeg_ir::products::ExternalDocument::Missing {} => "",
+                    cadmpeg_ir::products::ExternalDocument::DocumentId { .. } => continue,
+                };
                 let source = self.emitter.emit(
                     "EXTERNAL_SOURCE",
-                    &format!("IDENTIFIER({})", string(path.as_str())),
+                    &format!("IDENTIFIER({})", string(location)),
                 );
                 let definition = self.emitter.emit(
                     "PRODUCT_DEFINITION_REFERENCE",
@@ -3219,7 +3223,7 @@ impl<'a> Builder<'a> {
                         string(object.as_deref().unwrap_or(""))
                     ),
                 );
-                self.losses.push(cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!("external occurrence {} does not hold the product and formation identifiers required by PRODUCT_DEFINITION_REFERENCE", occurrence.id)));
+                self.losses.push(cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!("external occurrence {} does not hold the product and formation identifiers required by PRODUCT_DEFINITION_REFERENCE{}", occurrence.id, if location.is_empty() { ", or the source location" } else { "" })));
                 (definition, None)
             } else {
                 self.loss(
