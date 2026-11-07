@@ -847,6 +847,7 @@ pub(crate) fn decode_edge_identity_operands(
 /// Decode face-recipe operand frames named by grouped and direct feature references.
 pub(crate) fn decode_face_operands(
     ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -1021,10 +1022,14 @@ pub(crate) fn decode_face_operands(
                         .and_then(|record_index| header_index.get(&(stream, *record_index)))
                         .and_then(|header| header.byte_offset)
                 });
-            if let Some(operand) = parse_face_operand(
+            if let Some(operand) = decode_face_operand_part(
                 ctx,
-                bytes,
+                parts,
+                scan.entry_view(&entry.name)
+                    .ok_or_else(|| CodecError::malformed("missing face operand stream"))?,
+                stream,
                 records,
+                recipes,
                 crate::design::decode::operands::FaceOperandFrame {
                     scope,
                     scope_reference_ordinal: group.scope_reference_ordinal,
@@ -1032,9 +1037,8 @@ pub(crate) fn decode_face_operands(
                     next_byte_offset,
                     header,
                 },
-                recipes,
-            ) {
-                out.push(operand?);
+            )? {
+                out.push(operand);
             }
         }
     }
@@ -1107,10 +1111,14 @@ pub(crate) fn decode_face_operands(
             } else {
                 None
             };
-            if let Some(operand) = parse_face_operand(
+            if let Some(operand) = decode_face_operand_part(
                 ctx,
-                bytes,
+                parts,
+                scan.entry_view(&entry.name)
+                    .ok_or_else(|| CodecError::malformed("missing face operand stream"))?,
+                stream,
                 records,
+                recipes,
                 crate::design::decode::operands::FaceOperandFrame {
                     scope,
                     scope_reference_ordinal,
@@ -1118,14 +1126,103 @@ pub(crate) fn decode_face_operands(
                     next_byte_offset,
                     header,
                 },
-                recipes,
-            ) {
-                out.push(operand?);
+            )? {
+                out.push(operand);
             }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn decode_face_operand_part(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    records: &[crate::metastream::PrimaryRecordFrame],
+    recipes: &[ConstructionRecipe],
+    input: FaceOperandFrame<'_>,
+) -> Result<Option<DesignFaceOperand>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+
+    let Some(start) = input
+        .header
+        .byte_offset
+        .and_then(|v| usize::try_from(v).ok())
+    else {
+        return Ok(None);
+    };
+    let after_start = start
+        .checked_add(1)
+        .ok_or_else(|| CodecError::malformed("face operand offset overflows"))?;
+    let end = [4, 5]
+        .into_iter()
+        .filter_map(|delta| input.header.record_index.checked_add(delta))
+        .filter_map(|index| records.first_at_or_after(after_start, index))
+        .chain(input.next_byte_offset.and_then(|v| usize::try_from(v).ok()))
+        .min()
+        .unwrap_or(source.window().len());
+    let recipe = recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream)
+                && matches!(
+                    recipe.kind,
+                    ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
+                )
+                && recipe
+                    .byte_offset
+                    .and_then(|v| usize::try_from(v).ok())
+                    .is_some_and(|offset| offset > start && offset < end)
+        })
+        .min_by_key(|recipe| recipe.byte_offset);
+    let Some(offset) = recipe
+        .and_then(|r| r.byte_offset)
+        .and_then(|v| usize::try_from(v).ok())
+    else {
+        return parse_face_operand(ctx, source.window(), records, input, recipes).transpose();
+    };
+    let Some(frame) = records
+        .iter()
+        .find(|frame| frame.start <= offset && offset < frame.end)
+    else {
+        return parse_face_operand(ctx, source.window(), records, input, recipes).transpose();
+    };
+    let begin = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("face operand start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("face operand end overflows"))?;
+    let extent = source
+        .child(begin, end)
+        .ok_or_else(|| CodecError::malformed("face operand exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+        stream,
+        ":design-record-header#",
+        u64_from_index(frame.start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(None);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        parse_face_operand(ctx, source.window(), records, input, recipes)
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("invalid face operand recipe"))
+    })
 }
 
 /// Decode ordered sheet-metal source-region identities.
