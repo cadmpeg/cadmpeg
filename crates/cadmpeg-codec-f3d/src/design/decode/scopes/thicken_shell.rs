@@ -40,16 +40,14 @@ pub(super) fn exact_thicken_operation(
     if bytes.get(start + thicken::ZERO_RUN_9..start + thicken::PROLOGUE_MARKER)? != [0; 9] {
         return None;
     }
-    let mut cursor = match bytes.get(start + thicken::PROLOGUE_MARKER)? {
-        0 => start + thicken::LEN,
+    let (mut cursor, prologue_flag) = match bytes.get(start + thicken::PROLOGUE_MARKER)? {
+        0 => (start + thicken::LEN, None),
         1 if View::u32_le_at(bytes, start + thicken::LEN)? == 0 => {
             let short_end = start + thicken::LEN + U32_LEN;
-            if View::u32_le_at(bytes, short_end)? == THICKEN_FORM {
-                short_end
-            } else if bytes.get(short_end) == Some(&0) {
-                short_end + 1
-            } else {
-                return None;
+            match bytes.get(short_end)? {
+                _ if View::u32_le_at(bytes, short_end)? == THICKEN_FORM => (short_end, None),
+                flag @ (0 | 1) => (short_end + 1, Some((short_end, *flag))),
+                _ => return None,
             }
         }
         _ => return None,
@@ -112,8 +110,11 @@ pub(super) fn exact_thicken_operation(
     if scalar.value.get() == 0.0 {
         return None;
     }
+    let prologue = prologue_flag.map_or_else(String::new, |(at, flag)| {
+        format!(" and prologue flag byte {flag:02x} at byte {at}")
+    });
     losses.push(crate::loss::F3dLossCode::FeatureThickenFlagsAssumed.note(format!(
-        "Thicken scope {} stores flag bytes {:02x} {:02x} at byte {flags_at}; the Thicken settings these flags select are unresolved (DR-313), and a Thicken projected from the scope takes its side from the sign of the thickness.",
+        "Thicken scope {} stores flag bytes {:02x} {:02x} at byte {flags_at}{prologue}; the Thicken settings these flags select are unresolved (DR-313), and a Thicken projected from the scope takes its side from the sign of the thickness.",
         scope.id, flags[0], flags[1]
     )));
     Some(DesignThickenOperation {

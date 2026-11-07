@@ -10,6 +10,7 @@ use cadmpeg_ir::report::loss::LossNote;
 const MARKER_ZERO: &[u8] = &[0];
 const MARKER_ONE: &[u8] = &[1, 0, 0, 0, 0];
 const MARKER_ONE_PADDED: &[u8] = &[1, 0, 0, 0, 0, 0];
+const MARKER_ONE_FLAGGED: &[u8] = &[1, 0, 0, 0, 0, 1];
 
 struct ThickenFrame<'a> {
     prologue: &'a [u8],
@@ -118,7 +119,12 @@ fn thickness(frame: &ThickenFrame<'_>) -> Option<(f64, u32)> {
 
 #[test]
 fn every_prologue_form_reads_the_signed_thickness() {
-    for prologue in [MARKER_ZERO, MARKER_ONE, MARKER_ONE_PADDED] {
+    for prologue in [
+        MARKER_ZERO,
+        MARKER_ONE,
+        MARKER_ONE_PADDED,
+        MARKER_ONE_FLAGGED,
+    ] {
         for scalar_zero in [false, true] {
             let frame = ThickenFrame {
                 prologue,
@@ -175,6 +181,20 @@ fn admitted_scope_reports_its_flag_bytes() {
 }
 
 #[test]
+fn six_byte_prologue_reports_its_flag_byte() {
+    let (operation, losses) = ThickenFrame {
+        prologue: MARKER_ONE_FLAGGED,
+        flags: [1, 1],
+        ..ThickenFrame::group_first()
+    }
+    .decode();
+    assert!(operation.is_some());
+    assert!(losses[0]
+        .message
+        .contains("flag bytes 01 01 at byte 45 and prologue flag byte 01 at byte 25"));
+}
+
+#[test]
 fn frame_outside_the_grammar_stays_unread() {
     let rejected = [
         ThickenFrame {
@@ -182,7 +202,7 @@ fn frame_outside_the_grammar_stays_unread() {
             ..ThickenFrame::group_first()
         },
         ThickenFrame {
-            prologue: &[1, 0, 0, 0, 0, 1],
+            prologue: &[1, 0, 0, 0, 0, 2],
             ..ThickenFrame::group_first()
         },
         ThickenFrame {
