@@ -1406,15 +1406,19 @@ impl CodecBackend for FcstdCodec {
                                 && source.byte_len().unwrap_or(0) == retained.byte_len()
                         })
                 }) {
-                    // A missing directory or unframed tail cannot establish
-                    // whether a later GUI member supplies body visibility.
-                    // Name only body fields that this prefix did not read.
-                    for body in ir.model.bodies.iter().filter(|body| body.visible.is_none()) {
-                        loss.dropped_fields
-                            .push(cadmpeg_ir::report::loss::DroppedField {
-                                record: body.id.as_str().to_owned(),
-                                field: "visible".to_owned(),
-                            });
+                    for body in &ir.model.bodies {
+                        for (field, absent) in [
+                            ("visible", body.visible.is_none()),
+                            ("color", body.color.is_none()),
+                        ] {
+                            if absent {
+                                loss.dropped_fields
+                                    .push(cadmpeg_ir::report::loss::DroppedField {
+                                        record: body.id.as_str().to_owned(),
+                                        field: field.to_owned(),
+                                    });
+                            }
+                        }
                     }
                 }
             }
