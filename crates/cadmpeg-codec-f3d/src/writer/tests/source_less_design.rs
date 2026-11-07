@@ -22,6 +22,79 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_form_keeps_native_scope_and_cage() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_form.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let (written, mut report) =
+        super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterDesignRecordsOmitted.kind()));
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        decoded.ir(),
+        written.ir(),
+    );
+}
+
+#[test]
+fn source_less_copy_paste_keeps_edited_occurrence_placement() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_copy_paste.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    let occurrence = edited
+        .model
+        .occurrences
+        .iter_mut()
+        .find(|occurrence| occurrence.ordinal == 1)
+        .unwrap();
+    let translation =
+        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(13.0, 27.0, 41.0))
+            .unwrap();
+    occurrence.transform = Some(occurrence.transform.unwrap().with_translation(translation));
+    let (written, mut report) = super::source_less_analytic::synthesize_document(&edited, None);
+    let cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage) = &report.coverage else {
+        panic!("synthesis declares arena coverage");
+    };
+    assert_eq!(
+        coverage.product_definitions,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    assert_eq!(
+        coverage.occurrences,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
+}
+
+#[test]
+fn source_less_surface_stitch_keeps_its_input_and_gap() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_surface_stitch.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let (written, mut report) =
+        super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::WriterDesignRecordsOmitted.kind()));
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        decoded.ir(),
+        written.ir(),
+    );
+}
+
+#[test]
 fn source_less_remove_body_keeps_group_without_untyped_member() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_remove_body.f3d");
     let decoded = F3dCodec
