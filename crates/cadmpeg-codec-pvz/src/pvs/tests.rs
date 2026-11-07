@@ -433,6 +433,42 @@ fn damaged_xml_component_preserves_source_indices() {
 }
 
 #[test]
+fn damaged_property_index_preserves_later_component() {
+    let xml = br#"<PV_FILE type="PVS" version="0302"><section_structure><component name="First"/><component name="Middle"/><component name="Last"/></section_structure><section_properties><property_component_ref><property name="key" value="first"/></property_component_ref><property_component_ref index_offset="1" bad="a" bad="b"/><property_component_ref><property name="key" value="last"/></property_component_ref></section_properties></PV_FILE>"#;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Pvz, &ctx);
+    let structure = read(&ctx, View::over_retained(xml), "test.pvs", &mut parts)
+        .expect("recover property siblings");
+    assert_eq!(&*structure.definitions[0].properties[0].value, "first");
+    assert!(structure.definitions[1].properties.is_empty());
+    assert_eq!(&*structure.definitions[2].properties[0].value, "last");
+    let (_, _, fidelity, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 1);
+    assert!(fidelity
+        .retained_records()
+        .values()
+        .any(|record| record.data()
+            == Some(br#"<property_component_ref index_offset="1" bad="a" bad="b"/>"#.as_slice())));
+}
+
+#[test]
+fn ambiguous_damaged_property_index_does_not_reassign_later_properties() {
+    let xml = br#"<PV_FILE type="PVS" version="0302"><section_structure><component name="First"/><component name="Middle"/><component name="Last"/></section_structure><section_properties><property_component_ref><property name="key" value="first"/></property_component_ref><property_component_ref index_offset="1" index_offset="2"/><property_component_ref><property name="key" value="unknown"/></property_component_ref></section_properties></PV_FILE>"#;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Pvz, &ctx);
+    let structure = read(&ctx, View::over_retained(xml), "test.pvs", &mut parts)
+        .expect("retain properties with unknown owner");
+    assert_eq!(&*structure.definitions[0].properties[0].value, "first");
+    assert!(structure.definitions[1].properties.is_empty());
+    assert!(structure.definitions[2].properties.is_empty());
+    let (_, _, fidelity, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 2);
+    assert!(fidelity.retained_records().values().any(|record| record.data() == Some(br#"<property_component_ref><property name="key" value="unknown"/></property_component_ref>"#.as_slice())));
+}
+
+#[test]
 fn the_xml_form_maps_to_the_same_model() {
     let xml = br#"<PV_FILE type="PVS" version="0302">
 <section_index><internal_section type="2"/><internal_section type="3"/></section_index>
