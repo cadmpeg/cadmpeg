@@ -309,11 +309,26 @@ fn damaged_xml_element_preserves_sibling_configurations() {
         } else {
             damaged.as_bytes().to_vec()
         };
-        assert!(result
+        let (part_id, _) = result
             .source_fidelity()
             .retained_records()
-            .values()
-            .any(|record| record.data() == Some(expected.as_slice())));
+            .iter()
+            .find(|(_, record)| record.data() == Some(expected.as_slice()))
+            .expect("retained damaged element");
+        let unknowns: Vec<cadmpeg_ir::NativeUnknownRecord> = result
+            .ir()
+            .native
+            .namespace("sldprt")
+            .expect("native namespace")
+            .arena_as("unknowns")
+            .expect("unknown records");
+        let part = unknowns
+            .iter()
+            .find(|record| &record.id == part_id)
+            .expect("element stub");
+        assert_eq!(part.links.len(), 1);
+        assert_eq!(part.links[0].as_str(), native.feature_histories[0].id);
+        assert_valid(&result);
     }
 }
 

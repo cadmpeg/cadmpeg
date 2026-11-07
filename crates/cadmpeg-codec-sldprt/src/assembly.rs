@@ -291,7 +291,7 @@ fn native_project(
         ctx,
         text,
         "parse SolidWorks component instance tree",
-        |_, _, _| Ok(()),
+        |_, _, _, _| Ok(()),
     ) {
         Ok(document) => document,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),

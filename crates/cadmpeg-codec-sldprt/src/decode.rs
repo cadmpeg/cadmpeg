@@ -3668,7 +3668,14 @@ fn build_geometry_ir(
     )?;
     let mut unknowns = brep.unknowns;
     unknowns.extend(pmi_stubs);
-    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses, &mut retention)?;
+    give_up_truncated_blocks(
+        ctx,
+        scan,
+        &native.feature_histories,
+        &mut unknowns,
+        &mut pmi_losses,
+        &mut retention,
+    )?;
     retain_lane_images(ctx, &native, &mut annotations, &mut unknowns)?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     for owned_face_color in brep.face_colors {
@@ -4358,7 +4365,14 @@ fn build_metadata_ir(
         retention.record(&id, cadmpeg_ir::document::ArenaClass::Model);
     }
     unknowns.extend(pmi_stubs);
-    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses, &mut retention)?;
+    give_up_truncated_blocks(
+        ctx,
+        scan,
+        &histories,
+        &mut unknowns,
+        &mut pmi_losses,
+        &mut retention,
+    )?;
     ir.model.pmi =
         crate::swift::annotations(ctx, scan, &mut annotations, None, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -5513,6 +5527,7 @@ const DOCUMENT_METADATA_ID: &str = "sldprt:metadata:document#0";
 fn give_up_truncated_blocks(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    histories: &[crate::records::FeatureHistory],
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     retention: &mut retention::Retention,
@@ -5579,13 +5594,14 @@ fn give_up_truncated_blocks(
             }
         }
     }
-    give_up_xml_elements(ctx, scan, unknowns, losses, retention)?;
+    give_up_xml_elements(ctx, scan, histories, unknowns, losses, retention)?;
     Ok(())
 }
 
 fn give_up_xml_elements(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    histories: &[crate::records::FeatureHistory],
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     retention: &mut retention::Retention,
@@ -5607,8 +5623,26 @@ fn give_up_xml_elements(
             ctx,
             &text,
             "scan SolidWorks XML damage",
-            |start, end, name| {
-                damaged.push((start, end, String::from_utf8_lossy(name).into_owned()));
+            |start, end, name, ancestors| {
+                let history = if ancestors.len() == 1
+                    && ancestors[0]
+                        .windows(b"Keywords".len())
+                        .any(|part| part == b"Keywords")
+                {
+                    let id = format!("sldprt:history:feature-history#{}", section.ordinal());
+                    histories
+                        .iter()
+                        .find(|history| history.id == id)
+                        .map(|history| history.id.clone())
+                } else {
+                    None
+                };
+                damaged.push((
+                    start,
+                    end,
+                    String::from_utf8_lossy(name).into_owned(),
+                    history,
+                ));
                 Ok(())
             },
         ) {
@@ -5625,7 +5659,7 @@ fn give_up_xml_elements(
             .get(marker..)
             .is_some_and(|bytes| bytes.starts_with(&[0xff, 0xfe]));
         let prefix = marker + if utf16 { 2 } else { 0 };
-        for (start, end, name) in damaged {
+        for (start, end, name, history) in damaged {
             let to_source = |offset: usize| -> Option<usize> {
                 let offset = if utf16 {
                     text.get(..offset)?.encode_utf16().count().checked_mul(2)?
@@ -5662,7 +5696,7 @@ fn give_up_xml_elements(
                         id.clone(),
                         u64_from_index(start),
                         data.to_vec(),
-                        Vec::new(),
+                        history.iter().cloned().collect(),
                     ));
                 }
             }
