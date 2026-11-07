@@ -3,7 +3,7 @@
 
 use super::{
     anonymous, anonymous_with_children, class_wrapper_with_direct, component,
-    crc_chunk_with_direct, records, utf16, wire_index, CadIr, CodecError, Value,
+    crc_chunk_with_direct, records, utf16, wire_index, CadIr, Value,
 };
 use crate::loss::RhinoLossCode;
 use crate::writer::WriteError;
@@ -99,13 +99,9 @@ pub(in crate::writer) fn patterns(ir: &CadIr) -> Result<HatchExport, WriteError>
 }
 
 fn pattern(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, WriteError> {
-    let fields = record.fields().map_err(|error| match error {
-        cadmpeg_ir::native::NativeConvertError::Resource(CodecError::ResourceLimit(limit)) => {
-            WriteError::Encode(limit.into())
-        }
-        cadmpeg_ir::native::NativeConvertError::Resource(error) => WriteError::Fail(error),
-        error => WriteError::Omit(error.to_string()),
-    })?;
+    let fields = record
+        .fields()
+        .map_err(crate::writer::native_record_error)?;
     let name = fields
         .get("name")
         .and_then(Value::as_str)
