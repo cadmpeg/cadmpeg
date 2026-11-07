@@ -254,6 +254,8 @@ pub(crate) fn decode_edge_operands(
 
 /// Decode vertex-recipe members retained inside edge-treatment groups.
 pub(crate) fn decode_edge_treatment_vertex_operands(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -321,7 +323,24 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             let Some(header) = header_index.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = parse_vertex_recipe(bytes, records, stream, header, recipes) else {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing vertex operand stream"))?;
+            let Some(recipe) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream,
+                    records,
+                    recipes,
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Vertex],
+                },
+                || parse_vertex_recipe(bytes, records, stream, header, recipes).map(Ok),
+            )?
+            else {
                 continue;
             };
             let (Ok(scope_reference_ordinal), Ok(group_member_ordinal)) = (

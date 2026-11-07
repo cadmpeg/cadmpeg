@@ -377,20 +377,18 @@ fn typed_material_handoff_keeps_absent_fresnel_values_and_ordered_texture_identi
     assert_eq!(handoff.name, "old steel");
     assert_eq!(handoff.diffuse, [5, 6, 7, 8]);
     assert_eq!(handoff.archive_index, Some(7));
-    assert_eq!(
-        handoff.properties[0],
-        (
-            "index_of_refraction",
-            Some(crate::test_support::finite(1.45))
-        )
-    );
-    assert_eq!(
-        handoff.properties[1],
-        ("reflectivity", Some(crate::test_support::finite(0.0)))
-    );
-    assert_eq!(handoff.properties[4], ("reflection_glossiness", None));
-    assert_eq!(handoff.properties[5], ("refraction_glossiness", None));
-    assert_eq!(handoff.properties[6], ("fresnel_index_of_refraction", None));
+    let record = &ir.native.namespace("rhino").unwrap().arenas()["materials"][0];
+    for (name, expected) in [("index_of_refraction", 1.45), ("reflectivity", 0.0)] {
+        let value = record.field(name).and_then(|value| value.as_f64()).unwrap();
+        assert!((value - expected).abs() < 1e-12);
+    }
+    for name in [
+        "reflection_glossiness",
+        "refraction_glossiness",
+        "fresnel_index_of_refraction",
+    ] {
+        assert!(record.field(name).is_none_or(|value| value.is_null()));
+    }
     assert_eq!(
         handoff.texture_source_uuids,
         [

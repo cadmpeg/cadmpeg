@@ -57,15 +57,6 @@ pub(super) fn project(
                 .push(id.clone());
         }
         let base_color = Some(crate::wire::packed_color(material.diffuse));
-        let mut properties = BTreeMap::new();
-        for (name, value) in material.properties {
-            if let Some(value) = value {
-                let name = cadmpeg_core::text::NonBlankString::new(name).ok_or_else(|| {
-                    CodecError::malformed("Rhino material property name is empty")
-                })?;
-                properties.insert(name, value);
-            }
-        }
         ctx.charge_entities(1, "rhino_materials")?;
         ir.model.appearances.push(Appearance {
             native_ref: Some(native_id.clone()),
@@ -78,7 +69,7 @@ pub(super) fn project(
             schema: Some("Rhino material".to_owned()),
             category: None,
             base_color,
-            properties,
+            properties: BTreeMap::new(),
             textures: Vec::new(),
         });
     }
