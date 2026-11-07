@@ -17,7 +17,7 @@ fn replacement_index_checks_exposed_key_order_and_duplicates() {
             (TextKey(1, texts[1].to_owned()), "second".to_owned()),
         ]);
         assert!(
-            matches!(super::ReplacementIndex::build(replacements.iter()), Err(CodecError::Malformed(message)) if message == "text replacements must have unique keys in byte order")
+            matches!(super::TextReplacements::build(replacements.iter()), Err(CodecError::Malformed(message)) if message == "text replacements must have unique keys in byte order")
         );
     }
 }
@@ -29,7 +29,7 @@ fn replacement_index_looks_up_keys_in_byte_order() {
         ("alpha".to_owned(), "first".to_owned()),
         ("beta".to_owned(), "second".to_owned()),
     ]);
-    let index = super::ReplacementIndex::build(replacements.iter()).unwrap();
+    let index = super::TextReplacements::build(replacements.iter()).unwrap();
     assert_eq!(
         index.values,
         [("alpha", "first"), ("beta", "second"), ("é", "third")]

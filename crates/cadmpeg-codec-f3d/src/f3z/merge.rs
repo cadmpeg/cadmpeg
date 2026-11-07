@@ -6,6 +6,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, TextReplacements};
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
@@ -437,7 +438,10 @@ impl MergeSession<'_, '_> {
                 scope_document_parameters(self.ctx, &mut component_ir.model)?;
                 let definition = define_member(self.ctx, &mut component_ir.model, label)?;
                 append_feature_history(&parent_ir.model, &mut component_ir.model)?;
+                let targets = native_record_targets(&component_ir.native, &occurrence);
+                let native_text = TextReplacements::build(targets.iter())?;
                 let mut scope = OccurrenceScope {
+                    native_text: &native_text,
                     ctx: self.ctx,
                     occurrence: &occurrence,
                 };
@@ -1939,8 +1943,23 @@ fn rescope(text: &str, occurrence: &str) -> Option<String> {
         .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
 }
 
+fn native_record_targets(
+    native: &Native,
+    occurrence: &str,
+) -> std::collections::BTreeMap<String, String> {
+    native
+        .namespace("f3d")
+        .into_iter()
+        .flat_map(|namespace| namespace.arenas().values().flatten())
+        .filter_map(|record| {
+            rescope(record.id(), occurrence).map(|target| (record.id().to_owned(), target))
+        })
+        .collect()
+}
+
 /// Rewrites every `f3d:` identity in one model entity into occurrence scope.
 struct OccurrenceScope<'r, 'a> {
+    native_text: &'r TextReplacements<'r>,
     ctx: &'r DecodeContext<'a>,
     occurrence: &'r str,
 }
@@ -1952,12 +1971,13 @@ impl EntityRewrite for OccurrenceScope<'_, '_> {
         &mut self,
         entity: T,
     ) -> Result<T, CodecError> {
-        cadmpeg_ir::schema::rewrite::identities(self.ctx, entity, |id: &str| {
-            match rescope(id, self.occurrence) {
-                Some(rewritten) => Ok(rewritten),
-                None => Ok(id.to_owned()),
-            }
+        let mut map = IdentityMap::new(|id: &str| {
+            Ok(rescope(id, self.occurrence).unwrap_or_else(|| id.to_owned()))
         })
+        .with_text_replacements(self.native_text);
+        let rewritten = entity.rewrite_identities(self.ctx, &mut map);
+        map.finish()?;
+        rewritten
     }
 }
 
