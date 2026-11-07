@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 114126,
-      "payload_sha256": "0285e036f37a79419cb77a67207d496f752b5223642145350c5936fa128699d8"
+      "payload_len": 113857,
+      "payload_sha256": "1cdb5e15af5cc892ab2c42217f2062aae8db0b19971126c70d13e05144eb3876"
     },
     {
       "name": "RevolutionProfile.InternalShape.brp",
