@@ -1572,7 +1572,20 @@ pub(super) fn fixed_kind_tail_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &grouped_scope,
         ),
-        None
+        Some(DesignSurfaceOffsetOperation {
+            distance: crate::test_support::real(-0.4),
+            distance_offset: u64_from_index(extend_distance_at + 40),
+            distance_record_index: extend_distance_record_index,
+            support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+                boundary_record_index: grouped_record_index,
+                boundary_reference_record_index: grouped_record_index + 2,
+                boundary_reference_offset: u64_from_index(grouped_at + 36 + 6),
+                edge_record_indices: vec![grouped_member_record_index],
+                tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.0001)
+                    .expect("checked fixture value"),
+                tolerance_offset: u64_from_index(grouped_at + 36 + 39),
+            },
+        })
     );
 
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]
