@@ -3495,6 +3495,17 @@ impl<'a> Builder<'a> {
                         .insert(region.body.as_str().to_owned());
                     false
                 };
+                if wire_written && body_kind == BodyKind::General {
+                    let shells = region
+                        .shells
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>();
+                    self.loss(
+                        StepLossCode::BodyReducedToWire,
+                        format!("general body {} was written as wire geometry for region {}; shells: {}", region.body, region.id, shells.join(", ")),
+                    );
+                }
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
             }
@@ -3556,7 +3567,7 @@ impl<'a> Builder<'a> {
             if closed && !solid {
                 self.loss(
                     StepLossCode::RegionSolidReducedToSheet,
-                    format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
+                    format!("body {} region {} was written as a surface model because its solid shells are incomplete or open", region.body, region.id),
                 );
             }
             let item = if !solid {
