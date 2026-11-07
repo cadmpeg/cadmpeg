@@ -350,14 +350,67 @@ mod tests {
     fn missing_child_end_tag_selects_the_child() {
         let bytes = b"<root><parent><broken></parent><sibling/></root>";
         let arena = DecodeArena::new();
-        let (ctx, view) =
-            DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-                .expect("create decode context");
+        let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("create decode context");
         let scan = ctx
             .scan_xml_elements(view, XmlEncoding::Utf8, "test")
             .expect("scan XML elements");
         let damaged = damaged_elements(&scan, &[]);
         assert_eq!(damaged.len(), 1);
         assert_eq!(&bytes[damaged[0].0..damaged[0].1], b"<broken>");
+    }
+
+    #[test]
+    fn recovers_siblings_and_source_offsets_after_unicode() {
+        let text = "<root><first>猫😀</first><bad a=\"1\" a=\"2\"/><last/></root>";
+        let arena = DecodeArena::new();
+        let (ctx, view) =
+            DecodeContext::from_root_bytes(text.as_bytes(), &arena, &DecodePolicy::service())
+                .expect("create decode context");
+        let mut dropped = Vec::new();
+        let (recovered, xml) = parse_xml_recovering(
+            &ctx,
+            view,
+            "test XML",
+            "scan test XML",
+            "parse test XML",
+            &|detail| CodecError::malformed(detail),
+            |extent, name, ancestors, _| {
+                dropped.push((
+                    extent.start(),
+                    extent.window().to_vec(),
+                    name.to_vec(),
+                    ancestors.to_vec(),
+                ));
+                Ok(())
+            },
+        )
+        .expect("recover XML");
+        let names: Vec<_> = xml
+            .root_element()
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .map(|node| node.tag_name().name())
+            .collect();
+        assert_eq!(names, ["first", "last"]);
+        let bad = "<bad a=\"1\" a=\"2\"/>";
+        assert_eq!(
+            dropped,
+            [(
+                text.find(bad).expect("bad element"),
+                bad.as_bytes().to_vec(),
+                b"bad".to_vec(),
+                vec![b"root".to_vec()]
+            )]
+        );
+        let last = xml
+            .root_element()
+            .last_element_child()
+            .expect("last sibling");
+        assert_eq!(
+            last.range().start,
+            text.find("<last/>").expect("last offset")
+        );
+        assert_eq!(recovered.window().len(), text.len());
     }
 }
