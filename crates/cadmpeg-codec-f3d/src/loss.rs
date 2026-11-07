@@ -56,6 +56,8 @@ pub(crate) enum F3dLossCode {
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     ConstructionClosingFlagAssumed,
+    /// A Chamfer's non-face group is read as its edge group despite its role.
+    ChamferEdgeRoleAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -559,6 +561,7 @@ impl F3dLossCode {
         Self::CylinderPlacementUnbound,
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
+        Self::ChamferEdgeRoleAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -802,6 +805,7 @@ impl F3dLossCode {
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
+            Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -1121,6 +1125,7 @@ impl F3dLossCode {
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
+            | Self::ChamferEdgeRoleAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -1334,6 +1339,7 @@ impl F3dLossCode {
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
+            | Self::ChamferEdgeRoleAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
@@ -1622,6 +1628,7 @@ mod tests {
                 "feature.cylinder-placement-unbound",
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
+                "feature.chamfer-edge-role-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
