@@ -880,6 +880,13 @@ pub(crate) fn admit_damaged_bulk_records(
             }
         }
         super::presentation::contain_browser_nodes(ctx, &mut output, source, &entry.name, &meta)?;
+        super::presentation::contain_body_presentations(
+            ctx,
+            &mut output,
+            source,
+            &entry.name,
+            &meta,
+        )?;
     }
     let (_, native, fidelity, losses) = output.into_parts();
     let stubs = native
