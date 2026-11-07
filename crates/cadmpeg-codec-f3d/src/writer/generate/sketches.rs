@@ -800,8 +800,7 @@ fn mark(
     ctx.charge_entities(1, "F3D sketch record")?;
     rows.push(crate::metastream::RecordIndexEntry {
         entity_id: u64::from(id),
-        bulk_offset: u64::try_from(offset)
-            .map_err(|_| CodecError::InvalidInput("F3D sketch stream exceeds u64".into()))?,
+        bulk_offset: cadmpeg_core::decode::u64_from_index(offset),
     });
     Ok(())
 }

@@ -636,7 +636,7 @@ fn synthesize_with_admission(
             .geometry
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
-    })?;
+    });
     let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
     let (opened, open_losses) = admission::open_incomplete_solids(poles.as_ref());
     let (pcurves, pcurve_losses) = pcurve_admission::admit(opened.as_ref());
