@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod integer;
 mod wire;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
