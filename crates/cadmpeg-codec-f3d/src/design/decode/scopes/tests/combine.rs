@@ -573,6 +573,14 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     assert!(operation.tools.first.external_identity.is_none());
 }
 
+/// What a fixture's companion record stores after the Combine's GUID.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CompanionRecord {
+    Table,
+    NoTable,
+    Absent,
+}
+
 /// Operand records of one operand-list `Combine` scope.
 struct OperandListFixture {
     operation: u32,
@@ -595,8 +603,7 @@ struct OperandListFixture {
     companion_type: &'static str,
     companion_guid: &'static str,
     companion_guid_tail: [u8; 3],
-    companion_table: bool,
-    companion_record: bool,
+    companion_record: CompanionRecord,
     new_component: u8,
     omit_consumed: bool,
 }
@@ -623,8 +630,7 @@ impl OperandListFixture {
             companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
             companion_guid: "00000000-0000-0000-0000-000000000000",
             companion_guid_tail: [0; 3],
-            companion_table: true,
-            companion_record: true,
+            companion_record: CompanionRecord::Table,
             new_component: 0,
             omit_consumed: false,
         }
@@ -762,7 +768,7 @@ impl OperandListFixture {
         let mut companion_records = self.companions.clone();
         companion_records.sort_unstable();
         companion_records.dedup();
-        if !self.companion_record {
+        if self.companion_record == CompanionRecord::Absent {
             companion_records.clear();
         }
         for companion in companion_records {
@@ -770,7 +776,7 @@ impl OperandListFixture {
             bytes.extend_from_slice(&[0; 10]);
             lp_utf16(&mut bytes, self.companion_guid);
             bytes.extend_from_slice(&self.companion_guid_tail);
-            if self.companion_table {
+            if self.companion_record == CompanionRecord::Table {
                 marked_list(&mut bytes, &[self.tools[0].1]);
             }
             indexed_header(&mut bytes, *b"258", companion);
@@ -1039,7 +1045,7 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     let mut guid_without_zeros = companion(false, vec![500]);
     guid_without_zeros.companion_guid_tail = [7; 3];
     let mut guid_without_table = companion(false, vec![500]);
-    guid_without_table.companion_table = false;
+    guid_without_table.companion_record = CompanionRecord::NoTable;
     let repeated = companion(false, vec![500, 500]);
     for fixture in [
         other_type,
@@ -1056,7 +1062,7 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     }
     assert_eq!(decode_combine_frame(&unregistered), None);
     let mut without_record = companion(false, vec![500]);
-    without_record.companion_record = false;
+    without_record.companion_record = CompanionRecord::Absent;
     let (operation, losses) = without_record.decode_with_losses();
     assert_eq!(operation, None);
     assert_eq!(
