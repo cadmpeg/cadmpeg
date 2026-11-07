@@ -21,6 +21,43 @@ use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
 #[test]
+fn free_nurbs_surface_keeps_level_membership_after_synthesis() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_surface_fixtures::nurbs_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("surface decodes");
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("surface synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("surface writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("surface re-decodes");
+    let source = &decoded.ir().model.presentation_layers[0];
+    let written = output
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == source.name)
+        .expect("source level survives");
+    assert_eq!(source, written);
+    assert_eq!(output.ir().model.faces.len(), 1);
+    assert!(output
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .any(|layer| layer.name == "1"));
+}
+
+#[test]
 fn trimmed_sheet_preserves_boundary_point_name() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     let decoded = IgesCodec

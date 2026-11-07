@@ -146,6 +146,58 @@ fn level_body(levels: &BTreeSet<i64>) -> Vec<u8> {
     .into_bytes()
 }
 
+fn wrapper_entities(entities: &[Entity], expanded_indices: &[usize]) -> BTreeSet<usize> {
+    let by_sequence = |token: &str| {
+        let sequence = token.trim_end_matches(';').parse::<usize>().ok()?;
+        let expanded = sequence.checked_sub(1)?.checked_div(2)?;
+        expanded_indices.iter().position(|index| *index == expanded)
+    };
+    let mut result = BTreeSet::new();
+    for (index, entity) in entities.iter().enumerate() {
+        if entity.type_code != 143 || !entity.source_targets.is_empty() {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&entity.parameter_body) else {
+            continue;
+        };
+        let Some(boundary) = text.split(',').nth(3).and_then(by_sequence) else {
+            continue;
+        };
+        let Some(boundary_entity) = entities
+            .get(boundary)
+            .filter(|entity| entity.type_code == 141 && entity.source_targets.is_empty())
+        else {
+            continue;
+        };
+        let Ok(text) = std::str::from_utf8(&boundary_entity.parameter_body) else {
+            continue;
+        };
+        let tokens = text.split(',').collect::<Vec<_>>();
+        let Some(count) = tokens.get(3).and_then(|value| value.parse::<usize>().ok()) else {
+            continue;
+        };
+        result.insert(index);
+        result.insert(boundary);
+        for position in 0..count {
+            let Some(curve) = position
+                .checked_mul(3)
+                .and_then(|offset| offset.checked_add(4))
+                .and_then(|offset| tokens.get(offset))
+                .and_then(|value| by_sequence(value))
+            else {
+                continue;
+            };
+            if entities
+                .get(curve)
+                .is_some_and(|entity| entity.type_code == 126 && entity.source_targets.is_empty())
+            {
+                result.insert(curve);
+            }
+        }
+    }
+    result
+}
+
 pub(super) fn append_level_definitions(ir: &CadIr, entities: &mut Vec<Entity>) {
     let memberships = layer_memberships(ir);
     let targets = super::attributes::targets(ir, entities);
@@ -226,6 +278,22 @@ pub(super) fn directory_levels(
     expanded_index_by_entity: &[usize],
 ) -> Vec<String> {
     let layer_of = layer_memberships(ir);
+    let wrapper_level = ir
+        .model
+        .presentation_layers
+        .iter()
+        .any(|layer| layer.name == "0")
+        .then(|| {
+            let used = ir
+                .model
+                .presentation_layers
+                .iter()
+                .filter_map(|layer| layer.name.parse::<i64>().ok())
+                .collect::<BTreeSet<_>>();
+            (1..=99_999_999).find(|level| !used.contains(level))
+        })
+        .flatten();
+    let wrappers = wrapper_entities(entities, expanded_index_by_entity);
     let defined_sets = entities
         .iter()
         .enumerate()
@@ -242,6 +310,12 @@ pub(super) fn directory_levels(
             continue;
         };
         let assigned = entity_layer_numbers(entity, &layer_of);
+        if assigned.is_empty() && wrappers.contains(&index) {
+            if let Some(level) = wrapper_level {
+                *slot = level.to_string();
+                continue;
+            }
+        }
         let mut ordered: Vec<i64> = assigned.into_iter().collect();
         if ordered.len() == 1 {
             *slot = ordered[0].to_string();
