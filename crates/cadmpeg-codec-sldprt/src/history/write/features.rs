@@ -39,7 +39,7 @@ pub(crate) struct FeatureInputRename {
 fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<Vec<FeatureInputRename>, WriteError> {
     // A history-only document has no serialized feature-input names to
     // synchronize. Its current history name is still authored below, without
     // turning an unrelated metadata edit into a refusal of retained B-rep.
@@ -81,12 +81,12 @@ fn synchronize_feature_input_names(
             }
         }
         let [(lane_index, name_index)] = matches.as_slice() else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
             )));
         };
         let value = cadmpeg_core::text::NonBlankString::new(new_name).ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
             ))
         })?;
@@ -131,6 +131,47 @@ fn generated_feature_source_ids(
         .iter()
         .filter(|feature| feature.native_ref.is_none())
     {
+        let FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) =
+            feature.definition()
+        else {
+            continue;
+        };
+        let source = match plane {
+            cadmpeg_ir::features::PrincipalPlane::Front => 2,
+            cadmpeg_ir::features::PrincipalPlane::Top => 3,
+            cadmpeg_ir::features::PrincipalPlane::Right => 4,
+        };
+        let record_id = generated_feature_record_id(&feature.id);
+        if existing.get(record_id.as_str()).copied() != Some(source) && !used.insert(source) {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT feature {} needs reserved principal-plane identity {source}",
+                feature.id
+            ))
+            .into());
+        }
+        if allocated
+            .values()
+            .any(|value: &FeatureSource| value.value() == Some(source))
+        {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT feature {} repeats principal-plane identity {source}",
+                feature.id
+            ))
+            .into());
+        }
+        allocated.insert(
+            feature.id.clone(),
+            FeatureSource::from_value(source)
+                .ok_or_else(|| CodecError::malformed("invalid principal-plane source identity"))?,
+        );
+    }
+    for feature in features
+        .iter()
+        .filter(|feature| feature.native_ref.is_none())
+    {
+        if allocated.contains_key(&feature.id) {
+            continue;
+        }
         let record_id = generated_feature_record_id(&feature.id);
         let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
             source_id
@@ -388,8 +429,14 @@ fn synchronize_features(
                 .entry(record.clone())
                 .or_default()
                 .insert(
-                    cadmpeg_core::text::NonBlankString::new(parameter.name.clone())
-                        .ok_or_else(|| CodecError::malformed("SLDPRT parameter name is empty"))?,
+                    cadmpeg_core::text::NonBlankString::new(parameter.name.clone()).ok_or_else(
+                        || {
+                            WriteError::Decline(format!(
+                                "SLDPRT parameter {} has an empty name",
+                                parameter.id
+                            ))
+                        },
+                    )?,
                 );
         }
     }
@@ -419,12 +466,18 @@ fn synchronize_features(
             &global_owners,
         )
         .ok_or_else(|| {
-            CodecError::malformed(
-                "SLDPRT canonical parameter expression references a missing identity",
-            )
+            WriteError::Decline(format!(
+                "SLDPRT parameter {} expression references a missing identity",
+                parameter.id
+            ))
         })?;
-        let name = cadmpeg_core::text::NonBlankString::new(parameter.name.clone())
-            .ok_or_else(|| CodecError::malformed("SLDPRT parameter name is empty"))?;
+        let name =
+            cadmpeg_core::text::NonBlankString::new(parameter.name.clone()).ok_or_else(|| {
+                WriteError::Decline(format!(
+                    "SLDPRT parameter {} has an empty name",
+                    parameter.id
+                ))
+            })?;
         canonical_parameter_texts
             .entry(owner.clone())
             .or_default()
@@ -548,11 +601,10 @@ fn synchronize_features(
             .as_deref()
             .is_some_and(|tag| !valid_xml_name(tag))
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} has an invalid source tag",
                 feature.id
-            ))
-            .into());
+            )));
         }
         let mut existing = native
             .feature_histories
@@ -592,7 +644,7 @@ fn synchronize_features(
             )));
         }
         let suppressed = feature.suppressed.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "SLDPRT feature {} has unresolved suppression",
                 feature.id
             ))
@@ -641,7 +693,7 @@ fn synchronize_features(
                 .map(|body| body_sources.get(body).cloned())
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    WriteError::Decline(format!(
                         "SLDPRT feature {} references a missing output body",
                         feature.id
                     ))
@@ -829,10 +881,10 @@ fn synchronize_features(
     let mismatches = dependency_mismatches(features, &record_ids, &projected_features)?;
     if let Some((index, expected, canonical)) = mismatches.into_iter().next() {
         let feature = &features[index];
-        return Err(CodecError::malformed(format_args!(
+        return Err(WriteError::Decline(format!(
             "SLDPRT feature {} dependencies are inconsistent with its operands: expected {expected:?}, projected {canonical:?}; definition {:?}",
             feature.id, feature.definition()
-        )).into());
+        )));
     }
     let written_classes = if patch_input_names {
         std::collections::BTreeSet::new()

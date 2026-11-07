@@ -165,18 +165,23 @@ fn sync_neutral_parameters(
         .filter_map(|constraint| {
             use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput;
             let definition = constraint.definition.kind();
-            if !crate::resolved_features::write_prepare::native_spatial_relation_supported(
-                definition, parameters,
-            ) {
-                return None;
-            }
             match definition {
                 SpatialSketchConstraintDefinitionInput::Native {
                     parameter: Some(id),
                     ..
-                } => parameters
+                } if crate::resolved_features::write_prepare::native_spatial_relation_supported(
+                    definition, parameters,
+                ) => parameters
                     .iter()
                     .find(|parameter| &parameter.id == id && !parameter.driving),
+                SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(id),
+                    ..
+                } => parameters
+                    .iter()
+                    .find(|parameter| &parameter.id == id && !parameter.driving
+                        && parameter.name.strip_suffix("@reference").is_some_and(|name| !name.is_empty())
+                        && matches!(parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(_)))),
                 _ => None,
             }
         })
