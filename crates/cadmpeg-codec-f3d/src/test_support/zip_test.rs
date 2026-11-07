@@ -1318,9 +1318,13 @@ fn sketch_presentation_archive(
         crate::test_support::indexed_header(&mut frame, *b"281", u32::try_from(entity).unwrap());
         frame.extend_from_slice(&[0; 8]);
         frame.push(1);
-        frame.extend_from_slice(&(if entity == 1305 { 0u32 } else { 2 }).to_le_bytes());
+        frame.extend_from_slice(&2u32.to_le_bytes());
         for (index, role) in [(1300u32, 0u32), (1302, 1)] {
+            let marker = frame.len();
             crate::test_support::push_marked_reference(&mut frame, index);
+            if entity == 1305 && index == 1302 {
+                frame[marker] = 0;
+            }
             frame.extend_from_slice(&role.to_le_bytes());
         }
         frame.extend_from_slice(&[0xaa, 0xbb, 0xcc]);

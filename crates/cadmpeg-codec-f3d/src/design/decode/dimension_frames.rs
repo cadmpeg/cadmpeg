@@ -1736,6 +1736,9 @@ pub(crate) fn decode_dimension_presentation_frames(
                 paired_classes.insert(u64::from(*class_tag));
             }
         }
+        if paired_classes.is_empty() {
+            continue;
+        }
         let geometry_indices = dimension_geometry_indices(&stream, points, curves);
         let mut sketch_entities = HashSet::new();
         for entity in entities.iter().filter(|entity| {
@@ -1760,6 +1763,19 @@ pub(crate) fn decode_dimension_presentation_frames(
             else {
                 continue;
             };
+            if indexed.member_end == indexed.end
+                || dimension_presentation_head(&bytes[..indexed.member_end], start).is_none()
+                || !lp_ascii_filtered_view(
+                    &bytes[..indexed.end],
+                    indexed.member_end,
+                    3..=3,
+                    u8::is_ascii_digit,
+                )
+                .and_then(|(tag, _)| tag.parse::<u64>().ok())
+                .is_some_and(|class| paired_classes.contains(&class))
+            {
+                continue;
+            }
             let extent = source
                 .child(
                     source.start().checked_add(start).ok_or_else(|| {
@@ -1892,18 +1908,8 @@ fn parse_dimension_presentation_payload(
     if !is_dimension_presentation_type(primary_type_guid) {
         return None;
     }
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if after_tag != start.checked_add(7)?
-        || bytes.get(start + 11..start + 19) != Some(&[0; 8])
-        || bytes.get(start + 19) != Some(&1)
-    {
-        return None;
-    }
+    let (class_tag, after_tag, count) = dimension_presentation_head(bytes, start)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
-    let count = usize::try_from(View::u32_le_at(bytes, start + 20)?).ok()?;
-    if !(1..=64).contains(&count) {
-        return None;
-    }
     let mut position = start.checked_add(24)?;
 
     let mut operands = Vec::new();
@@ -1962,6 +1968,25 @@ fn parse_dimension_presentation_payload(
         governing_parameter_record_index: 0,
         governing_companion_record_index: 0,
     })
+}
+
+fn dimension_presentation_head(bytes: &[u8], start: usize) -> Option<(&str, usize, usize)> {
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    if after_tag != start.checked_add(7)?
+        || bytes.get(start + 11..start + 19) != Some(&[0; 8])
+        || bytes.get(start + 19) != Some(&1)
+    {
+        return None;
+    }
+    let count = usize::try_from(View::u32_le_at(bytes, start + 20)?).ok()?;
+    let first_operand = start.checked_add(24)?;
+    if !(1..=64).contains(&count)
+        || bytes.get(first_operand) != Some(&1)
+        || View::u32_le_at(bytes, first_operand.checked_add(1)?)? == 0
+    {
+        return None;
+    }
+    Some((class_tag, after_tag, count))
 }
 
 /// Decode counted typed sketch loci nested immediately after dimensional

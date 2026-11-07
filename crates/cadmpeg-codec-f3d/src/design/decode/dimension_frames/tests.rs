@@ -901,6 +901,21 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
 }
 
 #[test]
+fn presentation_candidate_excludes_a_null_first_locus() {
+    let mut bytes = Vec::new();
+    crate::test_support::indexed_header(&mut bytes, *b"314", 332);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.push(1);
+    let first_reference = bytes.len();
+    bytes.extend_from_slice(&306u32.to_le_bytes());
+    assert!(super::dimension_presentation_head(&bytes, 0).is_some());
+    bytes[first_reference..first_reference + 4].copy_from_slice(&0u32.to_le_bytes());
+    assert!(super::dimension_presentation_head(&bytes, 0).is_none());
+}
+
+#[test]
 fn companion_interval_ends_before_a_foreign_scope_member() {
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
