@@ -118,7 +118,7 @@ fn detached_spline_surface_survives_in_a_bodyless_document() {
     .unwrap();
     let record = &records[9];
     let input = bodyless(|bytes| {
-        bytes.extend_from_slice(&source[record.offset..record.offset + record.len])
+        bytes.extend_from_slice(&source[record.offset..record.offset + record.len]);
     });
     let decoded = super::decode(input);
     assert_eq!(decoded.ir().model.surfaces.len(), 1);
