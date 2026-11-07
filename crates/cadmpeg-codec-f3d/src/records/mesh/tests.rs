@@ -855,6 +855,7 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
         identity(104, 100, 200),
         identity(104, 270, 30),
         109,
+        None,
     )
     .expect("scope");
     assert_eq!(scope.base_record(), identity(104, 270, 30));
@@ -865,20 +866,26 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
         identity(104, 269, 30),
         identity(104, 270, 31),
     ] {
-        assert!(
-            crate::records::mesh::DesignMeshScope::new(identity(104, 100, 200), base, 109).is_err()
-        );
+        assert!(crate::records::mesh::DesignMeshScope::new(
+            identity(104, 100, 200),
+            base,
+            109,
+            None
+        )
+        .is_err());
     }
     assert!(crate::records::mesh::DesignMeshScope::new(
         identity(104, 100, 200),
         identity(104, 270, 30),
-        0
+        0,
+        None
     )
     .is_err());
     assert!(crate::records::mesh::DesignMeshScope::new(
         identity(104, 100, 54),
         identity(104, 124, 30),
-        109
+        109,
+        None
     )
     .is_err());
 }

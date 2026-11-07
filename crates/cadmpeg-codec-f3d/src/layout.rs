@@ -1035,6 +1035,24 @@ pub(crate) mod paramesh_feature_scope_prefix {
     pub(crate) const BODY_COUNT: usize = 21;
 }
 
+/// Byte offsets for the `paramesh_flagged_feature_scope_prefix` record.
+///
+/// Spec §3.1. Record length 29 B.
+pub(crate) mod paramesh_flagged_feature_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 20;
+    /// Stated value of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG_VALUE: u8 = 1;
+    /// Offset of `flagged_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FLAGGED_WORD: usize = 21;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_COUNT: usize = 25;
+}
+
 /// Byte offsets for the `paramesh_feature_scope_base` record.
 ///
 /// Spec §3.1. Record length 30 B.

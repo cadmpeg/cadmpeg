@@ -1193,9 +1193,24 @@ Offsets are relative to the `Base Mesh Feature` indexed header. The ordered body
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its unflagged indexed header is followed by ten zero bytes |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | followed by ten zero bytes, a u32 body count at offset 21 |
 | 21 | 4 | `body_count` | `u32` | little | spec | a u32 body count at offset 21 |
+
+## `paramesh_flagged_feature_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | A flagged scope stores byte `01` at offset 20 |
+| 20 | 1 | `flag` | `u8` | little | spec | A flagged scope stores byte `01` at offset 20 · value `1` |
+| 21 | 4 | `flagged_word` | `u32` | little | spec | a u32 at offset 21; its body count is at offset 25 |
+| 25 | 4 | `body_count` | `u32` | little | spec | its body count is at offset 25 and its body references start at offset 29 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
 
 ## `paramesh_feature_scope_base`
 
