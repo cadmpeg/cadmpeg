@@ -774,7 +774,7 @@ pub(super) fn plan(
     if input.ir.model.configurations != projected.model.configurations {
         coverage.configurations = ArenaDisposition::Reported;
     }
-    if projected.model.faces.is_empty() {
+    if input.ir.scope.model && projected.model.faces.is_empty() {
         losses.push(
             SldprtLossCode::WriterNoExportableSolids
                 .note("the document has no exportable B-rep solids"),

@@ -220,7 +220,10 @@ fn finish(
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
-    if matches!(write_path, WritePath::Synthesized { .. }) && input.ir.model.faces.is_empty() {
+    if matches!(write_path, WritePath::Synthesized { .. })
+        && input.ir.scope.model
+        && input.ir.model.faces.is_empty()
+    {
         losses.push(
             SldprtLossCode::WriterNoExportableSolids
                 .note("the document has no exportable B-rep solids"),
