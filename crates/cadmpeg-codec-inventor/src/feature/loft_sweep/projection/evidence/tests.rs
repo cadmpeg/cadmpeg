@@ -224,3 +224,150 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         .contains(&(section, name)))
     .is_none());
 }
+
+const CAP_CLASS: &str =
+    "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
+const SIDE_CLASS: &str =
+    "NMx_Loft_Surface_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
+
+/// Two caps and one planar side of generator 17, plus one planar face named
+/// by a later generator 99.
+fn legacy_model() -> Model {
+    let mut model = model();
+    model.surfaces[2].geometry = serde_json::from_value(json!({
+        "kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},
+        "normal":{"x":1.0,"y":0.0,"z":0.0},"u_axis":{"x":0.0,"y":1.0,"z":0.0}
+    }))
+    .expect("plane");
+    let mut later = model.faces[2].clone();
+    later.id = serde_json::from_value(json!("test:model:face#f3")).expect("id");
+    model.faces.push(later);
+    model.attributes.push(model.attributes[2].clone());
+    let face = |i: usize| {
+        AttributeTarget::Face(
+            serde_json::from_value(json!(format!("test:model:face#f{i}"))).expect("face id"),
+        )
+    };
+    let attributes = [
+        (CAP_CLASS, 0, 17, vec![0, 19, 260]),
+        (CAP_CLASS, 1, 17, vec![0, 23, 260]),
+        (
+            SIDE_CLASS,
+            2,
+            17,
+            vec![2, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0],
+        ),
+        (
+            SIDE_CLASS,
+            3,
+            99,
+            vec![2, 5, 19, 258, 0, 0, 5, 23, 258, 0, 0],
+        ),
+    ];
+    for (attribute, (class, target, generator, tail)) in model.attributes.iter_mut().zip(attributes)
+    {
+        attribute.name = class.into();
+        attribute.target = face(target);
+        attribute.values.truncate(5);
+        attribute.values.extend(
+            [38, 1, generator, -1]
+                .into_iter()
+                .chain(tail)
+                .map(AttributeValue::Integer),
+        );
+    }
+    model
+}
+
+fn legacy_curves(section: usize) -> Vec<i64> {
+    [vec![8], vec![3]][section].clone()
+}
+
+#[test]
+fn legacy_loft_requires_both_caps_and_one_side_for_each_section_curve() {
+    let model = legacy_model();
+    assert!(legacy_loft(&model, 17, [19, 23], legacy_curves).is_some());
+    assert!(loft_result(&model, 17, [19, 23], legacy_curves).is_some());
+    // A later generator owns its own faces.
+    assert!(legacy_loft(&model, 99, [19, 23], |_| vec![5]).is_none());
+    assert!(legacy_loft(&model, 17, [23, 19], legacy_curves).is_none());
+    assert!(legacy_loft(&model, 17, [19, 19], legacy_curves).is_none());
+    assert!(legacy_loft(&model, 18, [19, 23], legacy_curves).is_none());
+    // A section boundary with another curve has no side face for it.
+    assert!(legacy_loft(&model, 17, [19, 23], |section| {
+        if section == 0 {
+            vec![8, 9]
+        } else {
+            vec![3]
+        }
+    })
+    .is_none());
+    assert!(legacy_loft(&model, 17, [19, 23], |_| Vec::new()).is_none());
+    assert!(
+        legacy_loft(&model, 17, [19, 23], |section| [vec![8], vec![4]][section]
+            .clone())
+        .is_none()
+    );
+}
+
+#[test]
+fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
+    let base = legacy_model();
+    let check = |model: &Model| legacy_loft(model, 17, [19, 23], legacy_curves);
+    let mut missing_cap = base.clone();
+    missing_cap.attributes.remove(1);
+    assert!(check(&missing_cap).is_none());
+    let mut duplicate_cap = base.clone();
+    duplicate_cap.attributes[1].values[11] = AttributeValue::Integer(19);
+    assert!(check(&duplicate_cap).is_none());
+    let mut foreign_cap = base.clone();
+    foreign_cap.attributes[1].values[11] = AttributeValue::Integer(40);
+    assert!(check(&foreign_cap).is_none());
+    // The side tail carries no member index; a member tail is the other carrier's form.
+    let mut member = base.clone();
+    member.attributes[2].values[18] = AttributeValue::Integer(4);
+    member.attributes[2].values[19] = AttributeValue::Integer(1);
+    assert!(check(&member).is_none());
+    let mut curve_tail = base.clone();
+    curve_tail.attributes[2].values[14] = AttributeValue::Integer(257);
+    assert!(check(&curve_tail).is_none());
+    let mut duplicate_side = base.clone();
+    let mut side = duplicate_side.attributes[2].clone();
+    side.target = AttributeTarget::Face(
+        serde_json::from_value(json!("test:model:face#f3")).expect("face id"),
+    );
+    side.values[7] = AttributeValue::Integer(17);
+    duplicate_side.attributes[3] = side;
+    assert!(check(&duplicate_side).is_none());
+    // Two names on one face: the face is not solely the generator's.
+    let mut shared = base.clone();
+    shared.attributes[2].values[6] = AttributeValue::Integer(2);
+    shared.attributes[2]
+        .values
+        .insert(9, AttributeValue::Integer(5));
+    shared.attributes[2]
+        .values
+        .insert(10, AttributeValue::Integer(-1));
+    assert!(check(&shared).is_none());
+    // A side face on a non-planar surface.
+    let mut curved = base.clone();
+    curved.surfaces[2].geometry = model().surfaces[2].geometry.clone();
+    assert!(check(&curved).is_none());
+    // The generator names a face on a second body.
+    let mut other_body = base.clone();
+    let mut body = other_body.bodies[0].clone();
+    body.id = serde_json::from_value(json!("test:model:body#b2")).expect("id");
+    let mut region = other_body.regions[0].clone();
+    region.id = serde_json::from_value(json!("test:model:region#r2")).expect("id");
+    region.body = body.id.clone();
+    let mut shell = other_body.shells[0].clone();
+    shell.id = serde_json::from_value(json!("test:model:shell#s2")).expect("id");
+    shell.region = region.id.clone();
+    other_body.faces[3].shell = shell.id.clone();
+    other_body.attributes[3].values[7] = AttributeValue::Integer(17);
+    other_body.attributes[3].values[11] = AttributeValue::Integer(0);
+    other_body.bodies.push(body);
+    other_body.regions.push(region);
+    other_body.shells.push(shell);
+    assert!(check(&other_body).is_none());
+}

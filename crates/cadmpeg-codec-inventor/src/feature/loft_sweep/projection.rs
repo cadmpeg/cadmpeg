@@ -144,19 +144,19 @@ fn loft(
         );
         selected.push((*ordinal, *sketch, profile.clone()));
     }
-    evidence::loft(
-        index.result_model.ok_or(NativeReason::ResultTopology)?,
+    let result_model = index.result_model.ok_or(NativeReason::ResultTopology)?;
+    let section_sources: [u32; 2] = section_sources
+        .try_into()
+        .map_err(|_| NativeReason::ResultTopology)?;
+    evidence::loft_result(
+        result_model,
         source.header.source_index,
-        section_sources
-            .try_into()
-            .map_err(|_| NativeReason::ResultTopology)?,
-        |section, name| {
+        section_sources,
+        |section| {
             selected
                 .get(section)
-                .is_some_and(|(ordinal, sketch, profile)| {
-                    index
-                        .profiles
-                        .contains_curve_name(token, *ordinal, sketch, profile, name)
+                .map_or_else(Vec::new, |(ordinal, sketch, profile)| {
+                    index.profiles.curve_names(token, *ordinal, sketch, profile)
                 })
         },
     )
