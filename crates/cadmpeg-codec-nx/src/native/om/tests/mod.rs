@@ -895,6 +895,27 @@ fn class_registry_metadata_requires_a_complete_tail() {
 }
 
 #[test]
+fn damaged_arrangement_element_keeps_readable_siblings() {
+    let xml = br#"<Arrangements><Arrangement Name="First" Default="YES"/><Arrangement Name="Broken" Name="duplicate" Default="NO"/><Arrangement Name="Last" Default="NO"/></Arrangements>"#;
+    let source = prt_with_named_payloads(&[("/Root/part/arrangements", xml.to_vec())]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode surviving arrangements");
+    let configurations = &result.ir().model.configurations;
+    assert_eq!(configurations.len(), 2);
+    assert_eq!(configurations[0].name.as_deref(), Some("First"));
+    assert_eq!(configurations[1].name.as_deref(), Some("Last"));
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("<Arrangement>"));
+}
+
+#[test]
 fn decode_retains_nx_arrangement_configurations() {
     let mut cur = Cursor::new(prt_with_arrangements());
     let result = NxCodec
