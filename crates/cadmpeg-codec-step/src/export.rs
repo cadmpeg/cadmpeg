@@ -4485,6 +4485,22 @@ impl<'a> Builder<'a> {
             if let Some(reference) = self
                 .emit_standalone_support_pcurve(&curve_id)
                 .or_else(|| self.emit_curve(&curve_id))
+                .or_else(|| {
+                    let curve = self.curves.get(curve_id.as_str())?;
+                    if self.construction_supports.contains(&curve_id)
+                        || curve.parameter_range.is_some()
+                        || !matches!(
+                            curve.geometry.solved(),
+                            Some(SolvedCurveGeometry::Unknown { .. })
+                        )
+                    {
+                        return None;
+                    }
+                    let name = Self::carrier_name(&self.carrier_names, &curve_id);
+                    let reference = self.emitter.emit("CURVE", &string(name));
+                    self.curve_refs.insert(curve_id.clone(), reference);
+                    Some(reference)
+                })
             {
                 let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
                 let reference = if let Some(range) = self
