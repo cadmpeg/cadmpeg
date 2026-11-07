@@ -384,6 +384,10 @@ fn decode_asm_history(
 thread_local! {
     static INJECTED_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
         const { std::cell::Cell::new(None) };
+    static INJECTED_PHASE_TWO_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
+        const { std::cell::Cell::new(None) };
+    static INJECTED_LOCATION_UNAVAILABLE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 }
 
 /// Make the next Design part-location run on this thread fail with
@@ -396,11 +400,27 @@ pub(crate) fn inject_failure(failure: fn() -> CodecError) {
 /// Take a pending injected part-location failure, when one was armed.
 #[cfg(test)]
 pub(crate) fn take_injected_failure() -> Option<fn() -> CodecError> {
-    INJECTED_FAILURE.with(std::cell::Cell::take)
+    let failure = INJECTED_FAILURE.with(std::cell::Cell::take);
+    INJECTED_LOCATION_UNAVAILABLE.with(|slot| slot.set(failure.is_some()));
+    failure
+}
+
+#[cfg(test)]
+pub(crate) fn take_injected_location_unavailable() -> bool {
+    INJECTED_LOCATION_UNAVAILABLE.with(std::cell::Cell::take)
+}
+
+#[cfg(test)]
+pub(crate) fn inject_phase_two_failure(failure: fn() -> CodecError) {
+    INJECTED_PHASE_TWO_FAILURE.with(|slot| slot.set(Some(failure)));
 }
 
 /// Decode design intent over the product prerequisites.
 pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecError> {
+    #[cfg(test)]
+    if let Some(failure) = INJECTED_PHASE_TWO_FAILURE.with(std::cell::Cell::take) {
+        return Err(failure());
+    }
     let &DesignInputs {
         ctx,
         scan,
