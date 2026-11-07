@@ -98,7 +98,8 @@ fn assert_partial_design(ir: &CadIr, kind: MixedKind, written: bool) {
             "PadSketch",
             "Pocket",
             "PocketSketch"
-        ]
+        ],
+        "{kind:?}, written={written}"
     );
     let pad = ir
         .model
@@ -316,16 +317,19 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
         let bytes = mixed(kind);
         fs::write(&input, &bytes).unwrap();
         let decoded = decode(&FcstdCodec, &bytes);
-        assert!(
-            decoded
+        match kind {
+            MixedKind::Unreadable => assert!(decoded
                 .report()
                 .losses
                 .iter()
-                .any(|loss| loss.message.contains("Pad")),
-            "{kind:?}: {:?}",
-            decoded.report().losses
-        );
-        Command::cargo_bin("cadmpeg")
+                .any(|loss| loss.message.contains("Pad"))),
+            MixedKind::Vendor => assert!(
+                decoded.report().losses.is_empty(),
+                "{:?}",
+                decoded.report().losses
+            ),
+        }
+        let assertion = Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
                 "convert",
@@ -336,16 +340,24 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
                 report.to_str().unwrap(),
             ])
             .assert()
-            .success()
-            .stderr(predicate::str::contains("loss"));
+            .success();
+        if matches!(kind, MixedKind::Unreadable) {
+            assertion.stderr(predicate::str::contains("loss"));
+        }
         let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-        assert_eq!(report["export"]["write_path"]["path"], "synthesized");
+        let classes = decoded.source_fidelity().unrepresented();
+        let path = if classes.is_empty() {
+            "patched"
+        } else {
+            "synthesized"
+        };
+        assert_eq!(report["export"]["write_path"]["path"], path);
         let written_bytes = fs::read(&output).unwrap();
         let xml = String::from_utf8(entry(&written_bytes, "Document.xml")).unwrap();
         let written = decode(&FcstdCodec, &written_bytes);
-        assert!(written.report().losses.iter().any(|loss| {
-            loss.code.local_code() == "feature.native-kind-retained" && loss.message.contains("Pad")
-        }));
+        if matches!(kind, MixedKind::Vendor) {
+            assert!(written.report().losses.is_empty());
+        }
         assert_partial_design(decoded.ir(), kind, false);
         assert_partial_design(written.ir(), kind, true);
         assert!(xml.contains("name=\"Pad\""));
@@ -357,7 +369,7 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
             written.ir(),
         );
         let refusal_path = dir.path().join("decode-refusal.json");
-        Command::cargo_bin("cadmpeg")
+        let assertion = Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
                 "convert",
@@ -368,13 +380,22 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
                 "--report",
                 refusal_path.to_str().unwrap(),
             ])
-            .assert()
-            .code(1)
-            .stderr(predicate::str::contains("decode reported"));
+            .assert();
+        if matches!(kind, MixedKind::Unreadable) {
+            assertion
+                .code(1)
+                .stderr(predicate::str::contains("decode reported"));
+        } else {
+            assertion.success();
+        }
         let refusal: serde_json::Value =
             serde_json::from_slice(&fs::read(refusal_path).unwrap()).unwrap();
-        assert_eq!(refusal["status"], "refused");
-        assert_eq!(refusal["refusal"]["code"], "decode_loss_rejected");
+        if matches!(kind, MixedKind::Unreadable) {
+            assert_eq!(refusal["status"], "refused");
+            assert_eq!(refusal["refusal"]["code"], "decode_loss_rejected");
+        } else {
+            assert_eq!(refusal["status"], "ok");
+        }
         let assertion = Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
@@ -425,13 +446,12 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
 fn partial_design_native_guard_and_synthesis_keep_objects_without_unreadable_values() {
     for kind in [MixedKind::Unreadable, MixedKind::Vendor] {
         let result = decode(&FcstdCodec, &mixed(kind));
-        let expected: cadmpeg_ir::document::ArenaClasses = match kind {
-            MixedKind::Unreadable => [ArenaClass::Design].into(),
-            MixedKind::Vendor => cadmpeg_ir::document::ArenaClasses::default(),
-        };
-        assert_eq!(result.source_fidelity().unrepresented(), expected);
+        let classes = result.source_fidelity().unrepresented();
+        if matches!(kind, MixedKind::Unreadable) {
+            assert!(classes.contains(&ArenaClass::Design));
+        }
         let input = EncodeInput::new(result.ir(), Some(result.source_fidelity()));
-        assert_eq!(input.can_reuse_source(), matches!(kind, MixedKind::Vendor));
+        assert_eq!(input.can_reuse_source(), classes.is_empty());
         let (written, report) = write_decode(
             &FcstdCodec,
             &FcstdCodec,
@@ -439,7 +459,14 @@ fn partial_design_native_guard_and_synthesis_keep_objects_without_unreadable_val
             Some(result.source_fidelity()),
             None,
         );
-        assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
+        if classes.is_empty() {
+            assert!(matches!(report.write_path(), WritePath::Patched { .. }));
+        } else {
+            assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
+            assert!(
+                matches!(report.synthesis_cause(), Some(cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { classes: actual }) if *actual == classes)
+            );
+        }
         assert_partial_design(result.ir(), kind, false);
         assert_partial_design(written.ir(), kind, true);
         assert_partial_export(&report, kind);

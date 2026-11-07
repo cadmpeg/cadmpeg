@@ -609,6 +609,7 @@ fn write_archive_prefix(
     losses.extend(setting_losses);
     losses.extend(tables::layer_linetype_losses(ir)?);
     losses.extend(tables::layer_material_losses(ir, materials));
+    losses.extend(tables::layer_color_losses(ir)?);
     losses.extend(linetype_losses);
     losses.extend(font_losses);
     for record in records_in(ir, "object_presentation") {
@@ -1469,7 +1470,9 @@ fn native_dispositions(
                     let (source, target) = tables::layer_linetype(ir, value)?;
                     let (material_source, material_target) =
                         tables::layer_material(ir, value, &materials);
-                    unchanged |= source == target && material_source == material_target;
+                    unchanged |= source == target
+                        && material_source == material_target
+                        && tables::layer_colors_complete(ir, value)?;
                 }
             }
             if unchanged && tables::native_layer_complete(record) {
