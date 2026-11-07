@@ -223,6 +223,16 @@ fn malformed_modifier_element_keeps_readable_fields() {
             })
             .collect();
         assert_eq!(losses.len(), 1);
+        assert!(result
+            .ir()
+            .native_unknowns("rhino")
+            .unwrap()
+            .iter()
+            .any(|record| record
+                .links
+                .iter()
+                .any(|link| link.as_str() == "rhino:object:record#000000")));
+        assert_valid(&result);
         let damaged = r#"<broken type="a" type="b"/>"#;
         let expected: Vec<u8> = if version == 1 {
             damaged.encode_utf16().flat_map(u16::to_le_bytes).collect()
