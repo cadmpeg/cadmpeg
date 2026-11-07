@@ -501,7 +501,7 @@ pub(super) fn decode(
                 library_id: None,
                 visual_guid: None,
                 physical_token: None,
-                schema: Some("step_surface_style".into()),
+                schema: None,
                 category: None,
                 base_color: Some(color),
                 textures: Vec::new(),
