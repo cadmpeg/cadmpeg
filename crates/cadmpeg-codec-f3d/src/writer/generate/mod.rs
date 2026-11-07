@@ -639,6 +639,9 @@ pub(super) fn write_with_limits(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
             ) => Some("Base Feature"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+            ) if kind.as_str() == "BaseFlange" => Some("BaseFlange"),
             _ => None,
         };
         let written = written_features
@@ -679,6 +682,16 @@ pub(super) fn write_with_limits(
                 partial = true;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
                     format!("feature {} recompute state is not encoded", feature.id),
+                ));
+            }
+            if matches!(feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+                ) if kind.as_str() == "BaseFlange")
+            {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} retains its native scope references; the referenced construction records are omitted", feature.id),
                 ));
             }
             if timeline_ranks
