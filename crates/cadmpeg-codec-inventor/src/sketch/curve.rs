@@ -211,7 +211,7 @@ pub(crate) fn member_losses(
     )
 }
 
-fn member_loss_counts<'a>(
+pub(super) fn member_loss_counts<'a>(
     unresolved: &HashSet<(&str, u32)>,
     records: impl IntoIterator<Item = (&'a str, u32, [u8; 16])>,
 ) -> Vec<LossNote> {
@@ -224,6 +224,9 @@ fn member_loss_counts<'a>(
         }
     }
     let mut losses = counts.into_iter().map(|(record_type, count)| {
+        if super::text::is_text_member_type(record_type) {
+            return super::text::member_loss(record_type, count);
+        }
         InventorLossCode::SketchMemberNative.note(format!(
             "Retained {count} Inventor sketch member record(s) of type {}: byte grammar and curve operands remain unresolved.",
             crate::pmdc::type_id_string(record_type),

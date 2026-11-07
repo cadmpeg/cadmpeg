@@ -236,6 +236,7 @@ fn midpoint_controls_require_a_null_parameter_and_zero_suffix() {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: vec![constraint],
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         let loss = relation_loss(&inventory);
@@ -263,8 +264,8 @@ fn unknown_member_classes_keep_their_type_counts_and_pinned_loss() {
             0xed, 0xb0,
         ],
         [
-            0x0e, 0xad, 0x98, 0x7a, 0xb9, 0x49, 0x5c, 0xee, 0xfc, 0x18, 0x67, 0x87, 0xa2, 0xa2,
-            0x06, 0x43,
+            0x6d, 0x37, 0xc7, 0x43, 0xb5, 0x48, 0x53, 0xfb, 0x86, 0xf9, 0x13, 0x92, 0x00, 0x29,
+            0xb0, 0xd0,
         ],
     ];
     let losses = member_loss_counts(

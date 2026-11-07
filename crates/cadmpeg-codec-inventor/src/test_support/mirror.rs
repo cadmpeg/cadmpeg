@@ -737,6 +737,7 @@ impl Fixture {
             transforms: self.transforms.clone(),
             directions: Vec::new(),
             constraints: Vec::new(),
+            text_members: Vec::new(),
             issues: Vec::new(),
         };
         crate::feature::project(

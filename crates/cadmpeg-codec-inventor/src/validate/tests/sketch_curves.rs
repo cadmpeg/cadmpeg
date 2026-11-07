@@ -334,7 +334,7 @@ fn neutral_construction_state_recomputes_from_the_entity_flags() -> TestResult {
                     points: PmDcReferenceList::new(
                         2,
                         Some(PmDcListMetadata::U32([2, 0])),
-                        vec![PmDcReference::from_packed(2), PmDcReference::from_packed(2)],
+                        vec![PmDcReference::from_packed(2), PmDcReference::from_packed(3)],
                     )
                     .expect("line endpoints"),
                     auxiliary: Vec::new(),
@@ -370,6 +370,18 @@ fn neutral_construction_state_recomputes_from_the_entity_flags() -> TestResult {
             1,
             serde_json::json!({"state": null, "associations": null}),
         )?);
+        // The second line endpoint, one unit along the line direction.
+        let mut end = sketch_point(
+            22,
+            2,
+            serde_json::json!({"state": null, "associations": null}),
+        )?;
+        crate::test_support::sketch_curves::edit_entity(&mut end, |payload| {
+            if let PmDcSketchEntityKind::Point { position, .. } = &mut payload.kind {
+                position[0] = FiniteReal::ONE;
+            }
+        });
+        data.pm_dc_sketch_entities.push(end);
         sketch_records(&mut data)?;
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.sketch_entities.push(
