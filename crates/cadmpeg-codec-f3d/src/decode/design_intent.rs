@@ -1300,6 +1300,8 @@ fn extend_related_design_records(
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
+        ctx,
+        &mut *design_parts,
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
@@ -1513,6 +1515,8 @@ fn extend_related_design_records(
         )?;
     design.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
+            ctx,
+            &mut *design_parts,
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,

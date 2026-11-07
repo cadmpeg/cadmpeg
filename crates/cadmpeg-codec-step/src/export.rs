@@ -2857,7 +2857,7 @@ impl<'a> Builder<'a> {
                 && (occurrence_products.contains_key(&occurrence.id)
                     || writable_external(occurrence))
                 && occurrence.effective_transform().is_ok_and(|transform| {
-                    transform.is_none_or(|transform| transform.is_proper_rigid())
+                    transform.is_none_or(|transform| geometry::is_similarity_transform(&transform))
                 })
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
@@ -2906,6 +2906,7 @@ impl<'a> Builder<'a> {
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
+        let mut mapped_occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
             let parent_product = match &occurrence.parent {
                 OccurrenceParent::Occurrence { occurrence: parent } => {
@@ -2935,6 +2936,11 @@ impl<'a> Builder<'a> {
                 }
             };
             let Some(frame) = transform.proper_rigid_frame() else {
+                if let Some(target) =
+                    geometry::transformation_operator(&mut self.emitter, transform)
+                {
+                    mapped_occurrence_placements.insert(occurrence.id.clone(), (from, target));
+                }
                 continue;
             };
             let rows = transform.rows();
@@ -2953,6 +2959,22 @@ impl<'a> Builder<'a> {
             }
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
+        let required_representations: BTreeSet<_> = occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence_placements.contains_key(&occurrence.id)
+                    || mapped_occurrence_placements.contains_key(&occurrence.id)
+            })
+            .filter_map(|occurrence| occurrence_products.get(&occurrence.id).cloned())
+            .chain(representation_placements.keys().cloned())
+            .collect();
+        let owned_bodies: BTreeSet<_> = products
+            .iter()
+            .flat_map(|product| &product.bodies)
+            .collect();
+        let has_unclaimed_written_bodies = self.ir.model.bodies.iter().any(|body| {
+            !owned_bodies.contains(&body.id) && self.body_item_refs.contains_key(body.id.as_str())
+        });
         let mut product_attributes =
             HashMap::<&str, Vec<&cadmpeg_ir::attributes::SourceAttribute>>::new();
         for attribute in &ir.model.attributes {
@@ -3054,23 +3076,8 @@ impl<'a> Builder<'a> {
             if let Some(child_placements) = representation_placements.get(&product.id) {
                 placements.extend(child_placements);
             }
-            // A representation with no body items binds the product to an
-            // empty shape: the re-decode reports a product with a shape
-            // representation and no committed topology body. Documents with an
-            // occurrence graph keep every binding the assembly walk needs; a
-            // lone product keeps its binding when unclaimed bodies resolve
-            // through it; other bodyless products keep only the product
-            // definition shape.
-            let owned_bodies: BTreeSet<_> = products
-                .iter()
-                .flat_map(|product| &product.bodies)
-                .collect();
-            let has_unclaimed_written_bodies = self.ir.model.bodies.iter().any(|body| {
-                !owned_bodies.contains(&body.id)
-                    && self.body_item_refs.contains_key(body.id.as_str())
-            });
             let representation = if body_items.is_empty()
-                && occurrences.is_empty()
+                && !required_representations.contains(&product.id)
                 && !(products.len() == 1 && has_unclaimed_written_bodies)
             {
                 None
@@ -3095,10 +3102,11 @@ impl<'a> Builder<'a> {
                 product_context,
                 definition_context,
                 assembly_root_placements,
+                has_unclaimed_written_bodies,
             )
         });
         let root_representation = assembly_root
-            .map(|(_, representation)| representation)
+            .and_then(|(_, representation)| representation)
             .or_else(|| {
                 root_product
                     .or_else(|| {
@@ -3136,14 +3144,10 @@ impl<'a> Builder<'a> {
                             .insert(occurrence.id.as_str().to_owned());
                         continue;
                     };
-                    let Some(parent) = definitions
-                        .get(parent_product)
-                        .copied()
-                        .zip(representations.get(parent_product).copied())
-                    else {
+                    let Some(parent) = definitions.get(parent_product).copied() else {
                         continue;
                     };
-                    parent
+                    (parent, representations.get(parent_product).copied())
                 }
                 (OccurrenceParent::Root {}, Some(assembly_root)) if placed_root(occurrence) => {
                     assembly_root
@@ -3185,7 +3189,9 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if transform.is_some_and(|transform| !transform.is_proper_rigid()) {
+            if transform.is_some_and(|transform| !transform.is_proper_rigid())
+                && !mapped_occurrence_placements.contains_key(&occurrence.id)
+            {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -3195,13 +3201,10 @@ impl<'a> Builder<'a> {
             let (child_definition, child_representation) = if let Some(child_product) =
                 occurrence_products.get(&occurrence.id)
             {
-                let Some((&definition, &representation)) = definitions
-                    .get(child_product)
-                    .zip(representations.get(child_product))
-                else {
+                let Some(&definition) = definitions.get(child_product) else {
                     continue;
                 };
-                (definition, Some(representation))
+                (definition, representations.get(child_product).copied())
             } else if writable_external(occurrence) {
                 let PrototypeReference::External { document, object } = &occurrence.prototype
                 else {
@@ -3245,10 +3248,35 @@ impl<'a> Builder<'a> {
             );
             self.occurrence_step_refs
                 .insert(occurrence.id.as_str().to_owned(), usage);
+            if let Some(&(origin, target)) = mapped_occurrence_placements.get(&occurrence.id) {
+                let Some(child_representation) = child_representation else {
+                    continue;
+                };
+                let map = self.emitter.emit(
+                    "REPRESENTATION_MAP",
+                    &format!("{origin},{child_representation}"),
+                );
+                let item = self
+                    .emitter
+                    .emit("MAPPED_ITEM", &format!("'',{map},{target}"));
+                let representation =
+                    self.emit_shape_representation("", vec![item], Vec::new(), context);
+                let usage_shape = self
+                    .emitter
+                    .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
+                self.emitter.emit(
+                    "SHAPE_DEFINITION_REPRESENTATION",
+                    &format!("{usage_shape},{representation}"),
+                );
+                continue;
+            }
             let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
                 continue;
             };
             let Some(child_representation) = child_representation else {
+                continue;
+            };
+            let Some(parent_representation) = parent_representation else {
                 continue;
             };
             let usage_shape = self
@@ -3271,14 +3299,15 @@ impl<'a> Builder<'a> {
     }
 
     /// Emits the model product that places the root occurrences. Returns its
-    /// product definition and shape representation.
+    /// product definition and any shape representation.
     fn emit_assembly_root(
         &mut self,
         context: Ref,
         product_context: Ref,
         definition_context: Ref,
         placements: Vec<Ref>,
-    ) -> (Ref, Ref) {
+        needs_geometry: bool,
+    ) -> (Ref, Option<Ref>) {
         let name = string(self.model_name);
         let product = self
             .emitter
@@ -3290,6 +3319,9 @@ impl<'a> Builder<'a> {
             "PRODUCT_DEFINITION",
             &format!("{name},'',{formation},{definition_context}"),
         );
+        if placements.is_empty() && !needs_geometry {
+            return (definition, None);
+        }
         let shape = self
             .emitter
             .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
@@ -3308,7 +3340,7 @@ impl<'a> Builder<'a> {
             "SHAPE_DEFINITION_REPRESENTATION",
             &format!("{shape},{representation}"),
         );
-        (definition, representation)
+        (definition, Some(representation))
     }
 
     fn emit_unclaimed_body_representation(&mut self, context: Ref, root: Option<Ref>) {
@@ -4317,7 +4349,29 @@ impl<'a> Builder<'a> {
         let mut members = Vec::new();
         let mut has_surfaces = false;
         for surface_id in surface_ids {
-            if let Some(reference) = self.emit_surface(&surface_id) {
+            let reference = self.emit_surface(&surface_id).or_else(|| {
+                let surface = self.surfaces.get(surface_id.as_str())?;
+                if self.construction_supports.contains(&surface_id)
+                    || !matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Unknown { .. })
+                    )
+                {
+                    return None;
+                }
+                let name = Self::carrier_name(&self.carrier_names, &surface_id);
+                let reference = self.emitter.emit("SURFACE", &string(name));
+                self.surface_refs.insert(
+                    surface_id.clone(),
+                    WrittenSurface {
+                        reference,
+                        chart: None,
+                        reversed_normal: false,
+                    },
+                );
+                Some(reference)
+            });
+            if let Some(reference) = reference {
                 let ranges =
                     self.procedural_surfaces
                         .get(surface_id.as_str())
@@ -4464,6 +4518,22 @@ impl<'a> Builder<'a> {
             if let Some(reference) = self
                 .emit_standalone_support_pcurve(&curve_id)
                 .or_else(|| self.emit_curve(&curve_id))
+                .or_else(|| {
+                    let curve = self.curves.get(curve_id.as_str())?;
+                    if self.construction_supports.contains(&curve_id)
+                        || curve.parameter_range.is_some()
+                        || !matches!(
+                            curve.geometry.solved(),
+                            Some(SolvedCurveGeometry::Unknown { .. })
+                        )
+                    {
+                        return None;
+                    }
+                    let name = Self::carrier_name(&self.carrier_names, &curve_id);
+                    let reference = self.emitter.emit("CURVE", &string(name));
+                    self.curve_refs.insert(curve_id.clone(), reference);
+                    Some(reference)
+                })
             {
                 let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
                 let reference = if let Some(range) = self
@@ -4601,11 +4671,23 @@ impl<'a> Builder<'a> {
             "DEFINITIONAL_REPRESENTATION",
             &format!("'',({curve}),{context}"),
         );
-        let name = Self::carrier_name(&self.carrier_names, curve_id);
-        let reference = self.emitter.emit(
+        let name = Self::carrier_name(&self.carrier_names, curve_id).to_owned();
+        let pcurve = self.emitter.emit(
             "PCURVE",
-            &format!("{},{surface},{representation}", string(name)),
+            &format!("{},{surface},{representation}", string(&name)),
         );
+        let reference = if matches!(
+            self.curves.get(curve_id)?.geometry.solved(),
+            Some(SolvedCurveGeometry::Unknown { .. })
+        ) {
+            let basis = self.emitter.emit("CURVE", &string(&name));
+            self.emitter.emit(
+                "SURFACE_CURVE",
+                &format!("{},{basis},({pcurve}),.PCURVE_S1.", string(&name)),
+            )
+        } else {
+            pcurve
+        };
         self.curve_refs.insert(curve_id.to_owned(), reference);
         if exact_construction {
             self.written_procedural_curves.insert(construction_id);
