@@ -219,6 +219,7 @@ fn sketch_block_terminal_identity_carries_its_origin() {
 
 #[test]
 fn synthetic_block_instance_archive_has_a_declared_placement() {
+    const EPS_BLOCK_ORIGIN_MM: f64 = 1e-12;
     fn class(bytes: &mut Vec<u8>, name: &str) {
         bytes.extend_from_slice(CLASS_MARKER);
         bytes.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
@@ -306,7 +307,6 @@ fn synthetic_block_instance_archive_has_a_declared_placement() {
     assert_eq!(names[0].value, "Use");
     assert_eq!(names[1].value, "Block");
     let point = sketch_block_record_origin(&payload, 0, payload.len()).unwrap();
-    const EPS_BLOCK_ORIGIN_MM: f64 = 1e-12;
     assert!((point.x - 10.0).abs() < EPS_BLOCK_ORIGIN_MM);
     assert!((point.y - 20.0).abs() < EPS_BLOCK_ORIGIN_MM);
     assert!((point.z - 30.0).abs() < EPS_BLOCK_ORIGIN_MM);
