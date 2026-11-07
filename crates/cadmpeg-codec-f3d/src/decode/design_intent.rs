@@ -1667,6 +1667,7 @@ fn extend_related_design_records(
         &scope_histories,
     )?;
     crate::design::decode::operands::bind_work_plane_constructions(
+        (ctx, &mut *design_parts),
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
