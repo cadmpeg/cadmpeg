@@ -2767,6 +2767,12 @@ fn native_count_limit(limit: u64, count: u64) -> CodecError {
     ))
 }
 
+fn writable_count_limit(limit: u64, count: u64) -> WriteError {
+    WriteError::Omit(format!(
+        "Rhino native count {count} exceeds the format limit {limit}"
+    ))
+}
+
 fn polymorphic_array<'a>(
     children: impl ExactSizeIterator<Item = &'a ([u8; 16], Vec<u8>)>,
 ) -> Result<Vec<u8>, CodecError> {
@@ -3287,9 +3293,9 @@ fn nurbs_curve_payload_dimension(
 ) -> Result<Vec<u8>, WriteError> {
     let rational = i32::from(curve.weights().is_some());
     let order = i32::try_from(curve.degree() + 1)
-        .map_err(|_| native_count_limit(2_147_483_647, u64::from(curve.degree() + 1)))?;
+        .map_err(|_| writable_count_limit(2_147_483_647, u64::from(curve.degree() + 1)))?;
     let count = i32::try_from(curve.control_points().len()).map_err(|_| {
-        native_count_limit(
+        writable_count_limit(
             2_147_483_647,
             cadmpeg_core::decode::u64_from_index(curve.control_points().len()),
         )
@@ -3315,7 +3321,7 @@ fn nurbs_curve_payload_dimension(
     }
     payload.extend(
         (i32::try_from(curve.knots().len() - 2).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(curve.knots().len() - 2),
             )
@@ -3394,17 +3400,17 @@ fn nurbs_surface_payload(
         3,
         rational,
         i32::try_from(surface.u_degree() + 1)
-            .map_err(|_| native_count_limit(2_147_483_647, u64::from(surface.u_degree() + 1)))?,
+            .map_err(|_| writable_count_limit(2_147_483_647, u64::from(surface.u_degree() + 1)))?,
         i32::try_from(surface.v_degree() + 1)
-            .map_err(|_| native_count_limit(2_147_483_647, u64::from(surface.v_degree() + 1)))?,
+            .map_err(|_| writable_count_limit(2_147_483_647, u64::from(surface.v_degree() + 1)))?,
         i32::try_from(surface.u_count()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(surface.u_count()),
             )
         })?,
         i32::try_from(surface.v_count()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(surface.v_count()),
             )
@@ -3427,7 +3433,7 @@ fn nurbs_surface_payload(
     for knots in [surface.u_knots(), surface.v_knots()] {
         payload.extend(
             (i32::try_from(knots.len() - 2).map_err(|_| {
-                native_count_limit(
+                writable_count_limit(
                     2_147_483_647,
                     cadmpeg_core::decode::u64_from_index(knots.len() - 2),
                 )
@@ -4016,7 +4022,7 @@ fn mesh_payload(
     let mut payload = vec![payload_version];
     payload.extend(
         (i32::try_from(mesh.vertices().len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
             )
@@ -4025,7 +4031,7 @@ fn mesh_payload(
     );
     payload.extend(
         (i32::try_from(mesh.triangles().len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(mesh.triangles().len()),
             )
@@ -4050,7 +4056,7 @@ fn mesh_payload(
     };
     payload.extend(
         (i32::try_from(width.bytes()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(width.bytes()),
             )
@@ -4124,7 +4130,7 @@ fn mesh_payload(
         body.extend(0_i32.to_le_bytes());
         body.extend(
             (u32::try_from(mesh.vertices().len()).map_err(|_| {
-                native_count_limit(
+                writable_count_limit(
                     4_294_967_295,
                     cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
                 )
