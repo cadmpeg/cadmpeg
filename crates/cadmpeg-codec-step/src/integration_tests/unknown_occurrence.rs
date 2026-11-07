@@ -11,7 +11,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn unknown_occurrence_pose_is_omitted_and_known_sibling_round_trips() {
+fn unplaced_occurrence_and_known_sibling_round_trip() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     for (key, bodies) in [
         ("root", vec![]),
@@ -73,19 +73,20 @@ fn unknown_occurrence_pose_is_omitted_and_known_sibling_round_trips() {
         .iter()
         .filter(|loss| loss.code == crate::loss::StepLossCode::OccurrencePlacementUnknown.kind())
         .collect::<Vec<_>>();
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("test:model:occurrence#unknown"));
+    assert!(losses.is_empty());
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded
+    let unknown = decoded
         .ir()
         .model
         .occurrences
         .iter()
-        .any(|occurrence| occurrence.name.as_deref() == Some("unknown")));
+        .find(|occurrence| occurrence.name.as_deref() == Some("unknown"))
+        .expect("unplaced occurrence");
+    assert!(unknown.transform.is_none());
     let known = decoded
         .ir()
         .model
@@ -98,7 +99,7 @@ fn unknown_occurrence_pose_is_omitted_and_known_sibling_round_trips() {
 }
 
 #[test]
-fn unknown_ancestor_omits_descendants_and_keeps_known_local_frames() {
+fn unplaced_ancestor_preserves_descendants_and_local_frames() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     for (key, bodies) in [
         ("root", vec![]),
@@ -202,29 +203,21 @@ fn unknown_ancestor_omits_descendants_and_keeps_known_local_frames() {
         .iter()
         .filter(|loss| loss.code == crate::loss::StepLossCode::OccurrencePlacementUnknown.kind())
         .collect::<Vec<_>>();
-    assert_eq!(losses.len(), 3);
-    for key in ["unknown", "child", "grandchild"] {
-        let id = format!("test:model:occurrence#{key}");
-        assert_eq!(
-            losses
-                .iter()
-                .filter(|loss| loss.message.contains(&id))
-                .count(),
-            1
-        );
-    }
+    assert!(losses.is_empty());
 
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded
+    let unknown = decoded
         .ir()
         .model
         .occurrences
         .iter()
-        .any(|occurrence| occurrence.name.as_deref() == Some("unknown")));
+        .find(|occurrence| occurrence.name.as_deref() == Some("unknown"))
+        .expect("unplaced occurrence");
+    assert!(unknown.transform.is_none());
     let known = decoded
         .ir()
         .model
@@ -241,13 +234,27 @@ fn unknown_ancestor_omits_descendants_and_keeps_known_local_frames() {
         .find(|occurrence| occurrence.name.as_deref() == Some("known_child"))
         .expect("known nested sibling");
     assert_eq!(known_child.transform, Some(translated(3.0)));
-    for key in ["child", "grandchild"] {
-        assert!(!decoded
-            .ir()
-            .model
-            .occurrences
-            .iter()
-            .any(|occurrence| occurrence.name.as_deref() == Some(key)));
-    }
+    let child = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("child"))
+        .expect("child of unplaced occurrence");
+    assert_eq!(child.transform, Some(translated(2.0)));
+    assert!(
+        matches!(&child.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &unknown.id)
+    );
+    let grandchild = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("grandchild"))
+        .expect("grandchild of unplaced occurrence");
+    assert_eq!(grandchild.transform, Some(translated(2.0)));
+    assert!(
+        matches!(&grandchild.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &child.id)
+    );
     assert_eq!(ir.model.occurrences[1].transform, None);
 }
