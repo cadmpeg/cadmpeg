@@ -944,17 +944,20 @@ pub(super) fn write(
                     .count()
                     == 1
                 && !entries.contains_key(file))
-            .then(|| file.clone())
+            .then(|| (file.clone(), property))
         });
-        let file = original_file.unwrap_or_else(|| {
-            let mut file = format!("{name}.brp");
-            let mut suffix = 1;
-            while entries.contains_key(&file) || entry_names.contains(&file) {
-                file = format!("{name}_{suffix}.brp");
-                suffix += 1;
-            }
-            file
-        });
+        let file = original_file.as_ref().map_or_else(
+            || {
+                let mut file = format!("{name}.brp");
+                let mut suffix = 1;
+                while entries.contains_key(&file) || entry_names.contains(&file) {
+                    file = format!("{name}_{suffix}.brp");
+                    suffix += 1;
+                }
+                file
+            },
+            |(file, _)| file.clone(),
+        );
         entries.insert(file.clone(), serialized.bytes);
         for body in &bodies {
             if !serialized
@@ -972,13 +975,22 @@ pub(super) fn write(
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("body owner is absent"))?;
+        let source_property = if let Some((_, property)) = original_file {
+            let mut available = available.clone();
+            available.insert(file.clone());
+            xml::native_named(property, &names, &available)?
+        } else {
+            None
+        };
         object.set(
             &property_name,
-            xml::property(
-                &property_name,
-                "Part::PropertyPartShape",
-                &xml::element("Part", &[("file", file)]),
-            ),
+            source_property.unwrap_or_else(|| {
+                xml::property(
+                    &property_name,
+                    "Part::PropertyPartShape",
+                    &xml::element("Part", &[("file", file)]),
+                )
+            }),
         );
         if property_name == "Shape" {
             object.mark_geometry_written();
