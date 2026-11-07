@@ -174,11 +174,6 @@ fn boundary_group_rejects_each_violated_tail_invariant() {
             ..COMPACT_TAIL
         },
         Tail {
-            ordinal: 256,
-            ordinal_copy: 256,
-            ..COMPACT_TAIL
-        },
-        Tail {
             ordinal_copy: 126,
             ..COMPACT_TAIL
         },

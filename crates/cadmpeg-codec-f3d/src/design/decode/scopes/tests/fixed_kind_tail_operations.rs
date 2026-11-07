@@ -1462,7 +1462,7 @@ pub(super) fn fixed_kind_tail_operations(
             &extend_scope,
         )
         .map(|operation| operation.support),
-        None
+        Some(operation.support.clone())
     );
     let mut zero_tolerance = bytes.clone();
     let tolerance_at = extend_boundary_at + extend_boundary_tail + 39;

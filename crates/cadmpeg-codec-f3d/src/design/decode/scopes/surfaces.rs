@@ -435,7 +435,7 @@ fn exact_surface_boundary_group(
         && View::u32_le_at(bytes, tail + layout.trailing_count)? == 1
         && View::u64_le_at(bytes, tail + layout.role)? == role.raw()
         && bytes.get(tail + layout.zero_run_10..tail + layout.ordinal)? == [0; 10]
-        && (1..256).contains(&ordinal)
+        && ordinal != 0
         && View::u32_le_at(bytes, tail + layout.ordinal_copy)? == ordinal
         && marked_record_reference(bytes, tail + layout.second_next_reference)
             == record_index.checked_add(2)
