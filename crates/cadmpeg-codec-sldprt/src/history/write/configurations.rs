@@ -63,8 +63,11 @@ pub(crate) fn ensure_default_configuration(
     supported: &[BodyId],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if !projected.scope.design || !projected.model.configurations.is_empty() || supported.is_empty()
-    {
+    let geometry = !supported.is_empty()
+        || !projected.model.points.is_empty()
+        || !projected.model.curves.is_empty()
+        || !projected.model.surfaces.is_empty();
+    if !projected.scope.design || !projected.model.configurations.is_empty() || !geometry {
         return Ok(());
     }
     let id = ConfigurationId::mint("sldprt:model:configuration#default")

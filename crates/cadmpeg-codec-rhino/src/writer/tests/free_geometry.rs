@@ -81,6 +81,37 @@ fn authored_extrusion_payload_decodes_its_cap_and_carrier() {
 }
 
 #[test]
+fn extrusion_retains_its_mesh_cache() {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/extrusion.3dm"
+    ));
+    let source = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(source.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let output = RhinoCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.tessellations.len(), 1);
+    let actual = output.ir().model.tessellations[0].vertices();
+    let expected = source.ir().model.tessellations[0].vertices();
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!((actual.x - expected.x).abs() < 1e-12);
+        assert!((actual.y - expected.y).abs() < 1e-12);
+        assert!((actual.z - expected.z).abs() < 1e-12);
+    }
+}
+
+#[test]
 fn capped_extrusion_retains_its_procedure_and_cap_pcurves() {
     let bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),

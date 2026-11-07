@@ -73,21 +73,95 @@ fn payload_name_candidates(
     payload
         .windows(name_marker.len())
         .enumerate()
-        .filter_map(move |(offset, marker)| (marker == name_marker).then_some(offset))
+        .filter_map(move |(offset, marker)| {
+            (marker == name_marker || declared_name_length_at(payload, offset).is_some())
+                .then_some(offset)
+        })
         .filter_map(move |offset| {
-            let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let start = offset + NAME_MARKER.len() + 1;
-            let end = start.checked_add(length.checked_mul(2)?)?;
+            let (start, end) = name_span(payload, offset)?;
             let units = payload.get(start..end)?;
             let object_id = end
                 .checked_add(8)
                 .and_then(|position| View::u32_le_at(payload, position))
                 .and_then(|value| ObjectId::try_from(value).ok());
+            if units.is_empty() && object_id.is_none() {
+                return None;
+            }
             Some((offset, object_id, units))
         })
+}
+
+pub(crate) fn name_span(payload: &[u8], offset: usize) -> Option<(usize, usize)> {
+    let length_at = declared_name_length_at(payload, offset)
+        .or_else(|| offset.checked_add(NAME_MARKER.len()))?;
+    let first = *payload.get(length_at)?;
+    let (length, start) = if first == u8::MAX {
+        (
+            usize::from(View::u16_le_at(payload, length_at.checked_add(1)?)?),
+            length_at.checked_add(3)?,
+        )
+    } else {
+        (usize::from(first), length_at.checked_add(1)?)
+    };
+    let end = start.checked_add(length.checked_mul(2)?)?;
+    payload.get(start..end)?;
+    Some((start, end))
+}
+
+fn declared_name_length_at(payload: &[u8], offset: usize) -> Option<usize> {
+    const CLASS: &[u8] = b"moNodeName_c";
+    let end = offset.checked_add(CLASS_MARKER.len())?;
+    if payload.get(offset..end)? != CLASS_MARKER
+        || usize::from(View::u16_le_at(payload, end)?) != CLASS.len()
+        || payload.get(end + 2..end + 2 + CLASS.len())? != CLASS
+        || payload.get(end + 2 + CLASS.len()..end + 5 + CLASS.len())?
+            != &NAME_MARKER[2..]
+    {
+        return None;
+    }
+    Some(end + 5 + CLASS.len())
+}
+
+pub(crate) fn name_length_at(payload: &[u8], offset: usize) -> Option<usize> {
+    if let Some(length_at) = declared_name_length_at(payload, offset) {
+        return Some(length_at);
+    }
+    let token = View::u16_le_at(payload, offset)?;
+    let marker = offset.checked_add(2)?;
+    if !is_class_token(token) || payload.get(marker..marker.checked_add(3)?)? != &NAME_MARKER[2..] {
+        return None;
+    }
+    marker.checked_add(3)
+}
+
+pub(crate) fn record_name_end(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
+    let offset = usize::try_from(name.offset).ok()?;
+    if let Some((start, end)) = name_span(payload, offset) {
+        let units = name.value.encode_utf16();
+        if units
+            .flat_map(u16::to_le_bytes)
+            .eq(payload[start..end].iter().copied())
+        {
+            return Some(end);
+        }
+    }
+    let units = name.value.encode_utf16().count();
+    offset
+        .checked_add(name_prefix_len(units))?
+        .checked_add(units.checked_mul(2)?)
+}
+
+pub(crate) fn append_name_length(payload: &mut Vec<u8>, length: u16) {
+    if length < u16::from(u8::MAX) {
+        payload.push(length.to_le_bytes()[0]);
+    } else {
+        payload.push(u8::MAX);
+        payload.extend_from_slice(&length.to_le_bytes());
+    }
+}
+
+pub(crate) fn name_prefix_len(units: usize) -> usize {
+    NAME_MARKER.len() + 1 + usize::from(units >= usize::from(u8::MAX)) * 2
 }
 
 pub(super) fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
@@ -97,7 +171,7 @@ pub(super) fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &s
         .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
         .filter_map(|offset| {
             let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
+            if length == 0 {
                 return None;
             }
             let bytes = payload.get(offset + 6..offset + 6 + length)?;
@@ -123,7 +197,7 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
         .filter(|(_, window)| *window == CLASS_MARKER)
         .find_map(|(offset, _)| {
             let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
+            if length == 0 {
                 return None;
             }
             let name = payload.get(offset + 6..offset + 6 + length)?;
@@ -139,7 +213,11 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
                 return None;
             }
             let units = usize::from(*payload.get(token_offset + 5)?);
-            (1..=128).contains(&units).then_some(token)
+            if units == 0 {
+                let object = View::u32_le_at(payload, token_offset + 6 + 8)?;
+                ObjectId::try_from(object).ok()?;
+            }
+            Some(token)
         })
 }
 

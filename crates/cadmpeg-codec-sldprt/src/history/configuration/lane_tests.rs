@@ -1549,6 +1549,60 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
 }
 
 #[test]
+fn boolean_configuration_accepts_only_zero_and_one() {
+    use cadmpeg_ir::features::{DesignParameter, Expression, ParameterId, ParameterValue};
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let id = ParameterId::mint("test:model:parameter#enabled").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        driving: true,
+        id: id.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "Enabled".into(),
+        expression: Expression::text("false"),
+        display: None,
+        value: Some(ParameterValue::Boolean(false)),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model
+        .configurations
+        .push(design_configuration("default", 0, Some(0), None));
+    for (number, expected) in [
+        (0.0, Some(false)),
+        (1.0, Some(true)),
+        (-1.0, None),
+        (0.5, None),
+        (2.0, None),
+    ] {
+        let configuration = &mut ir.model.configurations[0];
+        configuration.parameter_values.insert(
+            id.clone(),
+            ParameterValue::Real(FiniteReal::new(number).unwrap()),
+        );
+        configuration
+            .parameter_overrides
+            .insert(id.clone(), Expression::text(number.to_string()));
+        align_configuration_parameter_kinds(&mut ir);
+        let configuration = &ir.model.configurations[0];
+        assert_eq!(
+            configuration.parameter_values.get(&id),
+            expected.map(ParameterValue::Boolean).as_ref()
+        );
+        if let Some(value) = expected {
+            assert_eq!(
+                configuration.parameter_overrides.get(&id),
+                Some(&Expression::text(value.to_string()))
+            );
+        }
+    }
+}
+
+#[test]
 fn integer_parameter_refuses_real_override_outside_i64_or_fractional() {
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     use cadmpeg_ir::scalar::FiniteReal;

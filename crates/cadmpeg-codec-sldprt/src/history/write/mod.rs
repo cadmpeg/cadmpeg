@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
+use crate::writer::write_error::WriteError;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
     FeatureOperation, LinearTermination, PlanarProfileRef, VertexSelection,
@@ -54,7 +54,7 @@ fn validate_embedded_helix_edits(
     ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let Some(native) = native else {
         return Ok(());
     };
@@ -102,7 +102,7 @@ fn validate_embedded_helix_edits(
             continue;
         };
         if feature.evaluation.definition() != expected {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes embedded helix geometry",
                 feature.id
             )));
@@ -114,7 +114,7 @@ fn validate_embedded_helix_edits(
 fn validate_surface_sweep_profile_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let Some(native) = native else {
         return Ok(());
     };
@@ -153,19 +153,19 @@ fn validate_surface_sweep_profile_edits(
         let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
             feature.evaluation.definition()
         else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
         };
         let Some(profile) = shape.referenced_profile() else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
         };
         if profile != expected {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
@@ -239,7 +239,7 @@ fn project_feature_model_with_native_inputs(
 fn validate_compact_body_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let Some(native) = native else {
         return Ok(());
     };
@@ -276,9 +276,9 @@ fn validate_compact_body_selection_edits(
                 &selection.local_body_ids,
             ),
         )
-        .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
+        .map_err(|error| WriteError::Decline(error.to_string()))?;
         if bodies != &expected {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes a compact body selection",
                 feature.id
             )));
@@ -288,7 +288,7 @@ fn validate_compact_body_selection_edits(
             .as_ref()
             .is_some_and(|expected| mode != expected)
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes a compact body retention mode",
                 feature.id
             )));
@@ -300,7 +300,7 @@ fn validate_compact_body_selection_edits(
 fn validate_compact_edge_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let Some(native) = native else {
         return Ok(());
     };
@@ -339,7 +339,7 @@ fn validate_compact_edge_selection_edits(
             _ => continue,
         };
         let [edges] = groups.as_slice() else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} requires exactly one compact edge group",
                 feature.id
             )));
@@ -349,7 +349,7 @@ fn validate_compact_edge_selection_edits(
         );
         let generated = edge_selections
             .iter()
-            .map(|selection| -> Result<Option<_>, CodecError> {
+            .map(|selection| -> Result<Option<_>, WriteError> {
                 let Some(native_feature) = selection.terminal_feature_ref.as_deref() else {
                     return Ok(None);
                 };
@@ -365,14 +365,14 @@ fn validate_compact_edge_selection_edits(
                     .join(",");
                 Ok(cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id).ok())
             })
-            .collect::<Result<Option<Vec<_>>, CodecError>>()?;
+            .collect::<Result<Option<Vec<_>>, WriteError>>()?;
         let expected = match generated.filter(|edges| !edges.is_empty()) {
             Some(edges) => EdgeSelection::generated(edges, native.clone())
                 .unwrap_or(EdgeSelection::Native(native)),
             None => EdgeSelection::Native(native),
         };
         if *edges != &expected {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes a compact edge selection",
                 feature.id
             )));
@@ -384,7 +384,7 @@ fn validate_compact_edge_selection_edits(
 fn validate_compact_surface_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     enum SelectionSlot<'a> {
         Face(&'a FaceSelection),
         Vertex(&'a VertexSelection),
@@ -511,7 +511,7 @@ fn validate_compact_surface_selection_edits(
             }
         };
         if changed {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} changes a compact surface selection",
                 feature.id
             )));
@@ -520,4 +520,4 @@ fn validate_compact_surface_selection_edits(
     Ok(())
 }
 
-mod input_classes;
+pub(super) mod input_classes;
