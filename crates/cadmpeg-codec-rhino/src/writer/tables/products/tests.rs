@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -176,4 +177,66 @@ fn unknown_ancestor_cascades_without_changing_known_local_reference_frames() {
             .any(|bytes| bytes == expected));
     }
     assert_eq!(ir.model.occurrences[1].transform, Some(translated(2.0)));
+}
+
+#[test]
+fn overflowing_occurrence_placement_names_only_the_unwritable_record() {
+    let mut ir = CadIr::empty();
+    ir.model.product_definitions.push(ProductDefinition {
+        id: "test:model:product#part".try_into().unwrap(),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::default(),
+        bodies: vec![],
+        sketches: Vec::new(),
+        native_ref: None,
+    });
+    let huge = Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    for (ordinal, name) in ["overflow", "valid"].into_iter().enumerate() {
+        ir.model.occurrences.push(Occurrence {
+            id: format!("test:model:occurrence#{name}").try_into().unwrap(),
+            prototype: PrototypeReference::Local {
+                definition: ir.model.product_definitions[0].id.clone(),
+            },
+            parent: OccurrenceParent::Root {},
+            ordinal: u32::try_from(ordinal).unwrap(),
+            transform: Some(if name == "overflow" {
+                huge
+            } else {
+                Transform::identity()
+            }),
+            linked_prototype: (name == "overflow").then_some(huge),
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        });
+    }
+    let plan = super::super::materials::MaterialPlan::new(&ir).unwrap();
+    let output = super::references(&ir, &plan).unwrap();
+    assert_eq!(output.records.len(), 1);
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:occurrence#overflow")));
+    assert!(output.written.contains("test:model:occurrence#valid"));
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:occurrence#overflow")));
+    let valid = crate::writer::neutral_object_uuid("test:model:occurrence#valid");
+    assert!(bytes.windows(valid.len()).any(|window| window == valid));
 }

@@ -1612,3 +1612,43 @@ fn expression_dependencies_use_unique_labels_and_skip_strings_and_metadata() {
         );
     }
 }
+
+#[test]
+fn vendor_body_member_with_shape_projects_as_native_feature() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="PartDesign::Body" name="Body"/><Object type="Vendor::Feature" name="Custom"/></Objects>
+<ObjectData Count="2">
+<Object name="Body"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Custom"/></LinkList></Property></Properties></Object>
+<Object name="Custom"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Custom.Shape.brp"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 1
+Ve 0.001 0 0 0 0 0 1001000 *
++1 0 *";
+    let bytes = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("Custom.Shape.brp", brep),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode vendor body member");
+    assert!(!result.ir().model.points.is_empty());
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Custom"))
+        .expect("body member projects");
+    assert!(
+        matches!(feature.definition().operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "Vendor::Feature")
+    );
+    assert_valid_document(result.ir());
+}
