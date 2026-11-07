@@ -345,6 +345,25 @@ fn blend(index: usize, owner: i64, schema: u32, generator: i64) -> Record {
 }
 
 #[test]
+fn a_schema_43_carrier_joins_no_face() {
+    let records = archive(38)
+        .into_iter()
+        .map(|mut record| {
+            let mut tokens = record.tokens.to_vec();
+            for token in &mut tokens {
+                if matches!(token, Token::Long(38)) {
+                    *token = Token::Long(43);
+                }
+            }
+            record.tokens = tokens.into();
+            record
+        })
+        .collect::<Vec<_>>();
+    assert!(crate::feature::edge_selection::matched_qualified(&records[1], 43).is_some());
+    assert!(run(&records, 43).is_none());
+}
+
+#[test]
 fn a_plain_join_states_no_assumption() {
     for schema in [38, 44] {
         let face = run(&archive(schema), schema).expect("selected");

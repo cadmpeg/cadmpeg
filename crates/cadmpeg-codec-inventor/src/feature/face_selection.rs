@@ -174,6 +174,11 @@ pub(super) fn selected(
     selectors: &[FaceSelector],
     schema: u32,
 ) -> HashMap<u32, SelectedFace> {
+    // The generated names of a schema-43 owner have no defined grammar, so the
+    // generator check cannot run.
+    if schema == 43 {
+        return HashMap::new();
+    }
     let by_index = unique_index(
         records
             .iter()
