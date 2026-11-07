@@ -1612,6 +1612,7 @@ fn extend_related_design_records(
     );
     design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
         ctx,
+        design_parts,
         scan,
         &design.design_parameter_scopes,
         &design.design_construction_operand_groups,
