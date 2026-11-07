@@ -166,7 +166,7 @@ fn shared_native_ref_authors_distinct_current_materials_and_reports_exact_guid_r
         let native=format!("appearance {id} linked native {native_id} /source_uuid {} -> {:?}; distinct Rhino material components require unique physical UUIDs",json!(SOURCE_UUID),uuid);
         for message in [canonical, native] {
             assert!(plan.losses().iter().any(|loss| loss.code
-                == RhinoLossCode::WriterAttributesOmitted.kind()
+                == RhinoLossCode::WriterMaterialUuidReassigned.kind()
                 && loss.message == message));
         }
     }
@@ -384,7 +384,7 @@ fn explicit_unique_current_asset_guid_wins_and_reports_only_the_changed_native_u
     assert_eq!(plan.losses().len(), 1);
     assert_eq!(
         plan.losses()[0].code,
-        RhinoLossCode::WriterAttributesOmitted.kind()
+        RhinoLossCode::WriterMaterialUuidReassigned.kind()
     );
     assert_eq!(plan.losses()[0].message, format!(
         "appearance {FIRST_ID} linked native {} /source_uuid {} -> {edited:?}; distinct Rhino material components require unique physical UUIDs",
@@ -427,7 +427,7 @@ fn unchanged_one_to_one_uuid_is_reserved_before_an_independent_canonical_collisi
     assert_eq!(plan.losses().len(), 1);
     assert_eq!(
         plan.losses()[0].code,
-        RhinoLossCode::WriterAttributesOmitted.kind()
+        RhinoLossCode::WriterMaterialUuidReassigned.kind()
     );
     assert_eq!(plan.losses()[0].message, format!(
         "appearance {SECOND_ID} /asset_guid {:?} -> {:?}; distinct Rhino material components require unique physical UUIDs",

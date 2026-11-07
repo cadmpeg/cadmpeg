@@ -149,6 +149,10 @@ loss_codes! {
     WriterEntityOmitted => "writer.entity-omitted",
     /// Unsupported UV images were omitted while preserving model-space boundaries.
     WriterPcurvesOmitted => "writer.pcurves-omitted",
+    /// A circular UV image was represented by a reparameterized NURBS.
+    WriterPcurveReparameterized => "writer.pcurve-reparameterized",
+    /// A linear UV image was represented by a degree-1 NURBS.
+    WriterPcurveConverted => "writer.pcurve-converted",
     /// A body's local shape was written without its unsupported placement.
     WriterBodyTransformNotApplied => "writer.body-transform-not-applied",
     /// No writable geometric entity remains in the document.
@@ -171,6 +175,8 @@ impl IgesLossCode {
             Self::WriterArenaOmitted
             | Self::WriterAttributeOmitted
             | Self::DesignParametricRecordsOmitted
+            | Self::WriterPcurveReparameterized
+            | Self::WriterPcurveConverted
             | Self::NoExportableSolids => Severity::Warning,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 Severity::Warning
@@ -227,6 +233,9 @@ impl IgesLossCode {
             Self::WriterAttributeOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::DesignParametricRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEntityOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterPcurveReparameterized | Self::WriterPcurveConverted => {
+                LossTaxonomy::GeometryNotTransferred
+            }
             Self::WriterPcurvesOmitted => LossTaxonomy::PcurveOmitted,
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -373,6 +382,8 @@ mod tests {
                 "design.parametric-records-omitted",
                 "writer.entity-omitted",
                 "writer.pcurves-omitted",
+                "writer.pcurve-reparameterized",
+                "writer.pcurve-converted",
                 "writer.body-transform-not-applied",
                 "export.no-exportable-solids",
             ]
