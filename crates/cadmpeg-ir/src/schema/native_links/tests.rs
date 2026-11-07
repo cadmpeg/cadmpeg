@@ -89,10 +89,10 @@ fn input_operand_links_resolve_to_the_containing_topology() {
     model.feature_input_topologies.push(FeatureInputTopology {
         id: topology_id.clone(),
         input_of: FeatureId::mint("test:model:feature#one").unwrap(),
-        bodies: Default::default(),
-        faces: Default::default(),
-        edges: Default::default(),
-        vertices: Default::default(),
+        bodies: crate::features::DistinctMembers::default(),
+        faces: crate::features::DistinctMembers::default(),
+        edges: crate::features::DistinctMembers::default(),
+        vertices: crate::features::DistinctMembers::default(),
         operands: vec![FeatureInputOperand {
             id: operand_id.clone(),
             definition: FeatureInputOperandDefinition::Native,

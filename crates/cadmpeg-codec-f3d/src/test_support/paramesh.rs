@@ -34,6 +34,10 @@ fn raw_chunk(descriptor: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 pub(crate) fn triangle() -> Vec<u8> {
+    triangle_with_attribute_names(None)
+}
+
+pub(crate) fn triangle_with_attribute_names(xml: Option<&str>) -> Vec<u8> {
     let mut property = field(1, b"fusion_uuid");
     property.extend(field(3, b"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"));
     let mut registry = field(8, &property);
@@ -41,13 +45,28 @@ pub(crate) fn triangle() -> Vec<u8> {
     registry.extend(field(12, b"11111111-2222-4333-8444-555555555555"));
     registry.extend(field(21, b"v"));
     registry.extend(field(22, b"t"));
+    if xml.is_some() {
+        let mut streams = vec![0x08, 7];
+        streams.extend(field(2, b"r"));
+        let mut channel = vec![0x10, 1];
+        channel.extend(field(3, b"2060d08b-7434-4786-9506-b0ee951bb9dc"));
+        channel.extend(field(5, &streams));
+        registry.extend(field(5, &channel));
+        let mut names_property = field(1, b"attname.amt.autodesk");
+        names_property.extend(field(4, b"names"));
+        registry.extend(field(8, &names_property));
+    }
     let mut bytes = b"\x89UDPMESH\r\n\x1a\n".to_vec();
     bytes.extend_from_slice(&2_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 32]);
     bytes.extend_from_slice(&u64::try_from(registry.len()).unwrap().to_le_bytes());
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend(registry);
-    let names = [0x82, 0xa1, b'v', 2, 0xa1, b't', 3];
+    let mut names = vec![0x82, 0xa1, b'v', 2, 0xa1, b't', 3];
+    if xml.is_some() {
+        names[0] = 0x84;
+        names.extend_from_slice(&[0xa1, b'r', 4, 0xa5, b'n', b'a', b'm', b'e', b's', 5]);
+    }
     bytes.extend_from_slice(&u64::try_from(names.len()).unwrap().to_le_bytes());
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(&names);
@@ -61,5 +80,12 @@ pub(crate) fn triangle() -> Vec<u8> {
         .collect();
     bytes.extend(raw_chunk(&[0x82, 0xa1, b'D', 3, 0xa1, b'T', 3], &vertices));
     bytes.extend(raw_chunk(&[0x82, 0xa1, b'T', 1, 0xa1, b'd', 1], &corners));
+    if let Some(xml) = xml {
+        bytes.extend(raw_chunk(
+            &[0x82, 0xa1, b'T', 1, 0xa1, b'd', 1],
+            &1_u32.to_le_bytes(),
+        ));
+        bytes.extend(raw_chunk(&[0x81, 0xa1, b'T', 0], xml.as_bytes()));
+    }
     bytes
 }

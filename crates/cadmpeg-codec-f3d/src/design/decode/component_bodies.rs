@@ -125,12 +125,7 @@ pub(crate) fn owners(
         }
     }
     let lookup = |entity| registered.get(&entity).copied().flatten();
-    let Ok(frames) = super::meta::design_primary_frames(bytes, meta) else {
-        return Ok(BodyMemberships {
-            owners: result,
-            complete: false,
-        });
-    };
+    let frames = super::meta::design_primary_frames(bytes, meta)?;
     for frame in frames {
         if !supported_container(frame.design_type) {
             continue;

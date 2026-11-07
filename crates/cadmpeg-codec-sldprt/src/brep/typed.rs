@@ -1138,7 +1138,7 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(&cadmpeg_core::decode::DecodeContext::for_encode(&cadmpeg_core::decode::DecodeArena::new(), &cadmpeg_core::decode::DecodePolicy::desktop()), decoded.ir(), 0.001, false).unwrap();
         let facts = scan(&body);
 
         assert!(facts.has_valid_ownership(), "{facts:?}");
@@ -1167,7 +1167,7 @@ mod tests {
             .edges
             .iter()
             .any(|edge| edge.curve() == Some(curve)));
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(&cadmpeg_core::decode::DecodeContext::for_encode(&cadmpeg_core::decode::DecodeArena::new(), &cadmpeg_core::decode::DecodePolicy::desktop()), decoded.ir(), 0.001, false).unwrap();
         let facts = scan(&body);
         let scopes = super::super::topology::topology_scopes(&body, false);
         assert!(

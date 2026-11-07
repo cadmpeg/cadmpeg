@@ -33,6 +33,36 @@ fn nurbs_curve_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn null_entity_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("null_entity"));
+}
+
+#[test]
+fn bounded_plane_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("bounded_plane"));
+}
+
+#[test]
+fn vertex_loop_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("explicit_vertex_loop"));
+}
+
+#[test]
+fn scalar_properties_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("scalar_property_forms"));
+}
+
+#[test]
+fn offset_circle_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("uniform_offset_circle"));
+}
+
+#[test]
+fn offset_plane_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("offset_plane"));
+}
+
+#[test]
 fn edited_nurbs_control_point_replaces_source_curve() {
     let decoded = IgesCodec
         .decode(
