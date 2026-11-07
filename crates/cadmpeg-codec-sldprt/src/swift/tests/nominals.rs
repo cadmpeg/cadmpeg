@@ -9,8 +9,9 @@ use crate::swift::decode_rendered_utf16;
 use crate::swift::enrich_implicit_nominals;
 use crate::swift::pmi_id;
 use crate::swift::project;
-use crate::swift::rendered_dimensions;
+use crate::swift::project_with_topology;
 use crate::swift::rendered_nominal;
+use crate::swift::rendered_projections;
 use crate::swift::unique_diameter;
 use crate::swift::Entity;
 use crate::swift::Reference;
@@ -18,10 +19,23 @@ use crate::swift::RelatedObject;
 use crate::swift::RenderedDimension;
 use crate::swift::RenderedDimensionKind;
 use crate::swift::ROOT_CLASS;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::pmi::DimensionKind;
 use cadmpeg_ir::pmi::DimensionTolerance;
+use cadmpeg_ir::pmi::PmiAnnotation;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiQuantity;
+
+fn assert_dimension_kind(annotations: &[PmiAnnotation], id: &str, expected: &DimensionKind) {
+    let annotation = annotations
+        .iter()
+        .find(|annotation| annotation.id == pmi_id(id).unwrap())
+        .expect("dimension annotation");
+    let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+        panic!("dimension definition")
+    };
+    assert_eq!(dimension.kind(), expected);
+}
 
 #[test]
 fn approximate_measurement_refuses_nonfinite_values() {
@@ -479,8 +493,15 @@ fn unrelated_counterbore_size_does_not_select_a_pattern_diameter() {
 fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
     let mut root = semantic_root();
     *root.features.entities.get_mut(1).expect("direct cylinder") = cylinder_with_radius(17.5);
+    root.annotations
+        .entities
+        .get_mut(2)
+        .expect("diameter annotation")
+        .integers
+        .insert("Type".into(), 3);
     let mut annotations = project(&root);
     enrich_implicit_nominals(&root, &[], &mut annotations);
+    assert_dimension_kind(&annotations, "A30", &DimensionKind::Diameter);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A30").unwrap())
@@ -507,6 +528,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
         .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
     let mut annotations = project(&root);
     enrich_implicit_nominals(&root, &[], &mut annotations);
+    assert_dimension_kind(&annotations, "A30", &DimensionKind::SphericalDiameter);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A30").unwrap())
@@ -517,6 +539,74 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
     };
     let nominal = relation.nominal().expect("dimension nominal");
     assert_eq!(*nominal, length(31.75).expect("finite length"));
+
+    *root.features.entities.get_mut(2).expect("mixed cylinder") = cylinder_with_radius(15.875);
+    root.annotations
+        .entities
+        .get_mut(2)
+        .expect("diameter annotation")
+        .features
+        .references
+        .push(reference("F21", "GdtCylinder"));
+    let mut annotations = project(&root);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
+    assert_dimension_kind(&annotations, "A30", &DimensionKind::Diameter);
+
+    root.annotations
+        .entities
+        .get_mut(2)
+        .expect("diameter annotation")
+        .features
+        .references = vec![reference("FP", "GdtPattern")];
+    let mut annotations = project(&root);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
+    assert_dimension_kind(&annotations, "A30", &DimensionKind::Diameter);
+}
+
+#[test]
+fn unresolved_spherical_diameter_nominal_is_reported() {
+    let mut root = Entity {
+        class: ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    root.features.references.push(reference("F30", "GdtSphere"));
+    root.features.entities.push(entity("GdtSphere"));
+
+    let mut diameter = entity("GdtDiameter");
+    diameter.doubles.insert("Nominal".into(), 0.0);
+    diameter
+        .features
+        .references
+        .push(reference("F30", "GdtSphere"));
+    root.annotations
+        .references
+        .push(reference("A30", "GdtDiameter"));
+    root.annotations.entities.push(diameter);
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty test root fits policy");
+    let projection =
+        project_with_topology(&ctx, &root, None, &[]).expect("spherical PMI projection");
+    assert_dimension_kind(
+        &projection.annotations,
+        "A30",
+        &DimensionKind::SphericalDiameter,
+    );
+    assert_eq!(dimension_nominal(&projection.annotations, "A30"), None);
+
+    let mut losses = Vec::new();
+    projection.append_losses(&mut losses);
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::SldprtLossCode::PmiSwiftImplicitNominalUnresolved.kind()
+            })
+            .count(),
+        1,
+        "unresolved spherical diameter nominal is reported"
+    );
 }
 
 #[test]
@@ -1138,6 +1228,7 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
             .class = format!("PrizMetrik.GdtAnalysis.{class},gdtanalysis.net");
     }
     let mut radius = entity("GdtRadius");
+    radius.integers.insert("Type".into(), 3);
     radius.doubles.insert("Nominal".into(), 0.0);
     radius.doubles.insert("MinusTolerance".into(), -0.1);
     radius.doubles.insert("PlusTolerance".into(), 0.0);
@@ -1153,6 +1244,7 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
 
     let mut annotations = project(&root);
     enrich_implicit_nominals(&root, &[], &mut annotations);
+    assert_dimension_kind(&annotations, "A50", &DimensionKind::Radius);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -1190,6 +1282,26 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
     let mut annotations = project(&root);
     enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "A50"), None);
+    assert_dimension_kind(&annotations, "A50", &DimensionKind::Radius);
+
+    root.annotations
+        .entities
+        .get_mut(4)
+        .expect("radius annotation")
+        .features
+        .references = vec![reference("F21", "GdtSphere")];
+    root.annotations
+        .entities
+        .get_mut(4)
+        .expect("radius annotation")
+        .integers
+        .insert("Type".into(), 0);
+    let mut annotations = project(&root);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
+    assert_dimension_kind(&annotations, "A50", &DimensionKind::SphericalRadius);
+    let nominal = dimension_nominal(&annotations, "A50").expect("spherical radius nominal");
+    assert_eq!(nominal.quantity, PmiQuantity::Length);
+    assert!(approximately_equal(nominal.value.get(), 4.0));
 }
 
 #[test]
@@ -1208,7 +1320,7 @@ fn scans_explicit_rendered_diameter_literals() {
         }
     }
     assert_eq!(
-        rendered_dimensions(&payload),
+        rendered_projections(&payload).0,
         [
             RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,

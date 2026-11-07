@@ -100,6 +100,10 @@ selected by `Encoder::plan`, not stored in the options. An empty timestamp produ
 default output deterministic. The first body name, when present, supplies the
 STEP product name. `product_name` supplies the `FILE_NAME` name instead.
 
+The writer creates a parent product for distinct local root definitions when no
+repeated root definition has a representable child. It also creates a parent for
+a rigid root occurrence with a non-identity placement.
+
 ## Losses and errors
 
 The writer exports representable geometry and records reductions in
@@ -108,8 +112,8 @@ The writer exports representable geometry and records reductions in
 In particular:
 
 - faces on unknown surfaces and edges without typed 3D curves are omitted;
-- non-rigid body transforms and non-identity root occurrence placements report
-  losses;
+- non-rigid body transforms and root occurrence placements that are not rigid or
+  have non-unit scale report losses;
 - coedge pcurves emit their geometry; native-only pcurve metadata is not
   represented in STEP;
 - textures, shaders, source attributes, and retained opaque records report

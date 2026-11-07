@@ -277,6 +277,7 @@ fn projection_orders_history_and_marks_suppression() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
@@ -413,6 +414,7 @@ fn project_work_planes(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
@@ -460,6 +462,7 @@ fn projection_writes_browser_work_planes_in_history_order() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
