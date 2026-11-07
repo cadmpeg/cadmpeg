@@ -802,6 +802,90 @@ fn source_less_cosmetic_thread_keeps_unresolved_extent() {
 }
 
 #[test]
+fn cosmetic_thread_reports_unsupported_fields_and_keeps_the_operation() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::Dimension;
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Thread" Type="CosmeticThread" id="42"/></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moCosmeticThread_c",
+            "Thread",
+            42,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            standard,
+            designation,
+            pitch,
+            modeled,
+            ..
+        }) = definition
+        else {
+            panic!("cosmetic thread")
+        };
+        *standard = cadmpeg_core::text::NonBlankString::new("metric");
+        *designation = cadmpeg_core::text::NonBlankString::new("M6");
+        *pitch = Some(Dimension::Literal(PositiveLength::new(1.0).unwrap()));
+        *modeled = Some(true);
+    });
+    let id = ir.model.features[0].id.clone();
+    let with_fidelity = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        with_fidelity.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(with_fidelity
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("modeled")));
+    ir.native = cadmpeg_ir::Native::default();
+    ir.source = None;
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && ["standard", "designation", "pitch", "modeled"]
+                .iter()
+                .all(|field| loss.message.contains(field))));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { .. })
+    )));
+}
+
+#[test]
 fn source_less_principal_planes_keep_reserved_roles() {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::PrincipalPlane;
