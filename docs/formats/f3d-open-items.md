@@ -154,15 +154,15 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 ### DR-259. Owner of a scope that several timeline objects name
 
-**Question.** Which object owns a `Base Feature` scope that two or more paste or body-to-component objects name?
+**Question.** Which object owns a `Base Feature` scope that two or more paste or body-to-component objects name, and which fields bind an object without a later same-index header?
 
-**Known.** `f3d.md` §3.1 "A paste or body-to-component timeline object owns" gives the owner fields; each object stores its reference to the owned scope after its counted body references. The owned scope takes its owner's timeline position. The decoder gives the scope to the object with the lowest record index whose owned runs read and reads no copy sources for it.
+**Known.** `f3d.md` §3.1 "A paste or body-to-component timeline object owns" gives the owner fields; each object stores its reference to the owned scope after its counted body references. The owned scope takes its owner's timeline position. The decoder gives the scope to the object with the lowest record index whose owned runs read and reads no copy sources for it. For an unpaired object, it reads the count and references as the owned scope and leaves the copy form unread.
 
 **Need.** A save in which two objects name one scope, with the timeline position and the body set that Fusion shows for that scope.
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.timeline-owner-competing`.
+**Note.** The decoder reports `feature.timeline-owner-competing` or `feature.timeline-owner-unpaired` for the respective cases.
 
 ### DR-260. Placement of a pasted copy
 
@@ -715,7 +715,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** `f3d.md` §3.1 "An attributed local component occurrence carries a counted attribute run and an occurrence key." gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
 
-**Need.** The two bytes can be a grounding or visibility state of the occurrence.
+**Need.** The two bytes can be a grounding or visibility state of the occurrence. A controlled attributed occurrence must identify the marked source reference when its target has no type registration.
+
+**Conflict.** None.
+
+**Note.** The decoder reads an unregistered source as a component occurrence and reports `assembly.local-occurrence-source-unregistered`.
 
 ### DR-84. Occurrence identity pairs of a typed path
 
@@ -1659,3 +1663,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder projects the scope from its ordered reference table and keeps these lanes in the native scope bytes.
+
+### DR-328. Extrude auxiliary and surface selections
+
+**Question.** What geometry and ordering does a role-`0x0000004300000000` group select in a surface Extrude, and what does a role-`0x0000000500000000` group select in a distance and through-all Extrude?
+
+**Known.** A surface Extrude scope can reference one such group with multiple members. The decoder retains the group and reads it as the profile with `feature.extrude-surface-profile-assumed`. A distance and through-all scope can carry a role-`0x0000000500000000` group; its selection stays native with `feature.extrude-auxiliary-selection-native`.
+
+**Need.** Controlled surface Extrudes that vary the selected curves and their ordering, and distance and through-all Extrudes that vary the auxiliary selection.
+
+**Conflict.** None.
+
+**Note.** The group and its member references remain in the native model.
+
+### DR-329. Extrude distance and face controls
+
+**Question.** Does a fixed symmetric Extrude distance without a measurement word state the travel on each side or the total travel? What does the byte after the second-side face extent control?
+
+**Known.** The scope stores a symmetric direction and a fixed distance lane. The decoder takes the lane as the travel on each side and emits `feature.extrude-symmetric-distance-assumed`. A distance-to-face extent can store byte `1` after its second-side extent; the decoder retains this value in the native extent and assumes it preserves the face termination with `feature.extrude-face-control-assumed`. The native scope retains the symmetric direction and lane.
+
+**Need.** Controlled symmetric Extrudes with fixed distances and measured boundary positions for the remaining frame forms, and distance-to-face Extrudes that vary the second-side control.
+
+**Conflict.** DR-78 records this measurement question for another fixed frame.
+
+**Note.** The neutral feature retains the symmetry constraint and its per-side distance.

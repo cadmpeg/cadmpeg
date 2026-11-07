@@ -2272,7 +2272,9 @@ fn bind_extrude_work_plane_targets(
         }
     }
     let sides = match extent {
-        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
+        ExtrudeExtent::OneSided { side }
+        | ExtrudeExtent::Symmetric { side }
+        | ExtrudeExtent::SymmetricPerSide { side } => vec![side],
         ExtrudeExtent::TwoSided { first, second } => vec![first, second],
     };
     for side in sides {
@@ -8812,6 +8814,7 @@ fn project_extrude(
     enum ExtentShape {
         OneSided(LinearTermination),
         Symmetric(LinearTermination),
+        SymmetricPerSide(LinearTermination),
         TwoSided {
             first: LinearTermination,
             second: LinearTermination,
@@ -8823,9 +8826,6 @@ fn project_extrude(
         PrologueReversal,
     }
 
-    if scope.extrude_native_profiles().is_some() {
-        return Ok(None);
-    }
     let supported_parameter = |source_kind: &str| {
         matches!(
             source_kind,
@@ -8836,6 +8836,8 @@ fn project_extrude(
                 | "Side2Offset"
                 | "TaperAngle"
                 | "Side2TaperAngle"
+                | "Side1WallThickness"
+                | "Side2WallThickness"
         )
     };
     if parameters
@@ -8857,80 +8859,99 @@ fn project_extrude(
         construction_groups
     )?);
     let prologue = or_none!(scope.extrude_prologue());
-    let profile_ref = match scope.extrude_profile() {
-        Some(profile) => {
-            let placement = or_none!(placements.iter().find(|placement| {
-                native_stream(&placement.id) == native_stream(&scope.id)
-                    && placement.entity_id == profile.entity_id
-            }));
-            ProfileRef::Planar(PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(
-                placement,
-            )))
-        }
-        None => {
-            let [first, rest @ ..] = profile_groups.as_slice() else {
-                return Ok(None);
-            };
-            if rest.is_empty() {
-                match resolved_extrude_profile_face_group(
-                    ctx,
-                    scope,
-                    first,
-                    construction_groups,
-                    face_operands,
-                )? {
-                    Some(profile) => profile,
-                    None => ProfileRef::Planar(PlanarProfileRef::Native(first.id.clone())),
-                }
-            } else {
-                let mut state = None;
-                let mut faces = Vec::new();
-                let mut native = Vec::new();
-                let mut complete = true;
-                for group in &profile_groups {
-                    let Some(selection) = resolved_extrude_profile_face_group(
+    let profile_ref = if scope.extrude_native_profiles().is_some() {
+        ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
+    } else if !prologue.solid_operation()
+        && scope.extrude_profile().is_none()
+        && profile_groups.is_empty()
+    {
+        let group = or_none!(unique_feature_match(scope_groups.iter().copied().filter(
+            |group| {
+                group.role() == DesignOperandRole::ROLE_0X43
+                    && !group.members().is_empty()
+                    && usize::try_from(group.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                        == Some(&group.record_index)
+            }
+        )));
+        ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()))
+    } else {
+        match scope.extrude_profile() {
+            Some(profile) => {
+                let placement = or_none!(placements.iter().find(|placement| {
+                    native_stream(&placement.id) == native_stream(&scope.id)
+                        && placement.entity_id == profile.entity_id
+                }));
+                ProfileRef::Planar(PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(
+                    placement,
+                )))
+            }
+            None => {
+                let [first, rest @ ..] = profile_groups.as_slice() else {
+                    return Ok(None);
+                };
+                if rest.is_empty() {
+                    match resolved_extrude_profile_face_group(
                         ctx,
                         scope,
-                        group,
+                        first,
                         construction_groups,
                         face_operands,
-                    )?
-                    else {
-                        complete = false;
-                        break;
-                    };
-                    let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
-                        state: selected_state,
-                        faces: selected_faces,
-                        native: selected_native,
-                    }) = selection
-                    else {
-                        complete = false;
-                        break;
-                    };
-                    if state.as_ref().is_some_and(|state| state != &selected_state) {
-                        complete = false;
-                        break;
+                    )? {
+                        Some(profile) => profile,
+                        None => ProfileRef::Planar(PlanarProfileRef::Native(first.id.clone())),
                     }
-                    state = Some(selected_state);
-                    for face in selected_faces {
-                        if !faces.contains(&face) {
-                            faces.push(face);
+                } else {
+                    let mut state = None;
+                    let mut faces = Vec::new();
+                    let mut native = Vec::new();
+                    let mut complete = true;
+                    for group in &profile_groups {
+                        let Some(selection) = resolved_extrude_profile_face_group(
+                            ctx,
+                            scope,
+                            group,
+                            construction_groups,
+                            face_operands,
+                        )?
+                        else {
+                            complete = false;
+                            break;
+                        };
+                        let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
+                            state: selected_state,
+                            faces: selected_faces,
+                            native: selected_native,
+                        }) = selection
+                        else {
+                            complete = false;
+                            break;
+                        };
+                        if state.as_ref().is_some_and(|state| state != &selected_state) {
+                            complete = false;
+                            break;
+                        }
+                        state = Some(selected_state);
+                        for face in selected_faces {
+                            if !faces.contains(&face) {
+                                faces.push(face);
+                            }
+                        }
+                        for id in selected_native {
+                            native.push(id);
                         }
                     }
-                    for id in selected_native {
-                        native.push(id);
-                    }
+                    ProfileRef::Planar(match (complete, state) {
+                        (true, Some(state)) if !faces.is_empty() => {
+                            match PlanarProfileRef::historical_faces(state, faces, native) {
+                                Ok(profile) => profile,
+                                Err(_) => PlanarProfileRef::Native(scope.id.clone()),
+                            }
+                        }
+                        _ => PlanarProfileRef::Native(scope.id.clone()),
+                    })
                 }
-                ProfileRef::Planar(match (complete, state) {
-                    (true, Some(state)) if !faces.is_empty() => {
-                        match PlanarProfileRef::historical_faces(state, faces, native) {
-                            Ok(profile) => profile,
-                            Err(_) => PlanarProfileRef::Native(scope.id.clone()),
-                        }
-                    }
-                    _ => PlanarProfileRef::Native(scope.id.clone()),
-                })
             }
         }
     };
@@ -8977,15 +8998,10 @@ fn project_extrude(
         .transpose()
         .ok();
     let fixed_along = or_none!(fixed_along);
-    // Without a measurement word, a fixed symmetric distance lane does not
-    // state whether it is the half or the whole travel (open item DR-78).
-    if parameter_along.is_none()
+    let assumed_fixed_symmetric = parameter_along.is_none()
         && fixed_along.is_some()
         && prologue.extent() == Some(DesignExtrudeExtent::SymmetricDistance)
-        && prologue.distance_tail().is_none()
-    {
-        return Ok(None);
-    }
+        && prologue.distance_tail().is_none();
     let along = match (parameter_along, fixed_along) {
         (Some(parameter), Some((fixed, AlongDirection::SignedDistance)))
             if (parameter.get() - fixed.get()).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9 =>
@@ -9085,7 +9101,9 @@ fn project_extrude(
                 .extrude_prologue()
                 .and_then(DesignExtrudePrologue::extent),
             Some(
-                DesignExtrudeExtent::TwoSidedToFaces | DesignExtrudeExtent::TwoSidedDistanceToFace,
+                DesignExtrudeExtent::TwoSidedToFaces
+                    | DesignExtrudeExtent::TwoSidedDistanceToFace
+                    | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne,
             )
         )
     {
@@ -9234,7 +9252,27 @@ fn project_extrude(
             )
         }
         (
-            DesignExtrudeExtent::TwoSidedDistanceToFace,
+            DesignExtrudeExtent::TwoSidedDistanceThroughAll,
+            Some((Some(along), AlongDirection::SignedDistance)),
+            None,
+        ) if !prologue.direction_reversed()
+            && termination_groups.is_empty()
+            && effective_side_one_offset.is_none()
+            && effective_side_two_offset.is_none() =>
+        {
+            (
+                ExtentShape::TwoSided {
+                    first: LinearTermination::Blind {
+                        length: NonZeroLength::from(along.abs()),
+                    },
+                    second: LinearTermination::ThroughAll {},
+                },
+                along.get() < 0.0,
+            )
+        }
+        (
+            DesignExtrudeExtent::TwoSidedDistanceToFace
+            | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne,
             Some((Some(along), AlongDirection::SignedDistance)),
             None,
         ) if !prologue.direction_reversed()
@@ -9290,25 +9328,23 @@ fn project_extrude(
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
-            // The measurement word states whether each side travels the
-            // stored distance. Without it, dual distance lanes share one
-            // per-side distance and a single lane keeps the whole travel.
-            let each_side = match prologue.distance_tail().map(|tail| tail.measurement) {
-                Some(crate::records::feature::extrude::DesignExtrudeMeasurement::EachSide) => true,
-                Some(_) => false,
-                None => prologue.side_extent_discriminators() == Some([1, 1]),
+            let each_side = assumed_fixed_symmetric
+                || match prologue.distance_tail().map(|tail| tail.measurement) {
+                    Some(crate::records::feature::extrude::DesignExtrudeMeasurement::EachSide) => {
+                        true
+                    }
+                    Some(_) => false,
+                    None => prologue.side_extent_discriminators() == Some([1, 1]),
+                };
+            let termination = LinearTermination::Blind {
+                length: NonZeroLength::from(along.abs()),
             };
-            let length = if each_side {
-                or_none!(NonZeroLength::new(2.0 * along.get()))
+            let shape = if each_side {
+                ExtentShape::SymmetricPerSide(termination)
             } else {
-                along
+                ExtentShape::Symmetric(termination)
             };
-            (
-                ExtentShape::Symmetric(LinearTermination::Blind {
-                    length: NonZeroLength::from(length.abs()),
-                }),
-                along.get() < 0.0,
-            )
+            (shape, along.get() < 0.0)
         }
         (DesignExtrudeExtent::TwoSidedThroughAll, None, None)
             if crate::design::decode::scopes::extrude::through_all::taper_parameters_match(
@@ -9432,6 +9468,9 @@ fn project_extrude(
             side: ExtrudeSide { termination, draft },
         },
         ExtentShape::Symmetric(termination) => ExtrudeExtent::Symmetric {
+            side: ExtrudeSide { termination, draft },
+        },
+        ExtentShape::SymmetricPerSide(termination) => ExtrudeExtent::SymmetricPerSide {
             side: ExtrudeSide { termination, draft },
         },
         ExtentShape::TwoSided { first, second } => ExtrudeExtent::TwoSided {

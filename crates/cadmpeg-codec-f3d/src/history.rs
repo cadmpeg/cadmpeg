@@ -2952,7 +2952,10 @@ pub(crate) fn bind_feature_face_selections(
                     }
                     let sides = match extent {
                         cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
-                        | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => vec![side],
+                        | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side }
+                        | cadmpeg_ir::features::ExtrudeExtent::SymmetricPerSide { side } => {
+                            vec![side]
+                        }
                         cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
                             vec![first, second]
                         }

@@ -148,6 +148,14 @@ fn feature_extents_round_trip_through_json() {
                 draft: None,
             },
         },
+        ExtrudeExtent::SymmetricPerSide {
+            side: ExtrudeSide {
+                termination: LinearTermination::Blind {
+                    length: crate::scalar::NonZeroLength::new(12.5).unwrap(),
+                },
+                draft: None,
+            },
+        },
         ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::Blind {
@@ -172,6 +180,13 @@ fn feature_extents_round_trip_through_json() {
             },
         },
     ];
+    assert_eq!(
+        serde_json::to_value(&extents[2]).unwrap(),
+        serde_json::json!({
+            "kind": "symmetric_per_side",
+            "side": { "termination": { "kind": "blind", "length": 12.5 } }
+        })
+    );
     let json = serde_json::to_string(&extents).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<ExtrudeExtent>>(&json).unwrap(),

@@ -12,6 +12,7 @@ fn extrude_extent_tuple_is_one_admission_key() {
         (1, [4, 0], DesignExtrudeExtent::OneSidedThroughAll),
         (2, [2, 0], DesignExtrudeExtent::TwoSidedToFaces),
         (2, [1, 1], DesignExtrudeExtent::TwoSidedDistance),
+        (2, [1, 4], DesignExtrudeExtent::TwoSidedDistanceThroughAll),
         (3, [1, 0], DesignExtrudeExtent::SymmetricDistance),
         (3, [4, 4], DesignExtrudeExtent::SymmetricThroughAll),
     ];

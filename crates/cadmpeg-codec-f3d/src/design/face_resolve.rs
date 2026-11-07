@@ -2250,7 +2250,7 @@ pub(crate) fn bind_extrude_target_faces(
                         resolution,
                     );
                 }
-                ExtrudeExtent::Symmetric { .. } => {}
+                ExtrudeExtent::Symmetric { .. } | ExtrudeExtent::SymmetricPerSide { .. } => {}
             }
         });
     }

@@ -3650,14 +3650,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     })
                             }
                         };
+                        let encoding_valid = if reference.type_guid.is_some() {
+                            typed_references
+                                && reference.trailing_zero_count == 0
+                                && reference.operation_prefix_marker_offset.is_none()
+                                && scope.byte_offset().checked_add(u64_from_index(
+                                    crate::layout::typed_reference_extrude_anchor_prefix::LEN,
+                                )) == Some(operation_offset)
+                        } else {
+                            matches!(reference.trailing_zero_count, 7 | 8) && marker_valid
+                        };
                         scope
                             .byte_offset()
                             .checked_add(26)
                             .is_some_and(|expected_offset| {
                                 reference.record_index_offset == expected_offset
                             })
-                            && matches!(reference.trailing_zero_count, 7 | 8)
-                            && marker_valid
+                            && encoding_valid
                             && scope
                                 .reference_members()
                                 .values()
@@ -3790,12 +3799,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     direction_face_extend_values[0],
                     side_extent_discriminators,
                 ) == Some(extent);
+                let mixed_extent = direction_face_extend_values[0] == 2
+                    && side_extent_discriminators == [1, 2]
+                    && matches!(
+                        extent,
+                        records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
+                            | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne
+                    );
                 let dual_lane_symmetric_extent = direction_face_extend_values == [3, 2]
                     && side_extent_discriminators == [1, 1]
                     && extent == records::feature::extrude::DesignExtrudeExtent::SymmetricDistance;
                 prefix_valid
                     && matches!(direction_face_extend_values[0], 1..=3)
-                    && (standard_extent || legacy_class_415_extent || dual_lane_symmetric_extent)
+                    && (standard_extent
+                        || mixed_extent
+                        || legacy_class_415_extent
+                        || dual_lane_symmetric_extent)
                     && first_side_target_ordinal.is_none_or(|_| side_extent_discriminators[0] == 2)
                     && target_ordinal_valid
                     && first_side_offset_valid
@@ -3883,8 +3902,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .checked_sub(scope.byte_offset())
                     .is_some_and(|reference_count_offset| {
                         is_class_296_one_sided_to_face_layout(
-                            scope.class_tag.as_str(),
-                            scope.paired_class_tag.as_str(),
                             scope.frame_length(),
                             reference_count_offset,
                             scope.reference_members().len(),
@@ -3968,8 +3985,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .checked_sub(scope.byte_offset())
                     .is_some_and(|reference_count_offset| {
                         is_class_296_legacy_one_sided_to_face_layout(
-                            scope.class_tag.as_str(),
-                            scope.paired_class_tag.as_str(),
                             scope.frame_length(),
                             reference_count_offset,
                             scope.reference_members().len(),
@@ -3995,8 +4010,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .checked_sub(scope.byte_offset())
                     .is_some_and(|reference_count_offset| {
                         is_class_296_legacy_one_sided_distance_layout(
-                            scope.class_tag.as_str(),
-                            scope.paired_class_tag.as_str(),
                             scope.frame_length(),
                             reference_count_offset,
                             scope.reference_members().len(),
@@ -4485,7 +4498,12 @@ fn direct_extrude_operation_valid(
             crate::layout::shifted_typed_reference_extrude_prologue::OPERATION,
         ]
     } else {
-        &[crate::layout::offset_24_extrude_prologue::OPERATION, 28]
+        &[
+            crate::layout::offset_24_extrude_prologue::OPERATION,
+            crate::layout::compact_shifted_extrude_prologue::OPERATION,
+            crate::layout::shifted_extrude_prologue::OPERATION,
+            28,
+        ]
     };
     admitted
         .iter()
@@ -5961,7 +5979,16 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && side_one_offset_count == 0
                         && !prologue.direction_reversed()
                 }
-                records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace => {
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll => {
+                    has_one_along_carrier
+                        && against_count == 0
+                        && !has_fixed_against
+                        && side_one_offset_count == 0
+                        && side_two_offset_count == 0
+                        && !prologue.direction_reversed()
+                }
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
+                | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne => {
                     along_count == 1
                         && !has_fixed_extrude_parameters
                         && against_count == 0
@@ -6034,6 +6061,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )) + usize::from(matches!(
                 extrude_extent,
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
+                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne
             )) + usize::from(matches!(
                 extrude_start,
                 records::feature::extrude::DesignExtrudeStart::FromFace
@@ -6069,7 +6097,8 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
                     records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
                 ],
-                (_, records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace) => {
+                (_, records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
+                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne) => {
                     vec![records::topology::extrude_selection::DesignExtrudeFaceRole::Termination]
                 }
                 _ => Vec::new(),

@@ -4503,9 +4503,8 @@ pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_54 {
     pub(crate) const ZERO_AFTER_START: usize = 51;
     /// Offset of `profile_scalar_at_54` (`f64`, little-endian). Spec §3.1.
     pub(crate) const PROFILE_SCALAR_AT_54: usize = 54;
-    /// Offset of `zero_after_scalar_at_54` (`bytes[16]`). Spec §3.1.
-    pub(crate) const ZERO_AFTER_SCALAR_AT_54: usize = 62;
     /// Offset of `reference_slots` (`bytes[47]`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const REFERENCE_SLOTS: usize = 78;
     /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FIRST_SIDE_EXTENT: usize = 125;
@@ -4519,9 +4518,8 @@ pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_54 {
 /// Offsets are relative to the class-296 primary indexed header. This prefix uses the alternate scalar lane at +70 and is admitted only with the exact legacy class, frame, and reference-count tuple.
 /// ```
 pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_70 {
-    /// Offset of `zero_before_scalar_at_70` (`bytes[16]`). Spec §3.1.
-    pub(crate) const ZERO_BEFORE_SCALAR_AT_70: usize = 54;
     /// Offset of `profile_scalar_at_70` (`f64`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const PROFILE_SCALAR_AT_70: usize = 70;
 }
 
@@ -8852,4 +8850,48 @@ pub(crate) mod surface_trim_cell_entry {
     pub(crate) const RECORD_REFERENCE: usize = 0;
     /// Offset of `value` (`u64`, little-endian). Spec §3.1.
     pub(crate) const VALUE: usize = 11;
+}
+
+/// Byte offsets for the `legacy_reference_extrude_profile_normal` record.
+///
+/// Spec §3.1. Record length 78 B.
+pub(crate) mod legacy_reference_extrude_profile_normal {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 78;
+    /// Offset of `profile_normal` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_NORMAL: usize = 54;
+}
+
+/// Byte offsets for the `typed_reference_extrude_anchor_prefix` record.
+///
+/// Spec §3.1. Record length 76 B.
+pub(crate) mod typed_reference_extrude_anchor_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 76;
+    /// Offset of `construction_group_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_GROUP_REFERENCE: usize = 25;
+}
+
+/// Byte offsets for the `typed_fixed_extrude_scalar_frame` record.
+///
+/// Spec §3.1. Record length 303 B.
+pub(crate) mod typed_fixed_extrude_scalar_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 303;
+    /// Offset of `owner_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 24;
+    /// Offset of `ordinal` (`u8`). Spec §3.1.
+    pub(crate) const ORDINAL: usize = 75;
+    /// Offset of `zero_run` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 76;
+    /// Offset of `value` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const VALUE: usize = 80;
+    /// Offset of `parameter_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const PARAMETER_REFERENCE: usize = 88;
+    /// Offset of `repeated_owner_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const REPEATED_OWNER_REFERENCE: usize = 147;
+    /// Offset of `presentation_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const PRESENTATION_REFERENCE: usize = 200;
+    /// Offset of `trailing_owner_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const TRAILING_OWNER_REFERENCE: usize = 252;
 }

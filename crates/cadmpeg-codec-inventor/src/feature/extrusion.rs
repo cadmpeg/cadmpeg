@@ -104,7 +104,9 @@ pub(super) fn native_face_targets(definition: &cadmpeg_ir::features::FeatureDefi
             ..
         }
     )) + match extent {
-        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => is_face(side),
+        ExtrudeExtent::OneSided { side }
+        | ExtrudeExtent::Symmetric { side }
+        | ExtrudeExtent::SymmetricPerSide { side } => is_face(side),
         ExtrudeExtent::TwoSided { first, second } => is_face(first) + is_face(second),
     }
 }

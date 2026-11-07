@@ -135,6 +135,7 @@ rewrite_enum!(ExtrudeExtent, []; {
     OneSided { side },
     TwoSided { first, second },
     Symmetric { side },
+    SymmetricPerSide { side },
 });
 
 rewrite_record!(ExtrudeSide, []; { termination, draft });

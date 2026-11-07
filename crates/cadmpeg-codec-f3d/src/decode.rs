@@ -656,7 +656,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 | ExtrudeStart::FromPlane { .. } => true,
             };
             let extent_is_resolved = match extent {
-                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } | ExtrudeExtent::SymmetricPerSide { side } => {
                     linear_termination_is_resolved(&side.termination)
                 }
                 ExtrudeExtent::TwoSided { first, second } => {
@@ -1654,9 +1654,9 @@ fn design_projection_gaps(
                     face_selection(face);
                 }
                 let (first, second) = match extent {
-                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                        (side, None)
-                    }
+                    ExtrudeExtent::OneSided { side }
+                    | ExtrudeExtent::Symmetric { side }
+                    | ExtrudeExtent::SymmetricPerSide { side } => (side, None),
                     ExtrudeExtent::TwoSided { first, second } => (first, Some(second)),
                 };
                 for side in [Some(first), second].into_iter().flatten() {
@@ -1929,6 +1929,155 @@ fn report_design_projection_gaps(
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
+    let wall_parameters: std::collections::HashSet<(&str, u32)> = native
+        .design_parameters
+        .iter()
+        .filter(|parameter| {
+            matches!(
+                parameter.source_kind_str(),
+                "Side1WallThickness" | "Side2WallThickness"
+            )
+        })
+        .filter_map(|parameter| {
+            crate::ids::native_stream(&parameter.id).map(|stream| (stream, parameter.record_index))
+        })
+        .collect();
+    let wall_scopes: std::collections::HashSet<(&str, u32)> = native
+        .design_parameter_owners
+        .iter()
+        .filter_map(|owner| {
+            let stream = crate::ids::native_stream(owner.id())?;
+            wall_parameters
+                .contains(&(stream, owner.parameter_record_index()))
+                .then_some((stream, owner.scope_record_index()))
+        })
+        .collect();
+    let scopes_by_id: std::collections::HashMap<&str, _> = native
+        .design_parameter_scopes
+        .iter()
+        .map(|scope| (scope.id.as_str(), scope))
+        .collect();
+    let auxiliary_selection_scopes: std::collections::HashSet<(&str, u32)> = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| {
+            group.role() == crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5
+                && group.extrude_role().is_none()
+        })
+        .filter_map(|group| {
+            crate::ids::native_stream(&group.id).map(|stream| (stream, group.scope_record_index))
+        })
+        .collect();
+    for feature in &ir.model.features {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| scopes_by_id.get(id))
+        else {
+            continue;
+        };
+        let Some(prologue) = scope.extrude_prologue() else {
+            continue;
+        };
+        if crate::ids::native_stream(&scope.id)
+            .is_some_and(|stream| wall_scopes.contains(&(stream, scope.record_index)))
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        {
+            report
+                .losses
+                .push(F3dLossCode::FeatureExtrudeWallThicknessNative.note(format!(
+                    "Extrude {} retains its wall-thickness inputs in the native scope.",
+                    feature.id
+                )));
+        }
+        if prologue.extent()
+            == Some(
+                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll,
+            )
+            && crate::ids::native_stream(&scope.id).is_some_and(|stream| {
+                auxiliary_selection_scopes.contains(&(stream, scope.record_index))
+            })
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        {
+            report.losses.push(
+                F3dLossCode::FeatureExtrudeAuxiliarySelectionNative.note(format!(
+                    "Extrude {} retains an auxiliary selection in its native scope (DR-328).",
+                    feature.id
+                )),
+            );
+        }
+        if prologue.extent()
+            == Some(crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        {
+            report.losses.push(F3dLossCode::FeatureExtrudeFaceControlAssumed.note(
+                format!("Extrude {} assumes the second-side control preserves the face termination (DR-329).", feature.id),
+            ));
+        }
+        if prologue.extent()
+            == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
+            && prologue.distance_tail().is_none()
+            && scope.fixed_extrude_parameters().is_some()
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        extent: cadmpeg_ir::features::ExtrudeExtent::SymmetricPerSide { .. },
+                        ..
+                    }
+                )
+            )
+        {
+            report.losses.push(F3dLossCode::FeatureExtrudeSymmetricDistanceAssumed.note(
+                format!("Extrude {} assumes the fixed symmetric distance applies on each side (DR-329).", feature.id),
+            ));
+        }
+    }
+    let surface_groups: std::collections::HashSet<&str> = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| {
+            group.role()
+                == crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X43
+        })
+        .map(|group| group.id.as_str())
+        .collect();
+    for feature in &ir.model.features {
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile:
+                    cadmpeg_ir::features::ProfileRef::Planar(
+                        cadmpeg_ir::features::PlanarProfileRef::Native(group),
+                    ),
+                ..
+            },
+        ) = feature.evaluation.definition()
+        {
+            if surface_groups.contains(group.as_str()) {
+                report.losses.push(
+                    F3dLossCode::FeatureExtrudeSurfaceProfileAssumed.note(format!(
+                        "Extrude {} takes native group {group} as its surface profile (DR-328).",
+                        feature.id
+                    )),
+                );
+            }
+        }
+    }
     let projected_moves: std::collections::HashSet<&str> = ir
         .model
         .features

@@ -679,7 +679,9 @@ fn scale_extrude_extent(
     use cadmpeg_ir::features::ExtrudeExtent;
 
     match extent {
-        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+        ExtrudeExtent::OneSided { side }
+        | ExtrudeExtent::Symmetric { side }
+        | ExtrudeExtent::SymmetricPerSide { side } => {
             scale_extrude_side(side, scale)?;
         }
         ExtrudeExtent::TwoSided { first, second } => {

@@ -114,13 +114,13 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
         .copy_from_slice(&1u32.to_le_bytes());
     assert!(parse(&invalid_side, "296").extrude_prologue().is_none());
 
-    let mut invalid_pair = make_bytes(473, 10);
-    invalid_pair[473 + 4..473 + 7].copy_from_slice(b"260");
-    assert!(parse(&invalid_pair, "296").extrude_prologue().is_none());
+    let mut alternate_pair = make_bytes(473, 10);
+    alternate_pair[473 + 4..473 + 7].copy_from_slice(b"260");
+    assert!(parse(&alternate_pair, "296").extrude_prologue().is_some());
 
     assert!(parse(&make_bytes(462, 9), "414")
         .extrude_prologue()
-        .is_none());
+        .is_some());
 }
 
 #[test]
@@ -642,13 +642,40 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         false,
     );
 
+    let distance_scalar_62 = build(
+        483,
+        distance_tail::REFERENCE_COUNT,
+        &DISTANCE_REFERENCES,
+        [true, false, true, true, false, true, false],
+        [
+            DISTANCE_REFERENCES[0],
+            DISTANCE_REFERENCES[2],
+            DISTANCE_REFERENCES[3],
+            DISTANCE_REFERENCES[5],
+        ],
+        2,
+        1,
+        62,
+        1.0,
+        0,
+    );
+    assert_valid(
+        &distance_scalar_62,
+        483,
+        distance_tail::REFERENCE_COUNT,
+        &DISTANCE_REFERENCES,
+        DesignExtrudeExtent::OneSidedDistance,
+        2,
+        false,
+    );
+
     let mut invalid_profile = to_face_scalar_54.clone();
     invalid_profile[scalar_54::PROFILE_SCALAR_AT_54..scalar_54::PROFILE_SCALAR_AT_54 + 8]
         .copy_from_slice(&2.0f64.to_le_bytes());
     assert!(prologue(&invalid_profile).is_none());
 
     let mut invalid_scalar_lane = to_face_scalar_54.clone();
-    invalid_scalar_lane[scalar_54::ZERO_AFTER_SCALAR_AT_54] = 1;
+    invalid_scalar_lane[62..70].copy_from_slice(&1.0f64.to_le_bytes());
     assert!(prologue(&invalid_scalar_lane).is_none());
 
     let mut invalid_slot = to_face_scalar_54.clone();
@@ -665,7 +692,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         .copy_from_slice(&11u32.to_le_bytes());
     assert!(prologue(&invalid_reference_count).is_none());
 
-    let mut invalid_pair = to_face_scalar_54;
-    invalid_pair[515 + 4..515 + 7].copy_from_slice(b"260");
-    assert!(prologue(&invalid_pair).is_none());
+    let mut alternate_pair = to_face_scalar_54;
+    alternate_pair[515 + 4..515 + 7].copy_from_slice(b"260");
+    assert!(prologue(&alternate_pair).is_some());
 }

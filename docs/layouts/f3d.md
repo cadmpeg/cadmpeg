@@ -9075,6 +9075,61 @@ Spec §3.1 · layout: byte offsets · size: 19 B
 | 0 | 11 | `record_reference` | `bytes[11]` | little | spec | a marked indexed-record reference at entry offset 0 |
 | 11 | 8 | `value` | `u64` | little | spec | a positive u64 entry value at entry offset 11 |
 
+## `legacy_reference_extrude_profile_normal`
+
+Spec §3.1 · layout: byte offsets · size: 78 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 54 | 24 | `profile_normal` | `f64[3]` | little | spec | unit profile normal as three f64 values at offset 54 |
+
+Unstated regions:
+
+- `0..54` (54 B): The indexed header and operation fields precede the profile normal.
+
+## `typed_reference_extrude_anchor_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 76 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 25 | 51 | `construction_group_reference` | `bytes[51]` | little | spec | a 51-byte typed construction-group reference at offset 25 |
+
+Unstated regions:
+
+- `0..25` (25 B): The indexed header and prefix precede the typed reference.
+
+## `typed_fixed_extrude_scalar_frame`
+
+Spec §3.1 · layout: byte offsets · size: 303 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/shared_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 51 | `owner_reference` | `bytes[51]` | little | spec | typed owner reference is at offset 24 |
+| 75 | 1 | `ordinal` | `u8` | little | spec | lane ordinal is at offset 75 |
+| 76 | 4 | `zero_run` | `bytes[4]` | little | spec | four zero bytes follow · value `[0, 0, 0, 0]` |
+| 80 | 8 | `value` | `f64` | little | spec | finite f64 value is at offset 80 |
+| 88 | 51 | `parameter_reference` | `bytes[51]` | little | spec | typed parameter reference at offset 88 |
+| 147 | 51 | `repeated_owner_reference` | `bytes[51]` | little | spec | Typed references at offsets 147 and 252 repeat the owning Extrude scope |
+| 200 | 51 | `presentation_reference` | `bytes[51]` | little | spec | typed presentation reference at offset 200 |
+| 252 | 51 | `trailing_owner_reference` | `bytes[51]` | little | spec | Typed references at offsets 147 and 252 repeat the owning Extrude scope |
+
+Unstated regions:
+
+- `0..24` (24 B): The indexed header and scalar prefix precede the owner reference.
+- `139..147` (8 B): The scalar trailer precedes the repeated owner reference.
+- `198..200` (2 B): Two trailer bytes precede the presentation reference.
+- `251..252` (1 B): One trailer byte precedes the final owner reference.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

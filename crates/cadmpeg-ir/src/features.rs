@@ -7390,6 +7390,11 @@ pub enum ExtrudeExtent {
         /// The mirrored side.
         side: ExtrudeSide,
     },
+    #[doc = "One side mirrored across the profile plane, with blind length per side."]
+    SymmetricPerSide {
+        #[doc = "The mirrored side."]
+        side: ExtrudeSide,
+    },
 }
 
 /// Revolution sides use the right-hand rule about the stated axis direction.

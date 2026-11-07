@@ -88,9 +88,9 @@ pub(super) fn extrude_extent_is_incomplete(
             || termination_dependency_is_incomplete(&side.termination, dependencies)
     };
     match extent {
-        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-            side_is_incomplete(side)
-        }
+        ExtrudeExtent::OneSided { side }
+        | ExtrudeExtent::Symmetric { side }
+        | ExtrudeExtent::SymmetricPerSide { side } => side_is_incomplete(side),
         ExtrudeExtent::TwoSided { first, second } => {
             side_is_incomplete(first) || side_is_incomplete(second)
         }

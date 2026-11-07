@@ -166,14 +166,12 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
         )
         .expect("project the extrude feature")
         .expect("typed dual-lane symmetric Extrude");
-        // Each side travels the shared per-side input: the neutral whole
-        // travel is twice the parameter.
         assert!(matches!(
             symmetric,
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
                 direction: ExtrudeDirection::ProfileNormal {},
-                extent: ExtrudeExtent::Symmetric {
+                extent: ExtrudeExtent::SymmetricPerSide {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
                             length: actual_length
@@ -184,7 +182,7 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
                 op: BooleanOp::NewBody,
                 solid: Some(true),
                 ..
-            }) if (profile == neutral_sketch_id(&placement)) && actual_length.get() == 11.0 && actual_draft.get() == 0.2
+            }) if (profile == neutral_sketch_id(&placement)) && actual_length.get() == 5.5 && actual_draft.get() == 0.2
         ));
     });
 }

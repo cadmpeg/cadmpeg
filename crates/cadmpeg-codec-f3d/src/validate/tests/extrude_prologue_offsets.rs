@@ -173,6 +173,7 @@ fn class_349_reference_aware_prefix_keeps_its_frame_rule() {
                     *reference = Some(DesignExtrudePrologueReference {
                         record_index: 11,
                         record_index_offset: 26,
+                        type_guid: None,
                         trailing_zero_count: 7,
                         operation_prefix_marker_offset: None,
                     });

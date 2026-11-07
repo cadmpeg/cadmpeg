@@ -62,7 +62,9 @@ fn fixed_extrude(
     fixed: DesignFixedExtrudeParameters,
 ) -> DesignParameterScope {
     let direction = match extent {
-        DesignExtrudeExtent::TwoSidedDistance => 2,
+        DesignExtrudeExtent::TwoSidedDistance | DesignExtrudeExtent::TwoSidedDistanceThroughAll => {
+            2
+        }
         DesignExtrudeExtent::SymmetricDistance => 3,
         _ => 1,
     };
@@ -215,10 +217,8 @@ fn fixed_two_sided_distance_lanes_project_two_blind_sides() {
     assert!((second.get() - 2.0).abs() < 1.0e-12);
 }
 
-/// A fixed symmetric distance lane does not state its measurement form, so it
-/// defines no neutral extent (DR-78).
 #[test]
-fn fixed_symmetric_distance_lane_keeps_the_native_feature() {
+fn fixed_symmetric_distance_projects_equal_side_distances() {
     let scope = fixed_extrude(
         DesignExtrudeExtent::SymmetricDistance,
         DesignFixedExtrudeParameters {
@@ -231,11 +231,51 @@ fn fixed_symmetric_distance_lane_keeps_the_native_feature() {
             ..Default::default()
         },
     );
-    assert!(projected(&scope).is_none());
+    let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::SymmetricPerSide { side },
+        ..
+    })) = projected(&scope)
+    else {
+        panic!("fixed symmetric distance");
+    };
+    assert!(
+        matches!(side.termination, LinearTermination::Blind { length } if length.get() == 12.0)
+    );
 }
 
 #[test]
-fn multiple_native_sketch_profiles_keep_the_extrude_native() {
+fn fixed_distance_and_through_all_project_on_opposite_sides() {
+    let scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistanceThroughAll,
+        DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(1.5, 11))),
+            ..Default::default()
+        },
+    );
+    let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    })) = projected(&scope)
+    else {
+        panic!("distance and through-all Extrude");
+    };
+    assert!(
+        matches!(first.termination, LinearTermination::Blind { length } if length.get() == 15.0)
+    );
+    assert!(matches!(
+        second.termination,
+        LinearTermination::ThroughAll {}
+    ));
+    let wire = serde_json::to_string(&DesignExtrudeExtent::TwoSidedDistanceThroughAll).unwrap();
+    assert_eq!(wire, "\"two_sided_distance_through_all\"");
+    assert_eq!(
+        serde_json::from_str::<DesignExtrudeExtent>(&wire).unwrap(),
+        DesignExtrudeExtent::TwoSidedDistanceThroughAll
+    );
+}
+
+#[test]
+fn multiple_native_sketch_profiles_project_with_a_native_profile() {
     let mut scope = fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
         DesignFixedExtrudeParameters {
@@ -255,7 +295,21 @@ fn multiple_native_sketch_profiles_keep_the_extrude_native() {
         first,
         DesignSketchProfileOperand::try_new(second).unwrap(),
     ]);
-    assert!(projected(&scope).is_none());
+    let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile: ProfileRef::Planar(PlanarProfileRef::Native(profile)),
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    })) = projected(&scope)
+    else {
+        panic!("projected Extrude with native profile");
+    };
+    assert_eq!(profile, scope.id);
+    assert!(
+        matches!(first.termination, LinearTermination::Blind { length } if length.get() == 10.0)
+    );
+    assert!(
+        matches!(second.termination, LinearTermination::Blind { length } if length.get() == 20.0)
+    );
 }
 
 /// The measurement word, when present, states whether each side travels the
@@ -291,21 +345,31 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
             )
         })
         .expect("project the extrude feature")?;
-        let FeatureDefinition::Operation(FeatureOperation::Extrude {
-            extent:
-                ExtrudeExtent::Symmetric {
-                    side:
-                        ExtrudeSide {
-                            termination: LinearTermination::Blind { length },
-                            ..
-                        },
-                },
-            ..
-        }) = definition
-        else {
-            panic!("symmetric blind Extrude: {definition:?}");
-        };
-        Some(length.get())
+        match definition {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent:
+                    ExtrudeExtent::Symmetric {
+                        side:
+                            ExtrudeSide {
+                                termination: LinearTermination::Blind { length },
+                                ..
+                            },
+                    },
+                ..
+            }) => Some(length.get()),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent:
+                    ExtrudeExtent::SymmetricPerSide {
+                        side:
+                            ExtrudeSide {
+                                termination: LinearTermination::Blind { length },
+                                ..
+                            },
+                    },
+                ..
+            }) => Some(2.0 * length.get()),
+            _ => panic!("symmetric blind Extrude: {definition:?}"),
+        }
     };
     let scope =
         |fixed: Option<f64>, sides: [u32; 2], measurement: Option<DesignExtrudeMeasurement>| {
@@ -353,7 +417,10 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
             );
         }
     }
-    assert!(whole_travel(&scope(Some(1.2), [1, 0], None), None).is_none());
+    assert_eq!(
+        whole_travel(&scope(Some(1.2), [1, 0], None), None),
+        Some(24.0)
+    );
     let untailed = whole_travel(&scope(None, [1, 0], None), Some(0.55)).unwrap();
     assert!((untailed - 5.5).abs() < 1.0e-12);
 }

@@ -214,3 +214,107 @@ fn extrude_projects_with_target_shape_group() {
         crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
     ));
 }
+
+#[test]
+fn distance_and_through_all_retains_auxiliary_selection() {
+    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    let scope = scope_with_extent(DesignExtrudeExtent::TwoSidedDistanceThroughAll);
+    let profile = profile_group(100, 0);
+    let mut auxiliary = profile_group(101, 1);
+    auxiliary.operand_role = DesignConstructionOperandRole::Other(
+        crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+    );
+    let params = parameters();
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(
+            ctx,
+            &scope,
+            &[(0, &params[0]), (1, &params[1])],
+            &[profile, auxiliary],
+            &[],
+            &[],
+            &[],
+        )
+    })
+    .unwrap()
+    .expect("mixed Extrude");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    }) = definition
+    else {
+        panic!("mixed Extrude definition");
+    };
+    assert!(
+        matches!(first.termination, LinearTermination::Blind { length } if length.get() == 5.5)
+    );
+    assert!(matches!(
+        second.termination,
+        LinearTermination::ThroughAll {}
+    ));
+}
+
+#[test]
+fn surface_extrude_retains_the_role_43_group_as_its_native_profile() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    let mut scope = scope();
+    if let Some(DesignExtrudePrologue::ReferenceAware {
+        solid_operation, ..
+    }) = scope.extrude_prologue_mut()
+    {
+        *solid_operation = false;
+    }
+    let mut group = profile_group(100, 0);
+    group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X43);
+    let params = parameters();
+    let inputs = [(0, &params[0]), (1, &params[1])];
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(ctx, &scope, &inputs, &[group.clone()], &[], &[], &[])
+    })
+    .unwrap()
+    .expect("surface Extrude");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile: ProfileRef::Planar(PlanarProfileRef::Native(profile)),
+        extent: ExtrudeExtent::OneSided { side },
+        solid: Some(false),
+        ..
+    }) = definition
+    else {
+        panic!("surface Extrude definition");
+    };
+    assert_eq!(profile, group.id);
+    assert!(matches!(side.termination, LinearTermination::Blind { length } if length.get() == 5.5));
+    assert_eq!(side.draft.unwrap().get(), 0.2);
+}
+
+#[test]
+fn wall_thickness_stays_native_while_the_extrude_distance_projects() {
+    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    let scope = scope();
+    let group = profile_group(100, 0);
+    let params = parameters();
+    let wall = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "value",
+        "Side1WallThickness",
+        Some("mm"),
+        "wall",
+        0.2,
+    ))
+    .unwrap();
+    let inputs = [(0, &params[0]), (1, &params[1]), (2, &wall)];
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(ctx, &scope, &inputs, &[group], &[], &[], &[])
+    })
+    .unwrap()
+    .expect("wall Extrude");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = definition
+    else {
+        panic!("wall Extrude definition");
+    };
+    assert!(matches!(side.termination, LinearTermination::Blind { length } if length.get() == 5.5));
+}

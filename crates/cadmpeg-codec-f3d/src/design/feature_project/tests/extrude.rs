@@ -87,7 +87,9 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::TwoSidedToFaces => (2, [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => (2, [1, 1]),
                 DesignExtrudeExtent::TwoSidedThroughAll => (2, [4, 4]),
-                DesignExtrudeExtent::TwoSidedDistanceToFace => (2, [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace
+                | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne => (2, [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceThroughAll => (2, [1, 4]),
                 DesignExtrudeExtent::SymmetricDistance => (3, [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => (3, [4, 4]),
             };
@@ -110,7 +112,9 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::TwoSidedToFaces => ([2, 0], [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => ([2, 0], [1, 1]),
                 DesignExtrudeExtent::TwoSidedThroughAll => ([2, 0], [4, 4]),
-                DesignExtrudeExtent::TwoSidedDistanceToFace => ([2, 0], [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace
+                | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne => ([2, 0], [1, 2]),
+                DesignExtrudeExtent::TwoSidedDistanceThroughAll => ([2, 0], [1, 4]),
                 DesignExtrudeExtent::SymmetricDistance => ([3, 0], [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => ([3, 0], [4, 4]),
             };
@@ -1805,6 +1809,38 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 ..
             }) if (id == &face_group.id) && actual_length.get() == 5.5 && actual_offset.get() == 0.5 && actual_draft.get() == -0.3
+        ));
+
+        set_extrude_extent(
+            &mut scope,
+            DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne,
+        );
+        let controlled = crate::test_support::with_decode_context(|decode_ctx| {
+            project_extrude(
+                decode_ctx,
+                &scope,
+                &[(0, &along), (1, &second_side_offset), (2, &side_two_taper)],
+                &[body_group.clone(), face_group.clone()],
+                &[],
+                std::slice::from_ref(&placement),
+                &[],
+            )
+        })
+        .expect("project the Extrude")
+        .expect("controlled distance-to-face Extrude");
+        assert!(matches!(
+            controlled,
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent: ExtrudeExtent::TwoSided {
+                    first: ExtrudeSide {
+                        termination: LinearTermination::Blind { length }, ..
+                    },
+                    second: ExtrudeSide {
+                        termination: LinearTermination::ToFace { .. }, ..
+                    },
+                },
+                ..
+            }) if length.get() == 5.5
         ));
 
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);

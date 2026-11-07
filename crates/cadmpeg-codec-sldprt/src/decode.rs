@@ -1240,7 +1240,9 @@ fn append_design_losses(
         | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
-        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+        ExtrudeExtent::OneSided { side }
+        | ExtrudeExtent::Symmetric { side }
+        | ExtrudeExtent::SymmetricPerSide { side } => {
             incomplete_linear_termination(&side.termination)
         }
         ExtrudeExtent::TwoSided { first, second } => {

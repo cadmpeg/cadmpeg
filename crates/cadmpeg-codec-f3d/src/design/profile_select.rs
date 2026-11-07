@@ -478,7 +478,8 @@ pub(crate) fn has_to_termination(extent: &cadmpeg_ir::features::ExtrudeExtent) -
         cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
             check_side(first) || check_side(second)
         }
-        cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => check_side(side),
+        cadmpeg_ir::features::ExtrudeExtent::Symmetric { side }
+        | cadmpeg_ir::features::ExtrudeExtent::SymmetricPerSide { side } => check_side(side),
     }
 }
 
