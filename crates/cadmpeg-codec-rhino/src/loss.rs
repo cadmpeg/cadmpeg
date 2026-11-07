@@ -253,6 +253,10 @@ pub(crate) enum RhinoLossCode {
     WriterTextStyleOmitted,
     /// A text style reference is reduced or reassigned.
     WriterTextStyleReferenceReduced,
+    /// A product definition has unrepresentable native metadata.
+    WriterProductMetadataReduced,
+    /// An embedded image cannot be written.
+    WriterImageOmitted,
     /// A native light has incomplete or unrepresentable fields.
     WriterLightOmitted,
     /// A light's stored archive index changes to its emitted table position.
@@ -271,6 +275,8 @@ pub(crate) enum RhinoLossCode {
     WriterLayerLinetypeReduced,
     /// A layer material reference changes its archive index or is omitted.
     WriterLayerMaterialReduced,
+    /// A native layer color cannot be represented.
+    WriterLayerColorReduced,
     /// Layer membership cannot be assigned to an individual non-object record.
     WriterLayerMembershipOmitted,
     /// An unspecified layer visibility is written as the native default.
@@ -411,6 +417,8 @@ impl RhinoLossCode {
         Self::WriterDimensionStyleIndexReassigned,
         Self::WriterTextStyleOmitted,
         Self::WriterTextStyleReferenceReduced,
+        Self::WriterProductMetadataReduced,
+        Self::WriterImageOmitted,
         Self::WriterLightOmitted,
         Self::WriterLightIndexReassigned,
         Self::WriterLightAttributeIndexReassigned,
@@ -420,6 +428,7 @@ impl RhinoLossCode {
         Self::WriterLinetypeReduced,
         Self::WriterLayerLinetypeReduced,
         Self::WriterLayerMaterialReduced,
+        Self::WriterLayerColorReduced,
         Self::WriterLayerMembershipOmitted,
         Self::WriterLayerVisibilityDefaulted,
         Self::WriterLayerDescriptionNormalized,
@@ -512,6 +521,8 @@ impl RhinoLossCode {
             Self::WriterDimensionStyleIndexReassigned => "writer.dimension-style-index-reassigned",
             Self::WriterTextStyleOmitted => "writer.text-style-omitted",
             Self::WriterTextStyleReferenceReduced => "writer.text-style-reference-reduced",
+            Self::WriterProductMetadataReduced => "writer.product-metadata-reduced",
+            Self::WriterImageOmitted => "writer.image-omitted",
             Self::WriterLightOmitted => "writer.light-omitted",
             Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
             Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
@@ -521,6 +532,7 @@ impl RhinoLossCode {
             Self::WriterLinetypeReduced => "writer.linetype-reduced",
             Self::WriterLayerLinetypeReduced => "writer.layer-linetype-reduced",
             Self::WriterLayerMaterialReduced => "writer.layer-material-reduced",
+            Self::WriterLayerColorReduced => "writer.layer-color-reduced",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
             Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
@@ -653,6 +665,7 @@ impl RhinoLossCode {
             | Self::WriterLinetypeReduced
             | Self::WriterLayerLinetypeReduced
             | Self::WriterLayerMaterialReduced
+            | Self::WriterLayerColorReduced
             | Self::WriterLayerMembershipOmitted
             | Self::WriterLayerVisibilityDefaulted
             | Self::WriterLayerDescriptionNormalized
@@ -667,6 +680,8 @@ impl RhinoLossCode {
             | Self::WriterDimensionStyleIndexReassigned
             | Self::WriterTextStyleOmitted
             | Self::WriterTextStyleReferenceReduced
+            | Self::WriterProductMetadataReduced
+            | Self::WriterImageOmitted
             | Self::WriterLightOmitted
             | Self::WriterLightIndexReassigned
             | Self::WriterLightAttributeIndexReassigned
@@ -792,6 +807,8 @@ mod tests {
                 "writer.dimension-style-index-reassigned",
                 "writer.text-style-omitted",
                 "writer.text-style-reference-reduced",
+                "writer.product-metadata-reduced",
+                "writer.image-omitted",
                 "writer.light-omitted",
                 "writer.light-index-reassigned",
                 "writer.light-attribute-index-reassigned",
@@ -801,6 +818,7 @@ mod tests {
                 "writer.linetype-reduced",
                 "writer.layer-linetype-reduced",
                 "writer.layer-material-reduced",
+                "writer.layer-color-reduced",
                 "writer.layer-membership-omitted",
                 "writer.layer-visibility-defaulted",
                 "writer.layer-description-normalized",

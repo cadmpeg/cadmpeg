@@ -581,6 +581,9 @@ pub fn cross_compare(
         Err(_) => BTreeSet::new(),
     };
     let normalized = normalize_synthetic_roots(&reduced_after, &synthetic);
+    let nulled =
+        null_dangling_preserving_paired(&projected, &normalized, &required, config.reduced);
+    let adjusted = apply_reduced(&nulled, config.reduced, true);
     findings.extend(native_findings(&projected, &normalized, &required));
     let unpaired = match unpaired_before_ids(
         &adjusted,
@@ -755,6 +758,28 @@ fn null_dangling(before: &Value, required: &BTreeSet<String>) -> Value {
     let ids: BTreeSet<String> = before_rows(before).keys().cloned().collect();
     walk(&mut nulled, required, &ids);
     nulled
+}
+
+fn null_dangling_preserving_paired(
+    before: &Value,
+    after: &Value,
+    required: &BTreeSet<String>,
+    reduced: &[ReducedProbe],
+) -> Value {
+    let mut retained = required.clone();
+    let comparison = apply_reduced(before, reduced, true);
+    if let Ok(unpaired) = unpaired_before_ids(
+        &comparison,
+        after,
+        &Mode::Cross(CrossProjection::new(BTreeSet::new())),
+    ) {
+        retained.extend(
+            before_rows(before)
+                .into_keys()
+                .filter(|id| !unpaired.contains(id)),
+        );
+    }
+    null_dangling(before, &retained)
 }
 
 /// Applies each reduced row's storage rule to the matching record paths.
@@ -1419,6 +1444,56 @@ mod tests {
             nulled.pointer("/model/occurrences/0/name"),
             Some(&json!("fcstd:native:object#Assembly"))
         );
+    }
+
+    #[test]
+    fn paired_optional_references_remain_checked() {
+        use super::null_dangling_preserving_paired;
+        use crate::comparison::{agree, unpaired_before_ids, Allowances, CrossProjection, Mode};
+
+        let before = json!({"model": {
+            "bodies": [{"id": "source:body#1"}],
+            "regions": [{"id": "source:region#1", "body": "source:body#1"}]
+        }});
+        let after = json!({"model": {
+            "bodies": [{"id": "target:body#1"}],
+            "regions": [{"id": "target:region#1", "body": "target:body#1"}]
+        }});
+        let required = BTreeSet::from(["source:region#1".to_owned()]);
+        let retained = null_dangling_preserving_paired(&before, &after, &required, &[]);
+        assert_eq!(
+            retained.pointer("/model/regions/0/body"),
+            Some(&json!("source:body#1"))
+        );
+        assert!(
+            unpaired_before_ids(&retained, &after, &Mode::Cross(CrossProjection::default()))
+                .unwrap()
+                .is_empty()
+        );
+
+        let absent = json!({"model": {"bodies": [], "regions": []}});
+        let nulled = null_dangling_preserving_paired(&before, &absent, &required, &[]);
+        assert_eq!(
+            nulled.pointer("/model/regions/0/body"),
+            Some(&serde_json::Value::Null)
+        );
+
+        let source = json!({"model": {
+            "bodies": [{"id": "source:body#1", "name": "first"}, {"id": "source:body#2", "name": "second"}],
+            "regions": [{"id": "source:region#1", "body": "source:body#1"}]
+        }});
+        let moved = json!({"model": {
+            "bodies": [{"id": "target:body#1", "name": "first"}, {"id": "target:body#2", "name": "second"}],
+            "regions": [{"id": "target:region#1", "body": "target:body#2"}]
+        }});
+        let retained = null_dangling_preserving_paired(&source, &moved, &required, &[]);
+        assert!(agree(
+            &retained,
+            &moved,
+            &Allowances::removed(BTreeSet::new()),
+            Mode::Cross(CrossProjection::default())
+        )
+        .is_err());
     }
 
     #[test]
