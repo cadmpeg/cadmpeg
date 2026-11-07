@@ -99,8 +99,9 @@ fn edit_document(ir: &CadIr) -> CadIr {
         1,
         "the extrusion consumes its one canonical Length parameter"
     );
+    let value = ParameterValue::Length(Length::new(37.0).unwrap());
     edited
-        .set_dimension(&feature_id, &paths[0], Length::new(37.0).unwrap())
+        .set_parameter_expression(&length, Expression::literal(&value), Some(value))
         .unwrap();
     edited
         .model
@@ -479,4 +480,23 @@ fn unedited_patch_supplies_no_content_beyond_the_synthesized_written_arenas() {
             synthesized.ir(),
         );
     }
+}
+
+#[test]
+fn design_history_full_edit_synthesizes_all_canonical_values() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let source = decode(&FcstdCodec, &fixture("design_history.FCStd"));
+    let edited = edit_document(source.ir());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    let (written, report) = write_decode(&FcstdCodec, &FcstdCodec, &edited, None, None);
+    assert_edits(written.ir());
+    assert_eq!(counts(written.ir()), counts(&edited));
+    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
 }
