@@ -189,6 +189,31 @@ fn detached_carriers_are_authored_without_a_body() {
 }
 
 #[test]
+fn model_only_geometry_has_a_native_default_configuration() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut scope = ir.scope;
+    scope.design = false;
+    ir.set_scope(scope).unwrap();
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = crate::SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "config.inferred-without-native"));
+}
+
+#[test]
 fn detached_point_is_written_in_the_selected_partition() {
     use cadmpeg_core::decode::View;
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
