@@ -293,6 +293,16 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
+    /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
+    FeatureExtrudeProfileFaceOrderAssumed,
+    /// An Extrude face profile's end-cap search stopped at a local cap.
+    FeatureExtrudeProfileFaceSearchCapped,
+    /// An Extrude face profile takes the preceding faces that its transition's end caps cover.
+    FeatureExtrudeProfileCapFacesInferred,
+    /// An Extrude face profile takes the faces that its transition deletes on the plane of its resolved faces.
+    FeatureExtrudeProfileDeletedFacesInferred,
+    /// An Extrude face profile stays native because its end caps or deleted faces contradict a face set.
+    FeatureExtrudeProfileFaceSetDisputed,
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
@@ -313,6 +323,12 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionNative,
     /// Legacy face operands use a current active face after no historical slot proof.
     FeatureFaceSelectionActiveSubstituted,
+    /// Offset Surface support groups with different ordinals are read as one
+    /// support-face selection.
+    FeatureSurfaceOffsetGroupOrdinalsAssumed,
+    /// A legacy Scale form is selected by the frame length of its English
+    /// spelling; its payload length matches no form.
+    FeatureScaleFrameLengthFormAssumed,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
@@ -635,6 +651,11 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeProfileFaceOrderAssumed,
+        Self::FeatureExtrudeProfileFaceSearchCapped,
+        Self::FeatureExtrudeProfileCapFacesInferred,
+        Self::FeatureExtrudeProfileDeletedFacesInferred,
+        Self::FeatureExtrudeProfileFaceSetDisputed,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
@@ -645,6 +666,8 @@ impl F3dLossCode {
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
+        Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
+        Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
         Self::FeatureFixedFilletAssignmentNative,
@@ -879,6 +902,21 @@ impl F3dLossCode {
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeProfileFaceOrderAssumed => {
+                "feature.extrude-profile-face-order-assumed"
+            }
+            Self::FeatureExtrudeProfileFaceSearchCapped => {
+                "feature.extrude-profile-face-search-capped"
+            }
+            Self::FeatureExtrudeProfileCapFacesInferred => {
+                "feature.extrude-profile-cap-faces-inferred"
+            }
+            Self::FeatureExtrudeProfileDeletedFacesInferred => {
+                "feature.extrude-profile-deleted-faces-inferred"
+            }
+            Self::FeatureExtrudeProfileFaceSetDisputed => {
+                "feature.extrude-profile-face-set-disputed"
+            }
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
@@ -893,6 +931,10 @@ impl F3dLossCode {
             Self::FeatureFaceSelectionActiveSubstituted => {
                 "feature.face-selection-active-substituted"
             }
+            Self::FeatureSurfaceOffsetGroupOrdinalsAssumed => {
+                "feature.surface-offset-group-ordinals-assumed"
+            }
+            Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
@@ -1148,6 +1190,11 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileFaceOrderAssumed
+            | Self::FeatureExtrudeProfileFaceSearchCapped
+            | Self::FeatureExtrudeProfileCapFacesInferred
+            | Self::FeatureExtrudeProfileDeletedFacesInferred
+            | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -1158,6 +1205,8 @@ impl F3dLossCode {
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
+            | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
+            | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
@@ -1343,6 +1392,11 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileFaceOrderAssumed
+            | Self::FeatureExtrudeProfileFaceSearchCapped
+            | Self::FeatureExtrudeProfileCapFacesInferred
+            | Self::FeatureExtrudeProfileDeletedFacesInferred
+            | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -1353,6 +1407,8 @@ impl F3dLossCode {
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
+            | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
+            | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
@@ -1626,6 +1682,11 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-profile-face-order-assumed",
+                "feature.extrude-profile-face-search-capped",
+                "feature.extrude-profile-cap-faces-inferred",
+                "feature.extrude-profile-deleted-faces-inferred",
+                "feature.extrude-profile-face-set-disputed",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",
@@ -1636,6 +1697,8 @@ mod tests {
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
+                "feature.surface-offset-group-ordinals-assumed",
+                "feature.scale-frame-length-form-assumed",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
                 "feature.fixed-fillet-assignment-native",
