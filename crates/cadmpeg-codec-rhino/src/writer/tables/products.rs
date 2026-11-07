@@ -255,16 +255,74 @@ pub(in crate::writer) fn definition_written(
         .is_none_or(|members| members.as_array().is_some_and(Vec::is_empty))
 }
 
+pub(in crate::writer) fn reduced_definition_fields(
+    ir: &CadIr,
+    definition: &ProductDefinition,
+    version: crate::RhinoArchiveVersion,
+) -> Vec<&'static str> {
+    let native = definition.native_ref.as_deref().and_then(|id| {
+        records(ir, "product_definitions")
+            .iter()
+            .find(|record| record.id() == id)
+    });
+    let Some(native) = native else {
+        return Vec::new();
+    };
+    let mut fields = Vec::new();
+    if native.field("unit_system").is_some_and(|value| {
+        !value.is_null()
+            && value
+                .as_u64()
+                .and_then(|value| u32::try_from(value).ok())
+                .is_none()
+    }) {
+        fields.push("unit_system");
+    }
+    if version != crate::RhinoArchiveVersion::V5
+        && native.field("archive_index").is_some_and(|value| {
+            !value.is_null()
+                && value
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .is_none()
+        })
+    {
+        fields.push("archive_index");
+    }
+    fields
+}
+
+pub(in crate::writer) fn definition_metadata_losses(
+    ir: &CadIr,
+    version: crate::RhinoArchiveVersion,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let referenced = referenced_definitions(ir);
+    ir.model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition_written(ir, &referenced, definition))
+        .filter_map(|definition| {
+            let fields = reduced_definition_fields(ir, definition, version);
+            (!fields.is_empty()).then(|| {
+                crate::loss::RhinoLossCode::WriterProductMetadataReduced.note(format!(
+                    "product definition {} native {} fields are reduced: {}",
+                    definition.id,
+                    definition.native_ref.as_deref().unwrap_or("unlinked"),
+                    fields.join(", ")
+                ))
+            })
+        })
+        .collect()
+}
+
 fn definition_units(
     native: Option<&serde_json::Map<String, Value>>,
 ) -> Result<(u32, f64, Vec<u8>), CodecError> {
-    let units = match native
+    let units = native
         .and_then(|fields| fields.get("unit_system"))
         .and_then(Value::as_u64)
-    {
-        Some(value) => u32::try_from(value).map_err(CodecError::malformed)?,
-        None => 2,
-    };
+        .and_then(|value| u32::try_from(value).ok())
+        .unwrap_or(2);
     let meters = native
         .and_then(|fields| fields.get("meters_per_unit"))
         .and_then(Value::as_f64)
@@ -318,7 +376,10 @@ pub(in crate::writer) fn definitions(
                 .and_then(|fields| fields.get("archive_index"))
                 .and_then(Value::as_i64)
             {
-                Some(value) => i32::try_from(value).map_err(CodecError::malformed)?,
+                Some(value) => match i32::try_from(value) {
+                    Ok(index) => index,
+                    Err(_) => wire_index(ordinal)?,
+                },
                 None => wire_index(ordinal)?,
             };
             result.push(modern_definition(
