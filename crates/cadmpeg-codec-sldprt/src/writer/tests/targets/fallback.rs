@@ -64,11 +64,30 @@ fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_con
         .insert_retained_record(crate::source_image_id(), image)
         .expect("source image identity");
     let records = crate::source_records(&ir, &fidelity);
+    let mut limits = cadmpeg_core::decode::ResourceLimits::default();
+    limits.max_input_bytes = 0;
+    let limited = crate::writer::write_semantic_with_records(
+        &ir,
+        &fidelity.annotations,
+        &records,
+        Some(&fidelity),
+        limits,
+        &mut Vec::new(),
+    )
+    .err()
+    .expect("the source image exceeds the caller's input ceiling");
+    assert!(matches!(
+        limited,
+        crate::writer::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes
+                && limit.limit == 0
+    ));
     let error = crate::writer::write_semantic_with_records(
         &ir,
         &fidelity.annotations,
         &records,
         Some(&fidelity),
+        cadmpeg_core::decode::ResourceLimits::default(),
         &mut Vec::new(),
     )
     .err()

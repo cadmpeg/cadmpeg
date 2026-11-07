@@ -630,6 +630,7 @@ pub(super) fn plan(
             sw_version: declaration,
             prepared_native,
             source_trust,
+            limits: input.limits,
         },
         &mut bytes,
     )?;
