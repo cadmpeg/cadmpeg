@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
+pub(in crate::families) mod weighted_edges;
+mod weighted_plane;
+
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::u64_from_index;
 
@@ -1708,6 +1711,8 @@ enum ConsolidatedCarrierChart<'a> {
 #[derive(Clone, Copy, Default)]
 pub(in crate::families) struct ConsolidatedCurveBindingCounts {
     pub(super) standard_edges: usize,
+    pub(in crate::families) widened_vertices: usize,
+    pub(in crate::families) max_vertex_widening: f64,
     pub(super) partner_supports: usize,
     pub(super) partner_face_pcurve_pairs: usize,
     pub(super) standard_face_surfaces: usize,

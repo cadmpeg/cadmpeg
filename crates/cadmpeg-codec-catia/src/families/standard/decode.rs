@@ -2714,6 +2714,23 @@ fn try_decode_standard_population(
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
             Err(_) => return None,
         };
+    let weighted = match crate::families::freeform::weighted_edges::attach(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        &a5_carriers,
+        refusal,
+        &mut admission,
+    ) {
+        Ok(weighted) => weighted,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
+    consolidated_curve_bindings.standard_edges += weighted.edges;
+    consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
+    consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
+    consolidated_curve_bindings.max_vertex_widening = weighted.max_vertex_widening;
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -2746,6 +2763,13 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
             consolidated_curve_bindings.rechart_numeric_failures,
+        )));
+    }
+    if consolidated_curve_bindings.widened_vertices != 0 {
+        report.losses.push(CatiaLossCode::GeometryVertexToleranceWidened.note(format!(
+            "Widened {} vertex tolerances for binary32 coordinate storage; maximum widening {:.17} mm",
+            consolidated_curve_bindings.widened_vertices,
+            consolidated_curve_bindings.max_vertex_widening,
         )));
     }
     report.coverage.record(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT, usize::from(true));

@@ -13,7 +13,11 @@ const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 /// unclassified. Segment intersection and containment are quadratic in them.
 pub(crate) const MAX_PLANAR_BOUNDARY_POINTS: usize = 4096;
 
-fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
+pub(crate) fn strictly_inside_planar_polygon(
+    point: Point2,
+    polygon: &[Point2],
+    tolerance: f64,
+) -> bool {
     let mut inside = false;
     for (left, right) in polygon
         .iter()
@@ -54,7 +58,7 @@ fn point_on_segment(point: Point2, left: Point2, right: Point2, tolerance: f64) 
         && point_u * (point.u - right.u) + point_v * (point.v - right.v) <= tolerance * tolerance
 }
 
-fn segments_intersect_or_touch(
+pub(crate) fn segments_intersect_or_touch(
     left_start: Point2,
     left_end: Point2,
     right_start: Point2,
