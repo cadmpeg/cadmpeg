@@ -735,7 +735,7 @@ fn source_less_reference_plane_retains_unresolved_construction() {
 }
 
 #[test]
-fn source_less_sketch_block_retains_definition_reference_and_placement() {
+fn source_less_sketch_block_reports_unwritten_instance() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Block" Type="SketchBlockDefinition" id="101"/><Feature Name="Use" Type="SketchBlockInstance" id="102" BlockDefinition="101" BlockOrigin="10mm,20mm,30mm"/></Keywords>"#));
     source.extend(make_block(
@@ -768,13 +768,13 @@ fn source_less_sketch_block_retains_definition_reference_and_placement() {
         .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
         block: Some(block),
-        placement: Some(placement),
+        placement: Some(_),
     }) = instance.evaluation.definition()
     else {
         panic!("block instance");
     };
     assert_eq!(block, &definition.id);
-    let expected_placement = *placement;
+    let instance_id = instance.id.clone();
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
     for feature in &mut ir.model.features {
@@ -783,6 +783,10 @@ fn source_less_sketch_block_retains_definition_reference_and_placement() {
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterDesignReduced.kind()
+            && loss.message.contains(instance_id.as_str())
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
@@ -806,9 +810,10 @@ fn source_less_sketch_block_retains_definition_reference_and_placement() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Use"))
         .unwrap();
-    assert!(
-        matches!(instance.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) }) if block == &definition.id && placement == &expected_placement)
-    );
+    assert!(matches!(
+        instance.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry { .. })
+    ));
 }
 
 #[test]

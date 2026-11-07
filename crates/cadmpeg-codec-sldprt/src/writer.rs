@@ -111,6 +111,7 @@ pub(crate) fn write_semantic_with_records(
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+    limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, write_error::WriteError> {
     let trust = source_fidelity.map_or(SourceTrust::Authored, |fidelity| {
@@ -129,6 +130,7 @@ pub(crate) fn write_semantic_with_records(
             sw_version: None,
             prepared_native: None,
             source_trust: trust,
+            limits,
         },
         writer,
     )
@@ -194,6 +196,7 @@ pub(super) struct SemanticOptions<'a> {
     sw_version: Option<&'a str>,
     prepared_native: Option<SldprtNative>,
     source_trust: SourceTrust,
+    limits: cadmpeg_core::decode::ResourceLimits,
 }
 
 /// Author the selected version envelope without consuming retained bytes.
@@ -209,11 +212,15 @@ pub(super) fn write_semantic_at(
         sw_version,
         prepared_native,
         source_trust,
+        limits,
     } = options;
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
     let digest_arena = DecodeArena::new();
-    let (digest_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
+    let policy = DecodePolicy {
+        limits,
+        ..DecodePolicy::desktop()
+    };
+    let digest_ctx = DecodeContext::for_encode(&digest_arena, &policy);
     let mut native = match prepared_native {
         Some(native) => Some(native),
         None => ir
@@ -282,7 +289,7 @@ pub(super) fn write_semantic_at(
     let ir = &normalized;
     let source_arena = DecodeArena::new();
     let source_context = source_image(retained_records)
-        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
+        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &policy))
         .transpose()?;
     let source_scan = source_context
         .as_ref()
