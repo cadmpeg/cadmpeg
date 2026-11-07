@@ -8459,7 +8459,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
-    let mut visibility_ordinals = HashSet::new();
     let collections = native
         .design_types
         .iter()
@@ -8503,11 +8502,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     let collection = collection.get();
                     if header_valid
                         && collections.contains(&(ids::design_segment(&placement.id), collection))
-                        && visibility_ordinals.insert((
-                            native_stream,
-                            collection,
-                            visibility.stream_ordinal.get(),
-                        ))
                     {
                         visibility_offsets.insert((native_stream, visibility.visible_offset()))
                     } else {
