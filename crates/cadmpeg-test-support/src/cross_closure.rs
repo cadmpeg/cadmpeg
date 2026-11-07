@@ -1467,7 +1467,7 @@ mod tests {
         );
         assert!(
             unpaired_before_ids(&retained, &after, &Mode::Cross(CrossProjection::default()))
-                .unwrap()
+                .expect("the paired graph is valid")
                 .is_empty()
         );
 
