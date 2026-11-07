@@ -28,6 +28,11 @@ fn analytic_cylinder_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn analytic_cone_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("analytic_cone_surface"));
+}
+
+#[test]
 fn nurbs_curve_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("nurbs_curve"));
 }
