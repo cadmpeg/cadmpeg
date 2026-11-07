@@ -13,6 +13,36 @@ use cadmpeg_ir::{
 };
 
 #[test]
+fn standalone_unknown_surface_round_trips_without_a_surface_shape() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use std::io::Cursor;
+
+    let mut ir = CadIr::empty();
+    let mut surface = edgeless_doc().model.surfaces.remove(0);
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    ir.model.surfaces.push(surface);
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write unknown surface");
+    assert!(std::str::from_utf8(&bytes)
+        .unwrap()
+        .contains(" = SURFACE('');"));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode surface");
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Unknown { record: None })
+    )));
+}
+
+#[test]
 fn recovered_bounded_surface_does_not_add_an_opaque_representation() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
