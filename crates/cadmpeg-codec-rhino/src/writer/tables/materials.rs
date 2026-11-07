@@ -225,30 +225,40 @@ pub(in crate::writer) fn bound_appearance<'a>(
     ir: &'a CadIr,
     identity: &str,
 ) -> Option<&'a Appearance> {
-    let binding = ir.model.appearance_bindings.iter().find(|binding| {
-        use cadmpeg_ir::appearance::AppearanceTarget;
-        let target = match &binding.target {
-            AppearanceTarget::Body(id) => id.as_str(),
-            AppearanceTarget::Face(id) => id.as_str(),
-            AppearanceTarget::Edge(id) => id.as_str(),
-            AppearanceTarget::Vertex(id) => id.as_str(),
-            AppearanceTarget::Point(id) => id.as_str(),
-            AppearanceTarget::Curve(id) => id.as_str(),
-            AppearanceTarget::Surface(id) => id.as_str(),
-            AppearanceTarget::Occurrence(id) => id.as_str(),
-            AppearanceTarget::Tessellation(id) => id.as_str(),
-            AppearanceTarget::TriangleGroup { tessellation, .. } => tessellation.as_str(),
-            AppearanceTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
-                id.as_str()
-            }
-            AppearanceTarget::Record { .. } => return false,
-        };
-        target == identity
-    })?;
+    let binding = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| binding_targets(ir, binding, identity))?;
     ir.model
         .appearances
         .iter()
         .find(|appearance| appearance.id == binding.appearance)
+}
+
+fn binding_targets(
+    ir: &CadIr,
+    binding: &cadmpeg_ir::appearance::AppearanceBinding,
+    identity: &str,
+) -> bool {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    let target = match &binding.target {
+        AppearanceTarget::Body(id) => id.as_str(),
+        AppearanceTarget::Face(id) => id.as_str(),
+        AppearanceTarget::Edge(id) => id.as_str(),
+        AppearanceTarget::Vertex(id) => id.as_str(),
+        AppearanceTarget::Point(id) => id.as_str(),
+        AppearanceTarget::Curve(id) => id.as_str(),
+        AppearanceTarget::Surface(id) => id.as_str(),
+        AppearanceTarget::Occurrence(id) => id.as_str(),
+        AppearanceTarget::Tessellation(id) => id.as_str(),
+        AppearanceTarget::TriangleGroup { tessellation, .. } => tessellation.as_str(),
+        AppearanceTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
+            id.as_str()
+        }
+        AppearanceTarget::Record { .. } => return false,
+    };
+    target == identity
 }
 
 pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> bool {

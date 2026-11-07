@@ -100,6 +100,30 @@ pub(crate) fn parse_layer_at(
     bytes: &[u8],
     origin: SourceLocation,
 ) -> Result<Layer, CodecError> {
+    parse(ctx, bytes, origin, true)
+}
+
+pub(crate) fn parse_generated_layer(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Layer, CodecError> {
+    parse(
+        ctx,
+        bytes,
+        SourceLocation {
+            space: SpaceId::ROOT,
+            offset: 0,
+        },
+        false,
+    )
+}
+
+fn parse(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    origin: SourceLocation,
+    charge_records: bool,
+) -> Result<Layer, CodecError> {
     let text = std::str::from_utf8(bytes).map_err(|error| {
         if error.error_len().is_none() {
             return truncated(origin, error.valid_up_to(), "usda UTF-8");
@@ -115,6 +139,7 @@ pub(crate) fn parse_layer_at(
         bytes: text.as_bytes(),
         pos: 0,
         origin,
+        charge_records,
     };
     parser.layer()
 }
@@ -141,6 +166,7 @@ struct Parser<'c, 'a, 't> {
     bytes: &'t [u8],
     pos: usize,
     origin: SourceLocation,
+    charge_records: bool,
 }
 
 type Parsed<T> = Result<T, CodecError>;
@@ -1294,7 +1320,9 @@ impl<'t> Parser<'_, '_, 't> {
 
     fn prim_spec(&mut self) -> Parsed<PrimSpec> {
         let _depth = self.ctx.enter_nested("usda_prim_nesting")?;
-        self.ctx.charge_entities(1, "usda_prim")?;
+        if self.charge_records {
+            self.ctx.charge_entities(1, "usda_prim")?;
+        }
         let offset = self.pos;
         let specifier = if self.eat_keyword("def") {
             Specifier::Def
@@ -1372,7 +1400,9 @@ impl<'t> Parser<'_, '_, 't> {
                 self.end_statement()?;
                 continue;
             }
-            self.ctx.charge_entities(1, "usda_property")?;
+            if self.charge_records {
+                self.ctx.charge_entities(1, "usda_property")?;
+            }
             body.properties.push(self.property_spec()?);
             self.end_statement()?;
         }

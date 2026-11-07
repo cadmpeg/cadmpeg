@@ -329,3 +329,39 @@ fn textured_mesh_assets_have_no_native_back_links() {
     assert!(findings.is_empty(), "{findings:#?}");
     cadmpeg_test_support::native_linkage::assert_native_linkage(decoded.ir());
 }
+
+#[test]
+fn damaged_paramesh_xml_preserves_readable_document_content() {
+    let sibling = "<Attrib><TriName>grp_tt2060d08b-7434-4786-9506-b0ee951bb9dc</TriName><AmtName>tid</AmtName></Attrib>";
+    let good = format!("<?xml version=\"1.0\"?>{sibling}");
+    let damaged = format!("<?xml version=\"1.0\"?><Attrib><TriName>broken &bad;</TriName><AmtName>bad</AmtName></Attrib>{sibling}");
+    let decode = |xml: &str| {
+        super::decode(crate::test_support::mesh_fixture::archive_with_textures(
+            &crate::test_support::paramesh::triangle_with_attribute_names(Some(xml)),
+            Some(&synthetic_geometry_smbh()),
+            true,
+        ))
+    };
+    let baseline = decode(&good);
+    let recovered = decode(&damaged);
+    assert_eq!(recovered.ir().model, baseline.ir().model);
+    assert_eq!(recovered.ir().model.tessellations.len(), 1);
+    assert_eq!(
+        recovered.ir().model.tessellations[0]
+            .texture_assignments()
+            .len(),
+        1
+    );
+    let unreadable: Vec<_> = recovered
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0]
+        .dropped
+        .iter()
+        .any(|id| id.as_str().contains("TriName")));
+    super::assert_valid(&recovered);
+}

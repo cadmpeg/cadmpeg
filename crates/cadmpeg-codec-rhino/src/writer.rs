@@ -1242,6 +1242,9 @@ fn prepare_write<'a, 'budget>(
         )?;
         brep_count += loose_written;
         if baked.model.faces.is_empty() {
+            if baked.model.edges.is_empty() && loose_written == 1 {
+                written_bodies.insert(baked.model.bodies[0].id.to_string());
+            }
             if loose_written == 0 {
                 losses.push(omitted_body(
                     &baked,
@@ -4423,9 +4426,23 @@ fn object_attributes_payload(
     visible: Option<bool>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
+    object_attributes_for_target(ir, identity, identity, name, color, visible, materials)
+}
+
+fn object_attributes_for_target(
+    ir: &CadIr,
+    identity: &str,
+    material_target: &str,
+    name: Option<&str>,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+    materials: &MaterialPlan,
+) -> Result<Vec<u8>, CodecError> {
     let uuid = tables::products::occurrence_uuid(ir, identity)
         .unwrap_or_else(|| neutral_object_uuid(identity));
-    let material = materials.material_index(ir, identity);
+    let material = materials
+        .material_index(ir, material_target)
+        .or_else(|| materials.material_index(ir, identity));
     // Rhino can state an object display colour independently of its material.
     // Keep that channel absent when the effective colour comes from material.
     let direct_color = ir

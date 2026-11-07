@@ -123,9 +123,9 @@ fn header_only_edition_three_does_not_claim_a_found_model_part() {
             )
             .expect("edition-three header without a model population");
         // The header holds no part, but its `FILE_NAME` projection holds
-        // eleven document attributes (#233): a non-container decode holds
+        // eleven FILE_NAME attributes and one description (#233): a non-container decode holds
         // model records, so model scope follows §1.1.
-        let held_attributes = usize::from(depth != DecodeDepth::Container) * 11;
+        let held_attributes = usize::from(depth != DecodeDepth::Container) * 12;
         assert_eq!(
             decoded.ir().scope,
             ContentScope {

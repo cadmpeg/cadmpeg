@@ -1244,10 +1244,6 @@ fn edge_without_curve_is_reported_and_omitted() {
         source_object: None,
     };
     let _ = curve; // silence unused import path
-    assert!(report
-        .losses
-        .iter()
-        .any(|l| l.message.contains("edge(s) have no typed 3D curve")));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::EdgeNo3dCurve.kind()
             && loss

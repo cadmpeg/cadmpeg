@@ -52,67 +52,112 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// before the paired header. The type GUID and version select the layout; the
 /// dynamic class tag does not.
 pub(in crate::design::decode) fn exact_hole_construction(
-    bytes: &[u8],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: (View<'_>, &str),
     records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     required_scope_kind: &scope::DesignFeatureKind,
 ) -> Result<Option<DesignHoleConstruction>, CodecError> {
-    (|| {
-        if &scope.kind() != required_scope_kind {
-            return None;
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+
+    if &scope.kind() != required_scope_kind {
+        return Ok(None);
+    }
+    let (source, stream) = source;
+    let bytes = source.window();
+    let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
+    let mut candidate = None;
+    let mut ambiguous = false;
+    for record_index in scope.reference_members().values() {
+        let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
+            continue;
+        };
+        if *type_guid != HOLE_POINT_DATA_TYPE_GUID {
+            continue;
         }
-        let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
-        let mut candidate = None;
-        for record_index in scope.reference_members().values() {
-            let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
-                continue;
-            };
-            if *type_guid != HOLE_POINT_DATA_TYPE_GUID || !matches!(*version, 1 | 4) {
+        for frame in records
+            .iter()
+            .filter(|frame| frame.entity_id == u64::from(*record_index))
+        {
+            let start = source
+                .start()
+                .checked_add(frame.start)
+                .ok_or_else(|| CodecError::malformed("Hole carrier start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("Hole carrier end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("Hole carrier exceeds its stream"))?;
+            let record_id = cadmpeg_ir::ids::Identity::new(super::super::text::design_record_id(
+                stream,
+                ":design-record-header#",
+                cadmpeg_core::decode::u64_from_index(frame.start),
+            ))
+            .map_err(CodecError::malformed)?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design])
+                .record_id(record_id);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+            if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
                 continue;
             }
-            for (start, paired_at) in records.frames(*record_index) {
-                let Some((_, after_tag)) =
-                    lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
-                else {
-                    continue;
+            let Some(next) = ctx.decode_part(parts, extent, spec, |_| {
+                let parse = || {
+                    let (_, after_tag) =
+                        lp_ascii_filtered_view(bytes, frame.start, 3..=3, u8::is_ascii_digit)?;
+                    if after_tag != frame.start + 7
+                        || View::u32_le_at(bytes, after_tag) != Some(*record_index)
+                        || frame.member_end == frame.end
+                    {
+                        return None;
+                    }
+                    graphic_ascii_end(bytes, after_tag + 8, 0..=256)
                 };
-                if after_tag != start + 7
-                    || View::u32_le_at(bytes, after_tag) != Some(*record_index)
-                {
-                    continue;
-                }
-                let Some(payload_at) = graphic_ascii_end(bytes, after_tag + 8, 0..=256) else {
-                    continue;
+                let malformed = || {
+                    CodecError::malformed(format_args!(
+                        "Hole carrier entity {record_index} has an invalid frame"
+                    ))
                 };
-                let next = match hole_construction_frame_at(
+                let payload_at = parse().ok_or_else(malformed)?;
+                hole_construction_frame_at(
                     bytes,
                     records,
-                    start,
-                    paired_at,
+                    frame.start,
+                    frame.member_end,
                     payload_at,
                     *record_index,
                     *version,
-                ) {
-                    Ok(next) => next,
-                    Err(error) => return Some(Err(error)),
-                };
-                if let Some(next) = next {
-                    if candidate.replace(next).is_some() {
-                        return None;
-                    }
-                }
+                )?
+                .ok_or_else(malformed)
+            })?
+            else {
+                continue;
+            };
+            if candidate.replace(next).is_some() {
+                ambiguous = true;
             }
         }
-        candidate.map(|mut candidate| {
-            candidate.face_selection = face_selection;
-            if *required_scope_kind == scope::DesignFeatureKind::Hole {
-                candidate.locations = hole_locations(bytes, records, scope, stream_types);
-            }
-            Ok(candidate)
-        })
-    })()
-    .transpose()
+    }
+    if ambiguous {
+        return Ok(None);
+    }
+    Ok(candidate.map(|mut candidate| {
+        candidate.face_selection = face_selection;
+        if *required_scope_kind == scope::DesignFeatureKind::Hole {
+            candidate.locations = hole_locations(bytes, records, scope, stream_types);
+        }
+        candidate
+    }))
 }
 
 /// Read every point-data record that `scope` references, in reference order.

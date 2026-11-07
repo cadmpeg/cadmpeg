@@ -21,12 +21,24 @@
             "r": 0.10000000149011612
           },
           "id": "step:presentation:appearance#70",
-          "name": "mesh green",
-          "schema": "step_surface_style"
+          "name": "mesh green"
         }
       ],
       "assembly_joints": [],
       "attributes": [
+        {
+          "id": "step:data:file-description#00000000000000000000",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "AP242 tessellation"
+            }
+          ]
+        },
         {
           "id": "step:data:file-name#author",
           "name": "author",

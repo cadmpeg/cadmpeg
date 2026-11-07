@@ -4,6 +4,24 @@ use super::*;
 use crate::chunks::ArchiveVersion;
 use crate::writer::TCODE_GROUP_TABLE;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+#[test]
+fn instance_group_membership_follows_the_native_object_link() {
+    let decoded = crate::RhinoCodec
+        .decode(
+            &mut std::io::Cursor::new(include_bytes!(
+                "../../../../tests/golden/fixtures/e2_structure.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the synthesized instance group");
+    let ir = decoded.ir();
+    for occurrence in &ir.model.occurrences {
+        assert_eq!(group_indices(ir, occurrence.id.as_str()).unwrap(), vec![0]);
+    }
+    assert_eq!(ir.model.occurrences.len(), 2);
+}
 
 #[test]
 fn typed_group_name_and_uuid_are_authored_without_source_bytes() {

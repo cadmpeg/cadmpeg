@@ -2,7 +2,7 @@
 //! Current material records have one shared authoring identity allocation.
 
 use super::{
-    bound_appearance, encode_material, native_base_complete, own_material, records, wire_index,
+    binding_targets, encode_material, native_base_complete, own_material, records, wire_index,
     CadIr, CodecError, Value,
 };
 use crate::loss::RhinoLossCode;
@@ -362,8 +362,11 @@ impl MaterialPlan {
     }
 
     pub(in crate::writer) fn material_index(&self, ir: &CadIr, identity: &str) -> Option<i32> {
-        let appearance = bound_appearance(ir, identity)?;
-        self.appearance_index(appearance.id.as_str())
+        ir.model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding_targets(ir, binding, identity))
+            .find_map(|binding| self.appearance_index(binding.appearance.as_str()))
     }
     pub(in crate::writer) fn native_targets(&self, id: &str) -> &[i32] {
         self.native_targets.get(id).map_or(&[], Vec::as_slice)

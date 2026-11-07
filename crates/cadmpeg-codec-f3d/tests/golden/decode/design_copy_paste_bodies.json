@@ -1618,6 +1618,61 @@
       {
         "code": {
           "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.point-owner-unresolved",
+          "kind": "reference_graph_not_closed",
+          "strict_floor": "warning"
+        },
+        "severity": "warning",
+        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1022 has no placement for owner 277."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.point-owner-unresolved",
+          "kind": "reference_graph_not_closed",
+          "strict_floor": "warning"
+        },
+        "severity": "warning",
+        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1228 has no placement for owner 277."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.point-owner-unresolved",
+          "kind": "reference_graph_not_closed",
+          "strict_floor": "warning"
+        },
+        "severity": "warning",
+        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1434 has no placement for owner 277."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.point-owner-unresolved",
+          "kind": "reference_graph_not_closed",
+          "strict_floor": "warning"
+        },
+        "severity": "warning",
+        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1640 has no placement for owner 277."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.point-owner-unresolved",
+          "kind": "reference_graph_not_closed",
+          "strict_floor": "warning"
+        },
+        "severity": "warning",
+        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2086 has no placement for owner 277."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
           "namespace": "decode",
           "code": "record.unreadable",
           "kind": "decode_diagnostic",

@@ -14,7 +14,7 @@
 [floors]
 catia = 84
 creo = 84
-f3d = 389
+f3d = 395
 freecad = 72
 iges = 324
 inventor = 8
@@ -28,7 +28,7 @@ usd = 156
 
 [notes]
 catia = "28 frozen fixture files + 28 inspect + 28 decode snapshots."
-f3d = "65 frozen fixture files + 65 inspect + 65 decode + 65 generate + 64 patch + 65 replay artifacts. Counts do not establish semantic coverage."
+f3d = "66 frozen fixture files + 66 inspect + 66 decode + 66 generate + 65 patch + 66 replay artifacts. Counts do not establish semantic coverage."
 rhino = "29 frozen fixture files + 29 inspect + 29 decode + 116 encode artifacts across explicit v5 and v8 targets."
 step = "20 inspect + 20 decode + 4 encode. The branches are not uniform: inspect and decode run over every fixture through Harness::check, while encode runs over the four stems ENCODE_FIXTURES names, through Harness::check_inputs. A written STEP file is much larger than the report describing it, and those four sources already span every target resolution the writer has: Inherit to the catalog default, Inherit to a non-default row, Inherit to an edition carried in a schema object identifier, and the refusal an edition-less AP242 header must produce. Adding a fixture raises this floor by 2, or by 3 if ENCODE_FIXTURES also names it."
 inventor = "Two frozen fixture files and 3 inspect + 3 decode snapshots; Harness::check_inputs covers both branches."
