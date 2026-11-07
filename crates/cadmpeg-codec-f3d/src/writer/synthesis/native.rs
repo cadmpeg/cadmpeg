@@ -167,6 +167,7 @@ pub(super) fn reconcile(
         design_canvas_images: original.design_canvas_images.clone(),
         design_decal_images: original.design_decal_images.clone(),
         design_body_bindings: original.design_body_bindings.clone(),
+        design_feature_timelines: original.design_feature_timelines.clone(),
         design_parameter_scopes: original
             .design_parameter_scopes
             .iter()
@@ -191,6 +192,12 @@ pub(super) fn reconcile(
                             ) => {
                                 scope.kind()
                                     == crate::records::feature::scope::DesignFeatureKind::Extrude
+                            }
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Sketch { .. },
+                            ) => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::Sketch
                             }
                             cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },

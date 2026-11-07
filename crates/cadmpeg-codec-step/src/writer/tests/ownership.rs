@@ -13,6 +13,42 @@ use cadmpeg_ir::{
 };
 
 #[test]
+fn standalone_unknown_curve_round_trips_without_a_curve_shape() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        id: CurveId::mint("test:model:curve#unknown").unwrap(),
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write unknown curve");
+    assert!(std::str::from_utf8(&bytes)
+        .unwrap()
+        .contains(" = CURVE('');"));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode curve");
+    assert!(decoded.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry.solved(),
+        Some(SolvedCurveGeometry::Unknown { record: None })
+    )));
+    let validation =
+        cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate curve");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn standalone_unknown_surface_round_trips_without_a_surface_shape() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
