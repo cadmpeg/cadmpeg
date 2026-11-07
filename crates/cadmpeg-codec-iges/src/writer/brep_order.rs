@@ -85,6 +85,12 @@ fn apply_topology_source(
     if let Some((_, label)) =
         sequence.and_then(|sequence| directory_source(ir, sequence, type_code))
     {
+        if matches!(type_code, 143 | 144)
+            && super::attributes::labels::sheet_boundary_points(ir, entity)
+                .is_some_and(|points| !points.is_empty())
+        {
+            return;
+        }
         entity.label = label;
     }
 }
