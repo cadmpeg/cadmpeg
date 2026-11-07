@@ -647,6 +647,12 @@
       ],
       "bodies": [
         {
+          "color": {
+            "a": 1.0,
+            "b": 0.6000000238418579,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
           "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
           "kind": "solid",
           "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:1",

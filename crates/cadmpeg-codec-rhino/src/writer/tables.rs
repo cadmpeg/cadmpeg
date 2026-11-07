@@ -43,7 +43,21 @@ fn object_record(ir: &CadIr, identity: &str) -> Option<String> {
             }
         },
     );
-    native
+    native.map(|reference| {
+        records(ir, "product_occurrences")
+            .iter()
+            .find(|record| record.id() == reference)
+            .and_then(|record| record.field("links"))
+            .and_then(|links| {
+                links.as_array().and_then(|links| {
+                    links
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .find_map(|link| source_record_resolves(ir, link).then(|| link.to_owned()))
+                })
+            })
+            .unwrap_or(reference)
+    })
 }
 
 fn source_record_resolves(ir: &CadIr, source: &str) -> bool {

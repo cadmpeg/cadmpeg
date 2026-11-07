@@ -58,6 +58,58 @@ fn offset_circle_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn offset_plane_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("offset_plane"));
+}
+
+#[test]
+fn parametric_spline_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("parametric_spline_curve"));
+}
+
+#[test]
+fn edited_parametric_spline_uses_current_control_points() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(fixture("parametric_spline_curve")),
+            &DecodeOptions::default(),
+        )
+        .expect("spline decodes");
+    let mut ir = decoded.ir().clone();
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &mut ir.model.curves[0].geometry
+    else {
+        panic!("expected NURBS");
+    };
+    curve
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
+                point.y += 1.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or(())
+        })
+        .expect("edited control points are finite");
+    let expected = ir.model.curves[0].geometry.clone();
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("edited spline synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("edited spline writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("edited spline decodes");
+    assert!(output
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == expected));
+}
+
+#[test]
 fn edited_nurbs_control_point_replaces_source_curve() {
     let decoded = IgesCodec
         .decode(

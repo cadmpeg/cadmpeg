@@ -7991,7 +7991,14 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .records_by_index
             .get(&(native_stream, group.paired_record_index));
         let carrier_ordinal = usize::try_from(group.carrier_reference_ordinal).ok();
-        let source_spec = face_source_carrier_spec(group.source_members.len());
+        let source_count = scope.and_then(|scope| {
+            face_source_profile_pair_count(&native.design_types, scope, |record| {
+                ctx.records_by_index
+                    .get(&(native_stream, record))
+                    .map(|header| header.class_tag.as_str())
+            })
+        });
+        let source_spec = source_count.and_then(face_source_carrier_spec);
         let registered = |record, class: &str, role| {
             face_source_record_is_registered(&native.design_types, &group.id, record, class, role)
         };
@@ -8002,11 +8009,7 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     scope.class_tag.as_str(),
                     FaceSourceType::Scope,
                 )
-                && face_source_profile_pair_count(&native.design_types, scope, |record| {
-                    ctx.records_by_index
-                        .get(&(native_stream, record))
-                        .map(|header| header.class_tag.as_str())
-                }) == Some(group.source_members.len())
+                && source_count.is_some()
                 && carrier_ordinal
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&group.carrier_record_index)
@@ -8051,34 +8054,34 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             {
                 return false;
             }
-            group
-                .source_members
-                .iter()
-                .enumerate()
-                .all(|(ordinal, member)| {
-                    let Ok(ordinal) = u64::try_from(ordinal) else {
-                        return false;
-                    };
-                    group
-                        .carrier_span
-                        .start()
-                        .checked_add(source_reference_offset)
-                        .and_then(|offset| {
-                            offset.checked_add(
-                                ordinal.checked_mul(
-                                    u64::try_from(
-                                        crate::layout::sheet_metal_region_identity_reference::LEN,
-                                    )
-                                    .ok()?,
-                                )?,
-                            )
-                        })
-                        == Some(member.offset)
-                })
+            let Some(first) = group
+                .carrier_span
+                .start()
+                .checked_add(source_reference_offset)
+            else {
+                return false;
+            };
+            let Ok(stride) =
+                u64::try_from(crate::layout::sheet_metal_region_identity_reference::LEN)
+            else {
+                return false;
+            };
+            let mut previous = None;
+            group.source_members.iter().all(|member| {
+                let Some(delta) = member.offset.checked_sub(first) else {
+                    return false;
+                };
+                let ordinal = delta / stride;
+                let valid = delta % stride == 0
+                    && usize::try_from(ordinal).is_ok_and(|ordinal| ordinal < layout.source_count)
+                    && previous.is_none_or(|previous| previous < ordinal);
+                previous = Some(ordinal);
+                valid
+            })
         });
         let mut source_records = HashSet::new();
         let source_members_valid = if let Some(layout) = source_spec {
-            if group.source_members.len() == layout.source_count {
+            if group.source_members.len() <= layout.source_count {
                 let mut valid = true;
                 for member in group.source_members.iter().map(|member| &member.value) {
                     let unique_record = source_records.insert(member.record_index);
