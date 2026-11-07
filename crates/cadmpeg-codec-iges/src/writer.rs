@@ -531,9 +531,6 @@ fn append_name_properties(
         let owner = entities
             .get_mut(*owner_index)
             .ok_or_else(|| CodecError::malformed("IGES name owner is missing"))?;
-        // A re-emitted native name property already links here; the neutral
-        // name is current, so it supersedes the carried value in place
-        // instead of writing a second property the re-decode cannot join.
         let mut superseded = false;
         for link in owner.property_links.clone() {
             let Some(property) = entities.get_mut(link) else {
@@ -4466,15 +4463,19 @@ fn boundary_entity(
         }
     }
     parameters.push(';');
+    let source = brep_order::boundary_source(ir, boundary.loop_.id.as_str());
     Ok(Entity {
         structure: None,
         property_links: Vec::new(),
         association_links: Vec::new(),
         line_font: None,
-        source_targets: Vec::new(),
+        source_targets: source
+            .as_ref()
+            .map(|(id, _)| vec![id.clone()])
+            .unwrap_or_default(),
         type_code: 141,
         form: 0,
-        label: String::new(),
+        label: source.map(|(_, label)| label).unwrap_or_default(),
         status: EntityStatus::PhysicallyDependent,
         subscript: 0,
         parameter_body: parameters.into_bytes(),
