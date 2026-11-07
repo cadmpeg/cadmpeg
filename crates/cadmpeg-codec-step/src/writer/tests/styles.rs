@@ -20,6 +20,12 @@ fn damaged_unbound_colours_survive_synthesis_without_bindings() {
         .expect("decode damaged STEP");
     assert_eq!(original.ir().model.appearances.len(), 2);
     assert!(original.ir().model.appearance_bindings.is_empty());
+    assert!(original
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .all(|appearance| appearance.schema.is_none()));
     let mut bytes = Vec::new();
     write_step(
         original.ir(),
