@@ -8,6 +8,7 @@ mod cache_storage;
 mod depth_limits;
 mod shared_walks;
 mod surface_styles;
+mod unbound;
 
 /// A style whose override walk does not terminate states no depth. Its
 /// position is stated as absence and sorts after every stated depth; the
