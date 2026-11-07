@@ -133,6 +133,10 @@ fn validate_model_with_index<'ir>(
 
     let mut findings = Vec::new();
 
+    if let Some(proof) = ValidatedFinding::for_cadir(ctx, ir)? {
+        findings.push(proof.finding);
+    }
+
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ids, &mut findings);
