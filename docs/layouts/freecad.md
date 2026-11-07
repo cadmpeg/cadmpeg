@@ -8,9 +8,8 @@ Source of truth: [`docs/formats/freecad_fcstd.md`](../../docs/formats/freecad_fc
 Table source: `docs/layouts/freecad.toml`.
 
 FCStd is a ZIP of XML plus embedded OCC B-Rep and application side entries. The
-XML layers have no byte layout, but four side entries do, and those are tabled
-here: the mesh-kernel record, the point-kernel record, the packed-colour list,
-and the link-array element list (§11, §9).
+XML layers have no byte layout. The tables cover mesh, point, packed-colour,
+link-array and fillet-edge side entries (§11, §9).
 
 The §11 side entries state that both integer byte orders are accepted for the
 mesh record when its magic and version agree; every other stated width in these
@@ -81,6 +80,32 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `element_count` | `u32` | little | spec | Each side entry begins with a little-endian element count |
+
+## `fillet_edges_header`
+
+Spec §11 · layout: byte offsets · size: 4 B
+
+Parsed by:
+- `crates/cadmpeg-codec-freecad/src/design.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | a little-endian `u32` item count followed |
+
+## `fillet_edge_item`
+
+Spec §11 · layout: byte offsets · size: 20 B
+
+The stride follows from one 32-bit index and two 64-bit values.
+
+Parsed by:
+- `crates/cadmpeg-codec-freecad/src/design.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `edgeid` | `i32` | little | spec | `edgeid` identifies the source `EdgeN` subelement |
+| 4 | 8 | `radius1` | `f64` | little | spec | `radius1` and `radius2` are the two radii |
+| 12 | 8 | `radius2` | `f64` | little | spec | `radius1` and `radius2` are the two radii |
 
 ## Not tabulated
 

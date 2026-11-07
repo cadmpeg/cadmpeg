@@ -2180,6 +2180,15 @@ measure supplies a nominal only when it is the sole measure outside the limit
 items. Aggregate order and entity identity do not assign measure roles.
 Complex measure records referenced by a characteristic representation are
 typed measure carriers.
+The name of a `DIMENSIONAL_SIZE` distinguishes `diameter`, `radius`,
+`spherical diameter`, and `spherical radius`. Each has a length quantity.
+A `DESCRIPTIVE_REPRESENTATION_ITEM` named `dimensional note` supplies a
+dimension modifier through its `description`. `theoretical` denotes a basic
+dimension and `auxiliary` denotes a reference dimension. Other modifiers
+include `statistical` and `controlled radius`. A
+`COMPOUND_REPRESENTATION_ITEM` groups secondary modifiers. The modifier
+belongs to the dimensional characteristic whose representation contains the
+item. Numeric measure selection does not consume a modifier as a nominal.
 `GEOMETRIC_ITEM_SPECIFIC_USAGE` resolves a shape-aspect definition, including a
 definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
 geometric or topology item. A resolved face, edge, vertex, body, point, or curve
@@ -2264,6 +2273,18 @@ fifth attribute. Another tolerance kind references a datum system only through
 a `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` partial in a complex instance. The defined-unit and defined-area-unit
 partials retain their unit sizes and area shape; modifier aggregates retain
 their enumeration values.
+`UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE.displacement` is a signed length.
+`GEOMETRIC_TOLERANCE_WITH_MAXIMUM_TOLERANCE.maximum_upper_tolerance` is a
+positive length greater than the tolerance magnitude and requires a maximum-
+or least-material modifier. These attributes follow the inherited attributes
+in a simple instance and occupy their declaring partials in a complex one.
+`TOLERANCE_ZONE.defining_tolerance` associates each zone with its tolerances.
+`TOLERANCE_ZONE_FORM.name` states the zone form, including `cylindrical or
+circular` and `spherical`. `PROJECTED_ZONE_DEFINITION` adds a boundary set,
+projection-end shape aspect, and positive projected length to a zone.
+`PROJECTED_ZONE_DEFINITION_WITH_OFFSET` adds a signed offset. A zone can have
+more than one projected definition. Zone references supply ownership;
+aggregate order does not. All length values use their explicit measure units.
 CADIR decision: the reader recognizes only the exact characteristic leaf
 names above. An unrecognized direct entity name ending in `_TOLERANCE`,
 including the abstract `GEOMETRIC_TOLERANCE` name, is not a kind and remains a

@@ -342,6 +342,17 @@ fn counted_two_chart_first_coordinate_reads_positive_dict_prefixes() {
 }
 
 #[test]
+fn counted_two_chart_first_chart_reads_low_dict_53() {
+    let row = [0x53, 0, 0, 0, 0, 0, 0, 0x18, 0x18, 0x18];
+    let faces = BTreeSet::from([10, 11]);
+    let samples = two_chart_pcurve_samples(&two_chart_body_payload(3, &row), Some(&faces));
+    let [record] = samples.as_slice() else {
+        panic!("one counted two-chart body");
+    };
+    assert!((record.samples[0][0][0] - 21.0 / 128.0).abs() < 1.0e-12);
+}
+
+#[test]
 fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 5]);
@@ -765,6 +776,38 @@ fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() 
         ]
     );
     assert_eq!(rows[1].next_edges, [273, 44]);
+}
+
+#[test]
+fn reciprocal_face_cycles_disambiguate_a_bounded_row_suffix() {
+    fn row(payload: &mut Vec<u8>, id: u8, faces: &[u8], next: [u8; 2]) {
+        payload.extend_from_slice(&[id, 0, 4, 1, 0xf6, 0xff]);
+        payload.extend_from_slice(faces);
+        payload.extend_from_slice(&next);
+        payload.extend_from_slice(&[0, 0, 0xe3, 0xe1, 0xe3]);
+    }
+    let fixture = |include_predecessor| {
+        let mut payload = b"topol_ref_data\0".to_vec();
+        row(&mut payload, 20, &[1, 0x81, 0x2c], [20, 22]);
+        row(&mut payload, 21, &[1, 0x81, 0x2d], [21, 23]);
+        row(&mut payload, 22, &[1, 0x81, 0x2c], [22, 10]);
+        if include_predecessor {
+            row(&mut payload, 23, &[1, 0x81, 0x2d], [23, 10]);
+        }
+        row(&mut payload, 10, &[0x81, 0x2c, 0x81, 0x2d], [20, 21]);
+        payload
+    };
+    let face_ids = BTreeSet::from([1, 44, 300, 301]);
+    let rows = topology_rows_with_face_ids(&fixture(true), Some(&face_ids));
+    let recovered = rows
+        .iter()
+        .find(|row| row.id == 10)
+        .expect("closed face cycles");
+    assert_eq!(recovered.faces, [300, 301].map(NonZeroU32::new));
+    assert_eq!(recovered.next_edges, [20, 21]);
+
+    let incomplete = topology_rows_with_face_ids(&fixture(false), Some(&face_ids));
+    assert!(incomplete.iter().all(|row| row.id != 10));
 }
 
 #[test]
