@@ -9,7 +9,7 @@ use super::scalars::FeatureObjectNames;
 use super::selections::{
     compact_component_path_end_at, component_face_reference_in_record, COMPACT_EDGE_VECTOR_MARKER,
 };
-use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
+use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
@@ -578,10 +578,7 @@ fn resolved_reference_point(
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let object_id = name.object_id.and_then(ObjectId::value)?;
-    let name_start = usize::try_from(name.offset).ok()?;
-    let name_end = name_start
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    let name_end = super::names::record_name_end(payload, name)?;
     let header = payload.get(name_end..name_end.checked_add(16)?)?;
     if header[..HEADER_PREFIX.len()] != HEADER_PREFIX
         || header[pt_short::OBJECT_ID..pt_short::ZERO_AFTER_ID] != object_id.to_le_bytes()
@@ -1576,24 +1573,27 @@ fn sketch_block_record_origin(payload: &[u8], start: usize, end: usize) -> Optio
     const ABSOLUTE_POINT_CLASS: &[u8] = b"moAbsolutePoint_c";
     const NATIVE_TO_IR: f64 = 1000.0;
 
+    let payload = payload.get(..end)?;
     let (_, identity) = sketch_block_record_identity(payload, start, end)?;
     let body = identity.checked_add(44)?;
     let class_len = u16::try_from(ABSOLUTE_POINT_CLASS.len())
         .ok()?
         .to_le_bytes();
-    if payload.get(body..body + CLASS_MARKER.len()) == Some(CLASS_MARKER)
+    let coordinates = if payload.get(body..body + CLASS_MARKER.len()) == Some(CLASS_MARKER)
         && payload.get(body + 4..body + 6) == Some(&class_len)
         && payload.get(body + 6..body + 6 + ABSOLUTE_POINT_CLASS.len())
             == Some(ABSOLUTE_POINT_CLASS)
     {
-        return Some(Point3::new(0.0, 0.0, 0.0));
-    }
-    let point_token = View::u16_le_at(payload, body)?;
-    if !is_class_token(point_token) {
-        return None;
-    }
+        body + 6 + ABSOLUTE_POINT_CLASS.len()
+    } else {
+        let point_token = View::u16_le_at(payload, body)?;
+        if !is_class_token(point_token) {
+            return None;
+        }
+        body + 2
+    };
     let scalar = |relative: usize| {
-        let value = View::f64_le_at(payload, body + 2 + relative)? * NATIVE_TO_IR;
+        let value = View::f64_le_at(payload, coordinates + relative)? * NATIVE_TO_IR;
         (value.is_finite() && value.abs() <= 1.0e9).then_some(value)
     };
     Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
@@ -1660,9 +1660,7 @@ fn sketch_block_compact_local_id(
     record_end: usize,
 ) -> Option<u16> {
     let name_start = usize::try_from(name.offset).ok()?;
-    let name_end = name_start
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    let name_end = super::names::record_name_end(payload, name)?;
     let header_start = name_end.checked_add(28)?;
     let header = View::u16_le_at(payload, header_start)?;
     (sketch_block_record_local_id(payload, name_start, record_end)? == header).then_some(header)

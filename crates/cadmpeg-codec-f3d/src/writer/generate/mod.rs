@@ -621,6 +621,9 @@ pub(super) fn write_with_limits(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Sketch { .. },
             ) => Some("Sketch"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude { .. },
+            ) => Some("Extrude"),
             _ => None,
         };
         let written = written_features
@@ -710,6 +713,28 @@ pub(super) fn write_with_limits(
         } else {
             ArenaDisposition::Written
         };
+        for input in &target.model.feature_input_topologies {
+            if written_features.contains(&input.input_of)
+                && target.model.features.iter().any(|feature| {
+                    feature.id == input.input_of
+                        && matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                            )
+                        )
+                })
+            {
+                dispositions.feature_input_topologies = ArenaDisposition::Reported;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature input {} is regenerated from its sketch profile; native construction details are omitted", input.id),
+                ));
+                residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                    "feature input {} uses generated profile identity and parameter timestamp",
+                    input.id
+                )));
+            }
+        }
     }
     let regenerated_parameters = target
         .model
