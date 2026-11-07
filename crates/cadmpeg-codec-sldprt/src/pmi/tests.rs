@@ -1237,6 +1237,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
         LinearTermination, PlanarProfileRef, ProfileRef,
@@ -1289,7 +1290,6 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     assert_eq!(parameter.expression.literal_text().as_deref(), Some("25mm"));
     assert!(parameter.pmi.is_some());
 
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let parameter_id = parameter.id.clone();
     let mut ir = decoded.ir().clone();
     ir.model
