@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::scopes::direct_face::{exact_move_face_operation, exact_move_operation};
+use crate::design::decode::scopes::direct_face::{
+    exact_move_face_operation, exact_move_operation, marked_move_transform_loss,
+};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 
 fn fixture(class: &str, length: usize) -> (Vec<u8>, DesignParameterScope) {
@@ -413,4 +415,56 @@ fn move_transform_selects_type_and_length_form() {
     bytes[43..47].copy_from_slice(&5u32.to_le_bytes());
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(exact_move_operation(&bytes, &records, &scope, &types).is_none());
+}
+
+fn marked_move_loss(bytes: &[u8], scope: &DesignParameterScope) -> Option<String> {
+    let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", 2);
+    let class_types = super::move_transform_types(&row, &[452, 500]);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let operation = exact_move_operation(bytes, &records, scope, &class_types).unwrap();
+    marked_move_transform_loss(bytes, &records, scope, &operation, &class_types).map(|note| {
+        assert_eq!(
+            note.code,
+            crate::loss::F3dLossCode::FeatureMoveTransformAssumed.kind()
+        );
+        note.message
+    })
+}
+
+#[test]
+fn a_marked_transform_record_that_breaks_a_rigid_transform_rule_keeps_its_matrix_with_a_loss() {
+    let (mut bytes, scope) = marked_move_fixture("452", 253);
+    bytes[43..47].copy_from_slice(&1u32.to_le_bytes());
+    let decoded = decoded_move(&bytes, &scope).unwrap();
+    assert_eq!(u32::from(decoded.form), 1);
+    assert_eq!(decoded.transform.rows()[0], [0., -1., 0., 7.]);
+    assert_eq!(
+        marked_move_loss(&bytes, &scope).as_deref(),
+        Some("Move scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has form word 1 in a 253-byte frame (DR-306).")
+    );
+
+    let (bytes, scope) = marked_move_fixture("332", 256);
+    let decoded = decoded_move(&bytes, &scope).unwrap();
+    assert_eq!(u32::from(decoded.form), 1);
+    assert_eq!(decoded.transform.rows()[2], [0., 0., 1., 13.]);
+    assert_eq!(
+        marked_move_loss(&bytes, &scope).as_deref(),
+        Some("Move scope f3d:test:scope#17 keeps the rigid matrix of its marked transform record 71, which has a class type other than 84E6245F-1CDC-4FB8-8048-163A85FAD3F0 version 2 and a 256-byte frame (DR-306).")
+    );
+}
+
+#[test]
+fn a_marked_transform_record_within_the_rigid_transform_rules_has_no_loss() {
+    for (class, length) in [("452", 253), ("500", 254), ("500", 273), ("452", 274)] {
+        let (bytes, scope) = marked_move_fixture(class, length);
+        assert_eq!(marked_move_loss(&bytes, &scope), None, "{class} {length}");
+    }
+    let (bytes, scope) = fixture("452", 253);
+    assert_eq!(
+        decoded_move(&bytes, &scope)
+            .unwrap()
+            .transform_reference_offset,
+        None
+    );
+    assert_eq!(marked_move_loss(&bytes, &scope), None);
 }

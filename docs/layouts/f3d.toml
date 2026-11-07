@@ -16814,14 +16814,14 @@ kind = "byte"
 section = "3.1"
 anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 253
-note = "Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263, the class-456 form uses paired class 258, and the class-452 form uses paired class 262 and form word 5; the same-index paired header follows at offset 253."
+note = "Offsets are relative to the transform record's primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
+anchor = "A 253- or 254-byte frame stores form word `5`"
 
 [[record.gap]]
 offset = 11
@@ -16867,7 +16867,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
+anchor = "A 253- or 254-byte frame stores form word `5`"
 
 [[record.gap]]
 offset = 11
@@ -16913,7 +16913,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
+anchor = "A 273- or 274-byte frame stores form word `1`"
 
 [[record.gap]]
 offset = 11
@@ -16926,7 +16926,7 @@ offset = 43
 type = "u32"
 value = 1
 source = "spec"
-anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
+anchor = "A 273- or 274-byte frame stores form word `1`"
 
 [[record.field]]
 name = "reserved_zero"
@@ -16960,7 +16960,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
+anchor = "A 273- or 274-byte frame stores form word `1`"
 
 [[record.gap]]
 offset = 11
