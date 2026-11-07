@@ -261,18 +261,23 @@ impl Serialize for ScopeRows<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            scope_record: RecordRef<'a>,
-            scope_base_record: RecordRef<'a>,
-            scope_owner_record_index: u32,
-            scope_owner_reference_offset: u64,
-            scope_body_count_offset: u64,
+            #[serde(rename = "scope_record")]
+            record: RecordRef<'a>,
+            #[serde(rename = "scope_base_record")]
+            base_record: RecordRef<'a>,
+            #[serde(rename = "scope_owner_record_index")]
+            owner_record_index: u32,
+            #[serde(rename = "scope_owner_reference_offset")]
+            owner_reference_offset: u64,
+            #[serde(rename = "scope_body_count_offset")]
+            body_count_offset: u64,
         }
         serializer.collect_seq(self.0.iter().map(|scope| Wire {
-            scope_record: RecordRef::from_identity(scope.record()),
-            scope_base_record: RecordRef::scope_base(scope),
-            scope_owner_record_index: scope.owner_record_index(),
-            scope_owner_reference_offset: scope.owner_reference_offset(),
-            scope_body_count_offset: scope.record().byte_offset()
+            record: RecordRef::from_identity(scope.record()),
+            base_record: RecordRef::scope_base(scope),
+            owner_record_index: scope.owner_record_index(),
+            owner_reference_offset: scope.owner_reference_offset(),
+            body_count_offset: scope.record().byte_offset()
                 + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
         }))
     }

@@ -2261,9 +2261,10 @@ pub(crate) fn decode_mesh_bodies(
                 .body_at_mut(body_ordinal)
                 .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?;
             body.container_mesh_uuid = Some(container.mesh_uuid.clone());
-            body.split_streams = container.split_streams.clone();
-            body.history_streams = container.history_streams.clone();
-            body.face_group_metadata = container.face_group_metadata.clone();
+            body.split_streams.clone_from(&container.split_streams);
+            body.history_streams.clone_from(&container.history_streams);
+            body.face_group_metadata
+                .clone_from(&container.face_group_metadata);
             let body = design_records[design_ordinal][feature_ordinal]
                 .body_at(body_ordinal)
                 .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?;
@@ -3292,8 +3293,8 @@ mod tests {
         let start = sole_typed_frame(&graph, MESH_BODY_TYPE_GUID).start;
         graph.bytes[start + 20] = 1;
         graph.bytes.splice(start + 21..start + 21, [0; 4]);
-        graph.bytes[start + 21..start + 25].copy_from_slice(&0x11223344u32.to_le_bytes());
-        graph.bytes[start + 25..start + 29].copy_from_slice(&0x55667788u32.to_le_bytes());
+        graph.bytes[start + 21..start + 25].copy_from_slice(&0x1122_3344_u32.to_le_bytes());
+        graph.bytes[start + 25..start + 29].copy_from_slice(&0x5566_7788_u32.to_le_bytes());
         for record in &mut graph.meta.records {
             if record.bulk_offset > u64::try_from(start).unwrap() {
                 record.bulk_offset += 4;
@@ -3330,8 +3331,8 @@ mod tests {
         let start = u64_from_index(start);
         let wire = serde_json::to_value(feature).unwrap();
         let body_wire = &wire["bodies"][0];
-        assert_eq!(body_wire["body_words"]["flagged_word"], 0x11223344u32);
-        assert_eq!(body_wire["body_words"]["body_word"], 0x55667788u32);
+        assert_eq!(body_wire["body_words"]["flagged_word"], 0x1122_3344_u32);
+        assert_eq!(body_wire["body_words"]["body_word"], 0x5566_7788_u32);
         assert_eq!(body_wire["body_words_offset"], start + 21);
         assert_eq!(super::mesh_word_losses(&features).count(), 2);
         assert_eq!(

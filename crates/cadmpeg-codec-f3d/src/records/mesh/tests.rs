@@ -227,7 +227,7 @@ fn mesh_feature_preserves_split_stream_descriptor() {
 fn mesh_feature_preserves_history_stream_encoding() {
     let mut wire = mesh_feature_wire_for_borrowed(1, false);
     wire["bodies"][0]["history_streams"] =
-        serde_json::json!([{"name":"t", "encoding":"5d14", "decoded_length":1048577}]);
+        serde_json::json!([{"name":"t", "encoding":"5d14", "decoded_length":1_048_577}]);
     let feature: super::DesignMeshFeature = serde_json::from_value(wire).unwrap();
     let output = serde_json::to_value(feature).unwrap();
     assert_eq!(
@@ -236,7 +236,7 @@ fn mesh_feature_preserves_history_stream_encoding() {
     );
     assert_eq!(
         output["bodies"][0]["history_streams"][0]["decoded_length"],
-        1048577
+        1_048_577
     );
 }
 

@@ -1537,7 +1537,7 @@ impl DesignMeshCollection {
                 + u64::from(body_count) * 11
                 + 4;
             if data.word_offset != word_offset
-                || (data.entries.len() != 0
+                || (!data.entries.is_empty()
                     && data.entries.len()
                         != usize::try_from(body_count).map_err(|_| "body count exceeds usize")?)
                 || data.entries.iter().enumerate().any(|(ordinal, entry)| {
@@ -1812,30 +1812,31 @@ impl DesignMeshFeature {
 
 #[derive(Serialize, Deserialize)]
 struct MeshScopeWire {
-    scope_record: DesignMeshRecordIdentity,
-    scope_base_record: DesignMeshRecordIdentity,
-    scope_owner_record_index: u32,
-    scope_owner_reference_offset: u64,
-    scope_body_count_offset: u64,
+    #[serde(rename = "scope_record")]
+    record: DesignMeshRecordIdentity,
+    #[serde(rename = "scope_base_record")]
+    base_record: DesignMeshRecordIdentity,
+    #[serde(rename = "scope_owner_record_index")]
+    owner_record_index: u32,
+    #[serde(rename = "scope_owner_reference_offset")]
+    owner_reference_offset: u64,
+    #[serde(rename = "scope_body_count_offset")]
+    body_count_offset: u64,
 }
 
 impl TryFrom<MeshScopeWire> for DesignMeshScope {
     type Error = String;
     fn try_from(wire: MeshScopeWire) -> Result<Self, String> {
-        let scope = Self::new(
-            wire.scope_record,
-            wire.scope_base_record,
-            wire.scope_owner_record_index,
-        )?;
+        let scope = Self::new(wire.record, wire.base_record, wire.owner_record_index)?;
         if scope.record().byte_offset()
             + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT)
-            != wire.scope_body_count_offset
+            != wire.body_count_offset
         {
-            return Err("scope_body_count_offset must locate the scope body count".into());
+            return Err("body_count_offset must locate the scope body count".into());
         }
-        if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
+        if scope.owner_reference_offset() != wire.owner_reference_offset {
             return Err(
-                "scope_owner_reference_offset must locate the closing base owner reference".into(),
+                "owner_reference_offset must locate the closing base owner reference".into(),
             );
         }
         Ok(scope)
@@ -1845,11 +1846,11 @@ impl TryFrom<MeshScopeWire> for DesignMeshScope {
 impl From<DesignMeshScope> for MeshScopeWire {
     fn from(scope: DesignMeshScope) -> Self {
         Self {
-            scope_record: scope.record().clone(),
-            scope_base_record: scope.base_record(),
-            scope_owner_record_index: scope.owner_record_index(),
-            scope_owner_reference_offset: scope.owner_reference_offset(),
-            scope_body_count_offset: scope.record().byte_offset()
+            record: scope.record().clone(),
+            base_record: scope.base_record(),
+            owner_record_index: scope.owner_record_index(),
+            owner_reference_offset: scope.owner_reference_offset(),
+            body_count_offset: scope.record().byte_offset()
                 + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
         }
     }
