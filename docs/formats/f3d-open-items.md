@@ -168,11 +168,15 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 ### DR-31. Editable Pipe section-type carrier and path parameterization
 
-**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path?
+**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path, and does a `Pipe` whose forward and reverse fractions both equal one sweep its whole path group when its section lies inside the path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. A section shape can be bound from unique saved topology. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a new-body `Pipe` as a circular section swept along its whole path group when its result bodies are solids that no later feature changes, every face of them lies on a plane, on a cylinder whose radius is the outside radius or, for a hollow section, the inner radius, or on a torus whose minor radius is one of those radii, the faces include at least one curved face of each radius, and the forward and reverse fractions both equal one. It reports `feature.pipe-circular-section-inferred` and `feature.pipe-whole-path-extent-assumed`.
 
-**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation.
+**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ### DR-61. Cross-document selection stamp and evaluation scalar
 
@@ -1119,6 +1123,18 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
 
 **Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
+
+### DR-304. Fallback faces of Extrude bounded-face operands
+
+**Question.** Which faces does an `Extrude` bounded-face operand select when its recipe nodes have no unique topology binding?
+
+**Known.** The nodes of a bounded-face recipe name, by prefix-operand ordinal, faces around the boundary of the recipe's face. Without a unique binding, the decoder selects faces with the candidate and support rules of `f3d.md` §3.1 that follow the alternate-selector proof, and tests the selection unless the grouped Design-reference intersection holds a face or the operand has alternate-selector candidates. The test takes the prefix operands that the parsed nodes name, by root, first prelude value and fan values, or every prefix operand when no node parses, as naming faces around the selected face's boundary; a node without a parsed structure, or one that names an ordinal outside the operands, names none. Such an operand supplies the preceding-topology faces that its references with a nonnegative Design reference name; it contradicts nothing when a negative reference of it names a face, when another reference names no face, when a named face lies outside the preceding topology, or when a named face has no rebuilt boundary. The selection fails when every selected face has a rebuilt boundary and the selection shares no boundary vertex with the faces of one operand. A failing selection is withdrawn. The legacy start and termination candidate rule then gives the operand only a face that is not withdrawn and shares a boundary vertex with every such operand. The profile-group carrier rule pairs each member with the face of the same position in increasing stable face-slot order; it takes no face set that holds a face withdrawn from one of its members, or that pairs a withdrawn member with a face that does not share a boundary vertex with every such operand of that member. Each refused face or face set reports `feature.face-operand-fallback-contradicted`. The sketch-plane start and termination rules of the same scope can still select any candidate face, the withdrawn one included.
+
+**Need.** The node grammar and the empty-lane binding of DR-170, so that each recipe binds its own face.
+
+**Conflict.** `f3d.md` §3.1 resolves such an operand to the sole preceding candidate, or to the sole candidate that the transition chain changes. In a cut of two split top faces, that candidate is a side face that shares no boundary vertex with the faces of the recipe's prefix operands.
+
+**Note.** A withdrawn selection reports `feature.face-operand-fallback-contradicted` with the faces of the operand that it does not touch.
 
 ### DR-171. Sketch support identity
 

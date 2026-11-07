@@ -1006,7 +1006,8 @@ fn validate_loaded(
         &native.design_body_recipe_operands,
         &native.asm_histories,
     );
-    history::bind_face_operand_history_candidates(
+    // discarded-value: the decoder reported these losses when it bound the operands.
+    let _ = history::bind_face_operand_history_candidates(
         decode,
         &mut expected_face_operands,
         &native.design_parameter_scopes,
