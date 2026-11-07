@@ -2033,8 +2033,9 @@ transforms, CSS, elliptical arcs, other path commands, and positioned text spans
 are outside the normalized grammar. Stylesheets and scripts can change peer
 geometry and prevent static normalization of the whole template.
 
-Text has explicit X/Y baseline coordinates and a positive `font-size` in viewport
-units, hence millimetres. Plain text and unpositioned `tspan` children form one
+Text has explicit X/Y baseline coordinates. A `font-size` in viewport units gives
+the positive em height in millimetres; an absent `font-size` uses the user agent's
+medium size. Plain text and unpositioned `tspan` children form one
 string. Each `EditableTexts` key replaces the content of a `text` element whose
 `freecad:editable` attribute equals that key. The attribute namespace is
 `http://www.freecadweb.org/wiki/index.php?title=Svg_Namespace`. Replacement text
