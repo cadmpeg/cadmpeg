@@ -9,6 +9,26 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_sketch_dimensions_keep_their_bindings() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_sketch_dimension;
+
+    let input =
+        f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let (rewritten, mut report) =
+        super::super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        decoded.ir(),
+        rewritten.ir(),
+    );
+}
+
+#[test]
 fn source_less_extrusion_does_not_invent_an_input() {
     use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
     use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_extrude;

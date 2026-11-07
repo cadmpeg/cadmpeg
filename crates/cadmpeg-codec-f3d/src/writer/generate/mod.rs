@@ -175,7 +175,7 @@ pub(super) fn write_with_limits(
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
     }
-    let mut written_sketches = sketches::encode(target, &output_ctx)?;
+    let mut written_sketches = sketches::encode(target, &native, &output_ctx)?;
     let mut design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     let brep_name = source_brep_name(
         &native,
@@ -590,6 +590,18 @@ pub(super) fn write_with_limits(
                         constraint.id
                     ),
                 ));
+            } else if matches!(
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::HorizontalDistance { .. }
+                    | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native {
+                        parameter: Some(_),
+                        ..
+                    }
+            ) {
+                residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                    "sketch dimension {} uses a generated companion timestamp and record frame",
+                    constraint.id
+                )));
             }
         }
         dispositions.sketch_constraints =
