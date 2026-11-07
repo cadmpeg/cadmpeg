@@ -1068,7 +1068,10 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     assert_eq!(
         losses
             .iter()
-            .map(|loss| (loss.code.clone(), loss.message.contains("primary and one paired header")))
+            .map(|loss| (
+                loss.code.clone(),
+                loss.message.contains("primary and one paired header")
+            ))
             .collect::<Vec<_>>(),
         [(F3dLossCode::FeatureCombineOperandListRefused.kind(), true)]
     );
@@ -1172,7 +1175,10 @@ fn a_frame_whose_lists_name_its_operands_keeps_main_reading_when_a_field_contrad
         assert_eq!(
             losses
                 .iter()
-                .map(|loss| (loss.code.clone(), loss.message.contains("its lists name its operands")))
+                .map(|loss| (
+                    loss.code.clone(),
+                    loss.message.contains("its lists name its operands")
+                ))
                 .collect::<Vec<_>>(),
             [(F3dLossCode::FeatureCombinePrologueAssumed.kind(), true)],
             "{name}"
