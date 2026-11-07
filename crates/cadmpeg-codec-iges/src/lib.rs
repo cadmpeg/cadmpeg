@@ -44,8 +44,6 @@ use cadmpeg_ir::codec::write::{
     EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
-use cadmpeg_ir::hash::document_local_sha256;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ContainerSummary;
 
 const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
@@ -126,23 +124,6 @@ impl IgesVersion {
 /// Codec for IGES files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
-
-fn document_digest(
-    ir: &CadIr,
-    limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy {
-        limits,
-        ..Default::default()
-    };
-    let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
-    let digest = document_local_sha256(&ctx, ir, ir.source.as_ref(), "iges", SOURCE_IMAGE_ID)?;
-    session.finish()?;
-    ctx.finish_session()?;
-    Ok(digest)
-}
 
 impl CodecBackend for IgesCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
