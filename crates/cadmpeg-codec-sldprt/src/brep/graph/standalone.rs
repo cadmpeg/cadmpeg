@@ -194,7 +194,7 @@ pub(super) fn decode(
             spline_offsets.binary_search(&offset).is_ok()
         })
     } else {
-        Default::default()
+        std::collections::HashMap::default()
     };
     if !refusals.is_empty() || indexed.len() != spline_offsets.len() {
         return Ok(None);
