@@ -1,0 +1,183 @@
+{
+  "container_kind": "3dm-chunks",
+  "entries": [
+    {
+      "attributes": {
+        "body_offset": "63",
+        "offset": "51",
+        "record_count": "1",
+        "size": "36"
+      },
+      "compression": "none",
+      "name": "table-0x10000014",
+      "role": "table",
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 24
+      }
+    },
+    {
+      "attributes": {
+        "body_offset": "99",
+        "offset": "87",
+        "record_count": "2",
+        "size": "485"
+      },
+      "compression": "none",
+      "name": "table-0x10000015",
+      "role": "table",
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 473
+      }
+    },
+    {
+      "attributes": {
+        "body_offset": "584",
+        "offset": "572",
+        "record_count": "2",
+        "size": "546"
+      },
+      "compression": "none",
+      "name": "table-0x10000010",
+      "role": "table",
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 534
+      }
+    },
+    {
+      "attributes": {
+        "body_offset": "1130",
+        "offset": "1118",
+        "record_count": "2",
+        "size": "516"
+      },
+      "compression": "none",
+      "name": "table-0x10000011",
+      "role": "table",
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 504
+      }
+    },
+    {
+      "attributes": {
+        "body_offset": "1646",
+        "offset": "1634",
+        "record_count": "1",
+        "size": "165"
+      },
+      "compression": "none",
+      "name": "table-0x10000018",
+      "role": "table",
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 153
+      }
+    },
+    {
+      "attributes": {
+        "body_offset": "1811",
+        "offset": "1799",
+        "record_count": "1",
+        "size": "439"
+      },
+      "compression": "none",
+      "name": "table-0x10000021",
+      "role": "table",
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 427
+      }
+    },
+    {
+      "attributes": {
+        "body_offset": "2250",
+        "object_typecode_0x1": "1",
+        "object_typecode_0x1000": "2",
+        "object_typecode_0x20": "1",
+        "offset": "2238",
+        "record_count": "4",
+        "size": "1351"
+      },
+      "compression": "none",
+      "name": "table-0x10000013",
+      "role": "table",
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 1339
+      }
+    },
+    {
+      "attributes": {
+        "class_uuid": "46f75541-f46b-48be-aa7e-b353bbe068a7",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "363"
+      },
+      "compression": "none",
+      "name": "class-46f75541-f46b-48be-aa7e-b353bbe068a7",
+      "role": "object-class",
+      "size": {
+        "form": "exact",
+        "size": 363
+      }
+    },
+    {
+      "attributes": {
+        "class_uuid": "c3101a1d-f157-11d3-bfe7-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "210"
+      },
+      "compression": "none",
+      "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
+      "role": "object-class",
+      "size": {
+        "form": "exact",
+        "size": 210
+      }
+    },
+    {
+      "attributes": {
+        "class_uuid": "f9cfb638-b9d4-4340-87e3-c56e7865d96a",
+        "count": "2",
+        "nil_uuid": "false",
+        "total_record_bytes": "754"
+      },
+      "compression": "none",
+      "name": "class-f9cfb638-b9d4-4340-87e3-c56e7865d96a",
+      "role": "object-class",
+      "size": {
+        "form": "exact",
+        "size": 754
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "80",
+          "opennurbs_writer_version": "202608010"
+        },
+        "dialect": "rhino:archive-80"
+      }
+    }
+  },
+  "notes": [
+    "archive version 80",
+    "object at 3214 has nil object UUID"
+  ]
+}

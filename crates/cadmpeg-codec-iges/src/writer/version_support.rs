@@ -10,6 +10,9 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 
 impl crate::IgesVersion {
     pub(super) fn admits(self, entity: &Entity) -> bool {
+        if entity.type_code == 0 {
+            return entity.form == 0;
+        }
         if matches!(
             entity.type_code,
             124 | 125
