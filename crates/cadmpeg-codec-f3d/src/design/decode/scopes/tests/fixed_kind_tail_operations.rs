@@ -36,7 +36,16 @@ fn tested_surface_extend_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceExtendOperation> {
-    exact_surface_extend_operation(bytes, records, scope)
+    let mut losses = Vec::new();
+    let operation = exact_surface_extend_operation(bytes, records, scope, &mut losses);
+    if operation.is_some() {
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.surface-boundary-flag-record-assumed"
+        );
+    }
+    operation
 }
 
 fn tested_surface_offset_operation(

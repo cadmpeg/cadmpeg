@@ -401,7 +401,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_surface_extend_operation(bytes, &records, &scope);
+                let construction =
+                    exact_surface_extend_operation(bytes, &records, &scope, &mut losses);
                 if let Some(operation) = &construction {
                     let distance = operation.distance.get();
                     losses.push(

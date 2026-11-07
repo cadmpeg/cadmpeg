@@ -8848,6 +8848,26 @@ pub(crate) mod surface_boundary_group_tail_87 {
     pub(crate) const SCOPE_REFERENCE: usize = 76;
 }
 
+/// Byte offsets for the `compact_flag_record` record.
+///
+/// Spec §3.1. Record length 24 B.
+///
+/// ```text
+/// Offsets are relative to the record's indexed header.
+/// ```
+pub(crate) mod compact_flag_record {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 24;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 21;
+    /// Offset of `value` (`u8`). Spec §3.1.
+    pub(crate) const VALUE: usize = 22;
+    /// Offset of `terminator` (`u8`). Spec §3.1.
+    pub(crate) const TERMINATOR: usize = 23;
+}
+
 /// Byte offsets for the `surface_trim_cell_table_prefix` record.
 ///
 /// Spec §3.1. Record length 25 B.

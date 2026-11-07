@@ -347,6 +347,7 @@ pub(crate) enum F3dLossCode {
     FeatureSurfaceExtendMethodUnresolved,
     /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
     FeatureSurfaceExtendDistanceNonpositive,
+    FeatureSurfaceBoundaryFlagRecordAssumed,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
     FeatureThickenFlagsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
@@ -688,6 +689,7 @@ impl F3dLossCode {
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSurfaceExtendDistanceNonpositive,
+        Self::FeatureSurfaceBoundaryFlagRecordAssumed,
         Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
@@ -962,6 +964,9 @@ impl F3dLossCode {
             }
             Self::FeatureSurfaceExtendDistanceNonpositive => {
                 "feature.surface-extend-distance-nonpositive"
+            }
+            Self::FeatureSurfaceBoundaryFlagRecordAssumed => {
+                "feature.surface-boundary-flag-record-assumed"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
@@ -1241,6 +1246,7 @@ impl F3dLossCode {
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -1448,6 +1454,7 @@ impl F3dLossCode {
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
@@ -1745,6 +1752,7 @@ mod tests {
                 "feature.loft-settings-assumed",
                 "feature.surface-extend-method-unresolved",
                 "feature.surface-extend-distance-nonpositive",
+                "feature.surface-boundary-flag-record-assumed",
                 "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",

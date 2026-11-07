@@ -1604,7 +1604,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which field of a `SurfaceExtend` scope stores the extension method: natural, tangent, or perpendicular?
 
-**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing compact flag record. The candidate fields are the boolean of that flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope.
+**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. The candidate fields are the boolean of a compact flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope.
 
 **Need.** Three saves that extend the same edge by the same distance, one with each extension method, compared byte for byte.
 
@@ -1623,3 +1623,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder keeps the signed distance in the native operation, keeps the scope native, and reports `feature.surface-extend-distance-nonpositive`.
+
+### DR-323. Surface boundary carrier trailing reference
+
+**Question.** Which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?
+
+**Known.** The carrier stores one marked trailing reference. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`.
+
+**Need.** Controlled saves and record comparisons that establish the target record forms and their effect on the operation.
+
+**Conflict.** None.
+
+**Note.** The decoder retains the boundary operation and reports `feature.surface-boundary-flag-record-assumed` when the reference does not name a compact flag record.

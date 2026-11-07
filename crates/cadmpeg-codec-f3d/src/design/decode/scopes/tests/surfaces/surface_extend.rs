@@ -105,6 +105,7 @@ fn decode(bytes: &[u8]) -> Option<DesignSurfaceExtendOperation> {
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         &surface_extend_scope(),
+        &mut Vec::new(),
     )
 }
 
@@ -112,6 +113,8 @@ fn fixture(distance: f64, tail: &Tail) -> (Vec<u8>, usize, usize) {
     let mut bytes = Vec::new();
     let owner_at = compact_distance_owner(&mut bytes, distance);
     let carrier_at = boundary_carrier(&mut bytes, tail);
+    indexed_header(&mut bytes, *b"123", FLAG_RECORD);
+    bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0]);
     (bytes, owner_at, carrier_at)
 }
 
@@ -189,4 +192,39 @@ fn boundary_group_rejects_each_violated_tail_invariant() {
         let (bytes, _, _) = fixture(2.54, &tail);
         assert_eq!(decode(&bytes), None);
     }
+}
+
+#[test]
+fn missing_and_differently_typed_flag_records_keep_the_operation_with_a_loss() {
+    for flag in [None, Some([0u8; 13])] {
+        let (mut bytes, _, _) = fixture(2.54, &COMPACT_TAIL);
+        bytes.truncate(bytes.len() - 24);
+        if let Some(payload) = flag {
+            indexed_header(&mut bytes, *b"123", FLAG_RECORD);
+            bytes.extend_from_slice(&payload);
+        }
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let mut losses = Vec::new();
+        let operation =
+            exact_surface_extend_operation(&bytes, &records, &surface_extend_scope(), &mut losses)
+                .unwrap();
+        assert_eq!(operation.boundary_reference_record_index, 60);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.surface-boundary-flag-record-assumed"
+        );
+    }
+}
+
+#[test]
+fn compact_flag_record_does_not_add_a_loss() {
+    let (bytes, _, _) = fixture(2.54, &COMPACT_TAIL);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let mut losses = Vec::new();
+    let operation =
+        exact_surface_extend_operation(&bytes, &records, &surface_extend_scope(), &mut losses)
+            .unwrap();
+    assert_eq!(operation.boundary_reference_record_index, 60);
+    assert!(losses.is_empty());
 }

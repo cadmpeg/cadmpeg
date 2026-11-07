@@ -8993,7 +8993,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `absent_optional_references` | `bytes[2]` | little | spec | Each tail stores two zero bytes |
 | 2 | 4 | `trailing_count` | `u32` | little | spec | `u32 trailing_count` with value 1 |
-| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference that names a compact flag record |
+| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference |
 | 17 | 8 | `role` | `u64` | little | spec | A u64 role follows |
 | 25 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes come the u32 group ordinal |
 | 35 | 4 | `ordinal` | `u32` | little | spec | After ten zero bytes come the u32 group ordinal |
@@ -9020,7 +9020,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `absent_optional_references` | `bytes[2]` | little | spec | Each tail stores two zero bytes |
 | 2 | 4 | `trailing_count` | `u32` | little | spec | `u32 trailing_count` with value 1 |
-| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference that names a compact flag record |
+| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference |
 | 17 | 8 | `role` | `u64` | little | spec | A u64 role follows |
 | 25 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes come the u32 group ordinal |
 | 35 | 4 | `ordinal` | `u32` | little | spec | After ten zero bytes come the u32 group ordinal |
@@ -9032,6 +9032,26 @@ Parsed by:
 | 64 | 11 | `next_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
 | 75 | 1 | `zero_byte` | `u8` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
 | 76 | 11 | `scope_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+
+## `compact_flag_record`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the record's indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | an indexed header followed by ten zero bytes |
+| 21 | 1 | `marker` | `u8` | little | spec | marker byte `01` |
+| 22 | 1 | `value` | `u8` | little | spec | a boolean byte |
+| 23 | 1 | `terminator` | `u8` | little | spec | terminator byte `00` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 
 ## `surface_trim_cell_table_prefix`
 

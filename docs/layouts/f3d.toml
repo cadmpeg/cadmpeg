@@ -30602,7 +30602,7 @@ name = "trailing_reference"
 offset = 6
 type = "bytes[11]"
 source = "spec"
-anchor = "one marked trailing reference that names a compact flag record"
+anchor = "one marked trailing reference"
 
 [[record.field]]
 name = "role"
@@ -30716,7 +30716,7 @@ name = "trailing_reference"
 offset = 6
 type = "bytes[11]"
 source = "spec"
-anchor = "one marked trailing reference that names a compact flag record"
+anchor = "one marked trailing reference"
 
 [[record.field]]
 name = "role"
@@ -30794,6 +30794,48 @@ offset = 76
 type = "bytes[11]"
 source = "spec"
 anchor = "A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail"
+
+[[record]]
+name = "compact_flag_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact flag record is an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`."
+size = 24
+note = "Offsets are relative to the record's indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "an indexed header followed by ten zero bytes"
+
+[[record.field]]
+name = "marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "marker byte `01`"
+
+[[record.field]]
+name = "value"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "a boolean byte"
+
+[[record.field]]
+name = "terminator"
+offset = 23
+type = "u8"
+source = "spec"
+anchor = "terminator byte `00`"
 
 [[record]]
 name = "surface_trim_cell_table_prefix"

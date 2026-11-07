@@ -16,6 +16,7 @@ use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
+use crate::layout::compact_flag_record as flag_record;
 use crate::layout::surface_boundary_group_tail_87 as tail_87;
 use crate::layout::surface_boundary_group_tail_88 as tail_88;
 use crate::records::feature::scope::DesignParameterScope;
@@ -37,6 +38,7 @@ pub(super) fn exact_surface_extend_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<DesignSurfaceExtendOperation> {
     let operation = exact_surface_boundary_operation(
         bytes,
@@ -45,6 +47,13 @@ pub(super) fn exact_surface_extend_operation(
         DesignFeatureFamily::SurfaceExtend,
         DesignOperandRole::BODIES_B,
     )?;
+    surface_boundary_flag_loss(
+        bytes,
+        records,
+        scope,
+        operation.boundary_reference_record_index,
+        losses,
+    );
     Some(DesignSurfaceExtendOperation {
         distance: operation.distance,
         distance_offset: operation.distance_offset,
@@ -86,7 +95,7 @@ pub(super) fn exact_surface_offset_operation(
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
     };
-    Ok(exact_surface_boundary_operation(
+    let operation = exact_surface_boundary_operation(
         bytes,
         records,
         scope,
@@ -98,8 +107,17 @@ pub(super) fn exact_surface_offset_operation(
             member_recipe_kind(records, recipes, stream, *member)
                 == Some(ConstructionRecipeKind::Edge)
         })
-    })
-    .map(|operation| DesignSurfaceOffsetOperation {
+    });
+    if let Some(operation) = &operation {
+        surface_boundary_flag_loss(
+            bytes,
+            records,
+            scope,
+            operation.boundary_reference_record_index,
+            losses,
+        );
+    }
+    Ok(operation.map(|operation| DesignSurfaceOffsetOperation {
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
@@ -112,6 +130,37 @@ pub(super) fn exact_surface_offset_operation(
             tolerance_offset: operation.tolerance_offset,
         },
     }))
+}
+
+fn surface_boundary_flag_loss(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    reference: u32,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let matches = records.offsets(reference).iter().any(|&start| {
+        let Some(end) = start.checked_add(flag_record::LEN) else {
+            return false;
+        };
+        let Some(frame) = bytes.get(start..end) else {
+            return false;
+        };
+        frame.get(flag_record::ZERO_RUN..flag_record::MARKER) == Some(&[0; 10])
+            && frame.get(flag_record::MARKER) == Some(&1)
+            && frame
+                .get(flag_record::VALUE)
+                .is_some_and(|value| *value <= 1)
+            && frame.get(flag_record::TERMINATOR) == Some(&0)
+    });
+    if !matches {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureSurfaceBoundaryFlagRecordAssumed.note(format!(
+                "{} retains boundary reference {} without a matching compact flag record (DR-323).",
+                scope.id, reference
+            )),
+        );
+    }
 }
 
 /// The grouped support form and the ordinal of each of its groups.
