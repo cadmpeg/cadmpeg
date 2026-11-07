@@ -125,7 +125,8 @@ pub(crate) fn decode_instances_with_issue<'a>(
     output: &mut PartOutput,
     package: &ProteinEnvelope<'a>,
 ) -> Result<(ProteinInstances<'a>, Option<String>), CodecError> {
-    let catalog = match cadmpeg_protein::SchemaCatalog::load(ctx, package.payload) {
+    let prefix = format!("inventor-protein-{}", package.payload.start());
+    let catalog = match cadmpeg_protein::SchemaCatalog::load(ctx, package.payload, output, &prefix) {
         Ok(catalog) => catalog,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => return Ok((Vec::new(), Some(crate::issue_detail(error)?))),
@@ -182,7 +183,9 @@ fn decode_instances_from(
     archive: &ArchiveSnapshot<'_>,
     payload: View<'_>,
 ) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
-    let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, ctx);
+    let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload, &mut parts, "test")?
+    else {
         return Ok(Vec::new());
     };
     archive

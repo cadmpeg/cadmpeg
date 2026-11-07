@@ -3668,7 +3668,15 @@ fn build_geometry_ir(
     )?;
     let mut unknowns = brep.unknowns;
     unknowns.extend(pmi_stubs);
-    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses, &mut retention)?;
+    give_up_truncated_blocks(
+        ctx,
+        scan,
+        &native.feature_histories,
+        &annotations,
+        &mut unknowns,
+        &mut pmi_losses,
+        &mut retention,
+    )?;
     retain_lane_images(ctx, &native, &mut annotations, &mut unknowns)?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     for owned_face_color in brep.face_colors {
@@ -4358,7 +4366,15 @@ fn build_metadata_ir(
         retention.record(&id, cadmpeg_ir::document::ArenaClass::Model);
     }
     unknowns.extend(pmi_stubs);
-    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses, &mut retention)?;
+    give_up_truncated_blocks(
+        ctx,
+        scan,
+        &histories,
+        &annotations,
+        &mut unknowns,
+        &mut pmi_losses,
+        &mut retention,
+    )?;
     ir.model.pmi =
         crate::swift::annotations(ctx, scan, &mut annotations, None, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -5513,6 +5529,8 @@ const DOCUMENT_METADATA_ID: &str = "sldprt:metadata:document#0";
 fn give_up_truncated_blocks(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    histories: &[crate::records::FeatureHistory],
+    annotations: &Annotations,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     retention: &mut retention::Retention,
@@ -5576,6 +5594,142 @@ fn give_up_truncated_blocks(
             if !dropped.contains(&DOCUMENT_METADATA_ID.to_owned()) {
                 dropped.push(DOCUMENT_METADATA_ID.to_owned());
                 dropped.sort();
+            }
+        }
+    }
+    give_up_xml_elements(
+        ctx,
+        scan,
+        histories,
+        annotations,
+        unknowns,
+        losses,
+        retention,
+    )?;
+    Ok(())
+}
+
+fn give_up_xml_elements(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    histories: &[crate::records::FeatureHistory],
+    annotations: &Annotations,
+    unknowns: &mut Vec<UnknownRecord>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    retention: &mut retention::Retention,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+    for section in scan.sections() {
+        let Some(text) = crate::container::xml_text(section.payload()) else {
+            continue;
+        };
+        if !text
+            .trim_start()
+            .trim_start_matches('\u{feff}')
+            .starts_with('<')
+        {
+            continue;
+        }
+        let mut damaged = Vec::new();
+        let xml = match crate::container::recover_xml(
+            ctx,
+            &text,
+            "scan SolidWorks XML damage",
+            |start, end, name| {
+                damaged.push((start, end, String::from_utf8_lossy(name).into_owned()));
+                Ok(())
+            },
+        ) {
+            Ok(xml) => xml,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => continue,
+        };
+        if damaged.is_empty() {
+            continue;
+        }
+        let Some(source) = scan.section_view(section) else {
+            continue;
+        };
+        let payload = source.window();
+        let marker = usize::from(payload.starts_with(&[0x86]));
+        let utf16 = payload
+            .get(marker..)
+            .is_some_and(|bytes| bytes.starts_with(&[0xff, 0xfe]));
+        let prefix = marker + if utf16 { 2 } else { 0 };
+        let history_id = format!("sldprt:history:feature-history#{}", section.ordinal());
+        let history = histories.iter().find(|history| history.id == history_id);
+        let mut owners = BTreeMap::new();
+        if let Some(history) = history {
+            for id in history
+                .configurations
+                .iter()
+                .map(|item| item.id.as_str())
+                .chain(history.features.iter().map(|item| item.id.as_str()))
+            {
+                if let Some(source) = annotations
+                    .provenance
+                    .get(id)
+                    .filter(|source| source.stream() == section.source_stream().as_str())
+                {
+                    owners.insert(source.offset, id);
+                }
+            }
+        }
+        for (start, end, name) in damaged {
+            let containing =
+                history.and_then(|history| {
+                    xml.descendants()
+                        .filter(roxmltree::Node::is_element)
+                        .filter(|node| node.range().start <= start && end <= node.range().end)
+                        .filter_map(|node| {
+                            let range = node.range();
+                            let id = owners.get(&u64_from_index(range.start)).copied().or_else(
+                                || (node == xml.root_element()).then_some(history.id.as_str()),
+                            )?;
+                            Some((range.end - range.start, id))
+                        })
+                        .min_by_key(|(width, _)| *width)
+                        .map(|(_, id)| id.to_owned())
+                });
+            let to_source = |offset: usize| -> Option<usize> {
+                let offset = if utf16 {
+                    text.get(..offset)?.encode_utf16().count().checked_mul(2)?
+                } else {
+                    offset
+                };
+                source.start().checked_add(prefix)?.checked_add(offset)
+            };
+            let (Some(start), Some(end)) = (to_source(start), to_source(end)) else {
+                return Err(CodecError::malformed(
+                    "SolidWorks XML element offset overflows",
+                ));
+            };
+            let extent = source.child(start, end).ok_or_else(|| {
+                CodecError::malformed("SolidWorks XML element exceeds its section")
+            })?;
+            let mut part = PartOutput::new(cadmpeg_ir::CodecFormat::Sldprt, ctx);
+            let spec = PartSpec::new("sldprt.xml_element")
+                .holding([ArenaClass::Model, ArenaClass::Design])
+                .in_stream(section.source_stream().clone());
+            ctx.decode_part(&mut part, extent, spec, |_| {
+                Err::<(), _>(CodecError::malformed(format_args!(
+                    "damaged XML element <{name}>"
+                )))
+            })?;
+            let (_, _, fidelity, part_losses) = part.into_parts();
+            losses.extend(part_losses);
+            for (id, record) in fidelity.retained_records() {
+                if let Some(data) = record.data() {
+                    for class in record.untyped().iter().copied() {
+                        retention.record(id.as_str(), class);
+                    }
+                    unknowns.push(UnknownRecord::retained(
+                        id.clone(),
+                        u64_from_index(start),
+                        data.to_vec(),
+                        containing.iter().cloned().collect(),
+                    ));
+                }
             }
         }
     }

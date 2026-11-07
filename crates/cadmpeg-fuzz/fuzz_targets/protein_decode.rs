@@ -16,7 +16,12 @@ fuzz_target!(|data: &[u8]| {
         if let (Some(protein), Some(instance)) =
             (root.child(0, split), root.child(split, data.len()))
         {
-            let _decode = cadmpeg_protein::decode_detailed(&ctx, protein, instance);
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            let _decode =
+                cadmpeg_protein::decode_detailed(&ctx, protein, instance, &mut parts, "fuzz");
         }
     };
 });

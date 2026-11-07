@@ -21,8 +21,10 @@ pub fn package<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(), CodecE
 /// Exercise the structure-member decoder: header, directory, GZIP streams,
 /// element grammar, string pool, definitions, occurrences, properties, and
 /// the XML form.
-pub fn structure(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<(), CodecError> {
-    crate::pvs::read(ctx, member).map(|_| ())
+pub fn structure<'a>(ctx: &DecodeContext<'a>, member: View<'a>) -> Result<(), CodecError> {
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Pvz, ctx);
+    crate::pvs::read(ctx, member, "probe", &mut parts).map(|_| ())
 }
 
 /// Exercise the geometry-member decoder: header, directory, preamble, GZIP

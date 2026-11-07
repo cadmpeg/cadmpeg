@@ -352,7 +352,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         .expect("generated Global record is ASCII")
         .replace(' ', "");
     assert!(global_text.starts_with(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
+        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
     assert!(global_text.contains(",1.2300000000000000D2,"));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
@@ -931,6 +931,38 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
         assert_eq!(surface.type_code, expected_type);
         assert_eq!(surface.form, 1);
     }
+}
+
+#[test]
+fn transformed_surface_rejects_nonrigid_placement() {
+    let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("valid plane");
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("valid affine transform");
+    let surface = SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(plane)),
+            transform,
+        )
+        .expect("valid placed surface"),
+    );
+    assert!(matches!(
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &surface,
+            0,
+            IgesVersion::V5_3,
+        ),
+        Err(CodecError::UnsupportedContent(_))
+    ));
 }
 
 #[test]
