@@ -203,8 +203,43 @@ pub(super) fn payload(
     if minor == 3 {
         let mut cache = 1_i32.to_le_bytes().to_vec();
         cache.extend(0_i32.to_le_bytes());
+        let mut cache_direct = cache.clone();
+        if only.is_none() {
+            for mesh in &ir.model.tessellations {
+                let belongs_to_body = mesh.body.as_ref() == Some(&body.id);
+                let shares_source = mesh.source_object.as_ref().is_some_and(|source| {
+                    ir.model.surfaces.iter().any(|surface| {
+                        surface.source_object.as_ref() == Some(source)
+                            && surface.geometry.procedural_construction().is_some()
+                    })
+                });
+                if !belongs_to_body && !shares_source {
+                    continue;
+                }
+                let mesh = super::mesh_payload(mesh, version)?;
+                let wrapper =
+                    super::class_wrapper_with_direct(super::MESH_CLASS, &mesh.body, &mesh.direct)?;
+                let mut item = 1_i32.to_le_bytes().to_vec();
+                item.extend(0_i32.to_le_bytes());
+                item.extend([0_u8; 16]);
+                let item_direct = item.clone();
+                item.extend(wrapper);
+                cache.push(1);
+                cache_direct.push(1);
+                cache.extend(super::crc_chunk_with_direct(
+                    0x4000_8000,
+                    &item,
+                    &item_direct,
+                )?);
+            }
+        }
         cache.push(0);
-        payload_body.extend(super::crc_chunk(0x4000_8000, &cache)?);
+        cache_direct.push(0);
+        payload_body.extend(super::crc_chunk_with_direct(
+            0x4000_8000,
+            &cache,
+            &cache_direct,
+        )?);
     }
     let payload = super::crc_chunk_with_direct(0x4000_8000, &payload_body, &direct)?;
     Ok(Some(Candidate {
@@ -232,6 +267,7 @@ fn geometry_agrees(input: &CadIr, output: &CadIr) -> bool {
         "pcurves",
         "procedural_curves",
         "procedural_surfaces",
+        "tessellations",
     ];
     fn normalize(value: &mut Value, ids: &BTreeMap<String, String>, literal: bool) {
         match value {
@@ -311,11 +347,6 @@ pub(super) fn admit(
         || !ir.model.presentation_layers.is_empty()
         || !ir.model.view_presentations.is_empty()
         || !ir.model.attributes.is_empty()
-        || ir
-            .model
-            .tessellations
-            .iter()
-            .any(|mesh| mesh.body.is_some())
     {
         return Ok(None);
     }
