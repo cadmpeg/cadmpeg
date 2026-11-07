@@ -252,6 +252,24 @@ pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, 
     let Some(parameters) = parameters.as_array() else {
         return;
     };
+    let implicit_cylinder = kind == 192
+        && parent.field("form").and_then(|value| value.as_i64()) == Some(0)
+        && parent.field("transform").and_then(|value| value.as_i64()) == Some(0)
+        && matches!(
+            surface.geometry.solved(),
+            Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(cylinder))
+                if *cylinder.frame().reference() == cylinder.frame().axis().derived_reference()
+        );
+    if implicit_cylinder {
+        let Ok(body) = std::str::from_utf8(&entities[3].parameter_body) else {
+            return;
+        };
+        let Some((prefix, _)) = body.trim_end_matches(';').rsplit_once(',') else {
+            return;
+        };
+        entities[3].parameter_body = format!("{prefix};").into_bytes();
+        entities[3].form = 0;
+    }
     retain_surface_numbers(&mut entities[3], surface, parameters);
     let axis = if kind == 196 { 3 } else { 2 };
     for (entity, index) in entities.iter_mut().take(3).zip([1, axis, last]) {
@@ -267,6 +285,9 @@ pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, 
         }
         entity.source_targets.push(record.id().to_owned());
         retain_numeric_tokens(entity, record);
+    }
+    if implicit_cylinder {
+        entities.remove(2);
     }
     implicit_plane(ir, surface, entities, base);
 }
