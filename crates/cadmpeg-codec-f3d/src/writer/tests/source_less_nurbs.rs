@@ -125,11 +125,8 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less NURBS surface round trip");
     assert_eq!(
-        round_trip.ir().model.surfaces[0]
-            .geometry
-            .solved_cache()
-            .expect("solved carrier"),
-        &expected
+        round_trip.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(expected)
     );
 }
 
@@ -179,11 +176,8 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less rational NURBS surface round trip");
     assert_eq!(
-        round_trip.ir().model.surfaces[0]
-            .geometry
-            .solved_cache()
-            .expect("solved carrier"),
-        &expected
+        round_trip.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(expected)
     );
 }
 
@@ -770,11 +764,8 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multi-face NURBS round trip");
     assert_eq!(
-        round_trip.ir().model.surfaces[1]
-            .geometry
-            .solved_cache()
-            .expect("solved carrier"),
-        &expected_surface
+        round_trip.ir().model.surfaces[1].geometry,
+        SurfaceGeometry::Solved(expected_surface)
     );
     assert_eq!(
         round_trip.ir().model.curves[0]
