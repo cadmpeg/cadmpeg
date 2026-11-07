@@ -317,7 +317,7 @@ impl FcstdDocumentBuilder {
                 output
             })
             .collect::<Vec<_>>();
-        document_xml(&objects, &properties, "4", None, "1")
+        document_xml(&objects, &properties, "4", Some("cadmpeg"), "1")
     }
 }
 
@@ -425,7 +425,10 @@ pub(crate) fn document_xml(
     } else {
         ("Objects", "ObjectData", "Object")
     };
-    let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"{file_version}\" ProgramVersion=\"{}\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", program_version.unwrap_or("cadmpeg"), properties_xml(properties.values()), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
+    let program_version = program_version.map_or_else(String::new, |value| {
+        format!(" ProgramVersion=\"{}\"", crate::writer::xml::escaped(value))
+    });
+    let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"{file_version}\"{program_version} StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties.values()), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
     if schema != "2" {
         for object in objects {
             result.push_str("<ObjectDeps Name=\"");
@@ -449,13 +452,16 @@ pub(crate) fn document_xml(
         result.push_str(&crate::writer::xml::escaped(&object.name));
         result.push_str("\" type=\"");
         result.push_str(&crate::writer::xml::escaped(&object.kind));
-        result.push_str("\" id=\"");
-        if let Some(id) = object.declaration_id.as_deref() {
-            result.push_str(&crate::writer::xml::escaped(id));
-        } else {
-            result.push_str(&(index + 1).to_string());
-        }
         result.push('"');
+        let id = match &object.declaration_id {
+            crate::writer::xml::DeclarationId::Generated => Some((index + 1).to_string()),
+            crate::writer::xml::DeclarationId::Source(id) => id.clone(),
+        };
+        if let Some(id) = id {
+            result.push_str(" id=\"");
+            result.push_str(&crate::writer::xml::escaped(&id));
+            result.push('"');
+        }
         for (name, value) in &object.declaration_attributes {
             result.push(' ');
             result.push_str(name);

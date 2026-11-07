@@ -19,6 +19,7 @@ use super::project_features_with_native_inputs;
 use super::xml::{feature_xml_tag, valid_xml_name};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::records::FeatureSource;
+use crate::writer::write_error::WriteError;
 
 /// A write-side request to rewrite one serialized object name.
 ///
@@ -38,7 +39,7 @@ pub(crate) struct FeatureInputRename {
 fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<Vec<FeatureInputRename>, WriteError> {
     // A history-only document has no serialized feature-input names to
     // synchronize. Its current history name is still authored below, without
     // turning an unrelated metadata edit into a refusal of retained B-rep.
@@ -80,12 +81,12 @@ fn synchronize_feature_input_names(
             }
         }
         let [(lane_index, name_index)] = matches.as_slice() else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
             )));
         };
         let value = cadmpeg_core::text::NonBlankString::new(new_name).ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
             ))
         })?;
@@ -130,6 +131,45 @@ fn generated_feature_source_ids(
         .iter()
         .filter(|feature| feature.native_ref.is_none())
     {
+        let FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) =
+            feature.definition()
+        else {
+            continue;
+        };
+        let source = match plane {
+            cadmpeg_ir::features::PrincipalPlane::Front => 2,
+            cadmpeg_ir::features::PrincipalPlane::Top => 3,
+            cadmpeg_ir::features::PrincipalPlane::Right => 4,
+        };
+        let record_id = generated_feature_record_id(&feature.id);
+        if existing.get(record_id.as_str()).copied() != Some(source) && !used.insert(source) {
+            return Err(WriteError::Decline(format!(
+                "SLDPRT feature {} needs reserved principal-plane identity {source}",
+                feature.id
+            )));
+        }
+        if allocated
+            .values()
+            .any(|value: &FeatureSource| value.value() == Some(source))
+        {
+            return Err(WriteError::Decline(format!(
+                "SLDPRT feature {} repeats principal-plane identity {source}",
+                feature.id
+            )));
+        }
+        allocated.insert(
+            feature.id.clone(),
+            FeatureSource::from_value(source)
+                .ok_or_else(|| CodecError::malformed("invalid principal-plane source identity"))?,
+        );
+    }
+    for feature in features
+        .iter()
+        .filter(|feature| feature.native_ref.is_none())
+    {
+        if allocated.contains_key(&feature.id) {
+            continue;
+        }
         let record_id = generated_feature_record_id(&feature.id);
         let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
             source_id
@@ -387,8 +427,14 @@ fn synchronize_features(
                 .entry(record.clone())
                 .or_default()
                 .insert(
-                    cadmpeg_core::text::NonBlankString::new(parameter.name.clone())
-                        .ok_or_else(|| CodecError::malformed("SLDPRT parameter name is empty"))?,
+                    cadmpeg_core::text::NonBlankString::new(parameter.name.clone()).ok_or_else(
+                        || {
+                            WriteError::Decline(format!(
+                                "SLDPRT parameter {} has an empty name",
+                                parameter.id
+                            ))
+                        },
+                    )?,
                 );
         }
     }
@@ -418,12 +464,18 @@ fn synchronize_features(
             &global_owners,
         )
         .ok_or_else(|| {
-            CodecError::malformed(
-                "SLDPRT canonical parameter expression references a missing identity",
-            )
+            WriteError::Decline(format!(
+                "SLDPRT parameter {} expression references a missing identity",
+                parameter.id
+            ))
         })?;
-        let name = cadmpeg_core::text::NonBlankString::new(parameter.name.clone())
-            .ok_or_else(|| CodecError::malformed("SLDPRT parameter name is empty"))?;
+        let name =
+            cadmpeg_core::text::NonBlankString::new(parameter.name.clone()).ok_or_else(|| {
+                WriteError::Decline(format!(
+                    "SLDPRT parameter {} has an empty name",
+                    parameter.id
+                ))
+            })?;
         canonical_parameter_texts
             .entry(owner.clone())
             .or_default()
@@ -547,11 +599,10 @@ fn synchronize_features(
             .as_deref()
             .is_some_and(|tag| !valid_xml_name(tag))
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} has an invalid source tag",
                 feature.id
-            ))
-            .into());
+            )));
         }
         let mut existing = native
             .feature_histories
@@ -591,7 +642,7 @@ fn synchronize_features(
             )));
         }
         let suppressed = feature.suppressed.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "SLDPRT feature {} has unresolved suppression",
                 feature.id
             ))
@@ -640,7 +691,7 @@ fn synchronize_features(
                 .map(|body| body_sources.get(body).cloned())
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    WriteError::Decline(format!(
                         "SLDPRT feature {} references a missing output body",
                         feature.id
                     ))
@@ -789,7 +840,10 @@ fn synchronize_features(
                 .iter()
                 .find(|parameter| parameter.id == id)
                 .ok_or_else(|| {
-                    CodecError::malformed("native role references missing canonical parameter")
+                    WriteError::Decline(format!(
+                        "SLDPRT feature {} references missing parameter {id}",
+                        feature.id
+                    ))
                 })?;
             let properties = record
                 .dimension_properties
@@ -825,10 +879,10 @@ fn synchronize_features(
     let mismatches = dependency_mismatches(features, &record_ids, &projected_features)?;
     if let Some((index, expected, canonical)) = mismatches.into_iter().next() {
         let feature = &features[index];
-        return Err(CodecError::malformed(format_args!(
+        return Err(WriteError::Decline(format!(
             "SLDPRT feature {} dependencies are inconsistent with its operands: expected {expected:?}, projected {canonical:?}; definition {:?}",
             feature.id, feature.definition()
-        )).into());
+        )));
     }
     let written_classes = if patch_input_names {
         std::collections::BTreeSet::new()
@@ -845,7 +899,7 @@ fn synchronize_neutral_feature_content(
     parameters: &[DesignParameter],
     record_ids: &HashMap<FeatureId, String>,
     native: &mut crate::native::SldprtNative,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let parameters = parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -861,13 +915,13 @@ fn synchronize_neutral_feature_content(
                 FeatureSourceContent::Text(text) => Ok(FeatureContent::Text(text.clone())),
                 FeatureSourceContent::Parameter(id) => {
                     let parameter = parameters.get(id).ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        WriteError::Decline(format!(
                             "SLDPRT feature {} content references missing parameter {}",
                             feature.id, id.as_str()
                         ))
                     })?;
                     if parameter.owner.as_ref() != Some(&feature.id) {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} content references parameter {} owned by another feature",
                             feature.id, id.as_str()
                         )));
@@ -879,20 +933,30 @@ fn synchronize_neutral_feature_content(
                     .cloned()
                     .map(FeatureContent::Feature)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        WriteError::Decline(format!(
                             "SLDPRT feature {} content references missing feature {}",
                             feature.id, id
                         ))
                     }),
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let record_id = &record_ids[&feature.id];
+        let record_id = record_ids.get(&feature.id).ok_or_else(|| {
+            WriteError::Decline(format!(
+                "SLDPRT feature {} has no output record",
+                feature.id
+            ))
+        })?;
         let record = native
             .feature_histories
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|record| &record.id == record_id)
-            .ok_or_else(|| CodecError::Malformed("missing SLDPRT feature record".into()))?;
+            .ok_or_else(|| {
+                WriteError::Decline(format!(
+                    "SLDPRT feature {} has no output record",
+                    feature.id
+                ))
+            })?;
         record.content = content;
     }
     Ok(())
@@ -1027,6 +1091,52 @@ mod tests {
             &resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]),
         ));
         source
+    }
+
+    #[test]
+    fn missing_feature_content_and_output_record_decline_with_owner_identity() {
+        use crate::writer::write_error::WriteError;
+        use cadmpeg_ir::features::FeatureSourceContent;
+        use std::collections::HashMap;
+
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    &document_with_one_linked_object_name(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("synthetic history decodes");
+        let mut feature = decoded.ir().model.features[0].clone();
+        let owner = feature.id.to_string();
+        feature.source_content = vec![FeatureSourceContent::Feature(
+            FeatureId::mint("synthetic:test:id#missing").expect("feature identity"),
+        )]
+        .try_into()
+        .expect("distinct feature content");
+        let mut native = sldprt_native(decoded.ir());
+        let error = super::synchronize_neutral_feature_content(
+            std::slice::from_ref(&feature),
+            &[],
+            &HashMap::new(),
+            &mut native,
+        )
+        .expect_err("missing child declines the patch");
+        assert!(
+            matches!(error, WriteError::Decline(reason) if reason == format!("SLDPRT feature {owner} content references missing feature synthetic:test:id#missing"))
+        );
+
+        feature.source_content = cadmpeg_ir::features::FeatureContent::text(["text".to_owned()]);
+        let error = super::synchronize_neutral_feature_content(
+            &[feature],
+            &[],
+            &HashMap::new(),
+            &mut native,
+        )
+        .expect_err("missing output record declines the patch");
+        assert!(
+            matches!(error, WriteError::Decline(reason) if reason == format!("SLDPRT feature {owner} has no output record"))
+        );
     }
 
     #[test]

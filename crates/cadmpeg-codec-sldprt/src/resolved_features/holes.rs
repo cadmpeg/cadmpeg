@@ -238,9 +238,7 @@ fn hole_position_sketch_source(
     let source = feature
         .source_value()
         .or_else(|| name.object_id.and_then(ObjectId::value))?;
-    let offset = usize::try_from(name.offset)
-        .ok()?
-        .checked_add(6 + name.value.encode_utf16().count().checked_mul(2)?)?;
+    let offset = super::names::record_name_end(&lane.native_payload, name)?;
     if lane.native_payload.get(offset..offset + 8)
         != Some(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40])
         || lane.native_payload.get(offset + 8..offset + 12) != Some(&source.to_le_bytes())
@@ -265,8 +263,7 @@ fn hole_position_sketch_source(
             return None;
         }
         let child_source = child.object_id.and_then(ObjectId::value)?;
-        let trailer =
-            child_offset.checked_add(6 + child.value.encode_utf16().count().checked_mul(2)?)?;
+        let trailer = super::names::record_name_end(&lane.native_payload, child)?;
         if trailer.checked_add(12)? > body_end {
             return None;
         }

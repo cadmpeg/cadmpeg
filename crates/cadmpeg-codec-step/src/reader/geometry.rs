@@ -3244,6 +3244,71 @@ pub(super) struct OwnedCarriers {
     points: HashSet<PointIndex>,
 }
 
+pub(super) fn retain_topology_carrier_names(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    owned: &OwnedCarriers,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut named_targets: BTreeSet<_> = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.name == "name")
+        .map(|attribute| attribute.target.clone())
+        .collect();
+    for (&id, record) in exchange.records() {
+        let target = if let Some(curve) = index
+            .curves
+            .get(&id)
+            .filter(|curve| owned.curves.contains(curve))
+        {
+            Some(AttributeTarget::Curve(ir.model.curves[curve.0].id.clone()))
+        } else if let Some(surface) = index
+            .surfaces
+            .get(&id)
+            .filter(|surface| owned.surfaces.contains(surface))
+        {
+            Some(AttributeTarget::Surface(
+                ir.model.surfaces[surface.0].id.clone(),
+            ))
+        } else if let Some(point) = index
+            .points
+            .get(&id)
+            .filter(|point| owned.points.contains(&point.index))
+        {
+            Some(AttributeTarget::Point(
+                ir.model.points[point.index.0].id.clone(),
+            ))
+        } else {
+            None
+        };
+        let Some(target) = target else { continue };
+        if named_targets.contains(&target) {
+            continue;
+        }
+        let name = representation_item_name(record).and_then(|value| {
+            super::decode_text(
+                exchange,
+                value,
+                losses,
+                id,
+                "topology carrier name",
+                StepLossCode::MetadataStringInvalid,
+            )
+        });
+        if name.as_ref().is_some_and(|name| !name.is_empty()) {
+            named_targets.insert(target.clone());
+        }
+        retain_geometry_name(ctx, &mut ir.model.attributes, target, id, name.as_deref())?;
+    }
+    Ok(())
+}
+
 pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> OwnedCarriers {
     let mut curves = HashSet::new();
     for curve in ir

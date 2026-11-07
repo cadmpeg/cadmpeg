@@ -188,6 +188,7 @@ fn native_extrusion_with_a_solved_carrier_retains_the_carrier() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == crate::loss::StepLossCode::ProceduralReducedToCarrier.kind()
             && loss.message.contains(construction.as_str())
+            && loss.message.contains(owner.as_str())
     }));
     let decoded = crate::StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

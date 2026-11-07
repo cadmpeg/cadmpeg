@@ -949,17 +949,31 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
         )
         .unwrap();
     let decoded = EditableDecodeResult::from(decoded);
-    let records = crate::source_records(decoded.ir(), decoded.source_fidelity());
+    let fixture = sldprt_with_body(&body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&fixture, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
     let annotations = &decoded.source_fidelity().annotations;
     assert!(
-        super::patch_partition(decoded.ir(), annotations, &records, 0.001)
+        super::patch_partition(&ctx, &scan, decoded.ir(), annotations, 0.001)
             .unwrap()
             .is_some()
     );
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    limited_policy.limits.max_entities = 0;
+    let limited = cadmpeg_core::decode::DecodeContext::for_encode(&limited_arena, &limited_policy);
+    assert!(matches!(
+        super::patch_partition(&limited, &scan, decoded.ir(), annotations, 0.001),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+    ));
     let mut changed = decoded.ir().clone();
     changed.model.faces[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
-    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    let error = super::patch_partition(&ctx, &scan, &changed, annotations, 0.001).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed face colours"));
@@ -989,7 +1003,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
             });
     }
-    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    let error = super::patch_partition(&ctx, &scan, &changed, annotations, 0.001).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed pcurve geometry or metadata"));

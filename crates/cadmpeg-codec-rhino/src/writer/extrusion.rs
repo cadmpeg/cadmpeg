@@ -45,8 +45,9 @@ pub(super) fn payload(
         {
             return Ok(None);
         }
-        let Some([Some(_u0), Some(v0), Some(_u1), Some(v1)]) =
-            procedure.record_bounds().map(cadmpeg_ir::geometry::RecordBounds::get)
+        let Some([Some(_u0), Some(v0), Some(_u1), Some(v1)]) = procedure
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
         else {
             return Ok(None);
         };
@@ -77,9 +78,6 @@ pub(super) fn payload(
     let Some((direction, v0, v1)) = path else {
         return Ok(None);
     };
-    if profiles.len() > 1 {
-        return Ok(None);
-    }
     let Some(tangent) = direction.unit() else {
         return Ok(None);
     };
@@ -151,7 +149,30 @@ pub(super) fn payload(
         let body = super::nurbs_curve_payload_dimension(&profile, 2)?;
         children.push(super::class_wrapper(super::NURBS_CURVE_CLASS, &body)?);
     }
-    let profile_wrapper = children.remove(0);
+    let profile_count = profiles.len();
+    let count =
+        super::writable_i32_count(profile_count, "extrusion profile count exceeds i32".into())?;
+    let profile_wrapper = if profile_count == 1 {
+        children.remove(0)
+    } else {
+        let mut polycurve = vec![0x10];
+        polycurve.extend(count.to_le_bytes());
+        polycurve.extend(0_i32.to_le_bytes());
+        polycurve.extend(0_i32.to_le_bytes());
+        polycurve.extend([0_u8; 48]);
+        let parameter_count = count.checked_add(1).ok_or_else(|| {
+            WriteError::Omit("extrusion profile parameter count exceeds i32".into())
+        })?;
+        polycurve.extend(parameter_count.to_le_bytes());
+        for index in 0..parameter_count {
+            polycurve.extend(f64::from(index).to_le_bytes());
+        }
+        let direct = polycurve.clone();
+        for child in children {
+            polycurve.extend(child);
+        }
+        super::class_wrapper_with_direct(crate::curves::POLYCURVE.to_wire(), &polycurve, &direct)?
+    };
     let mut direct = Vec::new();
     direct.extend(1_i32.to_le_bytes());
     let minor = if version == crate::RhinoArchiveVersion::V5 {
@@ -174,7 +195,7 @@ pub(super) fn payload(
         direct.extend(value.to_le_bytes());
     }
     direct.push(0);
-    direct.extend(1_i32.to_le_bytes());
+    direct.extend(count.to_le_bytes());
     direct.extend([u8::from(caps[0]), u8::from(caps[1])]);
     let mut payload_body = direct[..8].to_vec();
     payload_body.extend(profile_wrapper);
@@ -182,14 +203,49 @@ pub(super) fn payload(
     if minor == 3 {
         let mut cache = 1_i32.to_le_bytes().to_vec();
         cache.extend(0_i32.to_le_bytes());
+        let mut cache_direct = cache.clone();
+        if only.is_none() {
+            for mesh in &ir.model.tessellations {
+                let belongs_to_body = mesh.body.as_ref() == Some(&body.id);
+                let shares_source = mesh.source_object.as_ref().is_some_and(|source| {
+                    ir.model.surfaces.iter().any(|surface| {
+                        surface.source_object.as_ref() == Some(source)
+                            && surface.geometry.procedural_construction().is_some()
+                    })
+                });
+                if !belongs_to_body && !shares_source {
+                    continue;
+                }
+                let mesh = super::mesh_payload(mesh, version)?;
+                let wrapper =
+                    super::class_wrapper_with_direct(super::MESH_CLASS, &mesh.body, &mesh.direct)?;
+                let mut item = 1_i32.to_le_bytes().to_vec();
+                item.extend(0_i32.to_le_bytes());
+                item.extend([0_u8; 16]);
+                let item_direct = item.clone();
+                item.extend(wrapper);
+                cache.push(1);
+                cache_direct.push(1);
+                cache.extend(super::crc_chunk_with_direct(
+                    0x4000_8000,
+                    &item,
+                    &item_direct,
+                )?);
+            }
+        }
         cache.push(0);
-        payload_body.extend(super::crc_chunk(0x4000_8000, &cache)?);
+        cache_direct.push(0);
+        payload_body.extend(super::crc_chunk_with_direct(
+            0x4000_8000,
+            &cache,
+            &cache_direct,
+        )?);
     }
     let payload = super::crc_chunk_with_direct(0x4000_8000, &payload_body, &direct)?;
     Ok(Some(Candidate {
         payload,
         body_id: body.id.to_string(),
-        profile_count: 1,
+        profile_count,
     }))
 }
 
@@ -211,6 +267,7 @@ fn geometry_agrees(input: &CadIr, output: &CadIr) -> bool {
         "pcurves",
         "procedural_curves",
         "procedural_surfaces",
+        "tessellations",
     ];
     fn normalize(value: &mut Value, ids: &BTreeMap<String, String>, literal: bool) {
         match value {
@@ -290,11 +347,6 @@ pub(super) fn admit(
         || !ir.model.presentation_layers.is_empty()
         || !ir.model.view_presentations.is_empty()
         || !ir.model.attributes.is_empty()
-        || ir
-            .model
-            .tessellations
-            .iter()
-            .any(|mesh| mesh.body.is_some())
     {
         return Ok(None);
     }
@@ -478,8 +530,9 @@ pub(super) fn sum(
     {
         return Ok(None);
     }
-    let Some([Some(_u0), Some(v0), Some(_u1), Some(v1)]) =
-        procedure.record_bounds().map(cadmpeg_ir::geometry::RecordBounds::get)
+    let Some([Some(_u0), Some(v0), Some(_u1), Some(v1)]) = procedure
+        .record_bounds()
+        .map(cadmpeg_ir::geometry::RecordBounds::get)
     else {
         return Ok(None);
     };

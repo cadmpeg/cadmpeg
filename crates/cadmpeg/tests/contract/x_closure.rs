@@ -436,7 +436,7 @@ fn observe_sldprt() -> ObservedSldprt {
     // SolidWorks stores tessellation scalars as f32 and appearance base
     // colours as 8-bit channels (#237 REDUCED_FIELDS); the comparison applies
     // that storage before pairing.
-    let reduced = [
+    let mut reduced: Vec<_> = [
         ("model.tessellations[].vertices[]", ReducedStorage::F32),
         (
             "model.tessellations[].vertex_normals[]",
@@ -451,6 +451,13 @@ fn observe_sldprt() -> ObservedSldprt {
         normalize: None,
     })
     .collect();
+    reduced.push(ReducedProbe {
+        path: "model.tessellations[].channels[].flags",
+        storage: ReducedStorage::Normalized {
+            loss: "sldprt/writer.fields-omitted",
+        },
+        normalize: Some(|_| serde_json::json!(2)),
+    });
     ObservedSldprt {
         carried,
         fixed_paths,

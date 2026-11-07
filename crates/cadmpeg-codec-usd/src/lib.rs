@@ -129,9 +129,15 @@ impl EncoderBackend for UsdCodec {
         let binary = target
             .entry()
             .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged)?;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy {
+            limits: input.limits,
+            ..Default::default()
+        };
+        let ctx = DecodeContext::for_encode(&arena, &policy);
+        let (mut body, members) = writer::plan(input, &target, packaged, &ctx)?;
         if binary {
-            body.bytes = crate_layer(&body.bytes, input.limits).map_err(transitional_from_codec)?;
+            body.bytes = crate_layer(&ctx, &body.bytes).map_err(transitional_from_codec)?;
             body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
         }
         if packaged {
@@ -150,18 +156,9 @@ impl EncoderBackend for UsdCodec {
 }
 
 /// The USDC form of the written text layer `text`.
-fn crate_layer(
-    text: &[u8],
-    limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<Vec<u8>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy {
-        limits,
-        ..Default::default()
-    };
-    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-    let layer = text::grammar::parse_layer(&ctx, text)?;
-    ctx.finish_session()?;
+fn crate_layer(ctx: &DecodeContext<'_>, text: &[u8]) -> Result<Vec<u8>, CodecError> {
+    let layer = text::grammar::parse_generated_layer(ctx, text)?;
+    cadmpeg_core::encode::EncodeSession::from_context(ctx)?.finish()?;
     usdc::write::write(&layer)
 }
 
