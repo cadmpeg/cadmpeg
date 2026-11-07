@@ -125,6 +125,7 @@ macro_rules! classified_arena_registry {
             solver_settings: crate::physics::solver::SolverSettings, model, "Solver settings arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             declared_measures: crate::declared_measures::DeclaredMeasure, model, "Declared measure arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             point_clouds: crate::point_cloud::PointCloud, model, "Point cloud arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            history_bodies: crate::history_body::HistoryBody, design, "History body arena: bodies that only an earlier history state holds, each with a nest of its own.", [serde(default, skip_serializing_if = "Vec::is_empty")];
         }
     };
 }

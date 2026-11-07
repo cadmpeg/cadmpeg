@@ -27,6 +27,7 @@ mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
 mod geometry_payloads;
+mod history_bodies;
 mod identity_order;
 mod physics;
 mod pmi;
@@ -154,6 +155,7 @@ fn validate_model_with_index<'ir>(
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
+    history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
