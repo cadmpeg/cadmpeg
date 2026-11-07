@@ -1234,6 +1234,7 @@ fn extend_related_design_records(
         .clone_from(&prereqs.design_parameter_companions);
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
+        design_parts,
         scan,
         &prereqs.design_types,
         &design.design_parameter_scopes,

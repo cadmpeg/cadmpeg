@@ -106,6 +106,76 @@ fn face_source_carrier_prefix_rejects_unbounded_counts_and_inconsistent_lanes() 
 }
 
 #[test]
+fn damaged_face_source_carrier_keeps_its_indexed_sibling() {
+    let layout = face_source_carrier_spec(2).unwrap();
+    let mut bytes = source_carrier(b"394", 100, 12, 2, layout.scalar_offset, 109);
+    let scalar = layout.scalar_offset + std::mem::size_of::<u32>();
+    bytes[scalar..scalar + std::mem::size_of::<f64>()].copy_from_slice(&f64::NAN.to_le_bytes());
+    let second = bytes.len();
+    bytes.extend_from_slice(&source_carrier(
+        b"394",
+        101,
+        12,
+        2,
+        layout.scalar_offset,
+        109,
+    ));
+    let frames = [
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 100,
+            start: 0,
+            member_end: second,
+            end: second,
+        },
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 101,
+            start: second,
+            member_end: bytes.len(),
+            end: bytes.len(),
+        },
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let decoded: Vec<_> = frames
+        .iter()
+        .filter_map(|frame| {
+            crate::design::decode::operands::decode_face_source_carrier_part(
+                &ctx,
+                &mut parts,
+                source,
+                "Design/BulkStream.dat",
+                frame,
+                frame.end,
+                12,
+            )
+            .unwrap()
+        })
+        .collect();
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(
+        decoded[0]
+            .iter()
+            .map(|(_, index)| *index)
+            .collect::<Vec<_>>(),
+        [200, 201]
+    );
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
+#[test]
 fn face_source_identity_uses_registration_and_segment_instead_of_class_literals() {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     use crate::records::identity::ReferenceRun;
