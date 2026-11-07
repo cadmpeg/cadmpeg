@@ -2633,9 +2633,9 @@ fn check_feature_references(
         });
         if configuration.active {
             for feature in &ir.model.features {
-                if feature.suppressed.is_some_and(|suppressed| {
-                    suppressed_features.contains(feature.id.as_str()) != suppressed
-                }) {
+                if suppressed_features.contains(feature.id.as_str())
+                    != feature.suppressed.unwrap_or(false)
+                {
                     super::record_finding(
                         findings,
                         Check::ReferentialIntegrity,

@@ -314,6 +314,13 @@ pub fn push_extras(
                     rejected.format()
                 ));
             }
+            Err(cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected)) => {
+                collisions.push(format!(
+                    "the container produced an untagged {} dialect layer at carrier {carrier}; \
+                     the later classification was omitted",
+                    rejected.format()
+                ));
+            }
         }
     }
     collisions
