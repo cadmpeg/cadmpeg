@@ -1690,11 +1690,11 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Where does a `Fillet` scope store its radius when it has no parameter owner and no fixed scalar lane?
 
-**Known.** `f3d.md` §3.1 pairs each construction-operand group of a `Fillet` scope with a `Radius` parameter owner, and gives a fixed `Fillet` scalar lanes in the scope reference table. A `Fillet` scope exists whose reference table holds one role-`0x0000001000000000` construction-operand group and the eight members of that group, with no other reference. The members are compact persistent-identity frames retained in the edge-identity arena. The scope has no indexed parameter owner, no fixed scalar lane, and no radius, chord length, or tangency weight record. The frame of the scope is 22 bytes shorter than the frame of a `Fillet` scope with owners and nine references. Its opaque scalar stored after the feature name is independent of the radii of the `Fillet` scopes that have owners. The decoder keeps the feature native and the native check reports that the group has no radius assignment.
+**Known.** The scopes that store radii use these forms. Within a scope of the Fillet family, construction-operand groups in scope-reference order pair one-to-one with `Radius` parameters in increasing owner-local order. `TangencyWeight` parameters, when present, pair with the same groups in increasing owner-local order. The group, owner, and parameter records store no radius or tangency-weight assignment cross-reference. The two orderings define both pairings. Each radius therefore applies to the ordered edge operands carried by its paired group. When the scope also holds role-`0x0000001000000000` face groups, the role-`0x0000000800000000` edge groups pair one-to-one with the radii in that order, and a face group in such a scope takes no pairing. `f3d.md` §3.1 gives the fixed `Fillet` scalar lanes in the scope reference table. A `Fillet` scope exists whose reference table holds one role-`0x0000001000000000` construction-operand group and the eight members of that group, with no other reference. The members are compact persistent-identity frames retained in the edge-identity arena. The scope has no indexed parameter owner, no fixed scalar lane, and no radius, chord length, or tangency weight record. The frame of the scope is 22 bytes shorter than the frame of a `Fillet` scope with owners and nine references. Its opaque scalar stored after the feature name is independent of the radii of the `Fillet` scopes that have owners.
 
 **Need.** The same selection saved as a `Fillet` with a known radius, and as a suppressed `Fillet` after the radius is deleted or the feature is suppressed, each with the scope frame, the reference table, and the timeline suppression state recorded.
 
-**Conflict.** `f3d.md` §3.1 requires a radius law for every `Fillet` group. This scope stores none.
+**Conflict.** None.
 
 **Note.** None.
 
@@ -1702,10 +1702,10 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** What does start-support byte `2` mean for an `Extrude` scope that stores no start-face group?
 
-**Known.** `f3d.md` §3.1 gives start-support byte `2` as a selected-face start that stores a `ProfileOffset` and a profile-from-entity reference, and adds one start group to the scope. A new-body `Extrude` scope exists with start-support byte `2`, one-sided distance extent, and a `ProfileOffset` owner, whose reference table holds three fixed scalar lanes, one further record, the profile group, and its profile. It stores no start group of any role. Its reference slots and frame length are those of an offset-profile-plane new-body scope with the same reference count. Selected-face start scopes of other operations store the start group. The decoder keeps the feature native and the native check reports that the start conflicts with the face operands.
+**Known.** `f3d.md` §3.1 gives start-support byte `2` as a selected-face start that stores a `ProfileOffset` and a profile-from-entity reference. A selected-face start adds one role-`0x0000001100000000` start group; a role-`0x0000000500000000` group is a start-face group only when the start support is selected face. A new-body `Extrude` scope exists with start-support byte `2`, one-sided distance extent, and a `ProfileOffset` owner, whose reference table holds three fixed scalar lanes, one further record, the profile group, and its profile. It stores no start group of any role. Its reference slots and frame length are those of an offset-profile-plane new-body scope with the same reference count. Selected-face start scopes of other operations store the start group.
 
 **Need.** Saves of a new-body `Extrude` that start from a selected face, from an offset plane, and from a selected face that is later deleted, each with the start-support byte and the scope reference table recorded.
 
-**Conflict.** `f3d.md` §3.1 requires a start group when the start support is a selected face. This scope stores none.
+**Conflict.** None.
 
 **Note.** None.

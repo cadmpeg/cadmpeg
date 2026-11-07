@@ -6075,15 +6075,28 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let invalid_face_groups_hide_extent_conflict =
                 class_296_two_faces_layout && face_operand_group_count == 0;
+            // DR-322: a new-body one-sided distance scope with start-support
+            // byte 2, a ProfileOffset, and no face group of any role.
+            let selected_start_without_group = matches!(
+                extrude_start,
+                records::feature::extrude::DesignExtrudeStart::FromFace
+            ) && matches!(
+                extrude_extent,
+                records::feature::extrude::DesignExtrudeExtent::OneSidedDistance
+            ) && prologue.operation()
+                == records::feature::extrude::DesignExtrudeOperation::NewBody
+                && face_operand_group_count == 0
+                && face_groups.is_empty();
             if ctx.holds_design_intent()
                 && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands
                     || !start_matches_operands
-                    || face_operand_group_count != expected_face_group_count
-                    || face_groups
-                        .iter()
-                        .map(|group| group.extrude_face_role())
-                        .ne(expected_face_roles.iter().copied().map(Some)))
+                    || (!selected_start_without_group
+                        && (face_operand_group_count != expected_face_group_count
+                            || face_groups
+                                .iter()
+                                .map(|group| group.extrude_face_role())
+                                .ne(expected_face_roles.iter().copied().map(Some)))))
             {
                 push_constant_finding(findings, Check::NativeLinks, "Fusion Design Extrude start or extent conflicts with its parameters and face operands", Some(scope.id.clone()));
             }
@@ -6550,8 +6563,14 @@ fn validate_fillet_operand_groups<'a>(
                         )
                     })
             });
+        // DR-321: a sole face-role group with no owner and no fixed lane.
+        let no_stored_radius = !has_parameter_owner
+            && sole_compact_group_shape
+            && group.role() == DesignOperandRole::ROLE_0X10
+            && scope.is_some_and(|scope| scope.fixed_fillet_parameters().is_none());
         if is_fillet
             && !retained_fixed_assignment
+            && !no_stored_radius
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
             && !has_radius_assignment
