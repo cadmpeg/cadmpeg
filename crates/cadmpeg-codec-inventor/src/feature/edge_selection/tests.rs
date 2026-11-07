@@ -728,6 +728,23 @@ fn legacy_selectors_need_the_matching_key_generator_and_edge_owner() {
 }
 
 #[test]
+fn class_chain_matching_attributes_of_schema_43_read_like_schema_38() {
+    for schema in [38, 40, 42, 43] {
+        let records = legacy_records(i64::from(schema));
+        assert_eq!(matched(&records[1], schema), Some((150, 7, 140)));
+    }
+    // The stored schema equals the carrier schema.
+    assert_eq!(matched(&legacy_records(43)[1], 42), None);
+    // Other carrier schemas do not read the class-chain form.
+    for schema in [0, 37, 39, 41, 45] {
+        assert_eq!(matched(&legacy_records(i64::from(schema))[1], schema), None);
+    }
+    // Qualifier 1 names vertices, not the edge.
+    let vertex = legacy_attribute(133, 140, "NMx_Matched_Entity", 43, &[1, 150, -1, 7, 1]);
+    assert_eq!(matched(&vertex, 43), None);
+}
+
+#[test]
 fn the_selector_join_runs_for_legacy_carriers_only_with_a_flange() {
     assert!(names_joined(44, false));
     assert!(names_joined(44, true));

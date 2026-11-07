@@ -31,8 +31,8 @@ use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::cap_regions::{
-    distance, face_cap, oriented_loops, relation, Cap, PlaneFrame, AREA_AGREEMENT, CAP_EDGES,
-    PARALLEL_CAP, SIDE_OFFSET,
+    face_cap, face_outlines_cover_caps, oriented_loops, relation, Cap, PlaneFrame, AREA_AGREEMENT,
+    CAP_EDGES, PARALLEL_CAP,
 };
 use crate::design::face_resolve::{
     extrude_profile_group_operand_indices, extrude_profile_group_roots,
@@ -678,7 +678,7 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
             if selected.len() != members
                 || !resolved.iter().all(|face| selected.contains(face))
                 || (selected_area - cap_area).abs() > AREA_AGREEMENT * cap_area.max(1.0)
-                || !outlines_agree(&caps, &outlines, tolerance)
+                || !face_outlines_cover_caps(&caps, &outlines, tolerance)
             {
                 return CapReading::Disputed(
                     "a selection that can be the profile fails the member count, resolved face, area or outline check",
@@ -880,53 +880,6 @@ fn interior_point(face: &Cap, tolerance: f64) -> Option<Point2> {
     }
     let (point, room) = best?;
     (room > FACE_CLEARANCE * tolerance).then_some(point)
-}
-
-/// Whether the outline of the union of `faces` lies on the caps' boundary
-/// and every cap vertex lies on that outline.
-///
-/// A face boundary segment is on the outline when the union holds one of its
-/// sides and not the other; both its ends must then lie on a cap piece.
-fn outlines_agree(caps: &[Cap], faces: &[Cap], tolerance: f64) -> bool {
-    let in_union = |point: Point2| faces.iter().any(|face| face.contains(point));
-    let on_caps = |point: Point2| {
-        caps.iter()
-            .map(|cap| cap.boundary_distance(point))
-            .fold(f64::INFINITY, f64::min)
-            <= tolerance
-    };
-    let offset = SIDE_OFFSET * tolerance;
-    let mut outline = Vec::new();
-    for ring in faces.iter().flat_map(|face| face.loops.iter()) {
-        for k in 0..ring.len() {
-            let (start, end) = (ring[k], ring[(k + 1) % ring.len()]);
-            let length = distance(start, end);
-            if length <= tolerance {
-                continue;
-            }
-            let middle = Point2::new(f64::midpoint(start.u, end.u), f64::midpoint(start.v, end.v));
-            let (du, dv) = (
-                -(end.v - start.v) / length * offset,
-                (end.u - start.u) / length * offset,
-            );
-            let left = in_union(Point2::new(middle.u + du, middle.v + dv));
-            let right = in_union(Point2::new(middle.u - du, middle.v - dv));
-            if left == right {
-                continue;
-            }
-            if !on_caps(start) || !on_caps(end) {
-                return false;
-            }
-            outline.push((start, end));
-        }
-    }
-    caps.iter()
-        .flat_map(|cap| cap.corners.iter())
-        .all(|corner| {
-            outline
-                .iter()
-                .any(|segment| point_segment_distance(*corner, *segment) <= tolerance)
-        })
 }
 
 #[cfg(test)]

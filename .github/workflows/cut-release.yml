@@ -3,15 +3,15 @@
 # Dispatch this workflow (Actions tab -> Cut release -> Run workflow) with the
 # target version, e.g. 0.1.5. It performs the entire release in a single run:
 #
-#   1. Requires a successful CI run on the main commit it releases, and waits
-#      for that run while it is queued or in progress.
-#   2. Validates the version (must be a strict upgrade; tag must not exist).
-#   3. Bumps the workspace manifest and refreshes Cargo.lock.
-#   4. Runs the repository policy gate on the bumped manifests.
-#   5. Commits the bump directly to main.
-#   6. Waits for the CI run on the bump commit. The bump changes Cargo.toml, so
+#   1. Lands a version bump on origin/main. Each attempt waits for CI on the
+#      current tip, re-fetches, and starts again if that tip moved. It then
+#      validates the version (strict upgrade, tag absent), regenerates the
+#      Cargo.toml and Cargo.lock bump on that tip, commits, and pushes. A
+#      rejected push starts a new attempt. Concurrent merges to main are
+#      expected.
+#   2. Waits for the CI run on the bump commit. The bump changes Cargo.toml, so
 #      that run is the full gate on Linux, macOS, and Windows.
-#   7. Tags the bump commit, which triggers the Release workflow (release.yml)
+#   3. Tags the bump commit, which triggers the Release workflow (release.yml)
 #      that builds artifacts and creates the GitHub Release.
 #
 # If the CI run on the bump commit fails, nothing is tagged. Fix main, then
@@ -45,6 +45,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: cut-release
+  cancel-in-progress: false
+
 # The default GITHUB_TOKEN needs no contents write access: every push below
 # uses the GitHub App token instead. `actions: write` re-runs a superseded CI run.
 permissions:
@@ -71,118 +75,98 @@ jobs:
           # authenticated as the App and therefore trigger release.yml.
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Require a successful CI run on the released commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          sha="$(git rev-parse HEAD)"
-          while :; do
-            passed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}&status=success" \
-              --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
-            test "${passed}" -gt 0 && break
-            pending="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}" \
-              --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status != "completed")] | length')"
-            if [[ "${pending}" -eq 0 ]]; then
-              echo "::error::CI has not passed on main HEAD ${sha}." >&2
-              exit 1
-            fi
-            echo "Waiting for CI on ${sha}"
-            sleep 60
-          done
-
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Set workspace version
-        id: bump
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          version="${{ inputs.version }}"
-          version="${version#v}"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-          current="$(
-            cargo metadata --no-deps --format-version 1 |
-              jq --raw-output '.packages[] | select(.name == "cadmpeg") | .version'
-          )"
-
-          # Refuse a no-op or a downgrade: the new version must sort strictly
-          # after the current one.
-          lowest="$(printf '%s\n%s\n' "${current}" "${version}" | sort --version-sort | head -n1)"
-          if [[ "${version}" == "${current}" || "${lowest}" != "${current}" ]]; then
-            echo "requested version ${version} is not greater than current ${current}" >&2
-            exit 1
-          fi
-
-          # Refuse to clobber an existing tag.
-          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
-            echo "tag v${version} already exists on origin" >&2
-            exit 1
-          fi
-
-          python3 scripts/set-workspace-version.py "${version}"
-          cargo update --workspace
-
-          # Coherence guard: the manifest version dist matches the tag against
-          # must now equal the requested version.
-          manifest_version="$(
-            cargo metadata --no-deps --format-version 1 |
-              jq --raw-output '.packages[] | select(.name == "cadmpeg") | .version'
-          )"
-          if [[ "${manifest_version}" != "${version}" ]]; then
-            echo "manifest version ${manifest_version} does not match requested ${version}" >&2
-            exit 1
-          fi
-
-      - name: Repository policy gate
-        run: |
-          set -euo pipefail
-          python3 -m unittest -q scripts/test_pre_commit.py
-          python3 scripts/check-doc-anchors.py
-          python3 -m unittest -v scripts/test_check_source_policy.py
-          python3 scripts/check-source-policy.py
-          python3 -m unittest -v scripts/test_check_resource_caps.py
-          python3 scripts/check-resource-caps.py
-          python3 scripts/check-deny-census.py
-          python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
-          python3 scripts/check-golden-coverage-floors.py
-          python3 -m unittest -v scripts/test_check_codec_facade.py
-          python3 scripts/check-codec-facade.py
-          python3 -m unittest discover -q -s scripts -p test_check_dialects.py
-          python3 scripts/check-dialects.py
-          python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py
-          python3 scripts/check-dialect-support.py
-          python3 -m unittest discover -q -s scripts -p test_render_format_support.py
-          python3 scripts/render-format-support.py --check
-
-      - name: Commit and push
+      - name: Land version bump on main
         id: commit
         shell: bash
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
-          version="${{ steps.bump.outputs.version }}"
+          version="${VERSION#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-          # Attribute the commit to the App's bot identity so it shows as
-          # verified and authored by the App rather than a stray user.
           bot_id="$(gh api "/users/${APP_SLUG}[bot]" --jq '.id')"
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
 
-          git add Cargo.toml Cargo.lock
-          # Sign off under the App's bot identity. This commit goes straight to
-          # main with no pull request to carry the sign-off, so the commit
-          # carries it, independent of the CI check's release-file exemption.
-          git commit -s -m "Bump workspace version to ${version}"
-          git push origin HEAD:main
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          wait_for_ci() {
+            local sha="$1"
+            while :; do
+              passed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}&status=success" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+              if [[ "${passed}" -gt 0 ]]; then
+                return 0
+              fi
+              pending="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status != "completed")] | length')"
+              failed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion != "success")] | length')"
+              if [[ "${pending}" -eq 0 && "${failed}" -gt 0 ]]; then
+                echo "::error::CI has not passed on main HEAD ${sha}." >&2
+                return 1
+              fi
+              echo "Waiting for CI on ${sha}"
+              sleep 60
+            done
+          }
+
+          while :; do
+            git fetch origin main
+            git reset --hard origin/main
+
+            wait_for_ci "$(git rev-parse HEAD)"
+
+            git fetch origin main
+            if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+              echo "origin/main moved during the CI wait; restarting"
+              continue
+            fi
+
+            current="$(
+              cargo metadata --no-deps --format-version 1 |
+                jq --raw-output '.packages[] | select(.name == "cadmpeg") | .version'
+            )"
+            lowest="$(printf '%s\n%s\n' "${current}" "${version}" | sort --version-sort | head -n1)"
+            if [[ "${version}" == "${current}" || "${lowest}" != "${current}" ]]; then
+              echo "requested version ${version} is not greater than current ${current}" >&2
+              exit 1
+            fi
+            if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+              echo "tag v${version} already exists on origin" >&2
+              exit 1
+            fi
+
+            python3 scripts/set-workspace-version.py "${version}"
+            cargo update --workspace
+            manifest_version="$(
+              cargo metadata --no-deps --format-version 1 |
+                jq --raw-output '.packages[] | select(.name == "cadmpeg") | .version'
+            )"
+            if [[ "${manifest_version}" != "${version}" ]]; then
+              echo "manifest version ${manifest_version} does not match requested ${version}" >&2
+              exit 1
+            fi
+
+            git add Cargo.toml Cargo.lock
+            git commit -s -m "Bump workspace version to ${version}"
+            if push_out="$(git push origin HEAD:main 2>&1)"; then
+              printf '%s\n' "${push_out}"
+              echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              break
+            fi
+            printf '%s\n' "${push_out}"
+            if grep -Eq '\[rejected\]|non-fast-forward' <<<"${push_out}"; then
+              echo "origin/main moved during the bump; restarting"
+              continue
+            fi
+            exit 1
+          done
 
       - name: Wait for CI on the bump commit
         shell: bash
@@ -213,6 +197,6 @@ jobs:
           SHA: ${{ steps.commit.outputs.sha }}
         run: |
           set -euo pipefail
-          version="${{ steps.bump.outputs.version }}"
+          version="${{ steps.commit.outputs.version }}"
           git tag "v${version}" "${SHA}"
           git push origin "v${version}"
