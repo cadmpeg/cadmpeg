@@ -228,6 +228,140 @@ fn unplaced_occurrences_round_trip_as_product_usages_without_placements() {
 }
 
 #[test]
+fn scaled_root_and_child_occurrences_round_trip_as_mapped_items() {
+    use cadmpeg_ir::products::OccurrenceParent;
+    use cadmpeg_ir::transform::Transform;
+
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let mut root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product#assembly",
+        None,
+    );
+    root.name = Some("Scaled root".into());
+    root.transform = Transform::affine([
+        [2.0, 0.0, 0.0, 10.0],
+        [0.0, 2.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+    ]);
+    let mut child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product#part",
+        Some("test:model:occurrence#root"),
+    );
+    child.name = Some("Scaled child".into());
+    child.transform = Transform::affine([
+        [0.5, 0.0, 0.0, 1.0],
+        [0.0, 0.5, 0.0, 2.0],
+        [0.0, 0.0, 0.5, 3.0],
+    ]);
+    ir.model.occurrences = vec![root, child];
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(!report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::OccurrencePlacementNotRigid.kind()
+        || loss.code == crate::loss::StepLossCode::RootOccurrencePlacementNotRepresentable.kind()));
+    let text = std::str::from_utf8(&bytes).expect("STEP text");
+    assert_eq!(text.matches(" = MAPPED_ITEM(").count(), 2);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode assembly");
+    let root = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Scaled root"))
+        .expect("root");
+    let child = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Scaled child"))
+        .expect("child");
+    assert!(
+        matches!(&child.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &root.id)
+    );
+    for (occurrence, scale, translation) in [
+        (root, 2.0, [10.0, 20.0, 30.0]),
+        (child, 0.5, [1.0, 2.0, 3.0]),
+    ] {
+        let rows = occurrence.transform.expect("placement").rows();
+        for axis in 0..3 {
+            assert!((rows[axis][axis] - scale).abs() < 1.0e-12);
+            assert!((rows[axis][3] - translation[axis]).abs() < 1.0e-12);
+        }
+    }
+    let validation =
+        cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate assembly");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn reflected_occurrence_preserves_its_orientation() {
+    use cadmpeg_ir::transform::Transform;
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![unnamed_definition(
+        "test:model:product#part",
+        vec![ir.model.bodies[0].id.clone()],
+    )];
+    let mut occurrence = unnamed_occurrence(
+        "test:model:occurrence#reflected",
+        "test:model:product#part",
+        None,
+    );
+    occurrence.name = Some("Reflected".into());
+    occurrence.transform = Transform::affine([
+        [-1.0, 0.0, 0.0, 4.0],
+        [0.0, 1.0, 0.0, 5.0],
+        [0.0, 0.0, 1.0, 6.0],
+    ]);
+    ir.model.occurrences.push(occurrence);
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(!report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::OccurrencePlacementNotRigid.kind()
+        || loss.code == crate::loss::StepLossCode::RootOccurrencePlacementNotRepresentable.kind()));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode assembly");
+    let rows = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Reflected"))
+        .expect("reflected occurrence")
+        .transform
+        .expect("placement")
+        .rows();
+    for (axis, expected) in [-1.0, 1.0, 1.0].into_iter().enumerate() {
+        assert!((rows[axis][axis] - expected).abs() < 1.0e-12);
+        assert!((rows[axis][3] - [4.0, 5.0, 6.0][axis]).abs() < 1.0e-12);
+    }
+}
+
+#[test]
 fn unplaced_external_references_round_trip_as_product_definition_references() {
     use cadmpeg_ir::products::{ExternalDocument, PrototypeReference};
 
