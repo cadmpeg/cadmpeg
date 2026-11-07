@@ -343,6 +343,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
+    FeatureThickenFlagsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
@@ -680,6 +682,7 @@ impl F3dLossCode {
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
@@ -948,6 +951,7 @@ impl F3dLossCode {
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
@@ -1223,6 +1227,7 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -1427,6 +1432,7 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -1721,6 +1727,7 @@ mod tests {
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",

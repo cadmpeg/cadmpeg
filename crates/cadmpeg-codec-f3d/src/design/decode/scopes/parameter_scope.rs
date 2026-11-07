@@ -50,6 +50,7 @@ use super::surfaces::exact_ruled_surface_operation;
 use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
+use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_axis_construction;
@@ -351,11 +352,13 @@ pub(crate) fn decode_parameter_scopes(
                         scope::DesignScopePayloadMut::Shell(slot),
                         Some(direct_face::DesignDirectFaceOperation::Shell(value)),
                     ) => *slot = Some(value),
-                    (
-                        scope::DesignScopePayloadMut::Thicken(slot),
-                        Some(direct_face::DesignDirectFaceOperation::Thicken(value)),
-                    ) => *slot = Some(value),
                     _ => {}
+                }
+            }
+            {
+                let construction = exact_thicken_operation(bytes, &records, &scope, &mut losses);
+                if let scope::DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() {
+                    *slot = construction;
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::Align {

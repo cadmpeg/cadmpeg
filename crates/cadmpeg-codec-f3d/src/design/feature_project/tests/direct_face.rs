@@ -102,6 +102,65 @@ fn thicken_projects_native_group() {
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
 }
 
+fn thicken_after_state(previous_state: i64) -> DesignParameterScope {
+    let mut scope = scope(DesignFeatureKind::Thicken);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(previous_state);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
+    let scope = thicken_after_state(5);
+    let faces_group = group(DesignOperandRole::ROLE_0X12);
+    let mut whole_body = group(DesignOperandRole::ROLE_0X5);
+    whole_body.id = "f3d:test:group#110".into();
+    whole_body.record_index = 110;
+    let groups = [faces_group, whole_body.clone()];
+    let FeatureOperation::Thicken { faces, .. } = projected_operation(
+        super::super::project_thicken(&scope, &[resolved_member_operand()], &groups),
+    ) else {
+        panic!("expected a thicken");
+    };
+    let mut rebound = faces.clone();
+    super::super::list_thicken_whole_bodies(&mut rebound, &scope, &groups);
+    assert_eq!(rebound, faces);
+    let FaceSelection::HistoricalPartial {
+        faces,
+        unresolved,
+        native,
+        ..
+    } = faces
+    else {
+        panic!("expected a partial historical selection, got {faces:?}");
+    };
+    assert_eq!(faces.as_slice().len(), 1);
+    assert_eq!(unresolved.as_slice(), [whole_body.id]);
+    assert_eq!(native, scope.id.as_str());
+}
+
+#[test]
+fn thicken_keeps_resolved_faces_without_a_whole_body_group() {
+    let scope = thicken_after_state(5);
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(super::super::project_thicken(
+            &scope,
+            &[resolved_member_operand()],
+            &[group(DesignOperandRole::ROLE_0X12)],
+        ))
+    else {
+        panic!("expected a thicken");
+    };
+    assert!(
+        matches!(faces, FaceSelection::Historical { .. }),
+        "{faces:?}"
+    );
+}
+
 #[test]
 fn shell_projects_native_face_group() {
     let scope = scope(DesignFeatureKind::Shell);

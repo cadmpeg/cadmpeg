@@ -7,7 +7,6 @@ use super::parameter_scope::parameter_scope_payload_length;
 use super::point_data::exact_point_data_construction;
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
 use super::thicken_shell::exact_shell_wall_slots;
 use crate::bytes::lp_ascii_filtered_view;
@@ -109,60 +108,6 @@ pub(super) fn exact_direct_face_operation(
                     distance: scalar.value,
                     distance_record_index,
                     distance_offset: scalar.value_offset,
-                },
-            ))
-        }
-        DesignFeatureFamily::Thicken if scope.reference_members().len() >= 3 => {
-            if let Some(operation) = exact_legacy_thicken_class_347(bytes, records, scope) {
-                return Some(operation);
-            }
-            let (reference_offset, thickness_is_first) = match parameter_scope_payload_length(scope)
-            {
-                Some(length)
-                    if length
-                        == 276
-                            + 11 * u64::try_from(
-                                scope.reference_members().len().checked_sub(2)?,
-                            )
-                            .ok()?
-                        && bytes.get(start + 34) == Some(&1)
-                        && View::u32_le_at(bytes, start + 35)
-                            == scope.reference_members().values().nth(1).copied()
-                        && bytes.get(start + 39..start + 45) == Some(&[0; 6])
-                        && matches!(bytes.get(start + 45), Some(0 | 1))
-                        && bytes.get(start + 46..start + 48) == Some(&[1, 1])
-                        && View::u32_le_at(bytes, start + 48)
-                            == scope.reference_members().values().next().copied() =>
-                {
-                    (47, true)
-                }
-                Some(281)
-                    if matches!(bytes.get(start + 45), Some(0 | 1))
-                        && bytes.get(start + 46) == Some(&1) =>
-                {
-                    (46, false)
-                }
-                Some(287) if bytes.get(start + 47) == Some(&1) => (47, false),
-                _ => return None,
-            };
-            let thickness_record_index = View::u32_le_at(bytes, start + reference_offset + 1)?;
-            let expected_thickness = if thickness_is_first {
-                scope.reference_members().values().next()
-            } else {
-                scope.reference_members().values().next_back()
-            };
-            if expected_thickness != Some(&thickness_record_index) {
-                return None;
-            }
-            let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-            if scalar.value.get() == 0.0 {
-                return None;
-            }
-            Some(DesignDirectFaceOperation::Thicken(
-                direct_face::DesignThickenOperation {
-                    signed_thickness: scalar.value,
-                    thickness_record_index,
-                    thickness_offset: scalar.value_offset,
                 },
             ))
         }

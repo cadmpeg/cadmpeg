@@ -474,44 +474,20 @@ Unstated regions:
 - `199..225` (26 B): The generic fixed scope tail precedes the preceding history-state identity.
 - `229..271` (42 B): The generic fixed scope tail closes immediately before the paired class-261 header.
 
-## `thicken_class_347_scope_frame`
+## `thicken_scope_prologue`
 
-Spec §3.1 · layout: byte offsets · size: 291 B
+Spec §3.1 · layout: byte offsets · size: 21 B
 
-Offsets are relative to the primary indexed header. The paired class-258 header begins at offset 291; the class pair and frame length admit this form.
+Offsets are relative to the primary indexed header. The prologue marker selects whether the prologue ends at offset 21, 25, or 26.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | primary frame |
-| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes occupy offsets 11 through 20 |
-| 21 | 4 | `feature_form` | `u32` | little | spec | u32 `4` is at offset 21 · value `4` |
-| 25 | 4 | `group_form` | `u32` | little | spec | u32 `1` is at offset 25 · value `1` |
-| 29 | 11 | `group_reference` | `bytes[11]` | little | spec | A marked reference at offset 29 names the first ordered group |
-| 40 | 2 | `scalar_prefix` | `bytes[2]` | little | spec | Bytes 40 and 41 are `01 01` · value `[1, 1]` |
-| 42 | 11 | `scalar_reference` | `bytes[11]` | little | spec | the marked reference at offset 42 names the last ordered scalar |
-| 53 | 4 | `auxiliary_count` | `u32` | little | spec | Offset 53 stores u32 `1` · value `1` |
-| 57 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | a marked auxiliary reference at offset 57 |
-| 68 | 8 | `zero_run_8` | `bytes[8]` | little | spec | Eight zero bytes at offsets 68 through 75 |
-| 76 | 4 | `guid_code_unit_count` | `u32` | little | spec | its count is u32 `36` at offset 76 · value `36` |
-| 80 | 72 | `guid` | `bytes[72]` | little | spec | a 36-code-unit LP-UTF16 GUID at offset 80 |
-| 152 | 3 | `zero_run_3` | `bytes[3]` | little | spec | Three zero bytes at offsets 152 through 154 |
-| 155 | 4 | `reference_count` | `u32` | little | spec | the three-entry ordered reference table at offset 155 · value `3` |
-| 159 | 11 | `group_reference_entry` | `bytes[11]` | little | spec | the three-entry ordered reference table at offset 155 |
-| 170 | 11 | `member_reference_entry` | `bytes[11]` | little | spec | the three-entry ordered reference table at offset 155 |
-| 181 | 11 | `scalar_reference_entry` | `bytes[11]` | little | spec | the three-entry ordered reference table at offset 155 |
-| 192 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 192 |
-| 196 | 4 | `kind_code_unit_count` | `u32` | little | spec | The scope kind is u32 `7` at offset 196 · value `7` |
-| 200 | 14 | `kind` | `bytes[14]` | little | spec | followed by `Thicken` at offset 200 |
-| 214 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal follows at offset 214 |
-| 245 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity at offset 245 |
-
-Unstated regions:
-
-- `218..245` (27 B): The generic fixed scope tail precedes the preceding history-state identity.
-- `249..291` (42 B): The generic fixed scope tail closes immediately before the paired header at offset 291.
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after the indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | a prologue marker at offset 20 |
 
 ## `design_mirror_scope_class369_tail`
 

@@ -633,50 +633,20 @@ pub(crate) mod shell_class_369_261_scope_frame {
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 225;
 }
 
-/// Byte offsets for the `thicken_class_347_scope_frame` record.
+/// Byte offsets for the `thicken_scope_prologue` record.
 ///
-/// Spec §3.1. Record length 291 B.
+/// Spec §3.1. Record length 21 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The paired class-258 header begins at offset 291; the class pair and frame length admit this form.
+/// Offsets are relative to the primary indexed header. The prologue marker selects whether the prologue ends at offset 21, 25, or 26.
 /// ```
-pub(crate) mod thicken_class_347_scope_frame {
+pub(crate) mod thicken_scope_prologue {
     /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 291;
-    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_10: usize = 11;
-    /// Offset of `feature_form` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FEATURE_FORM: usize = 21;
-    /// Offset of `group_form` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const GROUP_FORM: usize = 25;
-    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const GROUP_REFERENCE: usize = 29;
-    /// Offset of `scalar_prefix` (`bytes[2]`). Spec §3.1.
-    pub(crate) const SCALAR_PREFIX: usize = 40;
-    /// Offset of `scalar_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const SCALAR_REFERENCE: usize = 42;
-    /// Offset of `auxiliary_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const AUXILIARY_COUNT: usize = 53;
-    /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const AUXILIARY_REFERENCE: usize = 57;
-    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_8: usize = 68;
-    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 76;
-    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_3: usize = 152;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 155;
-    /// Offset of `group_reference_entry` (`bytes[11]`). Spec §3.1.
-    pub(crate) const GROUP_REFERENCE_ENTRY: usize = 159;
-    /// Offset of `member_reference_entry` (`bytes[11]`). Spec §3.1.
-    pub(crate) const MEMBER_REFERENCE_ENTRY: usize = 170;
-    /// Offset of `scalar_reference_entry` (`bytes[11]`). Spec §3.1.
-    pub(crate) const SCALAR_REFERENCE_ENTRY: usize = 181;
-    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 196;
-    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FEATURE_ORDINAL: usize = 214;
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `prologue_marker` (`u8`). Spec §3.1.
+    pub(crate) const PROLOGUE_MARKER: usize = 20;
 }
 
 /// Byte offsets for the `design_mirror_scope_class369_tail` record.

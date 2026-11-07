@@ -3182,6 +3182,7 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
+                    crate::design::feature_project::list_thicken_whole_bodies(faces, scope, groups);
                     selection::bind_body_recipe_face_selection(
                         faces,
                         feature_id,
