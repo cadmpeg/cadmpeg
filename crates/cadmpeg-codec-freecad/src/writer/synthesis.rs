@@ -15,6 +15,41 @@ use xml::Object;
 #[cfg(test)]
 mod tests;
 
+fn unchanged_placement(property: &PropertyRecord, generated: &str) -> bool {
+    if property.name != "Placement" || property.type_name != "App::PropertyPlacement" {
+        return false;
+    }
+    let [value] = property.values() else {
+        return false;
+    };
+    if value.tag != "PropertyPlacement" || value.attributes.len() != 7 || value.text.is_some() {
+        return false;
+    }
+    let Ok(document) = roxmltree::Document::parse(generated) else {
+        return false;
+    };
+    let Some(node) = document
+        .root_element()
+        .children()
+        .find(roxmltree::Node::is_element)
+    else {
+        return false;
+    };
+    if !node.has_tag_name("PropertyPlacement") || node.attributes().len() != 7 {
+        return false;
+    }
+    ["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"]
+        .into_iter()
+        .all(|key| {
+            let source = value
+                .attributes
+                .get(key)
+                .and_then(|s| s.parse::<f64>().ok());
+            let output = node.attribute(key).and_then(|s| s.parse::<f64>().ok());
+            matches!((source, output), (Some(a), Some(b)) if a.is_finite() && a == b)
+        })
+}
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -354,6 +389,17 @@ pub(super) fn write(
             .and_then(|name| objects.iter_mut().find(|object| object.name == *name));
         if let Some(object) = destination {
             let neutral_owned = !native_names.contains(&object.name);
+            if neutral_owned
+                && object
+                    .properties
+                    .get(&property.name)
+                    .is_some_and(|generated| unchanged_placement(property, generated))
+            {
+                if let Some(original) = xml::native_named(property, &names, &available)? {
+                    object.set(&property.name, original);
+                    continue;
+                }
+            }
             if neutral_owned
                 && (object.properties.contains_key(&property.name)
                     || (crate::property_policy::has_neutral_form(&property.name)
