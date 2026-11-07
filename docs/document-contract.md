@@ -58,7 +58,7 @@ Rule P projects every typed native record with a neutral home into that home, as
 
 Rule W writes native records in three steps. W1 re-emits a typed record of the writer's own namespace that has no neutral counterpart when its references resolve; otherwise the writer drops it and charges `export:native.records-omitted`. W2 regenerates a native record with a neutral counterpart from the current neutral record when the projection disagrees. W3 declares `Written`, `Regenerated`, or `Dropped` for every native arena of the writer's namespace, with record overrides inside mixed arenas. The export report is the authority for the document and output.
 
-A cross-format write reports the ids of foreign `unknowns` stubs it omits with `export:native.records-omitted`.
+Given-up parts retain their bytes in fidelity for their `unknowns` stubs; those stubs do not incur `export:native.records-omitted`.
 
 Rule B keeps source layout out of neutral records. A neutral record holds no source byte offset, length, record size, or digest of source bytes. A native record keeps the source offsets and lengths its writer's patch path uses, as typed fields. The digest of the whole source is `decode_digest`.
 
