@@ -4089,18 +4089,19 @@ pub(crate) fn brep_body(
         if bounded_curve::derived_sphere_seam(ir, edge) {
             continue;
         }
-        let bounded = bounded_curve::from_edge(ctx, ir, edge, length_scale)?.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
-                "SLDPRT edge {} has no writable bounded curve",
-                edge.id
-            ))
-        })?;
+        let bounded = bounded_curve::from_edge(ctx, ir, edge, length_scale)
+            .map_err(|limit| write_error::WriteError::Fatal(limit.into()))?
+            .ok_or_else(|| {
+                write_error::WriteError::Decline(format!(
+                    "SLDPRT edge {} has no writable bounded curve",
+                    edge.id
+                ))
+            })?;
         if !curves.contains_key(&bounded.curve) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(write_error::WriteError::Decline(format!(
                 "SLDPRT edge {} has no emitted bounded-curve source",
                 edge.id
-            ))
-            .into());
+            )));
         }
         bounded_curves.insert(edge.id.clone(), (take_attr(&mut next)?, bounded));
     }
