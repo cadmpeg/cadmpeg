@@ -194,6 +194,10 @@ pub(crate) enum F3dLossCode {
     FeatureOutputBodyUnbound,
     /// A derived base scope stores a copy of a source and frame that the archive does not contain.
     FeatureDerivedBaseUnresolved,
+    /// A Pipe section is inferred as a circle from its result faces.
+    FeaturePipeCircularSectionInferred,
+    /// A Pipe whose fractions both equal one is assumed to sweep its whole path group.
+    FeaturePipeWholePathExtentAssumed,
     /// A box scope has no fully decoded dimensions and local frame.
     FeatureBoxPrimitiveUnresolved,
     /// Sheet-metal base flanges projected with their stored thickness copy because
@@ -578,6 +582,8 @@ impl F3dLossCode {
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
+        Self::FeaturePipeCircularSectionInferred,
+        Self::FeaturePipeWholePathExtentAssumed,
         Self::FeatureBoxPrimitiveUnresolved,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
@@ -816,6 +822,8 @@ impl F3dLossCode {
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
+            Self::FeaturePipeCircularSectionInferred => "feature.pipe-circular-section-inferred",
+            Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
@@ -1078,6 +1086,8 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
+            | Self::FeaturePipeCircularSectionInferred
+            | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
@@ -1270,6 +1280,8 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
+            | Self::FeaturePipeCircularSectionInferred
+            | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::ThreadLiveFaceUnproven
@@ -1549,6 +1561,8 @@ mod tests {
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
+                "feature.pipe-circular-section-inferred",
+                "feature.pipe-whole-path-extent-assumed",
                 "feature.box-primitive-unresolved",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
