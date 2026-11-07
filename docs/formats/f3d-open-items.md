@@ -1684,3 +1684,16 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+
+### DR-321. Fillet scope without a stored radius
+
+**Question.** Where does a `Fillet` scope store its radius when it has no parameter owner and no fixed scalar lane?
+
+**Known.** `f3d.md` §3.1 pairs each construction-operand group of a `Fillet` scope with a `Radius` parameter owner, and gives a fixed `Fillet` scalar lanes in the scope reference table. A `Fillet` scope exists whose reference table holds one role-`0x0000001000000000` construction-operand group and the eight members of that group, with no other reference. The members are compact persistent-identity frames retained in the edge-identity arena. The scope has no indexed parameter owner, no fixed scalar lane, and no radius, chord length, or tangency weight record. The frame of the scope is 22 bytes shorter than the frame of a `Fillet` scope with owners and nine references. Its opaque scalar stored after the feature name is independent of the radii of the `Fillet` scopes that have owners. The decoder keeps the feature native and the native check reports that the group has no radius assignment.
+
+**Need.** The same selection saved as a `Fillet` with a known radius, and as a suppressed `Fillet` after the radius is deleted or the feature is suppressed, each with the scope frame, the reference table, and the timeline suppression state recorded.
+
+**Conflict.** `f3d.md` §3.1 requires a radius law for every `Fillet` group. This scope stores none.
+
+**Note.** None.
