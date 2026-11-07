@@ -34,7 +34,7 @@ pub(crate) mod target;
 pub(crate) mod xml;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Seek, Write};
+use std::io::Write;
 
 use cadmpeg_core::CodecError;
 use zip::write::SimpleFileOptions;
@@ -163,9 +163,6 @@ impl From<std::io::Error> for PatchError {
     }
 }
 
-trait WriteSeek: Write + Seek {}
-impl<T: Write + Seek> WriteSeek for T {}
-
 /// Repack the retained entry set with a patched `Document.xml`.
 ///
 /// The replay law is already settled when this runs. A [`Resolution`] comes only
@@ -173,7 +170,7 @@ impl<T: Write + Seek> WriteSeek for T {}
 /// dialect written here is the one the retained document already declares.
 /// This function carries out that decision; it does not gate it.
 fn write_seekable(
-    output: &mut dyn WriteSeek,
+    output: &mut std::io::Cursor<Vec<u8>>,
     resolution: &Resolution<'_>,
     encode_context: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<WriteOutcome, PatchError> {
@@ -277,7 +274,7 @@ fn write_seekable(
             archive
                 .start_file(entry.name(), file_options)
                 .map_err(|error| {
-                    std::io::Error::other(format!("cannot write {}: {error}", entry.name()))
+                    PatchError::Declined(format!("cannot write {}: {error}", entry.name()))
                 })?;
             archive.write_all(if entry.name() == "Document.xml" {
                 &document_xml
@@ -286,7 +283,7 @@ fn write_seekable(
             })?;
         }
         archive.finish().map_err(|error| {
-            std::io::Error::other(format!("cannot finish FCStd archive: {error}"))
+            PatchError::Declined(format!("cannot finish FCStd archive: {error}"))
         })?;
     }
     let notes = vec![
