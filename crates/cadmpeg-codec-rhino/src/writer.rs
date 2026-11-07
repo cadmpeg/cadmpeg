@@ -2775,17 +2775,17 @@ fn writable_count_limit(limit: u64, count: u64) -> WriteError {
 
 fn polymorphic_array<'a>(
     children: impl ExactSizeIterator<Item = &'a ([u8; 16], Vec<u8>)>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     polymorphic_records(children.map(|(class, body)| (*class, body.as_slice(), None)))
 }
 
 fn polymorphic_records<'a>(
     children: impl ExactSizeIterator<Item = ([u8; 16], &'a [u8], Option<&'a [u8]>)>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let mut body = vec![0x10];
     body.extend(
         (i32::try_from(children.len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(children.len()),
             )
@@ -2802,14 +2802,14 @@ fn polymorphic_records<'a>(
             checksum.unwrap_or(payload),
         )?);
     }
-    crc_chunk_with_direct(0x4000_8000, &body, &direct)
+    Ok(crc_chunk_with_direct(0x4000_8000, &body, &direct)?)
 }
 
-fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
+fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
     let mut body = vec![0x10];
     body.extend(
         (i32::try_from(records.len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(records.len()),
             )
@@ -2817,20 +2817,20 @@ fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
         .to_le_bytes(),
     );
     body.extend(records.concat());
-    crc_chunk(0x4000_8000, &body)
+    Ok(crc_chunk(0x4000_8000, &body)?)
 }
 
 fn face_array(
     records: &[Vec<u8>],
     faces: &[&cadmpeg_ir::topology::Face],
     archive_version: RhinoArchiveVersion,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let version_two = archive_version.uses_face_array_v2();
     let minor = if version_two { 2 } else { 1 };
     let mut body = vec![0x10 | minor];
     body.extend(
         (i32::try_from(records.len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(records.len()),
             )
@@ -2851,7 +2851,7 @@ fn face_array(
             body.push(0);
         }
     }
-    crc_chunk(0x4000_8000, &body)
+    Ok(crc_chunk(0x4000_8000, &body)?)
 }
 
 fn encoded_face_colors(
