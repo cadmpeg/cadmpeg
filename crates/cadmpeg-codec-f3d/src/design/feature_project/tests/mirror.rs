@@ -106,7 +106,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
-        project_mirror(&body_scope, &body_groups, &[], &[]).expect("body mirror")
+        project_mirror(&body_scope, &body_groups, &[], &[], &[]).expect("body mirror")
     else {
         panic!("mirror projects a pattern");
     };
@@ -126,7 +126,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-        project_mirror(&face_scope, &face_groups, &[], &[]).expect("face mirror")
+        project_mirror(&face_scope, &face_groups, &[], &[], &[]).expect("face mirror")
     else {
         panic!("mirror projects a pattern");
     };
@@ -135,4 +135,38 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         [PatternSeed::Faces(FaceSelection::Native(native))]
             if native == "f3d:Design/BulkStream.dat:group#40"
     ));
+}
+
+#[test]
+fn a_projected_mirror_reads_a_compact_feature_seed() {
+    use super::pattern::{compact_entity_selection, seed_scope};
+
+    let scope = mirror_scope(40);
+    let feature = seed_scope(5, Some(2));
+    let groups = [
+        group(10, 40, DesignOperandRole::BODIES_A),
+        group(10, 30, DesignOperandRole::ROLE_0X5),
+    ];
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+        project_mirror(
+            &scope,
+            &groups,
+            &[],
+            &[compact_entity_selection(40, 41, 5)],
+            &[scope.clone(), feature.clone()],
+        )
+        .expect("feature mirror")
+    else {
+        panic!("mirror projects a pattern");
+    };
+    assert!(matches!(
+        pattern.definition(),
+        PatternTransform::Mirror { .. }
+    ));
+    assert_eq!(
+        seeds,
+        vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
+            &feature
+        ))]
+    );
 }

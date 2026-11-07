@@ -189,21 +189,68 @@ fn error_at(out: &Brep, t: f64) -> f64 {
 }
 #[test]
 fn numerical_0922b_sphere_circle_frames() {
-    for (axis, reference) in [
-        (Vector3::new(0., 0., 1.), Vector3::new(1., 0., 0.)),
-        (Vector3::new(0., 0., 1.), Vector3::new(0., 1., 0.)),
-        (Vector3::new(0., 0., -1.), Vector3::new(1., 0., 0.)),
-        (Vector3::new(1., 0., 0.), Vector3::new(0., 0., 1.)),
+    for (axis, reference, spans) in [
+        (Vector3::new(0., 0., 1.), Vector3::new(1., 0., 0.), 1),
+        (Vector3::new(0., 0., 1.), Vector3::new(0., 1., 0.), 1),
+        (Vector3::new(0., 0., -1.), Vector3::new(1., 0., 0.), 1),
+        (Vector3::new(1., 0., 0.), Vector3::new(0., 0., 1.), 2),
     ] {
         let mut out = sphere_fixture(Point3::new(0., 0., 0.), axis, reference);
         derive_sphere(&mut out);
-        assert_eq!(out.pcurves.len(), 1);
+        assert_eq!(out.pcurves.len(), spans);
         let residual = error_at(&out, 0.3);
         println!(
             "SW circleaxis{axis:?},reference{reference:?},pcurve{:?}:residual{residual}",
             out.pcurves[0].geometry
         );
         assert!(residual < 32.0 * f64::EPSILON);
+    }
+}
+#[test]
+fn a_meridian_through_both_poles_stays_on_the_sphere_chart() {
+    let half_pi = std::f64::consts::FRAC_PI_2;
+    for reference in [Vector3::new(0., 0., 1.), Vector3::new(0., 1., 0.)] {
+        let mut out = sphere_fixture(Point3::new(0., 0., 0.), Vector3::new(1., 0., 0.), reference);
+        derive_sphere(&mut out);
+        let uses = &out.coedges[0].pcurves;
+        assert_eq!(uses.len(), out.pcurves.len());
+        assert!(uses.len() >= 2);
+        let mut next = 0.0;
+        for use_ in uses {
+            let [start, end] = use_.parameter_range.expect("span range").endpoints();
+            assert!((start - next).abs() <= 1.0e-12);
+            next = end;
+            let pcurve = out
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == use_.pcurve)
+                .expect("span pcurve");
+            for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                let t = start + (end - start) * fraction;
+                let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &pcurve.geometry,
+                    t,
+                )
+                .unwrap();
+                assert!(uv.v.abs() <= half_pi + 1.0e-12);
+                let hit = cadmpeg_ir::eval::decode::surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &out.surfaces[0].geometry,
+                    uv.u,
+                    uv.v,
+                )
+                .unwrap();
+                let wanted = cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &out.curves[0].geometry,
+                    t,
+                )
+                .unwrap();
+                assert!(hit.distance(wanted.get()) <= 1.0e-12);
+            }
+        }
+        assert!((next - std::f64::consts::TAU).abs() <= 1.0e-12);
     }
 }
 #[test]

@@ -194,6 +194,10 @@ pub(crate) enum F3dLossCode {
     FeatureOutputBodyUnbound,
     /// A derived base scope stores a copy of a source and frame that the archive does not contain.
     FeatureDerivedBaseUnresolved,
+    /// A Pipe section is inferred as a circle from its result faces.
+    FeaturePipeCircularSectionInferred,
+    /// A Pipe whose fractions both equal one is assumed to sweep its whole path group.
+    FeaturePipeWholePathExtentAssumed,
     /// A box scope has no fully decoded dimensions and local frame.
     FeatureBoxPrimitiveUnresolved,
     /// Sheet-metal base flanges projected with their stored thickness copy because
@@ -325,6 +329,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftSettingsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
+    /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
+    FeatureFaceOperandFallbackContradicted,
     /// Edge-treatment selections retain native recipes; no historical edge.
     FeatureEdgeSelectionNative,
     /// Edge-treatment operands stay unresolved inside historical selections.
@@ -581,6 +587,8 @@ impl F3dLossCode {
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
+        Self::FeaturePipeCircularSectionInferred,
+        Self::FeaturePipeWholePathExtentAssumed,
         Self::FeatureBoxPrimitiveUnresolved,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
@@ -645,6 +653,7 @@ impl F3dLossCode {
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureFaceOperandUnresolved,
+        Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
         Self::FeatureEdgeSelectionLost,
@@ -820,6 +829,8 @@ impl F3dLossCode {
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
+            Self::FeaturePipeCircularSectionInferred => "feature.pipe-circular-section-inferred",
+            Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
@@ -890,6 +901,9 @@ impl F3dLossCode {
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
+            Self::FeatureFaceOperandFallbackContradicted => {
+                "feature.face-operand-fallback-contradicted"
+            }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
             Self::FeatureEdgeSelectionLost => "feature.edge-selection-lost",
@@ -1085,6 +1099,8 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
+            | Self::FeaturePipeCircularSectionInferred
+            | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
@@ -1150,6 +1166,7 @@ impl F3dLossCode {
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1278,6 +1295,8 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
+            | Self::FeaturePipeCircularSectionInferred
+            | Self::FeaturePipeWholePathExtentAssumed
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::ThreadLiveFaceUnproven
@@ -1342,6 +1361,7 @@ impl F3dLossCode {
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1558,6 +1578,8 @@ mod tests {
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
+                "feature.pipe-circular-section-inferred",
+                "feature.pipe-whole-path-extent-assumed",
                 "feature.box-primitive-unresolved",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
@@ -1622,6 +1644,7 @@ mod tests {
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
                 "feature.face-operand-unresolved",
+                "feature.face-operand-fallback-contradicted",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
                 "feature.edge-selection-lost",
