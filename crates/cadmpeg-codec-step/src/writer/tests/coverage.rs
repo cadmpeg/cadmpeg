@@ -706,6 +706,31 @@ fn layer_without_writable_items_is_named_in_the_loss() {
 }
 
 #[test]
+fn empty_layer_is_named_in_the_loss() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::PresentationLayer;
+
+    let mut ir = unit_cube().expect("cube");
+    let id = LayerId::mint("test:model:layer#empty").expect("identity");
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: id.clone(),
+        native_ref: None,
+        parent: None,
+        name: "Empty".into(),
+        description: None,
+        visible: Some(true),
+        items: Vec::new(),
+    });
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write layer");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::EmptyLayerOmitted.kind()
+            && loss.message.contains(id.as_str())
+    }));
+}
+
+#[test]
 fn point_only_tessellation_is_written_as_an_ap242_point_set() {
     use crate::parse::Value;
     use cadmpeg_ir::math::Point3;
