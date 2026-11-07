@@ -705,9 +705,7 @@ pub(super) fn write_semantic_at(
 ///
 /// `patched` states that retained source records fed the write; `retained_brep`
 /// states that the retained Parasolid partition was replayed because
-/// `brep_local_sha256` still matches. Only that partition carries pcurves and
-/// procedural constructions: the generated and patched partitions do not
-/// encode them. Retained semantic PMI is carried only by the retained
+/// `brep_local_sha256` still matches. Retained semantic PMI is carried by the
 /// `PMISemanticDataDB` block, which exists only on the patched path;
 /// `check_semantic_support` declines semantic records without a target encoding. Design
 /// records reach the output through the native history lanes, synchronized

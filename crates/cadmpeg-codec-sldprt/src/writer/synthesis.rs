@@ -422,10 +422,22 @@ pub(super) fn plan(
             .curves
             .iter()
             .filter(|curve| {
-                !retained_curves.contains(&curve.id) && super::can_write_curve(&before_subset, curve)
+                !retained_curves.contains(&curve.id)
+                    && super::can_write_curve(&before_subset, curve)
             })
             .cloned(),
     );
+    let curve_constructions = projected
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    projected
+        .model
+        .procedural_curves
+        .retain(|curve| curve_constructions.contains(&curve.id));
     let kept_curves = projected
         .model
         .curves
@@ -687,6 +699,14 @@ pub(super) fn plan(
     );
     losses.extend(output.normalization_losses);
     let mut coverage = output.coverage;
+    if !projected.model.procedural_curves.is_empty() {
+        coverage.procedural_curves =
+            if projected.model.procedural_curves.len() == input.ir.model.procedural_curves.len() {
+                ArenaDisposition::Written
+            } else {
+                ArenaDisposition::Reported
+            };
+    }
     macro_rules! changed_arena {
         ($($arena:ident),* $(,)?) => {$(
             if input.ir.model.$arena.len() > projected.model.$arena.len() {
