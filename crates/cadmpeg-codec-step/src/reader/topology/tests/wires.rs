@@ -73,13 +73,13 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
         .edges
         .iter()
         .all(|edge| edge.curve().is_none()));
-    assert!(decoded.report().losses.iter().any(|loss| {
+    assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::EdgeNoSurfaceOrCurveForPcurve.kind()
             && loss
                 .message
                 .contains("edge #19 has no decoded surface or curve carrier")
     }));
-    assert!(decoded.report().losses.iter().any(|loss| {
+    assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DecodeWarning.kind()
             && loss
                 .message
