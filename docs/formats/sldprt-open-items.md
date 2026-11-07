@@ -729,7 +729,7 @@ resolve a seed feature?
 
 **Conflict.** The source tree contains multiple `.025` frames on distinct owners, including the two compound-width candidates with datum sequences `D|C|J` and `D|C|K`. The four workbook owner-to-frame joins remain unresolved.
 
-**Note.** `Position7` and `Position8` reach `Width4` and `Width9`, respectively. Each width is `.500` in and references two planes; their datum sequences and sizes differ from the workbook groups. `Position11` has `D|B|C` but references `Sphere-172`. `Position12` has `A|B|C` and references four counterbores through `Hole Pattern9`; `Position18` references `Hole Pattern16` with `C|A|B`. Equal position magnitudes do not establish the four requested owner and datum combinations.
+**Note.** `Position7` and `Position8` reach `Width4` and `Width9`, respectively. Each width is `.500` in and references two planes; their datum sequences and sizes differ from the workbook groups. `Position11` has `D|B|C` but references `Sphere-172`. `Position12` has `A|B|C` and references four counterbores through `Hole Pattern9`; `Position18` references `Hole Pattern16` with `C|A|B`. History text parameters `RD1` and `RD2` display diameter `1`, and `RD3` and `RD4` display `1.106`. Their links to the controlled features remain unresolved. STEP dimensions `#155` and `#156` carry `1.106` in between isolated line pairs. STEP position `#135` has `D|B|C` and targets the two spheres; `#113` and `#114` have `A|B|C` and target the `.415` in holes and `.625` in counterbores. Equal position magnitudes do not establish the four requested owner and datum combinations.
 
 ### DI-55. FTC-06 spherical position owner set
 
@@ -765,7 +765,7 @@ resolve a seed feature?
 
 **Conflict.** The workbook marks a square reference dimension. The native record's subtype and status mapping remain unestablished; the emitted neutral dimension has size and face targets.
 
-**Note.** The referenced `GdtCompoundWidth` stores a `GeoOpenSlot` width of `27.94` mm and nominal length of `24.765` mm. The two source measurements therefore cannot establish a square from equal width and length. The FTC-06 reference spherical-radius candidate `Diameter7` also stores `Type=0` and nonzero bilateral tolerances, but belongs to `GdtRadius`. In CTC-04, `GdtDiameter` and `GdtDistanceBetween` records with `Type=0` match STEP dimensions marked `theoretical`. The class-specific type codes remain unresolved.
+**Note.** The referenced `GdtCompoundWidth` stores a `GeoOpenSlot` width of `27.94` mm and nominal length of `24.765` mm. The two source measurements therefore cannot establish a square from equal width and length. History parameter `TXD6` carries `<MOD-BOX>1.1`. Its display record references `TXD6` and carries a `moSwiftFPlaneRef_c` point at `(96.8375, -63.5, 48.26)` mm, a corner of one `Width4` target face. The typed link to `Width4` remains unresolved. The FTC-06 reference spherical-radius candidate `Diameter7` also stores `Type=0` and nonzero bilateral tolerances, but belongs to `GdtRadius`. In CTC-04, `GdtDiameter` and `GdtDistanceBetween` records with `Type=0` match STEP dimensions marked `theoretical`. The class-specific type codes remain unresolved.
 
 ### DI-58. FTC-08 parallelism modifier conflict
 
@@ -813,7 +813,7 @@ resolve a seed feature?
 
 **Conflict.** The workbook gives `2X`; the referenced SWIFT pattern and STEP targets span four distinct axes through one four-child pattern.
 
-**Note.** `Hole Pattern9` has four direct applied compound-hole children. Each child references the same supporting plane and its own cylinder and counterbore geometry. The presentation text for the `.415` callout uses the `<COUNT=#X >` placeholder; the adjacent counterbore text supplies `.625` and `.500`. The direct child list has no two-child subgroup to select either pair, and the placeholder requires its count source to establish the displayed multiplier.
+**Note.** `Hole Pattern9` has four direct applied compound-hole children. Each child references the same supporting plane and its own cylinder and counterbore geometry. The presentation text for the `.415` callout uses the `<COUNT=#X >` placeholder; the adjacent counterbore text supplies `.625` and `.500`. History parameter `TXD3` displays `4X` with the same hole, counterbore and depth values. Its link to the pattern remains unresolved. The direct child list has no two-child subgroup to select either pair, and the placeholder requires its count source to establish the displayed multiplier.
 
 ### DI-62. CTC-04 composite profile datum systems
 
