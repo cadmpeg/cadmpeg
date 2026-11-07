@@ -31,6 +31,7 @@ struct Extrusion {
     parameter_index: Option<u32>,
     profile_asset: Option<crate::records::mesh::DesignRelaxedGuidText>,
     profile_indices: Option<(u32, u32)>,
+    profile_frame: Option<(u32, f64)>,
     current_state: u32,
     previous_state: u32,
 }
@@ -670,7 +671,11 @@ fn select_extrusions(
             let index = id.as_str().strip_prefix(prefix)?.parse::<u32>().ok()?;
             (crate::ids::neutral_parameter_id_parts(stream, index) == *id).then_some(index)
         });
-        let profile = scope.extrude_profile();
+        let profile = scope.extrude_profile().filter(|profile| {
+            profile.entity_id.suffix() == u64::from(container)
+                && crate::ids::design_segment(&scope.id)
+                    == owner.native_ref.as_deref().and_then(crate::ids::design_segment)
+        });
         let profile_asset = profile.map(|profile| profile.asset_id.clone());
         let profile_indices = profile.and_then(|profile| {
             let mut references = scope.reference_members().values().copied();
@@ -678,7 +683,18 @@ fn select_extrusions(
             (profile.scope_reference_ordinal == 1 && references.next() == Some(profile.record_index))
                 .then_some((group, profile.record_index))
         });
-        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, scope_index: scope.record_index, parameter_index, profile_asset, profile_indices, current_state, previous_state })
+        let profile_frame = profile_indices.and_then(|(group_index, profile_index)| {
+            let group = native.design_construction_operand_groups.iter().find(|group| {
+                group.record_index == group_index && group.scope_record_index == scope.record_index
+                    && group.scope_reference_ordinal == 0 && group.role() == crate::records::topology::extrude_selection::DesignOperandRole::PROFILE
+                    && crate::ids::design_segment(&group.id) == crate::ids::design_segment(&scope.id)
+                    && input.operands.iter().any(|operand| operand.native_ref.as_str() == group.id)
+            })?;
+            if group.members().len() != 1 || group.members()[0].value != profile_index
+                || group.frame.variant || group.frame.closing_flag || !group.lost_edge_references.is_empty() { return None; }
+            Some((group.frame.opaque_index.get(), group.frame.opaque_scalar().get()))
+        });
+        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, scope_index: scope.record_index, parameter_index, profile_asset, profile_indices, profile_frame, current_state, previous_state })
     }).collect()
 }
 
@@ -1652,9 +1668,10 @@ pub(super) fn encode(
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&0x0000_0041_0000_0000u64.to_le_bytes());
         out.extend_from_slice(&[0; 10]);
-        out.extend_from_slice(&1u32.to_le_bytes());
-        out.extend_from_slice(&1f64.to_le_bytes());
-        out.extend_from_slice(&1u32.to_le_bytes());
+        let (frame_index, frame_scalar) = extrusion.profile_frame.unwrap_or((1, 1.0));
+        out.extend_from_slice(&frame_index.to_le_bytes());
+        out.extend_from_slice(&frame_scalar.to_le_bytes());
+        out.extend_from_slice(&frame_index.to_le_bytes());
         reference(&mut out, group + 2);
         out.extend_from_slice(&[0; 2]);
         reference(&mut out, group + 1);
