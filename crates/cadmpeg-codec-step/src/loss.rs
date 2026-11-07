@@ -303,6 +303,8 @@ pub(crate) enum StepLossCode {
     AppearanceBindingBodyFallback,
     /// Source attribute records were not written.
     SourceAttributeNotWritten,
+    /// A generic attribute target was written as a typed STEP target.
+    SourceAttributeTargetNormalized,
     /// A document timestamp uses STEP's extended syntax.
     TimestampNormalized,
     /// Procedural definitions were reduced to STEP carriers.
@@ -559,6 +561,7 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
+        Self::SourceAttributeTargetNormalized,
         Self::TimestampNormalized,
         Self::ProceduralReducedToCarrier,
         Self::ProceduralCurveCacheToleranceOmitted,
@@ -770,6 +773,7 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
+            Self::SourceAttributeTargetNormalized => "attribute.target-normalized",
             Self::TimestampNormalized => "attribute.timestamp-normalized",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::ProceduralCurveCacheToleranceOmitted => {
@@ -896,6 +900,7 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
+            | Self::SourceAttributeTargetNormalized
             | Self::TimestampNormalized
             | Self::ProceduralReducedToCarrier
             | Self::ProceduralCurveCacheToleranceOmitted
@@ -967,6 +972,7 @@ impl StepLossCode {
             | Self::DrawingPresentationRecordsOmitted
             | Self::DisplayColorUnstyled
             | Self::SourceAttributeNotWritten
+            | Self::SourceAttributeTargetNormalized
             | Self::TimestampNormalized => LossTaxonomy::AttributesNotTransferred,
             Self::PlacementReferenceInferred => LossTaxonomy::CarrierAxisInferred,
             Self::ConflictingRepresentationUnits
@@ -1267,6 +1273,7 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
+                "attribute.target-normalized",
                 "attribute.timestamp-normalized",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.procedural-curve-cache-tolerance-omitted",
