@@ -38,7 +38,7 @@ pub(super) fn encode(
             .and_then(|(_, value)| value.parse::<usize>().ok())
             .unwrap_or(0);
         ctx.retain_bytes(
-            u64::try_from(prefix_length).map_err(CodecError::malformed)?,
+            cadmpeg_core::decode::u64_from_index(prefix_length),
             "F3D ACT table prefix",
         )?;
         let mut bulk = ctx.alloc_filled(prefix_length, 0u8, "F3D ACT table prefix")?;
@@ -71,12 +71,7 @@ pub(super) fn encode(
                 ));
             }
             ctx.charge_entities(1, "F3D ACT record")?;
-            records.push((
-                index,
-                u64::try_from(out.len()).map_err(|_| {
-                    CodecError::InvalidInput("ACT stream exceeds u64 byte offsets".into())
-                })?,
-            ));
+            records.push((index, cadmpeg_core::decode::u64_from_index(out.len())));
             let tag = ordinal
                 .checked_add(256)
                 .filter(|value| *value <= 999)
