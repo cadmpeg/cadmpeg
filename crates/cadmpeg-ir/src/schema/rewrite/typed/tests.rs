@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{IdentityMap, RewriteIdentities};
+use super::{IdentityMap, RewriteIdentities, TextReplacements};
 use crate::ids::PointId;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -56,9 +56,9 @@ fn typed_text_rewrite_only_changes_owned_identity_text() {
         "test:model:point#one".to_owned(),
         "test:occurrence:point#one".to_owned(),
     )]);
+    let replacements = TextReplacements::build(replacements.iter()).unwrap();
     let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()))
-        .with_text_replacements(replacements.iter())
-        .unwrap();
+        .with_text_replacements(&replacements);
     let text = vec![
         "test:model:point#one".to_owned(),
         "test:model:point#external".to_owned(),
@@ -209,13 +209,13 @@ fn a_callback_resource_refusal_fuses_later_identity_and_text_rewrites() {
         "test:model:point#one".to_owned(),
         "test:occurrence:point#one".to_owned(),
     )]);
+    let replacements = TextReplacements::build(replacements.iter()).unwrap();
     let calls = std::cell::Cell::new(0);
     let mut map = IdentityMap::new(|_: &str| {
         calls.set(calls.get() + 1);
         Err(CodecError::ResourceLimit(limit))
     })
-    .with_text_replacements(replacements.iter())
-    .unwrap();
+    .with_text_replacements(&replacements);
     assert!(matches!(
         PointId::mint("test:model:point#one")
             .unwrap()
