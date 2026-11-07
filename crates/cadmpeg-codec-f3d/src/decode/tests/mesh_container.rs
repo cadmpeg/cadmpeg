@@ -43,7 +43,10 @@ fn unjoined_paramesh_retains_decoded_channel_metadata() {
     };
     let bytes = crate::test_support::paramesh::triangle();
     let mut mesh = crate::test_support::with_decode_context(|ctx| {
-        crate::paramesh::decode_mesh_container(ctx, &bytes).unwrap()
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+        crate::paramesh::decode_mesh_container(ctx, &mut parts, "Synthetic.paramesh", &bytes)
+            .unwrap()
     });
     let uv = [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0]
         .into_iter()
@@ -84,7 +87,10 @@ fn unjoined_paramesh_marks_unknown_channel_values_untyped() {
     use crate::paramesh::{MeshAttribute, MeshAttributeAddressing, MeshElements, UniqueFaceGroups};
     let bytes = crate::test_support::paramesh::triangle();
     let mut mesh = crate::test_support::with_decode_context(|ctx| {
-        crate::paramesh::decode_mesh_container(ctx, &bytes).unwrap()
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+        crate::paramesh::decode_mesh_container(ctx, &mut parts, "Synthetic.paramesh", &bytes)
+            .unwrap()
     });
     mesh.attributes.push(MeshAttribute {
         role: 9,
