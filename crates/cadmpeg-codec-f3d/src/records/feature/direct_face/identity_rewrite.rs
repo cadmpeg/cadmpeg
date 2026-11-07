@@ -13,7 +13,7 @@ rewrite_native_scalar!(DesignDraftTwoSided);
 rewrite_native_scalar!(DesignMoveForm);
 rewrite_native_record!(DesignMoveOperation, []; {transform, transform_offset, transform_record_index, form, form_offset});
 rewrite_native_record!(DesignOffsetFacesOperation, []; {distance, distance_record_index, distance_offset});
-rewrite_native_record!(DesignShellOperation, []; {thickness, thickness_record_index, thickness_offset, outward, outward_offset, wall_slots});
+rewrite_native_record!(DesignShellOperation, []; {thickness, thickness_record_index, thickness_offset, outward, outward_offset, wall_slots, auxiliary_references});
 rewrite_native_record!(DesignShellOutsideWall, []; {thickness, thickness_record_index, thickness_offset});
 rewrite_native_record!(DesignShellWallSlots, []; {tangent_chain, rounded_corners, outside});
 rewrite_native_record!(DesignThickenOperation, []; {signed_thickness, thickness_record_index, thickness_offset});

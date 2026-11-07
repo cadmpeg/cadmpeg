@@ -13,7 +13,17 @@ const INSIDE: u32 = 93;
 const OUTSIDE: u32 = 94;
 
 #[derive(Clone)]
+enum Prefix {
+    Cornered,
+    Compact,
+    Marked,
+    Counted(Vec<u32>),
+}
+
+#[derive(Clone)]
 struct Fixture {
+    prefix: Prefix,
+    flag: u8,
     class_tag: [u8; 3],
     tangent_chain: u8,
     rounded_corners: u8,
@@ -32,6 +42,8 @@ impl Fixture {
         table.extend(inside);
         table.extend(outside);
         Self {
+            prefix: Prefix::Cornered,
+            flag: 0,
             class_tag: *b"412",
             tangent_chain: 0,
             rounded_corners: 0,
@@ -53,16 +65,44 @@ impl Fixture {
         }
         let mut bytes = Vec::new();
         indexed_header(&mut bytes, self.class_tag, 90);
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.push(self.tangent_chain);
-        bytes.push(self.rounded_corners);
+        match self.prefix {
+            Prefix::Cornered => {
+                bytes.extend_from_slice(&[0; 10]);
+                bytes.push(self.tangent_chain);
+                bytes.push(self.rounded_corners);
+            }
+            Prefix::Compact => {
+                bytes.extend_from_slice(&[0; 10]);
+                bytes.push(self.flag);
+            }
+            Prefix::Marked | Prefix::Counted(_) => {
+                bytes.extend_from_slice(&[0; 9]);
+                bytes.push(1);
+                bytes.push(self.flag);
+                bytes.extend_from_slice(&[0, 0, 0, 1]);
+            }
+        }
+        if matches!(self.prefix, Prefix::Counted(_)) {
+            bytes.push(0);
+        }
         for slot in [self.inside, self.outside] {
             match slot {
                 Some(record) => marked(&mut bytes, record),
                 None => bytes.push(0),
             }
         }
-        bytes.extend_from_slice(&[0; 12]);
+        match &self.prefix {
+            Prefix::Cornered => bytes.extend_from_slice(&[0; 12]),
+            Prefix::Compact | Prefix::Marked => bytes.extend_from_slice(&[0; 8]),
+            Prefix::Counted(auxiliary) => {
+                bytes.extend_from_slice(&[0; 4]);
+                bytes.extend_from_slice(&u32::try_from(auxiliary.len()).unwrap().to_le_bytes());
+                for record in auxiliary {
+                    marked(&mut bytes, *record);
+                }
+                bytes.extend_from_slice(&[0; 4]);
+            }
+        }
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         marked(&mut bytes, self.group_reference);
         lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
@@ -248,4 +288,123 @@ fn every_present_wall_needs_a_positive_scalar() {
     let mut negative_inside = Fixture::new(Some(INSIDE), None);
     negative_inside.scalars = vec![(INSIDE, -0.25)];
     assert_eq!(negative_inside.decode(), None);
+}
+
+fn prefixed(prefix: Prefix, inside: Option<u32>, outside: Option<u32>) -> Fixture {
+    let mut fixture = Fixture::new(inside, outside);
+    fixture.prefix = prefix;
+    fixture
+}
+
+#[test]
+fn each_prefix_starts_its_slots_at_its_offset() {
+    for (prefix, slots_at) in [
+        (Prefix::Compact, 22),
+        (Prefix::Marked, 26),
+        (Prefix::Counted(Vec::new()), 27),
+    ] {
+        let inside = prefixed(prefix.clone(), Some(INSIDE), None)
+            .decode()
+            .unwrap();
+        assert_eq!(inside.thickness.get(), 0.25);
+        assert_eq!(inside.thickness_record_index, INSIDE);
+        assert!(!inside.outward);
+        assert_eq!(inside.outward_offset, slots_at);
+        assert_eq!(inside.wall_slots, None);
+        assert!(inside.auxiliary_references.is_empty());
+
+        let outside = prefixed(prefix, None, Some(OUTSIDE)).decode().unwrap();
+        assert_eq!(outside.thickness.get(), 0.5);
+        assert_eq!(outside.thickness_record_index, OUTSIDE);
+        assert!(outside.outward);
+        assert_eq!(outside.outward_offset, slots_at + 1);
+    }
+}
+
+#[test]
+fn the_offset_21_boolean_leaves_the_wall_direction_to_the_slot() {
+    for prefix in [Prefix::Compact, Prefix::Marked, Prefix::Counted(Vec::new())] {
+        for flag in [0, 1] {
+            let mut fixture = prefixed(prefix.clone(), Some(INSIDE), None);
+            fixture.flag = flag;
+            assert!(!fixture.decode().unwrap().outward);
+        }
+        let mut invalid = prefixed(prefix, Some(INSIDE), None);
+        invalid.flag = 2;
+        assert_eq!(invalid.decode(), None);
+    }
+}
+
+#[test]
+fn the_counted_prefix_keeps_its_auxiliary_references() {
+    let fixture = prefixed(Prefix::Counted(vec![95, 96]), Some(INSIDE), None);
+    let operation = fixture.decode().unwrap();
+    assert_eq!(operation.auxiliary_references, vec![95, 96]);
+    assert_eq!(operation.thickness_record_index, INSIDE);
+    assert_eq!(operation.outward_offset, 27);
+
+    let mut unmarked = prefixed(Prefix::Counted(vec![95]), Some(INSIDE), None);
+    unmarked.corrupt = Some((47, 2));
+    assert_eq!(unmarked.decode(), None);
+
+    let mut trailing = prefixed(Prefix::Counted(vec![95]), Some(INSIDE), None);
+    trailing.corrupt = Some((58, 1));
+    assert_eq!(trailing.decode(), None);
+}
+
+#[test]
+fn the_wall_scalar_can_be_any_ordered_reference_but_the_group() {
+    for table in [
+        vec![INSIDE, GROUP, MEMBER],
+        vec![GROUP, MEMBER, INSIDE],
+        vec![GROUP, MEMBER, 95, INSIDE],
+    ] {
+        let mut fixture = prefixed(Prefix::Marked, Some(INSIDE), None);
+        fixture.table = table;
+        assert_eq!(fixture.decode().unwrap().thickness_record_index, INSIDE);
+    }
+
+    let mut unlisted_wall = prefixed(Prefix::Marked, Some(INSIDE), None);
+    unlisted_wall.table = vec![GROUP, MEMBER, 95];
+    assert_eq!(unlisted_wall.decode(), None);
+
+    let mut unlisted_group = prefixed(Prefix::Marked, Some(INSIDE), None);
+    unlisted_group.table = vec![95, MEMBER, INSIDE];
+    assert_eq!(unlisted_group.decode(), None);
+
+    let mut two_references = prefixed(Prefix::Marked, Some(INSIDE), None);
+    two_references.table = vec![GROUP, INSIDE];
+    assert_eq!(two_references.decode(), None);
+
+    let mut wall_is_group = prefixed(Prefix::Marked, Some(INSIDE), None);
+    wall_is_group.group_reference = INSIDE;
+    assert_eq!(wall_is_group.decode(), None);
+}
+
+#[test]
+fn a_prefix_without_the_cornered_flags_stores_one_wall() {
+    for prefix in [Prefix::Compact, Prefix::Marked, Prefix::Counted(Vec::new())] {
+        let both = prefixed(prefix.clone(), Some(INSIDE), Some(OUTSIDE));
+        assert_eq!(both.decode(), None);
+        let mut none = prefixed(prefix, None, None);
+        none.table = vec![GROUP, MEMBER, INSIDE];
+        assert_eq!(none.decode(), None);
+    }
+}
+
+#[test]
+fn the_marked_prefix_constants_admit_the_form() {
+    for class_tag in [*b"369", *b"396", *b"430"] {
+        let mut fixture = prefixed(Prefix::Marked, Some(INSIDE), None);
+        fixture.class_tag = class_tag;
+        assert_eq!(fixture.decode().unwrap().thickness_record_index, INSIDE);
+    }
+    for (offset, value) in [(11, 1), (20, 0), (22, 1), (25, 0), (37, 1)] {
+        let mut fixture = prefixed(Prefix::Marked, Some(INSIDE), None);
+        fixture.corrupt = Some((offset, value));
+        assert_eq!(fixture.decode(), None, "offset {offset}");
+    }
+    let mut counted_separator = prefixed(Prefix::Counted(Vec::new()), Some(INSIDE), None);
+    counted_separator.corrupt = Some((26, 2));
+    assert_eq!(counted_separator.decode(), None);
 }

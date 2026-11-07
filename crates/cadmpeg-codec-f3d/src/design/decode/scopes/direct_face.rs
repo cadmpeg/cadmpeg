@@ -7,7 +7,6 @@ use super::parameter_scope::parameter_scope_payload_length;
 use super::point_data::exact_point_data_construction;
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use super::thicken_shell::exact_shell_class_369_261;
 use super::thicken_shell::exact_shell_wall_slots;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -84,17 +83,6 @@ pub(super) fn exact_direct_face_operation(
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
-        && scope.class_tag.as_str() == "369"
-        && scope.paired_class_tag.as_str() == "261"
-    {
-        return exact_shell_class_369_261(bytes, records, scope);
-    }
-    if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell) {
-        if let Some(operation) = exact_shell_wall_slots(bytes, records, scope) {
-            return Some(operation);
-        }
-    }
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::OffsetFaces => {
             let distance_marker = offset_faces_distance_marker(bytes, scope, start)?;
@@ -111,106 +99,7 @@ pub(super) fn exact_direct_face_operation(
                 },
             ))
         }
-        DesignFeatureFamily::Shell if scope.reference_members().len() == 3 => {
-            let (thickness_record_index, thickness_is_first, outward, outward_offset) =
-                match parameter_scope_payload_length(scope) {
-                    Some(268)
-                        if bytes.get(start + 11..start + 20) == Some(&[0; 9])
-                            && bytes.get(start + 20) == Some(&1)
-                            && matches!(bytes.get(start + 21), Some(0 | 1))
-                            && bytes.get(start + 22..start + 25) == Some(&[0; 3])
-                            && bytes.get(start + 25..start + 29) == Some(&[1, 0, 0, 1])
-                            && bytes.get(start + 33..start + 51) == Some(&[0; 18])
-                            && View::u32_le_at(bytes, start + 51) == Some(1)
-                            && bytes.get(start + 55) == Some(&1)
-                            && View::u32_le_at(bytes, start + 56)
-                                == scope.reference_members().values().nth(1).copied()
-                            && bytes.get(start + 60..start + 66) == Some(&[0; 6]) =>
-                    {
-                        (
-                            View::u32_le_at(bytes, start + 29)?,
-                            true,
-                            bytes[start + 21] != 0,
-                            start + 21,
-                        )
-                    }
-                    Some(268)
-                        if bytes.get(start + 11..start + 20) == Some(&[0; 9])
-                            && bytes.get(start + 20) == Some(&1)
-                            && matches!(bytes.get(start + 21), Some(0 | 1))
-                            && bytes.get(start + 22..start + 25) == Some(&[0; 3])
-                            && bytes.get(start + 25..start + 27) == Some(&[1, 0])
-                            && bytes.get(start + 27) == Some(&1)
-                            && bytes.get(start + 32..start + 51) == Some(&[0; 19])
-                            && View::u32_le_at(bytes, start + 51) == Some(1)
-                            && bytes.get(start + 55) == Some(&1)
-                            && View::u32_le_at(bytes, start + 56)
-                                == scope.reference_members().values().nth(1).copied()
-                            && bytes.get(start + 60..start + 66) == Some(&[0; 6]) =>
-                    {
-                        (
-                            View::u32_le_at(bytes, start + 28)?,
-                            true,
-                            bytes[start + 21] != 0,
-                            start + 21,
-                        )
-                    }
-                    Some(268)
-                        if matches!(bytes.get(start + 25), Some(0 | 1))
-                            && bytes.get(start + 26) == Some(&0)
-                            && bytes.get(start + 27) == Some(&1)
-                            && View::u32_le_at(bytes, start + 51) == Some(1)
-                            && bytes.get(start + 55) == Some(&1)
-                            && View::u32_le_at(bytes, start + 56)
-                                == scope.reference_members().values().next().copied() =>
-                    {
-                        (
-                            View::u32_le_at(bytes, start + 28)?,
-                            false,
-                            bytes[start + 25] != 0,
-                            start + 25,
-                        )
-                    }
-                    Some(258)
-                        if bytes.get(start + 11..start + 21) == Some(&[0; 10])
-                            && matches!(bytes.get(start + 21), Some(0 | 1))
-                            && bytes.get(start + 22) == Some(&1)
-                            && bytes.get(start + 27..start + 42) == Some(&[0; 15])
-                            && View::u32_le_at(bytes, start + 42) == Some(1)
-                            && bytes.get(start + 46) == Some(&1)
-                            && View::u32_le_at(bytes, start + 47)
-                                == scope.reference_members().values().next().copied()
-                            && bytes.get(start + 51..start + 57) == Some(&[0; 6]) =>
-                    {
-                        (
-                            View::u32_le_at(bytes, start + 23)?,
-                            false,
-                            bytes[start + 21] != 0,
-                            start + 21,
-                        )
-                    }
-                    _ => return None,
-                };
-            let expected_thickness = if thickness_is_first {
-                scope.reference_members().values().next()
-            } else {
-                scope.reference_members().values().next_back()
-            };
-            if expected_thickness != Some(&thickness_record_index) {
-                return None;
-            }
-            let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-            Some(DesignDirectFaceOperation::Shell(
-                direct_face::DesignShellOperation {
-                    thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
-                    thickness_record_index,
-                    thickness_offset: scalar.value_offset,
-                    outward,
-                    outward_offset: u64::try_from(outward_offset).ok()?,
-                    wall_slots: None,
-                },
-            ))
-        }
+        DesignFeatureFamily::Shell => exact_shell_wall_slots(bytes, records, scope),
         _ => None,
     }
 }

@@ -59,6 +59,8 @@ pub(crate) struct DesignShellOperation {
         deserialize_with = "deserialize_wall_slots"
     )]
     pub(crate) wall_slots: Option<DesignShellWallSlots>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) auxiliary_references: Vec<u32>,
 }
 
 /// Fields of a `Shell` scope that stores its walls in optional slots.
@@ -259,6 +261,7 @@ mod tests {
                 rounded_corners: false,
                 outside,
             }),
+            auxiliary_references: Vec::new(),
         }
     }
 
