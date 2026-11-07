@@ -404,3 +404,116 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         assert_eq!(property.payloads[0].sha256, entries[0].sha256());
     }
 }
+
+#[test]
+fn authored_application_records_retain_fem_toolpath_and_extension_inputs() {
+    use crate::native::{EntryRecord, PropertyRecord};
+    use std::collections::BTreeMap;
+
+    const SCALAR_TOLERANCE: f64 = 1.0e-12;
+    let bytes =
+        include_bytes!("../../../../corpus/freecad_fcstd/fixtures/application_payloads.FCStd");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = decoded.ir().native.namespace("fcstd").unwrap();
+    let properties = native.arena_as::<PropertyRecord>("properties").unwrap();
+    let entries = native.arena_as::<EntryRecord>("entries").unwrap();
+    let applications = native
+        .arena_as::<serde_json::Value>("applications")
+        .unwrap();
+    let extension = applications
+        .iter()
+        .find(|record| record["object"] == "fcstd:native:object#ExtensionPayload")
+        .unwrap();
+    assert_eq!(extension["inert_payload"], true);
+    let property = |owner: &str, name: &str| {
+        properties
+            .iter()
+            .find(|property| {
+                property.owner == format!("fcstd:native:object#{owner}") && property.name == name
+            })
+            .unwrap()
+    };
+    let scalar = |owner: &str, name: &str| {
+        property(owner, name).values()[0].attributes["value"]
+            .parse::<f64>()
+            .unwrap()
+    };
+    assert!((scalar("TemperatureConstraint", "Temperature") - 80.0).abs() < SCALAR_TOLERANCE);
+    assert_eq!(
+        property("TemperatureConstraint", "Suppressed").values()[0].attributes["value"],
+        "false"
+    );
+    let links = |owner: &str, name: &str| {
+        property(owner, name)
+            .links()
+            .iter()
+            .map(|link| link.as_ref().unwrap().object().unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        links("FemAnalysis", "Group"),
+        ["fcstd:native:object#TemperatureConstraint"]
+    );
+    assert_eq!(
+        links("ExtensionPayload", "Members"),
+        [
+            "fcstd:native:object#Mesh",
+            "fcstd:native:object#PointCloud",
+            "fcstd:native:object#FemAnalysis",
+            "fcstd:native:object#Toolpath"
+        ]
+    );
+    assert_eq!(
+        property("ExtensionPayload", "Domain").values()[0].attributes["value"],
+        "Extension retention fixture"
+    );
+    assert_eq!(
+        property("ExtensionPayload", "SerializedState").values()[0].attributes["value"],
+        "eyJpdGVyYXRpb25zIjogMywgImNvbW1hbmQiOiBudWxsfQ=="
+    );
+    let entry = |owner: &str, name: &str| {
+        let [entry_name] = property(owner, name).side_entries() else {
+            panic!("expected one side entry")
+        };
+        entries
+            .iter()
+            .find(|entry| entry.name() == entry_name)
+            .unwrap()
+    };
+    let expected_bytes: Vec<_> = [1_u32, 2, 3, 4]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect();
+    assert_eq!(entry("ExtensionPayload", "Payload").data(), expected_bytes);
+    let path = std::str::from_utf8(entry("Toolpath", "Path").data()).unwrap();
+    let commands: Vec<_> = path
+        .lines()
+        .map(|line| {
+            let mut words = line.split_whitespace();
+            let kind = words.next().unwrap();
+            let parameters = words
+                .map(|word| (word.as_bytes()[0], word[1..].parse::<f64>().unwrap()))
+                .collect::<BTreeMap<_, _>>();
+            (kind, parameters)
+        })
+        .collect();
+    let expected = [
+        ("G0", vec![(b'X', 0.0), (b'Y', 0.0), (b'Z', 5.0)]),
+        (
+            "G1",
+            vec![(b'X', 10.0), (b'Y', 0.0), (b'Z', 0.0), (b'F', 120.0)],
+        ),
+        ("G1", vec![(b'X', 10.0), (b'Y', 10.0), (b'Z', 0.0)]),
+    ];
+    assert_eq!(commands.len(), expected.len());
+    for ((kind, parameters), (expected_kind, expected_parameters)) in commands.iter().zip(expected)
+    {
+        assert_eq!(*kind, expected_kind);
+        assert_eq!(parameters.len(), expected_parameters.len());
+        for (axis, expected) in expected_parameters {
+            assert!((parameters[&axis] - expected).abs() < SCALAR_TOLERANCE);
+        }
+    }
+}

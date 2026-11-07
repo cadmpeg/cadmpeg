@@ -30,6 +30,8 @@ enum CatiaOwnerPacketPayloadWireRef<'a> {
         references: &'a [u32],
         reference_encodings: &'a [super::CatiaAllocationReferenceEncoding],
         tail: NativeBytes<&'a [u8]>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        numeric_bounds: &'a Option<crate::families::b2::counted_owner_tail::CountedOwnerBounds>,
     },
 }
 
@@ -79,11 +81,13 @@ impl Serialize for CatiaConsolidatedOwnerPacket {
                 references,
                 reference_encodings,
                 tail,
+                numeric_bounds,
             } => (
                 CatiaOwnerPacketPayloadWireRef::Counted {
                     references,
                     reference_encodings,
                     tail: tail.as_slice().into(),
+                    numeric_bounds,
                 },
                 &[][..],
                 None,

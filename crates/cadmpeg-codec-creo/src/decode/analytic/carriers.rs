@@ -174,6 +174,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         ) else {
             continue;
         };
+        source_carriers.mark_topology_bound_plane(id.clone());
         annotate(
             annotations,
             &id,

@@ -1434,7 +1434,6 @@
           "native_ref": "fcstd:native:object#Pad",
           "ordinal": 9,
           "outputs": [
-            "fcstd:model:body#Pad:AddSubShape:PartShape2.brp:9",
             "fcstd:model:body#Pad:Shape:PartShape3.brp:9%40location1"
           ],
           "source_properties": {

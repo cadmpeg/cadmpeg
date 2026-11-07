@@ -49,6 +49,9 @@ use parameter_map::CatiaSampledParameterMap;
 mod domain_relation;
 use domain_relation::CatiaConsolidatedDomainRelation;
 
+pub(crate) mod a5_chart;
+use a5_chart::CatiaConsolidatedA5Chart;
+
 mod edge_node;
 use edge_node::{
     consolidated_vertex_identities, edge_node_wires, load_edge_nodes, CatiaConsolidatedEdgeNode,
@@ -294,6 +297,9 @@ enum CatiaOwnerPacketPayload {
         reference_encodings: Vec<CatiaAllocationReferenceEncoding>,
         /// Complete nonempty class-specific tail.
         tail: crate::families::b2::counted_owner_tail::CountedOwnerTail,
+        /// Parameter rectangle and Cartesian bounds in a complete numeric tail.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        numeric_bounds: Option<crate::families::b2::counted_owner_tail::CountedOwnerBounds>,
     },
 }
 
@@ -7447,6 +7453,10 @@ define_catia_arenas! {
         /// Exact consolidated cylinder charts.
         pub(crate) stored;
     },
+    consolidated_a5_charts: CatiaConsolidatedA5Chart {
+        /// Source-framed freeform chart sides.
+        pub(crate) stored;
+    },
     consolidated_domain_relations: CatiaConsolidatedDomainRelation {
         /// Complete source-local class-24 and class-25 scalar parameter relations.
         pub(crate) stored;
@@ -8771,6 +8781,7 @@ impl CatiaNative {
                 .map(CatiaOuterContainerBinding::from_source);
         }
         let consolidated_circles = consolidated_circles(bytes, consolidated_records);
+        let consolidated_a5_charts = a5_chart::derive(bytes, consolidated_records)?;
         let consolidated_class61_records = class61::records(bytes, consolidated_records)?;
         let consolidated_class5b5c_records =
             consolidated_class5b5c_records(bytes, consolidated_records)?;
@@ -8859,6 +8870,7 @@ impl CatiaNative {
             object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
+            consolidated_a5_charts,
             consolidated_domain_relations,
             consolidated_four_reference_edges,
             consolidated_edge_nodes,

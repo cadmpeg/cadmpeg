@@ -132,6 +132,7 @@
           "id": "step:data:declared_measure#41-43",
           "label": "triangle sheet",
           "native_ref": "#43",
+          "provenance": "validation_property",
           "quantity": {
             "kind": "solid_area",
             "value": 50.0
@@ -144,6 +145,7 @@
           "id": "step:data:declared_measure#46-48",
           "label": "triangle centroid",
           "native_ref": "#48",
+          "provenance": "validation_property",
           "quantity": {
             "kind": "solid_centroid",
             "value": {
@@ -160,6 +162,7 @@
           "id": "step:data:declared_measure#50-52",
           "label": "open sheet volume",
           "native_ref": "#52",
+          "provenance": "validation_property",
           "quantity": {
             "kind": "volume",
             "value": 0.0
@@ -172,6 +175,7 @@
           "id": "step:data:declared_measure#57-59",
           "label": "intentional mismatch",
           "native_ref": "#59",
+          "provenance": "validation_property",
           "quantity": {
             "kind": "solid_area",
             "value": 51.0

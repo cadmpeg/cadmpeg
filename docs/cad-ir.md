@@ -269,6 +269,12 @@ A gear joint's optional `ratio` is the rotation of the second connector per rota
 
 The optional `driving_parameter` names the design parameter whose value drives the offset, distance, or angle of the joint. It resolves in the `parameters` arena. The optional `frame_sense` of a paired joint's `operands` states how the z axes of the two connector frames mate when the joint is solved: `aligned` is `z₁ = z₀` and `opposed` is `z₁ = −z₀`. A grounded joint has one connector and no `frame_sense`. When the kind states its own `sense`, as a plane coincidence or an insert does, `frame_sense` equals it or is absent.
 
+## Declared measures
+
+A declared measure names a quantity and its target bodies or product definition. Volume is in cubic millimetres. Solid, wetted and sheet area are in square millimetres. Solid and sheet centroids are in millimetres. `provenance` is required and is `source_declaration`, `validation_property`, or `saved_cache`. `label` retains the source description, and `native_ref` names the source record.
+
+`source_error` is an optional nonnegative absolute bound on source-value representation error, in the quantity's units. For volume and area variants it bounds the scalar difference. For centroid variants it bounds Euclidean distance in millimetres. A declared comparison adds this bound to the measured numeric error and model uncertainty; an absent bound contributes zero.
+
 ## Point clouds
 
 A point cloud holds measured or sampled points in the frame of its optional product definition. `positions` holds at least one point, in document length units. `normals` and `colors` are empty or hold one value for each point. Each channel has a name that is unique in its point cloud and one finite value for each point, in point order; channels hold per-point scalars such as intensity, confidence, or a classification code. `sensor` is the pose of the capturing sensor in the frame of the points.

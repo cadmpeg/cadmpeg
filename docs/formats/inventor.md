@@ -53,6 +53,24 @@ versioned_trailer bytes[]
 
 The selector low byte indexes the section 4 type table, so a record selects one of the first 256 type descriptors. `trailing_payload_len` is zero or equals `block.payload_len`. Segment major versions above 18 have an extended trailer. Its presence byte selects an empty trailer or a typed property and reference list. After all records, the expanded stream has a u32 `0xffffffff` marker and a retained trailer. The stream is exhausted exactly.
 
+In PmDc and PmBRep segments of major versions 16, 17, 22, 25, and 28, records with type identifier `a5c245062846bbe61da9eda12072ce35` start with this payload prefix:
+
+```text
+header_value u32
+header_id u16
+word_a u32 = 5
+word_b u32 = 0x30000002
+word_c u32 = 0
+zero_values u32[5] = [0, 0, 0, 0, 0]
+word_d u32
+zero_value u32 = 0
+list_marker u16 = 2
+list_signature u16 = 0x3000
+list_count u32 >= 1
+```
+
+Two u32 metadata values and `list_count` u32 entries follow. The entries are followed by `list_count - 1` u32 values whose high 16 bits are zero, a u32 `0xffffffff` marker, and a trailing payload.
+
 ## 5. Active part kernel carrier
 
 The active part kernel carrier is the sole record with type identifier `5c5945f6d5113313100060a6bba647b5` in the sole `PmBRep` segment. The record payload starts with u32 header state, u16 header kind, u32 header value, and u32 schema. The kernel bytes start at payload offset 14.
@@ -552,6 +570,33 @@ next_reference u32
 ```
 
 The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The label's code units can include unpaired surrogates. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
+
+In PmDc segment major versions 25 and 28, a feature-label owner of type `751ade16744fe94fc498a8a8e89f29dd` has the state content header. Its `next` reference selects the label, whose owner reference selects this record. The body after the header contains:
+
+```text
+state i32 = -1
+first_reference u32
+work_plane u32
+value u32
+empty_list_marker u32 = 0x30000002  in version 28
+empty_list_count u32 = 0            in version 28
+references u32[5]
+```
+
+The first reference is null or selects type `1f96e5bede4c9ce1cfa35a9bdfda0947`. The work-plane reference selects type `42df52ced011d0d20008ccbc0663dc09`. The five references select types `303e4a7fd211d65e6000b3856c2387b0`, `1f02e78b324548a6bd6d4c90711db6d0`, `b431796169449384e3ad409bdebf7e05`, and `ae38b999d211c35b6000b3856c2387b0` twice, in order. Each non-null reference is qualified. The record ends after the references.
+
+In PmDc segment major versions 25 and 28, type `cf2b17de9c46a894e06459a70546aa94` has a state content header with flags `0x200`. Its `next` reference selects a feature label and its context selects a parameter table. The header is followed by `state:i32 = -1` and a sequence of u32 values.
+
+In PmDc segment major versions 25 and 28, type `c6b25a40954bd1c3e7ca9ca365917af4` has a state content header with a null `next` reference and a context that selects a parameter table. Its body after the header contains:
+
+```text
+state i32
+sketch u32
+second_reference u32
+third_reference u32
+```
+
+The state is −1 or 0. The three references are qualified. The sketch reference selects type `114d8790d011f8d10008cabc0663dc09`. The second reference selects type `e096df74d11169e0800066b1e13554c7` or `58850511d211e39560000cb38932edb0`. The third reference selects type `751ade16744fe94fc498a8a8e89f29dd` or `e1c36665d24968ac24cea9b3cc6055cd`. The record ends after the third reference.
 
 Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. An entity-style link whose owner is a planar sketch entity gives that entity its associative identifier within the sketch. Entity type 1 marks a point, entity type 2 marks a curve, and entity type `0x08000000` marks a sketch block instance. A profile-selection record selects an entity-style link or a kernel-entity link through its entity-link reference.
 

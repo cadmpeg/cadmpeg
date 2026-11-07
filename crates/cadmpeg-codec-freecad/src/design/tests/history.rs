@@ -1071,6 +1071,17 @@ Ve 0.001 0 0 0 0 0 1001000 *
     for hidden in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
         assert_eq!(visible(hidden), Some(false), "{hidden}");
     }
+    let pad = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pad"))
+        .unwrap();
+    let [output] = pad.evaluation.outputs().as_slice() else {
+        panic!("pad must have one result body");
+    };
+    assert!(output.as_str().contains(":Pad.Shape.brp:"));
     assert_valid_document(result.ir());
 }
 

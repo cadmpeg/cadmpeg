@@ -1392,7 +1392,8 @@ impl NativeModel {
             &object_uuid_values,
         )?;
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
-        let assembly_placements = assembly_placements(container)?;
+        let mut assembly_placements = assembly_placements(container)?;
+        super::assembly_placement::bind_object_records(&mut assembly_placements, &object_records);
         let ParasolidDeltasEvents {
             transmit_headers: deltas_transmit_headers,
             records: deltas_records,

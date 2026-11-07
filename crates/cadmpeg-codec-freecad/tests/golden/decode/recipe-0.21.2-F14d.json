@@ -992,7 +992,6 @@
           "native_ref": "fcstd:native:object#AdditiveCylinder",
           "ordinal": 11,
           "outputs": [
-            "fcstd:model:body#AdditiveCylinder:AddSubShape:PartShape3.brp:9",
             "fcstd:model:body#AdditiveCylinder:Shape:PartShape4.brp:9%40location1"
           ],
           "source_properties": {

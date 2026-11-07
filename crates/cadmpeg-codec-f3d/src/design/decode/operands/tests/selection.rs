@@ -1164,6 +1164,7 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
         id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
         record_index: 400,
         owner_reference: Some(265),
+        geometry_group: None,
         class_tag: "270".to_owned().try_into().unwrap(),
         byte_offset: 4000,
         geometry_offset: 100,

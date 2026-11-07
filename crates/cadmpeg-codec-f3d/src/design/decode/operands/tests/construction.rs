@@ -1523,31 +1523,37 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 }
 
 #[test]
-fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
-    for (ordinal, (class_tag, scope_kind)) in [
+fn legacy_move_body_groups_accept_a_set_closing_flag() {
+    for (ordinal, (class_tag, scope_kind, flag_pair)) in [
         (
             "323",
             crate::records::feature::scope::DesignFeatureKind::Move,
+            [1, 1],
         ),
         (
             "328",
             crate::records::feature::scope::DesignFeatureKind::Move,
+            [0, 1],
         ),
         (
             "257",
             crate::records::feature::scope::DesignFeatureKind::Move,
+            [1, 1],
         ),
         (
             "338",
             crate::records::feature::scope::DesignFeatureKind::RemoveBody,
+            [1, 1],
         ),
         (
             "282",
             crate::records::feature::scope::DesignFeatureKind::Move,
+            [0, 1],
         ),
         (
             "302",
             crate::records::feature::scope::DesignFeatureKind::Move,
+            [0, 1],
         ),
     ]
     .into_iter()
@@ -1581,20 +1587,9 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         bytes.extend_from_slice(&0.125f64.to_le_bytes());
         bytes.extend_from_slice(&180u32.to_le_bytes());
         push_marked_reference(&mut bytes, group_record_index + 2);
-        let flag_pair = matches!(class_tag, "282" | "302")
-            .then_some([0, 1])
-            .unwrap_or([1, 1]);
-        if class_tag == "328" {
-            bytes.push(0);
-        }
         bytes.extend_from_slice(&flag_pair);
-        if class_tag == "328" {
-            bytes.extend_from_slice(&u64::from(group_record_index + 1).to_le_bytes());
-            bytes.extend_from_slice(&[0; 3]);
-        } else {
-            push_marked_reference(&mut bytes, group_record_index + 1);
-            bytes.push(0);
-        }
+        push_marked_reference(&mut bytes, group_record_index + 1);
+        bytes.push(0);
         push_marked_reference(&mut bytes, scope_record_index);
         let paired_at = bytes.len();
         indexed_header(
@@ -1640,6 +1635,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         );
         assert_eq!(group.role(), DesignOperandRole::BODIES_A);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
+        assert!(group.frame.closing_flag);
         assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
     }
 }

@@ -757,16 +757,17 @@ impl<'ir> FaceInput<'_, 'ir> {
             hull,
         } = basis;
         match (chart, region) {
-            (Ok(Chart::Plane(_) | Chart::Cylinder(_)), Ok(_)) => self.boundary_box(
-                face,
-                coedges,
-                boundary,
-                BoxBasis {
-                    tau_b,
-                    member: None,
-                    method: Method::BoundaryExtremum,
-                },
-            ),
+            (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), Ok(_)) => self
+                .boundary_box(
+                    face,
+                    coedges,
+                    boundary,
+                    BoxBasis {
+                        tau_b,
+                        member: None,
+                        method: Method::BoundaryExtremum,
+                    },
+                ),
             (Ok(Chart::Cone(_)), Ok(region)) => self.boundary_box(
                 face,
                 coedges,
@@ -1217,7 +1218,7 @@ fn extent_quantities(
     let mut extents = Extents::default();
     match chart {
         Chart::Plane(_) => {}
-        Chart::Nurbs(_) => match upstream {
+        Chart::Nurbs(_) | Chart::Extrusion(_) => match upstream {
             Ok((boundary, region)) => {
                 match settle(
                     parameter_ranges(eval, chart, &boundary.resolved, region)

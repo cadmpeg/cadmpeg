@@ -20609,7 +20609,6 @@
           "native_ref": "fcstd:native:object#Hole",
           "ordinal": 45,
           "outputs": [
-            "fcstd:model:body#Hole:AddSubShape:Hole.AddSubShape.brp:22",
             "fcstd:model:body#Hole:Shape:Hole.Shape.brp:53%40location1"
           ],
           "source_properties": {
@@ -20868,8 +20867,13 @@
             "groups": [
               {
                 "edges": {
-                  "kind": "native",
-                  "value": "fcstd:native:property#PartChamfer:Base"
+                  "kind": "resolved",
+                  "value": {
+                    "edges": [
+                      "fcstd:model:edge#ChamferBase:Shape:ChamferBase.Shape.brp:3%40location1"
+                    ],
+                    "native": "fcstd:native:property#PartChamfer:Base"
+                  }
                 },
                 "spec": {
                   "first": 1.5,
@@ -20901,8 +20905,13 @@
             "groups": [
               {
                 "edges": {
-                  "kind": "native",
-                  "value": "fcstd:native:property#PartFillet:Base"
+                  "kind": "resolved",
+                  "value": {
+                    "edges": [
+                      "fcstd:model:edge#DressupBase:Shape:DressupBase.Shape.brp:3%40location1"
+                    ],
+                    "native": "fcstd:native:property#PartFillet:Base"
+                  }
                 },
                 "radius": {
                   "kind": "constant",
@@ -20973,7 +20982,6 @@
           "native_ref": "fcstd:native:object#PatternBase",
           "ordinal": 55,
           "outputs": [
-            "fcstd:model:body#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:34",
             "fcstd:model:body#PatternBase:Shape:PatternBase.Shape.brp:34%40location1"
           ],
           "source_properties": {

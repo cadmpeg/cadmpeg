@@ -51,6 +51,225 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
 }
 
 #[test]
+fn a_surface_inverse_keeps_searching_when_the_distance_gap_crosses_its_tolerance() {
+    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
+    let surface = NurbsSurface::from_lanes(
+        axis(),
+        axis(),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("skew bilinear patch");
+    let point = Point3::new(1.5, 1.05, 0.0);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let fitting = nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, 0.06)
+        .expect("solve within tolerance")
+        .expect("the point at u=0.5,v=1 is only 0.05 away");
+    let mapped = crate::eval::decode::nurbs_surface_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        fitting.u,
+        fitting.v,
+    )
+    .expect("surface point");
+    assert!(mapped.get().distance(point) <= 0.06);
+    assert!(
+        nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, 0.04)
+            .expect("solve below minimum distance")
+            .is_none()
+    );
+}
+
+#[test]
+fn a_fit_below_the_numeric_floor_is_found_or_exhausts_its_work() {
+    const FIT_TOLERANCE: f64 = 1.0e-30;
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("quadratic patch S(u,v)=(u squared,v,0)");
+    let point = Point3::new(0.0, 0.5, 0.0);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let budget = WorkBudget::new(1 << 14);
+    let result = nurbs_surface_parameter_within_tolerance_with_budget(
+        &ctx,
+        &surface,
+        point,
+        None,
+        FIT_TOLERANCE,
+        &budget,
+    )
+    .expect("fit search");
+    if let Some(parameters) = result {
+        let mapped = crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            parameters.u,
+            parameters.v,
+        )
+        .expect("surface point");
+        assert!(mapped.get().distance(point) <= FIT_TOLERANCE);
+    } else {
+        assert!(
+            budget.exhausted(),
+            "u=0,v=0.5 fits exactly; absence needs exhausted work"
+        );
+    }
+}
+
+#[test]
+fn a_fit_search_splits_the_axis_that_still_has_representable_midpoints() {
+    const FIT_TOLERANCE: f64 = 1.0e-30;
+    for transpose in [false, true] {
+        let wide = NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false);
+        let high = 1.0_f64.next_up();
+        let narrow = NurbsSurfaceAxis::new(1, vec![1.0, 1.0, high, high], false);
+        let rows = vec![
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        ];
+        let (u, v, rows) = if transpose {
+            let transposed = (0..2)
+                .map(|column| rows.iter().map(|row| row[column]).collect())
+                .collect();
+            (narrow, wide, transposed)
+        } else {
+            (wide, narrow, rows)
+        };
+        let surface = NurbsSurface::from_lanes(u, v, NurbsSurfaceLanes::new(rows, None), false)
+            .expect("patch with one indivisible parameter span");
+        let point = Point3::new(0.0, 0.0, 0.0);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let parameters =
+            nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, FIT_TOLERANCE)
+                .expect("inverse")
+                .expect("the lower corner fits and the quadratic axis can still be split");
+        let mapped = crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            parameters.u,
+            parameters.v,
+        )
+        .expect("surface point");
+        assert!(mapped.get().distance(point) <= FIT_TOLERANCE);
+    }
+}
+
+#[test]
+fn a_fit_search_tests_the_corners_of_an_indivisible_patch() {
+    const FIT_TOLERANCE: f64 = 1.0e-30;
+    for scale in [1.0, 1.0e-15] {
+        let high = 1.0_f64.next_up();
+        let surface = NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(2, vec![1.0, 1.0, 1.0, high, high, high], false),
+            NurbsSurfaceAxis::new(1, vec![1.0, 1.0, high, high], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(scale, 0.0, 0.0), Point3::new(scale, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("patch with indivisible parameter spans");
+        let point = Point3::new(scale, 0.0, 0.0);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let parameters =
+            nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, FIT_TOLERANCE)
+                .expect("inverse")
+                .expect("the upper u and lower v corner fits exactly");
+        let mapped = crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            parameters.u,
+            parameters.v,
+        )
+        .expect("surface point");
+        assert!(mapped.get().distance(point) <= FIT_TOLERANCE);
+    }
+}
+
+#[test]
+fn rounded_patch_midpoints_keep_their_control_bounds() {
+    const FIT_TOLERANCE: f64 = 1.0e-15;
+    let root = 13.0_f64 / 23.0;
+    let power = [
+        root.powi(4),
+        -4.0 * root.powi(3),
+        6.0 * root.powi(2),
+        -4.0 * root,
+        1.0,
+    ];
+    let rows = (0..=4)
+        .map(|i| {
+            let x: f64 = (0..=i)
+                .map(|k| {
+                    power[k] * crate::eval::bezier::binomial_coefficient(i, k).unwrap()
+                        / crate::eval::bezier::binomial_coefficient(4, k).unwrap()
+                })
+                .sum();
+            vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)]
+        })
+        .collect();
+    let high = 1.0 + 23.0 * f64::EPSILON;
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(
+            4,
+            vec![1.0, 1.0, 1.0, 1.0, 1.0, high, high, high, high, high],
+            false,
+        ),
+        NurbsSurfaceAxis::new(
+            1,
+            vec![1.0, 1.0, 1.0_f64.next_up(), 1.0_f64.next_up()],
+            false,
+        ),
+        NurbsSurfaceLanes::new(rows, None),
+        false,
+    )
+    .expect("quartic strip on a short parameter domain");
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let known = crate::eval::decode::nurbs_surface_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        1.0 + 13.0 * f64::EPSILON,
+        1.0,
+    )
+    .expect("known representable fit");
+    assert!(known.get().distance(point) <= FIT_TOLERANCE);
+    let parameters =
+        nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, FIT_TOLERANCE)
+            .expect("inverse")
+            .expect("the quartic has a fitting representable root");
+    let mapped = crate::eval::decode::nurbs_surface_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        parameters.u,
+        parameters.v,
+    )
+    .expect("surface point");
+    assert!(mapped.get().distance(point) <= FIT_TOLERANCE);
+}
+
+#[test]
 fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.2);
