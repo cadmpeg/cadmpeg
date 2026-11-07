@@ -54,6 +54,54 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
 }
 
 #[test]
+fn tilted_spherical_circle_rejects_chord_outside_circle_plane() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("valid sphere"),
+    ));
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: super::super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0),
+    };
+    let coordinate = std::f64::consts::FRAC_1_SQRT_2;
+    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -coordinate, coordinate),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("valid great circle"),
+    ));
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    assert!(standard_pcurve_geometry(
+        &surface,
+        &support,
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, coordinate, coordinate),
+        None,
+        Some(&carrier),
+        &mut refusal,
+    )
+    .is_none());
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one rejected pcurve");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.kind()
+    );
+}
+
+#[test]
 fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point::new(

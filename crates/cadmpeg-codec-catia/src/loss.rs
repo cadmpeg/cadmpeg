@@ -77,6 +77,10 @@ pub(crate) enum CatiaLossCode {
     GeometryParameterRangeInvalid,
     /// Equivalent support charts produce non-finite pcurve coordinates.
     GeometryPcurveRechartNonFinite,
+    /// A spherical UV chord leaves its source circle plane.
+    GeometryPcurveCirclePlaneMismatch,
+    /// A source-owned pcurve lacks a complete neutral boundary binding.
+    GeometryPcurveSourceUseUntransferred,
     /// Binary32 coordinate uncertainty widened derived vertex tolerances.
     GeometryVertexToleranceWidened,
     /// Face-local free-form carriers retain identity without aliased geometry.
@@ -135,6 +139,20 @@ pub(crate) enum CatiaLossCode {
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
     AttributesDimensionQuantityUnresolved,
+    /// Source geometric-tolerance candidates lack a complete neutral transfer.
+    AttributesPmiToleranceUntransferred,
+    /// A tolerance datum-reference system has unbound source members.
+    AttributesPmiDatumSystemUnresolved,
+    /// A PMI target roster has unbound or unsupported source members.
+    AttributesPmiTargetRosterUnresolved,
+    /// Selected PMI shape aspects lack neutral topology bindings.
+    AttributesPmiTopologyTargetUnresolved,
+    /// Source geometric tolerances retain unassigned semantic fields.
+    AttributesPmiSemanticsUnresolved,
+    /// A tolerance field key remains unbound to a selected source member.
+    AttributesPmiFieldKeyUnresolved,
+    /// Composite tolerance segments lack a neutral relationship.
+    AttributesPmiCompositeLinkUntransferred,
     /// Visualization value blocks lack a proven typed face or body target.
     AttributesVisualizationUnbound,
 }
@@ -154,6 +172,8 @@ impl CatiaLossCode {
         Self::GeometryAnalyticPayloadInvalid,
         Self::GeometryParameterRangeInvalid,
         Self::GeometryPcurveRechartNonFinite,
+        Self::GeometryPcurveCirclePlaneMismatch,
+        Self::GeometryPcurveSourceUseUntransferred,
         Self::GeometryVertexToleranceWidened,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
@@ -183,6 +203,13 @@ impl CatiaLossCode {
         Self::HistoryDefinitionChainsRetained,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
+        Self::AttributesPmiToleranceUntransferred,
+        Self::AttributesPmiDatumSystemUnresolved,
+        Self::AttributesPmiTargetRosterUnresolved,
+        Self::AttributesPmiTopologyTargetUnresolved,
+        Self::AttributesPmiSemanticsUnresolved,
+        Self::AttributesPmiFieldKeyUnresolved,
+        Self::AttributesPmiCompositeLinkUntransferred,
         Self::AttributesVisualizationUnbound,
     ];
 
@@ -203,6 +230,10 @@ impl CatiaLossCode {
             Self::GeometryAnalyticPayloadInvalid => "geometry.analytic-payload-invalid",
             Self::GeometryParameterRangeInvalid => "geometry.parameter-range-invalid",
             Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
+            Self::GeometryPcurveCirclePlaneMismatch => "geometry.pcurve-circle-plane-mismatch",
+            Self::GeometryPcurveSourceUseUntransferred => {
+                "geometry.pcurve-source-use-untransferred"
+            }
             Self::GeometryVertexToleranceWidened => "geometry.vertex-tolerance-widened",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
@@ -237,6 +268,17 @@ impl CatiaLossCode {
             }
             Self::AttributesDimensionQuantityUnresolved => {
                 "attributes.dimension-quantity-unresolved"
+            }
+            Self::AttributesPmiToleranceUntransferred => "attributes.pmi-tolerance-untransferred",
+            Self::AttributesPmiDatumSystemUnresolved => "attributes.pmi-datum-system-unresolved",
+            Self::AttributesPmiTargetRosterUnresolved => "attributes.pmi-target-roster-unresolved",
+            Self::AttributesPmiTopologyTargetUnresolved => {
+                "attributes.pmi-topology-target-unresolved"
+            }
+            Self::AttributesPmiSemanticsUnresolved => "attributes.pmi-semantics-unresolved",
+            Self::AttributesPmiFieldKeyUnresolved => "attributes.pmi-field-key-unresolved",
+            Self::AttributesPmiCompositeLinkUntransferred => {
+                "attributes.pmi-composite-link-untransferred"
             }
             Self::AttributesVisualizationUnbound => "attributes.visualization-unbound",
         }
@@ -280,6 +322,8 @@ impl CatiaLossCode {
             | Self::GeometryAnalyticPayloadInvalid
             | Self::GeometryParameterRangeInvalid
             | Self::GeometryPcurveRechartNonFinite
+            | Self::GeometryPcurveCirclePlaneMismatch
+            | Self::GeometryPcurveSourceUseUntransferred
             | Self::GeometryFaceLocalFreeformNotTransferred
             | Self::GeometryRevolutionProfileUnbound
             | Self::GeometryLineProfileNotTransferred => LossTaxonomy::GeometryNotTransferred,
@@ -301,6 +345,13 @@ impl CatiaLossCode {
             Self::TopologyZeroEntityGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
             Self::AttributesMaterialsMetadataNotTransferred
             | Self::AttributesDimensionQuantityUnresolved
+            | Self::AttributesPmiToleranceUntransferred
+            | Self::AttributesPmiDatumSystemUnresolved
+            | Self::AttributesPmiTargetRosterUnresolved
+            | Self::AttributesPmiTopologyTargetUnresolved
+            | Self::AttributesPmiSemanticsUnresolved
+            | Self::AttributesPmiFieldKeyUnresolved
+            | Self::AttributesPmiCompositeLinkUntransferred
             | Self::AttributesVisualizationUnbound => LossTaxonomy::AttributesNotTransferred,
             Self::HistoryModelingScopeUnresolved
             | Self::HistoryObjectRecordsUnresolved
@@ -359,6 +410,8 @@ mod tests {
                 "geometry.analytic-payload-invalid",
                 "geometry.parameter-range-invalid",
                 "geometry.pcurve-rechart-non-finite",
+                "geometry.pcurve-circle-plane-mismatch",
+                "geometry.pcurve-source-use-untransferred",
                 "geometry.vertex-tolerance-widened",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",
@@ -388,6 +441,13 @@ mod tests {
                 "history.definition-chains-retained",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
+                "attributes.pmi-tolerance-untransferred",
+                "attributes.pmi-datum-system-unresolved",
+                "attributes.pmi-target-roster-unresolved",
+                "attributes.pmi-topology-target-unresolved",
+                "attributes.pmi-semantics-unresolved",
+                "attributes.pmi-field-key-unresolved",
+                "attributes.pmi-composite-link-untransferred",
                 "attributes.visualization-unbound",
             ]
         );

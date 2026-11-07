@@ -2729,6 +2729,19 @@ fn try_decode_standard_population(
     };
     consolidated_curve_bindings.standard_edges += weighted.edges;
     consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
+    let source_jet_pcurves = match crate::families::freeform::owner_pcurves::attach(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        refusal,
+        &mut admission,
+    ) {
+        Ok(source_jet_pcurves) => source_jet_pcurves,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
+    consolidated_curve_bindings.standard_face_pcurves += source_jet_pcurves.pcurves;
     consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
     consolidated_curve_bindings.max_vertex_widening = weighted.max_vertex_widening;
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
@@ -2763,6 +2776,24 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
             consolidated_curve_bindings.rechart_numeric_failures,
+        )));
+    }
+    if source_jet_pcurves.unresolved_source_uses != 0 {
+        report.losses.push(CatiaLossCode::GeometryPcurveSourceUseUntransferred.note(format!(
+            "{} source-owned spherical pcurve use(s) lacked a complete A20/A25 boundary binding",
+            source_jet_pcurves.unresolved_source_uses,
+        )));
+    }
+    if source_jet_pcurves.unresolved_existing_uses != 0 {
+        report.losses.push(CatiaLossCode::GeometryPcurveSourceUseUntransferred.note(format!(
+            "{} source-owned spherical pcurve use(s) retained their existing coedge bindings",
+            source_jet_pcurves.unresolved_existing_uses,
+        )));
+    }
+    if source_jet_pcurves.unresolved_identity_collisions != 0 {
+        report.losses.push(CatiaLossCode::SourceAnnotationCollision.note(format!(
+            "{} source-owned spherical pcurve identity collision(s) were withheld",
+            source_jet_pcurves.unresolved_identity_collisions,
         )));
     }
     if consolidated_curve_bindings.widened_vertices != 0 {
@@ -6434,7 +6465,10 @@ fn emit_standard_topology(
                         ) if matches!(
                             support.geometry,
                             crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-                        ) && edge_geometry::arc_bounds::bounded_circle_branch(
+                        ) && (matches!(
+                            ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry,
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                        ) || edge_geometry::arc_bounds::bounded_circle_branch(
                             circle.center().get(),
                             circle.radius().get(),
                             *circle.frame().axis(),
@@ -6443,7 +6477,7 @@ fn emit_standard_topology(
                         )
                         .is_some_and(|(axis, _, bounded_range)| {
                             axis == *circle.frame().axis() && bounded_range == range.get()
-                        }) =>
+                        })) =>
                         {
                             let [lower, upper] = range.get();
                             cadmpeg_ir::eval::finite_or_refusal(

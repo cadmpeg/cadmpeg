@@ -70,6 +70,14 @@ impl LaneRefusals {
         self.notes.len()
     }
 
+    pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.note(format!(
+                "Withheld a derived spherical pcurve at source offset {source_offset}: its midpoint leaves the edge circle plane"
+            )),
+        );
+    }
+
     /// Retain the identity that prevented a carrier population from merging.
     pub(crate) fn push_annotation_collision(
         &mut self,

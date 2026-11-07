@@ -170,6 +170,18 @@ pub(super) fn standard_pcurve_geometry(
     else {
         return Ok(None);
     };
+    if let (
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle))),
+    ) = (surface, edge_curve)
+    {
+        let normal = *circle.frame().axis().as_raw();
+        let offset = midpoint.vector_from(circle.center().get());
+        if normal.dot(offset).abs() > SUPPORT_AGREEMENT_TOLERANCE {
+            refusal.push_pcurve_circle_plane_mismatch(support.pos);
+            return Ok(None);
+        }
+    }
     let on_curve = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let chord = end.vector_from(start);

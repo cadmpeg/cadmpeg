@@ -2,6 +2,7 @@
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
 pub(in crate::families) mod weighted_edges;
+pub(in crate::families) mod owner_pcurves;
 mod weighted_plane;
 
 use cadmpeg_core::convert::f64_from_index;
@@ -1693,6 +1694,9 @@ enum ConsolidatedCarrierChart<'a> {
     Cylinder {
         radius: f64,
     },
+    Sphere {
+        radius: f64,
+    },
     Cone {
         cone: &'a crate::families::b2::records::B2Cone,
     },
@@ -1734,6 +1738,7 @@ impl ConsolidatedCarrierChart<'_> {
         match self {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
+            Self::Sphere { radius } => [u / radius, v / radius],
             Self::Cone { cone } => [
                 u / cone.angular_scale.get(),
                 (v - cone.slant_range.lower()) * cone.half_angle.get().cos(),
@@ -1750,6 +1755,7 @@ impl ConsolidatedCarrierChart<'_> {
         match self {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
+            Self::Sphere { radius } => [u / radius, v / radius],
             Self::Cone { cone } => [
                 u / cone.angular_scale.get(),
                 v * cone.half_angle.get().cos(),

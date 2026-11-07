@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Transfer of complete CATIA product-manufacturing dimensions.
+//! Transfer source-closed CATIA product-manufacturing annotations.
+
+pub(crate) mod geometric_tolerance;
+mod source;
 
 use std::collections::HashSet;
 

@@ -533,3 +533,47 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
         );
     }
 }
+
+#[test]
+fn nist_ftc_07_plane_semicircle_follows_the_edge_interval() {
+    const TOLERANCE_MM: f64 = 2e-3;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
+    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode FTC-07 CATPart");
+    let model = &decoded.ir().model;
+    let edge = model
+        .edges
+        .iter()
+        .find(|e| e.id.as_str() == "catia:standard:edge#28")
+        .expect("edge");
+    let curve = model
+        .curves
+        .iter()
+        .find(|c| Some(&c.id) == edge.curve())
+        .expect("edge curve");
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|s| s.id.as_str() == "catia:standard:surf#4")
+        .expect("plane");
+    let pcurve = model
+        .pcurves
+        .iter()
+        .find(|p| p.id.as_str() == "catia:standard:pcurve#4:0:0")
+        .expect("pcurve");
+    let [a, b] = edge.param_range().expect("edge interval").get();
+    let [u, v] = pcurve.parameter_range().expect("pcurve interval").get();
+    let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
+    let expected = cadmpeg_ir::eval::decode::curve_point(admission, &curve.geometry, a.midpoint(b))
+        .expect("edge midpoint")
+        .get();
+    let uv = cadmpeg_ir::eval::decode::pcurve_uv(admission, &pcurve.geometry, u.midpoint(v))
+        .expect("pcurve midpoint");
+    let actual = cadmpeg_ir::eval::decode::surface_point(admission, &surface.geometry, uv.u, uv.v)
+        .expect("surface midpoint")
+        .get();
+    assert!(actual.distance(expected) < TOLERANCE_MM);
+}
