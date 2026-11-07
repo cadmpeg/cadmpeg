@@ -1980,12 +1980,7 @@ fn edge_curve_id_reported(
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
 ) -> Option<cadmpeg_ir::ids::CurveId> {
-    let Some(curve_step) = edge.curve() else {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
-            "STEP edge #{edge_id} has no 3D curve carrier; edge committed without a curve"
-        )));
-        return None;
-    };
+    let curve_step = edge.curve()?;
     let curve = exchange.records().get(&curve_step);
     let carrier = curve_carrier_record(curve_step, exchange);
     if carrier.is_none()
@@ -3167,6 +3162,8 @@ fn build_one(
                                 }
                             }
                         }
+                    } else if edge.curve().is_none() {
+                        Vec::new()
                     } else {
                         losses.push(StepLossCode::EdgeNoSurfaceOrCurveForPcurve.note(format!(
                             "edge #{} has no decoded surface or curve carrier, so its coedge has no pcurve",

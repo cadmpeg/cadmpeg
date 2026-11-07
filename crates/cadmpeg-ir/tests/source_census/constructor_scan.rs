@@ -18,6 +18,7 @@
 //! `UPDATE_CARRIED=1` and asserted fresh otherwise.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use super::encode_paths::{symbol_candidates, Call, CtorKind, Function, Graph, SelfReturn};
@@ -123,10 +124,10 @@ fn test_gated(attrs: &[syn::Attribute]) -> bool {
             return false;
         }
         let mut gated = false;
-        let _ = attr.parse_nested_meta(|meta| {
+        drop(attr.parse_nested_meta(|meta| {
             gated |= meta.path.is_ident("test");
             Ok(())
-        });
+        }));
         gated
     })
 }
@@ -179,13 +180,13 @@ fn serde_enum(attrs: &[syn::Attribute], item: &syn::ItemEnum) -> Option<(String,
             if !attr.path().is_ident("serde") {
                 continue;
             }
-            let _ = attr.parse_nested_meta(|meta| {
+            drop(attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("rename") {
                     let value: syn::LitStr = meta.value()?.parse()?;
                     rename_variant = Some(value.value());
                 }
                 Ok(())
-            });
+            }));
         }
         let spelling = rename_variant.unwrap_or_else(|| apply_rename(rename.as_deref(), &name));
         variants.insert(name, spelling);
@@ -277,7 +278,7 @@ fn record_type_arenas(root: &Path) -> BTreeMap<String, String> {
         else {
             continue;
         };
-        if !ty.chars().next().is_some_and(|ch| ch.is_uppercase()) {
+        if !ty.chars().next().is_some_and(char::is_uppercase) {
             continue;
         }
         if !parts
@@ -286,7 +287,7 @@ fn record_type_arenas(root: &Path) -> BTreeMap<String, String> {
         {
             continue;
         }
-        arenas.insert(ty.to_owned(), field.to_owned());
+        arenas.insert(ty.clone(), field.to_owned());
     }
     arenas
 }
@@ -474,7 +475,7 @@ fn cheap_forms(function: &Function, path: &[String]) -> Option<Vec<Vec<String>>>
                 .take_while(|part| !part.starts_with('$'))
                 .cloned()
                 .collect();
-            let mut rest = &path[..];
+            let mut rest = path;
             while rest.first().is_some_and(|part| part == "super") {
                 if scope.len() > 1 {
                     scope.pop();
@@ -535,7 +536,7 @@ struct FormCache<'a> {
     cheap: BTreeMap<(String, String), Vec<Vec<String>>>,
 }
 
-impl<'a> FormCache<'a> {
+impl FormCache<'_> {
     fn forms(&mut self, function: &Function, path: &[String]) -> &[Vec<String>] {
         if let Some(cheap) = cheap_forms(function, path) {
             self.cheap
@@ -559,6 +560,12 @@ impl<'a> FormCache<'a> {
 /// renamed imports and glob-imported names. A raw hit skips resolution, so
 /// an alias chain that would add further variants beyond the spelling is
 /// not followed (the observation side covers actual decodes).
+#[derive(Clone, Copy)]
+struct ConstructorLookup<'a> {
+    keys: &'a [(String, Vec<String>)],
+    table: &'a BTreeMap<String, BTreeSet<String>>,
+}
+
 fn classify_cached(
     cache: &mut FormCache<'_>,
     function: &Function,
@@ -566,9 +573,9 @@ fn classify_cached(
     kind: &CtorKind,
     registry: &Registry,
     record_types: &BTreeMap<String, String>,
-    keys: &[(String, Vec<String>)],
-    table: &BTreeMap<String, BTreeSet<String>>,
+    lookup: ConstructorLookup<'_>,
 ) -> (BTreeSet<String>, BTreeSet<String>, Vec<String>) {
+    let ConstructorLookup { keys, table } = lookup;
     let mut variants = BTreeSet::new();
     let mut arenas = BTreeSet::new();
     let mut callees = Vec::new();
@@ -597,8 +604,8 @@ fn classify_cached(
 }
 
 /// Cached resolution forms, with the cheap scope-local forms first.
-fn function_key(scope: &[String], owner: &Option<Vec<String>>, name: &str) -> String {
-    let mut key = owner.clone().unwrap_or_else(|| scope.to_vec());
+fn function_key(scope: &[String], owner: Option<&[String]>, name: &str) -> String {
+    let mut key = owner.unwrap_or(scope).to_vec();
     key.push(name.to_owned());
     key.join("::")
 }
@@ -622,7 +629,7 @@ fn constructor_table(
         if function.scope.first().map(String::as_str) != Some(package) {
             continue;
         }
-        let key = function_key(&function.scope, &function.owner, &function.name);
+        let key = function_key(&function.scope, function.owner.as_deref(), &function.name);
         for use_ in &function.ctor {
             let empty: Vec<(String, Vec<String>)> = Vec::new();
             let (found, _, targets) = classify_cached(
@@ -632,8 +639,10 @@ fn constructor_table(
                 &use_.kind,
                 registry,
                 record_types,
-                &empty,
-                &BTreeMap::new(),
+                ConstructorLookup {
+                    keys: &empty,
+                    table: &BTreeMap::new(),
+                },
             );
             direct.entry(key.clone()).or_default().extend(found);
             callees.entry(key.clone()).or_default().extend(targets);
@@ -641,9 +650,8 @@ fn constructor_table(
     }
     let mut table: BTreeMap<String, BTreeSet<String>> = direct
         .iter()
-        .filter_map(|(key, variants)| {
-            (!variants.is_empty()).then(|| (key.clone(), variants.clone()))
-        })
+        .filter(|(_, variants)| !variants.is_empty())
+        .map(|(key, variants)| (key.clone(), variants.clone()))
         .collect();
     // Each (caller, target) pair meets each key once: new keys can only
     // lengthen the best suffix match, so matches refine to the fixpoint.
@@ -855,7 +863,7 @@ fn crate_scan(
     };
     let keys = split_keys(table);
     for (index, function) in graph.functions.iter().enumerate() {
-        if !packages.contains(function.scope.first().map(String::as_str).unwrap_or("")) {
+        if !packages.contains(function.scope.first().map_or("", String::as_str)) {
             continue;
         }
         if reachable.contains(&index) {
@@ -872,8 +880,7 @@ fn crate_scan(
                 &use_.kind,
                 registry,
                 record_types,
-                &keys,
-                table,
+                ConstructorLookup { keys: &keys, table },
             );
             scan.variants.extend(found_variants);
             scan.arenas.extend(found_arenas);
@@ -898,26 +905,26 @@ fn registry_json(registry: &Registry) -> String {
             TagStyle::Adjacent => "adjacent",
             TagStyle::Untagged => "untagged",
         };
-        out.push_str(&format!("\"{name}\":{{\"style\":\"{style}\""));
+        write!(&mut out, "\"{name}\":{{\"style\":\"{style}\"").expect("write to string");
         if let Some(tag) = &definition.tag {
-            out.push_str(&format!(",\"tag\":\"{tag}\""));
+            write!(&mut out, ",\"tag\":\"{tag}\"").expect("write to string");
         }
         if let Some(rename) = &definition.rename {
-            out.push_str(&format!(",\"rename_all\":\"{rename}\""));
+            write!(&mut out, ",\"rename_all\":\"{rename}\"").expect("write to string");
         }
         out.push_str(",\"variants\":{");
         for (variant, (variant_name, spelling)) in definition.variants.iter().enumerate() {
             if variant != 0 {
                 out.push(',');
             }
-            out.push_str(&format!("\"{variant_name}\":\"{spelling}\""));
+            write!(&mut out, "\"{variant_name}\":\"{spelling}\"").expect("write to string");
         }
         out.push_str("},\"object_variants\":[");
         for (variant, variant_name) in definition.object_variants.iter().enumerate() {
             if variant != 0 {
                 out.push(',');
             }
-            out.push_str(&format!("\"{variant_name}\""));
+            write!(&mut out, "\"{variant_name}\"").expect("write to string");
         }
         out.push_str("]}");
     }
@@ -931,12 +938,12 @@ fn table_json(table: &BTreeMap<String, BTreeSet<String>>) -> String {
         if index != 0 {
             out.push(',');
         }
-        out.push_str(&format!("\"{key}\":["));
+        write!(&mut out, "\"{key}\":[").expect("write to string");
         for (variant, name) in variants.iter().enumerate() {
             if variant != 0 {
                 out.push(',');
             }
-            out.push_str(&format!("\"{name}\""));
+            write!(&mut out, "\"{name}\"").expect("write to string");
         }
         out.push(']');
     }
@@ -950,14 +957,14 @@ fn scan_json(scan: &CrateScan) -> String {
         if index != 0 {
             out.push(',');
         }
-        out.push_str(&format!("\"{variant}\""));
+        write!(&mut out, "\"{variant}\"").expect("write to string");
     }
     out.push_str("],\"arenas\":[");
     for (index, arena) in scan.arenas.iter().enumerate() {
         if index != 0 {
             out.push(',');
         }
-        out.push_str(&format!("\"{arena}\""));
+        write!(&mut out, "\"{arena}\"").expect("write to string");
     }
     out.push_str("]}");
     out
@@ -1110,14 +1117,14 @@ mod tests {
     #[test]
     fn struct_literals_and_self_resolve_to_arenas_and_variants() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Body;
             use crate::Surface;
             fn decode() -> Body { Body { id: 1 } }
             impl Surface {
                 fn make() -> Self { Self::Plane }
             }
-            "#,
+            ",
         );
         assert!(scan.arenas.contains("bodies"), "{scan:?}");
         assert!(scan.variants.contains("Surface::Plane"), "{scan:?}");
@@ -1126,11 +1133,11 @@ mod tests {
     #[test]
     fn call_callees_feed_the_table_with_fixpoint() {
         let graph = fixture(
-            r#"
+            r"
             use crate::Surface;
             fn helper() -> Surface { Surface::Cone }
             fn build() -> Surface { helper() }
-            "#,
+            ",
         );
         let registry = test_registry();
         let records = test_records();
@@ -1152,9 +1159,9 @@ mod tests {
     #[test]
     fn constructor_function_values_feed_the_table() {
         let graph = fixture(
-            r#"
+            r"
             fn decode() { let _ = Some(()).map(cadmpeg_ir::Surface::make); }
-            "#,
+            ",
         );
         let registry = test_registry();
         let records = test_records();
@@ -1169,7 +1176,7 @@ mod tests {
     #[test]
     fn unit_paths_as_values_count_but_comparison_operands_do_not() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Sense;
             fn decode(value: Sense) -> Sense {
                 let kept = Sense::Forward;
@@ -1179,14 +1186,14 @@ mod tests {
                 let _ = 1;
                 kept
             }
-            "#,
+            ",
         );
         assert!(scan.variants.contains("Sense::Forward"), "{scan:?}");
         let graph = fixture(
-            r#"
+            r"
             use crate::Sense;
             fn decode(value: Sense) -> bool { value == Sense::Forward }
-            "#,
+            ",
         );
         let registry = test_registry();
         let records = test_records();
@@ -1198,10 +1205,10 @@ mod tests {
     #[test]
     fn assert_eq_operands_are_comparisons() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Sense;
             fn decode(value: Sense) { assert_eq!(value, Sense::Forward); }
-            "#,
+            ",
         );
         assert!(!scan.variants.contains("Sense::Forward"), "{scan:?}");
     }
@@ -1209,14 +1216,14 @@ mod tests {
     #[test]
     fn test_items_are_excluded() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Sense;
             #[test]
             fn unit() { let _ = Sense::Forward; }
             #[cfg(test)]
             mod tests { use crate::Sense; fn helper() { let _ = Sense::Forward; } }
             fn decode() {}
-            "#,
+            ",
         );
         assert!(!scan.variants.contains("Sense::Forward"), "{scan:?}");
     }
@@ -1224,23 +1231,23 @@ mod tests {
     #[test]
     fn encode_path_functions_are_excluded() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Sense;
             impl EncoderBackend for Writer {
                 fn plan(&self) { let _ = Sense::Forward; }
             }
             fn decode() { let _ = Sense::Forward; }
-            "#,
+            ",
         );
         assert!(scan.variants.contains("Sense::Forward"), "{scan:?}");
         let graph = fixture(
-            r#"
+            r"
             use crate::Sense;
             impl EncoderBackend for Writer {
                 fn plan(&self) { helper(); }
             }
             fn helper() { let _ = Sense::Forward; }
-            "#,
+            ",
         );
         let registry = test_registry();
         let records = test_records();
@@ -1255,7 +1262,7 @@ mod tests {
     #[test]
     fn encode_path_follows_methods_of_self_returning_constructors() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::{Sense, Surface};
             struct Writer;
             struct Builder;
@@ -1271,7 +1278,7 @@ mod tests {
                 fn helper(&self) { let _ = Sense::Forward; }
             }
             fn decode() { let _ = Surface::Plane; }
-            "#,
+            ",
         );
         assert!(!scan.variants.contains("Sense::Forward"), "{scan:?}");
         assert!(scan.variants.contains("Surface::Plane"), "{scan:?}");
@@ -1280,7 +1287,7 @@ mod tests {
     #[test]
     fn wrapped_constructor_is_not_its_own_receiver_without_unwrapping() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Sense;
             struct Writer;
             struct Builder;
@@ -1293,7 +1300,7 @@ mod tests {
                 fn new() -> Result<Self, ()> { Ok(Self) }
                 fn build(&self) { let _ = Sense::Forward; }
             }
-            "#,
+            ",
         );
         assert!(scan.variants.contains("Sense::Forward"), "{scan:?}");
     }
@@ -1301,7 +1308,7 @@ mod tests {
     #[test]
     fn another_return_type_does_not_mark_the_constructor_owner_method() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Sense;
             struct Writer;
             struct Factory;
@@ -1314,7 +1321,7 @@ mod tests {
                 fn build(&self) { let _ = Sense::Forward; }
             }
             impl Product { fn build(&self) {} }
-            "#,
+            ",
         );
         assert!(scan.variants.contains("Sense::Forward"), "{scan:?}");
     }
@@ -1322,11 +1329,11 @@ mod tests {
     #[test]
     fn glob_imports_resolve() {
         let scan = scan_variants(
-            r#"
+            r"
             mod shapes { pub enum Surface { Plane } }
             use shapes::*;
             fn decode() { let _ = Surface::Plane; }
-            "#,
+            ",
         );
         assert!(scan.variants.contains("Surface::Plane"), "{scan:?}");
     }
@@ -1334,11 +1341,11 @@ mod tests {
     #[test]
     fn xinput_variants_map_to_their_ir_enum() {
         let scan = scan_variants(
-            r#"
+            r"
             mod input { pub enum SurfaceInput { Cone } }
             use input::SurfaceInput;
             fn decode() { let _ = SurfaceInput::Cone; }
-            "#,
+            ",
         );
         assert!(scan.variants.contains("Surface::Cone"), "{scan:?}");
     }
@@ -1346,20 +1353,20 @@ mod tests {
     #[test]
     fn macro_bodies_read_as_tokens_but_unused_macros_do_not_count() {
         let scan = scan_variants(
-            r#"
+            r"
             use crate::Sense;
             macro_rules! sense { () => { Sense::Forward }; }
             macro_rules! unused { () => { Sense::Forward }; }
             fn decode() -> Sense { sense!() }
-            "#,
+            ",
         );
         assert!(scan.variants.contains("Sense::Forward"), "{scan:?}");
         let graph = fixture(
-            r#"
+            r"
             use crate::Sense;
             macro_rules! unused { () => { Sense::Forward }; }
             fn decode() {}
-            "#,
+            ",
         );
         let registry = test_registry();
         let records = test_records();

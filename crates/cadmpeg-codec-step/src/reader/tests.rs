@@ -319,8 +319,15 @@ fn decode_user_defined_entities_as_named_opaque_records() {
             .expect("decode user-defined entity witness"),
     );
 
-    assert_eq!(result.ir().model.entity_count(), 11);
-    assert_eq!(result.ir().model.attributes.len(), 11);
+    assert_eq!(result.ir().model.entity_count(), 12);
+    assert_eq!(result.ir().model.attributes.len(), 12);
+    assert!(result.ir().model.attributes.iter().any(|attribute| {
+        attribute.name == "start"
+            && attribute.values
+                == vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    "UD-01 user-defined entity witness".to_owned(),
+                ))]
+    }));
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
 
