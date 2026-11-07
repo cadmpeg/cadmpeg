@@ -7,8 +7,8 @@ use super::{assert_valid, decode};
 use crate::loss::F3dLossCode;
 use crate::test_support::native_test::f3d_native;
 use crate::test_support::zip_test::{
-    f3d_with_generated_sketch_annotation, f3d_with_generated_sketch_presentation,
-    SketchAnnotationCase,
+    f3d_with_damaged_sketch_presentation_sibling, f3d_with_generated_sketch_annotation,
+    f3d_with_generated_sketch_presentation, SketchAnnotationCase,
 };
 use crate::F3dCodec;
 
@@ -110,6 +110,37 @@ const PRESENTATION_V1: &str = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57";
 const PRESENTATION_V3: &str = "8C780195-72C0-4a56-A911-E43AB14357F2";
 const PAIR_ENTITY_TRACKING: &str = "90055C05-546C-4EE7-B3C9-3DD922AD0C9C";
 const PAIR_DIMENSION: &str = "855F0A64-6286-4FFC-B918-BC394F600107";
+
+#[test]
+fn damaged_presentation_gives_up_one_part_and_keeps_its_sibling() {
+    let result = decode(f3d_with_damaged_sketch_presentation_sibling(
+        PRESENTATION_V3,
+        PAIR_DIMENSION,
+    ));
+    let native = f3d_native(result.ir());
+    assert_eq!(native.design_dimension_presentation_frames.len(), 1);
+    assert_eq!(
+        native.design_dimension_presentation_frames[0].record_index,
+        1304
+    );
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1305"));
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().stream_name(),
+        Some("FusionAssetName[Active]/Design1/BulkStream.dat")
+    );
+    assert_eq!(result.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+}
 
 #[test]
 fn presentation_frame_classes_resolve_through_type_table_ordinals() {
