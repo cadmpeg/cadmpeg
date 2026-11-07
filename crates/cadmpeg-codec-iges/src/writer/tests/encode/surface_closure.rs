@@ -28,6 +28,11 @@ fn analytic_cylinder_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn analytic_cone_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("analytic_cone_surface"));
+}
+
+#[test]
 fn nurbs_curve_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("nurbs_curve"));
 }
@@ -45,6 +50,41 @@ fn bounded_plane_synthesis_preserves_held_records() {
 #[test]
 fn vertex_loop_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("explicit_vertex_loop"));
+}
+
+#[test]
+fn colored_vertex_loop_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("colored_explicit_vertex_loop"));
+}
+
+#[test]
+fn edited_color_replaces_held_percentages() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(fixture("colored_explicit_vertex_loop")),
+            &DecodeOptions::default(),
+        )
+        .expect("fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let color = cadmpeg_ir::topology::Color::new(0.3, 0.4, 0.6, 1.0).expect("valid color");
+    ir.model.appearances[0].base_color = Some(color);
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("edited color synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("edited color writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("edited color decodes");
+    assert!(output
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.base_color == Some(color)));
 }
 
 #[test]

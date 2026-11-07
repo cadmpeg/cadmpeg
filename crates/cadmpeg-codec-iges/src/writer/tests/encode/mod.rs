@@ -1916,13 +1916,21 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         moved_loop.face = target_face_id;
     }
 
-    let emitted_loop_ids = decoded
+    let mut emitted_loop_ids = decoded
         .ir()
         .model
         .faces
         .iter()
         .flat_map(|face| face.loops.iter().cloned())
         .collect::<Vec<_>>();
+    emitted_loop_ids.sort_by_key(|id| {
+        id.as_str()
+            .rsplit_once('D')
+            .unwrap()
+            .1
+            .parse::<u32>()
+            .unwrap()
+    });
     let outer_loop_index = emitted_loop_ids
         .iter()
         .position(|loop_id| *loop_id == outer_loop_id)
