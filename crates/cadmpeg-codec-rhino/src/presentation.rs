@@ -185,43 +185,17 @@ pub(crate) struct MaterialProjection {
     pub(crate) source_uuid: Option<String>,
     pub(crate) name: String,
     pub(crate) diffuse: [u8; 4],
-    pub(crate) properties: [(&'static str, Option<FiniteReal>); 7],
     pub(crate) texture_source_uuids: Vec<Option<String>>,
 }
 
 impl From<MaterialRecord> for MaterialProjection {
     fn from(material: MaterialRecord) -> Self {
-        let fresnel = material.fresnel.0;
         Self {
             native_id: material.id,
             archive_index: material.archive_index,
             source_uuid: material.source_uuid,
             name: material.name,
             diffuse: material.diffuse.into_inner(),
-            properties: [
-                ("index_of_refraction", Some(material.index_of_refraction)),
-                ("reflectivity", Some(material.reflectivity)),
-                ("shine", Some(material.shine)),
-                ("transparency", Some(material.transparency)),
-                (
-                    "reflection_glossiness",
-                    fresnel
-                        .as_ref()
-                        .map(|settings| settings.reflection_glossiness),
-                ),
-                (
-                    "refraction_glossiness",
-                    fresnel
-                        .as_ref()
-                        .map(|settings| settings.refraction_glossiness),
-                ),
-                (
-                    "fresnel_index_of_refraction",
-                    fresnel
-                        .as_ref()
-                        .map(|settings| settings.index_of_refraction),
-                ),
-            ],
             texture_source_uuids: material
                 .textures
                 .into_iter()

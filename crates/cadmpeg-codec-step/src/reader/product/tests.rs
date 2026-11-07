@@ -127,6 +127,11 @@ fn nauo_without_placement_decodes_as_an_unplaced_occurrence() {
         .find(|occurrence| occurrence.name.as_deref() == Some("Unplaced"))
         .expect("unplaced usage");
     assert!(occurrence.transform.is_none());
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
     assert!(matches!(
         occurrence.parent,
         cadmpeg_ir::products::OccurrenceParent::Occurrence { .. }
@@ -444,7 +449,7 @@ fn occurrence_transform_accepts_cartesian_operator_endpoints() {
 }
 
 #[test]
-fn unresolved_occurrence_transform_is_reported_as_error() {
+fn absent_occurrence_transform_is_not_a_decode_loss() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
 #2=PRODUCT_CONTEXT('',#1,'mechanical');
@@ -458,11 +463,20 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
 #10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u','child instance','',#6,#9,$);",
     );
 
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains("NAUO #10")
-    }));
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .any(
+            |occurrence| occurrence.name.as_deref() == Some("child instance")
+                && occurrence.transform.is_none()
+        ));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 }
 
 #[test]
@@ -1169,11 +1183,11 @@ fn unrelated_representation_mapping_does_not_place_an_occurrence() {
         .find(|occurrence| occurrence.id.as_str().contains("#16"))
         .expect("child occurrence");
     assert_eq!(occurrence.transform, None);
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains("NAUO #16")
-    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 }
 
 #[test]

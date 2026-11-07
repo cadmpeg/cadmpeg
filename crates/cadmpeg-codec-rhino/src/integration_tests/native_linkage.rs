@@ -427,24 +427,30 @@ fn material_typed_handoff_keeps_native_order_values_and_optional_field_absence()
             cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 215)
         );
         assert!(appearance.textures.is_empty());
+        assert!(appearance.properties.is_empty());
         for (name, value) in [
             ("index_of_refraction", 1.25),
             ("reflectivity", 0.125),
             ("shine", 2.5),
             ("transparency", 0.25),
         ] {
-            assert_eq!(appearance.properties[name].get(), value);
+            let actual = native[ordinal]
+                .field(name)
+                .and_then(|value| value.as_f64())
+                .unwrap();
+            assert!((actual - value).abs() < 1e-12);
         }
-        assert_eq!(appearance.properties.len(), count);
         for (name, value) in [
             ("reflection_glossiness", 0.375),
             ("refraction_glossiness", 0.625),
             ("fresnel_index_of_refraction", 1.5),
         ] {
-            assert_eq!(
-                appearance.properties.get(name).copied(),
-                (count == 7).then(|| crate::test_support::finite(value))
-            );
+            let actual = native[ordinal].field(name).and_then(|value| value.as_f64());
+            if count == 7 {
+                assert!((actual.unwrap() - value).abs() < 1e-12);
+            } else {
+                assert!(actual.is_none());
+            }
         }
     }
     assert_eq!(
