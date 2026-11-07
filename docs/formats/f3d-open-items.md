@@ -251,7 +251,9 @@ component-occurrence carrier identify?
 definition record." gives the component-definition join through the
 component-record reference and the naming-space binding. Two carriers that
 name one component definition record can store different carrier GUIDs. The
-`CopyPaste` and `R-Pattern` joins select carriers by equal carrier GUID.
+legacy `CopyPaste` and `R-Pattern` joins select carriers by equal carrier GUID.
+The compact `CopyPaste` projection compares carriers by their component-record
+reference.
 
 **Need.** A writer must emit this GUID for each new occurrence.
 

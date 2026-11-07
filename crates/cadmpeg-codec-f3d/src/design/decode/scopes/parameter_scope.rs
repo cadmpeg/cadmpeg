@@ -1281,9 +1281,13 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
     type_guid: Option<&str>,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
     (|| {
-        let type_family = type_guid.and_then(family::from_type_guid);
         let start = usize::try_from(byte_offset).ok()?;
         let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
+        let paste_table_at = type_guid
+            .and_then(|guid| family::paste_prefix_table(guid, bytes.get(..paired_at)?, start));
+        let type_family = type_guid
+            .and_then(family::from_type_guid)
+            .or_else(|| paste_table_at.map(|_| scope::DesignFeatureKind::CopyPaste));
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
         let mut fixed_candidate = None;
@@ -1366,6 +1370,10 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         if confirmed_kind_end != kind_end {
             return None;
         }
+        // The prefix must end at the scope's own one-member reference table.
+        let type_family = type_family.filter(|_| {
+            paste_table_at.is_none_or(|table_at| table_at.checked_add(4 + 11 + 4) == Some(kind_at))
+        });
         let kind = scope_feature_kind(&kind_text, type_family.as_ref())?;
         let source_kind = (kind_text != kind.as_str()
             || kind == scope::DesignFeatureKind::PathPattern)
