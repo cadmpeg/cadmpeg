@@ -70,7 +70,7 @@ pub(super) fn write_with_limits(
 ) -> Result<Generated, CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
-    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
+    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true);
     let target = lowered.as_ref();
     let loaded_native = f3d_native(target)?;
     validate_assembly_projection(target, loaded_native.as_ref())?;

@@ -177,7 +177,7 @@ fn a_lowered_chain_states_its_edges_on_the_root_parameter_in_both_senses() {
     for inner_sense in [true, false] {
         for outer_sense in [true, false] {
             let ir = nested(inner_sense, outer_sense, false);
-            let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+            let lowered = super::lower_subset_curves(&ir, |_| true);
             let forward = inner_sense == outer_sense;
             assert_lowered_edge(&ir, &lowered, forward);
             let Some(ProceduralCurveDefinition::Subset(definition)) = lowered
@@ -206,7 +206,7 @@ fn a_kept_inner_subset_ends_the_chain_on_its_local_cache() {
     for inner_sense in [true, false] {
         for outer_sense in [true, false] {
             let ir = nested(inner_sense, outer_sense, true);
-            let lowered = super::lower_subset_curves(&ir, |curve| curve.id == id("outer")).unwrap();
+            let lowered = super::lower_subset_curves(&ir, |curve| curve.id == id("outer"));
             assert_lowered_edge(&ir, &lowered, outer_sense);
         }
     }
@@ -216,7 +216,7 @@ fn a_kept_inner_subset_ends_the_chain_on_its_local_cache() {
 fn a_model_without_a_selected_subset_is_borrowed() {
     let ir = nested(true, true, false);
     assert!(matches!(
-        super::lower_subset_curves(&ir, |_| false).unwrap(),
+        super::lower_subset_curves(&ir, |_| false),
         std::borrow::Cow::Borrowed(_)
     ));
 }
@@ -239,7 +239,7 @@ fn a_cyclic_subset_chain_is_left_for_writer_admission() {
         ),
     );
 
-    let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+    let lowered = super::lower_subset_curves(&ir, |_| true);
     assert_eq!(curve(&lowered, "inner"), curve(&ir, "inner"));
     assert_eq!(curve(&lowered, "outer"), curve(&ir, "outer"));
     assert!(curve(&lowered, "other").geometry.solved().is_some());
@@ -265,7 +265,7 @@ fn a_subset_with_an_overflowing_span_is_left_unchanged() {
     );
 
     assert!(matches!(
-        super::lower_subset_curves(&ir, |_| true).unwrap(),
+        super::lower_subset_curves(&ir, |_| true),
         std::borrow::Cow::Borrowed(_)
     ));
 }
@@ -293,7 +293,7 @@ fn an_overflowing_edge_range_keeps_its_subset_and_lowers_an_independent_one() {
     edge.set_curve(Some(id("outer"))).unwrap();
     edge.set_param_range(Some(ParameterInterval::new([1.0e308, 1.0e308]).unwrap()));
 
-    let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+    let lowered = super::lower_subset_curves(&ir, |_| true);
     assert_eq!(curve(&lowered, "outer"), curve(&ir, "outer"));
     assert_eq!(lowered.model.edges[0], ir.model.edges[0]);
     assert!(curve(&lowered, "other").geometry.solved().is_some());
@@ -323,7 +323,7 @@ fn an_unlowerable_subset_keeps_its_source_parameterization() {
     edge.set_curve(Some(id("outer"))).unwrap();
     edge.set_param_range(Some(ParameterInterval::new([1.0e308, 1.0e308]).unwrap()));
 
-    let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+    let lowered = super::lower_subset_curves(&ir, |_| true);
     assert_eq!(curve(&lowered, "inner"), curve(&ir, "inner"));
     assert_eq!(curve(&lowered, "outer"), curve(&ir, "outer"));
     assert_eq!(lowered.model.edges[0], ir.model.edges[0]);
@@ -364,7 +364,7 @@ fn a_spline_cache_moves_back_onto_the_source_parameter() {
         let edge = &mut ir.model.edges[0];
         edge.set_curve(Some(id("outer"))).unwrap();
         edge.set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
-        let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+        let lowered = super::lower_subset_curves(&ir, |_| true);
         assert_lowered_edge(&ir, &lowered, sense);
         let curve = lowered
             .model
