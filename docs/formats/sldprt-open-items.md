@@ -741,7 +741,7 @@ resolve a seed feature?
 
 **Conflict.** The workbook and STEP have two controlled spheres; the inspected SWIFT position record names one sphere feature.
 
-**Note.** The parsed feature and annotation traversal assigns `Sphere-172` CAD identifier `128:1647` and center `(-114.3, 63.5, -107.95)` mm; `Sphere-173` has CAD identifier `128:872` and center `(114.3, 63.5, -107.95)` mm. The raw SWIFT stream contains the `Sphere-173` feature identifier once, in the root feature list. It contains the `Sphere-172` identifier three times: the root feature list and the direct references of `Position11` and `Diameter8`. A shared direct feature reference does not bind the second sphere.
+**Note.** The parsed feature and annotation traversal assigns `Sphere-172` CAD identifier `128:1647` and center `(-114.3, 63.5, -107.95)` mm; `Sphere-173` has CAD identifier `128:872` and center `(114.3, 63.5, -107.95)` mm. The raw SWIFT stream contains the `Sphere-173` feature identifier once, in the root feature list. It contains the `Sphere-172` identifier three times: the root feature list and the direct references of `Position11` and `Diameter8`. The sole occurrence of `128:872` is in `Sphere-173`'s own `CadReferences` collection. Both sphere entities contain `CadReferences` and `NomSphere`; their parsed feature lists are empty. `Position11` has an empty direct annotation list. Its three applied-datum children each reference one datum: D, B and C in order. The counted display is outside the semantic root, and the `Position11` annotation identifier occurs in the root annotation roster. These records leave the display-to-position and second-sphere relations unresolved.
 
 ### DI-56. FTC-06 individual datum F associations
 
