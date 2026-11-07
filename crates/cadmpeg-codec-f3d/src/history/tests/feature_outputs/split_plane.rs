@@ -940,7 +940,7 @@ fn split_plane_unresolved_when_inserted_face_is_unclassifiable() {
             None,
             false,
             vec![
-                state(1, 1, Some(0), topo),
+                state(1, 1, Some(0), topo.clone()),
                 state(0, 0, None, AsmHistoricalTopology::default()),
             ],
         );
@@ -1024,7 +1024,7 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
             None,
             false,
             vec![
-                state(1, 1, Some(0), topo),
+                state(1, 1, Some(0), topo.clone()),
                 state(0, 0, None, AsmHistoricalTopology::default()),
             ],
         );
@@ -1065,6 +1065,33 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
                     loss.code != crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.kind()
                 }),
                 "partial vertex evidence with readable bounds must not emit HistoricalBodyBoundsUnresolved"
+            );
+
+            let history_prev_only = crate::test_support::history::history(
+                "f3d:asm-history#incomplete-prev-only".into(),
+                0,
+                None,
+                false,
+                vec![
+                    state(1, 1, Some(0), AsmHistoricalTopology::default()),
+                    state(0, 0, None, topo),
+                ],
+            );
+            let mut feat_prev_only = split_body_test_feature(&scope.id);
+            let prev_losses = bind_feature_outputs(
+                std::slice::from_mut(&mut feat_prev_only),
+                std::slice::from_ref(&scope),
+                &mut [history_prev_only],
+                &[],
+                &Default::default(),
+                None,
+            )
+            .unwrap();
+            assert!(
+                prev_losses.iter().all(|loss| {
+                    loss.code != crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
+                }),
+                "non-output previous state must not emit HistoricalBodyCenterPartial"
             );
         }
     }

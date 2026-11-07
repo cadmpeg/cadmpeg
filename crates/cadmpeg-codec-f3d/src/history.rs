@@ -1440,12 +1440,14 @@ pub(crate) fn bind_feature_outputs(
                         center_bounds_list.push((b, bds));
                         body_faces_map.insert(b, faces);
                     } else if let Some(bds) = body_index.edge_bounds(edges) {
-                        center_bounds_list.push((b, bds));
-                        losses.push(
-                            crate::loss::F3dLossCode::HistoricalBodyCenterPartial.note(format!(
-                                "historical solid body {b} uses incomplete topology or vertex evidence for its center in state {cur_state_id}"
-                            )),
-                        );
+                        if output_states.contains(&state_key) {
+                            center_bounds_list.push((b, bds));
+                            losses.push(
+                                crate::loss::F3dLossCode::HistoricalBodyCenterPartial.note(format!(
+                                    "historical solid body {b} uses incomplete topology or vertex evidence for its center in state {cur_state_id}"
+                                )),
+                            );
+                        }
                     } else {
                         losses.push(
                             crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.note(

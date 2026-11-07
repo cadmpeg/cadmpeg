@@ -249,10 +249,7 @@ pub(super) fn resolve_split_result_plane(
     if !ctx.candidates.all_faces_classified || ctx.candidates.inserted_planar_faces.is_empty() {
         return None;
     }
-    if !ctx.candidates.has_bodies
-        && ctx.after_solid.is_empty()
-        && ctx.before_solid.is_none_or(BTreeSet::is_empty)
-    {
+    if !ctx.candidates.has_bodies && ctx.after_solid.is_empty() {
         let &(_, first_o, first_n) = ctx.candidates.inserted_planar_faces.first()?;
         return ctx
             .candidates

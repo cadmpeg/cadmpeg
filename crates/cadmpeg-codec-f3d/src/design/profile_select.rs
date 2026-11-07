@@ -757,6 +757,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     }
                     if !matching_groups.is_empty() {
                         let inferred_before = scoped_resolution.profile_work.inferred_counts();
+                        let assumed_before = scoped_resolution.profile_work.assumed_flags();
                         let mut selections = Vec::new();
                         for group in &matching_groups {
                             let selection = resolved_extrude_profile_selection(
@@ -823,6 +824,11 @@ pub(crate) fn bind_extrude_profile_selections(
                                     _ => false,
                                 };
                             if use_merged {
+                                let after = scoped_resolution.profile_work.inferred_counts();
+                                scoped_resolution.profile_work.set_inferred_counts((
+                                    inferred_before.0 + usize::from(after.0 > inferred_before.0),
+                                    inferred_before.1 + usize::from(after.1 > inferred_before.1),
+                                ));
                                 *profile = merged;
                                 break 'feature_edit;
                             }
@@ -830,6 +836,9 @@ pub(crate) fn bind_extrude_profile_selections(
                         scoped_resolution
                             .profile_work
                             .set_inferred_counts(inferred_before);
+                        scoped_resolution
+                            .profile_work
+                            .set_assumed_flags(assumed_before);
                     }
                     if let Some(profiles) = explicit_profiles {
                         let sketch_id = sketch_id.clone();
@@ -849,6 +858,8 @@ pub(crate) fn bind_extrude_profile_selections(
                             ) {
                                 let inferred_before =
                                     scoped_resolution.profile_work.inferred_counts();
+                                let assumed_before =
+                                    scoped_resolution.profile_work.assumed_flags();
                                 if let Some(sel) = transition_profile_selection(
                                     sketch,
                                     scoped_resolution,
@@ -888,6 +899,9 @@ pub(crate) fn bind_extrude_profile_selections(
                                 scoped_resolution
                                     .profile_work
                                     .set_inferred_counts(inferred_before);
+                                scoped_resolution
+                                    .profile_work
+                                    .set_assumed_flags(assumed_before);
                             }
                         }
                         *profile = ProfileRef::Planar(
@@ -1530,6 +1544,7 @@ pub(super) fn resolved_extrude_profile_selection(
             resolution.ctx,
         )?;
     }
+    let inferred_before_transition = resolution.profile_work.inferred_counts();
     if resolved_profiles.is_none() {
         if let (Some(state_id), Some(previous_state_id)) =
             (history_state_id, previous_history_state_id)
@@ -1547,6 +1562,9 @@ pub(super) fn resolved_extrude_profile_selection(
             previous_state_id,
             resolved_profiles.as_ref(),
         )? {
+            resolution
+                .profile_work
+                .set_inferred_counts(inferred_before_transition);
             resolved_profiles = Some(proven);
         } else if let Some(proven) = cap_regions::removed_profile_selection(
             sketch,
@@ -1555,6 +1573,9 @@ pub(super) fn resolved_extrude_profile_selection(
             previous_state_id,
             resolved_profiles.as_ref(),
         )? {
+            resolution
+                .profile_work
+                .set_inferred_counts(inferred_before_transition);
             resolved_profiles = Some(proven);
         }
     }
@@ -2186,7 +2207,7 @@ pub(in crate::design) fn transition_profile_selection(
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
 
-    for (i, (sel_opt, step_delta)) in step_selections.iter().enumerate() {
+    for (i, (sel_opt, _)) in step_selections.iter().enumerate() {
         let Some(sel) = sel_opt.as_ref() else {
             continue;
         };
@@ -2206,10 +2227,20 @@ pub(in crate::design) fn transition_profile_selection(
                     }
                 });
         if others_agree_or_preserve {
+            let hole_inferred = usize::from(
+                step_selections
+                    .iter()
+                    .any(|(other_sel, d)| other_sel.as_ref() == Some(sel) && d.0 > 0),
+            );
+            let region_inferred = usize::from(
+                step_selections
+                    .iter()
+                    .any(|(other_sel, d)| other_sel.as_ref() == Some(sel) && d.1 > 0),
+            );
             let cur = resolution.profile_work.inferred_counts();
             resolution
                 .profile_work
-                .set_inferred_counts((cur.0 + step_delta.0, cur.1 + step_delta.1));
+                .set_inferred_counts((cur.0 + hole_inferred, cur.1 + region_inferred));
             return Ok(Some(sel.clone()));
         }
     }

@@ -113,6 +113,22 @@ impl ProfileGeometryWork {
         self.region_hole_inferred_selections.set(counts.1);
     }
 
+    pub(crate) fn assumed_flags(&self) -> (bool, bool, bool, bool) {
+        (
+            self.crossing_loop_assumed.get(),
+            self.cut_regions_assumed.get(),
+            self.cap_outline_assumed.get(),
+            self.cap_carrier_assumed.get(),
+        )
+    }
+
+    pub(crate) fn set_assumed_flags(&self, flags: (bool, bool, bool, bool)) {
+        self.crossing_loop_assumed.set(flags.0);
+        self.cut_regions_assumed.set(flags.1);
+        self.cap_outline_assumed.set(flags.2);
+        self.cap_carrier_assumed.set(flags.3);
+    }
+
     /// Close one profile selection. Count it against each cap that skipped a
     /// search since the previous selection closed.
     pub(crate) fn finish_selection(&self) {
