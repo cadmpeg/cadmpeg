@@ -1729,13 +1729,23 @@ fn source_less_lanes(
             };
             let point_index = marker_id(point_index)? - 1;
             let line_index = marker_id(points.len() + lines.len() * 2 + line_index)?;
-            super::write_generate::append_generated_scalar(
+            let name = if parameter.driving {
+                parameter.name.as_str()
+            } else {
+                parameter.name.strip_suffix("@reference").ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "spatial reference parameter name is invalid",
+                    )
+                })?
+            };
+            super::write_generate::append_generated_scalar_with_role(
                 &mut payload,
                 "sgPntLineDist",
-                &parameter.name,
+                name,
                 value.get() * 0.001,
                 scalar_ids.take()?,
                 &[(point_kind, point_index), (line_kind, line_index)],
+                parameter.driving,
             )?;
         }
         objects.push((configuration, owner.ordinal, payload));
