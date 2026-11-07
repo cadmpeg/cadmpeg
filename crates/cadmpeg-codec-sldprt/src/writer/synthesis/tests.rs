@@ -142,6 +142,10 @@ fn design_only_configuration_does_not_create_a_model_partition() {
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
+    assert!(!ir.scope.model);
+    assert!(!plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterNoExportableSolids.kind()
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
