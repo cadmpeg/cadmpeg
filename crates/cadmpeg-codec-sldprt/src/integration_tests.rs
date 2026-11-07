@@ -333,6 +333,42 @@ fn damaged_xml_element_preserves_sibling_configurations() {
 }
 
 #[test]
+fn damaged_nested_xml_element_links_its_feature() {
+    let xml = r#"<Keywords><Feature Name="Owner"><Dimension Name="Bad" Name="Duplicate"/><Dimension Name="Good"/></Feature></Keywords>"#;
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let result = decode(source);
+    let native = sldprt_native(result.ir());
+    let history = &native.feature_histories[0];
+    let feature = history
+        .features
+        .iter()
+        .find(|feature| feature.name == "Owner")
+        .expect("owner feature");
+    let damaged = br#"<Dimension Name="Bad" Name="Duplicate"/>"#;
+    let (part_id, _) = result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .find(|(_, record)| record.data() == Some(damaged.as_slice()))
+        .expect("retained dimension");
+    let unknowns: Vec<cadmpeg_ir::NativeUnknownRecord> = result
+        .ir()
+        .native
+        .namespace("sldprt")
+        .expect("native namespace")
+        .arena_as("unknowns")
+        .expect("unknown records");
+    let part = unknowns
+        .iter()
+        .find(|record| &record.id == part_id)
+        .expect("dimension stub");
+    assert_eq!(part.links.len(), 1);
+    assert_eq!(part.links[0].as_str(), feature.id);
+    assert_valid(&result);
+}
+
+#[test]
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
     let mut decoded = decoded;
