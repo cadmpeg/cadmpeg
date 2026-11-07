@@ -189,7 +189,7 @@ fn scan_units_xml(
         return Ok(());
     };
     let document =
-        match crate::container::recover_xml(ctx, &text, "decode XML tree", |_, _, _, _| Ok(())) {
+        match crate::container::recover_xml(ctx, &text, "decode XML tree", |_, _, _| Ok(())) {
             Ok(tree) => tree,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => {

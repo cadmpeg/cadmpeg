@@ -3672,6 +3672,7 @@ fn build_geometry_ir(
         ctx,
         scan,
         &native.feature_histories,
+        &annotations,
         &mut unknowns,
         &mut pmi_losses,
         &mut retention,
@@ -4369,6 +4370,7 @@ fn build_metadata_ir(
         ctx,
         scan,
         &histories,
+        &annotations,
         &mut unknowns,
         &mut pmi_losses,
         &mut retention,
@@ -5528,6 +5530,7 @@ fn give_up_truncated_blocks(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     histories: &[crate::records::FeatureHistory],
+    annotations: &Annotations,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     retention: &mut retention::Retention,
@@ -5594,7 +5597,15 @@ fn give_up_truncated_blocks(
             }
         }
     }
-    give_up_xml_elements(ctx, scan, histories, unknowns, losses, retention)?;
+    give_up_xml_elements(
+        ctx,
+        scan,
+        histories,
+        annotations,
+        unknowns,
+        losses,
+        retention,
+    )?;
     Ok(())
 }
 
@@ -5602,6 +5613,7 @@ fn give_up_xml_elements(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     histories: &[crate::records::FeatureHistory],
+    annotations: &Annotations,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     retention: &mut retention::Retention,
@@ -5619,37 +5631,19 @@ fn give_up_xml_elements(
             continue;
         }
         let mut damaged = Vec::new();
-        match crate::container::recover_xml(
+        let xml = match crate::container::recover_xml(
             ctx,
             &text,
             "scan SolidWorks XML damage",
-            |start, end, name, ancestors| {
-                let history = if ancestors.len() == 1
-                    && ancestors[0]
-                        .windows(b"Keywords".len())
-                        .any(|part| part == b"Keywords")
-                {
-                    let id = format!("sldprt:history:feature-history#{}", section.ordinal());
-                    histories
-                        .iter()
-                        .find(|history| history.id == id)
-                        .map(|history| history.id.clone())
-                } else {
-                    None
-                };
-                damaged.push((
-                    start,
-                    end,
-                    String::from_utf8_lossy(name).into_owned(),
-                    history,
-                ));
+            |start, end, name| {
+                damaged.push((start, end, String::from_utf8_lossy(name).into_owned()));
                 Ok(())
             },
         ) {
-            Ok(_) => {}
+            Ok(xml) => xml,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => continue,
-        }
+        };
         let Some(source) = scan.section_view(section) else {
             continue;
         };
@@ -5659,7 +5653,41 @@ fn give_up_xml_elements(
             .get(marker..)
             .is_some_and(|bytes| bytes.starts_with(&[0xff, 0xfe]));
         let prefix = marker + if utf16 { 2 } else { 0 };
-        for (start, end, name, history) in damaged {
+        let history_id = format!("sldprt:history:feature-history#{}", section.ordinal());
+        let history = histories.iter().find(|history| history.id == history_id);
+        let mut owners = BTreeMap::new();
+        if let Some(history) = history {
+            for id in history
+                .configurations
+                .iter()
+                .map(|item| item.id.as_str())
+                .chain(history.features.iter().map(|item| item.id.as_str()))
+            {
+                if let Some(source) = annotations
+                    .provenance
+                    .get(id)
+                    .filter(|source| source.stream() == section.source_stream().as_str())
+                {
+                    owners.insert(source.offset, id);
+                }
+            }
+        }
+        for (start, end, name) in damaged {
+            let containing =
+                history.and_then(|history| {
+                    xml.descendants()
+                        .filter(roxmltree::Node::is_element)
+                        .filter(|node| node.range().start <= start && end <= node.range().end)
+                        .filter_map(|node| {
+                            let range = node.range();
+                            let id = owners.get(&u64_from_index(range.start)).copied().or_else(
+                                || (node == xml.root_element()).then_some(history.id.as_str()),
+                            )?;
+                            Some((range.end - range.start, id))
+                        })
+                        .min_by_key(|(width, _)| *width)
+                        .map(|(_, id)| id.to_owned())
+                });
             let to_source = |offset: usize| -> Option<usize> {
                 let offset = if utf16 {
                     text.get(..offset)?.encode_utf16().count().checked_mul(2)?
@@ -5696,7 +5724,7 @@ fn give_up_xml_elements(
                         id.clone(),
                         u64_from_index(start),
                         data.to_vec(),
-                        history.iter().cloned().collect(),
+                        containing.iter().cloned().collect(),
                     ));
                 }
             }
