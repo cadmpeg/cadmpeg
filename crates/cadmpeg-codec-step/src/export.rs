@@ -629,24 +629,20 @@ impl FileNameFields {
             })
             .collect();
         let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
-        // An alias is consumed only when the header carries its value back:
-        // any other held alias keeps its drop loss, which names it. An
-        // empty fold still writes one empty entry, which carries every held
-        // empty alias back.
-        let empty_entry = vec![String::new()];
         let mut consumed_ids: Vec<_> = descriptions.iter().map(|(id, _)| id.clone()).collect();
         consumed_ids.extend(consumed(
             &label,
             &name.clone().into_iter().collect::<Vec<_>>(),
         ));
-        consumed_ids.extend(consumed(
-            &author,
-            if authors.is_empty() {
-                &empty_entry
-            } else {
-                &authors
-            },
-        ));
+        let first_author = authors.first().map_or("", String::as_str);
+        let second_author = authors.get(1).map_or(first_author, String::as_str);
+        for (name, value) in [
+            ("author", first_author),
+            ("CreatedBy", first_author),
+            ("LastModifiedBy", second_author),
+        ] {
+            consumed_ids.extend(consumed(&Self::held(ir, &[name]), &[value.to_owned()]));
+        }
         consumed_ids.extend(consumed(
             &organization,
             &organizations.clone().unwrap_or_default(),
