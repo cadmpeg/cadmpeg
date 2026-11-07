@@ -22,6 +22,38 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_extrude_keeps_profile_frame() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    {
+        let mut native = f3d_native_mut(&mut edited);
+        let group = &mut native.design_construction_operand_groups[0];
+        let mut frame = serde_json::to_value(&group.frame).unwrap();
+        frame["opaque_index"] = serde_json::json!(7);
+        frame["opaque_scalar"] = serde_json::json!(2.5);
+        group.frame = serde_json::from_value(frame).unwrap();
+    }
+    let (written, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    let input = &written.ir().model.feature_input_topologies[0];
+    let native = f3d_native(written.ir());
+    let group = native
+        .design_construction_operand_groups
+        .iter()
+        .find(|group| {
+            input
+                .operands
+                .iter()
+                .any(|operand| operand.native_ref.as_str() == group.id)
+        })
+        .unwrap();
+    assert_eq!(group.frame.opaque_index.get(), 7);
+    assert!((group.frame.opaque_scalar().get() - 2.5).abs() < 1e-12);
+}
+
+#[test]
 fn source_less_extrude_keeps_profile_record_indices() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
     let decoded = F3dCodec
