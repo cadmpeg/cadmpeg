@@ -6,6 +6,55 @@ use crate::native::SldprtNative;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 
 #[test]
+fn native_name_with_absent_identifier_survives_synthesis() {
+    let mut bytes = Vec::new();
+    crate::resolved_features::write_generate::append_generated_object_name(
+        &mut bytes,
+        "Unbound",
+        u32::MAX,
+    )
+    .unwrap();
+    let lane = crate::resolved_features::write_prepare::generated_native_lane(
+        &[],
+        "sldprt:feature-input#unbound",
+        None,
+        bytes,
+    )
+    .unwrap();
+    assert_eq!(
+        lane.names[0].object_id,
+        Some(crate::records::ObjectId::Absent)
+    );
+    let source = SldprtNative {
+        feature_input_lanes: vec![lane],
+        ..Default::default()
+    };
+    let mut target = SldprtNative::default();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.set_scope(cadmpeg_ir::ContentScope::container()).unwrap();
+    let mut losses = Vec::new();
+    let mut dispositions = NativeDispositions::for_namespace(
+        "sldprt",
+        crate::native::SLDPRT_ARENA_NAMES,
+        NativeDisposition::Dropped,
+    );
+    regenerate(
+        &ir,
+        &ir,
+        &source,
+        &mut target,
+        &mut losses,
+        &mut dispositions,
+    )
+    .unwrap();
+    assert!(losses.is_empty(), "{losses:?}");
+    let names = &target.feature_input_lanes[0].names;
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].value, "Unbound");
+    assert_eq!(names[0].object_id, Some(crate::records::ObjectId::Absent));
+}
+
+#[test]
 fn unheld_native_scalar_is_authored_from_typed_fields_after_wire_parse() {
     let mut feature = crate::records::Feature {
         id: "sldprt:history:feature#native-control".into(),

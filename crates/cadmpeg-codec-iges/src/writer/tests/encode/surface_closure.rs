@@ -73,6 +73,16 @@ fn parameter_domain_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn primitive_solids_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("primitive_solids"));
+}
+
+#[test]
+fn mixed_composite_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("mixed_analytic_composite_curve"));
+}
+
+#[test]
 fn edited_parametric_spline_uses_current_control_points() {
     let decoded = IgesCodec
         .decode(

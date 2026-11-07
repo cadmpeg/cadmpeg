@@ -1030,6 +1030,78 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
 }
 
 #[test]
+fn synthesized_tessellation_normalizes_flags_without_dropping_channels() {
+    use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let original = &ir.model.tessellations[0];
+    let channels = original
+        .channels()
+        .iter()
+        .enumerate()
+        .map(|(index, channel)| {
+            TessellationChannel::new(
+                channel.addressing().clone(),
+                channel.item_size(),
+                channel.kind(),
+                if index == 0 || index == 3 {
+                    7
+                } else {
+                    channel.flags()
+                },
+                channel.data().to_vec(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let mesh = Tessellation::new(
+        original.id.clone(),
+        original.mesh().clone().into_raw(),
+        channels,
+    )
+    .unwrap()
+    .with_body(original.body.clone());
+    let id = mesh.id.clone();
+    let expected = mesh.channels().to_vec();
+    ir.model.tessellations = vec![mesh];
+    for fidelity in [None, Some(decoded.source_fidelity())] {
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, fidelity), TargetRequest::Inherit)
+            .unwrap();
+        assert_eq!(
+            plan.report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code.local_code() == "writer.fields-omitted"
+                        && loss.message.contains(id.as_str())
+                })
+                .count(),
+            2
+        );
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let channels = output.ir().model.tessellations[0].channels();
+        assert_eq!(channels.len(), expected.len());
+        for (actual, source) in channels.iter().zip(&expected) {
+            assert_eq!(actual.flags(), 2);
+            assert_eq!(actual.item_size(), source.item_size());
+            assert_eq!(actual.kind(), source.kind());
+            assert_eq!(actual.data(), source.data());
+        }
+    }
+}
+
+#[test]
 fn synthesized_tessellation_reports_quantized_values() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh};

@@ -10,31 +10,18 @@ use crate::writer::write_error::WriteError;
 use cadmpeg_ir::features::{FaceSelection, FeatureId, PlanarProfileRef, WrapMode};
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
-    pub(super) fn encode_sketch_block_definition(
-        &self,
-        sketch: Option<&cadmpeg_ir::sketches::SketchId>,
-    ) -> Result<NeutralFeatureEncoding, WriteError> {
-        let feature = self.feature;
-        let existing = self.existing;
-        Ok({
-            if sketch.is_some() {
-                return Err(WriteError::Decline(format!(
-                    "SLDPRT feature {} changes sketch-block geometry",
-                    feature.id
-                )));
-            }
-            let record = existing.filter(|record| {
-                feature_input_class(record, NativeClassKind::SketchBlockDefinition)
-            });
-            NeutralFeatureEncoding {
-                kind: record.map_or_else(
-                    || "SketchBlockDefinition".into(),
-                    |record| record.kind.clone(),
-                ),
-                parameters: self.base_parameters(),
-                properties: self.base_properties(),
-            }
-        })
+    pub(super) fn encode_sketch_block_definition(&self) -> NeutralFeatureEncoding {
+        let record = self
+            .existing
+            .filter(|record| feature_input_class(record, NativeClassKind::SketchBlockDefinition));
+        NeutralFeatureEncoding {
+            kind: record.map_or_else(
+                || "SketchBlockDefinition".into(),
+                |record| record.kind.clone(),
+            ),
+            parameters: self.base_parameters(),
+            properties: self.base_properties(),
+        }
     }
 
     pub(super) fn encode_sketch_block_instance(
