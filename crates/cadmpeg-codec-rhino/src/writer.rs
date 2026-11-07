@@ -1536,9 +1536,10 @@ fn native_dispositions(
                         NativeDisposition::Written
                     }
                     "materials"
-                        if ir.model.appearances.iter().any(|appearance| {
-                            appearance.native_ref.as_deref() == Some(record.id())
-                        }) =>
+                        if tables::materials::native_colors_complete(record)
+                            && ir.model.appearances.iter().any(|appearance| {
+                                appearance.native_ref.as_deref() == Some(record.id())
+                            }) =>
                     {
                         NativeDisposition::Regenerated
                     }
