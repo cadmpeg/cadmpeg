@@ -1429,6 +1429,7 @@ mod tests {
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
                 "writer.geometry-omitted",
+                "writer.loop-classification-omitted",
                 "writer.auxiliary-omitted",
                 "writer.procedural-reduced",
                 "writer.no-exportable-solids",

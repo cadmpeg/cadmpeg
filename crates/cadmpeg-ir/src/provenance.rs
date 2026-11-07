@@ -39,6 +39,8 @@ pub enum CodecFormat {
     Nx,
     /// `parasolid`
     Parasolid,
+    /// `pvz`
+    Pvz,
     /// `rhino`
     Rhino,
     /// `sat`
@@ -63,6 +65,7 @@ impl CodecFormat {
             "inventor" => Self::Inventor,
             "nx" => Self::Nx,
             "parasolid" => Self::Parasolid,
+            "pvz" => Self::Pvz,
             "rhino" => Self::Rhino,
             "sat" => Self::Sat,
             "sldprt" => Self::Sldprt,
@@ -84,6 +87,7 @@ impl CodecFormat {
             Self::Inventor => "inventor",
             Self::Nx => "nx",
             Self::Parasolid => "parasolid",
+            Self::Pvz => "pvz",
             Self::Rhino => "rhino",
             Self::Sat => "sat",
             Self::Sldprt => "sldprt",
@@ -118,6 +122,8 @@ impl CodecFormat {
             Some(Self::Nx)
         } else if registry_id_is(bytes, b"parasolid") {
             Some(Self::Parasolid)
+        } else if registry_id_is(bytes, b"pvz") {
+            Some(Self::Pvz)
         } else if registry_id_is(bytes, b"rhino") {
             Some(Self::Rhino)
         } else if registry_id_is(bytes, b"sat") {
@@ -695,8 +701,9 @@ mod tests {
             let format = CodecFormat::parse(text).unwrap();
             assert_eq!(serde_json::to_value(format).unwrap(), variant["const"]);
         }
-        assert_eq!(variants.len(), 13);
+        assert_eq!(variants.len(), 14);
         assert!(variants.iter().any(|variant| variant["const"] == "f3d"));
+        assert!(variants.iter().any(|variant| variant["const"] == "pvz"));
         let schema = serde_json::to_value(schemars::schema_for!(SourceObjectAssociation)).unwrap();
         assert_eq!(
             schema["properties"]["format"]["$ref"],
