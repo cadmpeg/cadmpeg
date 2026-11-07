@@ -3064,7 +3064,9 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
-        for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+        let mut ordered_occurrences: Vec<_> = occurrences.iter().zip(&occurrence_names).collect();
+        ordered_occurrences.sort_by_key(|(occurrence, _)| occurrence.ordinal);
+        for (occurrence, &occurrence_name) in ordered_occurrences {
             if unknown_placements.contains(&occurrence.id) {
                 continue;
             }

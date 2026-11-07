@@ -1156,6 +1156,14 @@ fn styled_point_body_retains_product_and_group_membership() {
         .expect("decode written product");
     let ir = output.ir();
     assert_eq!(ir.model.product_definitions[0].bodies.len(), 1);
+    let source_annotation =
+        &decoded.ir().native.namespace("rhino").unwrap().arenas()["annotations"][0];
+    let written_annotation = &ir.native.namespace("rhino").unwrap().arenas()["annotations"][0];
+    assert_eq!(written_annotation.id(), source_annotation.id());
+    assert_eq!(
+        written_annotation.field("source_uuid"),
+        source_annotation.field("source_uuid")
+    );
     let group = &ir.native.namespace("rhino").unwrap().arenas()["groups"][0];
     assert_eq!(group.field("links").unwrap().as_array().unwrap().len(), 3);
     let attributes = &ir.native.namespace("rhino").unwrap().arenas()["object_presentation"];
