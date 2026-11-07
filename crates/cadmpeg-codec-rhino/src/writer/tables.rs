@@ -223,6 +223,46 @@ fn color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], Cod
     ])
 }
 
+fn layer_color(
+    ir: &CadIr,
+    layer: &PresentationLayer,
+    name: &str,
+) -> Result<([u8; 4], Option<LossNote>), CodecError> {
+    let native = own_layer(ir, layer);
+    match color(native.as_ref(), name) {
+        Ok(color) => Ok((color, None)),
+        Err(CodecError::Malformed(reason) | CodecError::InvalidInput(reason)) => Ok((
+            [0, 0, 0, 0],
+            Some(RhinoLossCode::WriterLayerColorReduced.note(format!(
+                "layer {} native {} {name} is omitted: {reason}",
+                layer.id,
+                layer.native_ref.as_deref().unwrap_or("unlinked")
+            ))),
+        )),
+        Err(error) => Err(error),
+    }
+}
+
+pub(super) fn layer_color_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    for layer in &ir.model.presentation_layers {
+        for name in ["color", "plot_color"] {
+            if let Some(loss) = layer_color(ir, layer, name)?.1 {
+                losses.push(loss);
+            }
+        }
+    }
+    Ok(losses)
+}
+
+pub(super) fn layer_colors_complete(
+    ir: &CadIr,
+    layer: &PresentationLayer,
+) -> Result<bool, CodecError> {
+    Ok(layer_color(ir, layer, "color")?.1.is_none()
+        && layer_color(ir, layer, "plot_color")?.1.is_none())
+}
+
 fn layer_display_color(
     ir: &CadIr,
     layer: &PresentationLayer,
@@ -312,7 +352,7 @@ pub(super) fn layers(
                 unit_color_channel(value.b())?,
                 unit_color_channel(1.0 - value.a())?,
             ],
-            None => color(fields, "color")?,
+            None => layer_color(ir, layer, "color")?.0,
         });
         payload.extend(0_i16.to_le_bytes());
         payload.extend(0_i16.to_le_bytes());
@@ -321,7 +361,7 @@ pub(super) fn layers(
         payload.extend(utf16(&layer.name)?);
         payload.push(u8::from(layer.visible.unwrap_or(true)));
         payload.extend(layer_linetype(ir, layer)?.1.to_le_bytes());
-        payload.extend(color(fields, "plot_color")?);
+        payload.extend(layer_color(ir, layer, "plot_color")?.0);
         payload.extend(
             fields
                 .and_then(|fields| fields.get("plot_weight_mm"))
