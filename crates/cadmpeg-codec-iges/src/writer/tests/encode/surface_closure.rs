@@ -43,6 +43,11 @@ fn bounded_plane_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn vertex_loop_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("explicit_vertex_loop"));
+}
+
+#[test]
 fn edited_nurbs_control_point_replaces_source_curve() {
     let decoded = IgesCodec
         .decode(
