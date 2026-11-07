@@ -425,11 +425,26 @@ fn a_second_geometry_element_is_refused() {
 #[test]
 fn damaged_xml_component_preserves_source_indices() {
     let xml = br#"<PV_FILE type="PVS" version="0302"><section_structure><component name="First"><component_instance index="1"/><component_instance index="2"/></component><component name="Broken" name="duplicate"/><component name="Last"/></section_structure><section_properties><property_component_ref index_offset="3"><property name="key" value="last"/></property_component_ref></section_properties></PV_FILE>"#;
-    let structure = decode(xml).expect("recover readable components");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Pvz, &ctx);
+    let structure = read(&ctx, View::over_retained(xml), "test.pvs", &mut parts)
+        .expect("recover readable components");
     assert_eq!(structure.definitions.len(), 2);
     assert_eq!(structure.definitions[0].occurrences.len(), 1);
     assert_eq!(structure.definitions[0].occurrences[0].definition, 1);
     assert_eq!(&*structure.definitions[1].properties[0].value, "last");
+    let (_, _, fidelity, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 2);
+    for source in [
+        br#"<component name="Broken" name="duplicate"/>"#.as_slice(),
+        br#"<component_instance index="1"/>"#.as_slice(),
+    ] {
+        assert!(fidelity
+            .retained_records()
+            .values()
+            .any(|record| record.data() == Some(source)));
+    }
 }
 
 #[test]

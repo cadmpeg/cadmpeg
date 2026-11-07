@@ -132,6 +132,7 @@ pub(super) fn read<'a>(
     let mut residue = Residue::default();
     let general: Rc<str> = Rc::from(GENERAL_STREAM);
     let mut definitions = Vec::new();
+    let mut definition_nodes = Vec::new();
     let mut property_sets = Vec::new();
     for section in root.children().filter(Node::is_element) {
         match section.tag_name().name() {
@@ -141,6 +142,7 @@ pub(super) fn read<'a>(
                     if component.tag_name().name() == COMPONENT {
                         positions.push((component.range().start, Some(definitions.len())));
                         definitions.push(component_definition(component, &mut residue)?);
+                        definition_nodes.push(component);
                     } else {
                         residue.xml_element(component.tag_name().name());
                     }
@@ -171,7 +173,29 @@ pub(super) fn read<'a>(
             occurrence.definition
         )));
     }
-    for definition in &mut definitions {
+    for (definition, component) in definitions.iter_mut().zip(definition_nodes) {
+        let mut sources = component
+            .children()
+            .filter(|node| node.is_element() && node.tag_name().name() == COMPONENT_INSTANCE);
+        for occurrence in &definition.occurrences {
+            let source = sources
+                .next()
+                .ok_or_else(|| CodecError::malformed("XML occurrence source is missing"))?;
+            if indices[occurrence.definition].is_none() {
+                let extent = member_element(member, source.range())?;
+                give_up_element(
+                    ctx,
+                    parts,
+                    extent,
+                    stream,
+                    COMPONENT_INSTANCE,
+                    "references a damaged component",
+                )?;
+            }
+        }
+        if sources.next().is_some() {
+            return Err(CodecError::malformed("XML occurrence source is unmatched"));
+        }
         definition.occurrences.retain_mut(|occurrence| {
             if let Some(index) = indices[occurrence.definition] {
                 occurrence.definition = index;
@@ -190,17 +214,7 @@ pub(super) fn read<'a>(
                 .filter(|next| (1..=count).contains(next));
         }
         if cursor.is_none() {
-            let start = member
-                .start()
-                .checked_add(set.range().start)
-                .ok_or_else(|| CodecError::malformed("XML property set offset overflows"))?;
-            let end = member
-                .start()
-                .checked_add(set.range().end)
-                .ok_or_else(|| CodecError::malformed("XML property set offset overflows"))?;
-            let extent = member
-                .child(start, end)
-                .ok_or_else(|| CodecError::malformed("XML property set escapes its member"))?;
+            let extent = member_element(member, set.range())?;
             give_up_element(
                 ctx,
                 parts,
@@ -241,6 +255,20 @@ pub(super) fn read<'a>(
         definitions,
         residue,
     })
+}
+
+fn member_element(member: View<'_>, range: std::ops::Range<usize>) -> Result<View<'_>, CodecError> {
+    let start = member
+        .start()
+        .checked_add(range.start)
+        .ok_or_else(|| CodecError::malformed("XML element offset overflows"))?;
+    let end = member
+        .start()
+        .checked_add(range.end)
+        .ok_or_else(|| CodecError::malformed("XML element offset overflows"))?;
+    member
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("XML element escapes its member"))
 }
 
 fn give_up_element(
