@@ -320,6 +320,7 @@ pub(super) fn contain_legacy_as_built_solved_frame(
 /// with the solved connector frame's third basis column.
 const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 
+#[derive(Debug, Clone, Copy)]
 pub(super) struct LegacyAsBuiltOperands<'a> {
     pub(super) scope: &'a DesignParameterScope,
     pub(super) recipes: &'a [ConstructionRecipe],
