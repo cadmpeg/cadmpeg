@@ -331,6 +331,19 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
+    /// A Combine frame that matches the fixed fields of the operand-list
+    /// prologue is read in the standard prologue.
+    FeatureCombinePrologueAssumed,
+    /// A Combine whose lists name its operands, whose other fields contradict
+    /// the operand-list prologue or cannot be checked, and which no prologue
+    /// reads stays native.
+    FeatureCombineOperandListRefused,
+    /// A Combine that places its result in a new component stays native.
+    FeatureCombineNewComponentNative,
+    /// A Combine with a companion `RemoveBody` scope reads every tool as
+    /// removed, though the companion body selections do not name exactly the
+    /// tools.
+    FeatureCombineToolConsumptionAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
@@ -676,6 +689,10 @@ impl F3dLossCode {
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
+        Self::FeatureCombinePrologueAssumed,
+        Self::FeatureCombineOperandListRefused,
+        Self::FeatureCombineNewComponentNative,
+        Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureRevolveLayoutAssumed,
@@ -945,6 +962,12 @@ impl F3dLossCode {
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
+            Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
+            Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
+            Self::FeatureCombineToolConsumptionAssumed => {
+                "feature.combine-tool-consumption-assumed"
+            }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
@@ -1221,6 +1244,10 @@ impl F3dLossCode {
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperandListRefused
+            | Self::FeatureCombineNewComponentNative
+            | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
@@ -1426,6 +1453,10 @@ impl F3dLossCode {
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperandListRefused
+            | Self::FeatureCombineNewComponentNative
+            | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
@@ -1721,6 +1752,10 @@ mod tests {
                 "feature.scale-frame-length-form-assumed",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
+                "feature.combine-prologue-assumed",
+                "feature.combine-operand-list-refused",
+                "feature.combine-new-component-native",
+                "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.revolve-layout-assumed",

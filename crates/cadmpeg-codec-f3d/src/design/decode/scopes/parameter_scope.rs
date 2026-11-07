@@ -484,7 +484,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_combine_operation(bytes, &records, &scope)?;
+                let construction =
+                    exact_combine_operation(bytes, &records, &scope, &stream_types, &mut losses)?;
                 if let scope::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
                     *slot = construction;
                 }

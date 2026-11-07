@@ -1818,19 +1818,21 @@ pub(crate) mod combine_extended_reference_operation_prefix {
 /// Spec §3.1. Record length 58 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length.
+/// Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length.
 /// ```
 pub(crate) mod combine_operand_list_operation_prefix {
-    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `property_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_PRESENCE: usize = 20;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 21;
-    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_4: usize = 25;
+    /// Offset of `companion_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPANION_COUNT: usize = 25;
     /// Offset of `keep_tools` (`u8`). Spec §3.1.
     pub(crate) const KEEP_TOOLS: usize = 29;
-    /// Offset of `zero_flag` (`u8`). Spec §3.1.
-    pub(crate) const ZERO_FLAG: usize = 30;
+    /// Offset of `new_component` (`u8`). Spec §3.1.
+    pub(crate) const NEW_COMPONENT: usize = 30;
     /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
     pub(crate) const CONSTANT_ONE: usize = 31;
     /// Offset of `reference_marker` (`u8`). Spec §3.1.
