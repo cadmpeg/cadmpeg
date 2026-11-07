@@ -579,14 +579,8 @@ fn typed_view_handoff_orders_native_owners_without_reordering_camera_values() {
         let view = &ir.model.view_presentations[ordinal];
         assert_eq!(view.native_ref.as_deref(), Some(records[ordinal].id()));
         assert_eq!(view.order, u32::try_from(ordinal).unwrap());
-        assert_eq!(
-            view.properties
-                .iter()
-                .find(|(key, _)| key.as_str() == "name")
-                .unwrap()
-                .1,
-            name
-        );
+        assert!(view.properties.is_empty());
+        assert_eq!(records[ordinal].field("name").unwrap(), name);
         assert_eq!(view.display_mode.as_deref(), Some("2"));
         let document = &ir.model.presentation_documents[ordinal];
         assert_eq!(document.native_ref.as_deref(), Some(records[ordinal].id()));

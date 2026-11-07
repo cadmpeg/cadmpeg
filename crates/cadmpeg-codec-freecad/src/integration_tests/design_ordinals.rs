@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Dense neutral ranks preserve native source order and dependency identities.
+//! Dense neutral ranks preserve dependency order and native identities.
 
 use cadmpeg_ir::features::{DesignParameter, Feature, ParameterValue};
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -36,8 +36,8 @@ fn sparse_interleaved_objects_get_dense_dependency_first_feature_ranks() {
     let ir = decoded.ir();
     assert_eq!(ir.model.features.len(), 4);
     for (name, rank) in [
-        ("Consumer", 0),
-        ("Driver", 1),
+        ("Driver", 0),
+        ("Consumer", 1),
         ("Independent", 2),
         ("Tail", 3),
     ] {
@@ -46,7 +46,7 @@ fn sparse_interleaved_objects_get_dense_dependency_first_feature_ranks() {
     let consumer = feature(ir, "Consumer");
     let driver = feature(ir, "Driver");
     // #209 D26: stored results have no regeneration definition operands.
-    // ObjectDeps remains native while feature ordinals follow source order.
+    // ObjectDeps remains native while feature ordinals follow dependency order.
     for feature in [consumer, driver] {
         assert!(matches!(
             feature.evaluation.definition().operation(),

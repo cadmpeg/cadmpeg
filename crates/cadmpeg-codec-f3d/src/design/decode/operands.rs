@@ -372,6 +372,10 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
 
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
 pub(crate) fn bind_work_point_input_carriers(
+    decode: (
+        &DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    ),
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -379,6 +383,7 @@ pub(crate) fn bind_work_point_input_carriers(
     edge_operands: &[DesignEdgeOperand],
     sketch_points: &[SketchPoint],
 ) -> Result<(), CodecError> {
+    let (ctx, parts) = decode;
     let mut header_index = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -449,7 +454,23 @@ pub(crate) fn bind_work_point_input_carriers(
             let Some(header) = header_index.get(&(stream.as_str(), input.record_index())) else {
                 continue;
             };
-            if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing work point operand stream"))?;
+            if let Some(recipe) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream: &stream,
+                    records,
+                    recipes,
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Vertex],
+                },
+                || parse_vertex_recipe(bytes, records, &stream, header, recipes).map(Ok),
+            )? {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                         recipe,
@@ -457,14 +478,9 @@ pub(crate) fn bind_work_point_input_carriers(
                     .map_err(CodecError::Malformed)?;
                 continue;
             }
-            if let Some(selection) = parse_work_point_sketch_point_frame(
-                bytes,
-                records,
-                input.record_index(),
-                header.byte_offset.ok_or_else(|| {
-                    CodecError::malformed("F3D source record has no scanner position")
-                })?,
-            ) {
+            let selection =
+                decode_work_point_selection_part(ctx, parts, source, &stream, records, header)?;
+            if let Some(WorkPointSelection::Sketch(selection)) = selection {
                 let mut point_matches = sketch_points.iter().filter(|point| {
                     native_stream(&point.id) == Some(stream.as_str())
                         && point.owner_reference == Some(selection.sketch_record_index)
@@ -507,15 +523,7 @@ pub(crate) fn bind_work_point_input_carriers(
                 }
                 continue;
             }
-            let Some(selection) = parse_entity_selection_frame(
-                bytes,
-                records,
-                input.record_index(),
-                header.byte_offset.ok_or_else(|| {
-                    CodecError::malformed("F3D source record has no scanner position")
-                })?,
-                header.class_tag.as_str(),
-            ) else {
+            let Some(WorkPointSelection::Entity(selection)) = selection else {
                 continue;
             };
             let Ok(primary_identity) = u32::try_from(selection.primary_identity) else {
@@ -569,6 +577,10 @@ pub(crate) fn bind_work_point_input_carriers(
 
 /// Bind the exact three-vertex construction carried by a `WorkPlane` scope.
 pub(crate) fn bind_work_plane_constructions(
+    decode: (
+        &DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    ),
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -576,6 +588,7 @@ pub(crate) fn bind_work_plane_constructions(
     owners: &[DesignParameterOwner],
     parameters: &[DesignParameter],
 ) -> Result<(), CodecError> {
+    let (ctx, parts) = decode;
     let mut header_index = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -638,20 +651,34 @@ pub(crate) fn bind_work_plane_constructions(
         }) {
             continue;
         }
-        let [Some(first_input), Some(second_input), Some(third_input)] = [first, second, third]
-            .map(|record_index| {
-                parse_vertex_recipe(
-                    bytes,
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("missing work plane operand stream"))?;
+        let mut inputs = Vec::new();
+        for record_index in [first, second, third] {
+            let Some(header) = header_index.get(&(stream.as_str(), *record_index)) else {
+                continue;
+            };
+            if let Some(recipe) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream: &stream,
                     records,
-                    &stream,
-                    header_index.get(&(stream.as_str(), *record_index))?,
                     recipes,
-                )
-            })
-        else {
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Vertex],
+                },
+                || parse_vertex_recipe(bytes, records, &stream, header, recipes).map(Ok),
+            )? {
+                inputs.push(recipe);
+            }
+        }
+        let Ok(inputs) = <[DesignVertexRecipe; 3]>::try_from(inputs) else {
             continue;
         };
-        let inputs = [first_input, second_input, third_input];
         let placement_record_index = *placement_record_index;
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = Some(
@@ -1252,10 +1279,18 @@ fn decode_operand_recipe_part<T>(
     else {
         return parse().transpose();
     };
+    let paired_search = start
+        .checked_add(11)
+        .ok_or_else(|| CodecError::malformed("operand header offset overflows"))?;
+    let missing_pair = input
+        .records
+        .first_at_or_after(paired_search, input.header.record_index)
+        .is_none_or(|paired| paired >= end);
+    let failed_offset = if missing_pair { start } else { offset };
     let Some(frame) = input
         .records
         .iter()
-        .find(|frame| frame.start <= offset && offset < frame.end)
+        .find(|frame| frame.start <= failed_offset && failed_offset < frame.end)
     else {
         return parse().transpose();
     };
@@ -4515,6 +4550,89 @@ pub(in crate::design) fn entity_selection_matches_curve(
     })
 }
 
+enum WorkPointSelection {
+    Sketch(WorkPointSketchPointFrame),
+    Entity(EntitySelectionFrame),
+}
+
+fn decode_work_point_selection_part(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    records: &[crate::metastream::PrimaryRecordFrame],
+    header: &DesignRecordHeader,
+) -> Result<Option<WorkPointSelection>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let Some(offset) = header.byte_offset.and_then(|v| usize::try_from(v).ok()) else {
+        return Ok(None);
+    };
+    if parse_entity_selection_prefix(source.window(), offset, header.record_index).is_none() {
+        return Ok(None);
+    }
+    let identity = header
+        .record_index
+        .checked_add(3)
+        .ok_or_else(|| CodecError::malformed("work point identity index overflows"))?;
+    let Some(frame) = records
+        .iter()
+        .find(|frame| frame.entity_id == u64::from(identity))
+        .or_else(|| {
+            records
+                .iter()
+                .find(|frame| frame.start <= offset && offset < frame.end)
+        })
+    else {
+        return Ok(None);
+    };
+    let begin = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("work point selection start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("work point selection end overflows"))?;
+    let extent = source
+        .child(begin, end)
+        .ok_or_else(|| CodecError::malformed("work point selection exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+        stream,
+        ":design-record-header#",
+        u64_from_index(frame.start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(None);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        let bytes = source.window();
+        let byte_offset = u64_from_index(offset);
+        parse_work_point_sketch_point_frame(bytes, records, header.record_index, byte_offset)
+            .map(WorkPointSelection::Sketch)
+            .or_else(|| {
+                parse_entity_selection_frame(
+                    bytes,
+                    records,
+                    header.record_index,
+                    byte_offset,
+                    header.class_tag.as_str(),
+                )
+                .map(WorkPointSelection::Entity)
+            })
+            .ok_or_else(|| CodecError::malformed("invalid work point selection"))
+    })
+}
+
 /// Direct sketch-point identity carried by a `WorkPoint` input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WorkPointSketchPointFrame {
@@ -4738,6 +4856,8 @@ pub(super) fn parse_entity_selection_frame(
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub(crate) fn decode_body_recipe_operands(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -4813,19 +4933,36 @@ pub(crate) fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe_with_index(
-                bytes,
-                records,
-                header,
-                body_recipes_by_stream
-                    .get(stream)
-                    .map_or(&[], Vec::as_slice),
-            ) else {
-                continue;
-            };
-            if let Some(operand) =
-                parse_body_recipe_operand_with_index(bytes, records, group, ordinal, header, recipe)
-            {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing body operand stream"))?;
+            if let Some(operand) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream,
+                    records,
+                    recipes,
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Body],
+                },
+                || {
+                    let recipe = unique_body_recipe_with_index(
+                        bytes,
+                        records,
+                        header,
+                        body_recipes_by_stream
+                            .get(stream)
+                            .map_or(&[], Vec::as_slice),
+                    )?;
+                    parse_body_recipe_operand_with_index(
+                        bytes, records, group, ordinal, header, recipe,
+                    )
+                    .map(Ok)
+                },
+            )? {
                 push_body_recipe_operand(
                     &mut out,
                     operand,
@@ -4892,27 +5029,44 @@ pub(crate) fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, *record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe_with_index(
-                bytes,
-                records,
-                header,
-                body_recipes_by_stream
-                    .get(stream)
-                    .map_or(&[], Vec::as_slice),
-            ) else {
-                continue;
-            };
             let owner = DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             };
-            if let Some(operand) = parse_body_recipe_operand_frame_with_index(
-                bytes,
-                records,
-                scope.record_index,
-                owner,
-                header,
-                recipe,
-            ) {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("missing body operand stream"))?;
+            if let Some(operand) = decode_operand_recipe_part(
+                ctx,
+                parts,
+                OperandRecipePart {
+                    source,
+                    stream,
+                    records,
+                    recipes,
+                    header,
+                    next_byte_offset: None,
+                    kinds: &[ConstructionRecipeKind::Body],
+                },
+                || {
+                    let recipe = unique_body_recipe_with_index(
+                        bytes,
+                        records,
+                        header,
+                        body_recipes_by_stream
+                            .get(stream)
+                            .map_or(&[], Vec::as_slice),
+                    )?;
+                    parse_body_recipe_operand_frame_with_index(
+                        bytes,
+                        records,
+                        scope.record_index,
+                        owner,
+                        header,
+                        recipe,
+                    )
+                    .map(Ok)
+                },
+            )? {
                 push_body_recipe_operand(
                     &mut out,
                     operand,
