@@ -116,10 +116,26 @@ pub(crate) fn construction_carrier_conflict(
     };
     let [start, end] = [start, end].map(|point| point.map(FiniteReal::get));
     let direction = direction.map(FiniteReal::get);
-    if start == end || direction == [0.0, 0.0] {
+    if same_position(start, end) || direction == [0.0, 0.0] {
         return false;
     }
     !line_carrier_matches(origin.map(FiniteReal::get), direction, start, end)
+}
+
+/// Largest per-axis difference between two stored positions that still counts
+/// as one position, in units of the machine epsilon times the larger
+/// coordinate magnitude of the pair. Positions are converted between unit
+/// systems in binary floating point, so two records of one point can differ
+/// by a few units in the last place.
+const SAME_POSITION_ULPS: f64 = 4.0;
+
+/// Whether two stored positions are one position up to floating-point
+/// rounding of their coordinates.
+fn same_position(first: [f64; 2], second: [f64; 2]) -> bool {
+    first
+        .iter()
+        .zip(&second)
+        .all(|(a, b)| (a - b).abs() <= SAME_POSITION_ULPS * f64::EPSILON * a.abs().max(b.abs()))
 }
 
 /// Whether the record is a line whose first two point references resolve to
@@ -130,17 +146,34 @@ pub(crate) fn degenerate_line(
     entity: &PmDcSketchEntity,
     point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
 ) -> bool {
+    line_endpoints(entity, point).is_some_and(|(start, end)| same_position(start, end))
+}
+
+/// Whether the record is a degenerate line whose endpoints are one position
+/// only under the reading that their difference is rounding.
+pub(crate) fn rounded_degenerate_line(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> bool {
+    line_endpoints(entity, point)
+        .is_some_and(|(start, end)| start != end && same_position(start, end))
+}
+
+/// The stored positions of the first two point references of a line.
+fn line_endpoints(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> Option<([f64; 2], [f64; 2])> {
     let PmDcSketchEntityKind::Line { points, .. } = &entity.kind else {
-        return false;
+        return None;
     };
     let [start, end, ..] = points.references() else {
-        return false;
+        return None;
     };
     let token = entity.identity.segment_token.as_str();
-    let (Some(start), Some(end)) = (point(token, start.index()), point(token, end.index())) else {
-        return false;
-    };
-    start.map(FiniteReal::get) == end.map(FiniteReal::get)
+    let start = point(token, start.index())?;
+    let end = point(token, end.index())?;
+    Some((start.map(FiniteReal::get), end.map(FiniteReal::get)))
 }
 
 /// Whether the record is a curve whose entity flags carry a bit with an
@@ -442,6 +475,8 @@ pub(crate) struct SketchProjection {
     pub(crate) native_carrier_conflicts: usize,
     /// Lines whose endpoints coincide; they stay native.
     pub(crate) native_degenerate_lines: usize,
+    /// Those lines whose endpoints coincide only up to rounding.
+    pub(crate) native_rounded_lines: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1657,6 +1692,11 @@ pub(crate) fn project(
             resolve_point(token, reference, &raw_entities)
         })
     });
+    let rounded_lines = line_keys(&|entity| {
+        rounded_degenerate_line(entity, |token, reference| {
+            resolve_point(token, reference, &raw_entities)
+        })
+    });
     let native_lines = conflicted_lines
         .union(&degenerate_lines)
         .copied()
@@ -1701,6 +1741,7 @@ pub(crate) fn project(
     let mut unresolved_entities = 0usize;
     let mut carrier_conflicts = Vec::new();
     let mut degenerate = Vec::new();
+    let mut rounded = Vec::new();
     for entity in &inventory.entities {
         let key = (
             entity.identity.segment_token.as_str(),
@@ -1750,6 +1791,9 @@ pub(crate) fn project(
             unresolved_entities += 1;
             if let Some(id) = sketch_id(sketch) {
                 if degenerate_lines.contains(&key) {
+                    if rounded_lines.contains(&key) {
+                        rounded.push(id.clone());
+                    }
                     degenerate.push(id);
                 } else {
                     carrier_conflicts.push(id);
@@ -2059,6 +2103,10 @@ pub(crate) fn project(
         .iter()
         .filter(|sketch| closed_sketch_ids.contains(sketch))
         .count();
+    let native_rounded_lines = rounded
+        .iter()
+        .filter(|sketch| closed_sketch_ids.contains(sketch))
+        .count();
     let unresolved_construction = projected_entities
         .iter()
         .filter(|entity| {
@@ -2079,6 +2127,7 @@ pub(crate) fn project(
         native_axis_distances,
         native_carrier_conflicts,
         native_degenerate_lines,
+        native_rounded_lines,
     })
 }
 
@@ -2097,6 +2146,15 @@ pub(crate) fn degenerate_line_loss(count: usize) -> Option<cadmpeg_ir::report::l
     (count != 0).then(|| {
         crate::loss::InventorLossCode::SketchDegenerateLineNative.note(format!(
             "Retained {count} Inventor line(s) natively: the endpoints share one position, so the record stores no segment, and a zero-length line bounds no profile."
+        ))
+    })
+}
+
+/// The loss for lines whose endpoints differ and are read as one position.
+pub(crate) fn rounded_line_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchLineEndpointsRoundingAssumed.note(format!(
+            "{count} Inventor line(s) have distinct stored endpoints within rounding; the reader assumes that the difference is rounding and reads one position."
         ))
     })
 }
