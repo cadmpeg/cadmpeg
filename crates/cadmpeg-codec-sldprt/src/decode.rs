@@ -3573,7 +3573,6 @@ fn build_geometry_ir(
         scan,
         &mut annotations,
         Some(&topology_index),
-        &histories,
         &mut pmi_losses,
     )?;
     stamp_feature_baseline(ctx, &mut ir)?;
@@ -4382,14 +4381,7 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    ir.model.pmi = crate::swift::annotations(
-        ctx,
-        scan,
-        &mut annotations,
-        None,
-        &histories,
-        &mut pmi_losses,
-    )?;
+    ir.model.pmi = crate::swift::annotations(ctx, scan, &mut annotations, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         sketches,
         entities: sketch_entities,
