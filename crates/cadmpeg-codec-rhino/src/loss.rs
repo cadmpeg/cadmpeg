@@ -253,6 +253,10 @@ pub(crate) enum RhinoLossCode {
     WriterTextStyleOmitted,
     /// A text style reference is reduced or reassigned.
     WriterTextStyleReferenceReduced,
+    /// A product definition has unrepresentable native metadata.
+    WriterProductMetadataReduced,
+    /// An embedded image cannot be written.
+    WriterImageOmitted,
     /// A native light has incomplete or unrepresentable fields.
     WriterLightOmitted,
     /// A light's stored archive index changes to its emitted table position.
@@ -413,6 +417,8 @@ impl RhinoLossCode {
         Self::WriterDimensionStyleIndexReassigned,
         Self::WriterTextStyleOmitted,
         Self::WriterTextStyleReferenceReduced,
+        Self::WriterProductMetadataReduced,
+        Self::WriterImageOmitted,
         Self::WriterLightOmitted,
         Self::WriterLightIndexReassigned,
         Self::WriterLightAttributeIndexReassigned,
@@ -515,6 +521,8 @@ impl RhinoLossCode {
             Self::WriterDimensionStyleIndexReassigned => "writer.dimension-style-index-reassigned",
             Self::WriterTextStyleOmitted => "writer.text-style-omitted",
             Self::WriterTextStyleReferenceReduced => "writer.text-style-reference-reduced",
+            Self::WriterProductMetadataReduced => "writer.product-metadata-reduced",
+            Self::WriterImageOmitted => "writer.image-omitted",
             Self::WriterLightOmitted => "writer.light-omitted",
             Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
             Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
@@ -672,6 +680,8 @@ impl RhinoLossCode {
             | Self::WriterDimensionStyleIndexReassigned
             | Self::WriterTextStyleOmitted
             | Self::WriterTextStyleReferenceReduced
+            | Self::WriterProductMetadataReduced
+            | Self::WriterImageOmitted
             | Self::WriterLightOmitted
             | Self::WriterLightIndexReassigned
             | Self::WriterLightAttributeIndexReassigned
@@ -797,6 +807,8 @@ mod tests {
                 "writer.dimension-style-index-reassigned",
                 "writer.text-style-omitted",
                 "writer.text-style-reference-reduced",
+                "writer.product-metadata-reduced",
+                "writer.image-omitted",
                 "writer.light-omitted",
                 "writer.light-index-reassigned",
                 "writer.light-attribute-index-reassigned",
