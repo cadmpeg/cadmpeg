@@ -314,8 +314,8 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
-    /// A Combine frame that matches the fixed fields of the operand-list and
-    /// standard prologues is read in one of them.
+    /// A Combine frame that matches the fixed fields of the operand-list
+    /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
     /// A Combine whose lists name its operands, whose other fields contradict
     /// the operand-list prologue or cannot be checked, and which no prologue

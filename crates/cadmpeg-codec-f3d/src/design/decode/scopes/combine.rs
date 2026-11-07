@@ -67,11 +67,12 @@ pub(super) fn exact_combine_operation(
                     && standard_fields_read(bytes, start)
                 {
                     operand_list_refusal = Some(
-                        "its lists name its operands, and the standard prologue also reads it",
+                        "its lists name its operands, and the standard prologue also reads it"
+                            .to_owned(),
                     );
                     continue;
                 }
-                if let Some(reason) = operand_list_refusal {
+                if let Some(reason) = &operand_list_refusal {
                     losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
                         "{}: the Combine frame matches the fixed operand-list fields and {reason}; it is read in the standard prologue",
                         scope.id
@@ -80,18 +81,21 @@ pub(super) fn exact_combine_operation(
                 return Ok(Some(*operation));
             }
             PrologueReading::NewComponent => {
-                operand_list_refusal =
-                    Some("its new-component Boolean is one, which the IR cannot name");
+                operand_list_refusal = Some(
+                    "its lists name its operands, and its new-component Boolean is one, which the IR cannot name"
+                        .to_owned(),
+                );
                 new_component = true;
             }
             PrologueReading::Contradicted(reason) => {
-                operand_list_refusal = Some(reason);
+                operand_list_refusal = Some(format!("its lists name its operands, but {reason}"));
                 contradiction = Some(reason);
             }
             PrologueReading::Refused => {
                 if operand_lists {
-                    operand_list_refusal =
-                        Some("its lists do not name its operands up to its reference table");
+                    operand_list_refusal = Some(
+                        "its lists do not name its operands up to its reference table".to_owned(),
+                    );
                 }
             }
         }

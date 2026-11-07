@@ -596,6 +596,7 @@ struct OperandListFixture {
     companion_guid: &'static str,
     companion_guid_tail: [u8; 3],
     companion_table: bool,
+    companion_record: bool,
     new_component: u8,
     omit_consumed: bool,
 }
@@ -623,6 +624,7 @@ impl OperandListFixture {
             companion_guid: "00000000-0000-0000-0000-000000000000",
             companion_guid_tail: [0; 3],
             companion_table: true,
+            companion_record: true,
             new_component: 0,
             omit_consumed: false,
         }
@@ -760,6 +762,9 @@ impl OperandListFixture {
         let mut companion_records = self.companions.clone();
         companion_records.sort_unstable();
         companion_records.dedup();
+        if !self.companion_record {
+            companion_records.clear();
+        }
         for companion in companion_records {
             indexed_header(&mut bytes, *b"412", companion);
             bytes.extend_from_slice(&[0; 10]);
@@ -1050,6 +1055,17 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
         assert_eq!(fixture.decode(), None);
     }
     assert_eq!(decode_combine_frame(&unregistered), None);
+    let mut without_record = companion(false, vec![500]);
+    without_record.companion_record = false;
+    let (operation, losses) = without_record.decode_with_losses();
+    assert_eq!(operation, None);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| (loss.code.clone(), loss.message.contains("primary and one paired header")))
+            .collect::<Vec<_>>(),
+        [(F3dLossCode::FeatureCombineOperandListRefused.kind(), true)]
+    );
     for (offset, value) in [(25, 1), (28, 1)] {
         let mut count_without_references = OperandListFixture::new(1, 0).bytes();
         count_without_references[offset] = value;
@@ -1148,8 +1164,11 @@ fn a_frame_whose_lists_name_its_operands_keeps_main_reading_when_a_field_contrad
             "{name}"
         );
         assert_eq!(
-            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
-            [F3dLossCode::FeatureCombinePrologueAssumed.kind()],
+            losses
+                .iter()
+                .map(|loss| (loss.code.clone(), loss.message.contains("its lists name its operands")))
+                .collect::<Vec<_>>(),
+            [(F3dLossCode::FeatureCombinePrologueAssumed.kind(), true)],
             "{name}"
         );
     }
