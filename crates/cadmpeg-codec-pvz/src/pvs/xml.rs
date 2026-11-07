@@ -6,8 +6,9 @@
 
 use std::rc::Rc;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use roxmltree::Node;
 
 use super::{ChildOccurrence, Definition, DefinitionRole, Placement, Property, Residue, Structure};
@@ -71,10 +72,57 @@ pub(super) fn declared_version(bytes: &[u8]) -> Option<&[u8]> {
 }
 
 /// Decodes an XML structure member.
-pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::malformed("XML structure member is not valid UTF-8"))?;
-    let document = ctx.parse_xml(text, "PVZ XML structure member")?;
+pub(super) fn read<'a>(
+    ctx: &DecodeContext<'a>,
+    member: View<'a>,
+    stream: &str,
+    parts: &mut PartOutput,
+) -> Result<Structure, CodecError> {
+    let mut damaged = Vec::new();
+    let (_, document) = cadmpeg_core::decode::parse_xml_recovering(
+        ctx,
+        member,
+        "PVZ XML structure member",
+        "scan PVZ XML elements",
+        "PVZ XML structure member",
+        &CodecError::malformed,
+        |extent, name, ancestors, _| {
+            let component = name == b"component"
+                && ancestors
+                    .first()
+                    .is_some_and(|parent| parent == b"section_structure");
+            let property_set = name == b"property_component_ref"
+                && ancestors
+                    .first()
+                    .is_some_and(|parent| parent == b"section_properties");
+            damaged.push((
+                extent,
+                String::from_utf8_lossy(name).into_owned(),
+                component,
+                property_set,
+            ));
+            Ok(())
+        },
+    )?;
+    let mut positions: Vec<(usize, Option<usize>)> = damaged
+        .iter()
+        .filter(|(_, _, component, _)| *component)
+        .map(|(extent, _, _, _)| (extent.start() - member.start(), None))
+        .collect();
+    let mut skipped_property_sets: Vec<_> = damaged
+        .iter()
+        .filter(|(_, _, _, property_set)| *property_set)
+        .map(|(extent, _, _, _)| {
+            (
+                extent.start() - member.start(),
+                damaged_property_step(extent.window()),
+            )
+        })
+        .collect();
+    skipped_property_sets.sort_unstable_by_key(|(offset, _)| *offset);
+    for (extent, name, _, _) in damaged {
+        give_up_element(ctx, parts, extent, stream, &name, "is malformed")?;
+    }
     let root = document.root_element();
     if root.tag_name().name() != ROOT || root.attribute("type") != Some("PVS") {
         return Err(CodecError::malformed(
@@ -84,6 +132,7 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
     let mut residue = Residue::default();
     let general: Rc<str> = Rc::from(GENERAL_STREAM);
     let mut definitions = Vec::new();
+    let mut definition_nodes = Vec::new();
     let mut property_sets = Vec::new();
     for section in root.children().filter(Node::is_element) {
         match section.tag_name().name() {
@@ -91,7 +140,9 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
             SECTION_STRUCTURE => {
                 for component in section.children().filter(Node::is_element) {
                     if component.tag_name().name() == COMPONENT {
+                        positions.push((component.range().start, Some(definitions.len())));
                         definitions.push(component_definition(component, &mut residue)?);
+                        definition_nodes.push(component);
                     } else {
                         residue.xml_element(component.tag_name().name());
                     }
@@ -109,7 +160,9 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
             other => residue.xml_element(other),
         }
     }
-    let count = definitions.len();
+    positions.sort_unstable_by_key(|position| position.0);
+    let indices: Vec<_> = positions.into_iter().map(|(_, index)| index).collect();
+    let count = indices.len();
     if let Some(occurrence) = definitions
         .iter()
         .flat_map(|definition| &definition.occurrences)
@@ -120,24 +173,76 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
             occurrence.definition
         )));
     }
-    let mut cursor = 0_usize;
+    for (definition, component) in definitions.iter_mut().zip(definition_nodes) {
+        let mut sources = component
+            .children()
+            .filter(|node| node.is_element() && node.tag_name().name() == COMPONENT_INSTANCE);
+        for occurrence in &definition.occurrences {
+            let source = sources
+                .next()
+                .ok_or_else(|| CodecError::malformed("XML occurrence source is missing"))?;
+            if indices[occurrence.definition].is_none() {
+                let extent = member_element(member, source.range())?;
+                give_up_element(
+                    ctx,
+                    parts,
+                    extent,
+                    stream,
+                    COMPONENT_INSTANCE,
+                    "references a damaged component",
+                )?;
+            }
+        }
+        if sources.next().is_some() {
+            return Err(CodecError::malformed("XML occurrence source is unmatched"));
+        }
+        definition.occurrences.retain_mut(|occurrence| {
+            if let Some(index) = indices[occurrence.definition] {
+                occurrence.definition = index;
+                true
+            } else {
+                false
+            }
+        });
+    }
+    let mut cursor = Some(0_usize);
+    let mut skipped = skipped_property_sets.into_iter().peekable();
     for set in property_sets {
+        while let Some((_, step)) = skipped.next_if(|(offset, _)| *offset < set.range().start) {
+            cursor = cursor
+                .and_then(|current| step.and_then(|step| current.checked_add(step)))
+                .filter(|next| (1..=count).contains(next));
+        }
+        if cursor.is_none() {
+            let extent = member_element(member, set.range())?;
+            give_up_element(
+                ctx,
+                parts,
+                extent,
+                stream,
+                PROPERTY_COMPONENT_REF,
+                "has no recoverable component index",
+            )?;
+            continue;
+        }
         let step = match set.attribute("index_offset") {
             Some(text) => index(text, "index_offset")?,
             None => 1,
         };
-        cursor = cursor
-            .checked_add(step)
+        let next = cursor
+            .and_then(|current| current.checked_add(step))
             .filter(|next| (1..=count).contains(next))
             .ok_or_else(|| {
                 CodecError::malformed("XML property_component_ref advances past the components")
             })?;
+        cursor = Some(next);
         for property in set.children().filter(Node::is_element) {
             if property.tag_name().name() != PROPERTY {
                 residue.xml_element(property.tag_name().name());
                 continue;
             }
-            if let Some(definition) = definitions.get_mut(cursor - 1) {
+            if let Some(definition) = indices[next - 1].and_then(|index| definitions.get_mut(index))
+            {
                 definition.properties.push(Property {
                     stream: Rc::clone(&general),
                     name: required(property, "name")?.into(),
@@ -150,6 +255,80 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
         definitions,
         residue,
     })
+}
+
+fn member_element(member: View<'_>, range: std::ops::Range<usize>) -> Result<View<'_>, CodecError> {
+    let start = member
+        .start()
+        .checked_add(range.start)
+        .ok_or_else(|| CodecError::malformed("XML element offset overflows"))?;
+    let end = member
+        .start()
+        .checked_add(range.end)
+        .ok_or_else(|| CodecError::malformed("XML element offset overflows"))?;
+    member
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("XML element escapes its member"))
+}
+
+fn give_up_element(
+    ctx: &DecodeContext<'_>,
+    parts: &mut PartOutput,
+    extent: View<'_>,
+    stream: &str,
+    name: &str,
+    reason: &str,
+) -> Result<(), CodecError> {
+    let mut spec = PartSpec::new("pvz.xml_element").holding([cadmpeg_ir::ArenaClass::Model]);
+    if let Some(stream) = cadmpeg_ir::StreamName::member(stream) {
+        spec = spec.in_stream(stream);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        Err::<(), _>(CodecError::malformed(format_args!(
+            "XML element <{name}> {reason}"
+        )))
+    })?;
+    Ok(())
+}
+
+fn damaged_property_step(bytes: &[u8]) -> Option<usize> {
+    let rest = bytes.strip_prefix(b"<")?;
+    let name_len = rest
+        .iter()
+        .position(|byte| byte.is_ascii_whitespace() || matches!(*byte, b'/' | b'>'))?;
+    let mut rest = rest.get(name_len..)?;
+    let mut step = None;
+    loop {
+        let trimmed = rest.trim_ascii_start();
+        let separated = trimmed.len() < rest.len();
+        rest = trimmed;
+        match rest {
+            [b'>', ..] | [b'/', b'>', ..] => return Some(step.unwrap_or(1)),
+            _ if !separated => return None,
+            _ => {}
+        }
+        let name_len = rest
+            .iter()
+            .position(|byte| *byte == b'=' || byte.is_ascii_whitespace())?;
+        let (name, after) = rest.split_at(name_len);
+        let after = after
+            .trim_ascii_start()
+            .strip_prefix(b"=")?
+            .trim_ascii_start();
+        let (&quote, after) = after.split_first()?;
+        if quote != b'"' && quote != b'\'' {
+            return None;
+        }
+        let value_len = after.iter().position(|byte| *byte == quote)?;
+        let (value, after) = after.split_at(value_len);
+        rest = after.get(1..)?;
+        if name == b"index_offset" {
+            if step.is_some() {
+                return None;
+            }
+            step = Some(std::str::from_utf8(value).ok()?.trim().parse().ok()?);
+        }
+    }
 }
 
 fn component_definition(

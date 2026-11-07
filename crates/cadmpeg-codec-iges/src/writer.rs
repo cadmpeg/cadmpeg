@@ -103,7 +103,7 @@ const WRITER_SENDER_PRODUCT: &str = "cadmpeg";
 const WRITER_NATIVE_FILE_NAME: &str = "generated.igs";
 const WRITER_NATIVE_SYSTEM_ID: &str = "cadmpeg";
 const WRITER_PREPROCESSOR_VERSION: &str = "0.1";
-const WRITER_INTEGER_REPRESENTATION_BITS: i64 = 32;
+const WRITER_INTEGER_REPRESENTATION_BITS: i64 = 64;
 const WRITER_SINGLE_PRECISION_MAGNITUDE: i64 = 38;
 const WRITER_SINGLE_PRECISION_SIGNIFICANCE: i64 = 6;
 const WRITER_DOUBLE_PRECISION_MAGNITUDE: i64 = 308;
@@ -161,6 +161,7 @@ mod offset_surface;
 mod pcurve_admission;
 mod placement_entities;
 pub(crate) mod target;
+mod transformed_surface;
 mod units;
 mod version_support;
 
@@ -636,7 +637,7 @@ fn synthesize_with_admission(
             .geometry
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
-    })?;
+    });
     let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
     let (opened, open_losses) = admission::open_incomplete_solids(poles.as_ref());
     let (pcurves, pcurve_losses) = pcurve_admission::admit(opened.as_ref());
@@ -6970,10 +6971,6 @@ fn surface_entities(
                     association_links: Vec::new(),
                     line_font: None,
                     source_targets: Vec::new(),
-                    // Type 108 Form 0 is the unbounded plane carrier in the
-                    // V4.0 and V5.0 profiles.  Keep the neutral plane frame
-                    // in its exact local Z=0 form and apply the frame through
-                    // the standard rigid Directory transformation.
                     type_code: 108,
                     form: 0,
                     label: String::new(),
@@ -7169,6 +7166,9 @@ fn surface_entities(
             };
             entities.push(surface);
             Ok(entities)
+        }
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            transformed_surface::entities(ctx, placed, base_index, version)
         }
         other => Err(CodecError::UnsupportedContent(format!(
             "IGES semantic writer does not encode surface geometry {other:?}"

@@ -607,8 +607,11 @@ pub(super) fn encode(
         body_map: None,
         browser_nodes: None,
     };
-    let meta = encode_design_metastream(&registry, &primary, &secondary)?
-        .ok_or_else(|| CodecError::Malformed("missing generated sketch metadata".into()))?;
+    let meta = encode_design_metastream(&registry, &primary, &secondary)?;
+    debug_assert!(meta.is_some(), "generated sketch registry has fixed types");
+    let Some(meta) = meta else {
+        return Ok(None);
+    };
     Ok(Some(SketchStream {
         bulk,
         meta,
@@ -800,8 +803,7 @@ fn mark(
     ctx.charge_entities(1, "F3D sketch record")?;
     rows.push(crate::metastream::RecordIndexEntry {
         entity_id: u64::from(id),
-        bulk_offset: u64::try_from(offset)
-            .map_err(|_| CodecError::InvalidInput("F3D sketch stream exceeds u64".into()))?,
+        bulk_offset: cadmpeg_core::decode::u64_from_index(offset),
     });
     Ok(())
 }

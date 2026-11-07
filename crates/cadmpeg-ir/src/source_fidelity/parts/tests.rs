@@ -165,10 +165,14 @@ fn failed_part_names_unformed_dependents_with_staged_records() {
     ctx.decode_part(&mut output, root, spec, |stage| {
         stage.insert_model(&ctx, point("step:model:point#zeta"))?;
         Err::<(), _>(CodecError::malformed("damaged entity"))
-    }).unwrap();
+    })
+    .unwrap();
     let (_, _, _, losses) = output.into_parts();
     assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].dropped, ["step:model:point#alpha", "step:model:point#zeta"]);
+    assert_eq!(
+        losses[0].dropped,
+        ["step:model:point#alpha", "step:model:point#zeta"]
+    );
 }
 
 #[test]
