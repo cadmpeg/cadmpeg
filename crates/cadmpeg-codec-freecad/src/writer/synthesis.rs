@@ -15,6 +15,41 @@ use xml::Object;
 #[cfg(test)]
 mod tests;
 
+fn unchanged_placement(property: &PropertyRecord, generated: &str) -> bool {
+    if property.name != "Placement" || property.type_name != "App::PropertyPlacement" {
+        return false;
+    }
+    let [value] = property.values() else {
+        return false;
+    };
+    if value.tag != "PropertyPlacement" || value.attributes.len() != 7 || value.text.is_some() {
+        return false;
+    }
+    let Ok(document) = roxmltree::Document::parse(generated) else {
+        return false;
+    };
+    let Some(node) = document
+        .root_element()
+        .children()
+        .find(roxmltree::Node::is_element)
+    else {
+        return false;
+    };
+    if !node.has_tag_name("PropertyPlacement") || node.attributes().len() != 7 {
+        return false;
+    }
+    ["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"]
+        .into_iter()
+        .all(|key| {
+            let source = value
+                .attributes
+                .get(key)
+                .and_then(|s| s.parse::<f64>().ok());
+            let output = node.attribute(key).and_then(|s| s.parse::<f64>().ok());
+            matches!((source, output), (Some(a), Some(b)) if a.is_finite() && a == b)
+        })
+}
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -354,6 +389,17 @@ pub(super) fn write(
             .and_then(|name| objects.iter_mut().find(|object| object.name == *name));
         if let Some(object) = destination {
             let neutral_owned = !native_names.contains(&object.name);
+            if neutral_owned
+                && object
+                    .properties
+                    .get(&property.name)
+                    .is_some_and(|generated| unchanged_placement(property, generated))
+            {
+                if let Some(original) = xml::native_named(property, &names, &available)? {
+                    object.set(&property.name, original);
+                    continue;
+                }
+            }
             if neutral_owned
                 && (object.properties.contains_key(&property.name)
                     || (crate::property_policy::has_neutral_form(&property.name)
@@ -1335,7 +1381,10 @@ pub(super) fn write(
 
         let mut rank_of: HashMap<&str, (u64, usize)> = HashMap::new();
         for (index, feature) in ir.model.features.iter().enumerate() {
-            if let Some(name) = names.get(feature.id.as_str()) {
+            if let Some(name) = names
+                .get(feature.id.as_str())
+                .filter(|name| !source_order.contains_key(name.as_str()))
+            {
                 rank_of
                     .entry(name.as_str())
                     .or_insert((feature.ordinal, index));
@@ -1348,7 +1397,10 @@ pub(super) fn write(
                 occurrence.parent,
                 cadmpeg_ir::products::OccurrenceParent::Root {}
             ) {
-                if let Some(name) = names.get(occurrence.id.as_str()) {
+                if let Some(name) = names
+                    .get(occurrence.id.as_str())
+                    .filter(|name| !source_order.contains_key(name.as_str()))
+                {
                     roots
                         .entry(name.as_str())
                         .or_insert((u64::from(occurrence.ordinal), index));
@@ -1357,6 +1409,7 @@ pub(super) fn write(
         }
         order_slots(&mut objects, &roots);
     }
+    let emitted_names: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for object in &mut objects {
         let mut originals = native_objects.iter().filter(|original| {
             names.get(original.id().as_str()) == Some(&object.name)
@@ -1365,6 +1418,27 @@ pub(super) fn write(
         if let (Some(original), None) = (originals.next(), originals.next()) {
             object.declaration_id =
                 xml::DeclarationId::Source(original.persistent_id.map(|id| id.to_string()));
+            let neutral_owns_dependencies = ir.model.features.iter().any(|feature| {
+                feature.native_ref.as_deref() == Some(original.id().as_str())
+                    && matches!(
+                        feature.definition().operation(),
+                        FeatureOperation::Native { .. }
+                    )
+            });
+            let mut dependencies = original
+                .dependencies
+                .iter()
+                .filter(|_| !neutral_owns_dependencies)
+                .filter_map(|id| names.get(id))
+                .filter(|name| emitted_names.contains(*name))
+                .cloned()
+                .collect::<Vec<_>>();
+            for dependency in &object.dependencies {
+                if !dependencies.contains(dependency) {
+                    dependencies.push(dependency.clone());
+                }
+            }
+            object.dependencies = dependencies;
         }
     }
     // The document header preserves the source's producing application and

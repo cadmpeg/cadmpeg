@@ -126,6 +126,9 @@ impl DesignDecalAsset {
     pub(crate) fn name(&self) -> &str {
         &self.name
     }
+    pub(crate) fn class_tags(&self) -> &[String; 2] {
+        &self.class_tags
+    }
     pub(crate) const fn primary_frame_length() -> u64 {
         u64_from_index(crate::layout::design_decal_image_asset_record::LEN)
     }
