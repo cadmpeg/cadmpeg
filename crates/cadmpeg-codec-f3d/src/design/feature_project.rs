@@ -54,6 +54,7 @@ use std::hash::Hash;
 
 pub(crate) mod form_cages;
 mod paste_copy;
+mod path_pattern;
 mod pattern_seeds;
 mod surface_offset;
 
@@ -1313,6 +1314,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 parameters: BTreeMap::new(),
                             })
                         })
+                    } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::PathPattern
+                    {
+                        path_pattern::path_pattern_definition(
+                            scope,
+                            construction_groups,
+                            &parameters,
+                            &mut projection_losses,
+                        )?
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::MoveFace
                     {

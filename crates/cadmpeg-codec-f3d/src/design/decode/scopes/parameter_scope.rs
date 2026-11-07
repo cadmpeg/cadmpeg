@@ -186,6 +186,15 @@ pub(crate) fn decode_parameter_scopes(
             if let scope::DesignScopePayloadMut::Emboss(slot) = scope.payload_mut() {
                 *slot = emboss;
             }
+            let path_pattern = super::path_pattern::exact_path_pattern_settings(
+                bytes,
+                &records,
+                &scope,
+                &class_types,
+            );
+            if let scope::DesignScopePayloadMut::PathPattern(slot) = scope.payload_mut() {
+                *slot = path_pattern;
+            }
             if let Some(loss) = extrude_extent_native_loss(&scope) {
                 losses.push(loss);
             }
@@ -1360,7 +1369,9 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             return None;
         }
         let kind = scope_feature_kind(&kind_text, type_family.as_ref())?;
-        let source_kind = (kind_text != kind.as_str()).then_some(kind_text);
+        let source_kind = (kind_text != kind.as_str()
+            || kind == scope::DesignFeatureKind::PathPattern)
+            .then_some(kind_text);
         let label = if tail_form == ScopeTailForm::Named {
             let label_at = kind_end.checked_add(8)?;
             let (value, _) = lp_utf16_bounded(bytes, label_at, 0..=256)?;
@@ -1928,7 +1939,8 @@ fn named_parameter_scope_tail_is_valid(
     })()
 }
 
-/// Type a scope from its class type GUID when that GUID is listed.
+/// Type a scope from its class type GUID when that GUID is listed. A
+/// `PathPattern` scope is selected only by its class GUID.
 fn scope_feature_kind(
     stored: &str,
     type_family: Option<&scope::DesignFeatureKind>,
@@ -1936,6 +1948,7 @@ fn scope_feature_kind(
     let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
     Some(match (literal, type_family) {
         (_, Some(family)) => family.clone(),
+        (scope::DesignFeatureKind::PathPattern, None) => scope::DesignFeatureKind::native(stored),
         (literal, None) => literal,
     })
 }
