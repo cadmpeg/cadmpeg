@@ -3,7 +3,6 @@
 
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::writer::write_error::WriteError;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::ParameterId;
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
@@ -281,12 +280,16 @@ pub(crate) fn role_parameter(
     feature: &cadmpeg_ir::features::Feature,
     native_roles: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     role: &str,
-) -> Result<Option<ParameterId>, CodecError> {
+) -> Result<Option<ParameterId>, WriteError> {
     let operation = feature.definition().operation();
-    let value = serde_json::to_value(operation)
-        .map_err(|error| CodecError::malformed(format!("serialize canonical role: {error}")))?;
+    let value = serde_json::to_value(operation).map_err(|error| {
+        WriteError::Decline(format!(
+            "SLDPRT feature {} cannot serialize canonical roles: {error}",
+            feature.id
+        ))
+    })?;
     let mut result = None;
-    visit_operation_roles(operation, |roles, paths| -> Result<(), CodecError> {
+    visit_operation_roles(operation, |roles, paths| -> Result<(), WriteError> {
         if roles
             .iter()
             .find(|candidate| native_roles.contains_key(**candidate))
@@ -302,7 +305,14 @@ pub(crate) fn role_parameter(
             result = dimension
                 .get("value")
                 .and_then(serde_json::Value::as_str)
-                .map(|id| ParameterId::mint(id.to_owned()).map_err(CodecError::malformed))
+                .map(|id| {
+                    ParameterId::mint(id.to_owned()).map_err(|error| {
+                        WriteError::Decline(format!(
+                            "SLDPRT feature {} has an invalid parameter binding: {error}",
+                            feature.id
+                        ))
+                    })
+                })
                 .transpose()?;
         }
         Ok(())
