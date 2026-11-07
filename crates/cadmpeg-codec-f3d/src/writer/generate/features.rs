@@ -52,6 +52,10 @@ struct NativeRemoveBody {
     state: u32,
     opaque_index: u32,
     opaque_scalar: f64,
+    recipe: Option<NativeBodyRecipe>,
+}
+
+struct NativeBodyRecipe {
     design_reference: u64,
     asset: String,
     context: String,
@@ -83,7 +87,9 @@ fn select_native_remove_bodies(
         let input = inputs.next()?;
         if inputs.next().is_some() || !input.bodies.is_empty() || !input.faces.is_empty()
             || !input.edges.is_empty() || !input.vertices.is_empty() || !input.edge_geometry.is_empty()
-            || input.operands.len() != 2 || !input.operands.iter().any(|operand| operand.native_ref.as_str() == selection) { return None; }
+            || !input.operands.iter().any(|operand| operand.native_ref.as_str() == selection) { return None; }
+        let recipe = if input.operands.len() == 1 { None } else {
+        if input.operands.len() != 2 { return None; }
         let operand = native.design_body_recipe_operands.iter().find(|record| record.record_index() == member
             && input.operands.iter().any(|input| input.native_ref.as_str() == record.id))?;
         if operand.scope_record_index != scope.record_index
@@ -99,11 +105,13 @@ fn select_native_remove_bodies(
                 && recipe.recipe_index == 0 && recipe.record_index.as_ref().is_some_and(|index| index.value == 0)
                 && recipe.design.as_ref().is_some_and(|design| design.id.value == (member + 3).to_string()
                     && design.selector.as_ref().is_some_and(|selector| selector.value == member + 4))) { return None; }
+        Some(NativeBodyRecipe { design_reference: operand.references()[0].design_reference,
+            asset: operand.asset_id.as_str().to_owned(), context: operand.context_id.as_str().to_owned() })
+        };
         Some(NativeRemoveBody { ordinal: feature.ordinal, id: feature.id.clone(), member,
             state: u32::try_from(scope.history_state_id()?).ok()?,
             opaque_index: group.frame.opaque_index.get(), opaque_scalar: group.frame.opaque_scalar().get(),
-            design_reference: operand.references()[0].design_reference,
-            asset: operand.asset_id.as_str().to_owned(), context: operand.context_id.as_str().to_owned() })
+            recipe })
     }).collect()
 }
 
@@ -732,7 +740,8 @@ pub(super) fn encode(
     });
     occupied.extend(base_flanges.iter().flat_map(|feature| feature.references));
     removals.retain(|feature| {
-        let indices = feature.member..=feature.member + 4;
+        let indices =
+            feature.member..=feature.member + if feature.recipe.is_some() { 4 } else { 0 };
         if indices.clone().any(|index| occupied.contains(&index)) {
             return false;
         }
@@ -971,31 +980,33 @@ pub(super) fn encode(
         mark(&mut secondary, group, out.len());
         header(&mut out, &tags[0], group)?;
         copy_groups.push(u64::from(group));
-        mark_primary(ctx, &mut primary, feature.member, out.len())?;
-        header(&mut out, &tags[15], feature.member)?;
-        out.extend_from_slice(&[0; 10]);
-        out.extend_from_slice(&1u32.to_le_bytes());
-        out.extend_from_slice(&feature.design_reference.to_le_bytes());
-        out.extend_from_slice(&3u32.to_le_bytes());
-        reference(&mut out, feature.member + 3);
-        out.extend_from_slice(&1u32.to_le_bytes());
-        native_lp_utf16(&mut out, &feature.asset)?;
-        native_lp_utf16(&mut out, &feature.context)?;
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&[0; 4]);
-        mark(&mut secondary, feature.member, out.len());
-        header(&mut out, &tags[0], feature.member)?;
-        removal_scopes.push(u64::from(feature.member));
-        for index in feature.member + 1..=feature.member + 4 {
-            mark_primary(ctx, &mut primary, index, out.len())?;
-            header(&mut out, &tags[6], index)?;
-            if index == feature.member + 3 {
-                native_lp_ascii(&mut out, &index.to_string())?;
-                out.extend_from_slice(&(feature.member + 4).to_le_bytes());
-                out.extend_from_slice(&[0; 12]);
-                native_lp_ascii(&mut out, "body_recipe_data")?;
+        if let Some(recipe) = &feature.recipe {
+            mark_primary(ctx, &mut primary, feature.member, out.len())?;
+            header(&mut out, &tags[15], feature.member)?;
+            out.extend_from_slice(&[0; 10]);
+            out.extend_from_slice(&1u32.to_le_bytes());
+            out.extend_from_slice(&recipe.design_reference.to_le_bytes());
+            out.extend_from_slice(&3u32.to_le_bytes());
+            reference(&mut out, feature.member + 3);
+            out.extend_from_slice(&1u32.to_le_bytes());
+            native_lp_utf16(&mut out, &recipe.asset)?;
+            native_lp_utf16(&mut out, &recipe.context)?;
+            out.extend_from_slice(&2u32.to_le_bytes());
+            out.extend_from_slice(&[0; 4]);
+            mark(&mut secondary, feature.member, out.len());
+            header(&mut out, &tags[0], feature.member)?;
+            removal_scopes.push(u64::from(feature.member));
+            for index in feature.member + 1..=feature.member + 4 {
+                mark_primary(ctx, &mut primary, index, out.len())?;
+                header(&mut out, &tags[6], index)?;
+                if index == feature.member + 3 {
+                    native_lp_ascii(&mut out, &index.to_string())?;
+                    out.extend_from_slice(&(feature.member + 4).to_le_bytes());
+                    out.extend_from_slice(&[0; 12]);
+                    native_lp_ascii(&mut out, "body_recipe_data")?;
+                }
+                copy_groups.push(u64::from(index));
             }
-            copy_groups.push(u64::from(index));
         }
     }
     for (feature, index) in base_flanges.iter().zip(base_flange_indices) {
