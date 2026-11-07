@@ -297,7 +297,7 @@ pub(super) fn encode(
         out.extend_from_slice(&1u64.to_le_bytes());
         out.extend_from_slice(&[0; 3]);
         ctx.charge_entities(1, "F3D feature record")?;
-        mark(&mut secondary, base, out.len())?;
+        mark(&mut secondary, base, out.len());
         header(&mut out, "256", base)?;
         for (local, scalar) in values.iter().enumerate() {
             let local = u32::try_from(local)
@@ -327,7 +327,7 @@ pub(super) fn encode(
                 &mut secondary,
                 owner_index,
                 out.len() - crate::layout::indexed_design_record_header::LEN,
-            )?;
+            );
             let parameter = DesignParameter::authored(DesignParameterContent {
                 id: format!("f3d:generated:parameter#{parameter_index}"),
                 class_tag: "259".to_owned().try_into().map_err(CodecError::Malformed)?,
@@ -467,20 +467,15 @@ fn mark_primary(
     offset: usize,
 ) -> Result<(), CodecError> {
     ctx.charge_entities(1, "F3D feature record")?;
-    mark(records, id, offset)
+    mark(records, id, offset);
+    Ok(())
 }
 
-fn mark(
-    records: &mut Vec<crate::metastream::RecordIndexEntry>,
-    id: u32,
-    offset: usize,
-) -> Result<(), CodecError> {
+fn mark(records: &mut Vec<crate::metastream::RecordIndexEntry>, id: u32, offset: usize) {
     records.push(crate::metastream::RecordIndexEntry {
         entity_id: u64::from(id),
-        bulk_offset: u64::try_from(offset)
-            .map_err(|_| CodecError::InvalidInput("F3D stream too large".into()))?,
+        bulk_offset: cadmpeg_core::decode::u64_from_index(offset),
     });
-    Ok(())
 }
 fn header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), CodecError> {
     native_lp_ascii(out, tag)?;
