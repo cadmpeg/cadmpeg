@@ -312,6 +312,57 @@ fn scaled_root_and_child_occurrences_round_trip_as_mapped_items() {
 }
 
 #[test]
+fn scaled_mapped_assembly_rewrites_without_new_decode_losses() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_mapped_assembly.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#33=DIRECTION('',(1.,0.,0.));",
+        "#33=DIRECTION('',(1.,0.,0.));\n#36=DIRECTION('',(0.,1.,0.));",
+    )
+    .replace(
+        "#35=AXIS2_PLACEMENT_3D('',#31,#32,#33);",
+        "#35=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','',#33,#36,#31,2.,#32);",
+    );
+    let codec = StepCodec::default();
+    let first = codec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode mapped assembly");
+    let mut bytes = Vec::new();
+    write_step(
+        first.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write mapped assembly");
+    let after = codec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written assembly");
+    assert!(
+        after.report().losses.iter().all(|loss| first
+            .report()
+            .losses
+            .iter()
+            .any(|before| before.code == loss.code)),
+        "{:#?}",
+        after.report().losses
+    );
+    let child = after
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Mapped child"))
+        .expect("mapped child");
+    let rows = child.transform.expect("placement").rows();
+    for (axis, row) in rows.iter().take(3).enumerate() {
+        assert!((row[axis] - 2.0).abs() < 1.0e-12);
+    }
+}
+
+#[test]
 fn reflected_occurrence_preserves_its_orientation() {
     use cadmpeg_ir::transform::Transform;
     let mut ir = unit_cube().expect("cube");
