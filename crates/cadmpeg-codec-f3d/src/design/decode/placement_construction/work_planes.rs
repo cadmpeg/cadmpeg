@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind solved placement geometry to construction-plane scopes.
 
+use std::collections::HashMap;
+
 use crate::ids::native_stream;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut, DesignWorkPlaneTransform,
@@ -88,6 +90,27 @@ pub(crate) fn bind(
         }
     }
     losses
+}
+
+pub(crate) fn class_pair_inferred_axis_losses(
+    scopes: &[DesignParameterScope],
+    placements: &[DesignPlacementConstruction],
+    inferred_axes: &HashMap<String, (u64, [u8; 2])>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    scopes
+        .iter()
+        .filter(|scope| !has_operand(scope, placements))
+        .filter_map(|scope| {
+            let frame = scope.work_plane_frame()?;
+            let &(offset, [inferred_x_axis, inferred_z_axis]) = inferred_axes.get(&scope.id)?;
+            (frame.work_plane_transform_offset == offset).then(|| {
+                crate::loss::F3dLossCode::WorkPlaneInferredAxisAssumed.note(format!(
+                    "WorkPlane {} takes its frame from the class-pair placement matrix at offset {offset}, whose isInferredXAxis byte is {inferred_x_axis} and isInferredZAxis byte is {inferred_z_axis}.",
+                    scope.id
+                ))
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

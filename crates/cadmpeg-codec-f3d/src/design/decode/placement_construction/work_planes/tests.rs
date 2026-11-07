@@ -228,3 +228,55 @@ fn work_plane_binds_version_seven_and_ten_grammar_frames() {
         );
     }
 }
+
+#[test]
+fn class_pair_frame_with_nonzero_inferred_axis_bytes_keeps_matrix_and_reports_assumption() {
+    use crate::records::sketch_placement::SketchPlacementMatrix;
+    use crate::test_support::work_plane::{placements, scope, scope_referencing};
+    let transform = SketchPlacementMatrix::try_from([
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 2.5],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .unwrap();
+    let mut class_pair = scope_referencing(&[73]);
+    class_pair.with_work_plane_transform(transform);
+    let inferred_axes =
+        std::collections::HashMap::from([(class_pair.id.clone(), (0, [0x4d, 0x90]))]);
+    let losses = super::class_pair_inferred_axis_losses(
+        std::slice::from_ref(&class_pair),
+        &[],
+        &inferred_axes,
+    );
+    assert_eq!(class_pair.work_plane_transform(), Some(transform));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::WorkPlaneInferredAxisAssumed
+            .note("")
+            .code
+    );
+    assert!(losses[0]
+        .message
+        .contains("isInferredXAxis byte is 77 and isInferredZAxis byte is 144"));
+
+    let replaced = std::collections::HashMap::from([(class_pair.id.clone(), (49, [1, 1]))]);
+    assert!(super::class_pair_inferred_axis_losses(
+        std::slice::from_ref(&class_pair),
+        &[],
+        &replaced
+    )
+    .is_empty());
+
+    let placement = placements().remove(0);
+    let mut registered = scope(&placement);
+    registered.with_work_plane_transform(transform);
+    let registered_axes = std::collections::HashMap::from([(registered.id.clone(), (0, [1, 1]))]);
+    assert!(super::class_pair_inferred_axis_losses(
+        std::slice::from_ref(&registered),
+        &[placement],
+        &registered_axes
+    )
+    .is_empty());
+}
