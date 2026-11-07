@@ -431,8 +431,8 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
     /// Exact compact flag records selected from the trailing-reference run.
     trailing_flags: Vec<DesignConstructionOperandFlag>,
-    /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
-    /// every container generation but one.
+    /// Opaque ordinal: nonzero, repeated after `opaque_scalar` in every
+    /// container generation but one.
     pub(crate) opaque_index: NonZeroU32,
     /// Byte offset of the first `opaque_index` copy.
     opaque_index_offset: u64,
