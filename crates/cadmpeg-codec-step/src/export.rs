@@ -2953,6 +2953,19 @@ impl<'a> Builder<'a> {
             }
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
+        let required_representations: BTreeSet<_> = occurrences
+            .iter()
+            .filter(|occurrence| occurrence_placements.contains_key(&occurrence.id))
+            .filter_map(|occurrence| occurrence_products.get(&occurrence.id).cloned())
+            .chain(representation_placements.keys().cloned())
+            .collect();
+        let owned_bodies: BTreeSet<_> = products
+            .iter()
+            .flat_map(|product| &product.bodies)
+            .collect();
+        let has_unclaimed_written_bodies = self.ir.model.bodies.iter().any(|body| {
+            !owned_bodies.contains(&body.id) && self.body_item_refs.contains_key(body.id.as_str())
+        });
         let mut product_attributes =
             HashMap::<&str, Vec<&cadmpeg_ir::attributes::SourceAttribute>>::new();
         for attribute in &ir.model.attributes {
@@ -3054,23 +3067,8 @@ impl<'a> Builder<'a> {
             if let Some(child_placements) = representation_placements.get(&product.id) {
                 placements.extend(child_placements);
             }
-            // A representation with no body items binds the product to an
-            // empty shape: the re-decode reports a product with a shape
-            // representation and no committed topology body. Documents with an
-            // occurrence graph keep every binding the assembly walk needs; a
-            // lone product keeps its binding when unclaimed bodies resolve
-            // through it; other bodyless products keep only the product
-            // definition shape.
-            let owned_bodies: BTreeSet<_> = products
-                .iter()
-                .flat_map(|product| &product.bodies)
-                .collect();
-            let has_unclaimed_written_bodies = self.ir.model.bodies.iter().any(|body| {
-                !owned_bodies.contains(&body.id)
-                    && self.body_item_refs.contains_key(body.id.as_str())
-            });
             let representation = if body_items.is_empty()
-                && occurrences.is_empty()
+                && !required_representations.contains(&product.id)
                 && !(products.len() == 1 && has_unclaimed_written_bodies)
             {
                 None
@@ -3095,10 +3093,11 @@ impl<'a> Builder<'a> {
                 product_context,
                 definition_context,
                 assembly_root_placements,
+                has_unclaimed_written_bodies,
             )
         });
         let root_representation = assembly_root
-            .map(|(_, representation)| representation)
+            .and_then(|(_, representation)| representation)
             .or_else(|| {
                 root_product
                     .or_else(|| {
@@ -3136,14 +3135,10 @@ impl<'a> Builder<'a> {
                             .insert(occurrence.id.as_str().to_owned());
                         continue;
                     };
-                    let Some(parent) = definitions
-                        .get(parent_product)
-                        .copied()
-                        .zip(representations.get(parent_product).copied())
-                    else {
+                    let Some(parent) = definitions.get(parent_product).copied() else {
                         continue;
                     };
-                    parent
+                    (parent, representations.get(parent_product).copied())
                 }
                 (OccurrenceParent::Root {}, Some(assembly_root)) if placed_root(occurrence) => {
                     assembly_root
@@ -3195,13 +3190,10 @@ impl<'a> Builder<'a> {
             let (child_definition, child_representation) = if let Some(child_product) =
                 occurrence_products.get(&occurrence.id)
             {
-                let Some((&definition, &representation)) = definitions
-                    .get(child_product)
-                    .zip(representations.get(child_product))
-                else {
+                let Some(&definition) = definitions.get(child_product) else {
                     continue;
                 };
-                (definition, Some(representation))
+                (definition, representations.get(child_product).copied())
             } else if writable_external(occurrence) {
                 let PrototypeReference::External { document, object } = &occurrence.prototype
                 else {
@@ -3251,6 +3243,9 @@ impl<'a> Builder<'a> {
             let Some(child_representation) = child_representation else {
                 continue;
             };
+            let Some(parent_representation) = parent_representation else {
+                continue;
+            };
             let usage_shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
@@ -3271,14 +3266,15 @@ impl<'a> Builder<'a> {
     }
 
     /// Emits the model product that places the root occurrences. Returns its
-    /// product definition and shape representation.
+    /// product definition and any shape representation.
     fn emit_assembly_root(
         &mut self,
         context: Ref,
         product_context: Ref,
         definition_context: Ref,
         placements: Vec<Ref>,
-    ) -> (Ref, Ref) {
+        needs_geometry: bool,
+    ) -> (Ref, Option<Ref>) {
         let name = string(self.model_name);
         let product = self
             .emitter
@@ -3290,6 +3286,9 @@ impl<'a> Builder<'a> {
             "PRODUCT_DEFINITION",
             &format!("{name},'',{formation},{definition_context}"),
         );
+        if placements.is_empty() && !needs_geometry {
+            return (definition, None);
+        }
         let shape = self
             .emitter
             .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
@@ -3308,7 +3307,7 @@ impl<'a> Builder<'a> {
             "SHAPE_DEFINITION_REPRESENTATION",
             &format!("{shape},{representation}"),
         );
-        (definition, representation)
+        (definition, Some(representation))
     }
 
     fn emit_unclaimed_body_representation(&mut self, context: Ref, root: Option<Ref>) {
