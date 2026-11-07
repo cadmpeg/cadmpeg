@@ -146,7 +146,7 @@ pub(super) fn point_at(
         .procedural_curves
         .iter()
         .find(|item| &item.id == construction)
-        .map(|item| item.definition())
+        .map(cadmpeg_ir::geometry::ProceduralCurve::definition)
     else {
         return Ok(None);
     };
