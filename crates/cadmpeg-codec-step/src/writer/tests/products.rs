@@ -746,8 +746,11 @@ fn product_scalar_attributes_are_step_properties_of_their_owner() {
     assert!(!report
         .losses
         .iter()
-        .any(|loss| loss.message.contains("test:model:attribute#first")
-            || loss.message.contains("test:model:attribute#second")));
+        .any(|loss| loss.message.contains("test:model:attribute#first")));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::SourceAttributeTargetNormalized.kind()
+            && loss.message.contains("test:model:attribute#second")
+    }));
 }
 
 #[test]
