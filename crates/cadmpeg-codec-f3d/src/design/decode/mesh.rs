@@ -2811,13 +2811,13 @@ mod tests {
             panic!("one mesh body");
         };
         assert_eq!(body.placement.record().record_index(), 104);
-        assert_eq!(body.placement.record().byte_offset(), start as u64);
+        assert_eq!(body.placement.record().byte_offset(), u64_from_index(start));
         assert_eq!(
             body.placement.transform().cells(),
             [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
         );
         assert_eq!(body.guid.opaque_run(), Some(&MESH_GUID_BYTES_21_TO_31));
-        let start = start as u64;
+        let start = u64_from_index(start);
         let wire = serde_json::to_value(feature).unwrap();
         let body_wire = &wire["bodies"][0];
         assert_eq!(
@@ -3517,7 +3517,7 @@ mod tests {
                 .expect("valid owner frame")
                 .expect("collection owner");
             assert_eq!(owner.collection_record_index, 100);
-            assert_eq!(owner.owner.backlink_offset(), backlink_at as u64);
+            assert_eq!(owner.owner.backlink_offset(), u64_from_index(backlink_at));
             assert_eq!(owner.owner.name_count(), name_count);
         }
     }
