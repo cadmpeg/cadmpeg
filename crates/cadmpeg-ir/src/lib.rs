@@ -60,6 +60,7 @@ pub mod examples;
 pub mod features;
 pub mod geometry;
 pub mod hash;
+pub mod history_body;
 
 pub mod ids;
 pub mod index;
