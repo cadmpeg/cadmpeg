@@ -344,6 +344,8 @@ pub(crate) enum F3dLossCode {
     FeatureFaceOperandUnresolved,
     /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
     FeatureTrimCellTableNative,
+    /// `SurfaceTrim` group members without a decoded operand record project by group role.
+    FeatureTrimMemberTypeAssumed,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -675,6 +677,7 @@ impl F3dLossCode {
         Self::FeatureLoftSettingsAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
+        Self::FeatureTrimMemberTypeAssumed,
         Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -940,6 +943,7 @@ impl F3dLossCode {
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
+            Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
             }
@@ -1212,6 +1216,7 @@ impl F3dLossCode {
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
+            | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1414,6 +1419,7 @@ impl F3dLossCode {
             | Self::FeatureLoftSettingsAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
+            | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1704,6 +1710,7 @@ mod tests {
                 "feature.loft-settings-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
+                "feature.trim-member-type-assumed",
                 "feature.face-operand-fallback-contradicted",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",

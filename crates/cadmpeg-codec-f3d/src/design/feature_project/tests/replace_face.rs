@@ -463,13 +463,16 @@ fn surface_trim_fixture() -> (
 #[test]
 fn surface_trim_projects_body_target_and_curve_tool() {
     let (scope, target_group, tool_group, body, curves) = surface_trim_fixture();
+    let mut losses = Vec::new();
     let definition = project_surface_trim(
         &scope,
         &[target_group.clone(), tool_group.clone()],
         std::slice::from_ref(&body),
         std::slice::from_ref(&curves),
+        &mut losses,
     )
     .expect("typed SurfaceTrim");
+    assert!(losses.is_empty());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -503,13 +506,16 @@ fn surface_trim_scope(references: Vec<u32>) -> DesignParameterScope {
 #[test]
 fn surface_trim_keeps_native_target_when_its_body_is_unresolved() {
     let (scope, target_group, tool_group, _, curves) = surface_trim_fixture();
+    let mut losses = Vec::new();
     let definition = project_surface_trim(
         &scope,
         &[target_group.clone(), tool_group.clone()],
         &[trim_body(1201, 0, 1202)],
         std::slice::from_ref(&curves),
+        &mut losses,
     )
     .expect("typed SurfaceTrim");
+    assert!(losses.is_empty());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -532,6 +538,7 @@ fn surface_trim_projects_multi_member_target_and_tool_groups() {
         &[1205, 1206, 1207],
         DesignOperandRole::ROLE_0X21,
     );
+    let mut losses = Vec::new();
     let definition = project_surface_trim(
         &scope,
         &[tool_group.clone(), target_group.clone()],
@@ -541,8 +548,10 @@ fn surface_trim_projects_multi_member_target_and_tool_groups() {
             trim_body(1204, 1, 1206),
         ],
         &[trim_curves(1204, 0, 1205), trim_curves(1204, 2, 1207)],
+        &mut losses,
     )
     .expect("typed SurfaceTrim");
+    assert!(losses.is_empty());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -560,11 +569,13 @@ fn surface_trim_requires_groups_that_partition_the_references() {
         group_with_members(1200, 0, 1201, &[1202, 1203], DesignOperandRole::BODIES_A);
     let bodies = [trim_body(1201, 0, 1202), trim_body(1201, 1, 1203)];
     let short_tool = group_with_members(1200, 3, 1204, &[1205, 1206], DesignOperandRole::ROLE_0X21);
+    let mut losses = Vec::new();
     assert!(project_surface_trim(
         &scope,
         &[target_group.clone(), short_tool],
         &bodies,
         &[trim_curves(1204, 0, 1205), trim_curves(1204, 1, 1206)],
+        &mut losses,
     )
     .is_none());
     let misplaced_tool = group_with_members(
@@ -584,32 +595,82 @@ fn surface_trim_requires_groups_that_partition_the_references() {
             trim_curves(1203, 2, 1206),
             trim_curves(1203, 3, 1207),
         ],
+        &mut losses,
     )
     .is_none());
+    assert!(losses.is_empty());
+}
+
+fn untyped_trim_member_loss(members: usize) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::FeatureTrimMemberTypeAssumed.note(format!(
+        "SurfaceTrim f3d:Design/BulkStream.dat:scope#1200 projects {members} group member(s) that have no decoded operand record as target bodies or trimming tools by the role of their group."
+    ))
 }
 
 #[test]
-fn surface_trim_requires_typed_target_and_tool_members() {
+fn surface_trim_projects_untyped_members_by_group_role_with_a_loss() {
     let (scope, target_group, tool_group, body, curves) = surface_trim_fixture();
-    let groups = [target_group, tool_group.clone()];
-    assert!(project_surface_trim(&scope, &groups, &[], std::slice::from_ref(&curves)).is_none());
-    assert!(project_surface_trim(
+    let groups = [target_group.clone(), tool_group.clone()];
+
+    let mut losses = Vec::new();
+    let definition = project_surface_trim(
         &scope,
         &groups,
         &[],
-        &[trim_curves(1201, 0, 1202), curves.clone()],
+        std::slice::from_ref(&curves),
+        &mut losses,
     )
-    .is_none());
-    assert!(project_surface_trim(&scope, &groups, std::slice::from_ref(&body), &[]).is_none());
-    assert!(project_surface_trim(
+    .expect("SurfaceTrim with an untyped target member");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            faces: FaceSelection::Native(ref faces),
+            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+        }) if faces == &target_group.id && tool == &tool_group.id
+    ));
+    assert_eq!(losses, vec![untyped_trim_member_loss(1)]);
+
+    for tool_records in [Vec::new(), vec![trim_curves(1203, 1, 1204)]] {
+        let mut losses = Vec::new();
+        let definition = project_surface_trim(
+            &scope,
+            &groups,
+            std::slice::from_ref(&body),
+            &tool_records,
+            &mut losses,
+        )
+        .expect("SurfaceTrim with an untyped tool member");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                faces: FaceSelection::Historical { ref faces, ref native, .. },
+                tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            }) if faces.len() == 1
+                && native.as_str() == target_group.id
+                && tool == &tool_group.id
+        ));
+        assert_eq!(losses, vec![untyped_trim_member_loss(1)]);
+    }
+
+    let mut losses = Vec::new();
+    assert!(project_surface_trim(&scope, &groups, &[], &[], &mut losses).is_some());
+    assert_eq!(losses, vec![untyped_trim_member_loss(2)]);
+}
+
+#[test]
+fn surface_trim_projects_a_trimming_body_tool() {
+    let (scope, target_group, tool_group, body, _) = surface_trim_fixture();
+    let mut losses = Vec::new();
+    let definition = project_surface_trim(
         &scope,
-        &groups,
-        std::slice::from_ref(&body),
-        &[trim_curves(1203, 1, 1204)],
+        &[target_group, tool_group.clone()],
+        &[body, trim_body(1203, 0, 1204)],
+        &[],
+        &mut losses,
     )
-    .is_none());
-    let definition = project_surface_trim(&scope, &groups, &[body, trim_body(1203, 0, 1204)], &[])
-        .expect("typed SurfaceTrim");
+    .expect("typed SurfaceTrim");
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -617,6 +678,22 @@ fn surface_trim_requires_typed_target_and_tool_members() {
             ..
         }) if tool == &tool_group.id
     ));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn surface_trim_rejects_an_entity_selection_target_member() {
+    let (scope, target_group, tool_group, _, curves) = surface_trim_fixture();
+    let mut losses = Vec::new();
+    assert!(project_surface_trim(
+        &scope,
+        &[target_group, tool_group],
+        &[],
+        &[trim_curves(1201, 0, 1202), curves],
+        &mut losses,
+    )
+    .is_none());
+    assert!(losses.is_empty());
 }
 
 fn assert_native_cells(ordinals: &[u64], trailing_value: u32) {
