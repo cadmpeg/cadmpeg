@@ -3,8 +3,8 @@
 
 use super::super::WriteError;
 use super::{
-    color, crc_chunk, integer, records, short_chunk, utf16, wire_index, CadIr, CodecError,
-    LossNote, Map, RhinoLossCode, Value,
+    color, crc_chunk, integer, records, short_chunk, utf16, wire_index, CadIr, LossNote, Map,
+    RhinoLossCode, Value,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 
@@ -120,10 +120,20 @@ fn current_fields(
             [Some(AttributeValue::Boolean(value))] => Value::Bool(*value),
             [Some(AttributeValue::Integer(value))] => (*value).into(),
             [Some(AttributeValue::Float(value))] => {
-                serde_json::to_value(value).map_err(CodecError::malformed)?
+                serde_json::to_value(value).map_err(|error| {
+                    WriteError::Omit(format!(
+                        "attribute {} cannot serialize its {arena}.{role} value: {error}",
+                        attribute.id
+                    ))
+                })?
             }
             [Some(AttributeValue::Vector(values))] => {
-                serde_json::to_value(values).map_err(CodecError::malformed)?
+                serde_json::to_value(values).map_err(|error| {
+                    WriteError::Omit(format!(
+                        "attribute {} cannot serialize its {arena}.{role} value: {error}",
+                        attribute.id
+                    ))
+                })?
             }
             _ => {
                 return Err(WriteError::Omit(format!(
