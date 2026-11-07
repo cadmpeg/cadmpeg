@@ -4,26 +4,6 @@
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/iges.md`](../layouts/iges.md), generated from `docs/layouts/iges.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
-## cadmpeg output contract
-
-The IGES writer consumes the document's neutral model. Unsupported design,
-appearance, attribute, product, PMI, tessellation, and other arenas are
-reported as dropped export content rather than refusing the document.
-An unsupported entity is omitted with a loss; structurally degraded geometry
-uses Error severity. Independent carriers remain exportable when an owning
-wire or solid cannot be emitted. A model with no exportable solids still
-produces valid empty IGES and a `NoExportableSolids` loss.
-
-An intact matching source image can be replayed only when
-`SourceFidelity.unrepresented` is empty. A changed document, missing source,
-unrepresented records, or native records without a synthesis encoding selects
-neutral-first synthesis with a reported `PatchDeclined` cause. Synthesized
-output consumes typed document content and no retained source bytes. Native
-records that cannot be regenerated are omitted with an informational native
-loss. An off-catalog target still needs an eligible source replay; an
-unresolvable target, malformed references or topology, and format capacity
-limits remain preconditions that can refuse output.
-
 ## Physical representation
 
 The representation flag is in the first 80 bytes. A `C` in byte 73 identifies Compressed ASCII. The other bytes of its flag record are printable ASCII. An `S` in byte 73 identifies Fixed ASCII.
