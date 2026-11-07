@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -227,7 +228,6 @@ fn overflowing_occurrence_placement_names_only_the_unwritable_record() {
         .iter()
         .any(|loss| loss.message.contains("test:model:occurrence#overflow")));
     assert!(output.written.contains("test:model:occurrence#valid"));
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let mut bytes = Vec::new();
     let report = crate::RhinoCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
