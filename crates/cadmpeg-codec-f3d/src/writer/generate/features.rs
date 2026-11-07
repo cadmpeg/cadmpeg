@@ -81,11 +81,83 @@ fn scalar<Q: DimensionValue>(
 
 type Primitive = (u64, &'static str, Vec<Scalar>, u32, FeatureId);
 
+struct CopyFeature {
+    ordinal: u64,
+    id: FeatureId,
+    bodies: Vec<(u64, u32, u32)>,
+}
+
+fn select_copies(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+    attributes: &super::attributes::AttributeIndex<'_>,
+) -> Result<Vec<CopyFeature>, CodecError> {
+    let mut selected = Vec::new();
+    for feature in &target.model.features {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::InsertBodies {
+                bodies: cadmpeg_ir::features::InsertedBodies::Resolved { .. }
+            })
+        ) || feature.suppressed == Some(true)
+            || !feature.dependencies.is_empty()
+            || !feature.source_properties.is_empty()
+            || feature.source_text.is_some()
+            || !feature.source_content.is_empty()
+        {
+            continue;
+        }
+        let Some(scope) = native
+            .design_parameter_scopes
+            .iter()
+            .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+        else {
+            continue;
+        };
+        let Some(operation) = scope.copy_paste_bodies_operation() else {
+            continue;
+        };
+        let mut bodies = Vec::new();
+        for copied in operation.bodies() {
+            let Some(binding) = native.design_body_bindings.iter().find(|binding| {
+                crate::ids::native_stream(binding.id()) == crate::ids::native_stream(&scope.id)
+                    && binding.entity_suffix == u64::from(copied.copied.value)
+            }) else {
+                break;
+            };
+            let Some(row) = binding.body.as_ref() else {
+                break;
+            };
+            let Some((ordinal, body)) = target.model.bodies.iter().enumerate().find(|(_, body)| {
+                body.native_ref.as_deref() == Some(row.as_str())
+                    && feature.evaluation.outputs().contains(&body.id)
+            }) else {
+                break;
+            };
+            let key = u64::try_from(super::attributes::source_less_body_key(
+                attributes, body, ordinal,
+            )?)
+            .map_err(CodecError::malformed)?;
+            bodies.push((key, copied.source.value, copied.copied.value));
+        }
+        if !bodies.is_empty()
+            && bodies.len() == operation.bodies().len()
+            && bodies.len() == feature.evaluation.outputs().len()
+        {
+            selected.push(CopyFeature {
+                ordinal: feature.ordinal,
+                id: feature.id.clone(),
+                bodies,
+            });
+        }
+    }
+    Ok(selected)
+}
+
 fn select(target: &CadIr) -> Vec<Primitive> {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
-        if feature.ordinal >= u64::from(u32::MAX)
-            || feature.suppressed == Some(true)
+        if feature.suppressed == Some(true)
             || !feature.dependencies.is_empty()
             || !feature.source_properties.is_empty()
             || feature.source_text.is_some()
@@ -218,41 +290,146 @@ pub(in crate::writer) fn authored_feature_ids(
         .collect()
 }
 
-type EncodedFeatures = (Vec<u8>, Vec<u8>, Vec<FeatureId>, Vec<ParameterId>, u32);
+pub(super) struct EncodedFeatures {
+    pub(super) stream: Option<(Vec<u8>, Vec<u8>)>,
+    pub(super) features: Vec<FeatureId>,
+    pub(super) parameters: Vec<ParameterId>,
+    pub(super) collection_index: u32,
+    pub(super) append: Option<DesignAppend>,
+}
+
+pub(super) struct DesignAppend {
+    pub(super) bulk: Vec<u8>,
+    pub(super) primary: Vec<crate::metastream::RecordIndexEntry>,
+    pub(super) secondary: Vec<crate::metastream::RecordIndexEntry>,
+    pub(super) types: Vec<GeneratedDesignType>,
+    pub(super) body_pairs: Vec<(u64, u64)>,
+}
 
 pub(super) fn encode(
     target: &CadIr,
+    native: &crate::native::F3dNative,
+    attributes: &super::attributes::AttributeIndex<'_>,
+    brep_name: &str,
+    design_registry: &GeneratedDesignRegistry,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut sketch: Option<&mut super::sketches::SketchStream>,
 ) -> Result<Option<EncodedFeatures>, CodecError> {
     let mut primitives = select(target);
-    if primitives.is_empty() {
+    let mut copies = select_copies(target, native, attributes)?;
+    let joined = sketch
+        .as_ref()
+        .is_some_and(|sketch| !sketch.feature_scopes.is_empty());
+    if joined && design_registry.body_map.is_some() {
+        copies.clear();
+    }
+    if design_registry.body_map.is_none()
+        && (!target.model.appearance_bindings.is_empty()
+            || copies.iter().map(|copy| copy.bodies.len()).sum::<usize>()
+                != target.model.bodies.len())
+    {
+        copies.clear();
+    }
+    let append_main = !copies.is_empty() && design_registry.body_map.is_some();
+    if primitives.is_empty() && copies.is_empty() && !joined {
         return Ok(None);
     }
     primitives.sort_by_key(|primitive| primitive.0);
-    let timeline = u32::try_from(primitives.len())
+    let type_start = if joined {
+        u32::try_from(
+            sketch
+                .as_ref()
+                .map_or(0, |sketch| sketch.registry.types.len()),
+        )
         .ok()
-        .and_then(|value| value.checked_mul(16))
-        .and_then(|value| value.checked_add(1))
-        .ok_or_else(|| CodecError::InvalidInput("too many F3D features".into()))?;
-    let collection_index = timeline.checked_add(1).ok_or_else(|| {
-        CodecError::InvalidInput("F3D parameter collection index exceeds u32".into())
-    })?;
+        .and_then(|value| value.checked_add(256))
+        .ok_or_else(|| CodecError::InvalidInput("F3D feature type count exceeds u32".into()))?
+    } else if append_main {
+        u32::try_from(design_registry.types.len())
+            .ok()
+            .and_then(|n| n.checked_add(256))
+            .ok_or_else(|| CodecError::InvalidInput("F3D feature type count exceeds u32".into()))?
+    } else {
+        256
+    };
+    let tags = (0..8u32)
+        .map(|offset| {
+            type_start
+                .checked_add(offset)
+                .map(|value| value.to_string())
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| CodecError::InvalidInput("F3D feature type count exceeds u32".into()))?;
+    let mut occupied = sketch
+        .as_ref()
+        .filter(|_| joined)
+        .map_or_else(std::collections::BTreeSet::new, |sketch| {
+            sketch.occupied.clone()
+        });
+    let mut next = sketch
+        .as_ref()
+        .filter(|_| joined)
+        .map_or(1, |sketch| sketch.next);
+    if append_main {
+        occupied.extend(
+            design_registry
+                .types
+                .iter()
+                .flat_map(|kind| kind.entity_ids.iter())
+                .filter_map(|id| u32::try_from(*id).ok()),
+        );
+        next = occupied
+            .last()
+            .copied()
+            .unwrap_or(0)
+            .checked_add(1)
+            .unwrap_or(0);
+    }
+    let mut bases = Vec::new();
+    for _ in &primitives {
+        bases.push(reserve_indices(&mut occupied, &mut next, 16)?);
+    }
+    let mut copy_bases = Vec::new();
+    for copy in &copies {
+        let count = u32::try_from(copy.bodies.len())
+            .ok()
+            .and_then(|n| n.checked_add(3))
+            .ok_or_else(|| CodecError::InvalidInput("too many copied bodies".into()))?;
+        copy_bases.push(reserve_indices(&mut occupied, &mut next, count)?);
+    }
+    let body_map_index = if copies.is_empty() || append_main {
+        None
+    } else {
+        Some(reserve_indices(&mut occupied, &mut next, 1)?)
+    };
+    let timeline = reserve_indices(&mut occupied, &mut next, 1)?;
+    let collection_index = reserve_indices(&mut occupied, &mut next, 1)?;
     let mut out = Vec::new();
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
     let mut scopes = Vec::new();
+    let mut timeline_scopes = sketch
+        .as_ref()
+        .filter(|_| joined)
+        .map_or_else(Vec::new, |sketch| {
+            sketch
+                .feature_scopes
+                .iter()
+                .map(|(ordinal, _, index)| (*ordinal, u64::from(*index)))
+                .collect()
+        });
     let mut owners = Vec::new();
     let mut parameters = Vec::new();
-    for (ordinal, (source_ordinal, kind, values, operation, _)) in primitives.iter().enumerate() {
-        let ordinal = u32::try_from(ordinal)
-            .map_err(|_| CodecError::InvalidInput("too many F3D feature records".into()))?;
-        let base = ordinal
-            .checked_mul(16)
-            .and_then(|v| v.checked_add(1))
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D feature records".into()))?;
+    let mut family_ordinals = std::collections::BTreeMap::<&str, u32>::new();
+    for ((source_ordinal, kind, values, operation, _), base) in primitives.iter().zip(bases) {
+        let family_ordinal = family_ordinals.entry(kind).or_default();
+        *family_ordinal = family_ordinal.checked_add(1).ok_or_else(|| {
+            CodecError::InvalidInput("F3D feature family ordinal exceeds u32".into())
+        })?;
         scopes.push(u64::from(base));
+        timeline_scopes.push((*source_ordinal, u64::from(base)));
         mark_primary(ctx, &mut primary, base, out.len())?;
-        header(&mut out, "257", base)?;
+        header(&mut out, &tags[1], base)?;
         out.extend_from_slice(&[0; 9]);
         out.extend_from_slice(&operation.to_le_bytes());
         out.push(0);
@@ -273,14 +450,7 @@ pub(super) fn encode(
         }
         out.extend_from_slice(&u32::MAX.to_le_bytes());
         native_lp_utf16(&mut out, kind)?;
-        out.extend_from_slice(
-            &source_ordinal
-                .checked_add(1)
-                .ok_or_else(|| {
-                    CodecError::InvalidInput("F3D feature ordinal exceeds u32::MAX".into())
-                })?
-                .to_le_bytes(),
-        );
+        out.extend_from_slice(&family_ordinal.to_le_bytes());
         out.extend_from_slice(&[0; 4]);
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&[0; 7]);
@@ -298,7 +468,7 @@ pub(super) fn encode(
         out.extend_from_slice(&[0; 3]);
         ctx.charge_entities(1, "F3D feature record")?;
         mark(&mut secondary, base, out.len());
-        header(&mut out, "256", base)?;
+        header(&mut out, &tags[0], base)?;
         for (local, scalar) in values.iter().enumerate() {
             let local = u32::try_from(local)
                 .map_err(|_| CodecError::InvalidInput("too many F3D feature parameters".into()))?;
@@ -309,7 +479,7 @@ pub(super) fn encode(
             parameters.push(u64::from(parameter_index));
             let owner = DesignParameterOwner::try_from(DesignParameterOwnerContent {
                 id: format!("f3d:generated:owner#{owner_index}"),
-                class_tag: "258".to_owned().try_into().map_err(CodecError::Malformed)?,
+                class_tag: tags[2].clone().try_into().map_err(CodecError::Malformed)?,
                 record_index: owner_index,
                 scope_record_index: Some(base),
                 local_ordinal: Some(local),
@@ -330,7 +500,7 @@ pub(super) fn encode(
             );
             let parameter = DesignParameter::authored(DesignParameterContent {
                 id: format!("f3d:generated:parameter#{parameter_index}"),
-                class_tag: "259".to_owned().try_into().map_err(CodecError::Malformed)?,
+                class_tag: tags[3].clone().try_into().map_err(CodecError::Malformed)?,
                 record_index: parameter_index,
                 source_ordinal: local,
                 source: DesignParameterSource::authored(
@@ -355,19 +525,103 @@ pub(super) fn encode(
             super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
         }
     }
+    let mut copy_groups = Vec::new();
+    let mut body_map = std::collections::BTreeMap::new();
+    let mut body_pairs = Vec::new();
+    for (copy, base) in copies.iter().zip(copy_bases) {
+        let group = base + 1;
+        let relation = base + 2;
+        let count = u32::try_from(copy.bodies.len()).map_err(CodecError::malformed)?;
+        let family = family_ordinals.entry("CopyPasteBodies").or_default();
+        *family += 1;
+        scopes.push(u64::from(base));
+        timeline_scopes.push((copy.ordinal, u64::from(base)));
+        mark_primary(ctx, &mut primary, base, out.len())?;
+        header(&mut out, &tags[1], base)?;
+        out.extend_from_slice(&[0; 18]);
+        reference(&mut out, group);
+        reference(&mut out, relation);
+        out.extend_from_slice(&(count + 1).to_le_bytes());
+        reference(&mut out, group);
+        for i in 0..count {
+            reference(&mut out, base + 3 + i);
+        }
+        out.extend_from_slice(&u32::MAX.to_le_bytes());
+        native_lp_utf16(&mut out, "CopyPasteBodies")?;
+        let mut tail = [0u8; 110];
+        tail[..4].copy_from_slice(&family.to_le_bytes());
+        tail[53..57].copy_from_slice(&u32::MAX.to_le_bytes());
+        out.extend_from_slice(&tail);
+        mark(&mut secondary, base, out.len());
+        header(&mut out, &tags[0], base)?;
+        mark_primary(ctx, &mut primary, group, out.len())?;
+        header(&mut out, &tags[6], group)?;
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&count.to_le_bytes());
+        for i in 0..count {
+            reference(&mut out, base + 3 + i);
+        }
+        copy_groups.push(u64::from(group));
+        for (i, (_, source, _)) in copy.bodies.iter().enumerate() {
+            let index = base + 3 + u32::try_from(i).map_err(CodecError::malformed)?;
+            scopes.push(u64::from(index));
+            mark_primary(ctx, &mut primary, index, out.len())?;
+            header(&mut out, &tags[1], index)?;
+            out.extend_from_slice(&[0; 10]);
+            out.extend_from_slice(&1u32.to_le_bytes());
+            out.extend_from_slice(&u64::from(*source).to_le_bytes());
+        }
+        mark_primary(ctx, &mut primary, relation, out.len())?;
+        header(&mut out, &tags[6], relation)?;
+        out.extend_from_slice(&[0; 8]);
+        out.push(1);
+        out.extend_from_slice(&(count * 2).to_le_bytes());
+        for (i, (key, source, copied)) in copy.bodies.iter().enumerate() {
+            out.push(1);
+            out.extend_from_slice(&source.to_le_bytes());
+            out.extend_from_slice(&[0; 10]);
+            out.push(1);
+            out.extend_from_slice(&copied.to_le_bytes());
+            out.extend_from_slice(&[0; 6]);
+            if i + 1 != copy.bodies.len() {
+                out.extend_from_slice(&[0; 4]);
+            }
+            body_map.insert(*key, u64::from(*copied));
+            body_pairs.push((*key, u64::from(*copied)));
+        }
+        copy_groups.push(u64::from(relation));
+    }
+    if let Some(index) = body_map_index {
+        mark_primary(ctx, &mut primary, index, out.len())?;
+        header(&mut out, &tags[7], index)?;
+        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
+        out.extend_from_slice(
+            &u32::try_from(body_map.len())
+                .map_err(CodecError::malformed)?
+                .to_le_bytes(),
+        );
+        for (key, suffix) in body_map {
+            out.extend_from_slice(&key.to_le_bytes());
+            out.extend_from_slice(&suffix.to_le_bytes());
+        }
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        native_lp_utf16(&mut out, brep_name)?;
+    }
     mark_primary(ctx, &mut primary, timeline, out.len())?;
-    native_lp_ascii(&mut out, "260")?;
+    timeline_scopes.sort_by_key(|(ordinal, _)| *ordinal);
+    native_lp_ascii(&mut out, &tags[4])?;
     out.extend_from_slice(&u64::from(timeline).to_le_bytes());
     native_lp_ascii(&mut out, "Timeline")?;
     out.extend_from_slice(&[0, 0, 1]);
-    out.extend_from_slice(&scopes[0].to_le_bytes());
+    out.extend_from_slice(&timeline_scopes[0].1.to_le_bytes());
     out.extend_from_slice(&[0; 2]);
     out.extend_from_slice(
-        &u32::try_from(scopes.len())
+        &u32::try_from(timeline_scopes.len())
             .map_err(|_| CodecError::InvalidInput("too many F3D features".into()))?
             .to_le_bytes(),
     );
-    for scope in &scopes {
+    for (_, scope) in &timeline_scopes {
         out.push(1);
         out.extend_from_slice(&scope.to_le_bytes());
         out.extend_from_slice(&[0; 2]);
@@ -380,7 +634,7 @@ pub(super) fn encode(
                 .map_err(|_| CodecError::InvalidInput("F3D parameter index exceeds u32".into()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    super::parameters::encode_collection(&mut out, "261", collection_index, &parameter_indices)?;
+    super::parameters::encode_collection(&mut out, &tags[5], collection_index, &parameter_indices)?;
     let types = [
         (
             "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
@@ -424,6 +678,20 @@ pub(super) fn encode(
             "CommonData",
             vec![u64::from(collection_index)],
         ),
+        (
+            "00000000-0000-4000-8000-000000000264",
+            None,
+            0,
+            "Geometry",
+            copy_groups,
+        ),
+        (
+            crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+            Some(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID),
+            crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+            "Body",
+            body_map_index.into_iter().map(u64::from).collect(),
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -439,28 +707,92 @@ pub(super) fn encode(
         })
     })
     .collect::<Result<Vec<_>, CodecError>>()?;
-    let registry = GeneratedDesignRegistry {
+    let mut registry = GeneratedDesignRegistry {
         types,
         body_map: None,
         browser_nodes: None,
     };
-    let meta = encode_design_metastream(&registry, &primary, &secondary)?;
-    debug_assert!(meta.is_some(), "generated feature registry has fixed types");
-    let Some(meta) = meta else {
-        return Ok(None);
+    let mut append = None;
+    let stream = if append_main {
+        append = Some(DesignAppend {
+            bulk: out,
+            primary,
+            secondary,
+            types: registry.types,
+            body_pairs,
+        });
+        None
+    } else if joined {
+        let sketch = sketch
+            .as_mut()
+            .ok_or_else(|| CodecError::Malformed("missing generated sketch stream".into()))?;
+        let offset = cadmpeg_core::decode::u64_from_index(sketch.bulk.len());
+        for record in primary.iter_mut().chain(&mut secondary) {
+            record.bulk_offset = record
+                .bulk_offset
+                .checked_add(offset)
+                .ok_or_else(|| CodecError::InvalidInput("F3D Design stream exceeds u64".into()))?;
+        }
+        sketch.bulk.extend_from_slice(&out);
+        sketch.registry.types.append(&mut registry.types);
+        sketch.primary.extend(primary.iter().copied());
+        sketch.secondary.extend(secondary.iter().copied());
+        let combined =
+            encode_design_metastream(&sketch.registry, &sketch.primary, &sketch.secondary)?;
+        sketch.meta = combined
+            .ok_or_else(|| CodecError::Malformed("missing generated Design metadata".into()))?;
+        None
+    } else {
+        let meta = encode_design_metastream(&registry, &primary, &secondary)?
+            .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
+        Some((out, meta))
     };
     let written_parameters = primitives
         .iter()
         .flat_map(|(_, _, values, _, _)| values.iter().filter_map(|value| value.parameter.clone()))
         .collect();
-    let written = primitives.into_iter().map(|(_, _, _, _, id)| id).collect();
-    Ok(Some((
-        out,
-        meta,
-        written,
-        written_parameters,
+    let mut written = sketch
+        .as_ref()
+        .filter(|_| joined)
+        .map_or_else(Vec::new, |sketch| {
+            sketch
+                .feature_scopes
+                .iter()
+                .map(|(_, id, _)| id.clone())
+                .collect()
+        });
+    written.extend(primitives.into_iter().map(|(_, _, _, _, id)| id));
+    written.extend(copies.into_iter().map(|copy| copy.id));
+    Ok(Some(EncodedFeatures {
+        stream,
+        features: written,
+        parameters: written_parameters,
         collection_index,
-    )))
+        append,
+    }))
+}
+
+fn reserve_indices(
+    occupied: &mut std::collections::BTreeSet<u32>,
+    next: &mut u32,
+    count: u32,
+) -> Result<u32, CodecError> {
+    loop {
+        let start = *next;
+        let end = start
+            .checked_add(count - 1)
+            .filter(|_| start != 0)
+            .ok_or_else(|| {
+                CodecError::InvalidInput("F3D feature record indices exceed u32".into())
+            })?;
+        if let Some(collision) = occupied.range(start..=end).next().copied() {
+            *next = collision.checked_add(1).unwrap_or(0);
+            continue;
+        }
+        occupied.extend(start..=end);
+        *next = end.checked_add(1).unwrap_or(0);
+        return Ok(start);
+    }
 }
 
 fn mark_primary(

@@ -231,7 +231,7 @@ fn source_less_primitive_feature_survives_synthesis() {
     ir.model.features[1].ordinal = u64::from(u32::MAX);
     let retained = ir.model.features[0].id.as_str();
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
-    assert_eq!(output.ir().model.features.len(), 1);
+    assert_eq!(output.ir().model.features.len(), 2);
     assert!(report
         .losses
         .iter()
@@ -261,6 +261,41 @@ fn source_less_primitive_feature_survives_synthesis() {
         .losses
         .iter()
         .any(|loss| loss.message.contains(&omitted)));
+}
+
+#[test]
+fn indexed_copy_paste_bodies_synthesis_keeps_neutral_content() {
+    use crate::test_support::native_test::TestEncode;
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_copy_paste_bodies;
+    use cadmpeg_test_support::comparison::{agree, Allowances, Mode};
+
+    let input =
+        f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    let point = edited.model.points.first_mut().unwrap();
+    let moved = point.position().get();
+    point.set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .unwrap(),
+    );
+    let mut bytes = Vec::new();
+    F3dCodec.encode(&edited, &mut bytes).unwrap();
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let before = cadmpeg_test_support::contract::neutral_view(&edited, &[]);
+    let after = cadmpeg_test_support::contract::neutral_view(round_trip.ir(), &[]);
+    for (left, right) in [(&before, &after), (&after, &before)] {
+        agree(left, right, &Allowances::default(), Mode::Same).unwrap();
+    }
 }
 
 #[test]
@@ -1055,7 +1090,8 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     use crate::records::identity::{RecordedValue, ReferenceRun};
     use crate::records::recipes::{
-        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector,
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
     };
     use crate::test_support::native_test::{f3d_native, f3d_native_mut};
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
@@ -1099,7 +1135,10 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
                         value: "333".into(),
                         offset: Some(0),
                     },
-                    selector: Some(ConstructionRecipeSelector { value: 42, byte_offset: None }),
+                    selector: Some(ConstructionRecipeSelector {
+                        value: 42,
+                        byte_offset: None,
+                    }),
                 }),
                 recipe_index: 0,
                 record_index: Some(RecordedValue {
@@ -1113,7 +1152,17 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
     assert_eq!(output.ir().model.bodies.len(), 1);
     assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
     assert_eq!(f3d_native(output.ir()).construction_recipes.len(), 1);
-    assert_eq!(f3d_native(output.ir()).construction_recipes[0].design.as_ref().unwrap().selector.as_ref().unwrap().value, 42);
+    assert_eq!(
+        f3d_native(output.ir()).construction_recipes[0]
+            .design
+            .as_ref()
+            .unwrap()
+            .selector
+            .as_ref()
+            .unwrap()
+            .value,
+        42
+    );
     assert!(report
         .losses
         .iter()
