@@ -143,6 +143,9 @@ fn current_material_edits_win_without_changing_the_typed_source_values() {
         )
     );
     assert_eq!(current.field("reflectivity"), Some(json!(0.75)));
+    for name in ["index_of_refraction", "shine", "transparency"] {
+        assert_eq!(current.field(name), native(&ir).field(name));
+    }
     for name in [
         "ambient",
         "emission",
