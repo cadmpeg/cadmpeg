@@ -6618,15 +6618,15 @@ pub(crate) mod typed_reference_profile_chain_record {
 /// Spec §3.1. Record length 76 B.
 ///
 /// ```text
-/// Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72.
+/// Offsets are relative to the identity record indexed header; the counted region groups begin at offset 72.
 /// ```
 pub(crate) mod typed_reference_profile_identity_record {
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `selection_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const SELECTION_REFERENCE: usize = 21;
-    /// Offset of `first_region_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIRST_REGION_COUNT: usize = 72;
+    /// Offset of `region_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REGION_GROUP_COUNT: usize = 72;
 }
 
 /// Byte offsets for the `typed_reference_companion_prefix` record.

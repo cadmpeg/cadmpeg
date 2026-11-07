@@ -6997,7 +6997,7 @@ fn parse_typed_profile_curve_selection_prefix(
             ),
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
-            loop_lists: [Vec::new(), Vec::new()],
+            groups: Vec::new(),
         },
         identity_end,
     ))
@@ -7021,22 +7021,24 @@ fn parse_typed_profile_curve_selection(
     };
     let start = usize::try_from(selection.identity_record_offset)
         .map_err(|_| CodecError::malformed("profile identity offset exceeds address space"))?;
-    let Some(lists) =
-        parse_profile_loop_lists(ctx, bytes, start + typed_identity::FIRST_REGION_COUNT, end)?
+    let Some(groups) =
+        parse_profile_region_groups(ctx, bytes, start + typed_identity::REGION_GROUP_COUNT, end)?
     else {
         return Ok(None);
     };
-    selection.loop_lists = lists;
+    selection.groups = groups;
     Ok(selection.valid_layout().then_some(selection))
 }
 
-fn parse_profile_loop_lists(
+/// Smallest stored region: a loop count, an entry count, one entry and the
+/// exterior flag.
+const MIN_PROFILE_REGION_BYTES: usize = 49;
+
+fn parse_profile_region(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-    end: usize,
+    view: &mut View<'_>,
 ) -> Result<
-    Option<[Vec<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>; 2]>,
+    Option<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>,
     CodecError,
 > {
     use crate::records::topology::entity_selection::{
@@ -7050,65 +7052,95 @@ fn parse_profile_loop_lists(
             }
         };
     }
-    let mut view = field!(View::over_retained(bytes).child(start, end));
-    let mut lists = [Vec::new(), Vec::new()];
-    for (list_index, regions) in lists.iter_mut().enumerate() {
+    let count = field!(view.u32_le());
+    let count = field!(view.counted(u64::from(count), 45)).get();
+    if count == 0 {
+        return Ok(None);
+    }
+    let mut loops = ctx.alloc_filled(
+        count,
+        DesignProfileCurveLoop::default(),
+        "F3D profile loops",
+    )?;
+    for loop_ in &mut loops {
         let count = field!(view.u32_le());
-        let count = field!(view.counted(u64::from(count), 49)).get();
-        if list_index == 0 && count == 0 {
+        let count = field!(view.counted(u64::from(count), 40)).get();
+        if count == 0 {
             return Ok(None);
         }
-        *regions = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
-        for loops in regions {
-            let count = field!(view.u32_le());
-            let count = field!(view.counted(u64::from(count), 45)).get();
-            if count == 0 {
+        loop_.entries = ctx.alloc_filled(
+            count,
+            DesignProfileCurveEntry::default(),
+            "F3D profile curve entries",
+        )?;
+        for entry in &mut loop_.entries {
+            if view.u32_le() != Some(2) {
                 return Ok(None);
             }
-            *loops = ctx.alloc_filled(
-                count,
-                DesignProfileCurveLoop::default(),
-                "F3D profile loops",
-            )?;
-            for loop_ in loops {
-                let count = field!(view.u32_le());
-                let count = field!(view.counted(u64::from(count), 40)).get();
-                if count == 0 {
-                    return Ok(None);
-                }
-                loop_.entries = ctx.alloc_filled(
-                    count,
-                    DesignProfileCurveEntry::default(),
-                    "F3D profile curve entries",
-                )?;
-                for entry in &mut loop_.entries {
-                    if view.u32_le() != Some(2) {
-                        return Ok(None);
-                    }
-                    let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
-                    *entry = DesignProfileCurveEntry {
-                        primary_id: field!(view.u64_le()),
-                        primary_id_offset,
-                        secondary_id: field!(view.u64_le()),
-                        entry_fields: [
-                            field!(view.u32_le()),
-                            field!(view.u32_le()),
-                            field!(view.u32_le()),
-                        ],
-                    };
-                    if view.take(8) != Some(&[0; 8][..]) {
-                        return Ok(None);
-                    }
-                }
-                loop_.outer = match view.u8() {
-                    Some(0) => false,
-                    Some(1) => true,
-                    _ => return Ok(None),
-                };
+            let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
+            *entry = DesignProfileCurveEntry {
+                primary_id: field!(view.u64_le()),
+                primary_id_offset,
+                secondary_id: field!(view.u64_le()),
+                entry_fields: [
+                    field!(view.u32_le()),
+                    field!(view.u32_le()),
+                    field!(view.u32_le()),
+                ],
+            };
+            if view.take(8) != Some(&[0; 8][..]) {
+                return Ok(None);
             }
         }
+        loop_.outer = match view.u8() {
+            Some(0) => false,
+            Some(1) => true,
+            _ => return Ok(None),
+        };
     }
-    Ok((view.remaining() == 0).then_some(lists))
+    Ok(Some(loops))
+}
+
+fn parse_profile_region_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<
+    Option<Vec<crate::records::topology::entity_selection::DesignProfileRegionGroup>>,
+    CodecError,
+> {
+    use crate::records::topology::entity_selection::DesignProfileRegionGroup;
+    macro_rules! field {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    let mut view = field!(View::over_retained(bytes).child(start, end));
+    let count = field!(view.u32_le());
+    // A group is one region and the u32 count of its further regions.
+    let count = field!(view.counted(u64::from(count), MIN_PROFILE_REGION_BYTES + 4)).get();
+    if count == 0 {
+        return Ok(None);
+    }
+    let mut groups = ctx.alloc_filled(
+        count,
+        DesignProfileRegionGroup::default(),
+        "F3D profile region groups",
+    )?;
+    for group in &mut groups {
+        group.region = field!(parse_profile_region(ctx, &mut view)?);
+        let count = field!(view.u32_le());
+        let count = field!(view.counted(u64::from(count), MIN_PROFILE_REGION_BYTES)).get();
+        group.further = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
+        for region in &mut group.further {
+            *region = field!(parse_profile_region(ctx, &mut view)?);
+        }
+    }
+    Ok((view.remaining() == 0).then_some(groups))
 }
 
 pub(crate) fn construction_closing_flag_losses(

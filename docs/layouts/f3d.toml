@@ -21887,7 +21887,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The identity record at the record index plus three stores ten zero bytes"
 size = 76
-note = "Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72."
+note = "Offsets are relative to the identity record indexed header; the counted region groups begin at offset 72."
 
 [[record.gap]]
 offset = 0
@@ -21909,7 +21909,7 @@ source = "spec"
 anchor = "The identity record at the record index plus three stores ten zero bytes"
 
 [[record.field]]
-name = "first_region_count"
+name = "region_group_count"
 offset = 72
 type = "u32"
 source = "spec"
