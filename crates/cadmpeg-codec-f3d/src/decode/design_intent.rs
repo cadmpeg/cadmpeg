@@ -619,7 +619,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ),
     );
     losses.extend(projected.unruled_flange_thickness_loss());
-    losses.extend(projected.hole_losses);
+    losses.extend(projected.projection_losses);
     losses.extend(
         crate::design::decode::operands::fixed_fillet_assignment_losses(
             &design.design_parameter_scopes,
@@ -662,6 +662,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_surface_trim_operations,
+        &mut losses,
     );
     super::bind_mesh_feature_definitions(
         &mut model.features,
