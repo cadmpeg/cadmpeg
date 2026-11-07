@@ -3567,7 +3567,7 @@ impl<'a> Builder<'a> {
             if closed && !solid {
                 self.loss(
                     StepLossCode::RegionSolidReducedToSheet,
-                    format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
+                    format!("body {} region {} was written as a surface model because its solid shells are incomplete or open", region.body, region.id),
                 );
             }
             let item = if !solid {
