@@ -50,13 +50,14 @@ enum RootKind<'a> {
 /// This plan holds identities/kinds only, never a previous geometry value.
 pub(super) struct RootKinds<'a> {
     rows: Vec<(&'a str, RootKind<'a>)>,
+    current: &'a crate::topology_transfer::CurrentTopologyBindings,
 }
 
 impl<'a> RootKinds<'a> {
     pub(super) fn new(
         ctx: &DecodeContext<'_>,
         ir: &'a CadIr,
-        current: &crate::topology_transfer::CurrentTopologyBindings,
+        current: &'a crate::topology_transfer::CurrentTopologyBindings,
     ) -> Result<Self, CodecError> {
         if let Some(refusal) = ctx.resource_refusal() {
             return Err(refusal.into());
@@ -169,7 +170,7 @@ impl<'a> RootKinds<'a> {
             }
         }
         rows.sort_unstable_by(|a, b| a.0.cmp(b.0));
-        Ok(Self { rows })
+        Ok(Self { rows, current })
     }
 
     fn get(&self, body: &str) -> Option<RootKind<'a>> {
@@ -1655,11 +1656,43 @@ fn serialize_geometry_inner(
         format!("{}\n{}", triangulations.len(), triangulations.join("\n"))
     };
     let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D {}\nPolygonOnTriangulations {}\nSurfaces {}\n{}\nTriangulations {}\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), polygons3d, polygons_indexed, surfaces.len(), surfaces.join("\n"), triangulations, shapes.len());
-    for shape in &shapes {
+    let mut flags = Vec::new();
+    ctx.reserve_working(&mut flags, shapes.len(), "FreeCAD topology flags")?;
+    flags.resize(shapes.len(), None);
+    for (id, index) in &indices {
+        let Some(native) = root_kinds.current.native_for_record(id) else {
+            continue;
+        };
+        let Some(kind) = root_kinds.current.source_kind(native) else {
+            continue;
+        };
+        let Some(shape) = shapes.get(*index) else {
+            continue;
+        };
+        let expected = match shape.kind {
+            "Ve" => crate::brep::TextShapeKind::Vertex,
+            "Ed" => crate::brep::TextShapeKind::Edge,
+            "Wi" => crate::brep::TextShapeKind::Wire,
+            "Fa" => crate::brep::TextShapeKind::Face,
+            "Sh" => crate::brep::TextShapeKind::Shell,
+            "So" => crate::brep::TextShapeKind::Solid,
+            "CS" => crate::brep::TextShapeKind::CompSolid,
+            "Co" => crate::brep::TextShapeKind::Compound,
+            _ => continue,
+        };
+        if kind == expected {
+            flags[*index] = root_kinds.current.source_flags(id);
+        }
+    }
+    for (index, shape) in shapes.iter().enumerate() {
         output.push_str(shape.kind);
         output.push('\n');
         output.push_str(&shape.geometry);
-        output.push_str("\n\n0101101\n");
+        output.push_str("\n\n");
+        for value in flags[index].unwrap_or([false, true, false, true, true, false, true]) {
+            output.push(if value { '1' } else { '0' });
+        }
+        output.push('\n');
         for (index, sense) in &shape.children {
             output.push(if *sense == Sense::Forward { '+' } else { '-' });
             output.push_str(&(shapes.len() - index).to_string());
