@@ -886,6 +886,12 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             &DecodeOptions::default(),
         )
         .expect("extrusion termination branches");
+    assert!(!result.ir().model.attributes.iter().any(|attribute| {
+        matches!(attribute.name.as_str(), "LengthFwd" | "LengthRev")
+            && attribute.native_ref.as_deref().is_some_and(|native| {
+                native.contains("PartExtrusion:") || native.contains("NegativeProfileNormal:")
+            })
+    }));
     let definition = |name: &str| {
         result
             .ir()
