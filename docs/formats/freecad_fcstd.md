@@ -539,9 +539,6 @@ locus from the sketch root point. For an isolated `Part::GeomPoint`, position co
 endpoints or a second center position. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
 remain explicit native relations rather than being guessed.
-CADIR decision: a missing or malformed `Type` is retained as a native constraint with kind
-`missing_type` or `malformed_type`; a numeric code outside the known family range is retained as
-`unknown_future_constraint`. None of these cases is projected as `Disabled`.
 `ElementIds` and `ElementPositions`, when present, are complete comma- or whitespace-separated
 integer lists with equal lengths. Legacy `First`/`Second`/`Third` fields require their matching
 `*Pos` field, and each supplied value must be an integer. Malformed or incomplete operand fields
