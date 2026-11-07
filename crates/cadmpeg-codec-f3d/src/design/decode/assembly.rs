@@ -320,6 +320,12 @@ pub(super) fn contain_legacy_as_built_solved_frame(
 /// with the solved connector frame's third basis column.
 const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 
+pub(super) struct LegacyAsBuiltOperands<'a> {
+    pub(super) scope: &'a DesignParameterScope,
+    pub(super) recipes: &'a [ConstructionRecipe],
+    pub(super) solved_frame: &'a DesignAssemblySolvedFrame,
+}
+
 /// Decode the two ordered construction/face-selection pairs of a 421-byte
 /// `As-built` scope and derive their local frames from the stored solved frame.
 pub(super) fn exact_legacy_as_built_421_operands(
@@ -328,11 +334,14 @@ pub(super) fn exact_legacy_as_built_421_operands(
     source: View<'_>,
     stream: &str,
     records: &[crate::metastream::PrimaryRecordFrame],
-    scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-    recipes: &[ConstructionRecipe],
-    solved_frame: &DesignAssemblySolvedFrame,
+    operands: LegacyAsBuiltOperands<'_>,
 ) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
+    let LegacyAsBuiltOperands {
+        scope,
+        recipes,
+        solved_frame,
+    } = operands;
     let bytes = source.window();
     (|| {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
@@ -356,7 +365,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
-    let hole = match exact_hole_construction(ctx, parts, source, stream, records, scope, stream_types, &crate::records::feature::scope::DesignFeatureKind::AsBuilt) {
+    let hole = match exact_hole_construction(ctx, parts, (source, stream), records, scope, stream_types, &crate::records::feature::scope::DesignFeatureKind::AsBuilt) {
         Ok(Some(hole)) => hole,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
