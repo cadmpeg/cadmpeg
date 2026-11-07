@@ -583,6 +583,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )?;
     design.design_dimension_locus_groups =
         crate::design::decode::dimension_frames::decode_dimension_locus_groups(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &prereqs.design_entity_headers,
         )?;
