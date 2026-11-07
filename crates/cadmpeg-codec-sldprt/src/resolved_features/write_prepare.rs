@@ -1766,6 +1766,7 @@ fn source_less_lanes(
         lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
         lane.references = reference_cells(&lane.scalars, &lane.classes)?;
         lane.sketch_entities = admit_sketch_input_entities(&lane.native_payload, &lane.id)?;
+        ctx.finish_session()?;
     }
     let bytes = lanes
         .iter()
@@ -1778,6 +1779,7 @@ fn source_less_lanes(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
+    ctx.finish_session()?;
     Ok(lanes)
 }
 
