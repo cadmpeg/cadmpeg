@@ -2,22 +2,21 @@
 //! Type 406 field grammars, regenerated from current canonical values.
 
 use super::{
-    entity, fields::collection_size, fields::Fields, hollerith, typed_value, AttributeValue,
-    BTreeSet, Entity, NativeRecord, Targets,
+    entity, fields::collection_size, fields::Fields, hollerith, integer_parameter, typed_value,
+    AttributeValue, BTreeSet, Entity, NativeRecord, Targets,
 };
 use serde_json::Value;
 
 fn integer(fields: &Fields<'_>, key: &str) -> Result<String, String> {
-    Ok(fields
+    fields
         .integer(key)?
-        .map(|value| value.to_string())
-        .unwrap_or_default())
+        .map_or_else(|| Ok(String::new()), integer_parameter)
 }
 fn real(fields: &Fields<'_>, key: &str) -> Result<String, String> {
     match fields.one(key)? {
         None => Ok(String::new()),
         Some(AttributeValue::Float(value)) => Ok(super::super::number(value)),
-        Some(AttributeValue::Integer(value)) => Ok(value.to_string()),
+        Some(AttributeValue::Integer(value)) => integer_parameter(value),
         _ => Err(format!("field {key} is not real-valued")),
     }
 }

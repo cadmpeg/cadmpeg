@@ -482,9 +482,7 @@ fn unreadable_losses(
 type RetainedPartBytes = Vec<(String, u64, Vec<u8>)>;
 
 /// The `nx:source:part#` stubs of one decode, with their retained bytes.
-fn part_home(
-    decoded: &cadmpeg_ir::codec::DecodeResult,
-) -> (Vec<String>, RetainedPartBytes) {
+fn part_home(decoded: &cadmpeg_ir::codec::DecodeResult) -> (Vec<String>, RetainedPartBytes) {
     let stubs = decoded
         .ir()
         .native
