@@ -669,7 +669,19 @@ pub(in crate::writer) fn styles(
     };
     for (position, record) in records(ir, "dimension_styles").iter().enumerate() {
         let index = wire_index(position).map_err(WriteError::Fail)?;
-        let fields = record.fields()?;
+        let mut fields = record.fields()?;
+        let mut reference_change = None;
+        if let Some(source) = fields
+            .get("text_style_index")
+            .and_then(Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+        {
+            let target = super::fonts::style_index(ir, source)?.unwrap_or(-1);
+            if source != target {
+                fields.insert("text_style_index".into(), Value::from(target));
+                reference_change = Some((source, target));
+            }
+        }
         let v5_record = fields
             .get("controls")
             .and_then(Value::as_object)
@@ -709,7 +721,16 @@ pub(in crate::writer) fn styles(
         match written {
             Ok(payload) => {
                 output.records.push(payload?);
-                output.written.insert(record.id().to_owned());
+                if let Some((source, target)) = reference_change {
+                    output
+                        .losses
+                        .push(RhinoLossCode::WriterTextStyleReferenceReduced.note(format!(
+                            "dimension style {} text style index {source} is written as {target}",
+                            record.id()
+                        )));
+                } else {
+                    output.written.insert(record.id().to_owned());
+                }
             }
             Err(WriteError::Omit(reason)) => output.losses.push(
                 RhinoLossCode::WriterAttributesOmitted.note(format!("{}: {reason}", record.id())),
