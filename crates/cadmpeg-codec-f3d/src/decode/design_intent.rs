@@ -709,6 +709,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
+        &mut design_parts,
         scan,
         &design.design_parameter_scopes,
         &mut model.features,

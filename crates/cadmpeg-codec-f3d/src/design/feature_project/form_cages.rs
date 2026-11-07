@@ -39,6 +39,7 @@ fn push_form_cage_id(ids: &mut Vec<cadmpeg_ir::ids::SubdId>, id: &cadmpeg_ir::id
 /// the archive entry identity of the neutral cage.
 pub(crate) fn bind_form_cages(
     ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     features: &mut [cadmpeg_ir::features::Feature],
@@ -53,7 +54,10 @@ pub(crate) fn bind_form_cages(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(stream)?;
+        let source = scan
+            .entry_view(stream)
+            .ok_or_else(|| CodecError::malformed("Form source View is missing"))?;
+        let bytes = source.window();
         let Some(meta) = crate::design::decode::meta::metadata_for_bulk_stream(scan, stream)?
         else {
             continue;
@@ -73,7 +77,7 @@ pub(crate) fn bind_form_cages(
                 scope.record_index,
                 scope.reference_members().values().copied(),
             )? {
-                let serializers = form_cage_serializers(ctx, bytes, &records)?;
+                let serializers = form_cage_serializers(ctx, parts, source, stream, &records)?;
                 let mut resolved = Vec::new();
                 let mut valid = true;
                 for object in cage_objects {
@@ -134,7 +138,7 @@ pub(crate) fn bind_form_cages(
                 == 1
             && form_class_328_envelope(bytes, &records, scope)
         {
-            let serializers = form_cage_serializers(ctx, bytes, &records)?;
+            let serializers = form_cage_serializers(ctx, parts, source, stream, &records)?;
             let mut resolved = Vec::new();
             let mut valid = true;
             for surface in &serializers.ordered {
@@ -188,7 +192,7 @@ pub(crate) fn bind_form_cages(
         else {
             continue;
         };
-        let serializers = form_cage_serializers(ctx, bytes, &records)?;
+        let serializers = form_cage_serializers(ctx, parts, source, stream, &records)?;
         let mut resolved = Vec::new();
         for surface in &surfaces {
             let Some(entry_name) = serializers.entry_name(*surface) else {
@@ -843,9 +847,13 @@ impl FormCageSerializers {
 
 fn form_cage_serializers(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
     records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Result<FormCageSerializers, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let bytes = source.window();
     let mut offsets = Vec::new();
     for (_, record_offsets) in records.records() {
         offsets.extend(record_offsets);
@@ -865,66 +873,98 @@ fn form_cage_serializers(
         {
             continue;
         }
-        let Some(next) = records.next_at_or_after(offset + 1) else {
-            continue;
-        };
-        if next != offset + form_serializer_frame_132::LEN
-            || (is_class_335 && bytes.get(next + 4..next + 7) != Some(b"331"))
-        {
+        let name_at = offset + form_serializer_frame_132::ENTRY_NAME_LENGTH;
+        let prefix = b"T\0S\0p\0l\0i\0n\0e\0.\0";
+        if bytes.get(name_at + 4..name_at + 4 + prefix.len()) != Some(prefix) {
             continue;
         }
-        let name_at = offset + form_serializer_frame_132::ENTRY_NAME_LENGTH;
-        let Some(name_units) = View::u32_le_at(bytes, name_at)
-            .filter(|count| (1..=256).contains(count))
-            .and_then(|count| usize::try_from(count).ok())
-        else {
+        let Some(frame) = records.iter().find(|frame| frame.start == offset) else {
             continue;
         };
-        let Some(after_name) = name_at.checked_add(4).and_then(|start| {
-            name_units
-                .checked_mul(2)
-                .and_then(|length| start.checked_add(length))
-        }) else {
+        let start = source
+            .start()
+            .checked_add(frame.start)
+            .ok_or_else(|| CodecError::malformed("Form serializer start overflows"))?;
+        let end = source
+            .start()
+            .checked_add(frame.end)
+            .ok_or_else(|| CodecError::malformed("Form serializer end overflows"))?;
+        let extent = source
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("Form serializer exceeds its stream"))?;
+        let id = cadmpeg_ir::ids::Identity::new(format!(
+            "{}:design-record-header#{}",
+            ids::native_scope(stream),
+            cadmpeg_core::decode::u64_from_index(offset)
+        ))
+        .map_err(CodecError::malformed)?;
+        let mut spec = PartSpec::new("f3d.bulk_record")
+            .holding([cadmpeg_ir::document::ArenaClass::Design])
+            .record_id(id);
+        if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+            spec = spec.in_stream(
+                cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                    .map_err(CodecError::malformed)?,
+            );
+        }
+        let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+        if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
             continue;
-        };
-        let Some(raw_name) = bytes.get(name_at + 4..after_name) else {
-            continue;
-        };
-        let entry_name = match ctx.utf16le_text(
-            raw_name,
-            name_units,
-            false,
-            "f3d form serializer name materialization",
-        ) {
-            Ok(text) => text,
-            Err(CodecError::Malformed(_)) => continue,
-            Err(error) => return Err(error),
-        };
-        if !entry_name.starts_with("TSpline.")
-            || !std::path::Path::new(&entry_name)
+        }
+        let Some((entry_name, surface)) = ctx.decode_part(parts, extent, spec, |_| {
+            let malformed = || CodecError::malformed("invalid Form serializer frame");
+            let next = records.next_at_or_after(offset + 1).ok_or_else(malformed)?;
+            if next != offset + form_serializer_frame_132::LEN
+                || (is_class_335 && bytes.get(next + 4..next + 7) != Some(b"331"))
+            {
+                return Err(malformed());
+            }
+            let bytes = bytes.get(..frame.end).ok_or_else(malformed)?;
+            let name_units = View::u32_le_at(bytes, name_at)
+                .filter(|count| (1..=256).contains(count))
+                .and_then(|count| usize::try_from(count).ok())
+                .ok_or_else(malformed)?;
+            let after_name = name_at
+                .checked_add(4)
+                .and_then(|start| {
+                    name_units
+                        .checked_mul(2)
+                        .and_then(|length| start.checked_add(length))
+                })
+                .ok_or_else(malformed)?;
+            let raw_name = bytes.get(name_at + 4..after_name).ok_or_else(malformed)?;
+            let entry_name = ctx.utf16le_text(
+                raw_name,
+                name_units,
+                false,
+                "f3d form serializer name materialization",
+            )?;
+            if !std::path::Path::new(&entry_name)
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("tsm"))
-            || bytes.get(after_name) != Some(&1)
-            || bytes.get(after_name + 9..after_name + 11) != Some(&[0, 0])
-        {
-            continue;
-        }
-        let Some(surface) =
-            View::u64_le_at(bytes, after_name + 1).and_then(|surface| u32::try_from(surface).ok())
+                || bytes.get(after_name) != Some(&1)
+                || bytes.get(after_name + 9..after_name + 11) != Some(&[0, 0])
+                || (is_class_335
+                    && bytes
+                        .get(after_name + 11..offset + form_serializer_frame_132::LEN)
+                        .is_none_or(|tail| tail.iter().any(|byte| *byte != 0)))
+                || (!is_class_335 && after_name + 11 != offset + form_serializer_frame_132::LEN)
+            {
+                return Err(malformed());
+            }
+            let surface = View::u64_le_at(bytes, after_name + 1)
+                .and_then(|surface| u32::try_from(surface).ok())
+                .ok_or_else(malformed)?;
+            Ok((entry_name, surface))
+        })?
         else {
             continue;
         };
         if is_class_335
-            && (bytes
-                .get(after_name + 11..offset + form_serializer_frame_132::LEN)
-                .is_none_or(|tail| tail.iter().any(|byte| *byte != 0))
-                || !records.offsets(surface).iter().any(|surface_offset| {
-                    bytes.get(*surface_offset + 4..*surface_offset + 7) == Some(b"358")
-                }))
+            && !records.offsets(surface).iter().any(|surface_offset| {
+                bytes.get(*surface_offset + 4..*surface_offset + 7) == Some(b"358")
+            })
         {
-            continue;
-        }
-        if !is_class_335 && after_name + 11 != offset + form_serializer_frame_132::LEN {
             continue;
         }
         if let Some(entry) = entries.get_mut(&surface) {
