@@ -340,13 +340,6 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
                 {
-                    let construction = exact_hole_construction(
-                        bytes,
-                        &records,
-                        &scope,
-                        &stream_types,
-                        &scope::DesignFeatureKind::Hole,
-                    )?;
                     let extent = super::hole::hole_extent(
                         bytes,
                         &scope,
@@ -359,7 +352,6 @@ pub(crate) fn decode_parameter_scopes(
                             .map(|row| row.version),
                     );
                     if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-                        slot.point = construction;
                         slot.extent = extent;
                     }
                 }
@@ -587,42 +579,6 @@ pub(crate) fn decode_parameter_scopes(
                         *slot = construction;
                     }
                 }
-                let legacy_form = scope
-                    .assembly_alignment()
-                    .and_then(|alignment| {
-                        let assembly::DesignAssemblyAlignmentForm::SolvedOnly {
-                            solved_frame,
-                            limits,
-                        } = alignment.form.as_ref()?
-                        else {
-                            return None;
-                        };
-                        let carriers = match exact_legacy_as_built_421_operands(
-                            ctx,
-                            bytes,
-                            &records,
-                            &scope,
-                            &stream_types,
-                            recipes,
-                            solved_frame,
-                        ) {
-                            Ok(Some(carriers)) => carriers,
-                            Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
-                        };
-                        Some(Ok(
-                            assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
-                                carriers,
-                                solved_frame: solved_frame.clone(),
-                                limits: limits.clone(),
-                                frames_field_present: true,
-                            },
-                        ))
-                    })
-                    .transpose()?;
-                if let (Some(alignment), Some(form)) = (scope.assembly_alignment_mut(), legacy_form) {
-                    alignment.form = Some(form);
-                }
                 {
                     let construction = exact_component_insert_construction(bytes, &records, &scope)?;
                     if let scope::DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
@@ -675,7 +631,60 @@ pub(crate) fn decode_parameter_scopes(
             })?;
             if let Some((scope, record_losses)) = decoded {
                 losses.extend(record_losses);
-                if let Some(scope) = scope {
+                if let Some(mut scope) = scope {
+                    let construction = exact_hole_construction(
+                        ctx,
+                        &mut parts,
+                        source,
+                        &entry.name,
+                        &records,
+                        &scope,
+                        &stream_types,
+                        &scope::DesignFeatureKind::Hole,
+                    )?;
+                    if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+                        slot.point = construction;
+                    }
+                    let legacy_form = scope
+                        .assembly_alignment()
+                        .and_then(|alignment| {
+                            let assembly::DesignAssemblyAlignmentForm::SolvedOnly {
+                                solved_frame,
+                                limits,
+                            } = alignment.form.as_ref()?
+                            else {
+                                return None;
+                            };
+                            let carriers = match exact_legacy_as_built_421_operands(
+                                ctx,
+                                &mut parts,
+                                source,
+                                &entry.name,
+                                &records,
+                                &scope,
+                                &stream_types,
+                                recipes,
+                                solved_frame,
+                            ) {
+                                Ok(Some(carriers)) => carriers,
+                                Ok(None) => return None,
+                                Err(error) => return Some(Err(error)),
+                            };
+                            Some(Ok(
+                                assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                                    carriers,
+                                    solved_frame: solved_frame.clone(),
+                                    limits: limits.clone(),
+                                    frames_field_present: true,
+                                },
+                            ))
+                        })
+                        .transpose()?;
+                    if let (Some(alignment), Some(form)) =
+                        (scope.assembly_alignment_mut(), legacy_form)
+                    {
+                        alignment.form = Some(form);
+                    }
                     out.push(scope);
                 }
             }

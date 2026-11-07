@@ -248,13 +248,16 @@ const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 /// `As-built` scope and derive their local frames from the stored solved frame.
 pub(super) fn exact_legacy_as_built_421_operands(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
     records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
 ) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
+    let bytes = source.window();
     (|| {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length()?,
@@ -277,7 +280,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
-    let hole = match exact_hole_construction(bytes, records, scope, stream_types, &crate::records::feature::scope::DesignFeatureKind::AsBuilt) {
+    let hole = match exact_hole_construction(ctx, parts, source, stream, records, scope, stream_types, &crate::records::feature::scope::DesignFeatureKind::AsBuilt) {
         Ok(Some(hole)) => hole,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
