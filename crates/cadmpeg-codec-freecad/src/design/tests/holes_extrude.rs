@@ -1206,7 +1206,12 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
             ..
         }) if (direction.z == 1.0) && result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 5.0
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(result.ir().scope.design && !result.ir().scope.model);
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        result.report().losses[0].code.local_code(),
+        "depth.not-delivered"
+    );
     assert_valid_document(result.ir());
 
     for value in malformed_values {
