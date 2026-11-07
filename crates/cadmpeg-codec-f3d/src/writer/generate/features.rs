@@ -45,6 +45,68 @@ struct NativeBaseFlange {
     thickness: f64,
 }
 
+struct NativeRemoveBody {
+    ordinal: u64,
+    id: FeatureId,
+    member: u32,
+    state: u32,
+    opaque_index: u32,
+    opaque_scalar: f64,
+    design_reference: u64,
+    asset: String,
+    context: String,
+}
+
+fn select_native_remove_bodies(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> Vec<NativeRemoveBody> {
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection};
+    target.model.features.iter().filter_map(|feature| {
+        let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+            bodies: BodySelection::Native(selection), mode: BodyRetentionMode::DeleteSelected,
+        }) = feature.evaluation.definition() else { return None };
+        if feature.source_tag.as_deref().is_some_and(|tag| tag != "RemoveBody")
+            || feature.suppressed == Some(true) || feature.needs_recompute || feature.product_definition.is_some()
+            || !feature.dependencies.is_empty() || !feature.source_properties.is_empty()
+            || feature.source_text.is_some() || !feature.source_content.is_empty() || !feature.evaluation.outputs().is_empty() { return None; }
+        let scope = native.design_parameter_scopes.iter().find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))?;
+        let group = native.design_construction_operand_groups.iter().find(|group| &group.id == selection)?;
+        if crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
+            || group.scope_record_index != scope.record_index || group.scope_reference_ordinal != 0
+            || group.role() != crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A
+            || group.members().len() != 1 || !group.lost_edge_references.is_empty()
+            || group.frame.variant || group.frame.closing_flag { return None; }
+        let member = group.members()[0].value;
+        if !scope.reference_members().values().copied().eq([group.record_index, member]) { return None; }
+        let mut inputs = target.model.feature_input_topologies.iter().filter(|input| input.input_of == feature.id);
+        let input = inputs.next()?;
+        if inputs.next().is_some() || !input.bodies.is_empty() || !input.faces.is_empty()
+            || !input.edges.is_empty() || !input.vertices.is_empty() || !input.edge_geometry.is_empty()
+            || input.operands.len() != 2 || !input.operands.iter().any(|operand| operand.native_ref.as_str() == selection) { return None; }
+        let operand = native.design_body_recipe_operands.iter().find(|record| record.record_index() == member
+            && input.operands.iter().any(|input| input.native_ref.as_str() == record.id))?;
+        if operand.scope_record_index != scope.record_index
+            || !matches!(operand.owner, crate::records::topology::body_recipe::DesignOperandOwner::Group { group_record_index, group_member_ordinal: 0 } if group_record_index == group.record_index)
+            || operand.references().len() != 1 || operand.references()[0].form != 3
+            || !operand.references()[0].candidate_faces.is_empty() || !operand.references()[0].preceding_candidate_faces.is_empty()
+            || !operand.references()[0].preceding_body_slots.is_empty()
+            || operand.resolved_body_state_id.is_some() || operand.resolved_body_slot.is_some() || operand.resolved_face_slot.is_some()
+            || !operand.resolved_body_face_slots.is_empty() || member.checked_add(4) != Some(operand.next_record_index())
+            || !operand.selector_tail().is_some_and(|tail| tail.byte_len() == 4 && tail.digest() == &cadmpeg_ir::hash::digest::Sha256Digest::digest(&[0; 4]))
+            || !native.construction_recipes.iter().any(|recipe| recipe.id == operand.recipe_id
+                && recipe.kind == crate::records::recipes::ConstructionRecipeKind::Body
+                && recipe.recipe_index == 0 && recipe.record_index.as_ref().is_some_and(|index| index.value == 0)
+                && recipe.design.as_ref().is_some_and(|design| design.id.value == (member + 3).to_string()
+                    && design.selector.as_ref().is_some_and(|selector| selector.value == member + 4))) { return None; }
+        Some(NativeRemoveBody { ordinal: feature.ordinal, id: feature.id.clone(), member,
+            state: u32::try_from(scope.history_state_id()?).ok()?,
+            opaque_index: group.frame.opaque_index.get(), opaque_scalar: group.frame.opaque_scalar().get(),
+            design_reference: operand.references()[0].design_reference,
+            asset: operand.asset_id.as_str().to_owned(), context: operand.context_id.as_str().to_owned() })
+    }).collect()
+}
+
 fn select_native_base_flanges(
     target: &CadIr,
     native: &crate::native::F3dNative,
@@ -601,6 +663,7 @@ pub(super) fn encode(
     let mut extrusions = select_extrusions(target, native, sketch.as_deref());
     let base_features = select_empty_base_features(target, native);
     let base_flanges = select_native_base_flanges(target, native);
+    let mut removals = select_native_remove_bodies(target, native);
     let mut dimensions = select_sketch_dimensions(target, native, sketch.as_deref());
     extrusions.sort_by_key(|extrusion| extrusion.ordinal);
     let mut copies = select_copies(target, native, attributes)?;
@@ -622,6 +685,7 @@ pub(super) fn encode(
         && copies.is_empty()
         && base_features.is_empty()
         && base_flanges.is_empty()
+        && removals.is_empty()
         && !joined
     {
         return Ok(None);
@@ -644,7 +708,7 @@ pub(super) fn encode(
     } else {
         256
     };
-    let tags = (0..15u32)
+    let tags = (0..16u32)
         .map(|offset| {
             type_start
                 .checked_add(offset)
@@ -667,6 +731,23 @@ pub(super) fn encode(
         DimensionConstruction::BodyRecipe(index) => index != 0 && occupied.insert(index),
     });
     occupied.extend(base_flanges.iter().flat_map(|feature| feature.references));
+    removals.retain(|feature| {
+        let indices = feature.member..=feature.member + 4;
+        if indices.clone().any(|index| occupied.contains(&index)) {
+            return false;
+        }
+        occupied.extend(indices);
+        true
+    });
+    if primitives.is_empty()
+        && copies.is_empty()
+        && base_features.is_empty()
+        && base_flanges.is_empty()
+        && removals.is_empty()
+        && !joined
+    {
+        return Ok(None);
+    }
     if append_main {
         occupied.extend(
             design_registry
@@ -697,6 +778,10 @@ pub(super) fn encode(
     let mut base_flange_indices = Vec::new();
     for _ in &base_flanges {
         base_flange_indices.push(reserve_indices(&mut occupied, &mut next, 1)?);
+    }
+    let mut removal_bases = Vec::new();
+    for _ in &removals {
+        removal_bases.push(reserve_indices(&mut occupied, &mut next, 4)?);
     }
     let mut dimension_bases = Vec::new();
     for _ in &dimensions {
@@ -841,10 +926,78 @@ pub(super) fn encode(
     let mut extrusion_scopes = Vec::new();
     let mut base_feature_scopes = Vec::new();
     let mut base_flange_scopes = Vec::new();
+    let mut removal_scopes = Vec::new();
     let mut extrusion_companions = Vec::new();
     let mut dimension_loci = Vec::new();
     let mut dimension_recipes = Vec::new();
     let mut copy_groups = Vec::new();
+    for (feature, index) in removals.iter().zip(removal_bases) {
+        let group = index + 1;
+        let family = family_ordinals.entry("RemoveBody").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D body removals".into()))?;
+        removal_scopes.push(u64::from(index));
+        timeline_scopes.push((feature.ordinal, u64::from(index)));
+        mark_primary(ctx, &mut primary, index, out.len())?;
+        header(&mut out, &tags[15], index)?;
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&2u32.to_le_bytes());
+        reference(&mut out, group);
+        reference(&mut out, feature.member);
+        out.extend_from_slice(&feature.state.to_le_bytes());
+        native_lp_utf16(&mut out, "RemoveBody")?;
+        out.extend_from_slice(&family.to_le_bytes());
+        out.extend_from_slice(&[0; 78]);
+        mark(&mut secondary, index, out.len());
+        header(&mut out, &tags[0], index)?;
+        mark_primary(ctx, &mut primary, group, out.len())?;
+        header(&mut out, &tags[6], group)?;
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut out, feature.member);
+        out.extend_from_slice(&[0; 2]);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&feature.opaque_index.to_le_bytes());
+        out.extend_from_slice(&feature.opaque_scalar.to_le_bytes());
+        out.extend_from_slice(&feature.opaque_index.to_le_bytes());
+        reference(&mut out, group + 2);
+        out.extend_from_slice(&[0; 2]);
+        reference(&mut out, group + 1);
+        out.push(0);
+        reference(&mut out, index);
+        mark(&mut secondary, group, out.len());
+        header(&mut out, &tags[0], group)?;
+        copy_groups.push(u64::from(group));
+        mark_primary(ctx, &mut primary, feature.member, out.len())?;
+        header(&mut out, &tags[15], feature.member)?;
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&feature.design_reference.to_le_bytes());
+        out.extend_from_slice(&3u32.to_le_bytes());
+        reference(&mut out, feature.member + 3);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        native_lp_utf16(&mut out, &feature.asset)?;
+        native_lp_utf16(&mut out, &feature.context)?;
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&[0; 4]);
+        mark(&mut secondary, feature.member, out.len());
+        header(&mut out, &tags[0], feature.member)?;
+        removal_scopes.push(u64::from(feature.member));
+        for index in feature.member + 1..=feature.member + 4 {
+            mark_primary(ctx, &mut primary, index, out.len())?;
+            header(&mut out, &tags[6], index)?;
+            if index == feature.member + 3 {
+                native_lp_ascii(&mut out, &index.to_string())?;
+                out.extend_from_slice(&(feature.member + 4).to_le_bytes());
+                out.extend_from_slice(&[0; 12]);
+                native_lp_ascii(&mut out, "body_recipe_data")?;
+            }
+            copy_groups.push(u64::from(index));
+        }
+    }
     for (feature, index) in base_flanges.iter().zip(base_flange_indices) {
         let family = family_ordinals.entry("BaseFlange").or_default();
         *family = family
@@ -1325,6 +1478,13 @@ pub(super) fn encode(
             "Fusion",
             base_flange_scopes,
         ),
+        (
+            "00000000-0000-0000-0000-000000001401",
+            None,
+            1,
+            "Fusion",
+            removal_scopes,
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -1414,6 +1574,7 @@ pub(super) fn encode(
     written.extend(extrusions.into_iter().map(|extrusion| extrusion.id));
     written.extend(base_features.into_iter().map(|feature| feature.id));
     written.extend(base_flanges.into_iter().map(|feature| feature.id));
+    written.extend(removals.into_iter().map(|feature| feature.id));
     Ok(Some(EncodedFeatures {
         stream,
         features: written,
