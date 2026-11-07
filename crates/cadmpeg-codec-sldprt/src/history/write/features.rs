@@ -130,6 +130,47 @@ fn generated_feature_source_ids(
         .iter()
         .filter(|feature| feature.native_ref.is_none())
     {
+        let FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) =
+            feature.definition()
+        else {
+            continue;
+        };
+        let source = match plane {
+            cadmpeg_ir::features::PrincipalPlane::Front => 2,
+            cadmpeg_ir::features::PrincipalPlane::Top => 3,
+            cadmpeg_ir::features::PrincipalPlane::Right => 4,
+        };
+        let record_id = generated_feature_record_id(&feature.id);
+        if existing.get(record_id.as_str()).copied() != Some(source) && !used.insert(source) {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT feature {} needs reserved principal-plane identity {source}",
+                feature.id
+            ))
+            .into());
+        }
+        if allocated
+            .values()
+            .any(|value: &FeatureSource| value.value() == Some(source))
+        {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT feature {} repeats principal-plane identity {source}",
+                feature.id
+            ))
+            .into());
+        }
+        allocated.insert(
+            feature.id.clone(),
+            FeatureSource::from_value(source)
+                .ok_or_else(|| CodecError::malformed("invalid principal-plane source identity"))?,
+        );
+    }
+    for feature in features
+        .iter()
+        .filter(|feature| feature.native_ref.is_none())
+    {
+        if allocated.contains_key(&feature.id) {
+            continue;
+        }
         let record_id = generated_feature_record_id(&feature.id);
         let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
             source_id
