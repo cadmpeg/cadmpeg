@@ -256,6 +256,7 @@ pub(super) fn reconcile(
                                     feature.evaluation.definition(),
                                     cadmpeg_ir::features::FeatureDefinition::Operation(
                                         cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
+                                            | cadmpeg_ir::features::FeatureOperation::Extrude { .. }
                                     )
                                 ) || matches!(feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. }) if kind.as_str() == "Decal"))
                         })
