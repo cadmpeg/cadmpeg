@@ -67,10 +67,12 @@ pub(crate) fn plan(
     let attempt = write(input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,
-        Err(super::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(
-            limit,
-        ))) if caller_ceiling(limit, input.limits) => {
-            return Err(cadmpeg_core::CodecError::ResourceLimit(limit).into());
+        Err(
+            error @ super::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            )),
+        ) if caller_ceiling(limit, input.limits) => {
+            return Err(error);
         }
         Err(error) => {
             return super::synthesis::plan(
