@@ -5266,7 +5266,7 @@ pub(crate) mod move_marked_transform_prologue {
 /// Spec §3.1. Record length 253 B.
 ///
 /// ```text
-/// Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263, the class-456 form uses paired class 258, and the class-452 form uses paired class 262 and form word 5; the same-index paired header follows at offset 253.
+/// Offsets are relative to the transform record's primary indexed header.
 /// ```
 pub(crate) mod move_transform_frame_253 {
     /// Record length in bytes. Spec §3.1.
