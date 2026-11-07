@@ -22,6 +22,63 @@ struct Scalar {
     expression: Option<String>,
 }
 
+struct Extrusion {
+    ordinal: u64,
+    id: FeatureId,
+    container: u32,
+    distance: Scalar,
+    current_state: u32,
+    previous_state: u32,
+}
+
+fn select_extrusions(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+    sketch: Option<&super::sketches::SketchStream>,
+) -> Vec<Extrusion> {
+    use cadmpeg_ir::features::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination, PlanarProfileRef,
+        ProfileRef, SketchFeatureBinding,
+    };
+    let Some(sketch) = sketch else {
+        return Vec::new();
+    };
+    target.model.features.iter().filter_map(|feature| {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)),
+            direction: ExtrudeDirection::ProfileNormal {},
+            start: ExtrudeStart::ProfilePlane {},
+            extent: ExtrudeExtent::OneSided { side },
+            op: BooleanOp::NewBody,
+            solid: Some(true), face_maker: None, inner_wire_taper: None,
+            length_along_profile_normal: None, allow_multi_profile_faces: None,
+        }) = feature.evaluation.definition() else { return None };
+        let LinearTermination::Blind { length } = &side.termination else { return None };
+        if !matches!(length, Dimension::Parameter(_)) { return None; }
+        if side.draft.is_some() || feature.suppressed == Some(true) || feature.needs_recompute
+            || feature.product_definition.is_some()
+            || !feature.source_properties.is_empty() || feature.source_text.is_some()
+            || !feature.source_content.is_empty() || !feature.evaluation.outputs().is_empty()
+            || feature.source_tag.as_deref().is_some_and(|tag| tag != "Extrude") { return None; }
+        let owner = target.model.features.iter().find(|candidate| matches!(candidate.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(id)) }) if id == sketch_id))?;
+        if feature.dependencies.len() != 1 || feature.dependencies.iter().any(|id| id != &owner.id) { return None; }
+        let mut inputs = target.model.feature_input_topologies.iter().filter(|input| input.input_of == feature.id);
+        let input = inputs.next()?;
+        if inputs.next().is_some() || !input.bodies.is_empty() || !input.faces.is_empty()
+            || !input.edges.is_empty() || !input.vertices.is_empty() || !input.edge_geometry.is_empty()
+            || input.operands.len() != 1 { return None; }
+        let scope = native.design_parameter_scopes.iter().find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))?;
+        let current_state = u32::try_from(scope.history_state_id()?).ok()?;
+        let previous_state = u32::try_from(scope.previous_history_state_id()?).ok()?;
+        if current_state == u32::MAX || previous_state == u32::MAX { return None; }
+        let container = *sketch.feature_containers.get(&owner.id)?;
+        let distance = scalar(target, &feature.id, "AlongDistance", 2, length)?;
+        if distance.value <= 0.0 { return None; }
+        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, current_state, previous_state })
+    }).collect()
+}
+
 fn scalar<Q: DimensionValue>(
     target: &CadIr,
     feature: &FeatureId,
@@ -320,6 +377,8 @@ pub(super) fn encode(
     mut sketch: Option<&mut super::sketches::SketchStream>,
 ) -> Result<Option<EncodedFeatures>, CodecError> {
     let mut primitives = select(target);
+    let mut extrusions = select_extrusions(target, native, sketch.as_deref());
+    extrusions.sort_by_key(|extrusion| extrusion.ordinal);
     let mut copies = select_copies(target, native, attributes)?;
     let joined = sketch
         .as_ref()
@@ -356,7 +415,7 @@ pub(super) fn encode(
     } else {
         256
     };
-    let tags = (0..8u32)
+    let tags = (0..10u32)
         .map(|offset| {
             type_start
                 .checked_add(offset)
@@ -392,6 +451,10 @@ pub(super) fn encode(
     let mut bases = Vec::new();
     for _ in &primitives {
         bases.push(reserve_indices(&mut occupied, &mut next, 16)?);
+    }
+    let mut extrusion_bases = Vec::new();
+    for _ in &extrusions {
+        extrusion_bases.push(reserve_indices(&mut occupied, &mut next, 11)?);
     }
     let mut copy_bases = Vec::new();
     for copy in &copies {
@@ -529,7 +592,130 @@ pub(super) fn encode(
             super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
         }
     }
+    let mut extrusion_scopes = Vec::new();
+    let mut extrusion_companions = Vec::new();
     let mut copy_groups = Vec::new();
+    for (extrusion, base) in extrusions.iter().zip(extrusion_bases) {
+        let group = base + 1;
+        let profile = base + 4;
+        let owner_index = base + 8;
+        let parameter_index = base + 9;
+        let companion_index = base + 10;
+        let family = family_ordinals.entry("Extrude").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D extrusions".into()))?;
+        extrusion_scopes.push(u64::from(base));
+        timeline_scopes.push((extrusion.ordinal, u64::from(base)));
+        mark_primary(ctx, &mut primary, base, out.len())?;
+        let start = out.len();
+        header(&mut out, &tags[8], base)?;
+        let end = start
+            .checked_add(208)
+            .ok_or_else(|| CodecError::InvalidInput("F3D scope length overflows".into()))?;
+        out.resize(end, 0);
+        out[start + 21..start + 25].copy_from_slice(&4u32.to_le_bytes());
+        out[start + 25..start + 29].copy_from_slice(&2u32.to_le_bytes());
+        out[start + 30..start + 34].copy_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&3u32.to_le_bytes());
+        for index in [group, profile, owner_index] {
+            reference(&mut out, index);
+        }
+        out.extend_from_slice(&extrusion.current_state.to_le_bytes());
+        native_lp_utf16(&mut out, "Extrude")?;
+        let mut tail = [0u8; 78];
+        tail[..4].copy_from_slice(&family.to_le_bytes());
+        tail[31..35].copy_from_slice(&extrusion.previous_state.to_le_bytes());
+        out.extend_from_slice(&tail);
+        mark(&mut secondary, base, out.len());
+        header(&mut out, &tags[0], base)?;
+        mark_primary(ctx, &mut primary, group, out.len())?;
+        header(&mut out, &tags[6], group)?;
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut out, profile);
+        out.extend_from_slice(&[0; 2]);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&0x0000_0041_0000_0000u64.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&1f64.to_le_bytes());
+        out.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut out, group + 2);
+        out.extend_from_slice(&[0; 2]);
+        reference(&mut out, group + 1);
+        out.push(0);
+        reference(&mut out, base);
+        mark(&mut secondary, group, out.len());
+        header(&mut out, &tags[0], group)?;
+        copy_groups.push(u64::from(group));
+        mark_primary(ctx, &mut primary, profile, out.len())?;
+        header(&mut out, &tags[6], profile)?;
+        out.extend_from_slice(&[0; 10]);
+        reference(&mut out, profile + 3);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        native_lp_utf16(&mut out, "00000000-0000-4000-8000-000000000001")?;
+        native_lp_utf16(&mut out, &extrusion.container.to_string())?;
+        out.extend_from_slice(&[0; 94]);
+        mark(&mut secondary, profile, out.len());
+        header(&mut out, &tags[6], profile)?;
+        copy_groups.push(u64::from(profile));
+        let scalar = &extrusion.distance;
+        let owner = DesignParameterOwner::try_from(DesignParameterOwnerContent {
+            id: format!("f3d:generated:owner#{owner_index}"),
+            class_tag: tags[2].clone().try_into().map_err(CodecError::Malformed)?,
+            record_index: owner_index,
+            scope_record_index: Some(base),
+            local_ordinal: Some(2),
+            evaluated_value: scalar.value,
+            parameter_record_index: parameter_index,
+            owned_ordinal: 2,
+            variant: Some(0),
+            companion_record_index: companion_index,
+        })
+        .map_err(CodecError::Malformed)?;
+        owners.push(u64::from(owner_index));
+        parameters.push(u64::from(parameter_index));
+        mark_primary(ctx, &mut primary, owner_index, out.len())?;
+        super::parameter_links::encode(&mut out, &[owner], &[])?;
+        mark(
+            &mut secondary,
+            owner_index,
+            out.len() - crate::layout::indexed_design_record_header::LEN,
+        );
+        let parameter = DesignParameter::authored(DesignParameterContent {
+            id: format!("f3d:generated:parameter#{parameter_index}"),
+            class_tag: tags[3].clone().try_into().map_err(CodecError::Malformed)?,
+            record_index: parameter_index,
+            source_ordinal: 2,
+            source: DesignParameterSource::authored(
+                "AlongDistance".into(),
+                Some(owner_index),
+                Some(DesignParameterDiscriminator::Code3),
+            )
+            .map_err(CodecError::Malformed)?,
+            expression: scalar
+                .expression
+                .clone()
+                .unwrap_or_else(|| format!("{} cm", scalar.value)),
+            unit: Some("cm".into()),
+            name: scalar
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("Depth{base}")),
+            evaluated_value: scalar.value,
+        })
+        .map_err(CodecError::Malformed)?;
+        mark_primary(ctx, &mut primary, parameter_index, out.len())?;
+        super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
+        mark_primary(ctx, &mut primary, companion_index, out.len())?;
+        header(&mut out, &tags[9], companion_index)?;
+        out.extend_from_slice(&[0; 20]);
+        reference(&mut out, owner_index);
+        out.extend_from_slice(&1u64.to_le_bytes());
+        out.extend_from_slice(&[0; 8]);
+        extrusion_companions.push(u64::from(companion_index));
+    }
     let mut body_map = std::collections::BTreeMap::new();
     let mut body_pairs = Vec::new();
     for (copy, base) in copies.iter().zip(copy_bases) {
@@ -699,6 +885,20 @@ pub(super) fn encode(
             "Body",
             body_map_index.into_iter().map(u64::from).collect(),
         ),
+        (
+            "DD405BC2-D673-44F0-8833-5CB2A1C186C7",
+            None,
+            0,
+            "Fusion",
+            extrusion_scopes,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000272",
+            None,
+            0,
+            "Dimension",
+            extrusion_companions,
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -754,10 +954,15 @@ pub(super) fn encode(
             .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
         Some((out, meta))
     };
-    let written_parameters = primitives
+    let mut written_parameters: Vec<_> = primitives
         .iter()
         .flat_map(|(_, _, values, _, _)| values.iter().filter_map(|value| value.parameter.clone()))
         .collect();
+    written_parameters.extend(
+        extrusions
+            .iter()
+            .filter_map(|extrusion| extrusion.distance.parameter.clone()),
+    );
     let mut written = sketch
         .as_ref()
         .filter(|_| joined)
@@ -770,6 +975,7 @@ pub(super) fn encode(
         });
     written.extend(primitives.into_iter().map(|(_, _, _, _, id)| id));
     written.extend(copies.into_iter().map(|copy| copy.id));
+    written.extend(extrusions.into_iter().map(|extrusion| extrusion.id));
     Ok(Some(EncodedFeatures {
         stream,
         features: written,
