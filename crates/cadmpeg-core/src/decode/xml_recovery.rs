@@ -26,19 +26,32 @@ pub fn parse_xml_recovering<'s>(
     let mut blanked: Vec<(usize, usize)> = Vec::new();
     loop {
         let current = reassemble(ctx, view, &blanked, operation)?;
-        let text = std::str::from_utf8(current.window())
-            .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
-        match parse(text) {
+        let parsed = match std::str::from_utf8(current.window()) {
+            Ok(text) => parse(text).map_err(|(error, position)| {
+                let damaged = position
+                    .and_then(|position| syntax_damage(&scan, view, text, position, &blanked));
+                (error, damaged)
+            }),
+            Err(error) => {
+                let damaged = view
+                    .start()
+                    .checked_add(error.valid_up_to())
+                    .and_then(|at| element_at(&scan, at, &blanked));
+                Err((
+                    CodecError::malformed(format_args!("{member} is not UTF-8")),
+                    damaged,
+                ))
+            }
+        };
+        match parsed {
             Ok(xml) => return Ok((current, xml)),
-            Err((error, position)) => {
+            Err((error, damaged)) => {
                 if matches!(error, CodecError::ResourceLimit(_)) {
                     return Err(error);
                 }
                 let mut fresh = damaged_elements(&scan, &blanked);
                 if fresh.is_empty() {
-                    if let Some(element) = position
-                        .and_then(|position| syntax_damage(&scan, view, text, position, &blanked))
-                    {
+                    if let Some(element) = damaged {
                         fresh.push(element);
                     } else {
                         return Err(error);
@@ -154,6 +167,14 @@ fn syntax_damage(
         .nth(column)
         .map_or(line.len(), |(index, _)| index);
     let at = view.start().checked_add(offset)?.checked_add(character)?;
+    element_at(scan, at, blanked)
+}
+
+fn element_at(
+    scan: &super::XmlElementScan<'_>,
+    at: usize,
+    blanked: &[(usize, usize)],
+) -> Option<DamagedSpan> {
     let elements = scan.elements();
     let (index, element) = elements
         .iter()
@@ -469,6 +490,39 @@ mod tests {
             text.find("<last/>").expect("last offset")
         );
         assert_eq!(recovered.window().len(), text.len());
+    }
+
+    #[test]
+    fn recovers_siblings_around_invalid_utf8() {
+        let bytes = b"prefix<root><first/><bad>\xff</bad><last/></root>suffix";
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("create decode context");
+        let start = b"prefix".len();
+        let end = bytes.len() - b"suffix".len();
+        let member = root.child(start, end).expect("member view");
+        let mut dropped = Vec::new();
+        let (_, document) = parse_xml_recovering(
+            &ctx,
+            member,
+            "test XML",
+            "scan test XML",
+            "parse test XML",
+            &|detail| CodecError::malformed(detail),
+            |extent, name, _, _| {
+                dropped.push((extent.window().to_vec(), name.to_vec()));
+                Ok(())
+            },
+        )
+        .expect("recover XML");
+        let names: Vec<_> = document
+            .root_element()
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .map(|node| node.tag_name().name())
+            .collect();
+        assert_eq!(names, ["first", "last"]);
+        assert_eq!(dropped, [(b"<bad>\xff</bad>".to_vec(), b"bad".to_vec())]);
     }
 
     #[test]
