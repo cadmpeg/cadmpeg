@@ -448,9 +448,13 @@ pub(super) fn write_with_limits(
         )));
     }
     let mut written_owned_parameters = Vec::new();
+    let mut written_component_definitions = Vec::new();
+    let mut written_component_occurrences = Vec::new();
     if let Some(features) = generated_features {
         written_features = features.features;
         written_owned_parameters = features.parameters;
+        written_component_definitions = features.component_definitions;
+        written_component_occurrences = features.component_occurrences;
         residual_losses.push(collection_residual(
             if features.stream.is_none() {
                 "FusionDesignSegmentType4"
@@ -530,6 +534,28 @@ pub(super) fn write_with_limits(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
+    if !written_component_definitions.is_empty() {
+        dispositions.product_definitions = if target
+            .model
+            .product_definitions
+            .iter()
+            .all(|product| written_component_definitions.contains(&product.id))
+        {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+        dispositions.occurrences = if target
+            .model
+            .occurrences
+            .iter()
+            .all(|occurrence| written_component_occurrences.contains(&occurrence.id))
+        {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+    }
     if let Some(bulk) = &design_bulk {
         if !bulk.written_materials.is_empty() {
             dispositions.appearance_bindings =
@@ -646,8 +672,14 @@ pub(super) fn write_with_limits(
                 cadmpeg_ir::features::FeatureOperation::KnitSurface { .. },
             ) => Some("SurfaceStitch"),
             cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::InsertComponent { .. },
+            ) => Some("CopyPaste"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
             ) if kind.as_str() == "BaseFlange" => Some("BaseFlange"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+            ) if kind.as_str() == "Form" => Some("Form"),
             _ => None,
         };
         let written = written_features
@@ -688,6 +720,16 @@ pub(super) fn write_with_limits(
                 partial = true;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
                     format!("feature {} recompute state is not encoded", feature.id),
+                ));
+            }
+            if matches!(feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+                ) if kind.as_str() == "Form")
+            {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} retains its Form reference; the referenced construction record is omitted", feature.id),
                 ));
             }
             if matches!(
