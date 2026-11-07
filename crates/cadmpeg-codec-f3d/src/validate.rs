@@ -6075,15 +6075,28 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let invalid_face_groups_hide_extent_conflict =
                 class_296_two_faces_layout && face_operand_group_count == 0;
+            // DR-322: a new-body one-sided distance scope with start-support
+            // byte 2, a ProfileOffset, and no face group of any role.
+            let selected_start_without_group = matches!(
+                extrude_start,
+                records::feature::extrude::DesignExtrudeStart::FromFace
+            ) && matches!(
+                extrude_extent,
+                records::feature::extrude::DesignExtrudeExtent::OneSidedDistance
+            ) && prologue.operation()
+                == records::feature::extrude::DesignExtrudeOperation::NewBody
+                && face_operand_group_count == 0
+                && face_groups.is_empty();
             if ctx.holds_design_intent()
                 && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands
                     || !start_matches_operands
-                    || face_operand_group_count != expected_face_group_count
-                    || face_groups
-                        .iter()
-                        .map(|group| group.extrude_face_role())
-                        .ne(expected_face_roles.iter().copied().map(Some)))
+                    || (!selected_start_without_group
+                        && (face_operand_group_count != expected_face_group_count
+                            || face_groups
+                                .iter()
+                                .map(|group| group.extrude_face_role())
+                                .ne(expected_face_roles.iter().copied().map(Some)))))
             {
                 push_constant_finding(findings, Check::NativeLinks, "Fusion Design Extrude start or extent conflicts with its parameters and face operands", Some(scope.id.clone()));
             }
@@ -6550,8 +6563,14 @@ fn validate_fillet_operand_groups<'a>(
                         )
                     })
             });
+        // DR-321: a sole face-role group with no owner and no fixed lane.
+        let no_stored_radius = !has_parameter_owner
+            && sole_compact_group_shape
+            && group.role() == DesignOperandRole::ROLE_0X10
+            && scope.is_some_and(|scope| scope.fixed_fillet_parameters().is_none());
         if is_fillet
             && !retained_fixed_assignment
+            && !no_stored_radius
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
             && !has_radius_assignment
@@ -7026,6 +7045,21 @@ fn validate_operand_group_carriers<'a>(
                                 .eq([profile.record_index])
                         })
                 });
+        // A profile group of several sketch-profile operands: each member is an
+        // operand that the scope retains as a native profile.
+        let has_exact_native_profile_members = group.extrude_role()
+            == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
+            && ctx
+                .scopes_by_index
+                .get(&(native_stream, group.scope_record_index))
+                .and_then(|scope| scope.extrude_native_profiles())
+                .is_some_and(|profiles| {
+                    group
+                        .members()
+                        .iter()
+                        .map(|member| member.value)
+                        .eq(profiles.iter().map(|profile| profile.record_index))
+                });
         let has_exact_group_members = !group.members().is_empty()
             && group
                 .members()
@@ -7078,6 +7112,7 @@ fn validate_operand_group_carriers<'a>(
             || has_exact_body_recipe_members
             || has_exact_topology_recipe_members
             || has_exact_sketch_profile_member
+            || has_exact_native_profile_members
             || has_exact_group_members;
         if !has_exact_member_carrier {
             push_constant_finding(
@@ -8459,7 +8494,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
-    let mut visibility_ordinals = HashSet::new();
     let collections = native
         .design_types
         .iter()
@@ -8503,11 +8537,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     let collection = collection.get();
                     if header_valid
                         && collections.contains(&(ids::design_segment(&placement.id), collection))
-                        && visibility_ordinals.insert((
-                            native_stream,
-                            collection,
-                            visibility.stream_ordinal.get(),
-                        ))
                     {
                         visibility_offsets.insert((native_stream, visibility.visible_offset()))
                     } else {
