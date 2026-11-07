@@ -143,21 +143,19 @@ fn generated_feature_source_ids(
         };
         let record_id = generated_feature_record_id(&feature.id);
         if existing.get(record_id.as_str()).copied() != Some(source) && !used.insert(source) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} needs reserved principal-plane identity {source}",
                 feature.id
-            ))
-            .into());
+            )));
         }
         if allocated
             .values()
             .any(|value: &FeatureSource| value.value() == Some(source))
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} repeats principal-plane identity {source}",
                 feature.id
-            ))
-            .into());
+            )));
         }
         allocated.insert(
             feature.id.clone(),

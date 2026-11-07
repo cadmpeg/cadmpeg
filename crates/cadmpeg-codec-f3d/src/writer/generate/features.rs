@@ -31,6 +31,227 @@ struct Extrusion {
     previous_state: u32,
 }
 
+struct EmptyBaseFeature {
+    ordinal: u64,
+    id: FeatureId,
+    reference: u32,
+    state: u32,
+}
+
+struct NativeBaseFlange {
+    ordinal: u64,
+    id: FeatureId,
+    references: [u32; 4],
+    thickness: f64,
+}
+
+fn select_native_base_flanges(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> Vec<NativeBaseFlange> {
+    target
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) =
+                feature.evaluation.definition()
+            else {
+                return None;
+            };
+            if kind.as_str() != "BaseFlange"
+                || !parameters.is_empty()
+                || feature
+                    .source_tag
+                    .as_deref()
+                    .is_some_and(|tag| tag != "BaseFlange")
+                || feature.suppressed == Some(true)
+                || feature.needs_recompute
+                || feature.product_definition.is_some()
+                || !feature.dependencies.is_empty()
+                || feature.source_text.is_some()
+                || !feature.source_content.is_empty()
+                || !feature.evaluation.outputs().is_empty()
+                || feature.source_properties.len() != 4
+            {
+                return None;
+            }
+            let scope = native
+                .design_parameter_scopes
+                .iter()
+                .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))?;
+            let operation = scope.base_flange_operation()?;
+            let references = [
+                operation.profile_group_record_index,
+                operation.profile_record_index,
+                operation.thickness_record_index,
+                operation.settings_record_index,
+            ];
+            if !scope.reference_members().values().copied().eq(references)
+                || references.iter().enumerate().any(|(index, value)| {
+                    feature
+                        .source_properties
+                        .get(format!("reference:{index}").as_str())
+                        != Some(&value.to_string())
+                })
+                || scope.history_state_id().is_some()
+            {
+                return None;
+            }
+            Some(NativeBaseFlange {
+                ordinal: feature.ordinal,
+                id: feature.id.clone(),
+                references,
+                thickness: operation.thickness.get(),
+            })
+        })
+        .collect()
+}
+
+fn select_empty_base_features(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> Vec<EmptyBaseFeature> {
+    target
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies:
+                    cadmpeg_ir::features::BodySelection::Resolved {
+                        bodies,
+                        native: selection,
+                    },
+            }) = feature.evaluation.definition()
+            else {
+                return None;
+            };
+            if !bodies.is_empty()
+                || feature.native_ref.as_deref() != Some(selection.as_str())
+                || feature.suppressed == Some(true)
+                || feature.needs_recompute
+                || feature.product_definition.is_some()
+                || !feature.dependencies.is_empty()
+                || !feature.source_properties.is_empty()
+                || feature.source_text.is_some()
+                || !feature.source_content.is_empty()
+                || !feature.evaluation.outputs().is_empty()
+                || feature
+                    .source_tag
+                    .as_deref()
+                    .is_some_and(|tag| tag != "Base Feature")
+            {
+                return None;
+            }
+            let scope = native
+                .design_parameter_scopes
+                .iter()
+                .find(|scope| scope.id == *selection)?;
+            if scope
+                .base_feature_construction()?
+                .body_entity_suffixes()
+                .len()
+                != 0
+            {
+                return None;
+            }
+            let mut references = scope.reference_members().values();
+            let reference = *references.next()?;
+            if references.next().is_some() {
+                return None;
+            }
+            let state = u32::try_from(scope.history_state_id()?).ok()?;
+            Some(EmptyBaseFeature {
+                ordinal: feature.ordinal,
+                id: feature.id.clone(),
+                reference,
+                state,
+            })
+        })
+        .collect()
+}
+
+struct SketchDimension {
+    constraint: cadmpeg_ir::sketches::SketchConstraintId,
+    scope: u32,
+    ordinal: u32,
+    source_ordinal: u32,
+    source_kind: String,
+    construction: DimensionConstruction,
+    scalar: Scalar,
+}
+
+enum DimensionConstruction {
+    Points([u32; 2]),
+    BodyRecipe(u32),
+}
+
+fn select_sketch_dimensions(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+    sketch: Option<&super::sketches::SketchStream>,
+) -> Vec<SketchDimension> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus,
+    };
+    let Some(sketch) = sketch else {
+        return Vec::new();
+    };
+    target.model.sketch_constraints.iter().filter_map(|constraint| {
+        if constraint.name.is_some() || constraint.driving.is_some() || constraint.active.is_some()
+            || constraint.virtual_space.is_some() || constraint.visible.is_some()
+            || constraint.orientation.is_some() || constraint.label_distance.is_some()
+            || constraint.label_position.is_some() || constraint.metadata.is_some() { return None; }
+        let (parameter_id, construction, source_kind) = match constraint.definition.kind() {
+            SketchConstraintDefinitionInput::HorizontalDistance {
+                first: SketchLocus::Entity(first), second: SketchLocus::Entity(second), parameter: Dimension::Parameter(id),
+            } => {
+                let position = |id| {
+                    let entity = target.model.sketch_entities.iter().find(|entity| entity.id() == id && entity.sketch == constraint.sketch)?;
+                    let SketchGeometryDefinition::Point { position } = entity.geometry.definition() else { return None };
+                    Some(position.get())
+                };
+                let a = position(first)?;
+                let b = position(second)?;
+                let expected = target.dimension_value(&Dimension::<cadmpeg_ir::scalar::Length>::Parameter(id.clone()))?.get();
+                let tolerance = target.tolerances.linear_or_default().get();
+                if (a.v - b.v).abs() > tolerance || ((a.u - b.u).abs() - expected.abs()).abs() > tolerance { return None; }
+                let first = *sketch.point_indices.get(first)?;
+                let second = *sketch.point_indices.get(second)?;
+                if first == second { return None; }
+                (id, DimensionConstruction::Points([first, second]), "Linear Dimension".to_owned())
+            }
+            SketchConstraintDefinitionInput::Native { native_kind, native_state: None, native_flags: None,
+                native_properties, entities, parameter: Some(id), operands } if native_properties.is_empty() && operands.len() == 1 => {
+                let operand = &operands[0];
+                let record = native.design_dimension_recipe_records.iter().find(|record| operand.native_ref.as_deref() == Some(record.id.as_str()))?;
+                if !native_kind.as_str().starts_with("Linear Dimension") || operand.object_index != Some(record.record_index)
+                    || operand.native_kind.as_str() != "construction_recipe"
+                    || !operand.field.as_ref().is_some_and(|field| field.name.as_str() == "recipe" && field.role.is_none())
+                    || record.recipe_kind != crate::records::recipes::ConstructionRecipeKind::Body
+                    || record.program != [0, 0] || !record.references.is_empty() || record.prefix_bytes.byte_len() != 9
+                    || record.prefix_bytes.digest() != &cadmpeg_ir::hash::digest::Sha256Digest::digest(&[0; 9])
+                    || entities.iter().any(|id| !sketch.point_indices.contains_key(id)) { return None; }
+                (id, DimensionConstruction::BodyRecipe(record.record_index), native_kind.as_str().to_owned())
+            }
+            _ => return None,
+        };
+        let parameter_row = target.model.parameters.iter().find(|row| &row.id == parameter_id)?;
+        let owner = parameter_row.owner.as_ref()?;
+        let (_, _, scope) = sketch.feature_scopes.iter().find(|(_, feature, _)| feature == owner)?;
+        let feature = target.model.features.iter().find(|feature| &feature.id == owner)?;
+        if !matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
+        }) if id == &constraint.sketch) { return None; }
+        let parameter = Dimension::<cadmpeg_ir::scalar::Length>::Parameter(parameter_id.clone());
+        let scalar = scalar(target, owner, "Linear Dimension", parameter_row.ordinal, &parameter)?;
+        Some(SketchDimension { constraint: constraint.id.clone(), scope: *scope,
+            ordinal: parameter_row.ordinal, source_ordinal: parameter_row.ordinal,
+            source_kind, construction, scalar })
+    }).collect()
+}
+
 fn select_extrusions(
     target: &CadIr,
     native: &crate::native::F3dNative,
@@ -378,6 +599,9 @@ pub(super) fn encode(
 ) -> Result<Option<EncodedFeatures>, CodecError> {
     let mut primitives = select(target);
     let mut extrusions = select_extrusions(target, native, sketch.as_deref());
+    let base_features = select_empty_base_features(target, native);
+    let base_flanges = select_native_base_flanges(target, native);
+    let mut dimensions = select_sketch_dimensions(target, native, sketch.as_deref());
     extrusions.sort_by_key(|extrusion| extrusion.ordinal);
     let mut copies = select_copies(target, native, attributes)?;
     let joined = sketch
@@ -394,7 +618,12 @@ pub(super) fn encode(
         copies.clear();
     }
     let append_main = !copies.is_empty() && design_registry.body_map.is_some();
-    if primitives.is_empty() && copies.is_empty() && !joined {
+    if primitives.is_empty()
+        && copies.is_empty()
+        && base_features.is_empty()
+        && base_flanges.is_empty()
+        && !joined
+    {
         return Ok(None);
     }
     primitives.sort_by_key(|primitive| primitive.0);
@@ -415,7 +644,7 @@ pub(super) fn encode(
     } else {
         256
     };
-    let tags = (0..10u32)
+    let tags = (0..15u32)
         .map(|offset| {
             type_start
                 .checked_add(offset)
@@ -433,6 +662,11 @@ pub(super) fn encode(
         .as_ref()
         .filter(|_| joined)
         .map_or(1, |sketch| sketch.next);
+    dimensions.retain(|dimension| match dimension.construction {
+        DimensionConstruction::Points(_) => true,
+        DimensionConstruction::BodyRecipe(index) => index != 0 && occupied.insert(index),
+    });
+    occupied.extend(base_flanges.iter().flat_map(|feature| feature.references));
     if append_main {
         occupied.extend(
             design_registry
@@ -455,6 +689,18 @@ pub(super) fn encode(
     let mut extrusion_bases = Vec::new();
     for _ in &extrusions {
         extrusion_bases.push(reserve_indices(&mut occupied, &mut next, 11)?);
+    }
+    let mut base_feature_indices = Vec::new();
+    for _ in &base_features {
+        base_feature_indices.push(reserve_indices(&mut occupied, &mut next, 1)?);
+    }
+    let mut base_flange_indices = Vec::new();
+    for _ in &base_flanges {
+        base_flange_indices.push(reserve_indices(&mut occupied, &mut next, 1)?);
+    }
+    let mut dimension_bases = Vec::new();
+    for _ in &dimensions {
+        dimension_bases.push(reserve_indices(&mut occupied, &mut next, 4)?);
     }
     let mut copy_bases = Vec::new();
     for copy in &copies {
@@ -593,8 +839,64 @@ pub(super) fn encode(
         }
     }
     let mut extrusion_scopes = Vec::new();
+    let mut base_feature_scopes = Vec::new();
+    let mut base_flange_scopes = Vec::new();
     let mut extrusion_companions = Vec::new();
+    let mut dimension_loci = Vec::new();
+    let mut dimension_recipes = Vec::new();
     let mut copy_groups = Vec::new();
+    for (feature, index) in base_flanges.iter().zip(base_flange_indices) {
+        let family = family_ordinals.entry("BaseFlange").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D base flanges".into()))?;
+        base_flange_scopes.push(u64::from(index));
+        timeline_scopes.push((feature.ordinal, u64::from(index)));
+        mark_primary(ctx, &mut primary, index, out.len())?;
+        let start = out.len();
+        header(&mut out, &tags[14], index)?;
+        out.resize(start + 258, 0);
+        out[start + 73..start + 77].copy_from_slice(&1u32.to_le_bytes());
+        out[start + 81] = 1;
+        out[start + 82..start + 86].copy_from_slice(&feature.references[3].to_le_bytes());
+        out[start + 92..start + 96].copy_from_slice(&1u32.to_le_bytes());
+        out[start + 112] = 1;
+        out[start + 113..start + 117].copy_from_slice(&feature.references[2].to_le_bytes());
+        out[start + 123..start + 131].copy_from_slice(&feature.thickness.to_le_bytes());
+        out[start + 141..start + 145].copy_from_slice(&1u32.to_le_bytes());
+        out[start + 145] = 1;
+        out[start + 146..start + 150].copy_from_slice(&feature.references[0].to_le_bytes());
+        out.extend_from_slice(&4u32.to_le_bytes());
+        for reference_index in feature.references {
+            reference(&mut out, reference_index);
+        }
+        out.extend_from_slice(&u32::MAX.to_le_bytes());
+        native_lp_utf16(&mut out, "BaseFlange")?;
+        out.extend_from_slice(&family.to_le_bytes());
+        out.extend_from_slice(&[0; 78]);
+        mark(&mut secondary, index, out.len());
+        header(&mut out, &tags[0], index)?;
+    }
+    for (feature, index) in base_features.iter().zip(base_feature_indices) {
+        let family = family_ordinals.entry("Base Feature").or_default();
+        *family = family
+            .checked_add(1)
+            .ok_or_else(|| CodecError::InvalidInput("too many F3D base features".into()))?;
+        base_feature_scopes.push(u64::from(index));
+        timeline_scopes.push((feature.ordinal, u64::from(index)));
+        mark_primary(ctx, &mut primary, index, out.len())?;
+        let start = out.len();
+        header(&mut out, &tags[13], index)?;
+        out.resize(start + 138, 0);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut out, feature.reference);
+        out.extend_from_slice(&feature.state.to_le_bytes());
+        native_lp_utf16(&mut out, "Base Feature")?;
+        out.extend_from_slice(&family.to_le_bytes());
+        out.extend_from_slice(&[0; 78]);
+        mark(&mut secondary, index, out.len());
+        header(&mut out, &tags[0], index)?;
+    }
     for (extrusion, base) in extrusions.iter().zip(extrusion_bases) {
         let group = base + 1;
         let profile = base + 4;
@@ -715,6 +1017,95 @@ pub(super) fn encode(
         out.extend_from_slice(&1u64.to_le_bytes());
         out.extend_from_slice(&[0; 8]);
         extrusion_companions.push(u64::from(companion_index));
+    }
+    for (dimension, base) in dimensions.iter().zip(dimension_bases) {
+        let parameter_index = base + 1;
+        let companion_index = base + 2;
+        let locus_index = base + 3;
+        let scalar = &dimension.scalar;
+        let owner = DesignParameterOwner::try_from(DesignParameterOwnerContent {
+            id: format!("f3d:generated:owner#{base}"),
+            class_tag: tags[2].clone().try_into().map_err(CodecError::Malformed)?,
+            record_index: base,
+            scope_record_index: Some(dimension.scope),
+            local_ordinal: Some(dimension.ordinal),
+            evaluated_value: scalar.value,
+            parameter_record_index: parameter_index,
+            owned_ordinal: dimension.source_ordinal,
+            variant: Some(1),
+            companion_record_index: companion_index,
+        })
+        .map_err(CodecError::Malformed)?;
+        owners.push(u64::from(base));
+        parameters.push(u64::from(parameter_index));
+        mark_primary(ctx, &mut primary, base, out.len())?;
+        super::parameter_links::encode(&mut out, &[owner], &[])?;
+        mark(
+            &mut secondary,
+            base,
+            out.len() - crate::layout::indexed_design_record_header::LEN,
+        );
+        let parameter = DesignParameter::authored(DesignParameterContent {
+            id: format!("f3d:generated:parameter#{parameter_index}"),
+            class_tag: tags[3].clone().try_into().map_err(CodecError::Malformed)?,
+            record_index: parameter_index,
+            source_ordinal: dimension.source_ordinal,
+            source: DesignParameterSource::authored(
+                dimension.source_kind.clone(),
+                Some(base),
+                None,
+            )
+            .map_err(CodecError::Malformed)?,
+            expression: scalar
+                .expression
+                .clone()
+                .unwrap_or_else(|| format!("{} cm", scalar.value)),
+            unit: Some("cm".into()),
+            name: scalar
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("Dimension{base}")),
+            evaluated_value: scalar.value,
+        })
+        .map_err(CodecError::Malformed)?;
+        mark_primary(ctx, &mut primary, parameter_index, out.len())?;
+        super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
+        mark_primary(ctx, &mut primary, companion_index, out.len())?;
+        header(&mut out, &tags[9], companion_index)?;
+        out.extend_from_slice(&[0; 20]);
+        reference(&mut out, base);
+        out.extend_from_slice(&1u64.to_le_bytes());
+        out.extend_from_slice(&[0; 8]);
+        extrusion_companions.push(u64::from(companion_index));
+        match dimension.construction {
+            DimensionConstruction::Points(points) => {
+                mark_primary(ctx, &mut primary, locus_index, out.len())?;
+                let start = out.len();
+                header(&mut out, &tags[10], locus_index)?;
+                out.resize(start + 80, 0);
+                out[start + 19] = 1;
+                out[start + 20..start + 24].copy_from_slice(&3u32.to_le_bytes());
+                out[start + 24] = 1;
+                out[start + 35..start + 39].copy_from_slice(&4u32.to_le_bytes());
+                out[start + 39] = 1;
+                out[start + 40..start + 44].copy_from_slice(&points[0].to_le_bytes());
+                out[start + 54] = 1;
+                out[start + 55..start + 59].copy_from_slice(&points[1].to_le_bytes());
+                out[start + 65..start + 69].copy_from_slice(&1u32.to_le_bytes());
+                mark(&mut secondary, locus_index, out.len());
+                header(&mut out, &tags[11], locus_index)?;
+                dimension_loci.push(u64::from(locus_index));
+            }
+            DimensionConstruction::BodyRecipe(index) => {
+                mark_primary(ctx, &mut primary, index, out.len())?;
+                header(&mut out, &tags[12], index)?;
+                out.extend_from_slice(&[0; 9]);
+                native_lp_ascii(&mut out, "body_recipe_data")?;
+                out.extend_from_slice(&0i32.to_le_bytes());
+                out.extend_from_slice(&0i32.to_le_bytes());
+                dimension_recipes.push(u64::from(index));
+            }
+        }
     }
     let mut body_map = std::collections::BTreeMap::new();
     let mut body_pairs = Vec::new();
@@ -899,6 +1290,41 @@ pub(super) fn encode(
             "Dimension",
             extrusion_companions,
         ),
+        (
+            "00000000-0000-0000-0000-000000001304",
+            None,
+            1,
+            "Dimension",
+            dimension_loci,
+        ),
+        (
+            "00000000-0000-0000-0000-000000001303",
+            None,
+            1,
+            "Dimension",
+            vec![],
+        ),
+        (
+            "00000000-0000-0000-0000-000000001305",
+            None,
+            1,
+            "Dimension",
+            dimension_recipes,
+        ),
+        (
+            "D7015B81-AB4D-4C89-BED7-AA4411E1964A",
+            None,
+            0,
+            "Fusion",
+            base_feature_scopes,
+        ),
+        (
+            "00000000-0000-0000-0000-000000001400",
+            None,
+            1,
+            "Fusion",
+            base_flange_scopes,
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -941,6 +1367,11 @@ pub(super) fn encode(
                 .ok_or_else(|| CodecError::InvalidInput("F3D Design stream exceeds u64".into()))?;
         }
         sketch.bulk.extend_from_slice(&out);
+        sketch.constraints.extend(
+            dimensions
+                .iter()
+                .map(|dimension| dimension.constraint.clone()),
+        );
         sketch.registry.types.append(&mut registry.types);
         sketch.primary.extend(primary.iter().copied());
         sketch.secondary.extend(secondary.iter().copied());
@@ -963,6 +1394,11 @@ pub(super) fn encode(
             .iter()
             .filter_map(|extrusion| extrusion.distance.parameter.clone()),
     );
+    written_parameters.extend(
+        dimensions
+            .iter()
+            .filter_map(|dimension| dimension.scalar.parameter.clone()),
+    );
     let mut written = sketch
         .as_ref()
         .filter(|_| joined)
@@ -976,6 +1412,8 @@ pub(super) fn encode(
     written.extend(primitives.into_iter().map(|(_, _, _, _, id)| id));
     written.extend(copies.into_iter().map(|copy| copy.id));
     written.extend(extrusions.into_iter().map(|extrusion| extrusion.id));
+    written.extend(base_features.into_iter().map(|feature| feature.id));
+    written.extend(base_flanges.into_iter().map(|feature| feature.id));
     Ok(Some(EncodedFeatures {
         stream,
         features: written,

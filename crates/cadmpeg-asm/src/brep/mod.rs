@@ -650,6 +650,36 @@ fn decode_with_table(
         &mut reach,
     )?;
 
+    let mut detached_surfaces = HashSet::new();
+    let mut detached_curves = HashSet::new();
+    let mut detached_points = HashSet::new();
+    if purpose == DecodePurpose::Model {
+        detached_surfaces.extend(
+            carriers
+                .surface_geo
+                .keys()
+                .filter(|index| !reach.surfaces.contains(index))
+                .copied(),
+        );
+        detached_curves.extend(
+            carriers
+                .curve_geo
+                .keys()
+                .filter(|index| !reach.curves.contains(index))
+                .copied(),
+        );
+        reach.surfaces.extend(carriers.surface_geo.keys().copied());
+        reach.curves.extend(carriers.curve_geo.keys().copied());
+        for record in records.iter().filter(|record| record.head() == "point") {
+            let index = i64::try_from(record.index).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
+            })?;
+            if reach.points.insert(index) {
+                detached_points.insert(index);
+            }
+        }
+    }
+
     let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
 
     emit_carrier_records(
@@ -665,6 +695,33 @@ fn decode_with_table(
     )?;
     emit_pcurves(&mut out, records, &mut carriers, &reach, format)?;
     emit_points(&mut out, records, &reach, format)?;
+    let source_object = |identity: &str, detached: &HashSet<i64>| {
+        let index = identity.rsplit_once('#')?.1.parse::<i64>().ok()?;
+        let source_format = cadmpeg_ir::CodecFormat::parse(&format.to_string())?;
+        detached
+            .contains(&index)
+            .then(|| cadmpeg_ir::SourceObjectAssociation {
+                format: source_format,
+                geometry_role: None,
+                object_id: cadmpeg_core::nonblank_literal!("ASM:{index}"),
+                instance_path: Vec::new(),
+            })
+    };
+    for surface in &mut out.surfaces {
+        if let Some(source) = source_object(surface.id.as_str(), &detached_surfaces) {
+            surface.source_object = Some(source);
+        }
+    }
+    for curve in &mut out.curves {
+        if let Some(source) = source_object(curve.id.as_str(), &detached_curves) {
+            curve.source_object = Some(source);
+        }
+    }
+    for point in &mut out.points {
+        if let Some(source) = source_object(point.id.as_str(), &detached_points) {
+            point.source_object = Some(source);
+        }
+    }
     emit_vertices(&mut out, records, &by_index, &reach, format)?;
     emit_edges(
         &mut out,

@@ -2950,6 +2950,29 @@ impl<'a> Builder<'a> {
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
         for (product, &name) in products.iter().zip(&product_names) {
+            if product
+                .source_name
+                .as_deref()
+                .is_some_and(|source| source != name)
+            {
+                let references = occurrences
+                    .iter()
+                    .filter_map(|occurrence| match &occurrence.prototype {
+                        PrototypeReference::Local { definition } if definition == &product.id => {
+                            Some(occurrence.id.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                self.loss(
+                    StepLossCode::ProductSourceNameReduced,
+                    format!(
+                        "product {} source name was reduced to its STEP name; occurrences: {}",
+                        product.id,
+                        references.join(", ")
+                    ),
+                );
+            }
             let product_id = product
                 .part_number
                 .as_deref()
@@ -3064,7 +3087,9 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
-        for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+        let mut ordered_occurrences: Vec<_> = occurrences.iter().zip(&occurrence_names).collect();
+        ordered_occurrences.sort_by_key(|(occurrence, _)| occurrence.ordinal);
+        for (occurrence, &occurrence_name) in ordered_occurrences {
             if unknown_placements.contains(&occurrence.id) {
                 continue;
             }
@@ -3470,6 +3495,17 @@ impl<'a> Builder<'a> {
                         .insert(region.body.as_str().to_owned());
                     false
                 };
+                if wire_written && body_kind == BodyKind::General {
+                    let shells = region
+                        .shells
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>();
+                    self.loss(
+                        StepLossCode::BodyReducedToWire,
+                        format!("general body {} was written as wire geometry for region {}; shells: {}", region.body, region.id, shells.join(", ")),
+                    );
+                }
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
             }
@@ -3704,6 +3740,7 @@ impl<'a> Builder<'a> {
         items: &mut Vec<Ref>,
     ) {
         let mut missing = BTreeSet::new();
+        let mut free_vertex_order = Vec::new();
         let mut retained = BTreeSet::new();
         let mut missing_edges = BTreeSet::new();
         let mut retained_edges = BTreeSet::new();
@@ -3712,6 +3749,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             missing.extend(shell.free_vertices().iter().cloned());
+            free_vertex_order.extend(shell.free_vertices().iter().cloned());
             for edge_id in shell.wire_edges() {
                 if let Some(edge) = self.edges.get(edge_id.as_str()) {
                     let vertices = if wire_written && self.edge_refs.contains_key(edge_id.as_str())
@@ -3808,6 +3846,12 @@ impl<'a> Builder<'a> {
             );
             self.push_region_recovery_item(region, context, item, items);
         }
+        let mut seen_vertices = BTreeSet::new();
+        let ordered_missing: Vec<_> = free_vertex_order
+            .into_iter()
+            .chain(missing.difference(&retained).cloned())
+            .filter(|id| !retained.contains(id) && seen_vertices.insert(id.clone()))
+            .collect();
         if !wire_written
             && edges.is_empty()
             && !self.body_step_refs.contains_key(region.body.as_str())
@@ -3815,7 +3859,7 @@ impl<'a> Builder<'a> {
         {
             let mut loops = Vec::new();
             let mut vertices = Vec::new();
-            for vertex_id in missing.difference(&retained) {
+            for vertex_id in &ordered_missing {
                 if let Some(vertex) = self.emit_vertex(vertex_id.as_str()) {
                     loops.push(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
                     vertices.push(format!("'{vertex_id}'"));
@@ -3864,7 +3908,7 @@ impl<'a> Builder<'a> {
         let mut points = Vec::new();
         let mut point_set = std::collections::HashSet::new();
         let mut retained_vertices = Vec::new();
-        for vertex_id in missing.difference(&retained) {
+        for vertex_id in &ordered_missing {
             let Some(point) = self
                 .vertices
                 .get(vertex_id.as_str())

@@ -180,6 +180,14 @@ pub(super) fn reconcile(
                                     cadmpeg_ir::features::FeatureOperation::Extrude { .. },
                                 ) => scope.kind()
                                     == crate::records::feature::scope::DesignFeatureKind::Extrude,
+                                cadmpeg_ir::features::FeatureDefinition::Operation(
+                                    cadmpeg_ir::features::FeatureOperation::BaseFeature { .. },
+                                ) => scope.base_feature_construction().is_some(),
+                                cadmpeg_ir::features::FeatureDefinition::Operation(
+                                    cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+                                ) if kind.as_str() == "BaseFlange" => {
+                                    scope.base_flange_operation().is_some()
+                                }
                                 _ => false,
                             }
                     })
@@ -187,6 +195,26 @@ pub(super) fn reconcile(
                 .cloned()
                 .collect(),
             design_parameters: original.design_parameters.clone(),
+            design_dimension_recipe_records: original
+                .design_dimension_recipe_records
+                .iter()
+                .filter(|record| {
+                    target.model.sketch_constraints.iter().any(|constraint| {
+                        if let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native {
+                            operands,
+                            ..
+                        } = constraint.definition.kind()
+                        {
+                            operands.iter().any(|operand| {
+                                operand.native_ref.as_deref() == Some(record.id.as_str())
+                            })
+                        } else {
+                            false
+                        }
+                    })
+                })
+                .cloned()
+                .collect(),
             design_configurations: original.design_configurations.clone(),
             body_native_keys: original.body_native_keys,
             body_visibilities: original.body_visibilities,

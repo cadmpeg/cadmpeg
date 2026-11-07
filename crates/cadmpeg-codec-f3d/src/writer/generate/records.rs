@@ -196,11 +196,12 @@ pub(super) fn encode_design_bulkstream(
         || !native.design_dimension_locus_pairs.is_empty()
         || !native.design_dimension_locus_groups.is_empty()
         || !native.design_dimension_null_locus_pairs.is_empty()
-        || !native.design_dimension_recipe_records.is_empty()
         || !native.design_parameter_owners.is_empty()
         || native.design_parameter_scopes.iter().any(|scope| {
             scope.copy_paste_bodies_operation().is_none()
                 && scope.kind() != crate::records::feature::scope::DesignFeatureKind::Extrude
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::BaseFeature
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::BaseFlange
         })
         || !native.design_sketch_placements.is_empty()
         || native
