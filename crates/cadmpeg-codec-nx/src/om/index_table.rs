@@ -118,14 +118,18 @@ impl<'a> FixedIndex<'a> {
         if View::u32_le_at(edges.bytes, index_start) != Some(0) {
             return None;
         }
-        let records = edges.records(index_start.checked_add(4)?, count, base)?;
+        let mut records = edges.records(index_start.checked_add(4)?, count, base)?;
         if records.first == base {
             return None;
         }
         let ids_start = object_id_table_offset.checked_add(8)?;
         let ids_end = ids_start.checked_add(records.words.remaining())?;
+        if ids_end > records.first {
+            return None;
+        }
         let object_ids = View::over_retained(records.source.get(ids_start..ids_end)?);
         records.source.get(..index_start)?;
+        records.first = ids_end;
         Some(Self {
             index_start,
             object_id_table_offset,
