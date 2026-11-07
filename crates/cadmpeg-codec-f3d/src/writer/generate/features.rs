@@ -29,6 +29,7 @@ struct Extrusion {
     distance: Scalar,
     scope_index: u32,
     parameter_index: Option<u32>,
+    profile_asset: Option<crate::records::mesh::DesignRelaxedGuidText>,
     current_state: u32,
     previous_state: u32,
 }
@@ -668,7 +669,8 @@ fn select_extrusions(
             let index = id.as_str().strip_prefix(prefix)?.parse::<u32>().ok()?;
             (crate::ids::neutral_parameter_id_parts(stream, index) == *id).then_some(index)
         });
-        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, scope_index: scope.record_index, parameter_index, current_state, previous_state })
+        let profile_asset = scope.extrude_profile().map(|profile| profile.asset_id.clone());
+        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, scope_index: scope.record_index, parameter_index, profile_asset, current_state, previous_state })
     }).collect()
 }
 
@@ -1638,7 +1640,15 @@ pub(super) fn encode(
         out.extend_from_slice(&[0; 10]);
         reference(&mut out, profile + 3);
         out.extend_from_slice(&1u32.to_le_bytes());
-        native_lp_utf16(&mut out, "00000000-0000-4000-8000-000000000001")?;
+        native_lp_utf16(
+            &mut out,
+            extrusion
+                .profile_asset
+                .as_ref()
+                .map_or("00000000-0000-4000-8000-000000000001", |asset| {
+                    asset.as_str()
+                }),
+        )?;
         native_lp_utf16(&mut out, &extrusion.container.to_string())?;
         out.extend_from_slice(&[0; 94]);
         mark(&mut secondary, profile, out.len());
