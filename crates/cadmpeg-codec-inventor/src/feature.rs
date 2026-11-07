@@ -1728,6 +1728,10 @@ const BASE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ]));
+/// Feature-label class of a surface extrusion.
+const SURFACE_EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xf0, 0xa4, 0x97, 0xe5, 0xd4, 0x11, 0xd8, 0x84, 0x10, 0x00, 0xfa, 0xa5, 0xbb, 0xa6, 0x47, 0xb5,
+]));
 const FILLET_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xdc, 0x15, 0xf7, 0xf1, 0xd1, 0x11, 0x42, 0x05, 0x00, 0x08, 0x30, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ]));
@@ -1904,13 +1908,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     ),
     (
         [
-            0xf0, 0xa4, 0x97, 0xe5, 0xd4, 0x11, 0xd8, 0x84, 0x10, 0x00, 0xfa, 0xa5, 0xbb, 0xa6,
-            0x47, 0xb5,
-        ],
-        "ExtrudeSurface",
-    ),
-    (
-        [
             0xf2, 0x58, 0xf7, 0x4c, 0xd3, 0x11, 0x4f, 0x24, 0x60, 0x00, 0x47, 0xa9, 0x9d, 0xcc,
             0xef, 0xb0,
         ],
@@ -1922,6 +1919,7 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
 pub(crate) enum FeatureFamily {
     Base,
     Extrusion,
+    SurfaceExtrusion,
     Fillet,
     Chamfer,
     Hole,
@@ -1943,6 +1941,7 @@ impl FeatureFamily {
         match self {
             Self::Base => &[BASE_CLASS_ID, derived::CLASS_ID],
             Self::Extrusion => &[EXTRUSION_CLASS_ID],
+            Self::SurfaceExtrusion => &[SURFACE_EXTRUSION_CLASS_ID],
             Self::Fillet => &[FILLET_CLASS_ID, CORNER_ROUND_CLASS_ID],
             Self::Chamfer => &[CHAMFER_CLASS_ID],
             Self::Hole => &[HOLE_CLASS_ID],
@@ -1967,6 +1966,7 @@ impl FeatureFamily {
         match self {
             Self::Base => 1,
             Self::Extrusion => 26,
+            Self::SurfaceExtrusion => 16,
             Self::Fillet => 15,
             Self::Chamfer => 11,
             Self::Hole => 24,
@@ -2000,6 +2000,7 @@ impl FeatureFamily {
         [
             Self::Base,
             Self::Extrusion,
+            Self::SurfaceExtrusion,
             Self::Fillet,
             Self::Chamfer,
             Self::Hole,
@@ -2027,7 +2028,16 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
             ) | (
                 Self::Extrusion,
-                FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    solid: Some(true),
+                    ..
+                })
+            ) | (
+                Self::SurfaceExtrusion,
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    solid: Some(false),
+                    ..
+                })
             ) | (
                 Self::Plate,
                 FeatureDefinition::Operation(
@@ -2089,6 +2099,9 @@ impl FeatureFamily {
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
         match definition {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => Some(Self::Base),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                solid: Some(false), ..
+            }) => Some(Self::SurfaceExtrusion),
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. }) => Some(Self::Extrusion),
             FeatureDefinition::Operation(
                 FeatureOperation::SheetMetalBaseFlange { .. }
@@ -2402,6 +2415,9 @@ pub(crate) fn project(
                 FeatureFamily::Base => None,
                 FeatureFamily::Extrusion => {
                     extrusion::project(ctx, feature, label, &index, &mut extrusion_losses)
+                }
+                FeatureFamily::SurfaceExtrusion => {
+                    extrusion::project_surface(ctx, feature, label, &index, &mut extrusion_losses)
                 }
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
@@ -2971,6 +2987,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
         return match family {
             FeatureFamily::Base => NativeFeatureKind::Other("Base".into()),
             FeatureFamily::Extrusion => NativeFeatureKind::Extrude,
+            FeatureFamily::SurfaceExtrusion => NativeFeatureKind::Other("ExtrudeSurface".into()),
             FeatureFamily::Fillet => NativeFeatureKind::Fillet,
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
@@ -3198,6 +3215,12 @@ impl<'a> BoundaryProfile<'a> {
         })
     }
 
+    /// The native selection of the profile curves. A surface extrusion keeps
+    /// the selection: it does not state whether a closed ring is filled.
+    fn selection(self) -> Option<PlanarProfileRef> {
+        PlanarProfileRef::sketch_selection(self.sketch_id, self.selections).ok()
+    }
+
     /// The selected sketch regions, or the native selection when they do not
     /// resolve. Resolution can append loops to the sketch profile table, so a
     /// projection resolves its profile after every other check.
@@ -3240,7 +3263,7 @@ fn project_extrusion(
         direction,
         start,
         extent,
-    } = extrusion::indexed_operands(source, label, index)?;
+    } = extrusion::indexed_operands(source, label, index, extrusion::Output::Solid)?;
     let (feature_id, result) = match feature_result(ctx, source, 26, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -3276,6 +3299,99 @@ fn project_extrusion(
                 extent,
                 op,
                 solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            }),
+        ),
+        native_ref: Some(source.id()),
+    };
+    Some(Ok((feature, result)))
+}
+
+/// Slots of a surface extrusion that hold no operand. Slot 14 holds a surface
+/// body whose role is open; slot 26 is the solid result collection.
+const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 7] = [8, 9, 10, 12, 14, 17, 26];
+
+/// The profile of a surface extrusion: the native selection of the boundary
+/// patch, or the native patch record when no neutral sketch exists.
+fn surface_extrusion_profile(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<PlanarProfileRef> {
+    let slots = source.properties.references();
+    if slots.len() != 30
+        || slots.get(23)? != slots.get(1)?
+        || SURFACE_EXTRUSION_NULL_SLOTS
+            .iter()
+            .any(|slot| slots[*slot].index() != 0)
+    {
+        return None;
+    }
+    let boundary = references(source, 1, PmDcFeatureReferenceFamily::BoundaryPatch, index)?;
+    let token = source.identity.segment_token.as_str();
+    let zero_control = !boundary.references().is_empty()
+        && boundary.references().iter().all(|reference| {
+            resolve_property(token, reference.index(), index).is_some_and(|property| {
+                matches!(
+                    property.kind,
+                    PmDcFeaturePropertyKind::ProfileSelection { value: 0, .. }
+                )
+            })
+        });
+    if !zero_control {
+        return None;
+    }
+    match BoundaryProfile::new(source, label, 1, index) {
+        Some(boundary) => boundary.selection(),
+        None => extrusion::native_profile(source, label, index),
+    }
+}
+
+fn project_surface_extrusion(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let profile = surface_extrusion_profile(source, label, index)?;
+    let extrusion::Operands {
+        op,
+        direction,
+        start,
+        extent,
+    } = extrusion::indexed_operands(source, label, index, extrusion::Output::Surface)?;
+    let (feature_id, result) = match body_result(ctx, source, 16, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
+        return Some(Err(error));
+    }
+    let feature = Feature {
+        product_definition: None,
+        id: feature_id,
+        ordinal: u64::from(label.index),
+        name: label.name().map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: boolean_properties(source, &[20, 22], index),
+        source_tag: Some("extrude".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(profile),
+                direction: ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                    source: Some(ExtrusionDirectionSource::Custom {}),
+                },
+                start,
+                extent,
+                op,
+                solid: Some(false),
                 face_maker: None,
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
@@ -4617,7 +4733,7 @@ pub(crate) mod tests {
         PmDcWorkPlanePayload, ProjectionIndex, BOOLEAN_TYPE, CHAMFER_CLASS_ID,
         END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE, EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE,
         FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID, MIRROR_FEATURE_TYPE, PLANE_SURFACE_FORM,
-        RECTANGULAR_PATTERN_FEATURE_TYPE, WORK_PLANE_TYPE,
+        RECTANGULAR_PATTERN_FEATURE_TYPE, SURFACE_EXTRUSION_CLASS_ID, WORK_PLANE_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};

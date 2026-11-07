@@ -2425,13 +2425,16 @@ fn validate_features(
                     Some(feature.id.as_str().to_owned())));
             }
         }
-        if matches!(family, crate::feature::FeatureFamily::Extrusion)
-            && !labels
-                .get(&(
-                    raw_feature.identity.segment_token.as_str(),
-                    raw_feature.identity.record_ordinal,
-                ))
-                .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
+        if matches!(
+            family,
+            crate::feature::FeatureFamily::Extrusion
+                | crate::feature::FeatureFamily::SurfaceExtrusion
+        ) && !labels
+            .get(&(
+                raw_feature.identity.segment_token.as_str(),
+                raw_feature.identity.record_ordinal,
+            ))
+            .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
         {
             findings.push(finding(
                 Check::NativeLinks,
