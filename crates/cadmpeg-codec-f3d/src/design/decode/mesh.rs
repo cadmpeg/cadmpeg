@@ -605,7 +605,11 @@ fn parse_mesh_body_record(
 ) -> Result<MeshBodyRecord, CodecError> {
     validate_mesh_registration(
         frame,
-        MESH_BODY_TYPE_VERSION,
+        if frame.design_type.version == 6 {
+            6
+        } else {
+            MESH_BODY_TYPE_VERSION
+        },
         MESH_BODY_BASE_TYPE_GUID,
         PARAMESH_MODULE,
         "mesh-body",
@@ -613,7 +617,9 @@ fn parse_mesh_body_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-body")?;
     let parsed = (|| {
+        let version_six = frame.design_type.version == 6;
         let flagged = record.get(flagged_body::FLAG) == Some(&flagged_body::FLAG_VALUE);
+        (record.get(flagged_body::FLAG).copied()? <= 1).then_some(())?;
         let zero_run = if flagged {
             flagged_body::ZERO_RUN_9..flagged_body::FLAG
         } else {
@@ -624,9 +630,22 @@ fn parse_mesh_body_record(
             .iter()
             .all(|byte| *byte == 0)
             .then_some(())?;
-        let layout = MeshBodyLayout::of(flagged);
+        let layout = MeshBodyLayout::of(flagged && !version_six);
         let transform = mesh_body_transform(record, layout)?;
-        let placement = DesignMeshPlacement::new(identity, transform, flagged).ok()?;
+        let placement =
+            DesignMeshPlacement::new(identity, transform, flagged && !version_six).ok()?;
+        let placement = if version_six {
+            let (name, end) = lp_utf16_bounded(record, layout.len, 0..=record.len())?;
+            (end <= record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?).then_some(())?;
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(record.len()).ok()?;
+            storage.extend_from_slice(record);
+            placement
+                .with_native_frame(name, cadmpeg_ir::native::bytes::NativeBytes::new(storage))
+                .ok()?
+        } else {
+            placement
+        };
         let scope_record_index = exact_local_record_index(record, layout.feature_scope_reference)?;
         let wrapper_record_index = exact_local_record_index(record, layout.wrapper_reference)?;
         let owner_record_index = exact_local_record_index(record, layout.body_owner_reference)?;
@@ -1696,6 +1715,23 @@ fn mesh_image_asset(
         asset.name.clone(),
         crate::ids::neutral_asset_id(&asset.name),
     ))
+}
+
+pub(crate) fn mesh_body_frame_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::bodies)
+        .filter_map(|body| {
+            body.placement.native_frame()?;
+            Some(
+                crate::loss::F3dLossCode::MeshBodyBytesUninterpreted.note(format!(
+                    "mesh-body record {} retains its version-6 frame with uninterpreted bytes",
+                    body.placement.record().record_index(),
+                )),
+            )
+        })
 }
 
 pub(crate) fn mesh_scope_prefix_losses(
@@ -2815,6 +2851,81 @@ mod tests {
         let guid_start = sole_typed_frame(&graph, MESH_GUID_TYPE_GUID).start;
         graph.bytes[guid_start + 21..guid_start + 32].copy_from_slice(&MESH_GUID_BYTES_21_TO_31);
         (graph, start)
+    }
+
+    #[test]
+    fn version_six_mesh_body_keeps_name_and_frame() {
+        let mut graph = synthetic_mesh_graph(false);
+        graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|ty| {
+                ty.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(MESH_BODY_TYPE_GUID)
+            })
+            .unwrap()
+            .version = 6;
+        let frame = sole_typed_frame(&graph, MESH_BODY_TYPE_GUID);
+        let start = frame.start;
+        let old_end = frame.end;
+        let old = &graph.bytes[start..old_end];
+        let mut body = old[..mesh_body::SECOND_TRANSFORM + MATRIX_BYTES].to_vec();
+        body[20] = 1;
+        body.extend_from_slice(&1.0_f32.to_le_bytes());
+        body.extend_from_slice(&[1, 1]);
+        body.extend_from_slice(&[0; 9]);
+        lp_utf16(&mut body, "11111111-2222-4333-8444-555555555555");
+        lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+        body.extend_from_slice(&[0; 4]);
+        lp_utf16(&mut body, "PrismMaterial-018");
+        assert_eq!(body.len(), mesh_body::FEATURE_SCOPE_REFERENCE);
+        body.extend_from_slice(&old[mesh_body::FEATURE_SCOPE_REFERENCE..mesh_body::LEN]);
+        lp_utf16(&mut body, "Axle");
+        body.extend_from_slice(&[0; 4]);
+        body.extend_from_slice(&1.0_f32.to_le_bytes());
+        body.extend_from_slice(&[1, 1]);
+        body.extend_from_slice(&[0; 9]);
+        lp_utf16(&mut body, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE");
+        lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+        body.extend_from_slice(&[0; 4]);
+        lp_utf16(&mut body, "PrismMaterial-018_physmat_aspects:Prism-256");
+        body.extend_from_slice(&old[old.len() - SAME_SEGMENT_REFERENCE_BYTES..]);
+        let end = start + body.len();
+        let extra = u64_from_index(body.len() - (old_end - start));
+        graph.bytes.splice(start..old_end, body);
+        for record in &mut graph.meta.records {
+            if record.bulk_offset > u64_from_index(start) {
+                record.bulk_offset += extra;
+            }
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("version-six body");
+        let [feature] = features.as_slice() else {
+            panic!("one feature")
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["bodies"][0]["body_name"], "Axle");
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(
+            decoded.bodies()[0]
+                .placement
+                .native_frame()
+                .unwrap()
+                .as_ref(),
+            &graph.bytes[start..end]
+        );
+        assert_eq!(decoded, *feature);
+        let losses: Vec<_> = super::mesh_body_frame_losses(&features).collect();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "mesh.body-bytes-uninterpreted");
     }
 
     #[test]

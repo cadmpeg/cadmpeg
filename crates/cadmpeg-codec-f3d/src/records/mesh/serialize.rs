@@ -68,6 +68,10 @@ impl Serialize for BodyRef<'_> {
         #[derive(Serialize)]
         struct Wire<'a> {
             body_record: RecordRef<'a>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            body_name: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            body_native_frame: Option<NativeBytes<&'a [u8]>>,
             entry_name_record: RecordRef<'a>,
             guid_record: RecordRef<'a>,
             wrapper_record: RecordRef<'a>,
@@ -115,6 +119,8 @@ impl Serialize for BodyRef<'_> {
         let node_transform = body.scene_node.transform();
         Wire {
             body_record: RecordRef::from_identity(&body.placement.record),
+            body_name: body.placement.body_name.as_deref(),
+            body_native_frame: body.placement.native_frame.as_ref().map(NativeBytes::from),
             entry_name_record: RecordRef::from_identity(&body.entry.record),
             guid_record: RecordRef::from_identity(&body.guid.record),
             wrapper_record: RecordRef::from_fixed(&body.wrapper_record),
