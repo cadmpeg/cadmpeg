@@ -10,7 +10,10 @@ patterns. Decoded features have `needs_recompute = false`.
 
 The writer requests geometry. It replays an eligible unedited source or
 synthesizes from the document. Its report states arena and record dispositions.
-A nonempty `unrepresented` selects synthesis.
+A nonempty `unrepresented` selects synthesis with `SourceUnrepresented`. A
+patch that cannot express an edit selects synthesis with `PatchDeclined`.
+Unsupported content is reduced or omitted with a loss; independent carriers
+remain writable. Empty geometry output charges `export:output.empty`.
 
 The synthesized Global section declares millimetres, model scale 1, and 17
 significant digits. Its minimum resolution uses the document's positive linear
