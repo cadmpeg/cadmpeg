@@ -28,14 +28,24 @@ fn harness() -> Harness {
 }
 
 fn inputs() -> Vec<(String, Vec<u8>)> {
-    let mut inputs = harness().fixture_inputs();
+    harness().fixture_inputs()
+}
+
+fn external_preview() -> Vec<u8> {
     let mut body = crate::test_support::test_container::summary_preview_segment();
     body.extend(crate::test_support::test_container::external_reference_segment("Support.CATPart"));
-    inputs.push((
-        "external_preview".into(),
-        crate::test_support::test_container::outer_body_catpart(&body),
-    ));
-    inputs
+    crate::test_support::test_container::outer_body_catpart(&body)
+}
+
+#[test]
+fn external_preview_fixture_matches_builder() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/fixtures/external_preview.catpart");
+    let built = external_preview();
+    if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+        std::fs::write(&path, &built).expect("write fixture");
+    }
+    assert_eq!(std::fs::read(path).expect("read fixture"), built);
 }
 
 /// The branches this codec pins, in golden-directory order.

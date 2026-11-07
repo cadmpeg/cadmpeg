@@ -29,7 +29,9 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
-    for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
+    'properties: for (relation_id, relation) in
+        exchange.entities("PROPERTY_DEFINITION_REPRESENTATION")
+    {
         let Some(relation) = relation.partial("PROPERTY_DEFINITION_REPRESENTATION") else {
             continue;
         };
@@ -141,27 +143,29 @@ pub(super) fn decode(
             let Some(Value::List(items)) = row.parameters.get(1) else {
                 continue;
             };
-            let Some(ids) = items
-                .iter()
-                .map(ValueExt::reference)
-                .collect::<Option<Vec<_>>>()
-            else {
+            if items.is_empty() {
                 continue;
-            };
-            if ids.is_empty() {
-                continue;
+            }
+            let mut ids = Vec::new();
+            ctx.reserve_working(&mut ids, items.len(), "STEP property row references")?;
+            for item in items {
+                let Some(id) = item.reference() else {
+                    continue 'properties;
+                };
+                ids.push(id);
             }
             ids
         } else {
             vec![value_id]
         };
-        let Some(values) = value_ids
-            .iter()
-            .map(|id| scalar_property_value(exchange, *id, &mut losses))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
+        let mut values = Vec::new();
+        ctx.reserve_working(&mut values, value_ids.len(), "STEP property row values")?;
+        for id in &value_ids {
+            let Some(value) = scalar_property_value(exchange, *id, &mut losses) else {
+                continue 'properties;
+            };
+            values.push(value);
+        }
         ir.model.attributes.push(SourceAttribute::new(
             ctx,
             AttributeId::from(ids::data(kind!("scalar-property"), relation_id)),
