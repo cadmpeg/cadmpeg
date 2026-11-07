@@ -785,6 +785,60 @@ fn older_step_schema_reports_unwritten_product_boolean() {
 }
 
 #[test]
+fn assembly_occurrences_keep_sibling_order() {
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product-definition#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product-definition#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#assembly",
+        None,
+    );
+    let mut later = unnamed_occurrence(
+        "test:model:occurrence#later",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    later.name = Some("Later".into());
+    later.ordinal = 1;
+    let mut earlier = unnamed_occurrence(
+        "test:model:occurrence#earlier",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    earlier.name = Some("Earlier".into());
+    ir.model.occurrences = vec![root, later, earlier];
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode assembly");
+    let ordinal = |name: &str| {
+        decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.name.as_deref() == Some(name))
+            .expect("named occurrence")
+            .ordinal
+    };
+    assert_eq!(ordinal("Earlier"), 0);
+    assert_eq!(ordinal("Later"), 1);
+}
+
+#[test]
 fn occurrence_style_without_a_writable_carrier_is_reported() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::topology::Color;

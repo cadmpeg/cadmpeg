@@ -208,3 +208,33 @@ fn primary_and_secondary_shapes_keep_separate_properties() {
         });
     assert!(findings.is_empty(), "{findings:#?}");
 }
+
+#[test]
+fn dimension_drawing_and_annotation_round_trip_together() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="FormatSpec" type="App::PropertyString"><String value="%0.2f"/></Property><Property name="Caption" type="App::PropertyString"><String value="Width"/></Property></Properties></Object></ObjectData></Document>"#;
+    let input = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(
+                std::str::from_utf8(xml).unwrap(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let findings =
+        cadmpeg_test_support::writer_closure::without_fidelity(&input, &FcstdCodec, &|bytes| {
+            let result = FcstdCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .map_err(|error| error.to_string())?;
+            Ok(cadmpeg_test_support::writer_closure::Redecoded {
+                ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+                loss_codes: result
+                    .report()
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect(),
+                members: Vec::new(),
+            })
+        });
+    assert!(findings.is_empty(), "{findings:#?}");
+}
