@@ -1105,6 +1105,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
     );
+    crate::design::components::project_copy_paste_transfer_features(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &prereqs.design_component_occurrences,
+    );
     losses.extend(crate::design::components::paths::bind_feature_paths(
         &mut model.features,
         &occurrence_paths,

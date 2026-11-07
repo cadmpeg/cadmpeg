@@ -226,6 +226,21 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     ),
 ];
 
+/// Type GUID that `CopyPaste` and `CutPaste` scopes share.
+const PASTE_TYPE: &str = "D57B1A22-9D5A-4D7D-A909-E08C579612CA";
+
+/// `CopyPaste` for a scope of the shared paste type that starts with the
+/// compact `CopyPaste` prefix, whatever its stored name.
+pub(super) fn from_paste_prefix(
+    guid: &str,
+    bytes: &[u8],
+    start: usize,
+) -> Option<DesignFeatureKind> {
+    (guid.eq_ignore_ascii_case(PASTE_TYPE)
+        && super::super::occurrence_transfer::compact_copy_paste_prefix(bytes, start).is_some())
+    .then_some(DesignFeatureKind::CopyPaste)
+}
+
 pub(super) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
     FAMILIES
         .iter()

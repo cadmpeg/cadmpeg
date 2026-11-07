@@ -1272,8 +1272,10 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
     type_guid: Option<&str>,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
     (|| {
-        let type_family = type_guid.and_then(family::from_type_guid);
         let start = usize::try_from(byte_offset).ok()?;
+        let type_family = type_guid.and_then(|guid| {
+            family::from_type_guid(guid).or_else(|| family::from_paste_prefix(guid, bytes, start))
+        });
         let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
