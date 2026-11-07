@@ -279,22 +279,20 @@ fn decode_sketch_visibilities_in_stream(
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
-    let Ok(frames) = super::meta::typed_primary_frames(
-        bytes,
-        metadata,
-        SKETCH_CONTAINER_TYPE_GUID,
-        "sketch-container",
-    ) else {
-        return Ok(Vec::new());
-    };
+    let frames = super::meta::typed_primary_frames(bytes, metadata, SKETCH_CONTAINER_TYPE_GUID)?;
     for frame in frames {
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
         out.push(decode_sketch_visibility_frame(bytes, metadata, frame)?);
     }
-    let Some(rejected) =
-        validate_sketch_visibility_collections(bytes, metadata, &out, &std::collections::HashSet::default(), None)?
+    let Some(rejected) = validate_sketch_visibility_collections(
+        bytes,
+        metadata,
+        &out,
+        &std::collections::HashSet::default(),
+        None,
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -310,14 +308,7 @@ fn decode_sketch_visibilities_with_parts(
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let bytes = source.window();
-    let Ok(frames) = super::meta::typed_primary_frames(
-        bytes,
-        metadata,
-        SKETCH_CONTAINER_TYPE_GUID,
-        "sketch-container",
-    ) else {
-        return Ok(Vec::new());
-    };
+    let frames = super::meta::typed_primary_frames(bytes, metadata, SKETCH_CONTAINER_TYPE_GUID)?;
     let mut out = Vec::new();
     let mut failed = std::collections::HashSet::new();
     for frame in frames {
@@ -413,14 +404,8 @@ fn validate_sketch_visibility_collections(
         .collect::<std::collections::HashMap<_, _>>();
     let mut listed = std::collections::HashSet::new();
     let mut collections = std::collections::HashSet::new();
-    let Ok(ordinal_frames) = super::meta::typed_primary_frames(
-        bytes,
-        metadata,
-        "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
-        "sketch ordinal collection",
-    ) else {
-        return Ok(None);
-    };
+    let ordinal_frames =
+        super::meta::typed_primary_frames(bytes, metadata, "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF")?;
     let mut failed_collections = std::collections::HashSet::new();
     for frame in ordinal_frames {
         let parse = || {
@@ -501,7 +486,6 @@ fn validate_sketch_visibility_collections(
                             bytes,
                             metadata,
                             SKETCH_CONTAINER_TYPE_GUID,
-                            "sketch-container",
                         )?;
                         container_frames = Some(
                             frames

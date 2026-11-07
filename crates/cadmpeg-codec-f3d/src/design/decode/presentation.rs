@@ -81,10 +81,7 @@ pub(super) fn browser_node_records(
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    let Ok(frames) = typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")
-    else {
-        return Ok(Vec::new());
-    };
+    let frames = typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID)?;
     for frame in frames {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
@@ -183,14 +180,7 @@ pub(crate) fn each_body_presentation(
 ) -> Result<(), CodecError> {
     let nodes = browser_node_records(bytes, meta)?;
     let entity_types = entity_types(meta)?;
-    let Ok(frames) = typed_primary_frames(
-        bytes,
-        meta,
-        BODY_PRESENTATION_TYPE_GUID,
-        "body-presentation",
-    ) else {
-        return Ok(());
-    };
+    let frames = typed_primary_frames(bytes, meta, BODY_PRESENTATION_TYPE_GUID)?;
     for frame in frames {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
