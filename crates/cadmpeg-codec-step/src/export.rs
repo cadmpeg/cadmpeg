@@ -4316,7 +4316,29 @@ impl<'a> Builder<'a> {
         let mut members = Vec::new();
         let mut has_surfaces = false;
         for surface_id in surface_ids {
-            if let Some(reference) = self.emit_surface(&surface_id) {
+            let reference = self.emit_surface(&surface_id).or_else(|| {
+                let surface = self.surfaces.get(surface_id.as_str())?;
+                if self.construction_supports.contains(&surface_id)
+                    || !matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Unknown { .. })
+                    )
+                {
+                    return None;
+                }
+                let name = Self::carrier_name(&self.carrier_names, &surface_id);
+                let reference = self.emitter.emit("SURFACE", &string(name));
+                self.surface_refs.insert(
+                    surface_id.clone(),
+                    WrittenSurface {
+                        reference,
+                        chart: None,
+                        reversed_normal: false,
+                    },
+                );
+                Some(reference)
+            });
+            if let Some(reference) = reference {
                 let ranges =
                     self.procedural_surfaces
                         .get(surface_id.as_str())
