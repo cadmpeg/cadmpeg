@@ -2091,10 +2091,30 @@ fn validate_features(
             let label_matches = labels
                 .get(&(token, raw_feature.identity.record_ordinal))
                 .is_some_and(|label| label.class_id() == crate::feature::THREAD_CLASS_ID);
-            let selection_matches = collection.is_some_and(|collection| {
-                matches!(face, cadmpeg_ir::features::FaceSelection::Native(native)
-                    if *native == collection.id())
-            });
+            let selection_matches = collection.is_some_and(|collection| match face {
+                cadmpeg_ir::features::FaceSelection::Native(native) => *native == collection.id(),
+                cadmpeg_ir::features::FaceSelection::Historical { native, .. } => {
+                    native.as_str() == collection.id()
+                }
+                _ => false,
+            }) && crate::feature::face_selection::valid(
+                feature,
+                raw_feature,
+                &ir.model.feature_input_topologies,
+                |id| {
+                    let mut candidates = data
+                        .pm_dc_feature_properties
+                        .iter()
+                        .filter(|p| p.id() == id);
+                    let property = candidates.next()?;
+                    candidates.next().is_none().then_some(property)
+                },
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.record_ordinal()?))
+                        .copied()
+                },
+            );
             let thread_fields = labels
                 .get(&(token, raw_feature.identity.record_ordinal))
                 .map_or_else(crate::feature::thread::Fields::default, |label| {
@@ -2169,7 +2189,35 @@ fn validate_features(
                         .copied()
                 },
             );
-            if expected.as_ref().ok() != Some(actual) {
+            // A historical face selection keeps its native selection list; the
+            // face join is checked by `face_selection::valid`.
+            let expected = expected.ok().map(|mut expected| {
+                if let (
+                    cadmpeg_ir::features::FeatureOperation::Thicken {
+                        faces: expected_faces,
+                        ..
+                    },
+                    cadmpeg_ir::features::FeatureOperation::Thicken {
+                        faces:
+                            cadmpeg_ir::features::FaceSelection::Historical { native: stored, .. },
+                        ..
+                    },
+                ) = (&mut expected, actual)
+                {
+                    if matches!(&*expected_faces,
+                        cadmpeg_ir::features::FaceSelection::Native(native)
+                            if native.as_str() == stored.as_str())
+                    {
+                        if let cadmpeg_ir::features::FeatureOperation::Thicken { faces, .. } =
+                            actual
+                        {
+                            *expected_faces = faces.clone();
+                        }
+                    }
+                }
+                expected
+            });
+            if expected.as_ref() != Some(actual) {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral thicken operands do not match their PmDc slots".into(),
@@ -2468,29 +2516,27 @@ fn validate_features(
                 Some(feature.id.as_str().to_owned()),
             ));
         }
-        if matches!(family, crate::feature::FeatureFamily::Motion)
-            && !crate::feature::face_selection::valid(
-                feature,
-                raw_feature,
-                &ir.model.feature_input_topologies,
-                |id| {
-                    let mut candidates = data
-                        .pm_dc_feature_properties
-                        .iter()
-                        .filter(|p| p.id() == id);
-                    let property = candidates.next()?;
-                    candidates.next().is_none().then_some(property)
-                },
-                |reference| {
-                    properties_by_record
-                        .get(&(
-                            raw_feature.identity.segment_token.as_str(),
-                            reference.record_ordinal()?,
-                        ))
-                        .copied()
-                },
-            )
-        {
+        if !crate::feature::face_selection::valid(
+            feature,
+            raw_feature,
+            &ir.model.feature_input_topologies,
+            |id| {
+                let mut candidates = data
+                    .pm_dc_feature_properties
+                    .iter()
+                    .filter(|p| p.id() == id);
+                let property = candidates.next()?;
+                candidates.next().is_none().then_some(property)
+            },
+            |reference| {
+                properties_by_record
+                    .get(&(
+                        raw_feature.identity.segment_token.as_str(),
+                        reference.record_ordinal()?,
+                    ))
+                    .copied()
+            },
+        ) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral face selection differs from its PmDc face operands".into(),
