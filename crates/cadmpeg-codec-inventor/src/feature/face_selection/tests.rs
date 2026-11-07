@@ -944,6 +944,47 @@ fn a_thread_face_within_a_tolerance_states_the_assumption() {
 }
 
 #[test]
+fn a_thread_face_with_a_non_finite_cone_ratio_names_it() {
+    // The record keeps the surface a cone.
+    let mut records = archive(44);
+    records[0] = face_on(1, 3, false);
+    let mut nan_cone = cone(3, 0.0, 0.25);
+    let mut tokens = nan_cone.tokens.to_vec();
+    tokens[6] = Token::Double(f64::NAN);
+    nan_cone.tokens = tokens.into();
+    records.push(nan_cone);
+    let selected = run(&records, 44).expect("selected");
+    assert!(matches!(selected.surface, Surface::Cone { ratio, .. } if ratio.is_nan()));
+    // A finite ratio outside the tolerance is not a cone.
+    let mut far = records.clone();
+    let mut wide = cone(3, 0.0, 0.25);
+    let mut tokens = wide.tokens.to_vec();
+    tokens[6] = Token::Double(1.1);
+    wide.tokens = tokens.into();
+    let last = far.len() - 1;
+    far[last] = wide;
+    assert_eq!(run(&far, 44).expect("selected").surface, Surface::Other);
+    // The note names the value, and the tolerance note does not claim it.
+    let ctx = context();
+    for ratio in [f64::NAN, f64::INFINITY] {
+        let surface = Surface::Cone {
+            ratio,
+            sine: 0.0,
+            radius: 0.25,
+        };
+        let (inventory, mut feature) = thread_fixture(&ctx, surface, Some(5.0));
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
+        let codes = notes
+            .iter()
+            .map(|note| note.code.local_code())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&"feature.face-join-thread-ratio-nonfinite"));
+        assert!(!codes.contains(&"feature.face-join-thread-tolerance-assumed"));
+    }
+}
+
+#[test]
 fn a_thread_joins_one_cylinder_or_cone_of_the_stated_size() {
     let ctx = context();
     // The cylinder radius is in archive length units; the diameter is in millimetres.

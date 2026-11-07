@@ -100,6 +100,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeOwnerIdenticalGeometry,
     /// A Move Face feature retains a face operand that does not join exactly one stored face revision.
     FeatureMoveFaceSelectionNative,
+    /// A Thread face stores a cone axis ratio that is not a finite number.
+    FeatureFaceJoinThreadRatioNonfinite,
     /// A Thread face differs from the exact surface form within a tolerance.
     FeatureFaceJoinThreadToleranceAssumed,
     /// A selected face rests on the assumption that its matched revision is the input face.
@@ -306,6 +308,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureMoveFaceSelectionNative,
+        Self::FeatureFaceJoinThreadRatioNonfinite,
         Self::FeatureFaceJoinThreadToleranceAssumed,
         Self::FeatureFaceJoinInputRevisionAssumed,
         Self::FeatureFaceJoinRepeatedAttribute,
@@ -441,6 +444,7 @@ impl InventorLossCode {
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
+            Self::FeatureFaceJoinThreadRatioNonfinite => "feature.face-join-thread-ratio-nonfinite",
             Self::FeatureFaceJoinThreadToleranceAssumed => {
                 "feature.face-join-thread-tolerance-assumed"
             }
@@ -574,6 +578,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureMoveFaceSelectionNative
+            | Self::FeatureFaceJoinThreadRatioNonfinite
             | Self::FeatureFaceJoinThreadToleranceAssumed
             | Self::FeatureFaceJoinInputRevisionAssumed
             | Self::FeatureFaceJoinRepeatedAttribute
@@ -737,6 +742,7 @@ mod tests {
                 "feature.edge-selection-native",
                 "feature.edge-owner-identical-geometry",
                 "feature.move-face-selection-native",
+                "feature.face-join-thread-ratio-nonfinite",
                 "feature.face-join-thread-tolerance-assumed",
                 "feature.face-join-input-revision-assumed",
                 "feature.face-join-repeated-attribute",

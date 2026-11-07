@@ -80,7 +80,8 @@ pub(in crate::feature) enum Surface {
     /// The face stores no surface this reader classifies.
     Other,
     Plane,
-    /// A cone with unit axis ratio within `EPS_CONE_RATIO`. `sine` is the sine
+    /// A cone with unit axis ratio within `EPS_CONE_RATIO`, or a non-finite
+    /// ratio that `assumption_losses` names. `sine` is the sine
     /// of the half-angle, and within `EPS_CYLINDER_SINE` of zero for a cylinder;
     /// `radius` is the length of the stored major axis, in the length unit of
     /// the archive.
@@ -223,7 +224,8 @@ fn classify_surface(face: &Record, by_index: &HashMap<i64, Option<&Record>>) -> 
     else {
         return Surface::Other;
     };
-    if (ratio - 1.0).abs() > EPS_CONE_RATIO {
+    // A non-finite ratio stays a cone, and `assumption_losses` names it.
+    if ratio.is_finite() && (ratio - 1.0).abs() > EPS_CONE_RATIO {
         return Surface::Other;
     }
     let radius = major.iter().map(|axis| axis * axis).sum::<f64>().sqrt();
@@ -571,10 +573,15 @@ fn thread_tolerance_used(surface: Surface, diameter: Option<f64>) -> bool {
         return false;
     };
     let cylinder = sine.abs() <= EPS_CYLINDER_SINE;
-    ratio != 1.0
+    (ratio.is_finite() && ratio != 1.0)
         || (cylinder && sine != 0.0)
         || (cylinder
             && diameter.is_some_and(|diameter| 2.0 * radius * MM_PER_ARCHIVE_LENGTH != diameter))
+}
+
+/// Whether a thread face stores a cone axis ratio that is not a finite number.
+fn thread_ratio_nonfinite(surface: Surface) -> bool {
+    matches!(surface, Surface::Cone { ratio, .. } if !ratio.is_finite())
 }
 
 /// Replaces the native face selection of each Move Face, Shell, Thread, and
@@ -883,23 +890,29 @@ pub(crate) fn assumption_losses(
         })
         .count();
     let identical = count(&ids(|face| face.identical_owners));
-    let tolerated = features
-        .iter()
-        .filter(|feature| {
-            let Some((Kind::Thread, FaceSelection::Historical { faces, .. })) = selection(feature)
-            else {
-                return false;
-            };
-            inventory
-                .edge_inputs
-                .faces
-                .iter()
-                .any(|((token, source), face)| {
-                    thread_tolerance_used(face.surface, thread_diameter(feature))
-                        && face_id(token, *source).is_ok_and(|id| faces.as_slice().contains(&id))
-                })
-        })
-        .count();
+    let thread_count = |flag: &dyn Fn(Surface, Option<f64>) -> bool| {
+        features
+            .iter()
+            .filter(|feature| {
+                let Some((Kind::Thread, FaceSelection::Historical { faces, .. })) =
+                    selection(feature)
+                else {
+                    return false;
+                };
+                inventory
+                    .edge_inputs
+                    .faces
+                    .iter()
+                    .any(|((token, source), face)| {
+                        flag(face.surface, thread_diameter(feature))
+                            && face_id(token, *source)
+                                .is_ok_and(|id| faces.as_slice().contains(&id))
+                    })
+            })
+            .count()
+    };
+    let tolerated = thread_count(&thread_tolerance_used);
+    let nonfinite = thread_count(&|surface, _| thread_ratio_nonfinite(surface));
     let mut notes = Vec::new();
     if selecting > 0 {
         notes.push(crate::loss::InventorLossCode::FeatureFaceJoinInputRevisionAssumed.note(format!("{selecting} face-selecting feature(s) keep historical face selections; the join does not establish the stored body state of a matched revision, so the selection assumes that the revision represents the input face of the feature.")));
@@ -909,6 +922,9 @@ pub(crate) fn assumption_losses(
     }
     if unshared > 0 {
         notes.push(crate::loss::InventorLossCode::FeatureFaceJoinUnsharedFamily.note(format!("{unshared} face-selecting feature(s) select a face with a generated-name family that shares no feature with the selector; the selection assumes that another family of the face identifies it.")));
+    }
+    if nonfinite > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinThreadRatioNonfinite.note(format!("{nonfinite} Thread feature(s) select a cone face whose stored axis ratio is not a finite number; the selection assumes that the face is a circular cone.")));
     }
     if tolerated > 0 {
         notes.push(crate::loss::InventorLossCode::FeatureFaceJoinThreadToleranceAssumed.note(format!("{tolerated} Thread feature(s) select a face within the tolerances of the cone axis ratio, the cylinder sine, or the stated diameter; the selection assumes that the difference is rounding.")));
