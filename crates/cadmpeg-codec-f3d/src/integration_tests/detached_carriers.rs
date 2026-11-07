@@ -103,3 +103,27 @@ fn detached_plane_survives_alongside_a_face_surface() {
     assert_eq!(decoded.ir().model.surfaces.len(), 2);
     super::assert_valid(&decoded);
 }
+
+#[test]
+fn detached_spline_surface_survives_in_a_bodyless_document() {
+    let source = crate::test_support::smbh_surfaces_test::synthetic_cyl_spl_sur_smbh();
+    let start = cadmpeg_asm::asm_header::record_stream_start(&source).unwrap();
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&source).unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
+        &source,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    let record = &records[9];
+    let input = bodyless(|bytes| {
+        bytes.extend_from_slice(&source[record.offset..record.offset + record.len])
+    });
+    let decoded = super::decode(input);
+    assert_eq!(decoded.ir().model.surfaces.len(), 1);
+    assert!(decoded.ir().model.faces.is_empty());
+    assert!(decoded.ir().model.surfaces[0].source_object.is_some());
+    assert!(!decoded.ir().model.procedural_surfaces.is_empty());
+    super::assert_valid(&decoded);
+}
