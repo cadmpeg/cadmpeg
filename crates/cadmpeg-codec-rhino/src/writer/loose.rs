@@ -14,8 +14,9 @@ use crate::loss::RhinoLossCode;
 
 use super::{
     attributed_object_record, bounded_line_payload, check_frame, check_nurbs_curve, circle_payload,
-    close_point, curve_object_record, nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve,
-    WriteError, ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
+    close_point, curve_object_record, framed_object_record, nurbs_curve_payload,
+    object_attributes_for_target, point_cloud_payload, WritableEdgeCurve, WriteError, ARC_CLASS,
+    LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(
@@ -184,10 +185,10 @@ pub(super) fn write(
         } else {
             None
         };
-        let identity = if let Some((identity, _)) = individual {
-            identity.clone()
-        } else if ir.model.faces.is_empty() && ir.model.edges.is_empty() {
+        let identity = if ir.model.faces.is_empty() && ir.model.edges.is_empty() {
             body.id.to_string()
+        } else if let Some((identity, _)) = individual {
+            identity.clone()
         } else {
             format!("{}.free-vertices", body.id)
         };
@@ -206,20 +207,22 @@ pub(super) fn write(
         }
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
-            &attributed_object_record(
-                document,
+            &framed_object_record(
                 kind,
                 class,
                 &payload,
-                &identity,
-                crate::writer::presentation::Display {
-                    name: display
+                None,
+                Some(object_attributes_for_target(
+                    document,
+                    &identity,
+                    individual.map_or(identity.as_str(), |(target, _)| target),
+                    display
                         .and_then(|value| value.name)
                         .or(body.name.as_deref()),
-                    color: display.and_then(|value| value.color).or(body.color),
-                    visible: display.and_then(|value| value.visible).or(body.visible),
-                },
-                materials,
+                    display.and_then(|value| value.color).or(body.color),
+                    display.and_then(|value| value.visible).or(body.visible),
+                    materials,
+                )?),
             )?,
             "retain Rhino Brep records",
         )?;
