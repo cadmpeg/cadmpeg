@@ -73,6 +73,43 @@ fn cadir_encoder_charges_the_caller_for_each_written_record() {
     assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
 }
 
+#[test]
+fn cadir_encoder_refuses_a_non_finite_document_field_with_validation_evidence() {
+    let mut ir = CadIr::empty();
+    ir.fragment = true;
+    let seed = Finding {
+        check: Check::Identity,
+        severity: Severity::Error,
+        message: "test".into(),
+        entity: None,
+        related: Vec::new(),
+    };
+    let mut signature = crate::repro::Signature::new(&seed, "cadir", crate::repro::Stage::Check);
+    signature.numbers.push(crate::repro::NumberBand {
+        value: f64::INFINITY,
+        lower: 0.0,
+        upper: 1.0,
+    });
+    ir.repro = Some(Box::new(crate::repro::BundleMetadata {
+        signature,
+        roots: Vec::new(),
+        context: serde_json::Map::default(),
+        manifest: Vec::new(),
+        incomplete_reason: None,
+    }));
+
+    let error = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect_err("CADIR cannot encode a non-finite field");
+    let EncodeError::InvalidInput(proof) = error else {
+        panic!("the refusal must carry validator evidence");
+    };
+    let report = validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(report.findings.contains(proof.finding()));
+    assert_eq!(proof.finding().check, Check::FiniteValue);
+    assert_eq!(proof.finding().severity, Severity::Error);
+}
+
 struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
