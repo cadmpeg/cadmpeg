@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded native curve wrappers for edge parameter intervals.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::math::Point3;
@@ -37,7 +36,7 @@ pub(super) fn from_edge(
     ir: &CadIr,
     edge: &Edge,
     length_scale: f64,
-) -> Result<Option<BoundedCurve>, CodecError> {
+) -> Result<Option<BoundedCurve>, ResourceLimit> {
     let Some(range) = edge
         .param_range()
         .map(cadmpeg_ir::units::FiniteVector::get)
@@ -57,7 +56,7 @@ pub(super) fn from_edge(
     ) {
         return Ok(None);
     }
-    let point = |parameter| -> Result<Option<Point3>, CodecError> {
+    let point = |parameter| -> Result<Option<Point3>, ResourceLimit> {
         if curve.geometry.solved().is_none() {
             return super::surface_curve::point_at(ctx, ir, curve, parameter);
         }
