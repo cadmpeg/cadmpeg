@@ -164,6 +164,7 @@ pub(super) fn reconcile(
         design_entity_headers: original.design_entity_headers.clone(),
         design_record_headers: original.design_record_headers.clone(),
         design_material_assignments: original.design_material_assignments.clone(),
+        design_canvas_images: original.design_canvas_images.clone(),
         design_body_bindings: original.design_body_bindings.clone(),
         design_parameter_scopes: original
             .design_parameter_scopes
@@ -178,6 +179,12 @@ pub(super) fn reconcile(
                             cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::InsertComponent { .. },
                             ) => scope.copy_paste_component_operation().is_some(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::ReferenceImage { .. },
+                            ) => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::Canvas
+                            }
                             cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::Extrude { .. },
                             ) => {
