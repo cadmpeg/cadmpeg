@@ -174,6 +174,7 @@ pub(crate) fn consolidated_owner_packets(
     }))
     .collect::<Vec<_>>();
     for packet in counted_owners {
+        let numeric_bounds = packet.tail.numeric_bounds(packet.references.len());
         let reference_encodings = (packet
             .reference_encodings
             .into_iter()
@@ -186,6 +187,7 @@ pub(crate) fn consolidated_owner_packets(
                 references: packet.references,
                 reference_encodings,
                 tail: packet.tail,
+                numeric_bounds,
             },
         ));
     }

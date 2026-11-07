@@ -20,7 +20,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
-    PmiQuantity, PmiTarget,
+    PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
@@ -1411,10 +1411,55 @@ impl<'a> Builder<'a> {
             .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
             .filter_map(|occurrence| occurrence_products.get(&occurrence.id))
             .collect::<BTreeSet<_>>();
+        let root_product_count = root_products.len();
         let root_product = match root_products.len() {
             1 => root_products.pop_first(),
             _ => None,
         };
+        let emitted_product_definitions = products
+            .iter()
+            .map(|product| product.id.clone())
+            .collect::<HashSet<_>>();
+        let mut root_definition_counts = BTreeMap::<ProductDefinitionId, usize>::new();
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        {
+            if let Some(definition) = occurrence_products
+                .get(&occurrence.id)
+                .filter(|definition| emitted_product_definitions.contains(*definition))
+            {
+                *root_definition_counts
+                    .entry(definition.clone())
+                    .or_default() += 1;
+            }
+        }
+        let repeated_root_occurrence_ids = occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter_map(|occurrence| {
+                let definition = occurrence_products.get(&occurrence.id)?;
+                (root_definition_counts
+                    .get(definition)
+                    .copied()
+                    .unwrap_or_default()
+                    > 1)
+                .then(|| occurrence.id.clone())
+            })
+            .collect::<HashSet<_>>();
+        let repeated_root_definition_has_children = occurrences.iter().any(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                OccurrenceParent::Occurrence { occurrence: parent }
+                    if repeated_root_occurrence_ids.contains(parent)
+            ) && occurrence_products
+                .get(&occurrence.id)
+                .is_some_and(|definition| emitted_product_definitions.contains(definition))
+                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| transform.is_proper_rigid())
+        });
         // A rigid root placement of a local product needs a parent product to carry it.
         let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
             matches!(occurrence.parent, OccurrenceParent::Root {})
@@ -1424,12 +1469,21 @@ impl<'a> Builder<'a> {
                     .effective_transform()
                     .is_ok_and(|transform| transform.is_proper_rigid())
         };
-        let assembly_root = occurrences.iter().any(|occurrence| {
-            placed_root(occurrence)
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| !is_identity(&transform.rows()))
-        });
+        let mut has_placed_root = false;
+        let mut has_non_identity_placed_root = false;
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| placed_root(occurrence))
+        {
+            has_placed_root = true;
+            has_non_identity_placed_root |= occurrence
+                .effective_transform()
+                .is_ok_and(|transform| !is_identity(&transform.rows()));
+        }
+        let assembly_root = has_non_identity_placed_root
+            || (has_placed_root
+                && root_product_count > 1
+                && !repeated_root_definition_has_children);
         let product_names = distinct_names(
             &products
                 .iter()
@@ -1602,7 +1656,12 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
-        for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+        let mut emission_order = occurrences
+            .iter()
+            .zip(&occurrence_names)
+            .collect::<Vec<_>>();
+        emission_order.sort_by_key(|(occurrence, _)| occurrence.ordinal);
+        for (occurrence, &occurrence_name) in emission_order {
             let parent = match (&occurrence.parent, assembly_root) {
                 (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
                     let Some(parent_occurrence) = graph.occurrence(parent) else {
@@ -4478,7 +4537,16 @@ impl<'a> Builder<'a> {
             }
         }
         for annotation in &annotations {
-            for target in &annotation.targets {
+            let zone_targets = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { constraints, .. } => constraints
+                    .zones
+                    .iter()
+                    .flat_map(|zone| &zone.projections)
+                    .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            for target in annotation.targets.iter().chain(zone_targets) {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
@@ -4724,14 +4792,17 @@ impl<'a> Builder<'a> {
                         // DIMENSIONAL_SIZE whose name identifies the size
                         // category; DIAMETER_SIZE and RADIUS_SIZE are not
                         // entity types.
-                        DimensionKind::Diameter | DimensionKind::Radius => {
-                            ("DIMENSIONAL_SIZE", true)
-                        }
+                        DimensionKind::Diameter
+                        | DimensionKind::Radius
+                        | DimensionKind::SphericalDiameter
+                        | DimensionKind::SphericalRadius => ("DIMENSIONAL_SIZE", true),
                         DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
                     };
                     let characteristic_name = match dimension {
                         DimensionKind::Diameter => "diameter",
                         DimensionKind::Radius => "radius",
+                        DimensionKind::SphericalDiameter => "spherical diameter",
+                        DimensionKind::SphericalRadius => "spherical radius",
                         _ => name,
                     };
                     let parameters = match dimension {
@@ -4744,7 +4815,8 @@ impl<'a> Builder<'a> {
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    let items = if let Some(DimensionTolerance::Limits { lower, upper }) = tolerance
+                    let mut items = if let Some(DimensionTolerance::Limits { lower, upper }) =
+                        tolerance
                     {
                         let mut items = Vec::new();
                         if let Some(value) = nominal {
@@ -4763,6 +4835,24 @@ impl<'a> Builder<'a> {
                             .into_iter()
                             .collect()
                     };
+                    let mut secondary_modifiers = Vec::new();
+                    for modifier in relation.modifiers() {
+                        let item = self.emitter.emit(
+                            "DESCRIPTIVE_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", string(modifier)),
+                        );
+                        if matches!(modifier.as_str(), "auxiliary" | "theoretical") {
+                            items.push(item);
+                        } else {
+                            secondary_modifiers.push(item);
+                        }
+                    }
+                    if !secondary_modifiers.is_empty() {
+                        items.push(self.emitter.emit(
+                            "COMPOUND_REPRESENTATION_ITEM",
+                            &format!("'dimensional note',{}", refs(&secondary_modifiers)),
+                        ));
+                    }
                     if !items.is_empty() {
                         let representation = self.emitter.emit(
                             "SHAPE_DIMENSION_REPRESENTATION",
@@ -4817,7 +4907,14 @@ impl<'a> Builder<'a> {
                     defined_area_second_unit,
                     datum_system,
                     modifiers,
+                    constraints,
                 } => {
+                    if constraints.zones.iter().flat_map(|zone| &zone.projections)
+                        .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                        .any(|target| !matches!(target, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
+                    {
+                        continue;
+                    }
                     let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
                     let entity = match tolerance {
                         GeometricToleranceKind::Straightness => "STRAIGHTNESS_TOLERANCE",
@@ -4860,6 +4957,8 @@ impl<'a> Builder<'a> {
                         && modifiers.is_empty()
                         && defined_unit.is_none()
                         && area_unit.is_none()
+                        && constraints.displacement.is_none()
+                        && constraints.maximum.is_none()
                     {
                         self.emitter.emit(
                             entity,
@@ -4901,11 +5000,71 @@ impl<'a> Builder<'a> {
                             parts
                                 .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
                         }
+                        if let Some(displacement) = constraints.displacement {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                displacement.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!("UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE({value})"));
+                        }
+                        if let Some(maximum) = constraints.maximum {
+                            let value = self.emit_pmi_measure(PmiValue::from_parts(
+                                maximum.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_MAXIMUM_TOLERANCE({value})"
+                            ));
+                        }
                         parts.push(format!("{entity}()"));
+                        parts.sort();
                         self.emitter
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
+                    for zone in &constraints.zones {
+                        let form = self
+                            .emitter
+                            .emit("TOLERANCE_ZONE_FORM", &string(zone.form.as_str()));
+                        let zone_ref = self.emitter.emit(
+                            "TOLERANCE_ZONE",
+                            &format!("'','',{pds},.F.,({tolerance_ref}),{form}"),
+                        );
+                        for projection in &zone.projections {
+                            let aspect = |target: &PmiTarget| match target {
+                                PmiTarget::ShapeAspect { source_id } => {
+                                    aspects.get(source_id.as_str()).copied()
+                                }
+                                _ => None,
+                            };
+                            let Some(end) = aspect(&projection.end) else {
+                                continue;
+                            };
+                            let boundaries = projection
+                                .boundaries
+                                .iter()
+                                .filter_map(aspect)
+                                .collect::<Vec<_>>();
+                            let length = self.emit_pmi_measure(PmiValue::from_parts(
+                                projection.length.magnitude(),
+                                PmiQuantity::Length,
+                            ));
+                            let mut args =
+                                format!("{zone_ref},{},{end},{length}", refs(&boundaries));
+                            let entity = if let Some(offset) = projection.offset {
+                                let offset = self.emit_pmi_measure(PmiValue::from_parts(
+                                    offset.magnitude(),
+                                    PmiQuantity::Length,
+                                ));
+                                args.push(',');
+                                args.push_str(&offset.to_string());
+                                "PROJECTED_ZONE_DEFINITION_WITH_OFFSET"
+                            } else {
+                                "PROJECTED_ZONE_DEFINITION"
+                            };
+                            self.emitter.emit(entity, &args);
+                        }
+                    }
                     self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
                 PmiDefinition::Datum { .. }

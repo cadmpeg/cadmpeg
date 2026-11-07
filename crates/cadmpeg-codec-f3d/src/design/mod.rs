@@ -127,6 +127,7 @@ pub(crate) fn design_feature_family(
         | Kind::JointOrigin
         | Kind::BaseFlange
         | Kind::SplitFace
+        | Kind::PathPattern
         | Kind::MoveFace
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace

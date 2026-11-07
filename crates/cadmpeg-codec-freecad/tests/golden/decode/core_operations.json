@@ -20609,7 +20609,6 @@
           "native_ref": "fcstd:native:object#Hole",
           "ordinal": 45,
           "outputs": [
-            "fcstd:model:body#Hole:AddSubShape:Hole.AddSubShape.brp:22",
             "fcstd:model:body#Hole:Shape:Hole.Shape.brp:53%40location1"
           ],
           "source_properties": {
@@ -20749,12 +20748,12 @@
             "ruled": true,
             "sections": [
               {
-                "kind": "native",
-                "value": "fcstd:native:object#LoftSectionA"
+                "kind": "feature",
+                "value": "fcstd:design:feature#LoftSectionA"
               },
               {
-                "kind": "native",
-                "value": "fcstd:native:object#LoftSectionB"
+                "kind": "feature",
+                "value": "fcstd:design:feature#LoftSectionB"
               }
             ],
             "solid": true
@@ -20824,8 +20823,13 @@
               "z": 0.0
             },
             "source": {
-              "kind": "native",
-              "value": "fcstd:native:property#Mirror:Source"
+              "kind": "resolved",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#MirrorBase:Shape:MirrorBase.Shape.brp:13%40location1"
+                ],
+                "native": "fcstd:native:property#Mirror:Source"
+              }
             }
           },
           "dependencies": [
@@ -20868,8 +20872,13 @@
             "groups": [
               {
                 "edges": {
-                  "kind": "native",
-                  "value": "fcstd:native:property#PartChamfer:Base"
+                  "kind": "resolved",
+                  "value": {
+                    "edges": [
+                      "fcstd:model:edge#ChamferBase:Shape:ChamferBase.Shape.brp:3%40location1"
+                    ],
+                    "native": "fcstd:native:property#PartChamfer:Base"
+                  }
                 },
                 "spec": {
                   "first": 1.5,
@@ -20901,8 +20910,13 @@
             "groups": [
               {
                 "edges": {
-                  "kind": "native",
-                  "value": "fcstd:native:property#PartFillet:Base"
+                  "kind": "resolved",
+                  "value": {
+                    "edges": [
+                      "fcstd:model:edge#DressupBase:Shape:DressupBase.Shape.brp:3%40location1"
+                    ],
+                    "native": "fcstd:native:property#PartFillet:Base"
+                  }
                 },
                 "radius": {
                   "kind": "constant",
@@ -20973,7 +20987,6 @@
           "native_ref": "fcstd:native:object#PatternBase",
           "ordinal": 55,
           "outputs": [
-            "fcstd:model:body#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:34",
             "fcstd:model:body#PatternBase:Shape:PatternBase.Shape.brp:34%40location1"
           ],
           "source_properties": {
@@ -21089,8 +21102,11 @@
               "kind": "frenet"
             },
             "path": {
-              "kind": "native",
-              "value": "fcstd:native:property#Sweep:Spine"
+              "kind": "edges",
+              "value": [
+                "fcstd:model:edge#SweepSpine:Shape:SweepSpine.Shape.brp:3%40location1",
+                "fcstd:model:edge#SweepSpine:Shape:SweepSpine.Shape.brp:5%40location1"
+              ]
             },
             "path_tangent": false,
             "shape": {
@@ -21099,8 +21115,8 @@
               "section": {
                 "kind": "profile",
                 "value": {
-                  "kind": "native",
-                  "value": "fcstd:native:object#SweepSection"
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#SweepSection"
                 }
               }
             },
@@ -21186,8 +21202,8 @@
             "inner_wire_taper": "inverted",
             "op": "new_body",
             "profile": {
-              "kind": "native",
-              "value": "fcstd:native:property#SymmetricExtrusion:Base"
+              "kind": "feature",
+              "value": "fcstd:design:feature#ExtrusionProfile"
             },
             "solid": true,
             "start": {

@@ -401,6 +401,11 @@ pub(crate) fn layers(
             cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected) => CodecError::malformed(
                 format_args!("duplicate Inventor dialect layer: {rejected:?}"),
             ),
+            cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected) => {
+                CodecError::malformed(format_args!(
+                    "Inventor extra dialect layer in the primary format needs an instance: {rejected:?}"
+                ))
+            }
         })?;
     }
     Ok(layers)
