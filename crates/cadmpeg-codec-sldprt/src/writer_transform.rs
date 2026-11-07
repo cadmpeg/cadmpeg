@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsError, sampled::GeometryLayoutError, CurveGeometry, SolvedCurveGeometry,
@@ -15,7 +15,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 
-pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
     if !ir.model.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())
@@ -75,33 +75,33 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         for region_id in &body.regions {
             let region = regions
                 .get(region_id.as_str())
-                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+                .ok_or_else(|| WriteError::Decline("body references missing region".into()))?;
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
-                    CodecError::Malformed("region references missing shell".into())
+                    WriteError::Decline("region references missing shell".into())
                 })?;
                 for face_id in shell.faces() {
                     let face = faces.get(face_id.as_str()).ok_or_else(|| {
-                        CodecError::Malformed("shell references missing face".into())
+                        WriteError::Decline("shell references missing face".into())
                     })?;
                     assign(&mut surface_transforms, face.surface.as_str(), transform)?;
                     for loop_id in &face.loops {
                         let lp = loops.get(loop_id.as_str()).ok_or_else(|| {
-                            CodecError::Malformed("face references missing loop".into())
+                            WriteError::Decline("face references missing loop".into())
                         })?;
                         for coedge_id in lp.coedges() {
                             let coedge = coedges.get(coedge_id.as_str()).ok_or_else(|| {
-                                CodecError::Malformed("loop references missing coedge".into())
+                                WriteError::Decline("loop references missing coedge".into())
                             })?;
                             let edge = edges.get(coedge.edge.as_str()).ok_or_else(|| {
-                                CodecError::Malformed("coedge references missing edge".into())
+                                WriteError::Decline("coedge references missing edge".into())
                             })?;
                             if let Some(curve) = edge.curve() {
                                 assign(&mut curve_transforms, curve.as_str(), transform)?;
                             }
                             for vertex_id in [&edge.start, &edge.end] {
                                 let vertex = vertices.get(vertex_id.as_str()).ok_or_else(|| {
-                                    CodecError::Malformed("edge references missing vertex".into())
+                                    WriteError::Decline("edge references missing vertex".into())
                                 })?;
                                 assign(&mut point_transforms, vertex.point.as_str(), transform)?;
                             }
@@ -145,10 +145,10 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         for mesh in &mut ir.model.tessellations {
             let transform = match &mesh.body {
                 Some(body) => transforms.get(body).copied().ok_or_else(|| {
-                    CodecError::Malformed("tessellation references missing body".into())
+                    WriteError::Decline("tessellation references missing body".into())
                 })?,
                 None => sole_transform.ok_or_else(|| {
-                    CodecError::UnsupportedContent(
+                    WriteError::Decline(
                         "SLDPRT cannot assign an unowned tessellation to transformed bodies".into(),
                     )
                 })?,
@@ -161,9 +161,9 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 Ok(())
             })
             .map_err(|error| match error {
-                TessellationError::EditRefused(message) => CodecError::UnsupportedContent(message),
+                TessellationError::EditRefused(message) => WriteError::Decline(message),
                 error @ TessellationError::Admission { .. } => {
-                    CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
+                    WriteError::Decline(format!("invalid transformed tessellation: {error}"))
                 }
             })?;
             if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
@@ -178,11 +178,11 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 })
                 .map_err(|error| match error {
                     TessellationError::EditRefused(message) => {
-                        CodecError::UnsupportedContent(message)
+                        WriteError::Decline(message)
                     }
-                    error @ TessellationError::Admission { .. } => CodecError::malformed(
-                        format_args!("invalid transformed tessellation: {error}"),
-                    ),
+                    error @ TessellationError::Admission { .. } => {
+                        WriteError::Decline(format!("invalid transformed tessellation: {error}"))
+                    }
                 })?;
             }
         }
@@ -198,12 +198,12 @@ fn assign(
     assignments: &mut HashMap<String, Transform>,
     id: &str,
     transform: Transform,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     if assignments
         .insert(id.to_string(), transform)
         .is_some_and(|current| current != transform)
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Decline(format!(
             "entity {id} is shared by bodies with different transforms"
         )));
     }
@@ -213,31 +213,31 @@ fn assign(
 const NON_FINITE_POINT: &str = "baked body placement produced a non-finite point";
 const NON_FINITE_DIRECTION: &str = "baked body placement produced a non-finite direction";
 
-fn non_finite_point() -> CodecError {
-    CodecError::UnsupportedContent(NON_FINITE_POINT.into())
+fn non_finite_point() -> WriteError {
+    WriteError::Decline(NON_FINITE_POINT.into())
 }
 
-fn non_finite_vector() -> CodecError {
-    CodecError::UnsupportedContent(NON_FINITE_DIRECTION.into())
+fn non_finite_vector() -> WriteError {
+    WriteError::Decline(NON_FINITE_DIRECTION.into())
 }
 
-fn sampled_edit_error(error: GeometryLayoutError) -> CodecError {
+fn sampled_edit_error(error: GeometryLayoutError) -> WriteError {
     if let GeometryLayoutError::EditRefused(message) = error {
-        CodecError::UnsupportedContent(message)
+        WriteError::Decline(message)
     } else {
-        CodecError::Malformed(error.to_string())
+        WriteError::Decline(error.to_string())
     }
 }
 
 /// Places a point, refusing a placement that leaves the finite range.
-fn placed_point(transform: Transform, point: FinitePoint3) -> Result<FinitePoint3, CodecError> {
+fn placed_point(transform: Transform, point: FinitePoint3) -> Result<FinitePoint3, WriteError> {
     transform
         .apply_point(point.get())
         .ok_or_else(non_finite_point)
 }
 
 /// Places a direction, refusing a placement that leaves the finite range.
-fn placed_vector(transform: Transform, vector: Vector3) -> Result<Vector3, CodecError> {
+fn placed_vector(transform: Transform, vector: Vector3) -> Result<Vector3, WriteError> {
     transform
         .apply_vector(vector)
         .map(cadmpeg_ir::features::FiniteVector3::get)
@@ -248,15 +248,15 @@ fn placed_frame(
     transform: Transform,
     frame: OrthonormalFrame3,
     refusal: &'static str,
-) -> Result<OrthonormalFrame3, CodecError> {
+) -> Result<OrthonormalFrame3, WriteError> {
     let axis = placed_vector(transform, *frame.axis().as_raw())?;
     let reference = placed_vector(transform, *frame.reference().as_raw())?;
-    OrthonormalFrame3::new(axis, reference).ok_or_else(|| CodecError::malformed(refusal))
+    OrthonormalFrame3::new(axis, reference).ok_or_else(|| WriteError::Decline(refusal.into()))
 }
 
-fn check_rigid(transform: Transform) -> Result<(), CodecError> {
+fn check_rigid(transform: Transform) -> Result<(), WriteError> {
     if !transform.is_proper_rigid() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Decline(
             "SLDPRT body transform must be a right-handed rigid transform".into(),
         ));
     }
@@ -266,7 +266,7 @@ fn check_rigid(transform: Transform) -> Result<(), CodecError> {
 fn transform_surface(
     geometry: &mut SurfaceGeometry,
     transform: Transform,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = placed_point(transform, plane_surface.origin())?;
@@ -340,9 +340,9 @@ fn transform_surface(
                         .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
                 })
                 .map_err(|error| match error {
-                    NurbsError::EditRefused(message) => CodecError::UnsupportedContent(message),
+                    NurbsError::EditRefused(message) => WriteError::Decline(message),
                     error => {
-                        CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                        WriteError::Decline(format!("invalid transformed NURBS: {error}"))
                     }
                 })?;
         }
@@ -363,13 +363,13 @@ fn transform_surface(
         }
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(WriteError::Decline(
                 "SLDPRT cannot transform a non-explicit surface".into(),
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
             let composed = transform.compose(*placed.transform()).map_err(|error| {
-                CodecError::UnsupportedContent(format!("invalid transformed carrier: {error}"))
+                WriteError::Decline(format!("invalid transformed carrier: {error}"))
             })?;
             placed.set_transform(composed);
         }
@@ -377,14 +377,14 @@ fn transform_surface(
     Ok(())
 }
 
-fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
+fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), WriteError> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = placed_point(transform, line_curve.origin())?;
             let direction =
                 UnitVector3::new(placed_vector(transform, *line_curve.direction().as_raw())?)
                     .ok_or_else(|| {
-                        CodecError::malformed("LineCurve.direction must have unit length")
+                        WriteError::Decline("LineCurve.direction must have unit length".into())
                     })?;
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
@@ -414,7 +414,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 ellipse_curve.major_radius(),
                 ellipse_curve.minor_radius(),
             )
-            .map_err(CodecError::malformed)?;
+            .map_err(|error| WriteError::Decline(error.to_string()))?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs
@@ -424,9 +424,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                         .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
                 })
                 .map_err(|error| match error {
-                    NurbsError::EditRefused(message) => CodecError::UnsupportedContent(message),
+                    NurbsError::EditRefused(message) => WriteError::Decline(message),
                     error => {
-                        CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                        WriteError::Decline(format!("invalid transformed NURBS: {error}"))
                     }
                 })?;
         }
@@ -479,13 +479,13 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
         CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed)) => {
             let composed = transform.compose(*placed.transform()).map_err(|error| {
-                CodecError::UnsupportedContent(format!("invalid transformed carrier: {error}"))
+                WriteError::Decline(format!("invalid transformed carrier: {error}"))
             })?;
             placed.set_transform(composed);
         }
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(WriteError::Decline(
                 "cannot bake a transform into a non-explicit curve".into(),
             ));
         }
@@ -496,7 +496,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
 #[cfg(test)]
 mod tests {
     use super::{placed_point, placed_vector, transform_curve, transform_surface};
-    use cadmpeg_core::CodecError;
+    use crate::writer::write_error::WriteError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::LineCurve;
     use cadmpeg_ir::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
@@ -522,7 +522,7 @@ mod tests {
             FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0)).expect("a finite point"),
         )
         .expect_err("the admitted operands overflow");
-        assert!(matches!(error, CodecError::UnsupportedContent(_)));
+        assert!(matches!(error, WriteError::Decline(_)));
     }
 
     #[test]
@@ -535,7 +535,7 @@ mod tests {
         .expect("a finite rotation is admitted");
         let error = placed_vector(rotation, Vector3::new(f64::MAX, f64::MAX, 0.0))
             .expect_err("the admitted operands overflow");
-        assert!(matches!(error, CodecError::UnsupportedContent(_)));
+        assert!(matches!(error, WriteError::Decline(_)));
     }
 
     #[test]
@@ -554,7 +554,7 @@ mod tests {
         ));
         let error = transform_surface(&mut surface, maximum_translation())
             .expect_err("the admitted placement overflows a vertex");
-        assert!(matches!(error, CodecError::UnsupportedContent(_)));
+        assert!(matches!(error, WriteError::Decline(_)));
 
         let mut curve = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
             PolylineCurve::new(
@@ -569,7 +569,7 @@ mod tests {
         ));
         let error = transform_curve(&mut curve, maximum_translation())
             .expect_err("the admitted placement overflows a sample");
-        assert!(matches!(error, CodecError::UnsupportedContent(_)));
+        assert!(matches!(error, WriteError::Decline(_)));
     }
 
     #[test]
@@ -583,7 +583,7 @@ mod tests {
         let mut curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed));
         let error = transform_curve(&mut curve, maximum_translation())
             .expect_err("the admitted transform composition overflows");
-        assert!(matches!(error, CodecError::UnsupportedContent(_)));
+        assert!(matches!(error, WriteError::Decline(_)));
     }
 
     #[test]
@@ -591,7 +591,7 @@ mod tests {
         let mut geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
         assert!(matches!(
             transform_curve(&mut geometry, Transform::identity()),
-            Err(CodecError::UnsupportedContent(_))
+            Err(WriteError::Decline(_))
         ));
     }
 
