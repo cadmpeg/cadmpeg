@@ -628,6 +628,11 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                     .losses
                     .iter()
                     .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()));
+            } else {
+                assert!(report.losses.iter().any(|loss| {
+                    loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+                        && loss.message.contains(ir.model.surfaces[0].id.as_str())
+                }));
             }
         }
     }
@@ -710,6 +715,26 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()));
+}
+
+#[test]
+fn failed_curve_construction_reports_its_unknown_support() {
+    let mut ir = standalone_subset_curve(None);
+    ir.model.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let support = ir.model.curves[0].id.clone();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write independent content");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+            && loss.message.contains(support.as_str())
+    }));
 }
 
 #[test]
