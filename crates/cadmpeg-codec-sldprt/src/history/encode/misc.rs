@@ -89,19 +89,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let Some(record) =
-                existing.filter(|record| classify(record) == Some(FeatureClass::CosmeticThread))
-            else {
+            if existing.is_some_and(|record| classify(record) != Some(FeatureClass::CosmeticThread))
+            {
                 return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} adds a cosmetic thread",
+                    "SLDPRT feature {} changes its cosmetic-thread family",
                     feature.id
                 )));
-            };
+            }
             let mut parameters = self.base_parameters();
             if let Some(diameter) = diameter {
-                let prefix = record
-                    .parameters
-                    .get("D2")
+                let prefix = existing
+                    .and_then(|record| record.parameters.get("D2"))
                     .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
                     .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
                 parameters.insert(
@@ -118,12 +116,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         cadmpeg_core::nonblank_literal!("D1"),
                         format_length_like(
                             self.dimension(length)?.into(),
-                            record.parameters.get("D1").map(String::as_str),
+                            existing
+                                .and_then(|record| record.parameters.get("D1"))
+                                .map(String::as_str),
                         ),
                     );
                 }
                 Some(CosmeticThreadExtent::Through {}) => {
                     parameters.remove("D1");
+                }
+                None if existing.is_none() => {
+                    return Err(CodecError::UnsupportedContent(format!(
+                        "SLDPRT feature {} has an unresolved cosmetic-thread extent",
+                        feature.id
+                    )));
                 }
                 None => {}
             }
@@ -137,7 +143,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             NeutralFeatureEncoding {
-                kind: record.kind.clone(),
+                kind: existing
+                    .map_or_else(|| "CosmeticThread".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
             }
