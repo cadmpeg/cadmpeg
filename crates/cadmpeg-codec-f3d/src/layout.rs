@@ -7162,6 +7162,24 @@ pub(crate) mod sketch_ordinal_collection_prefix {
     pub(crate) const ZERO_RUN: usize = 11;
 }
 
+/// Byte offsets for the `sketch_folder_prefix` record.
+///
+/// Spec §3.1. Record length 32 B.
+pub(crate) mod sketch_folder_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Offset of `zero_run_2` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_2: usize = 21;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 26;
+    /// Offset of `zero_run_3` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 27;
+}
+
 /// Byte offsets for the `assembly_as_built_scope_378` record.
 ///
 /// Spec §Assembly operands. Record length 378 B.

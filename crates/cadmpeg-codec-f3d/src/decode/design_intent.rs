@@ -1722,6 +1722,7 @@ fn extend_related_design_records(
         scan,
         &design.design_parameter_scopes,
         &prereqs.design_entity_headers,
+        &mut profile_losses,
     )?;
     let mut stream_lengths = std::collections::HashMap::new();
     for entry in scan
