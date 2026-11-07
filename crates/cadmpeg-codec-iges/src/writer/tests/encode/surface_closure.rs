@@ -98,6 +98,78 @@ fn offset_circle_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn linear_offset_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("linear_offset_line"));
+    assert_synthesis_closure(
+        crate::test_support::test_curves_and_surfaces::linear_offset_line_file(2),
+    );
+}
+
+#[test]
+fn edited_linear_offset_uses_current_spline() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(fixture("linear_offset_line")),
+            &DecodeOptions::default(),
+        )
+        .expect("linear offset decodes");
+    let mut ir = decoded.ir().clone();
+    let curve = ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Procedural {
+                    cache: Some(SolvedCurveGeometry::Nurbs(_)),
+                    ..
+                }
+            )
+        })
+        .expect("offset spline exists");
+    let CurveGeometry::Procedural {
+        cache: Some(SolvedCurveGeometry::Nurbs(spline)),
+        ..
+    } = &mut curve.geometry
+    else {
+        panic!("expected a spline");
+    };
+    spline
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
+                point.y += 1.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or(())
+        })
+        .expect("edited points are finite");
+    let expected = curve
+        .geometry
+        .solved()
+        .expect("edited spline exists")
+        .clone();
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("edited spline synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("edited spline writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("edited spline decodes");
+    assert!(output
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry.solved() == Some(&expected)));
+    assert!(output.ir().model.procedural_curves.is_empty());
+}
+
+#[test]
 fn offset_plane_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("offset_plane"));
 }
