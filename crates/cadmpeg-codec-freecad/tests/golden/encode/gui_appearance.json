@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 5880,
-      "payload_sha256": "ac9b9b37104fbb404bdcd96f4394a517089948e1fb6f642d6836cf6a4ec3d48c"
+      "payload_len": 5935,
+      "payload_sha256": "49ef2aede172cd5f0b48bcad472e36ee746eea98b31b9776597647702f214806"
     },
     {
       "name": "ColoredModel.Shape.brp",
