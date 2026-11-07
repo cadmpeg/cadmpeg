@@ -667,8 +667,8 @@ pub(in crate::writer) fn styles(
         written: std::collections::BTreeSet::new(),
         losses: Vec::new(),
     };
-    for (position, record) in records(ir, "dimension_styles").iter().enumerate() {
-        let index = wire_index(position).map_err(WriteError::Fail)?;
+    for record in records(ir, "dimension_styles") {
+        let index = wire_index(output.records.len()).map_err(WriteError::Fail)?;
         let mut fields = record.fields()?;
         let mut reference_change = None;
         if let Some(source) = fields
@@ -721,6 +721,18 @@ pub(in crate::writer) fn styles(
         match written {
             Ok(payload) => {
                 output.records.push(payload?);
+                let source_index = fields.get("archive_index").and_then(Value::as_i64);
+                let index_changed = source_index.is_some_and(|source| source != i64::from(index));
+                if let Some(source) = source_index.filter(|source| *source != i64::from(index)) {
+                    output
+                        .losses
+                        .push(
+                            RhinoLossCode::WriterDimensionStyleIndexReassigned.note(format!(
+                                "dimension style {} archive index {source} is written as {index}",
+                                record.id()
+                            )),
+                        );
+                }
                 if let Some((source, target)) = reference_change {
                     output
                         .losses
@@ -728,7 +740,7 @@ pub(in crate::writer) fn styles(
                             "dimension style {} text style index {source} is written as {target}",
                             record.id()
                         )));
-                } else {
+                } else if !index_changed {
                     output.written.insert(record.id().to_owned());
                 }
             }

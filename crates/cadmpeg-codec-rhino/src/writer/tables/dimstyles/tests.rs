@@ -114,8 +114,11 @@ fn v5_style_without_extra_round_trips() {
         .arenas()["dimension_styles"];
     assert_eq!(records.len(), 1);
     let exported = styles(&source, crate::RhinoArchiveVersion::V5).expect("typed dimstyles");
-    assert_eq!(exported.losses.len(), 1);
-    assert!(exported.losses[0].message.contains(records[0].id()));
+    assert_eq!(exported.losses.len(), 2);
+    assert!(exported
+        .losses
+        .iter()
+        .all(|loss| loss.message.contains(records[0].id())));
     assert_eq!(exported.records.len(), 1);
     assert!(!exported.written.contains(records[0].id()));
     let output = decode_dimstyles(&exported.records, "50");
@@ -333,7 +336,10 @@ fn modern_style_without_children_round_trips() {
     assert_eq!(records.len(), 1);
     let exported = styles(&source, crate::RhinoArchiveVersion::V6).expect("typed dimstyles");
     assert_eq!(exported.losses.len(), 1);
-    assert!(exported.losses[0].message.contains(records[0].id()));
+    assert!(exported
+        .losses
+        .iter()
+        .all(|loss| loss.message.contains(records[0].id())));
     assert_eq!(exported.records.len(), 1);
     let output = decode_dimstyles(&exported.records, "60");
     let written = &output
@@ -403,6 +409,55 @@ fn dimension_style_uses_emitted_font_index() {
     assert_eq!(
         output.native.namespace("rhino").unwrap().arenas()["dimension_styles"][0]
             .field("text_style_index"),
+        Some(serde_json::json!(0))
+    );
+}
+
+#[test]
+fn omitted_dimension_style_does_not_leave_an_index_gap() {
+    use crate::chunks::ArchiveVersion;
+    let mut source = decode_dimstyles(
+        &[class_wrapped(
+            &v5_payload(),
+            crate::wire::Uuid::to_wire(crate::presentation::V5_DIMSTYLE),
+            ArchiveVersion::V5,
+        )],
+        "50",
+    );
+    let fields = source.native.namespace("rhino").unwrap().arenas()["dimension_styles"][0]
+        .fields()
+        .unwrap();
+    let mut bad_fields = fields.clone();
+    bad_fields.insert(
+        "v5_extra".into(),
+        serde_json::json!({"parent_style_uuid":null}),
+    );
+    let mut good_fields = fields;
+    good_fields.insert("archive_index".into(), serde_json::json!(1));
+    good_fields.insert("text_style_index".into(), serde_json::json!(-1));
+    let bad_id = "rhino:presentation:dimension_style#bad";
+    let good_id = "rhino:presentation:dimension_style#good";
+    source.native.namespace_mut("rhino").arenas_mut().insert(
+        "dimension_styles".into(),
+        vec![
+            cadmpeg_ir::NativeRecord::new(bad_id.try_into().unwrap(), bad_fields).unwrap(),
+            cadmpeg_ir::NativeRecord::new(good_id.try_into().unwrap(), good_fields).unwrap(),
+        ],
+    );
+    let export = styles(&source, crate::RhinoArchiveVersion::V5).unwrap();
+    assert_eq!(export.records.len(), 1);
+    assert!(export
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(bad_id)));
+    assert!(export
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(good_id)));
+    let output = decode_dimstyles(&export.records, "50");
+    assert_eq!(
+        output.native.namespace("rhino").unwrap().arenas()["dimension_styles"][0]
+            .field("archive_index"),
         Some(serde_json::json!(0))
     );
 }
