@@ -348,6 +348,7 @@ pub(crate) enum F3dLossCode {
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
+    FeatureWorkAxisRuleUnassigned,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
@@ -720,6 +721,7 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
         Self::FeatureScaleFrameLengthFormAssumed,
+        Self::FeatureWorkAxisRuleUnassigned,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombinePrologueAssumed,
@@ -1006,6 +1008,7 @@ impl F3dLossCode {
                 "feature.surface-offset-group-ordinals-assumed"
             }
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
+            Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
@@ -1301,6 +1304,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
@@ -1518,6 +1522,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
@@ -1831,6 +1836,7 @@ mod tests {
                 "feature.face-selection-active-substituted",
                 "feature.surface-offset-group-ordinals-assumed",
                 "feature.scale-frame-length-form-assumed",
+                "feature.work-axis-rule-unassigned",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
                 "feature.combine-prologue-assumed",
