@@ -1531,28 +1531,6 @@ impl<'a> Builder<'a> {
                 hidden_binding_ids.contains(binding.id.as_str()),
             ));
         }
-        let bound: BTreeSet<&str> = ir
-            .model
-            .appearance_bindings
-            .iter()
-            .map(|binding| binding.appearance.as_str())
-            .collect();
-        for appearance in &ir.model.appearances {
-            let Some(color) = appearance.base_color else {
-                continue;
-            };
-            if bound.contains(appearance.id.as_str()) {
-                continue;
-            }
-            let name = appearance.name.as_deref().unwrap_or("");
-            let rgb = format!(
-                "{},{},{}",
-                self.emitter.real(f64::from(color.r())),
-                self.emitter.real(f64::from(color.g())),
-                self.emitter.real(f64::from(color.b()))
-            );
-            self.style_colour(Some(appearance.id.as_str()), name, &rgb, &mut style_refs);
-        }
         for body in &ir.model.bodies {
             let body_id = body.id.as_str();
             let Some(spec) = body_colors.get(body_id) else {
@@ -1613,6 +1591,29 @@ impl<'a> Builder<'a> {
                 self.body_level_bindings.remove(&id);
             }
             styled_bodies.insert(body_id);
+        }
+        let written_appearances: BTreeSet<&str> = ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| self.written_appearance_bindings.contains(&binding.id))
+            .map(|binding| binding.appearance.as_str())
+            .collect();
+        for appearance in &ir.model.appearances {
+            let Some(color) = appearance.base_color else {
+                continue;
+            };
+            if written_appearances.contains(appearance.id.as_str()) {
+                continue;
+            }
+            let name = appearance.name.as_deref().unwrap_or("");
+            let rgb = format!(
+                "{},{},{}",
+                self.emitter.real(f64::from(color.r())),
+                self.emitter.real(f64::from(color.g())),
+                self.emitter.real(f64::from(color.b()))
+            );
+            self.style_colour(Some(appearance.id.as_str()), name, &rgb, &mut style_refs);
         }
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
