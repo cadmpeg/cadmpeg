@@ -891,6 +891,71 @@ fn link_group_retains_element_list_on_the_native_wire() {
 }
 
 #[test]
+fn link_group_places_link_and_object_elements() {
+    const LENGTH_TOLERANCE: f64 = 1.0e-12;
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="App::LinkGroup" name="Group"/><Object type="App::Link" name="Link"/><Object type="Part::Feature" name="Member"/><Object type="Part::Feature" name="Prototype"/></Objects>
+<ObjectData Count="4">
+ <Object name="Group"><Properties Count="2"><Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="Link"/><Link value="Member"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Link"><Properties Count="2"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="4" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Member"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="7" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("link group");
+    let occurrences = &decoded.ir().model.occurrences;
+    let group = occurrences
+        .iter()
+        .find(|item| item.id.as_str().ends_with("#Group:container"))
+        .unwrap();
+    let graph = cadmpeg_ir::AssemblyGraph::new(occurrences).unwrap();
+    for (id, expected) in [
+        ("#Link:instance", [10.0, 4.0, 0.0]),
+        ("#Member:container", [10.0, 0.0, 7.0]),
+    ] {
+        let item = occurrences
+            .iter()
+            .find(|item| item.id.as_str().ends_with(id))
+            .unwrap();
+        assert!(
+            matches!(&item.parent, cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } if occurrence == &group.id)
+        );
+        let rows = assembly::resolved_transform(&graph, &item.id)
+            .unwrap()
+            .affine_rows();
+        for (row, expected) in rows.iter().zip(expected) {
+            assert!((row[3] - expected).abs() < LENGTH_TOLERANCE);
+        }
+    }
+    assert_valid_document(decoded.ir());
+}
+
+#[test]
+fn link_group_missing_element_does_not_create_an_occurrence() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::LinkGroup" name="Group"/></Objects>
+<ObjectData Count="1"><Object name="Group"><Properties Count="1">
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Missing"/></LinkList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("link group");
+    assert!(!decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .any(|occurrence| { occurrence.id.as_str().ends_with("#Missing:container") }));
+}
+
+#[test]
 fn product_record_identity_rejects_duplicates() {
     let records = [node("A", &[]), node("A", &[])];
     assert!(matches!(
@@ -1817,4 +1882,85 @@ fn assembly_joints_and_linked_prototypes_are_not_occurrences() {
             if occurrence.as_str() == "fcstd:model:occurrence#BlockLink:instance"
     ));
     assert_valid_document(result.ir());
+}
+#[test]
+fn container_ordinals_follow_source_member_order() {
+    for (runtime, property) in [("App::LinkGroup", "ElementList"), ("App::Part", "Group")] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="{runtime}" name="Group"/><Object type="App::Link" name="First"/><Object type="App::Link" name="Second"/><Object type="Part::Feature" name="Prototype"/></Objects>
+<ObjectData Count="4">
+ <Object name="Group"><Properties Count="1"><Property name="{property}" type="App::PropertyLinkList"><LinkList count="2"><Link value="Second"/><Link value="First"/></LinkList></Property></Properties></Object>
+ <Object name="First"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property></Properties></Object>
+ <Object name="Second"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="0"/></Object>
+</ObjectData></Document>"#
+        );
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let occurrences = &decoded.ir().model.occurrences;
+        let parent = occurrences
+            .iter()
+            .find(|item| item.id.as_str().ends_with("#Group:container"))
+            .unwrap();
+        for (name, ordinal) in [("Second", 0), ("First", 1)] {
+            let suffix = format!("#{name}:instance");
+            let item = occurrences
+                .iter()
+                .find(|item| item.id.as_str().ends_with(&suffix))
+                .unwrap();
+            assert_eq!(item.ordinal, ordinal, "{runtime}: {name}");
+            assert!(matches!(
+                &item.parent,
+                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
+                    if occurrence == &parent.id
+            ));
+        }
+        assert_valid_document(decoded.ir());
+    }
+}
+
+#[test]
+fn container_ordinals_keep_array_elements_together_in_source_order() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="App::LinkGroup" name="Group"/><Object type="App::Link" name="First"/><Object type="App::Link" name="Array"/><Object type="Part::Feature" name="Prototype"/></Objects>
+<ObjectData Count="4">
+ <Object name="Group"><Properties Count="1"><Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="Array"/><Link value="First"/></LinkList></Property></Properties></Object>
+ <Object name="First"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property></Properties></Object>
+ <Object name="Array"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property><Property name="ShowElement" type="App::PropertyBool"><Bool value="false"/></Property><Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let parent = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.id.as_str().ends_with("#Group:container"))
+        .unwrap();
+    for (suffix, ordinal) in [("#Array:0", 0), ("#Array:1", 1), ("#First:instance", 2)] {
+        let item = decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|item| item.id.as_str().ends_with(suffix))
+            .unwrap();
+        assert_eq!(item.ordinal, ordinal, "{suffix}");
+        assert!(matches!(
+            &item.parent,
+            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
+                if occurrence == &parent.id
+        ));
+    }
+    assert_valid_document(decoded.ir());
 }

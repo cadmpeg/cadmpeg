@@ -1005,7 +1005,8 @@ fn validate_loaded(
         &native.design_body_recipe_operands,
         &native.asm_histories,
     );
-    history::bind_face_operand_history_candidates(
+    // discarded-value: the decoder reported these losses when it bound the operands.
+    let _ = history::bind_face_operand_history_candidates(
         decode,
         &mut expected_face_operands,
         &native.design_parameter_scopes,
@@ -7933,7 +7934,29 @@ fn validate_face_operands<'a>(
                                 })
                                 == Some(&operand.record_index())
                     });
+                    let next_member = group.and_then(|group| {
+                        usize::try_from(group_member_ordinal)
+                            .ok()
+                            .and_then(|ordinal| ordinal.checked_add(1))
+                            .and_then(|ordinal| group.members().get(ordinal))
+                            .map(|member| member.value)
+                    });
+                    let frame_end = next_member
+                        .or_else(|| {
+                            scope
+                                .reference_members()
+                                .values()
+                                .position(|candidate| *candidate == operand.record_index())
+                                .and_then(|ordinal| {
+                                    scope.reference_members().values().nth(ordinal + 1)
+                                })
+                                .copied()
+                        })
+                        .and_then(|record_index| records_by_index.get(&(native_stream, record_index)))
+                        .map(|next| next.byte_offset)
+                        .filter(|next| *next > operand.byte_offset());
                     exact_group_member
+                        && frame_end.is_none_or(|end| operand.next_byte_offset() <= end)
                         && match family {
                             Some(
                                 design::DesignFeatureFamily::Extrude
@@ -7985,6 +8008,17 @@ fn validate_face_operands<'a>(
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X21
                                 }) && revolve_axis_recipe_kind_admitted(operand.recipe_kind)
+                            }
+                            Some(
+                                design::DesignFeatureFamily::RectangularPattern
+                                | design::DesignFeatureFamily::CircularPattern
+                                | design::DesignFeatureFamily::Mirror,
+                            ) if group.is_some_and(|group| {
+                                design::is_pattern_face_seed_group(&scope.kind(), group)
+                            }) =>
+                            {
+                                operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::CircularPattern) => {
                                 group.is_some_and(|group| {

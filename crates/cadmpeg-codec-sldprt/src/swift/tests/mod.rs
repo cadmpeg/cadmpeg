@@ -7,7 +7,6 @@ use cadmpeg_ir::pmi::PmiAnnotation;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiQuantity;
 use cadmpeg_ir::pmi::PmiValue;
-use std::collections::BTreeMap;
 
 mod identity;
 mod nominals;
@@ -145,52 +144,6 @@ fn semantic_root() -> Entity {
     ];
     root.annotations.entities = vec![datum, position, diameter, angle];
     root
-}
-
-fn neutral_feature(
-    id: &str,
-    name: &str,
-    ordinal: u64,
-    dependencies: Vec<cadmpeg_ir::features::FeatureId>,
-    definition: cadmpeg_ir::features::FeatureDefinition,
-) -> cadmpeg_ir::features::Feature {
-    cadmpeg_ir::features::Feature {
-        product_definition: None,
-        id: cadmpeg_ir::features::FeatureId::mint(format!("sldprt:model:feature#{id}"))
-            .expect("identity grammar"),
-        ordinal,
-        name: Some(name.into()),
-        suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
-        native_ref: Some(format!("sldprt:history:feature#{id}")),
-    }
-}
-
-fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinition {
-    use cadmpeg_ir::features::{holes::HoleKind, FeatureDefinition, FeatureOperation};
-
-    FeatureDefinition::Operation(FeatureOperation::Hole {
-        profile: None,
-        profile_filter: None,
-        face: None,
-        direction: None,
-        placements: None,
-        shape: cadmpeg_ir::features::holes::HoleShape::new(
-            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
-            None,
-            Some(cadmpeg_ir::scalar::PositiveLength::new(diameter).unwrap()),
-        )
-        .unwrap(),
-        extent: None,
-        bottom: None,
-        taper_angle: None,
-        allow_multi_profile_faces: None,
-    })
 }
 
 mod depth;

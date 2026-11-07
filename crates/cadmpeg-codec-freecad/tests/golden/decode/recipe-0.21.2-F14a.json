@@ -2447,7 +2447,6 @@
           "native_ref": "fcstd:native:object#AdditiveBox",
           "ordinal": 8,
           "outputs": [
-            "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
             "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1"
           ],
           "source_properties": {
