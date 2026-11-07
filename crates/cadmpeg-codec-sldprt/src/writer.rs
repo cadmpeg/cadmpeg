@@ -4987,7 +4987,7 @@ pub(super) fn surface_values(
     geometry: &SurfaceGeometry,
     reference: cadmpeg_ir::math::Vector3,
     length_scale: f64,
-) -> Result<(u8, Vec<f64>), CodecError> {
+) -> Result<(u8, Vec<f64>), write_error::WriteError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
@@ -5035,12 +5035,12 @@ pub(super) fn surface_values(
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
             if ratio != 1.0 {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact cone carriers encode circular cones only".into(),
                 ));
             }
             if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact cone carriers require an acute positive half-angle".into(),
                 ));
             }
@@ -5067,7 +5067,7 @@ pub(super) fn surface_values(
             let axis = sphere_surface.frame().axis().as_raw();
             let radius = sphere_surface.radius().get();
             if radius < 0.0 {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact sphere carriers require a positive radius".into(),
                 ));
             }
@@ -5094,7 +5094,7 @@ pub(super) fn surface_values(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if !(major_radius > minor_radius && minor_radius > 0.0) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(write_error::WriteError::Decline(
                     "SLDPRT compact torus carriers require major > minor > 0".into(),
                 ));
             }
@@ -5122,7 +5122,7 @@ pub(super) fn surface_values(
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
         }
