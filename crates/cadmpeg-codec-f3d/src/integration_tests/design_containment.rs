@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use super::{assert_valid, decode};
-use crate::decode::design_intent::inject_failure;
+use crate::decode::design_intent::{inject_failure, inject_phase_two_failure};
 use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
 use crate::test_support::native_test::f3d_native;
@@ -29,6 +29,15 @@ fn design_archive() -> Vec<u8> {
 
 fn malformed_design() -> CodecError {
     CodecError::malformed("injected design-intent failure")
+}
+
+#[test]
+fn phase_two_failure_keeps_located_design_in_scope() {
+    let source = include_bytes!("../../tests/golden/fixtures/design_sketch_constraints.f3d");
+    inject_phase_two_failure(malformed_design);
+    let contained = decode(source.to_vec());
+    assert!(contained.ir().scope.design);
+    assert!(contained.report().scope().design);
 }
 
 fn recursion_refusal() -> CodecError {

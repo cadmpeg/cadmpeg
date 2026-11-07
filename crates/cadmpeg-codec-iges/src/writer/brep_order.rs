@@ -73,7 +73,7 @@ fn apply_topology_source(
 ) {
     let prefix = match type_code {
         508 => "iges:model:loop#",
-        510 => "iges:model:face#",
+        143 | 144 | 510 => "iges:model:face#",
         514 => "iges:model:shell#",
         _ => return,
     };
@@ -85,6 +85,12 @@ fn apply_topology_source(
     if let Some((_, label)) =
         sequence.and_then(|sequence| directory_source(ir, sequence, type_code))
     {
+        if matches!(type_code, 143 | 144)
+            && super::attributes::labels::sheet_boundary_points(ir, entity)
+                .is_some_and(|points| !points.is_empty())
+        {
+            return;
+        }
         entity.label = label;
     }
 }
@@ -93,7 +99,7 @@ pub(super) fn apply_topology_sources(ir: &cadmpeg_ir::CadIr, entities: &mut [sup
     for entity in entities {
         let prefix = match entity.type_code {
             508 => "iges:model:loop#",
-            510 => "iges:model:face#",
+            143 | 144 | 510 => "iges:model:face#",
             514 => "iges:model:shell#",
             _ => continue,
         };
@@ -138,7 +144,7 @@ pub(super) fn edge_list_source(
     let parameters = record.field("parameters")?;
     let parameters = parameters.as_array()?;
     if parameters.get(1)?.get("value")?.get("value")?.as_u64()?
-        != u64::try_from(edges.len()).ok()?
+        != cadmpeg_core::decode::u64_from_index(edges.len())
     {
         return None;
     }

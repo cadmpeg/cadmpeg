@@ -3,6 +3,35 @@
 #![allow(clippy::unwrap_used)]
 
 #[test]
+fn empty_body_survives_beside_a_body_with_faces() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut body = ir.model.bodies[0].clone();
+    let mut region = ir.model.regions[0].clone();
+    body.id = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#empty").unwrap();
+    region.id = cadmpeg_ir::ids::RegionId::mint("synthetic:test:region#empty").unwrap();
+    region.body = body.id.clone();
+    region.shells.clear();
+    body.regions = vec![region.id.clone()];
+    ir.model.bodies.push(body);
+    ir.model.regions.push(region);
+    ir.model.finalize();
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = crate::SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().model.regions.len(), 2);
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
 fn configuration_subset_keeps_only_owned_and_detached_curves() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let source = serde_json::to_string(&ir)
@@ -60,7 +89,16 @@ fn configuration_subset_keeps_detached_supported_surfaces() {
         .surfaces
         .iter()
         .any(|candidate| candidate.id == surface.id));
-    let body = super::super::brep_body(&subset, 0.001, false).unwrap();
+    let body = super::super::brep_body(
+        &cadmpeg_core::decode::DecodeContext::for_encode(
+            &cadmpeg_core::decode::DecodeArena::new(),
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        ),
+        &subset,
+        0.001,
+        false,
+    )
+    .unwrap();
     assert!((0..body.len()).any(|offset| matches!(crate::brep::parse_carrier(&body, offset), Some(crate::brep::Carrier::Surface(carrier)) if carrier.geometry == surface.geometry)));
 }
 
@@ -118,7 +156,13 @@ fn detached_plane_is_authored_in_the_partition() {
 
 #[test]
 fn detached_carriers_are_authored_without_a_body() {
+    const EPS_STANDALONE_POINT_MM: f64 = 1e-9;
+
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Point;
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let surface = ir.model.surfaces[0].clone();
     let curve = ir.model.curves[0].clone();
@@ -131,6 +175,12 @@ fn detached_carriers_are_authored_without_a_body() {
     ir.model.edges.clear();
     ir.model.vertices.clear();
     ir.model.points.clear();
+    let point = Point::new(
+        cadmpeg_ir::ids::PointId::mint("synthetic:test:point#standalone").unwrap(),
+        FinitePoint3::new(Point3::new(1000.0, 2000.0, 3000.0)).unwrap(),
+        None,
+    );
+    ir.model.points.push(point.clone());
     ir.model.surfaces = vec![surface.clone()];
     ir.model.curves = vec![curve.clone()];
     ir.model.finalize();
@@ -146,6 +196,59 @@ fn detached_carriers_are_authored_without_a_body() {
         .payload();
     assert!((0..partition.len()).any(|offset| matches!(crate::brep::parse_carrier(partition, offset), Some(crate::brep::Carrier::Surface(carrier)) if carrier.geometry == surface.geometry)));
     assert!((0..partition.len()).any(|offset| matches!(crate::brep::parse_carrier(partition, offset), Some(crate::brep::Carrier::Curve(carrier)) if carrier.geometry == curve.geometry)));
+    let decoded = crate::SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "config.inferred-without-native"));
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|item| item.geometry == surface.geometry));
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|item| item.geometry == curve.geometry));
+    assert!(decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|item| {
+            item.position().get().distance(point.position().get()) < EPS_STANDALONE_POINT_MM
+        }));
+}
+
+#[test]
+fn model_only_geometry_has_a_native_default_configuration() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut scope = ir.scope;
+    scope.design = false;
+    ir.set_scope(scope).unwrap();
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = crate::SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "config.inferred-without-native"));
 }
 
 #[test]
@@ -187,3 +290,69 @@ fn detached_point_is_written_in_the_selected_partition() {
         })
     }));
 }
+
+#[test]
+fn omitted_wire_free_point_survives_with_solid() {
+    const EPS_WIRE_POINT_MM: f64 = 1e-9;
+    use crate::SldprtCodec;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::FinitePoint3;
+    use std::io::Cursor;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let body = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#wire").unwrap();
+    let region = cadmpeg_ir::ids::RegionId::mint("synthetic:test:region#wire").unwrap();
+    let shell = cadmpeg_ir::ids::ShellId::mint("synthetic:test:shell#wire").unwrap();
+    let vertex = cadmpeg_ir::ids::VertexId::mint("synthetic:test:vertex#wire").unwrap();
+    let point = cadmpeg_ir::ids::PointId::mint("synthetic:test:point#wire").unwrap();
+    let position = Point3::new(120.0, 140.0, 160.0);
+    ir.model.points.push(Point::new(
+        point.clone(),
+        FinitePoint3::new(position).unwrap(),
+        None,
+    ));
+    ir.model.vertices.push(Vertex {
+        native_ref: None,
+        id: vertex.clone(),
+        point,
+        tolerance: None,
+    });
+    ir.model
+        .shells
+        .push(Shell::with_free_vertices(shell.clone(), region.clone(), vec![vertex]).unwrap());
+    ir.model.regions.push(Region {
+        native_ref: None,
+        id: region.clone(),
+        body: body.clone(),
+        shells: vec![shell],
+    });
+    ir.model.bodies.push(Body {
+        native_ref: None,
+        id: body,
+        kind: BodyKind::Wire,
+        regions: vec![region],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.points.iter().any(|point| {
+        let actual = point.position().get();
+        (actual.x - position.x).abs() < EPS_WIRE_POINT_MM
+            && (actual.y - position.y).abs() < EPS_WIRE_POINT_MM
+            && (actual.z - position.z).abs() < EPS_WIRE_POINT_MM
+    }));
+}
+

@@ -10,7 +10,7 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class};
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::{
     features::{
         BodySelection, EdgeSelection, FaceSelection, PathRef, RuledSurfaceCorner, RuledSurfaceMode,
@@ -36,9 +36,9 @@ pub(super) struct ShellDefinition<'a> {
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_boundary_surface_unresolved(
         &self,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
+        Err(WriteError::Decline(format!(
             "SLDPRT feature {} has unresolved boundary-surface construction",
             feature.id
         )))
@@ -49,26 +49,26 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         tool: &PathRef,
         keep: &TrimRegion,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
         let Some(keep_token) = crate::feature_schema::trim_region_token(keep) else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} carries a cell-selected trim not representable by its schema",
                 feature.id
             )));
         };
         Ok({
             let faces = face_selection_value(faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} has no trim-surface input faces",
                     feature.id
                 ))
             })?;
             let tool = path_source(tool, record_sources, sketch_sources).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} references a missing trim path",
                     feature.id
                 ))
@@ -91,38 +91,46 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         distance: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
         method: SurfaceExtension,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let faces = face_selection_value(faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+            require_same_family(existing, &feature.id, &["ExtendSurface", "SurfaceExtend"])?;
+            let mut parameters = self.base_parameters();
+            if let Some(distance) = distance {
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Distance"),
+                    format_length_mm(self.dimension(distance)?.into()),
+                );
+            } else if parameters.contains_key("Distance") || parameters.contains_key("D1") {
+                return Err(WriteError::Decline(format!(
+                    "SLDPRT feature {} has a distance parameter but no extension distance",
+                    feature.id
+                )));
+            }
+            let mut properties = self.base_properties();
+            if let Some(faces) = face_selection_value(faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
+            } else if matches!(faces, FaceSelection::Unresolved) {
+                properties.remove("Faces");
+            } else {
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has no extend-surface input faces",
                     feature.id
-                ))
-            })?;
-            require_same_family(existing, &feature.id, &["ExtendSurface", "SurfaceExtend"])?;
-            let distance = distance.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved surface extension distance",
-                    feature.id
-                ))
-            })?;
-            let mut parameters = self.base_parameters();
-            parameters.insert(
-                cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(self.dimension(distance)?.into()),
-            );
-            let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
-            let method =
-                crate::feature_schema::surface_extension_token(method).ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
-                        "SLDPRT feature {} has an unsupported surface extension method",
-                        feature.id
-                    ))
-                })?;
-            properties.insert(cadmpeg_core::nonblank_literal!("Method"), method.into());
+                )));
+            }
+            if method == SurfaceExtension::Unresolved {
+                properties.remove("Method");
+            } else {
+                let method =
+                    crate::feature_schema::surface_extension_token(method).ok_or_else(|| {
+                        WriteError::Decline(format!(
+                            "SLDPRT feature {} has an unsupported surface extension method",
+                            feature.id
+                        ))
+                    })?;
+                properties.insert(cadmpeg_core::nonblank_literal!("Method"), method.into());
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "ExtendSurface".into(), |record| record.kind.clone()),
                 parameters,
@@ -139,24 +147,24 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         angle: Option<&cadmpeg_ir::features::Dimension<Angle>>,
         alternate_face: Option<bool>,
         corner: Option<&RuledSurfaceCorner>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             if angle.is_some() || alternate_face.is_some() || corner.is_some() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                                    "SLDPRT feature {} cannot encode ruled-surface angle, face-side, or corner semantics",
                                    feature.id
                                )));
             }
             let edges = edge_selection_value(edges).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} has no ruled-surface boundary edges",
                     feature.id
                 ))
             })?;
             let support_faces = face_selection_value(support_faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Decline(format!(
                     "SLDPRT feature {} has no ruled-surface supports",
                     feature.id
                 ))
@@ -204,7 +212,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_shell(
         &self,
         definition: ShellDefinition<'_>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let ShellDefinition {
             bodies,
             removed_faces,
@@ -224,20 +232,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || resolve_intersections.is_some()
                 || allow_self_intersections.is_some()
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported shell construction semantics",
                     feature.id
                 )));
             }
             let selection = face_selection_value(removed_faces);
             if selection.is_none() && !matches!(removed_faces, FaceSelection::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !feature_family(record, "Shell")) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
                     feature.id
                 )));
@@ -288,7 +296,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         thickness: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
         side: Option<&ThickenSide>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -302,13 +310,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && !feature_input_class(record, NativeClassKind::Thicken)
                 })
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported thicken semantics",
                     feature.id
                 )));
             }
             if existing.is_none() && side.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has unresolved thicken construction",
                     feature.id
                 )));
@@ -378,30 +386,34 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         faces: &FaceSelection,
         distance: Option<&cadmpeg_ir::features::Dimension<Length>>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let selection = face_selection_value(faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+            require_same_family(existing, &feature.id, &["OffsetSurface"])?;
+            let mut parameters = self.base_parameters();
+            if let Some(distance) = distance {
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Distance"),
+                    format_length_mm(self.dimension(distance)?),
+                );
+            } else if parameters.contains_key("Distance") || parameters.contains_key("D1") {
+                return Err(WriteError::Decline(format!(
+                    "SLDPRT feature {} has a distance parameter but no surface offset",
+                    feature.id
+                )));
+            }
+            let mut properties = self.base_properties();
+            if let Some(selection) = face_selection_value(faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
+            } else if matches!(faces, FaceSelection::Unresolved) {
+                properties.remove("Faces");
+            } else {
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has no offset-surface support faces",
                     feature.id
-                ))
-            })?;
-            require_same_family(existing, &feature.id, &["OffsetSurface"])?;
-            let distance = distance.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved surface offset",
-                    feature.id
-                ))
-            })?;
-            let mut parameters = self.base_parameters();
-            parameters.insert(
-                cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(self.dimension(distance)?),
-            );
-            let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
+                )));
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "OffsetSurface".into(), |record| record.kind.clone()),
                 parameters,
@@ -418,28 +430,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         gap_tolerance: Option<
             &cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::NonNegativeLength>,
         >,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let selection = face_selection_value(faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no knit-surface input faces",
-                    feature.id
-                ))
-            })?;
-            let merge_entities = merge_entities.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved knit merge state",
-                    feature.id
-                ))
-            })?;
-            let create_solid = create_solid.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved knit solid state",
-                    feature.id
-                ))
-            })?;
             require_same_family(existing, &feature.id, &["KnitSurface", "Knit"])?;
             let mut parameters = self.base_parameters();
             match gap_tolerance {
@@ -450,19 +444,38 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
                 None => {
-                    parameters.remove("GapTolerance");
+                    if parameters.contains_key("GapTolerance") {
+                        return Err(WriteError::Decline(format!(
+                            "SLDPRT feature {} has a gap parameter but no knit tolerance",
+                            feature.id
+                        )));
+                    }
                 }
             }
             let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("MergeEntities"),
-                merge_entities.to_string(),
-            );
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("CreateSolid"),
-                create_solid.to_string(),
-            );
+            if let Some(selection) = face_selection_value(faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
+            } else if matches!(faces, FaceSelection::Unresolved) {
+                properties.remove("Faces");
+            } else {
+                return Err(WriteError::Decline(format!(
+                    "SLDPRT feature {} has no knit-surface input faces",
+                    feature.id
+                )));
+            }
+            for (key, value) in [
+                (
+                    cadmpeg_core::nonblank_literal!("MergeEntities"),
+                    merge_entities,
+                ),
+                (cadmpeg_core::nonblank_literal!("CreateSolid"), create_solid),
+            ] {
+                if let Some(value) = value {
+                    properties.insert(key, value.to_string());
+                } else {
+                    properties.remove(key.as_str());
+                }
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "KnitSurface".into(), |record| record.kind.clone()),
                 parameters,
@@ -477,67 +490,66 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         support_faces: &FaceSelection,
         continuity: &cadmpeg_ir::features::FilledSurfaceContinuityState,
         merge_result: Option<bool>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses a path-based filled-surface boundary",
                     feature.id
                 )));
             };
-            let boundary = edge_selection_value(boundary).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+            require_same_family(existing, &feature.id, &["FilledSurface", "FillSurface"])?;
+            let mut properties = self.base_properties();
+            if let Some(value) = edge_selection_value(boundary) {
+                properties.insert(cadmpeg_core::nonblank_literal!("Boundary"), value);
+            } else if matches!(boundary, EdgeSelection::Unresolved) {
+                properties.remove("Boundary");
+            } else {
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has no filled-surface boundary",
-                    feature.id
-                ))
-            })?;
-            let support_faces = face_selection_value(support_faces).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no filled-surface supports",
-                    feature.id
-                ))
-            })?;
-            let continuity = continuity.resolved().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved filled-surface continuity",
-                    feature.id
-                ))
-            })?;
-            let Some(continuity) = continuity.uniform() else {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has per-boundary filled-surface continuity",
-                    feature.id
-                )));
-            };
-            if continuity.weight().is_some() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has a weighted filled-surface condition",
                     feature.id
                 )));
             }
-            let merge_result = merge_result.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved filled-surface merge state",
+            if let Some(value) = face_selection_value(support_faces) {
+                properties.insert(cadmpeg_core::nonblank_literal!("SupportFaces"), value);
+            } else if matches!(support_faces, FaceSelection::Unresolved) {
+                properties.remove("SupportFaces");
+            } else {
+                return Err(WriteError::Decline(format!(
+                    "SLDPRT feature {} has no filled-surface supports",
                     feature.id
-                ))
-            })?;
-            require_same_family(existing, &feature.id, &["FilledSurface", "FillSurface"])?;
-            let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Boundary"), boundary);
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("SupportFaces"),
-                support_faces,
-            );
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("Continuity"),
-                crate::feature_schema::surface_continuity_token(continuity.continuity()).into(),
-            );
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("MergeResult"),
-                merge_result.to_string(),
-            );
+                )));
+            }
+            if let Some(continuity) = continuity.resolved() {
+                let Some(continuity) = continuity.uniform() else {
+                    return Err(WriteError::Decline(format!(
+                        "SLDPRT feature {} has per-boundary filled-surface continuity",
+                        feature.id
+                    )));
+                };
+                if continuity.weight().is_some() {
+                    return Err(WriteError::Decline(format!(
+                        "SLDPRT feature {} has a weighted filled-surface condition",
+                        feature.id
+                    )));
+                }
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Continuity"),
+                    crate::feature_schema::surface_continuity_token(continuity.continuity()).into(),
+                );
+            } else {
+                properties.remove("Continuity");
+            }
+            if let Some(merge_result) = merge_result {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("MergeResult"),
+                    merge_result.to_string(),
+                );
+            } else {
+                properties.remove("MergeResult");
+            }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "FilledSurface".into(), |record| record.kind.clone()),
                 parameters: self.base_parameters(),
@@ -552,7 +564,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         anchor: &cadmpeg_ir::features::DraftAnchor,
         angle: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::SlopeAngle>>,
         outward: Option<bool>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -561,7 +573,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     (plane, pull.as_ref())
                 }
                 cadmpeg_ir::features::DraftAnchor::PartingLine { .. } => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} changes unsupported draft semantics",
                         feature.id
                     )));
@@ -579,7 +591,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported draft semantics",
                     feature.id
                 )));

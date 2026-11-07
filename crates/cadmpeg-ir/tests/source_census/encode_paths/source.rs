@@ -19,9 +19,7 @@ fn returns_self(signature: &syn::Signature) -> Option<SelfReturn> {
     let syn::Type::Path(ty) = ty.as_ref() else {
         return None;
     };
-    let Some(segment) = ty.path.segments.last() else {
-        return None;
-    };
+    let segment = ty.path.segments.last()?;
     if segment.ident == "Self" {
         return Some(SelfReturn::Direct);
     }

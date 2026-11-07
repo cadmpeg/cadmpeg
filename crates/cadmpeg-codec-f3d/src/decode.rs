@@ -2621,7 +2621,7 @@ impl<'a> F3dDecodeSession<'a> {
     /// decode, nor below [`DecodeDepth::Full`] where
     /// [`Self::cuts_design_intent`] holds; where it does not, phase 2 runs and
     /// the document holds design. [`DesignState::Absent`] keeps phase-1
-    /// prerequisite records and excludes design from the scope. A resource refusal, or any
+    /// prerequisite records. A resource refusal, or any
     /// error after the session fused, still refuses the document.
     fn decode_design_state(
         &mut self,
@@ -2636,7 +2636,7 @@ impl<'a> F3dDecodeSession<'a> {
             }
             return Ok(DesignState::Absent);
         }
-        let failure = match &prereqs.design_feature_timelines {
+        let (failure, located) = match &prereqs.design_feature_timelines {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
                     self.ir.scope.design = true;
@@ -2648,11 +2648,11 @@ impl<'a> F3dDecodeSession<'a> {
                 {
                     return Err(error)
                 }
-                Err(error) => error.to_string(),
+                Err(error) => (error.to_string(), has_located_design_part(self.scan)?),
             },
             Err(error) => match self.ctx.resource_refusal() {
                 Some(limit) => return Err(CodecError::ResourceLimit(limit)),
-                None => error.to_string(),
+                None => (error.to_string(), has_located_design_part(self.scan)?),
             },
         };
         push_loss_vec(
@@ -2660,7 +2660,7 @@ impl<'a> F3dDecodeSession<'a> {
             F3dLossCode::DesignIntentUndecoded,
             format_args!("Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"),
         );
-        self.ir.scope.design = false;
+        self.ir.scope.design = located;
         if source_has_design_records(self.scan)? {
             self.untyped
                 .insert(cadmpeg_ir::document::ArenaClass::Design);
@@ -2918,7 +2918,6 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(materials.notes);
                 self.report.losses.extend(materials.part_losses);
                 self.protein_part_fidelity.append(materials.part_fidelity)?;
                 self.protein_part_stubs.extend(materials.part_stubs);
@@ -2964,7 +2963,6 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(decoded_materials.notes);
                 self.report.losses.extend(decoded_materials.part_losses);
                 self.protein_part_fidelity
                     .append(decoded_materials.part_fidelity)?;
@@ -5321,6 +5319,37 @@ fn trailing_offset(id: &str) -> u64 {
     id.rsplit(':')
         .find_map(|part| part.parse::<u64>().ok())
         .unwrap_or(0)
+}
+
+fn has_located_design_part(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
+    #[cfg(test)]
+    if design_intent::take_injected_location_unavailable() {
+        return Ok(false);
+    }
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
+    {
+        let Some(prefix) = entry.name.strip_suffix("MetaStream.dat") else {
+            continue;
+        };
+        let bulk_name = format!("{prefix}BulkStream.dat");
+        let Some(bulk) = scan.entry_view(&bulk_name) else {
+            continue;
+        };
+        let meta = match scan.parsed_metastream(&entry.name) {
+            Ok(meta) => meta,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
+        };
+        if meta.records.iter().any(|record| {
+            usize::try_from(record.bulk_offset).is_ok_and(|start| start < bulk.window().len())
+        }) {
+            return Ok(true);
+        }
+    }
+    source_has_history_records(scan)
 }
 
 fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {

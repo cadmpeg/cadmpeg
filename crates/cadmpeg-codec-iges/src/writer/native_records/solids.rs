@@ -244,6 +244,8 @@ pub(in crate::writer) fn append_primitive_features(ir: &super::CadIr, entities: 
             if let Some(record) = feature.native_ref.as_ref().and_then(|id| {
                 native.and_then(|records| records.iter().find(|record| record.id() == id))
             }) {
+                retain_implicit_block_placement(ir, record, &mut entity);
+                super::numeric::retain(ir, record, &mut entity);
                 entity.source_targets.push(record.id().to_owned());
                 if let Some(source) = record
                     .field("source_entity")
@@ -255,6 +257,68 @@ pub(in crate::writer) fn append_primitive_features(ir: &super::CadIr, entities: 
             entities.push(entity);
         }
     }
+}
+
+pub(super) fn retain_implicit_block_placement(
+    ir: &super::CadIr,
+    record: &super::NativeRecord,
+    entity: &mut Entity,
+) {
+    if entity.type_code != 150 || entity.transform.is_some() {
+        return;
+    }
+    let Some(source) = record
+        .field("source_entity")
+        .and_then(|value| value.as_str().map(str::to_owned))
+    else {
+        return;
+    };
+    let Some(directory) = ir
+        .native
+        .namespace("iges")
+        .and_then(|namespace| namespace.arenas().get("entities"))
+        .and_then(|records| records.iter().find(|entry| entry.id() == source))
+    else {
+        return;
+    };
+    let Some(parameters) = directory.field("parameters") else {
+        return;
+    };
+    let Some(parameters) = parameters.as_array() else {
+        return;
+    };
+    if parameters.len() != 12
+        || parameters[4..]
+            .iter()
+            .any(|token| token["value"]["kind"].as_str() != Some("omitted"))
+    {
+        return;
+    }
+    let Ok(body) = std::str::from_utf8(&entity.parameter_body) else {
+        return;
+    };
+    let Some(body) = body.strip_suffix(';') else {
+        return;
+    };
+    let values = body.split(',').collect::<Vec<_>>();
+    let defaults = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+    if values.len() != 12
+        || !values[3..].iter().zip(defaults).all(|(value, expected)| {
+            value.replace(['D', 'd'], "E").parse::<f64>().ok() == Some(expected)
+        })
+    {
+        return;
+    }
+    let mut dimensions = Vec::new();
+    for (index, text) in values[..3].iter().enumerate() {
+        let token = &parameters[index + 1]["value"];
+        let retained = token["value"].as_i64().filter(|value| {
+            cadmpeg_core::convert::f64_from_i64(*value)
+                == text.replace(['D', 'd'], "E").parse::<f64>().ok()
+        });
+        dimensions.push(retained.map_or_else(|| (*text).to_owned(), |value| value.to_string()));
+    }
+    entity.parameter_body = format!("{},,,,,,,,,;", dimensions.join(",")).into_bytes();
 }
 
 fn operand(fields: &mut Fields<'_>, term: &Value) -> Result<String, String> {
@@ -669,8 +733,7 @@ pub(super) fn apply_rectangular_pattern(
         omitted.insert(position);
     }
     let total = u64::from(columns) * u64::from(rows);
-    let omitted_count =
-        u64::try_from(omitted.len()).map_err(|_| "rectangular mask count overflows")?;
+    let omitted_count = cadmpeg_core::decode::u64_from_index(omitted.len());
     let mut positions = Vec::new();
     if !omitted.is_empty() {
         let count = if flag == 0 {

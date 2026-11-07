@@ -9,23 +9,76 @@
 use cadmpeg_core::decode::index_from_u32;
 
 use super::{
-    distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_cage_surface,
-    form_cage_surfaces, form_class_325_cage_objects, form_class_325_cage_surface,
-    form_class_328_envelope, FormCageSerializers,
+    distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_class_325_cage_objects,
+    form_class_325_cage_surface, form_class_328_envelope, FormCageSerializers,
 };
+
+fn form_cage_surface(
+    bytes: &[u8],
+    records: &[crate::metastream::PrimaryRecordFrame],
+    object: u32,
+    scope: u32,
+) -> Option<u32> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    match super::form_cage_surface(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        records,
+        object,
+        scope,
+    )
+    .unwrap()
+    {
+        super::FormCageSurface::Resolved(surface) => Some(surface),
+        super::FormCageSurface::Unreadable | super::FormCageSurface::Unresolved => None,
+    }
+}
+
+fn form_cage_surfaces(
+    bytes: &[u8],
+    records: &[crate::metastream::PrimaryRecordFrame],
+    objects: &[u32],
+    scope: u32,
+) -> Option<Vec<u32>> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    super::form_cage_surfaces(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        records,
+        objects,
+        scope,
+    )
+    .unwrap()
+}
 
 fn parsed_serializers(
     bytes: &[u8],
     records: &[crate::metastream::PrimaryRecordFrame],
 ) -> FormCageSerializers {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
+    let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )
     .unwrap();
-    form_cage_serializers(&ctx, bytes, records).unwrap()
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    form_cage_serializers(&ctx, &mut parts, source, "Design/BulkStream.dat", records).unwrap()
 }
 
 #[test]
@@ -186,6 +239,7 @@ fn form_cage_surfaces_reject_another_scope() {
     let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
     let records = crate::design::test_support::test_primary_frames(&bytes);
     assert!(form_cage_surfaces(&bytes, &records, &[8300], 2191).is_none());
+    assert!(form_cage_surfaces(&bytes, &records, &[8300, 9999], 2190).is_none());
 }
 
 #[test]
@@ -211,6 +265,49 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
             Some(entry_name)
         );
     }
+}
+
+#[test]
+fn damaged_serializer_keeps_its_sibling() {
+    let name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+    let mut bytes = Vec::new();
+    for (index, surface, marker) in [(8305, 8304u64, 0), (8307, 8306, 1)] {
+        let mut serializer = indexed_frame(b"315", index, super::form_serializer_frame_132::LEN);
+        let name_at = super::form_serializer_frame_132::ENTRY_NAME_LENGTH;
+        let units: Vec<_> = name.encode_utf16().collect();
+        serializer[name_at..name_at + 4]
+            .copy_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+        for (ordinal, unit) in units.iter().enumerate() {
+            let at = name_at + 4 + ordinal * 2;
+            serializer[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        let tail = name_at + 4 + units.len() * 2;
+        serializer[tail] = marker;
+        serializer[tail + 1..tail + 9].copy_from_slice(&surface.to_le_bytes());
+        bytes.extend_from_slice(&serializer);
+        bytes.extend_from_slice(&indexed_frame(b"457", index + 1, 15));
+    }
+    let records = crate::design::test_support::test_primary_frames(&bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let serializers =
+        form_cage_serializers(&ctx, &mut parts, source, "Design/BulkStream.dat", &records).unwrap();
+    assert_eq!(serializers.entry_name(8306), Some(name));
+    assert_eq!(serializers.entry_name(8304), None);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
 }
 
 #[test]
@@ -613,5 +710,109 @@ fn class_328_form_metadata_rejects_each_duplicate_member_without_heap_growth() {
             !form_class_328_envelope(&duplicate, &records, &scope),
             "duplicate metadata member {ordinal}"
         );
+    }
+}
+
+#[test]
+fn damaged_form_cage_object_keeps_sibling_surface() {
+    let mut broken = indexed_frame(b"301", 8000, 200);
+    broken[189] = 2;
+    let mut object = indexed_frame(b"301", 8300, 200);
+    object[189] = 1;
+    object[190..198].copy_from_slice(&8301u64.to_le_bytes());
+    let mut first = indexed_frame(b"373", 8301, 33);
+    first[21] = 1;
+    first[22..30].copy_from_slice(&8302u64.to_le_bytes());
+    let mut second = indexed_frame(b"362", 8302, 29);
+    second[21..29].copy_from_slice(&8303u64.to_le_bytes());
+    let mut carrier = indexed_frame(b"457", 8303, 665);
+    carrier[317] = 1;
+    carrier[318..326].copy_from_slice(&2190u64.to_le_bytes());
+    carrier[339] = 1;
+    carrier[340..348].copy_from_slice(&8304u64.to_le_bytes());
+    let paired = indexed_frame(b"264", 8303, 15);
+    let bytes = [broken, object, first, second, carrier, paired].concat();
+    let records = crate::design::test_support::test_primary_frames(&bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let surfaces = super::form_cage_surfaces(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &records,
+        &[8000, 8300],
+        2190,
+    )
+    .unwrap();
+    assert_eq!(surfaces, Some(vec![8304]));
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
+#[test]
+fn damaged_form_cage_chain_links_keep_sibling_surface() {
+    fn chain(base: u32) -> Vec<u8> {
+        let mut object = indexed_frame(b"301", base, 200);
+        object[189] = 1;
+        object[190..198].copy_from_slice(&u64::from(base + 1).to_le_bytes());
+        let mut first = indexed_frame(b"373", base + 1, 33);
+        first[21] = 1;
+        first[22..30].copy_from_slice(&u64::from(base + 2).to_le_bytes());
+        let mut second = indexed_frame(b"362", base + 2, 29);
+        second[21..29].copy_from_slice(&u64::from(base + 3).to_le_bytes());
+        let mut carrier = indexed_frame(b"457", base + 3, 665);
+        carrier[317] = 1;
+        carrier[318..326].copy_from_slice(&2190u64.to_le_bytes());
+        carrier[339] = 1;
+        carrier[340..348].copy_from_slice(&u64::from(base + 4).to_le_bytes());
+        let paired = indexed_frame(b"264", base + 3, 15);
+        [object, first, second, carrier, paired].concat()
+    }
+    let clean = [chain(8000), chain(8300)].concat();
+    let records = crate::design::test_support::test_primary_frames(&clean);
+    for (record_index, offset) in [(8001, 21), (8002, 11), (8003, 339)] {
+        let mut bytes = clean.clone();
+        let frame = records
+            .iter()
+            .find(|frame| frame.entity_id == record_index)
+            .unwrap();
+        bytes[frame.start + offset] = 2;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let surfaces = super::form_cage_surfaces(
+            &ctx,
+            &mut parts,
+            source,
+            "Design/BulkStream.dat",
+            &records,
+            &[8000, 8300],
+            2190,
+        )
+        .unwrap();
+        assert_eq!(surfaces, Some(vec![8304]));
+        let (_, native, _, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
     }
 }

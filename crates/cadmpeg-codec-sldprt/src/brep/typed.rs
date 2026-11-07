@@ -294,9 +294,7 @@ impl Facts {
                 }
             }
         }
-        if bridge_attrs.is_empty() {
-            relevant_bodies.extend(bodies.keys().copied());
-        }
+        relevant_bodies.extend(bodies.keys().copied());
 
         let mut out = Vec::new();
         let mut assigned_faces = HashSet::new();
@@ -310,10 +308,9 @@ impl Facts {
             let body_regions = region_chain(body, &regions)?;
             let body_region_attrs: HashSet<u32> =
                 body_regions.iter().map(|region| region.attr).collect();
-            if !bridge_attrs.is_empty()
-                && !relevant_regions_by_body
-                    .get(&body_attr)
-                    .is_some_and(|regions| regions.is_subset(&body_region_attrs))
+            if relevant_regions_by_body
+                .get(&body_attr)
+                .is_some_and(|regions| !regions.is_subset(&body_region_attrs))
             {
                 return None;
             }
@@ -1138,7 +1135,7 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(&cadmpeg_core::decode::DecodeContext::for_encode(&cadmpeg_core::decode::DecodeArena::new(), &cadmpeg_core::decode::DecodePolicy::desktop()), decoded.ir(), 0.001, false).unwrap();
         let facts = scan(&body);
 
         assert!(facts.has_valid_ownership(), "{facts:?}");
@@ -1167,7 +1164,7 @@ mod tests {
             .edges
             .iter()
             .any(|edge| edge.curve() == Some(curve)));
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(&cadmpeg_core::decode::DecodeContext::for_encode(&cadmpeg_core::decode::DecodeArena::new(), &cadmpeg_core::decode::DecodePolicy::desktop()), decoded.ir(), 0.001, false).unwrap();
         let facts = scan(&body);
         let scopes = super::super::topology::topology_scopes(&body, false);
         assert!(

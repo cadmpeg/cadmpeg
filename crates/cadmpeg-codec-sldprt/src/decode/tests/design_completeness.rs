@@ -80,7 +80,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         }),
     ));
     ir.model.features.push(feature(
-        "synthetic:test:id#unaudited-stored-geometry",
+        "synthetic:test:id#empty-stored-geometry",
         3,
         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
     ));
@@ -96,7 +96,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
-            == "3 typed feature(s) retain native or unresolved required operation operands."
+            == "2 typed feature(s) retain native or unresolved required operation operands."
     }));
 }
 

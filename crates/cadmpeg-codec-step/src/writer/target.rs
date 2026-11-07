@@ -40,7 +40,7 @@ pub(crate) fn plan(
         None => StepSchema::ALL[0],
     };
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(&ctx, input.ir)?;
     let outcome = write_step_outcome(
         &ctx,
         &recovered.document,

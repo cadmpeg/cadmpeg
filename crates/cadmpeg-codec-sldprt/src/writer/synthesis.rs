@@ -50,7 +50,7 @@ fn cascade_validation_errors(
             finding.message.clone(),
         ))
     };
-    for _ in 0..1024 {
+    loop {
         let validation = cadmpeg_ir::validate::validate_neutral(projected, Vec::new())?;
         let errors: Vec<_> = validation
             .findings
@@ -132,9 +132,6 @@ fn cascade_validation_errors(
             }
         }
     }
-    Err(CodecError::Malformed(
-        "SLDPRT synthesis cascade exceeded its work cap".into(),
-    ))
 }
 
 /// Drop one model record by id through JSON, keeping admission order.
@@ -249,13 +246,51 @@ pub(super) fn plan(
     );
     repair_duplicate_configuration_indices(&mut projected.model.configurations, &mut losses);
     repair_configuration_names(&mut projected.model.configurations, &mut losses);
-    // Native lane and history records require names; default blank feature
-    // names to their identity as configurations do (#237).
-    normalize_feature_names(&mut projected.model.features, &mut losses);
     // A native reference that names no record any retained namespace holds
     // cannot be re-emitted or regenerated from. Clear such references and
     // write the neutral content without its native link (#237).
     null_unresolvable_native_refs(&mut projected.model, &projected.native, false, &mut losses)?;
+    for surface in &mut projected.model.surfaces {
+        if let Some(cache) = surface.geometry.solved_cache() {
+            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
+                "surface {} was written from its solved carrier",
+                surface.id
+            )));
+            surface.geometry = SurfaceGeometry::Solved(cache.clone());
+        }
+    }
+    let surface_curves = projected
+        .model
+        .curves
+        .iter()
+        .filter(|curve| super::surface_curve::supported(&projected, curve).is_some())
+        .map(|curve| curve.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    for curve in &mut projected.model.curves {
+        if surface_curves.contains(&curve.id) {
+            continue;
+        }
+        if let Some(cache) = curve.geometry.solved_cache() {
+            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
+                "curve {} was written from its solved carrier",
+                curve.id
+            )));
+            curve.geometry = CurveGeometry::Solved(cache.clone());
+        }
+    }
+    projected.model.procedural_surfaces.clear();
+    let retained_constructions = projected
+        .model
+        .curves
+        .iter()
+        .filter(|curve| surface_curves.contains(&curve.id))
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    projected
+        .model
+        .procedural_curves
+        .retain(|curve| retained_constructions.contains(&curve.id));
     cascade_validation_errors(&mut projected, &mut losses)?;
     // D13: the synthesis base is the active configuration. A document with no
     // active configuration still writes its base state instead of refusing at
@@ -310,8 +345,7 @@ pub(super) fn plan(
     // The encode session ceiling bounds the work on the input document: charge
     // its records so a caller ceiling refuses instead of truncating (#217).
     slot_context.charge_entities(
-        u64::try_from(input.ir.model.entity_count())
-            .map_err(|_| CodecError::Malformed("SLDPRT model entity count exceeds u64".into()))?,
+        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
         "sldprt synthesis",
     )?;
     prepare_native(&mut projected, &mut losses)?;
@@ -324,29 +358,8 @@ pub(super) fn plan(
         retained_native.as_ref(),
     )?;
     presentation::reduce(&mut projected, &mut losses)?;
-    // A solved cache is the document's carrier, independently of the source partition.
-    for surface in &mut projected.model.surfaces {
-        if let Some(cache) = surface.geometry.solved_cache() {
-            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
-                "surface {} was written from its solved carrier",
-                surface.id
-            )));
-            surface.geometry = SurfaceGeometry::Solved(cache.clone());
-        }
-    }
-    for curve in &mut projected.model.curves {
-        if let Some(cache) = curve.geometry.solved_cache() {
-            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
-                "curve {} was written from its solved carrier",
-                curve.id
-            )));
-            curve.geometry = CurveGeometry::Solved(cache.clone());
-        }
-    }
     geometry::convert_polylines(&mut projected, &mut losses);
     geometry::resolve_placements(&mut projected, &mut losses);
-    projected.model.procedural_surfaces.clear();
-    projected.model.procedural_curves.clear();
     geometry::flatten_composite_curves(&mut projected, &mut losses)?;
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
@@ -357,11 +370,11 @@ pub(super) fn plan(
             )));
             continue;
         }
-        match geometry::preflight(&projected, &body) {
+        match geometry::preflight(&slot_context, &projected, &body) {
             Ok(()) => supported.push(body.id.clone()),
             Err(super::write_error::WriteError::Decline(reason)) => {
                 if body.kind == cadmpeg_ir::topology::BodyKind::Sheet
-                    && geometry::reduce_sheet(&mut projected, &body, &mut losses)?
+                    && geometry::reduce_sheet(&slot_context, &mut projected, &body, &mut losses)?
                 {
                     supported.push(body.id.clone());
                 } else {
@@ -379,6 +392,48 @@ pub(super) fn plan(
         .bodies
         .sort_by_key(|body| !supported.contains(&body.id));
     projected = super::body_subset(&before_subset, &supported)?;
+    let kept_points = projected
+        .model
+        .points
+        .iter()
+        .map(|point| point.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    projected.model.points.extend(
+        before_subset
+            .model
+            .points
+            .iter()
+            .filter(|point| !kept_points.contains(&point.id))
+            .cloned(),
+    );
+    let retained_curves = projected
+        .model
+        .curves
+        .iter()
+        .map(|curve| curve.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    projected.model.curves.extend(
+        before_subset
+            .model
+            .curves
+            .iter()
+            .filter(|curve| {
+                !retained_curves.contains(&curve.id)
+                    && super::can_write_curve(&before_subset, curve)
+            })
+            .cloned(),
+    );
+    let curve_constructions = projected
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    projected
+        .model
+        .procedural_curves
+        .retain(|curve| curve_constructions.contains(&curve.id));
     let kept_curves = projected
         .model
         .curves
@@ -534,7 +589,29 @@ pub(super) fn plan(
     )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
     let mut prepared_native =
-        design::prepare(&mut projected, &mut losses, input.fidelity.is_none())?;
+        design::prepare(&slot_context, &mut projected, &mut losses, input.fidelity.is_none())?;
+    if projected.scope.model
+        && !projected.scope.design
+        && prepared_native.as_ref().is_none_or(|native| {
+            native
+                .feature_histories
+                .iter()
+                .all(|history| history.configurations.is_empty())
+        })
+    {
+        let mut carrier = projected.clone();
+        carrier.scope.design = true;
+        crate::history::write::configurations::ensure_default_configuration(
+            &mut carrier,
+            &supported,
+            &mut losses,
+        )?;
+        super::assign_configuration_indices(&mut carrier.model.configurations)?;
+        crate::history::write::configurations::sync_neutral_configurations(
+            &carrier.model.configurations,
+            &mut prepared_native,
+        );
+    }
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
         let mut declared = NativeDispositions::for_namespace(
@@ -622,6 +699,7 @@ pub(super) fn plan(
         });
     let declaration = source_declaration.or(target.write_declaration());
     let output = super::write_semantic_at(
+        &slot_context,
         &projected,
         &Annotations::default(),
         &[],
@@ -633,6 +711,7 @@ pub(super) fn plan(
         },
         &mut bytes,
     )?;
+    slot_context.finish_session()?;
     debug_assert_eq!(
         output.dialect,
         *resolved.target_id(),
@@ -640,6 +719,14 @@ pub(super) fn plan(
     );
     losses.extend(output.normalization_losses);
     let mut coverage = output.coverage;
+    if !projected.model.procedural_curves.is_empty() {
+        coverage.procedural_curves =
+            if projected.model.procedural_curves.len() == input.ir.model.procedural_curves.len() {
+                ArenaDisposition::Written
+            } else {
+                ArenaDisposition::Reported
+            };
+    }
     macro_rules! changed_arena {
         ($($arena:ident),* $(,)?) => {$(
             if input.ir.model.$arena.len() > projected.model.$arena.len() {
@@ -707,11 +794,18 @@ pub(super) fn plan(
     if input.ir.model.configurations != projected.model.configurations {
         coverage.configurations = ArenaDisposition::Reported;
     }
-    if projected.model.faces.is_empty() {
+    if input.ir.scope.model && projected.model.faces.is_empty() {
         losses.push(
             SldprtLossCode::WriterNoExportableSolids
                 .note("the document has no exportable B-rep solids"),
         );
+    }
+    for curve in &projected.model.curves {
+        if super::surface_curve::supported(&projected, curve).is_some() {
+            losses.push(cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
+                "surface curve {}: node identifiers and tolerance to the absent original curve are unspecified", curve.id
+            )));
+        }
     }
     losses.extend(super::accounting::losses(input.ir, true));
     losses.extend(super::accounting::arena_losses(input.ir, &coverage));
@@ -910,27 +1004,6 @@ fn repair_duplicate_configuration_indices(
     }
 }
 
-/// Native lane and history records require names. A feature without one
-/// cannot be authored; the identity stands in and the loss names it (#237).
-fn normalize_feature_names(
-    features: &mut [cadmpeg_ir::features::Feature],
-    losses: &mut Vec<LossNote>,
-) {
-    for feature in features {
-        if feature
-            .name
-            .as_deref()
-            .is_none_or(|name| name.trim().is_empty())
-        {
-            feature.name = Some(feature.id.as_str().into());
-            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
-                "feature {} uses its identity as the required native name",
-                feature.id
-            )));
-        }
-    }
-}
-
 /// Native record identities across every namespace of `native`, read through
 /// its serialized form so the codec never names another namespace.
 fn native_record_identities(
@@ -1065,6 +1138,17 @@ fn arena_ids(records: &impl serde::Serialize) -> Vec<String> {
     ids
 }
 
+fn loss_names_record(loss: &LossNote, id: &str) -> bool {
+    loss.message.split_whitespace().any(|token| {
+        token.trim_matches(|character: char| {
+            matches!(
+                character,
+                ',' | ';' | ':' | '(' | ')' | '[' | ']' | '.' | '\'' | '"'
+            )
+        }) == id
+    })
+}
+
 /// Charge the counted-arena omission loss with the dropped record ids named.
 ///
 /// A drop the target cannot represent is reported as a loss that names what
@@ -1088,7 +1172,7 @@ fn push_changed_arena_loss(
     }
     let mut unnamed: Vec<String> = dropped
         .iter()
-        .filter(|id| !losses.iter().any(|loss| loss.message.contains(id.as_str())))
+        .filter(|id| !losses.iter().any(|loss| loss_names_record(loss, id)))
         .map(|id| (*id).clone())
         .collect();
     unnamed.sort();
@@ -1132,7 +1216,7 @@ fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<L
             .iter()
             .filter_map(|row| row.get("id").and_then(serde_json::Value::as_str))
             .filter(|id| !after_ids.contains(id))
-            .filter(|id| !losses.iter().any(|loss| loss.message.contains(id)))
+            .filter(|id| !losses.iter().any(|loss| loss_names_record(loss, id)))
             .map(str::to_owned)
             .collect();
         if unnamed.is_empty() {
@@ -1341,6 +1425,37 @@ fn reduce_design(
     repair: bool,
 ) -> Result<(), super::write_error::WriteError> {
     for feature in &mut ir.model.features {
+        let mut omitted_thread_fields = Vec::new();
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                standard,
+                designation,
+                pitch,
+                modeled,
+                ..
+            }) = definition
+            {
+                if standard.take().is_some() {
+                    omitted_thread_fields.push("standard");
+                }
+                if designation.take().is_some() {
+                    omitted_thread_fields.push("designation");
+                }
+                if pitch.take().is_some() {
+                    omitted_thread_fields.push("pitch");
+                }
+                if modeled.take().is_some() {
+                    omitted_thread_fields.push("modeled");
+                }
+            }
+        });
+        if !omitted_thread_fields.is_empty() {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: cosmetic-thread fields {} have no native encoding",
+                feature.id,
+                omitted_thread_fields.join(", ")
+            )));
+        }
         let mut omitted_positions = Vec::new();
         let mut pattern_error = None;
         feature.evaluation.edit(|definition, _| {
@@ -1379,7 +1494,10 @@ fn reduce_design(
                 ..
             }) = definition
             {
-                if let Some(condition) = continuity.resolved().and_then(cadmpeg_ir::features::FilledSurfaceContinuity::uniform) {
+                if let Some(condition) = continuity
+                    .resolved()
+                    .and_then(cadmpeg_ir::features::FilledSurfaceContinuity::uniform)
+                {
                     if condition.weight().is_some() {
                         *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
                             condition.continuity(),

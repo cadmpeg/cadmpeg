@@ -17,6 +17,7 @@ use crate::native::SldprtNative;
 use crate::writer::write_error::WriteError;
 
 pub(super) fn prepare(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     repair: bool,
@@ -43,10 +44,10 @@ pub(super) fn prepare(
                 ))
             })?;
     synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
-    sketches(ir, native.as_ref(), losses)?;
+    sketches(ctx, ir, native.as_ref(), losses)?;
     // A dropped sketch retains its feature and solved output, with an explicit loss.
     synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ctx, ir, &mut native)?;
     crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
     let all_bodies = ir
         .model
@@ -161,10 +162,45 @@ pub(super) fn prepare(
             }
         }
         configuration.feature_states.clear();
-        for parameter in configuration.parameter_overrides.keys() {
-            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                "configuration {} parameter {parameter}: expression override omitted; its evaluated scalar is retained when representable", configuration.id
-            )));
+        for (parameter, expression) in &configuration.parameter_overrides {
+            let expected = configuration.parameter_values.get(parameter).or_else(|| {
+                ir.model
+                    .parameters
+                    .iter()
+                    .find(|candidate| candidate.id == *parameter)
+                    .and_then(|candidate| candidate.value.as_ref())
+            });
+            let value = expected.and_then(|expected| expression.literal_value_as(expected));
+            let native_expression = value.as_ref().and_then(|value| match value {
+                cadmpeg_ir::features::ParameterValue::Length(value) => {
+                    Some(crate::history::literals::format_length_mm(*value))
+                }
+                cadmpeg_ir::features::ParameterValue::Angle(value) => {
+                    Some(crate::history::literals::format_angle_rad(*value))
+                }
+                cadmpeg_ir::features::ParameterValue::Real(value) => Some(value.get().to_string()),
+                cadmpeg_ir::features::ParameterValue::Integer(value) => {
+                    cadmpeg_core::convert::f64_from_i64(*value).map(|value| value.to_string())
+                }
+                cadmpeg_ir::features::ParameterValue::Boolean(value) => Some(value.to_string()),
+                cadmpeg_ir::features::ParameterValue::String(_) => None,
+            });
+            if let Some(value) = value.filter(|value| {
+                native_expression.as_ref().is_some_and(|text| {
+                    *expression == cadmpeg_ir::features::Expression::text(text.clone())
+                }) && configuration
+                    .parameter_values
+                    .get(parameter)
+                    .is_none_or(|stored| stored == value)
+            }) {
+                configuration
+                    .parameter_values
+                    .insert(parameter.clone(), value);
+            } else {
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "configuration {} parameter {parameter}: expression override omitted; its evaluated scalar is retained when representable", configuration.id
+                )));
+            }
         }
         configuration.parameter_values.retain(|parameter, value| {
             if match value {
@@ -422,6 +458,7 @@ fn append_feature(
 }
 
 fn sketches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: Option<&SldprtNative>,
     losses: &mut Vec<LossNote>,
@@ -429,7 +466,11 @@ fn sketches(
     let original = ir.clone();
     let try_sketch = |candidate: &CadIr| {
         let mut native = native.cloned();
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(candidate, &mut native)
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(
+            ctx,
+            candidate,
+            &mut native,
+        )
     };
     let mut dropped = HashSet::new();
     for sketch in ir.model.sketches.clone() {
@@ -531,7 +572,9 @@ fn sketches(
         ) || matches!(constraint.definition.kind(),
             cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
                 point, line, parameter: cadmpeg_ir::features::Dimension::Parameter(id),
-            } if parameters.iter().any(|parameter| &parameter.id == id && parameter.driving && matches!(parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(_))))
+            } if parameters.iter().any(|parameter| &parameter.id == id
+                && (parameter.driving || parameter.name.strip_suffix("@reference").is_some_and(|name| !name.is_empty()))
+                && matches!(parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(_))))
                 && spatial_entities.iter().any(|entity| entity.id() == point)
                 && spatial_entities.iter().any(|entity| entity.id() == line)
         ) {

@@ -201,18 +201,37 @@ fn unverified_implementation_level_does_not_impose_edition3_schema_cardinality()
     let expected = codec
         .decode(&mut Cursor::new(&original), &DecodeOptions::default())
         .unwrap();
-    for source in [
-        original.replace("'2;1'", "' '"),
-        original
-            .lines()
-            .filter(|line| !line.starts_with("FILE_DESCRIPTION"))
-            .collect::<Vec<_>>()
-            .join("\n"),
+    for (source, description_held) in [
+        (original.replace("'2;1'", "' '"), true),
+        (
+            original
+                .lines()
+                .filter(|line| !line.starts_with("FILE_DESCRIPTION"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            false,
+        ),
     ] {
         let recovered = codec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(recovered.ir().model, expected.ir().model);
+        let mut expected_model = expected.ir().model.clone();
+        if !description_held {
+            assert!(expected_model
+                .attributes
+                .iter()
+                .any(|attribute| attribute.name == "start"));
+            expected_model
+                .attributes
+                .retain(|attribute| attribute.name != "start");
+            assert!(!recovered
+                .ir()
+                .model
+                .attributes
+                .iter()
+                .any(|attribute| attribute.name == "start"));
+        }
+        assert_eq!(recovered.ir().model, expected_model);
         assert!(!recovered.report().losses.is_empty());
     }
     // A verified declaration still carries the edition's conformance rules.

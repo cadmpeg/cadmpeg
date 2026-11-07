@@ -23,6 +23,14 @@ enum RelationFamily {
 pub(super) struct SketchStream {
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
+    pub(super) registry: GeneratedDesignRegistry,
+    pub(super) primary: Vec<crate::metastream::RecordIndexEntry>,
+    pub(super) secondary: Vec<crate::metastream::RecordIndexEntry>,
+    pub(super) occupied: std::collections::BTreeSet<u32>,
+    pub(super) next: u32,
+    pub(super) feature_scopes: Vec<(u64, cadmpeg_ir::features::FeatureId, u32)>,
+    pub(super) feature_containers: std::collections::BTreeMap<cadmpeg_ir::features::FeatureId, u32>,
+    pub(super) point_indices: std::collections::BTreeMap<SketchEntityId, u32>,
     pub(super) sketches: Vec<SketchId>,
     pub(super) renamed_sketches: Vec<SketchId>,
     pub(super) entities: Vec<SketchEntityId>,
@@ -33,6 +41,7 @@ pub(super) struct SketchStream {
 
 pub(super) fn encode(
     target: &CadIr,
+    native: &crate::native::F3dNative,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<SketchStream>, CodecError> {
     let mut bulk = Vec::new();
@@ -53,6 +62,14 @@ pub(super) fn encode(
     let mut sketches = Vec::new();
     let mut renamed_sketches = Vec::new();
     let mut entities = Vec::new();
+    let mut feature_scopes = Vec::new();
+    let mut feature_containers = std::collections::BTreeMap::new();
+    let mut point_indices = std::collections::BTreeMap::new();
+    let scope_type_needed = target
+        .model
+        .sketches
+        .iter()
+        .any(|sketch| sketch_feature(target, &sketch.id).is_some());
     let mut containers_used = std::collections::BTreeSet::new();
     let mut occupied = target
         .model
@@ -266,6 +283,21 @@ pub(super) fn encode(
             relations.push(relation);
             relation_members.push((indices.clone(), indices, mask));
         }
+        for (ordinal, member) in members.iter().enumerate() {
+            if reserved_members.contains_key(&ordinal) {
+                continue;
+            }
+            let index = native
+                .sketch_points
+                .iter()
+                .find(|point| member.native_ref.as_deref() == Some(point.id.as_str()))
+                .and_then(crate::records::sketch_geometry::SketchPoint::persistent_id)
+                .and_then(|id| u32::try_from(id).ok())
+                .filter(|id| *id != 0);
+            if let Some(index) = index.filter(|index| occupied.insert(*index)) {
+                reserved_members.insert(ordinal, index);
+            }
+        }
         let count = u32::try_from(members.len())
             .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
         let Some(head) = allocate(&mut occupied, &mut next) else {
@@ -344,6 +376,12 @@ pub(super) fn encode(
         containers.push(u64::from(container));
         heads.push(u64::from(head));
         for (member, &(point, companion)) in members.iter().zip(&member_indices) {
+            if matches!(
+                member.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            ) {
+                point_indices.insert(member.id().clone(), point);
+            }
             if let Some(text) = neutral_text(member, point, container) {
                 mark(ctx, &mut primary, point, bulk.len())?;
                 super::records::encode_sketch_text(&mut bulk, &text)?;
@@ -503,6 +541,45 @@ pub(super) fn encode(
             relation_ids.push(u64::from(index));
             constraints.push(relation.id.clone());
         }
+        if let Some(feature) = sketch_feature(target, &sketch.id) {
+            let Some(scope) = allocate(&mut occupied, &mut next) else {
+                break;
+            };
+            let family_ordinal = target
+                .model
+                .features
+                .iter()
+                .filter(|candidate| {
+                    candidate.ordinal < feature.ordinal
+                        && matches!(
+                            candidate.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Sketch { .. }
+                            )
+                        )
+                })
+                .count()
+                .checked_add(1)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| {
+                    CodecError::InvalidInput("F3D sketch feature ordinal exceeds u32".into())
+                })?;
+            mark(ctx, &mut primary, scope, bulk.len())?;
+            header(&mut bulk, "267", scope)?;
+            bulk.extend_from_slice(&[0; 10]);
+            bulk.extend_from_slice(&1u32.to_le_bytes());
+            reference(&mut bulk, container);
+            bulk.extend_from_slice(&u32::MAX.to_le_bytes());
+            native_lp_utf16(&mut bulk, "Sketch")?;
+            let mut tail = [0u8; 78];
+            tail[..4].copy_from_slice(&family_ordinal.to_le_bytes());
+            tail[31..35].copy_from_slice(&u32::MAX.to_le_bytes());
+            bulk.extend_from_slice(&tail);
+            mark(ctx, &mut secondary, scope, bulk.len())?;
+            header(&mut bulk, "267", scope)?;
+            feature_scopes.push((feature.ordinal, feature.id.clone(), scope));
+            feature_containers.insert(feature.id.clone(), container);
+        }
         sketches.push(sketch.id.clone());
         containers_used.insert(container);
         if original_container.is_none() {
@@ -571,27 +648,43 @@ pub(super) fn encode(
         ),
     ]
     .into_iter()
-    .chain((!texts.is_empty() || !nurbs.is_empty()).then_some((
-        "E0618268-3A06-450E-9E94-7CF4C2E66802",
-        "8E9D588C-28EF-43C4-B9A6-AA5430A68D4B",
-        0,
-        "Geometry",
-        texts,
-    )))
-    .chain((!nurbs.is_empty()).then_some((
+    .chain(
+        (!texts.is_empty() || !nurbs.is_empty() || scope_type_needed).then_some((
+            "E0618268-3A06-450E-9E94-7CF4C2E66802",
+            "8E9D588C-28EF-43C4-B9A6-AA5430A68D4B",
+            0,
+            "Geometry",
+            texts,
+        )),
+    )
+    .chain((!nurbs.is_empty() || scope_type_needed).then_some((
         "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
         "EE518F9E-9CC3-4424-9CAB-2B92426E5312",
         3,
         "MSketch",
         nurbs,
     )))
-    .chain((!nurbs_entities.is_empty()).then_some((
-        "EE518F9E-9CC3-4424-9CAB-2B92426E5312",
-        "9FF71F46-205F-484B-A2B5-A245D0D8FE33",
-        4,
-        "Geometry",
-        vec![],
-    )))
+    .chain(
+        (!nurbs_entities.is_empty() || scope_type_needed).then_some((
+            "EE518F9E-9CC3-4424-9CAB-2B92426E5312",
+            "9FF71F46-205F-484B-A2B5-A245D0D8FE33",
+            4,
+            "Geometry",
+            vec![],
+        )),
+    )
+    .chain(
+        scope_type_needed.then_some((
+            "8DA771B7-52ED-42FC-94E2-2353FE141373",
+            "2EDC2536-D95B-4469-8ACA-DC07124D9C43",
+            0,
+            "Fusion",
+            feature_scopes
+                .iter()
+                .map(|(_, _, index)| u64::from(*index))
+                .collect(),
+        )),
+    )
     .map(|(guid, base, version, module, entity_ids)| {
         Ok(GeneratedDesignType {
             type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
@@ -615,6 +708,14 @@ pub(super) fn encode(
     Ok(Some(SketchStream {
         bulk,
         meta,
+        registry,
+        primary,
+        secondary,
+        occupied,
+        next,
+        feature_scopes,
+        feature_containers,
+        point_indices,
         sketches,
         renamed_sketches,
         entities,
@@ -622,6 +723,34 @@ pub(super) fn encode(
         nurbs_entities,
         constraints,
     }))
+}
+
+fn sketch_feature<'a>(
+    target: &'a CadIr,
+    sketch: &SketchId,
+) -> Option<&'a cadmpeg_ir::features::Feature> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
+    let mut matching = target.model.features.iter().filter(|feature| {
+        matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(id)),
+        }) if id == sketch)
+    });
+    let (Some(feature), None) = (matching.next(), matching.next()) else {
+        return None;
+    };
+    (feature.suppressed != Some(true)
+        && !feature.needs_recompute
+        && feature.dependencies.is_empty()
+        && feature.source_properties.is_empty()
+        && feature.source_text.is_none()
+        && feature.source_content.is_empty()
+        && feature
+            .source_tag
+            .as_deref()
+            .is_none_or(|tag| tag == "Sketch")
+        && feature.product_definition.is_none()
+        && feature.evaluation.outputs().is_empty())
+    .then_some(feature)
 }
 
 fn underflows(value: f64) -> bool {

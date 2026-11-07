@@ -74,7 +74,7 @@ fn secondary_shape_payload_keeps_its_carrier_census() {
         cadmpeg_ir::codec::write::NativeDisposition::Regenerated
     );
     let output = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     let output_namespace = output.ir().native.namespace("fcstd").unwrap();
     let properties = output_namespace
@@ -117,7 +117,7 @@ fn primary_and_secondary_shapes_keep_separate_properties() {
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(output.ir().model.bodies.len(), 2);
     for surface in &input.ir().model.surfaces {
@@ -143,4 +143,98 @@ fn primary_and_secondary_shapes_keep_separate_properties() {
             .len(),
         2
     );
+    let input_native = input.ir().native.namespace("fcstd").unwrap();
+    let input_payloads = input_native
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let output_payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    for payload in &input_payloads {
+        assert!(output_payloads.iter().any(|other| other.id == payload.id));
+    }
+    let input_census = input_native
+        .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
+        .unwrap();
+    let output_census = namespace
+        .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
+        .unwrap();
+    for census in &input_census {
+        assert!(output_census.iter().any(|other| other.id == census.id));
+    }
+    for body in &input.ir().model.bodies {
+        let peer = output
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .find(|other| other.id == body.id)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(body).unwrap(),
+            serde_json::to_value(peer).unwrap()
+        );
+    }
+    for arena in ["applications", "document", "objects", "shape_payloads"] {
+        let before = input_native.arenas().get(arena).unwrap();
+        let after = namespace.arenas().get(arena).unwrap();
+        for record in before {
+            let peer = after
+                .iter()
+                .find(|other| other.id() == record.id())
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(record).unwrap(),
+                serde_json::to_value(peer).unwrap(),
+                "{arena}"
+            );
+        }
+    }
+    let findings =
+        cadmpeg_test_support::writer_closure::without_fidelity(&input, &FcstdCodec, &|bytes| {
+            let result = FcstdCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .map_err(|error| error.to_string())?;
+            Ok(cadmpeg_test_support::writer_closure::Redecoded {
+                ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+                loss_codes: result
+                    .report()
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect(),
+                members: Vec::new(),
+            })
+        });
+    assert!(findings.is_empty(), "{findings:#?}");
+}
+
+#[test]
+fn dimension_drawing_and_annotation_round_trip_together() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="FormatSpec" type="App::PropertyString"><String value="%0.2f"/></Property><Property name="Caption" type="App::PropertyString"><String value="Width"/></Property></Properties></Object></ObjectData></Document>"#;
+    let input = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(
+                std::str::from_utf8(xml).unwrap(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let findings =
+        cadmpeg_test_support::writer_closure::without_fidelity(&input, &FcstdCodec, &|bytes| {
+            let result = FcstdCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .map_err(|error| error.to_string())?;
+            Ok(cadmpeg_test_support::writer_closure::Redecoded {
+                ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+                loss_codes: result
+                    .report()
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect(),
+                members: Vec::new(),
+            })
+        });
+    assert!(findings.is_empty(), "{findings:#?}");
 }
