@@ -67,6 +67,9 @@ pub(super) fn exact_surface_offset_operation(
     if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope, recipes)? {
         return Ok(Some(operation));
     }
+    let Some(stream) = native_stream(&scope.id) else {
+        return Ok(None);
+    };
     Ok(exact_surface_boundary_operation(
         bytes,
         records,
@@ -74,6 +77,12 @@ pub(super) fn exact_surface_offset_operation(
         DesignFeatureFamily::SurfaceOffset,
         DesignOperandRole::PROFILE,
     )
+    .filter(|operation| {
+        operation.edge_record_indices.iter().all(|member| {
+            member_recipe_kind(records, recipes, stream, *member)
+                == Some(ConstructionRecipeKind::Edge)
+        })
+    })
     .map(|operation| DesignSurfaceOffsetOperation {
         distance: operation.distance,
         distance_offset: operation.distance_offset,
@@ -149,7 +158,8 @@ fn exact_surface_offset_face_groups(
                         .skip(1)
                         .any(|value| value == member)
                     || covered_references.contains(member)
-                    || !bounded_face_member(records, recipes, stream, *member)
+                    || member_recipe_kind(records, recipes, stream, *member)
+                        != Some(ConstructionRecipeKind::BoundedFace)
                 {
                     return None;
                 }
@@ -175,36 +185,30 @@ fn exact_surface_offset_face_groups(
     parsed.transpose()
 }
 
-fn bounded_face_member(
+fn member_recipe_kind(
     records: &IndexedRecordOffsets,
     recipes: &[ConstructionRecipe],
     stream: &str,
     member: u32,
-) -> bool {
-    let Some(recipe_start) = (0..4).try_fold(0, |position, delta| {
+) -> Option<ConstructionRecipeKind> {
+    let recipe_start = (0..4).try_fold(0, |position, delta| {
         records
             .first_at_or_after(position, member.checked_add(delta)?)
             .and_then(|offset| offset.checked_add(11))
-    }) else {
-        return false;
-    };
+    })?;
     let recipe_end = member
         .checked_add(4)
         .and_then(|next| records.first_at_or_after(recipe_start, next))
         .map(u64::try_from);
-    let Ok(recipe_start) = u64::try_from(recipe_start) else {
-        return false;
-    };
+    let recipe_start = u64::try_from(recipe_start).ok()?;
     recipes
         .iter()
         .filter(|recipe| {
             native_stream(&recipe.id) == Some(stream) && recipe.byte_offset >= recipe_start
         })
         .min_by_key(|recipe| recipe.byte_offset)
-        .is_some_and(|recipe| {
-            recipe.kind == ConstructionRecipeKind::BoundedFace
-                && recipe_end.is_none_or(|end| end.is_ok_and(|end| recipe.byte_offset < end))
-        })
+        .filter(|recipe| recipe_end.is_none_or(|end| end.is_ok_and(|end| recipe.byte_offset < end)))
+        .map(|recipe| recipe.kind)
 }
 
 fn exact_construction_operand_group(
