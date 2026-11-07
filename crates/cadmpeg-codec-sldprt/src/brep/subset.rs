@@ -120,7 +120,7 @@ pub(super) enum Pass {
     SurfaceCurves,
 }
 
-fn header(bytes: &[u8], start: usize) -> Option<(u32, u32, usize)> {
+pub(super) fn header(bytes: &[u8], start: usize) -> Option<(u32, u32, usize)> {
     let mut at = start;
     let attr = cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
     (attr > 1).then_some(())?;
