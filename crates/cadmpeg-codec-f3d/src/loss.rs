@@ -84,6 +84,9 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrencePathUnresolved,
     /// A sketch collection owner does not bind one component definition.
     SketchOwnerUnresolved,
+    SketchMembershipConflict,
+    SketchFolderClosingReference,
+    SketchFolderUnprojected,
     /// Sketch geometry backlinks name a sketch geometry group whose member run omits the record.
     SketchGeometryGroupMemberUnlisted,
     SketchGeometryGroupMemberUnbacklinked,
@@ -166,6 +169,7 @@ pub(crate) enum F3dLossCode {
     HistoryOnlyBodyOmitted,
     /// Reference-image timeline objects retain native Canvas records.
     ReferenceImageNativeRetained,
+    ReferenceImageFlagAssumed,
     /// Decal timeline objects retain native image and mapping records.
     DecalNativeRetained,
     /// Source parametric edge references marked lost have no independent proof.
@@ -255,6 +259,8 @@ pub(crate) enum F3dLossCode {
     HistoricalEdgeMidpointsUnresolved,
     /// A `Fillet` edge is inferred from blend geometry; no two supports share it.
     HistoricalFilletEdgeInferred,
+    /// An edge-treatment edge is read from the faces its recipe names; it bounds no candidate face.
+    HistoricalEdgeSelectionInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
     /// Historical body bounding geometry could not be computed from point carriers.
@@ -323,6 +329,10 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections took the polyline side of a projected point
     /// within the tolerance of a NURBS tube of a face boundary.
     FeatureProfilePolylineSideAssumed,
+    /// Extrude profile selections compared part of a cap outline by samples alone.
+    FeatureProfileCapOutlineAssumed,
+    /// Extrude profile selections read a cap edge carrier from its samples alone.
+    FeatureProfileCapCarrierAssumed,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -339,18 +349,39 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
+    /// A Combine frame that matches the fixed fields of the operand-list
+    /// prologue is read in the standard prologue.
+    FeatureCombinePrologueAssumed,
+    /// A Combine whose lists name its operands, whose other fields contradict
+    /// the operand-list prologue or cannot be checked, and which no prologue
+    /// reads stays native.
+    FeatureCombineOperandListRefused,
+    /// A Combine that places its result in a new component stays native.
+    FeatureCombineNewComponentNative,
+    /// A Combine with a companion `RemoveBody` scope reads every tool as
+    /// removed, though the companion body selections do not name exactly the
+    /// tools.
+    FeatureCombineToolConsumptionAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
+    /// A marked `Move` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record.
+    FeatureMoveTransformAssumed,
     /// A standard `Loft` scope stores a non-null marked reference whose target and setting are unresolved.
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
+    FeatureThickenFlagsAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
+    /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
+    FeatureTrimCellTableNative,
+    /// `SurfaceTrim` group members without a decoded operand record project by group role.
+    FeatureTrimMemberTypeAssumed,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -560,6 +591,9 @@ impl F3dLossCode {
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
+        Self::SketchMembershipConflict,
+        Self::SketchFolderClosingReference,
+        Self::SketchFolderUnprojected,
         Self::SketchGeometryGroupMemberUnlisted,
         Self::SketchGeometryGroupMemberUnbacklinked,
         Self::ComponentInsertUnplaced,
@@ -595,6 +629,7 @@ impl F3dLossCode {
         Self::DesignBodyBindingUnresolved,
         Self::HistoryOnlyBodyOmitted,
         Self::ReferenceImageNativeRetained,
+        Self::ReferenceImageFlagAssumed,
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
@@ -638,6 +673,7 @@ impl F3dLossCode {
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
+        Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalBodyBoundsUnresolved,
         Self::SketchRelationNativeRetained,
@@ -671,6 +707,8 @@ impl F3dLossCode {
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileIslandAbsenceAssumed,
         Self::FeatureProfilePolylineSideAssumed,
+        Self::FeatureProfileCapOutlineAssumed,
+        Self::FeatureProfileCapCarrierAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -678,12 +716,20 @@ impl F3dLossCode {
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
+        Self::FeatureCombinePrologueAssumed,
+        Self::FeatureCombineOperandListRefused,
+        Self::FeatureCombineNewComponentNative,
+        Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureRevolveLayoutAssumed,
+        Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
+        Self::FeatureTrimCellTableNative,
+        Self::FeatureTrimMemberTypeAssumed,
         Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -801,6 +847,9 @@ impl F3dLossCode {
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
+            Self::SketchMembershipConflict => "sketch.membership-conflict",
+            Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
+            Self::SketchFolderUnprojected => "sketch.folder-unprojected",
             Self::SketchGeometryGroupMemberUnlisted => "sketch.geometry-group-member-unlisted",
             Self::SketchGeometryGroupMemberUnbacklinked => {
                 "sketch.geometry-group-member-unbacklinked"
@@ -848,6 +897,7 @@ impl F3dLossCode {
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
             Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
+            Self::ReferenceImageFlagAssumed => "appearance.reference-image-flag-assumed",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
@@ -890,6 +940,7 @@ impl F3dLossCode {
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
+            Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
@@ -936,6 +987,8 @@ impl F3dLossCode {
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
+            Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
+            Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -947,12 +1000,22 @@ impl F3dLossCode {
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
+            Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
+            Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
+            Self::FeatureCombineToolConsumptionAssumed => {
+                "feature.combine-tool-consumption-assumed"
+            }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
+            Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
+            Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
+            Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
             }
@@ -1071,7 +1134,8 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveUnprofiledSelected
-            | Self::ThreadLiveFaceUnproven => Severity::Info,
+            | Self::ThreadLiveFaceUnproven
+            | Self::ReferenceImageFlagAssumed => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -1109,6 +1173,9 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
+            | Self::SketchMembershipConflict
+            | Self::SketchFolderClosingReference
+            | Self::SketchFolderUnprojected
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::ComponentInsertUnplaced
@@ -1181,6 +1248,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalEdgeSelectionInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
@@ -1214,6 +1282,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
+            | Self::FeatureProfileCapOutlineAssumed
+            | Self::FeatureProfileCapCarrierAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1221,12 +1291,20 @@ impl F3dLossCode {
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperandListRefused
+            | Self::FeatureCombineNewComponentNative
+            | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureTrimCellTableNative
+            | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1385,6 +1463,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalEdgeSelectionInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
@@ -1418,6 +1497,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
+            | Self::FeatureProfileCapOutlineAssumed
+            | Self::FeatureProfileCapCarrierAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1425,12 +1506,20 @@ impl F3dLossCode {
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperandListRefused
+            | Self::FeatureCombineNewComponentNative
+            | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureTrimCellTableNative
+            | Self::FeatureTrimMemberTypeAssumed
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1471,12 +1560,16 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
+            | Self::SketchMembershipConflict
+            | Self::SketchFolderClosingReference
+            | Self::SketchFolderUnprojected
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ReferenceImageNativeRetained
+            | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
             | Self::MeshAttributeNotTransferred
@@ -1599,6 +1692,9 @@ mod tests {
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
+                "sketch.membership-conflict",
+                "sketch.folder-closing-reference",
+                "sketch.folder-unprojected",
                 "sketch.geometry-group-member-unlisted",
                 "sketch.geometry-group-member-unbacklinked",
                 "assembly.component-insert-unplaced",
@@ -1634,6 +1730,7 @@ mod tests {
                 "design.body-binding-unresolved",
                 "design.history-only-body-omitted",
                 "appearance.reference-image-native",
+                "appearance.reference-image-flag-assumed",
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
@@ -1677,6 +1774,7 @@ mod tests {
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
+                "history.edge-selection-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.body-bounds-unresolved",
                 "sketch.relation-native",
@@ -1710,6 +1808,8 @@ mod tests {
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-polyline-side-assumed",
+                "feature.profile-cap-outline-assumed",
+                "feature.profile-cap-carrier-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
@@ -1717,12 +1817,20 @@ mod tests {
                 "feature.scale-frame-length-form-assumed",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
+                "feature.combine-prologue-assumed",
+                "feature.combine-operand-list-refused",
+                "feature.combine-new-component-native",
+                "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.revolve-layout-assumed",
+                "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
+                "feature.trim-cell-table-native",
+                "feature.trim-member-type-assumed",
                 "feature.face-operand-fallback-contradicted",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",

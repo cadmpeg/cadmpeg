@@ -456,6 +456,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             history_only_body_bindings: 0,
             incomplete_features: 6,
             native_reference_images: 0,
+            assumed_reference_image_flags: 0,
             native_decals: 0,
             unprojected_feature_scopes: 1,
             unprojected_parameters: 1,
@@ -1067,6 +1068,29 @@ fn fixture_pattern_states_have_a_distinct_native_retention_loss_count() {
             case.label
         );
     }
+}
+
+#[test]
+fn design_projection_gaps_count_canvas_images_with_a_cleared_flag() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native
+        .design_canvas_images
+        .push(crate::test_support::canvas::canvas_image_fixture());
+    assert_eq!(
+        design_projection_gaps(&ir, &native).assumed_reference_image_flags,
+        0
+    );
+    let mut cleared = crate::test_support::canvas::canvas_wire_fixture();
+    cleared["id"] = serde_json::json!("f3d:native:canvas#1");
+    cleared["second_boundary_flag"] = serde_json::json!(false);
+    native
+        .design_canvas_images
+        .push(serde_json::from_value(cleared).unwrap());
+    assert_eq!(
+        design_projection_gaps(&ir, &native).assumed_reference_image_flags,
+        1
+    );
 }
 
 #[test]

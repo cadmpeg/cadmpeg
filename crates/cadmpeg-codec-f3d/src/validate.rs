@@ -39,6 +39,7 @@ use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_lega
 use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
 use crate::layout::class_296_261_symmetric_distance_extrude_prefix as class_296_symmetric;
 use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_two_faces;
+use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
@@ -86,6 +87,32 @@ fn body_recipe_reference_table_is_admitted(
                         .iter()
                         .any(|tool| tool.record_index == operand.record_index())
                 })
+        })
+}
+
+/// An operand-list `Combine` stores its operation after the presence byte, or
+/// after an empty property block, and its keep-tools Boolean after the
+/// companion list. A `Combine` with a companion consumes its tools.
+fn operand_list_combine_offsets_hold(
+    scope_offset: u64,
+    operation: &records::feature::combine::DesignCombineOperation,
+) -> bool {
+    const EMPTY_PROPERTY_BLOCK_LEN: u64 = 4;
+    const COMPANION_REFERENCE_LEN: u64 = 11;
+    let operation_at = u64_from_index(combine_lists::OPERATION);
+    let keep_tools_after_operation =
+        u64_from_index(combine_lists::KEEP_TOOLS - combine_lists::OPERATION);
+    let property_block = operation
+        .operation_offset
+        .checked_sub(scope_offset)
+        .and_then(|relative| relative.checked_sub(operation_at));
+    let companion_bytes = operation
+        .keep_tools_offset
+        .checked_sub(operation.operation_offset)
+        .and_then(|distance| distance.checked_sub(keep_tools_after_operation));
+    matches!(property_block, Some(0 | EMPTY_PROPERTY_BLOCK_LEN))
+        && companion_bytes.is_some_and(|bytes| {
+            bytes.is_multiple_of(COMPANION_REFERENCE_LEN) && (bytes == 0 || !operation.keep_tools)
         })
 }
 
@@ -1799,7 +1826,9 @@ fn validate_canvas_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             && scope_unique
             && geometry_unique
             && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
-            && geometry_entities.contains(&(design_segment, u64::from(image.plane_entity_suffix)))
+            && image.plane_entity_suffix.is_none_or(|suffix| {
+                geometry_entities.contains(&(design_segment, u64::from(suffix)))
+            })
             && component_entities
                 .contains(&(design_segment, u64::from(image.component_entity_suffix)));
         if !valid {
@@ -3234,14 +3263,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records::feature::combine::DesignCombineForm::OperandLists => {
                             !compact_scope
                                 && !extended_reference_scope
-                                && scope.byte_offset().checked_add(21).is_some_and(
-                                    |expected_offset| operation.operation_offset == expected_offset,
-                                )
-                                && scope.byte_offset().checked_add(29).is_some_and(
-                                    |expected_offset| {
-                                        operation.keep_tools_offset == expected_offset
-                                    },
-                                )
+                                && operand_list_combine_offsets_hold(scope.byte_offset(), operation)
                         }
                         records::feature::combine::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope

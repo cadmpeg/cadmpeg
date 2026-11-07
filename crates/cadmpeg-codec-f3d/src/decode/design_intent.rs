@@ -619,7 +619,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ),
     );
     losses.extend(projected.unruled_flange_thickness_loss());
-    losses.extend(projected.hole_losses);
+    losses.extend(projected.projection_losses);
     losses.extend(
         crate::design::decode::operands::fixed_fillet_assignment_losses(
             &design.design_parameter_scopes,
@@ -662,6 +662,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_surface_trim_operations,
+        &mut losses,
     );
     super::bind_mesh_feature_definitions(
         &mut model.features,
@@ -1638,13 +1639,15 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
     );
-    design.asm_face_boundaries = crate::history::bind_edge_operand_history_candidates(
-        &mut design.design_edge_operands,
-        &design.design_parameter_scopes,
-        &prereqs.construction_recipes,
-        crate::history::BindingHistories::Release(&mut design.asm_histories),
-        &scope_histories,
-    )?;
+    let (face_boundaries, edge_selection_notes) =
+        crate::history::bind_edge_operand_history_candidates_with_notes(
+            &mut design.design_edge_operands,
+            &design.design_parameter_scopes,
+            &prereqs.construction_recipes,
+            crate::history::BindingHistories::Release(&mut design.asm_histories),
+            &scope_histories,
+        )?;
+    design.asm_face_boundaries = face_boundaries;
     design.design_edge_treatment_vertex_operands =
         crate::design::decode::operands::decode_edge_treatment_vertex_operands(
             scan,
@@ -1719,6 +1722,7 @@ fn extend_related_design_records(
         scan,
         &design.design_parameter_scopes,
         &prereqs.design_entity_headers,
+        &mut profile_losses,
     )?;
     let mut stream_lengths = std::collections::HashMap::new();
     for entry in scan
@@ -1759,5 +1763,6 @@ fn extend_related_design_records(
         &mut design.design_dimension_recipe_records,
         &design.design_edge_operands,
     );
+    profile_losses.extend(edge_selection_notes);
     Ok((untyped_tracking_paths, profile_losses))
 }
