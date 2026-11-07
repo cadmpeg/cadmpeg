@@ -1118,6 +1118,17 @@ fn arena_ids(records: &impl serde::Serialize) -> Vec<String> {
     ids
 }
 
+fn loss_names_record(loss: &LossNote, id: &str) -> bool {
+    loss.message.split_whitespace().any(|token| {
+        token.trim_matches(|character: char| {
+            matches!(
+                character,
+                ',' | ';' | ':' | '(' | ')' | '[' | ']' | '.' | '\'' | '"'
+            )
+        }) == id
+    })
+}
+
 /// Charge the counted-arena omission loss with the dropped record ids named.
 ///
 /// A drop the target cannot represent is reported as a loss that names what
@@ -1141,7 +1152,7 @@ fn push_changed_arena_loss(
     }
     let mut unnamed: Vec<String> = dropped
         .iter()
-        .filter(|id| !losses.iter().any(|loss| loss.message.contains(id.as_str())))
+        .filter(|id| !losses.iter().any(|loss| loss_names_record(loss, id)))
         .map(|id| (*id).clone())
         .collect();
     unnamed.sort();
@@ -1185,7 +1196,7 @@ fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<L
             .iter()
             .filter_map(|row| row.get("id").and_then(serde_json::Value::as_str))
             .filter(|id| !after_ids.contains(id))
-            .filter(|id| !losses.iter().any(|loss| loss.message.contains(id)))
+            .filter(|id| !losses.iter().any(|loss| loss_names_record(loss, id)))
             .map(str::to_owned)
             .collect();
         if unnamed.is_empty() {

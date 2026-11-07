@@ -12,6 +12,33 @@ use cadmpeg_ir::report::export::WritePath;
 use std::io::Cursor;
 
 #[test]
+fn omitted_record_names_do_not_alias_longer_ids() {
+    let before = serde_json::json!([
+        { "id": "synthetic:test:curve#1" },
+        { "id": "synthetic:test:curve#10" }
+    ]);
+    let after = serde_json::json!([]);
+    let mut losses = vec![crate::loss::SldprtLossCode::WriterEntityOmitted
+        .note("curve synthetic:test:curve#10 omitted")];
+    super::push_changed_arena_loss(
+        &mut losses,
+        "curves",
+        &before,
+        &after,
+        crate::loss::SldprtLossCode::WriterEntityOmitted,
+        "from synthesis",
+    );
+    assert!(losses[1]
+        .message
+        .split_whitespace()
+        .any(|word| word == "synthetic:test:curve#1"));
+    assert!(!losses[1]
+        .message
+        .split_whitespace()
+        .any(|word| word == "synthetic:test:curve#10"));
+}
+
+#[test]
 fn cascade_names_each_feature_with_a_removed_regeneration_parent() {
     use cadmpeg_ir::features::{
         DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
