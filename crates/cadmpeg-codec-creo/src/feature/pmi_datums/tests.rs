@@ -117,7 +117,7 @@ fn decoded(payload: &[u8]) -> (Vec<DatumTagIdentity>, usize) {
 }
 
 #[test]
-fn joins_step_datum_labels_to_definition_slots_and_keeps_a_typed_plane_reference() {
+fn keeps_positional_datum_labels_without_unproved_definition_slots() {
     let payload = full_fixture(Some(13), b"A", Some((0x25, 106)));
     let a_source_offset = payload
         .windows(b"\xe0\x0ap_datum_tag_name\0".len())
@@ -128,7 +128,7 @@ fn joins_step_datum_labels_to_definition_slots_and_keeps_a_typed_plane_reference
         .position(|window| window == b"\xe3\x3e\x12B\0")
         .expect("datum B text value");
     let (tags, unresolved) = decoded(&payload);
-    assert_eq!(unresolved, 0);
+    assert_eq!(unresolved, 2);
     assert_eq!(
         tags.iter()
             .map(|tag| (
@@ -139,8 +139,8 @@ fn joins_step_datum_labels_to_definition_slots_and_keeps_a_typed_plane_reference
             .collect::<Vec<_>>(),
         [
             ("A", Some(13), Some(13)),
-            ("B", Some(14), Some(14)),
-            ("C", Some(15), Some(15))
+            ("B", Some(14), None),
+            ("C", Some(15), None)
         ]
     );
     assert_eq!(tags[0].source_offset, a_source_offset);
@@ -187,14 +187,15 @@ fn retains_labels_when_a_definition_slot_join_is_unresolved() {
     assert_eq!(tags[0].definition_id, None);
     assert_eq!(tags[0].definition_slot, None);
     assert_eq!(tags[0].attachment, None);
-    assert_eq!(tags[1].definition_slot, Some(14));
-    assert_eq!(unresolved, 1);
+    assert_eq!(tags[1].definition_slot, None);
+    assert_eq!(tags[2].definition_slot, None);
+    assert_eq!(unresolved, 3);
 
     let (tags, unresolved) = decoded(&full_fixture(Some(14), b"A", Some((0x25, 106))));
     assert_eq!(tags[0].identification, "A");
     assert_eq!(tags[0].definition_slot, None);
     assert_eq!(tags[0].attachment, None);
-    assert_eq!(unresolved, 1);
+    assert_eq!(unresolved, 3);
 }
 
 #[test]
@@ -310,7 +311,7 @@ fn preserves_absolute_view_offsets_while_parsing_a_bounded_section() {
     assert_eq!(tags[0].identification, "A");
     assert_eq!(tags[0].source_offset, expected_offset);
     assert_eq!(tags.len(), 3);
-    assert_eq!(unresolved, 0);
+    assert_eq!(unresolved, 2);
 }
 
 #[test]
@@ -326,7 +327,7 @@ fn ignores_typed_leader_and_label_markers_after_the_selected_array() {
 }
 
 #[test]
-fn keeps_repeated_labels_as_separate_definition_slot_identities() {
+fn keeps_repeated_labels_as_separate_identities_without_positional_slots() {
     let mut payload = definition_array(16, 13, Some((0x25, 106)));
     let mut tags = tag_array(16, 13, Some(13), b"A", false);
     tags.extend_from_slice(&positional_tag(14, b"A", true));
@@ -344,9 +345,9 @@ fn keeps_repeated_labels_as_separate_definition_slot_identities() {
         tags.iter()
             .map(|tag| tag.definition_slot)
             .collect::<Vec<_>>(),
-        [Some(13), Some(14), Some(15)]
+        [Some(13), None, None]
     );
-    assert_eq!(unresolved, 0);
+    assert_eq!(unresolved, 2);
 }
 
 #[test]
@@ -368,8 +369,8 @@ fn retains_labels_when_the_preceding_definition_id_uses_an_extended_compact() {
     assert_eq!(tags[1].definition_slot, None);
     assert_eq!(tags[2].identification, "C");
     assert_eq!(tags[2].definition_id, Some(15));
-    assert_eq!(tags[2].definition_slot, Some(15));
-    assert_eq!(unresolved, 1);
+    assert_eq!(tags[2].definition_slot, None);
+    assert_eq!(unresolved, 2);
 }
 
 #[test]
@@ -385,8 +386,8 @@ fn retains_labels_when_a_control_prefix_precedes_a_candidate_id() {
     assert_eq!(tags[1].identification, "B");
     assert_eq!(tags[1].definition_id, None);
     assert_eq!(tags[1].definition_slot, None);
-    assert_eq!(tags[2].definition_slot, Some(15));
-    assert_eq!(unresolved, 1);
+    assert_eq!(tags[2].definition_slot, None);
+    assert_eq!(unresolved, 2);
 }
 
 #[test]

@@ -88,7 +88,6 @@ pub(in crate::decode) fn transfer(
     }
 
     let mut decoded_tags = 0usize;
-    let mut definition_slot_joins = 0usize;
     let mut inferred_targets = 0usize;
     let mut unresolved_targets = 0usize;
     let mut unresolved_label_joins = 0usize;
@@ -115,7 +114,6 @@ pub(in crate::decode) fn transfer(
                     )));
                 }
                 for tag in &tags {
-                    definition_slot_joins += usize::from(tag.definition_slot.is_some());
                     let target = if tag.definition_id.is_some() && tag.definition_slot.is_some() {
                         tag.attachment
                             .filter(|attachment| attachment.reference_type == 0x25)
@@ -199,11 +197,6 @@ pub(in crate::decode) fn transfer(
     if decoded_tags != 0 {
         losses.push(CreoLossCode::PmiDatumTagBoundaryAssumed.note(format!(
             "{decoded_tags} datum-tag row(s) use a class-qualified prototype boundary."
-        )));
-    }
-    if definition_slot_joins != 0 {
-        losses.push(CreoLossCode::PmiDatumDefinitionSlotAssumed.note(format!(
-            "{definition_slot_joins} datum-tag definition-slot join(s) use a candidate class-bounded row sequence."
         )));
     }
     if inferred_targets != 0 {

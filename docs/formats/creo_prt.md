@@ -6766,7 +6766,8 @@ identities. Each row has an `AE_Id`, `AE_Type`, `Annot_Id`, and `Annot_Type`.
 `Annot_Type` 32 identifies a geometric tolerance. The `AE_Id` and `AE_Type`
 pair selects neutral attributes with matching `ref_id` and `ref_type`.
 `PTC_GTOL_TYPE` states the tolerance characteristic and
-`PTC_GTOL_PRIMARY_TOL` states its magnitude in the model length unit.
+`PTC_GTOL_PRIMARY_TOL` states its magnitude. An empty `unit` field selects
+the model length unit.
 `PTC_GTOL_1_DTM_PRIM_STRING`, `PTC_GTOL_1_DTM_SEC_STRING`, and
 `PTC_GTOL_1_DTM_TERT_STRING` state the primary, secondary, and tertiary
 datum-reference labels of the first tolerance segment. The corresponding
@@ -6780,8 +6781,8 @@ the displayed second-segment magnitude and its tolerance-zone symbols.
 stores absolute bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
 `+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
 `Plus-Minus` stores deviation magnitudes in `PTC_DIM_LOWER_TOL_VALUE` and
-`PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values use
-the model length unit. Angular numeric values use radians; the
+`PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values with
+an empty `unit` field use the model length unit. Angular numeric values use radians; the
 `PTC_DIM_ANGULARDIM_UNIT` field selects the display unit.
 
 A geometric tolerance's type-1 `gtol_place_ptr.id` selects a zero-based

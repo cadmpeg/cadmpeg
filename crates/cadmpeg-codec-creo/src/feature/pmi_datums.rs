@@ -29,7 +29,7 @@ const ATTACHMENT_ID_FIELD: &[u8] = b"\xe0\x01attach_id\0";
 const POSITIONAL_SLAVE_INFO: &[u8] = b"\xe3\x80\xdb";
 const POSITIONAL_TEXT_VALUE: &[u8] = b"\xe3\x3e\x12";
 
-/// A datum label and its joined definition slot.
+/// A datum label with its established definition-slot relationship.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DatumTagIdentity {
     /// Absolute offset of the label field in the source view.
@@ -83,7 +83,7 @@ pub(crate) struct DatumAttachment {
     pub(crate) id: u32,
 }
 
-/// Read bounded datum-tag rows and join their definition ids to array slots.
+/// Read bounded datum-tag rows and join the prototype definition id to its slot.
 pub(crate) fn datum_tags(
     ctx: &DecodeContext<'_>,
     section: View<'_>,
@@ -191,12 +191,10 @@ pub(crate) fn datum_tags(
         });
     };
     let parsed_positional = positional_tag_rows(
-        section,
         array,
         positional_start,
         tag_array_end,
         remaining_slots,
-        definition_array,
         &mut tags[1..],
     );
     let parsed_positional = match parsed_positional {
@@ -403,12 +401,10 @@ fn leading_null_slots(view: &mut View<'_>, slots: usize) -> Option<usize> {
 }
 
 fn positional_tag_rows(
-    section: View<'_>,
     array: View<'_>,
     start: usize,
     end: usize,
     expected_rows: usize,
-    definition_array: Option<usize>,
     output: &mut [DatumTagIdentity],
 ) -> Result<usize, usize> {
     let Some(bounded) = array.child(start, end) else {
@@ -444,13 +440,10 @@ fn positional_tag_rows(
             PositionalDefinitionId::Known(value) => Some(value),
             PositionalDefinitionId::Unresolved => None,
         };
-        let definition_slot = definition_id.and_then(|id| {
-            definition_array.and_then(|field| datum_slot_for_id(section, field, array.end(), id))
-        });
         *output_row = DatumTagIdentity {
             source_offset,
             definition_id,
-            definition_slot,
+            definition_slot: None,
             identification,
             attachment: None,
         };
@@ -505,67 +498,6 @@ fn positional_text(row: &mut View<'_>) -> Option<(String, usize)> {
         .to_owned();
     expect(row, &[0])?;
     Some((value, field))
-}
-
-fn definition_array_is_complete(section: View<'_>, field: usize, bound: usize) -> bool {
-    let Some((array, header, leading_nulls)) = array_at(section, field, GTOL_DATUM_ARRAY, bound)
-    else {
-        return false;
-    };
-    if leading_nulls == header.slots {
-        return false;
-    }
-    let expected_rows = header.slots - leading_nulls - 1;
-    let Some(row_end) = first_row_end(array, array.position(), header.class_id) else {
-        return false;
-    };
-    let Some(positional_rows) = array.child(row_end, bound) else {
-        return false;
-    };
-    positional_definition_rows(positional_rows) == Some(expected_rows)
-}
-
-fn positional_definition_rows(rows: View<'_>) -> Option<usize> {
-    let mut matches = 0_usize;
-    let mut cursor = rows.position();
-    while let Some(offset) = find_from(rows, &[0xe3], cursor) {
-        let mut row = rows.child(offset, rows.end())?;
-        let parsed = (|| {
-            expect(&mut row, &[0xe3])?;
-            let datum_type = compact(&mut row)?;
-            let datum_id = nullable_compact(&mut row)?;
-            let feature_id = nullable_compact(&mut row)?;
-            let gtol_id = nullable_compact(&mut row)?;
-            expect(&mut row, &[0xe3])?;
-            (datum_type == 1
-                && matches!(datum_id, NullableCompact::Null)
-                && matches!(feature_id, NullableCompact::Null)
-                && matches!(gtol_id, NullableCompact::Null))
-            .then_some(())
-        })();
-        if parsed.is_some() {
-            matches = matches.checked_add(1)?;
-        }
-        cursor = offset.checked_add(1)?;
-        if cursor >= rows.end() {
-            break;
-        }
-    }
-    Some(matches)
-}
-
-fn datum_slot_for_id(
-    section: View<'_>,
-    field: usize,
-    bound: usize,
-    definition_id: u32,
-) -> Option<u32> {
-    let (_, header, _) = array_at(section, field, GTOL_DATUM_ARRAY, bound)?;
-    let slot = first_datum_slot(section, field, bound)?;
-    if definition_id < slot || usize::try_from(definition_id).ok()? >= header.slots {
-        return None;
-    }
-    definition_array_is_complete(section, field, bound).then_some(definition_id)
 }
 
 fn compact(view: &mut View<'_>) -> Option<u32> {

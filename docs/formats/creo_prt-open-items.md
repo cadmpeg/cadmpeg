@@ -1528,6 +1528,18 @@ nested text owner, and placement pointer. A named row can carry null
 serialized productions. Consume nested fields and distinguish later slots to
 transfer their datum and target references.
 
+**Note.** Boundary tests gave these results:
+
+1. A dimension-style `symbol` field marks the end: the binary windows contain no such field.
+2. `owner_id` ends the text row: six text fields follow it.
+3. The `dtl_named_item` or `dtl_item` `e2` ends the element: tolerance fields follow both.
+4. The `tol_text` array count bounds the element: parent fields follow the counted text.
+5. The placement compound opener ends the element: pointer and datum fields follow it.
+6. ASCII `profile_ends` ends the binary element: further binary fields follow it.
+7. The `datum_refs` count ends the element: sibling datum arrays follow it.
+8. The `f8` count is the number of occupied rows: null slots occur in the array.
+9. A `drf_id` frame is required to locate subsequent prefixes: typed prefixes with matching annotation owners and neutral values also occur after null `drfs_data`.
+
 ### PP-23. Geometric-tolerance datum identities
 
 **Question.** Which native records bind tolerance datum labels and frame
@@ -1568,6 +1580,18 @@ ordinal order before using its row count to assert slot identity.
 data, and the count of typed `e3` row candidates does not establish a
 one-to-one row boundary and slot ordinal.
 
+**Note.** Identity tests gave these results:
+
+1. Each `ref_info.ref_id` selects a vertex: a reference group contains vertex hits and misses.
+2. Each `ref_info.ref_id` selects a feature directly: tested identifiers do not join the feature arena.
+3. `ref_info.type` selects the namespace: the observed references share one type value.
+4. Binary datum-definition keys join reference identifiers: the prototype and positional candidates carry null key fields.
+5. Reference identifiers select tag slots: candidate identifiers differ from tag definition slots.
+6. `dtm_def_id` selects the tag's own slot: the two ordinals can differ.
+7. The first prototype's `dtm_def_id` selects the first populated definition slot: the values agree.
+8. A count of typed positional candidates proves their slot ordinals: nested leader data can contain the same markers.
+9. Each populated definition carries a leader: the CTC-01 definition array has three occupied candidates and one typed leader.
+
 ### PP-24. Geometric-tolerance attachment targets
 
 **Question.** Which pointer and nested attachment types select dimension,
@@ -1585,15 +1609,27 @@ Some positional placement identifiers start with `c0` and remain unresolved.
 **Need.** Establish each pointer's namespace and its complete owned target
 join before transferring a face or curve attachment.
 
+**Note.** Attachment tests gave these results:
+
+1. A type-1 pointer selects a zero-based dimension slot: the selected dimensions link back to their tolerances.
+2. A type-1 pointer selects a one-based dimension slot: the preceding slots lack those backlinks.
+3. A feature identifier uniquely selects the dimension: feature identifiers repeat.
+4. A dimension selects at most one tolerance: one dimension has two reciprocal links.
+5. A type-2 pointer selects a dimension slot: tested identifiers exceed the dimension array bounds.
+6. A type-4 pointer selects a reciprocal dimension: the tested in-range slots lack backlinks.
+7. A class reference states an inline attachment type: classed payloads lack the explicit type marker.
+8. A `c0`-prefixed placement identifier uses the admitted compact-integer lane: that decoder rejects the token.
+9. A dimension feature identifier selects the position target faces: the 85 mm dimension has a null `feat_id`.
+10. The dimension distance selects the position target faces: four native face pairs match each of the 85 mm and 50 mm distances.
+
 ### PP-25. PMI attribute units
 
 **Question.** How does a nonempty neutral attribute `unit` field affect its
 PMI numeric value?
 
 **Known.** Neutral attribute rows carry a unit field. PMI attributes with an
-empty unit field use the principal model length unit for length values. For a
-nonempty unit field, the decoder uses the model length unit or stored radians
-and records that assumption.
+empty unit field use the principal model length unit for length values. A
+nonempty unit field has an unresolved effect on numeric values.
 
 **Need.** Compare nonempty PMI unit fields with independently measured values
 to establish their conversion and precedence over the model unit.

@@ -32,10 +32,50 @@ struct DimensionFields<'a> {
     lower_tolerance: Option<f64>,
     upper_limit: Option<f64>,
     lower_limit: Option<f64>,
-    angular_unit: Option<&'a [u8]>,
-    duplicate: bool,
+    kind_ambiguous: bool,
+    nominal_ambiguous: bool,
+    mode_ambiguous: bool,
+    symmetric_ambiguous: bool,
+    upper_tolerance_ambiguous: bool,
+    lower_tolerance_ambiguous: bool,
+    upper_limit_ambiguous: bool,
+    lower_limit_ambiguous: bool,
+    conflicting: bool,
+    unit_unresolved: bool,
     invalid: bool,
     offset: Option<usize>,
+}
+
+impl DimensionFields<'_> {
+    fn tolerance_inputs_ambiguous(&self) -> bool {
+        self.mode_ambiguous
+            || self.symmetric_ambiguous
+            || self.upper_tolerance_ambiguous
+            || self.lower_tolerance_ambiguous
+            || self.upper_limit_ambiguous
+            || self.lower_limit_ambiguous
+    }
+
+    fn used_tolerance_inputs_ambiguous(&self) -> bool {
+        if self.mode_ambiguous {
+            return true;
+        }
+        let limits_ambiguous = self.upper_limit_ambiguous || self.lower_limit_ambiguous;
+        match self.mode {
+            Some(b"Limits") => limits_ambiguous,
+            Some(b"+- Symmetric") => {
+                self.symmetric_ambiguous
+                    || (self.tolerance.is_none() && (self.nominal_ambiguous || limits_ambiguous))
+            }
+            Some(b"Plus-Minus") => {
+                self.upper_tolerance_ambiguous
+                    || self.lower_tolerance_ambiguous
+                    || ((self.upper_tolerance.is_none() || self.lower_tolerance.is_none())
+                        && (self.nominal_ambiguous || limits_ambiguous))
+            }
+            _ => false,
+        }
+    }
 }
 
 struct ProjectedDimension {
@@ -83,12 +123,16 @@ pub(super) fn transfer(
     }
 
     let mut projected = Vec::new();
-    let mut length_dimensions = 0usize;
     let mut inferred_linear_kinds = 0usize;
-    let mut assumed_length_kinds = 0usize;
     let mut conflicting = 0usize;
-    let mut assumed_angular_units = 0usize;
+    let mut unresolved_units = 0usize;
     for (owner, fields) in fields_by_owner {
+        conflicting += usize::from(fields.conflicting);
+        unresolved_units += usize::from(fields.unit_unresolved);
+        if fields.kind_ambiguous {
+            unresolved += 1;
+            continue;
+        }
         let Some(kind) = fields.kind else {
             unresolved += 1;
             continue;
@@ -100,9 +144,6 @@ pub(super) fn transfer(
         if candidates.len() != 1 {
             unresolved += 1;
             continue;
-        }
-        if fields.duplicate {
-            conflicting += 1;
         }
         if fields.invalid {
             unresolved += 1;
@@ -123,16 +164,26 @@ pub(super) fn transfer(
         } else {
             PmiQuantity::Length
         };
-        if quantity == PmiQuantity::Angle
-            && !matches!(
-                fields.angular_unit,
-                Some(unit) if unit == b"Degrees" || unit == b"Radians"
-            )
-        {
-            assumed_angular_units += 1;
+        if quantity == PmiQuantity::Length && length_scale_mm.is_none() && !fields.unit_unresolved {
+            unresolved_units += usize::from(
+                fields.nominal.is_some()
+                    || fields.tolerance.is_some()
+                    || fields.upper_tolerance.is_some()
+                    || fields.lower_tolerance.is_some()
+                    || fields.upper_limit.is_some()
+                    || fields.lower_limit.is_some(),
+            );
+        }
+        let units_known =
+            !is_unknown_kind && (quantity == PmiQuantity::Angle || length_scale_mm.is_some());
+        if !units_known || fields.nominal_ambiguous || fields.tolerance_inputs_ambiguous() {
+            unresolved += 1;
         }
         let length_scale = length_scale_mm.unwrap_or(1.0);
-        let nominal = match fields.nominal {
+        let nominal = match fields
+            .nominal
+            .filter(|_| units_known && !fields.nominal_ambiguous)
+        {
             Some(value) => match value_for(value, quantity, length_scale) {
                 Some(value) => Some(value),
                 None => {
@@ -143,7 +194,18 @@ pub(super) fn transfer(
             None => None,
         };
         let (tolerance, unresolved_tolerance) =
-            tolerance(&fields, fields.nominal, quantity, length_scale);
+            if units_known && !fields.used_tolerance_inputs_ambiguous() {
+                tolerance(
+                    &fields,
+                    (!fields.nominal_ambiguous)
+                        .then_some(fields.nominal)
+                        .flatten(),
+                    quantity,
+                    length_scale,
+                )
+            } else {
+                (None, true)
+            };
         unresolved += usize::from(unresolved_tolerance);
         let definition = match PmiDimension::new(dimension_kind.clone(), nominal, tolerance) {
             Ok(definition) => definition,
@@ -155,9 +217,6 @@ pub(super) fn transfer(
                 definition
             }
         };
-        if quantity == PmiQuantity::Length {
-            length_dimensions += 1;
-        }
         let Some(offset) = fields.offset else {
             unresolved += 1;
             continue;
@@ -170,9 +229,6 @@ pub(super) fn transfer(
         });
         if is_linear_kind_inference {
             inferred_linear_kinds += 1;
-        }
-        if is_unknown_kind {
-            assumed_length_kinds += 1;
         }
     }
 
@@ -202,12 +258,17 @@ pub(super) fn transfer(
 
     if unresolved != 0 {
         losses.push(CreoLossCode::PmiRecordUnresolved.note(format!(
-            "{unresolved} dimensional attribute owner(s) have an ambiguous join, invalid value, or unresolved tolerance mode."
+            "{unresolved} dimensional value(s) or annotation-element joins are unresolved."
         )));
     }
     if conflicting != 0 {
-        losses.push(CreoLossCode::PmiFirstAttributeAssumed.note(format!(
-            "{conflicting} dimension(s) use the first value of conflicting attributes."
+        losses.push(CreoLossCode::PmiAttributeConflict.note(format!(
+            "{conflicting} dimension(s) have conflicting attributes; affected values were withheld."
+        )));
+    }
+    if unresolved_units != 0 {
+        losses.push(CreoLossCode::PmiUnitUnresolved.note(format!(
+            "{unresolved_units} dimension(s) have unresolved units; affected values were withheld."
         )));
     }
     if !projected.is_empty() {
@@ -224,22 +285,6 @@ pub(super) fn transfer(
         losses.push(CreoLossCode::PmiDimensionKindInferred.note(format!(
             "{inferred_linear_kinds} Creo linear dimension kind(s) use Location as the inferred semantic kind."
         )));
-    }
-    if assumed_length_kinds != 0 {
-        losses.push(CreoLossCode::PmiDimensionKindInferred.note(format!(
-            "{assumed_length_kinds} dimension(s) with an unknown kind use length values by assumption."
-        )));
-    }
-    if assumed_angular_units != 0 {
-        losses.push(CreoLossCode::PmiAngularUnitAssumed.note(format!(
-            "{assumed_angular_units} angular dimension(s) use stored radians by assumption."
-        )));
-    }
-    if length_dimensions != 0 && length_scale_mm.is_none() {
-        losses.push(
-            CreoLossCode::PmiLengthUnitAssumed
-                .note("Dimensional lengths use the default millimetre unit."),
-        );
     }
     Ok(())
 }
@@ -262,34 +307,85 @@ pub(super) fn dimension_field(name: &[u8]) -> bool {
 fn add_attribute<'a>(fields: &mut DimensionFields<'a>, attribute: &Attribute<'a>) {
     match (attribute.name, attribute.value) {
         (b"PTC_DIM_TYPE", Value::Text(value)) => {
-            fields.duplicate |= retain_first_text(&mut fields.kind, value);
+            let conflict = retain_first_text(&mut fields.kind, value);
+            fields.kind_ambiguous |= conflict;
+            fields.conflicting |= conflict;
             fields.offset.get_or_insert(attribute.offset);
         }
         (b"PTC_TOLERANCE_MODE", Value::Text(value)) => {
-            fields.duplicate |= retain_first_text(&mut fields.mode, value);
+            let conflict = retain_first_text(&mut fields.mode, value);
+            fields.mode_ambiguous |= conflict;
+            fields.conflicting |= conflict;
         }
-        (b"PTC_DIM_ANGULARDIM_UNIT", Value::Text(value)) => {
-            fields.duplicate |= retain_first_text(&mut fields.angular_unit, value);
-        }
+        (b"PTC_DIM_ANGULARDIM_UNIT", Value::Text(_)) => {}
         (b"PTC_DIM_NOMINAL_VAL", Value::Real(Some(value))) => {
-            fields.duplicate |= retain_first_real(&mut fields.nominal, value);
+            fields.nominal_ambiguous |= retain_known_real(
+                &mut fields.nominal,
+                value,
+                attribute.unit,
+                &mut fields.conflicting,
+                &mut fields.unit_unresolved,
+            );
         }
         (b"PTC_DIM_TOL_VALUE", Value::Real(Some(value))) => {
-            fields.duplicate |= retain_first_real(&mut fields.tolerance, value);
+            fields.symmetric_ambiguous |= retain_known_real(
+                &mut fields.tolerance,
+                value,
+                attribute.unit,
+                &mut fields.conflicting,
+                &mut fields.unit_unresolved,
+            );
         }
         (b"PTC_DIM_UPPER_TOL_VALUE", Value::Real(Some(value))) => {
-            fields.duplicate |= retain_first_real(&mut fields.upper_tolerance, value);
+            fields.upper_tolerance_ambiguous |= retain_known_real(
+                &mut fields.upper_tolerance,
+                value,
+                attribute.unit,
+                &mut fields.conflicting,
+                &mut fields.unit_unresolved,
+            );
         }
         (b"PTC_DIM_LOWER_TOL_VALUE", Value::Real(Some(value))) => {
-            fields.duplicate |= retain_first_real(&mut fields.lower_tolerance, value);
+            fields.lower_tolerance_ambiguous |= retain_known_real(
+                &mut fields.lower_tolerance,
+                value,
+                attribute.unit,
+                &mut fields.conflicting,
+                &mut fields.unit_unresolved,
+            );
         }
         (b"PTC_DIM_UPPER_LIMIT", Value::Real(Some(value))) => {
-            fields.duplicate |= retain_first_real(&mut fields.upper_limit, value);
+            fields.upper_limit_ambiguous |= retain_known_real(
+                &mut fields.upper_limit,
+                value,
+                attribute.unit,
+                &mut fields.conflicting,
+                &mut fields.unit_unresolved,
+            );
         }
         (b"PTC_DIM_LOWER_LIMIT", Value::Real(Some(value))) => {
-            fields.duplicate |= retain_first_real(&mut fields.lower_limit, value);
+            fields.lower_limit_ambiguous |= retain_known_real(
+                &mut fields.lower_limit,
+                value,
+                attribute.unit,
+                &mut fields.conflicting,
+                &mut fields.unit_unresolved,
+            );
         }
-        _ => fields.invalid = true,
+        _ => {
+            fields.invalid = true;
+            match attribute.name {
+                b"PTC_DIM_TYPE" => fields.kind_ambiguous = true,
+                b"PTC_DIM_NOMINAL_VAL" => fields.nominal_ambiguous = true,
+                b"PTC_TOLERANCE_MODE" => fields.mode_ambiguous = true,
+                b"PTC_DIM_TOL_VALUE" => fields.symmetric_ambiguous = true,
+                b"PTC_DIM_UPPER_TOL_VALUE" => fields.upper_tolerance_ambiguous = true,
+                b"PTC_DIM_LOWER_TOL_VALUE" => fields.lower_tolerance_ambiguous = true,
+                b"PTC_DIM_UPPER_LIMIT" => fields.upper_limit_ambiguous = true,
+                b"PTC_DIM_LOWER_LIMIT" => fields.lower_limit_ambiguous = true,
+                _ => {}
+            }
+        }
     }
 }
 
@@ -311,6 +407,19 @@ fn retain_first_real(slot: &mut Option<f64>, value: f64) -> bool {
             false
         }
     }
+}
+
+fn retain_known_real(
+    slot: &mut Option<f64>,
+    value: f64,
+    unit: &[u8],
+    conflicting: &mut bool,
+    unit_unresolved: &mut bool,
+) -> bool {
+    let conflict = retain_first_real(slot, value);
+    *conflicting |= conflict;
+    *unit_unresolved |= !unit.is_empty();
+    conflict || !unit.is_empty()
 }
 
 fn dimension_kind(source: &str) -> DimensionKind {
@@ -543,7 +652,6 @@ mod tests {
                 nominal: Some(CTC_ANGLE_NOMINAL_RADIANS),
                 mode: Some(b"+- Symmetric"),
                 tolerance: Some(CTC_ANGLE_TOLERANCE_RADIANS),
-                angular_unit: Some(b"Degrees"),
                 ..DimensionFields::default()
             },
         );
@@ -601,7 +709,7 @@ mod tests {
         add_attribute(&mut fields, &conflicting);
         close(fields.nominal.expect("preserved nominal"), 85.0);
         close(fields.upper_tolerance.expect("first tolerance"), 0.01);
-        assert!(fields.duplicate);
+        assert!(fields.upper_tolerance_ambiguous);
         let (tolerance, unresolved) = tolerance(&fields, fields.nominal, PmiQuantity::Length, 1.0);
         assert!(tolerance.is_none());
         assert!(unresolved);
