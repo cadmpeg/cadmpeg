@@ -999,9 +999,7 @@ pub(crate) fn decode_local_components(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Ok(frames) = super::meta::design_primary_frames(bytes, &meta) else {
-            continue;
-        };
+        let frames = super::meta::design_primary_frames(bytes, &meta)?;
         let mut components = StreamComponents::default();
         let mut definitions = Vec::new();
         for space in spaces {
