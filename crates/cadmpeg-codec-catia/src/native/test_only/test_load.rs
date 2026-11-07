@@ -727,6 +727,16 @@ impl CatiaNative {
         let e5_curve_supports = namespace.arena_as("e5_curve_supports")?;
         let e5_edges = namespace.arena_as("e5_edges")?;
         let e5_nurbs_limit_programs = namespace.arena_as("e5_nurbs_limit_programs")?;
+        let mut consolidated_a5_charts: Vec<crate::native::a5_chart::CatiaConsolidatedA5Chart> =
+            namespace.arena_as("consolidated_a5_charts")?;
+        consolidated_a5_charts.sort_by_key(|chart| (chart.source_index, chart.source_offset));
+        for (index, chart) in consolidated_a5_charts.iter().enumerate() {
+            if chart.id != format!("catia:consolidated:a5-chart#{index:00}") {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "invalid consolidated A5 chart identity".to_owned(),
+                ));
+            }
+        }
         let mut consolidated_domain_relations: Vec<
             crate::native::domain_relation::CatiaConsolidatedDomainRelation,
         > = namespace.arena_as("consolidated_domain_relations")?;
@@ -763,6 +773,7 @@ impl CatiaNative {
             object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
+            consolidated_a5_charts,
             consolidated_domain_relations,
             consolidated_four_reference_edges,
             consolidated_edge_nodes,

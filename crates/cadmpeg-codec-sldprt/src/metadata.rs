@@ -4,6 +4,7 @@
 pub(crate) mod configuration_manager;
 mod configuration_properties;
 pub(crate) mod default_properties;
+pub(crate) mod mass_properties;
 pub(crate) mod part;
 
 use crate::container::{ContainerScan, Section};

@@ -4,6 +4,7 @@
 mod assembly_bodies;
 mod declared_measures;
 mod partial_geometry;
+mod tolerance_zones;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 

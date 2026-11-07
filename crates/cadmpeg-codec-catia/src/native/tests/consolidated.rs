@@ -1521,6 +1521,7 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
         references,
         reference_encodings,
         tail,
+        ..
     } = &packet.payload
     else {
         panic!("count-framed owner payload")

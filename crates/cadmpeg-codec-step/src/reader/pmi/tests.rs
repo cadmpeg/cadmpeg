@@ -1224,6 +1224,7 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
         defined_area_unit: None,
         defined_area_second_unit: None,
         modifiers: Vec::new(),
+        constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
     };
     ir.model.pmi.push(unsupported);
 
@@ -1598,6 +1599,36 @@ fn dimensional_limit_measures_decode_as_limits() {
         loss.code == StepLossCode::DimensionalLimitsOmitted.kind()
             || loss.message.contains("nominal is ambiguous")
     }));
+}
+
+#[test]
+fn dimension_representations_merge_numeric_values_and_modifiers_in_either_order() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+    for id in [3, 16] {
+        let input = format!("{LIMIT_DIMENSION}\n#20=DESCRIPTIVE_REPRESENTATION_ITEM('dimensional note','theoretical');\n#21=SHAPE_DIMENSION_REPRESENTATION('',(#20),#2);\n#{id}=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#21);");
+        let result = decode_inline(&input);
+        assert_limit_values(limit_dimension(&result));
+        assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+            &annotation.definition,
+            PmiDefinition::Dimension(dimension) if dimension.modifiers() == ["theoretical"]
+        )));
+    }
+}
+
+#[test]
+fn conflicting_dimension_representations_omit_the_ambiguous_nominal() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+    let input = format!("{LIMIT_DIMENSION}\n#20=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(36.),#1) REPRESENTATION_ITEM('nominal value'));\n#21=SHAPE_DIMENSION_REPRESENTATION('',(#20),#2);\n#22=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#21);\n#23=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);");
+    let result = decode_inline(&input);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::DimensionalNominalAmbiguous.kind()));
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Dimension(dimension) if dimension.nominal().is_none() && dimension.tolerance().is_some()
+    )));
 }
 
 #[test]

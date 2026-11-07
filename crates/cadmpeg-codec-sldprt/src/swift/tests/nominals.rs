@@ -277,7 +277,7 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
         decimal_places: 3,
     }];
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &displayed, &mut annotations, None);
+    enrich_implicit_nominals(&root, &displayed, &mut annotations);
     let diameter = annotations
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
@@ -304,7 +304,7 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
         .features
         .references = vec![reference("FP", "GdtPattern")];
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &displayed, &mut annotations, None);
+    enrich_implicit_nominals(&root, &displayed, &mut annotations);
     let diameter = annotations
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
@@ -335,7 +335,6 @@ fn conflicting_pattern_sizes_do_not_resolve_a_nominal() {
             decimal_places: 1,
         }],
         &mut annotations,
-        None,
     );
     assert_eq!(dimension_nominal(&annotations, "A30"), None);
 }
@@ -353,7 +352,7 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
         .features
         .references = vec![reference("FP", "GdtPattern")];
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A30").unwrap())
@@ -399,7 +398,6 @@ fn empty_pattern_does_not_bind_an_unrelated_rendered_diameter() {
             decimal_places: 3,
         }],
         &mut annotations,
-        None,
     );
     assert_eq!(dimension_nominal(&annotations, "A30"), None);
 }
@@ -432,7 +430,7 @@ fn counterbore_pattern_supplies_distinct_hole_diameter() {
     root.annotations.entities.push(counterbore);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A30").unwrap())
@@ -473,7 +471,7 @@ fn unrelated_counterbore_size_does_not_select_a_pattern_diameter() {
     root.annotations.entities.push(counterbore);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "A30"), None);
 }
 
@@ -482,7 +480,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
     let mut root = semantic_root();
     *root.features.entities.get_mut(1).expect("direct cylinder") = cylinder_with_radius(17.5);
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A30").unwrap())
@@ -508,7 +506,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
         .expect("diameter feature reference")
         .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A30").unwrap())
@@ -566,7 +564,7 @@ fn directional_plane_distance_supplies_location_nominal() {
     ));
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -590,7 +588,7 @@ fn directional_plane_distance_supplies_location_nominal() {
     *root.features.entities.last_mut().expect("second plane") =
         plane_at([8.0, 9.0, 25.0], [1.0, 0.0, 0.0]);
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "A50"), None);
 }
 
@@ -623,7 +621,7 @@ fn directional_compound_hole_axes_supply_location_nominal() {
     ));
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -698,7 +696,7 @@ fn closed_slot_end_feature_supplies_length_location_nominal() {
     root.annotations.entities.push(distance);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -719,7 +717,7 @@ fn closed_slot_end_feature_supplies_length_location_nominal() {
         .doubles
         .insert("Width".into(), 7.0);
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "A50"), None);
 }
 
@@ -756,7 +754,6 @@ fn rendered_depth_resolves_axial_nominal_planes() {
             decimal_places: 2,
         }],
         &mut annotations,
-        None,
     );
     let depth = annotations
         .iter()
@@ -786,7 +783,7 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
     root.annotations.entities.push(depth);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -812,7 +809,7 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
     cylinder.integers.insert("IsThreaded".into(), 1);
     cylinder.doubles.insert("ThreadDepth".into(), 12.0);
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -856,7 +853,7 @@ fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
     root.annotations.entities.push(depth);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("AD").unwrap())
@@ -877,7 +874,7 @@ fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
         .doubles
         .insert("Z".into(), 1.0);
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "AD"), None);
 }
 
@@ -938,7 +935,7 @@ fn semantic_slot_dimensions_resolve_exact_nominals() {
     root.annotations.entities.push(length);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let width = annotations
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("Width 1"))
@@ -1014,11 +1011,16 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
     }
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
-    for (id, expected, quantity) in [
-        ("ACB", 15.875, PmiQuantity::Length),
-        ("ACSD", 20.0, PmiQuantity::Length),
-        ("ACSA", std::f64::consts::FRAC_PI_2, PmiQuantity::Angle),
+    enrich_implicit_nominals(&root, &[], &mut annotations);
+    for (id, expected, quantity, kind) in [
+        ("ACB", 15.875, PmiQuantity::Length, DimensionKind::Diameter),
+        ("ACSD", 20.0, PmiQuantity::Length, DimensionKind::Diameter),
+        (
+            "ACSA",
+            std::f64::consts::FRAC_PI_2,
+            PmiQuantity::Angle,
+            DimensionKind::Angular,
+        ),
     ] {
         let PmiDefinition::Dimension(relation) = &annotations
             .iter()
@@ -1029,6 +1031,7 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
             panic!("dimension definition");
         };
         let nominal = relation.nominal().expect("dimension nominal");
+        assert_eq!(relation.kind(), &kind);
         assert_eq!(nominal.quantity, quantity);
         assert!(approximately_equal(nominal.value.get(), expected));
     }
@@ -1077,7 +1080,7 @@ fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
     root.annotations.entities.push(width);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -1098,7 +1101,7 @@ fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
         .doubles
         .insert("Width".into(), 6.35);
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "A50"), None);
 }
 
@@ -1149,7 +1152,7 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
     root.annotations.entities.push(radius);
 
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
@@ -1185,7 +1188,7 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
         .expect("second pattern member reference")
         .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "A50"), None);
 }
 
@@ -1335,7 +1338,7 @@ fn bestfit_distance_root() -> Entity {
 fn directional_bestfit_distance_uses_solved_plane_not_feature_origin() {
     let root = bestfit_distance_root();
     let mut annotations = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut annotations, None);
+    enrich_implicit_nominals(&root, &[], &mut annotations);
     assert_eq!(dimension_nominal(&annotations, "AD"), length(13.0));
 }
 
@@ -1376,7 +1379,7 @@ fn directional_bestfit_distance_refuses_invalid_or_duplicate_solved_planes() {
             }
         }
         let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations, None);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
         assert_eq!(dimension_nominal(&annotations, "AD"), None);
     }
 }
@@ -1403,7 +1406,7 @@ fn directional_distance_refuses_every_nonidentity_transform() {
             .doubles
             .insert(field.into(), value);
         let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations, None);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
         assert_eq!(dimension_nominal(&annotations, "AD"), None);
     }
 }

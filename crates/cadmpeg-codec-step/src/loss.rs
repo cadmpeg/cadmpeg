@@ -119,6 +119,10 @@ pub(crate) enum StepLossCode {
     PmiAngleUnitUnresolved,
     /// A datum system has inconsistent precedence compartments.
     PmiDatumSystemInvalid,
+    /// A tolerance-zone constraint has no complete semantic interpretation.
+    PmiZoneUnresolved,
+    /// A dimensional modifier has no complete semantic value.
+    PmiDimensionModifierUnresolved,
     /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,
     /// Independent styled items assign conflicting scalar colors.
@@ -437,6 +441,8 @@ impl StepLossCode {
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
         Self::PmiDatumSystemInvalid,
+        Self::PmiZoneUnresolved,
+        Self::PmiDimensionModifierUnresolved,
         Self::DimensionalLimitsOmitted,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
@@ -622,6 +628,8 @@ impl StepLossCode {
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
+            Self::PmiZoneUnresolved => "pmi.zone-unresolved",
+            Self::PmiDimensionModifierUnresolved => "pmi.dimension-modifier-unresolved",
             Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
@@ -997,6 +1005,8 @@ impl StepLossCode {
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
             | Self::PmiDatumSystemInvalid
+            | Self::PmiZoneUnresolved
+            | Self::PmiDimensionModifierUnresolved
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
@@ -1085,6 +1095,8 @@ mod tests {
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
                 "pmi.datum-system-invalid",
+                "pmi.zone-unresolved",
+                "pmi.dimension-modifier-unresolved",
                 "pmi.dimensional-limits-omitted",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",

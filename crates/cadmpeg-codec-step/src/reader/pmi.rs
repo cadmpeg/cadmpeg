@@ -28,6 +28,7 @@ use super::topology::TopologyData;
 use super::StageOutcome;
 
 mod annotations;
+mod zones;
 
 use annotations::{AnnotationDraft, AnnotationIndex, Annotations};
 
@@ -82,7 +83,8 @@ pub(super) fn decode(
     let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange, ctx)?;
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
-    let characteristic_values = characteristic_values(exchange, geometry, &mut losses, ctx)?;
+    let characteristic_values =
+        characteristic_values(exchange, geometry, &mut typed, &mut losses, ctx)?;
     for (id, record) in exchange.entities("DATUM") {
         let identification = datum_identification_parameter(record)
             .and_then(|value| {
@@ -298,6 +300,11 @@ pub(super) fn decode(
                 DimensionKind::Diameter
             } else if category.is_some_and(|value| value.eq_ignore_ascii_case("radius")) {
                 DimensionKind::Radius
+            } else if category.is_some_and(|value| value.eq_ignore_ascii_case("spherical diameter"))
+            {
+                DimensionKind::SphericalDiameter
+            } else if category.is_some_and(|value| value.eq_ignore_ascii_case("spherical radius")) {
+                DimensionKind::SphericalRadius
             } else {
                 kind
             };
@@ -308,6 +315,13 @@ pub(super) fn decode(
             values.and_then(|values| values.nominal),
             values.and_then(|values| values.limits.clone()),
         )
+        .and_then(|dimension| {
+            dimension.with_modifiers(
+                values
+                    .map(|values| values.modifiers.clone())
+                    .unwrap_or_default(),
+            )
+        })
         .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
         let aspect_ids = record
             .partials
@@ -556,6 +570,7 @@ pub(super) fn decode(
         } else {
             (None, None)
         };
+        let constraints = zones::constraints(record, exchange, &mut measurements, ctx)?;
         let datum_system = first_matching(datum_system_parameter(record), ctx, |id| {
             annotations.get(id).is_some_and(|index| {
                 matches!(
@@ -601,6 +616,7 @@ pub(super) fn decode(
                     defined_area_second_unit,
                     datum_system,
                     modifiers: tolerance_modifiers(record, ctx)?,
+                    constraints,
                 },
             },
         );
@@ -628,6 +644,16 @@ pub(super) fn decode(
             }
         }
     }
+
+    zones::attach(
+        exchange,
+        geometry,
+        ir,
+        &annotations,
+        &mut typed,
+        &mut losses,
+        ctx,
+    )?;
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
         let Some(definition) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2)
@@ -1810,15 +1836,19 @@ fn modifier_values(
 struct CharacteristicValues {
     nominal: Option<PmiValue>,
     limits: Option<DimensionTolerance>,
+    modifiers: Vec<String>,
 }
 
 fn characteristic_values(
     exchange: &Exchange,
     geometry: &GeometryData,
+    typed: &mut HashSet<u64>,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, CharacteristicValues>, CodecError> {
     let mut result = BTreeMap::<u64, CharacteristicValues>::new();
+    let mut conflicting_nominals = HashSet::new();
+    let mut conflicting_limits = HashSet::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let mut measurements = measure_context(geometry, id, losses);
         let Some(characteristic) = first_matching(record_values(record), ctx, |id| {
@@ -1899,11 +1929,159 @@ fn characteristic_values(
                 None
             }
         };
-        if nominal.is_some() || limits.is_some() {
-            result.insert(characteristic, CharacteristicValues { nominal, limits });
+        let mut modifiers = BTreeSet::new();
+        let mut visited = HashSet::new();
+        parameters.visit(|value| {
+            dimension_modifiers(
+                value,
+                exchange,
+                &mut visited,
+                &mut modifiers,
+                typed,
+                losses,
+                ctx,
+            )
+        })?;
+        let modifiers: Vec<String> = modifiers.into_iter().collect();
+        if nominal.is_some() || limits.is_some() || !modifiers.is_empty() {
+            let previous = result
+                .entry(characteristic)
+                .or_insert_with(|| CharacteristicValues {
+                    nominal: None,
+                    limits: None,
+                    modifiers: Vec::new(),
+                });
+            if !conflicting_nominals.contains(&characteristic) {
+                match (previous.nominal, nominal) {
+                    (Some(old), Some(new)) if old != new => {
+                        previous.nominal = None;
+                        conflicting_nominals.insert(characteristic);
+                        losses.push(StepLossCode::DimensionalNominalAmbiguous.note(format!(
+                            "dimensional characteristic #{characteristic} has conflicting nominal values across representations"
+                        )));
+                    }
+                    (None, Some(value)) => previous.nominal = Some(value),
+                    _ => {}
+                }
+            }
+            if !conflicting_limits.contains(&characteristic) {
+                match (&previous.limits, &limits) {
+                    (Some(old), Some(new)) if old != new => {
+                        previous.limits = None;
+                        conflicting_limits.insert(characteristic);
+                        losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
+                            "dimensional characteristic #{characteristic} has conflicting limits across representations"
+                        )));
+                    }
+                    (None, Some(_)) => previous.limits = limits,
+                    _ => {}
+                }
+            }
+            previous.modifiers.extend(modifiers);
+            previous.modifiers.sort();
+            previous.modifiers.dedup();
         }
     }
     Ok(result)
+}
+
+fn dimension_modifiers(
+    value: &Value,
+    exchange: &Exchange,
+    visited: &mut HashSet<u64>,
+    output: &mut BTreeSet<String>,
+    typed: &mut HashSet<u64>,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("step_dimension_modifier_walk")?;
+    let Some(id) = value.reference() else {
+        return Ok(());
+    };
+    if !visited.insert(id) {
+        return Ok(());
+    }
+    let Some(record) = exchange.records().get(&id) else {
+        return Ok(());
+    };
+    if let Some(partial) = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "DESCRIPTIVE_REPRESENTATION_ITEM")
+    {
+        let simple = record.simple_name().is_some();
+        let name = if simple {
+            partial.parameters.first()
+        } else {
+            named_parameter(record, "REPRESENTATION_ITEM", 0)
+        };
+        let name = name.and_then(|value| {
+            decode_text(
+                exchange,
+                value,
+                losses,
+                id,
+                "dimension modifier role",
+                StepLossCode::MetadataStringInvalid,
+            )
+        });
+        if name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case("dimensional note"))
+        {
+            let description = partial
+                .parameters
+                .get(usize::from(simple))
+                .and_then(|value| {
+                    decode_text(
+                        exchange,
+                        value,
+                        losses,
+                        id,
+                        "dimension modifier",
+                        StepLossCode::MetadataStringInvalid,
+                    )
+                })
+                .filter(|value| !value.trim().is_empty());
+            if let Some(description) = description {
+                output.insert(description);
+                typed.insert(id);
+            } else {
+                losses.push(
+                    StepLossCode::PmiDimensionModifierUnresolved
+                        .note(format!("dimensional note #{id} has no modifier value")),
+                );
+            }
+        }
+    } else if let Some(partial) = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "COMPOUND_REPRESENTATION_ITEM")
+    {
+        let index = usize::from(record.simple_name().is_some());
+        if let Some(items) = partial.parameters.get(index) {
+            let mut complete = true;
+            let mut any = false;
+            for item in references(items, ctx) {
+                let item = item?;
+                dimension_modifiers(
+                    &Value::Reference(item),
+                    exchange,
+                    visited,
+                    output,
+                    typed,
+                    losses,
+                    ctx,
+                )?;
+                complete &= typed.contains(&item);
+                any = true;
+            }
+            if complete && any {
+                typed.insert(id);
+            }
+        }
+    }
+    Ok(())
 }
 
 enum MeasureParameters<'a> {

@@ -19,11 +19,20 @@
 //!   shell and negative for a void. When exactly one reading of that face
 //!   gives the required sign beyond the volume error, it is the face's
 //!   reading.
+//! - Shared sphere: unconfirmed faces of one sphere linked by edges with
+//!   opposite senses and agreeing normals lie on opposite sides of each edge,
+//!   so their readings flip together. Regions of one sphere have disjoint
+//!   interiors: the declared readings need a total area of at most the
+//!   sphere's, and the `k` complements need at least `k - 1` spheres' area.
+//!   When exactly one holds beyond the errors, it is every linked face's
+//!   reading.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{Coedge, Face};
 
 use crate::body::closure;
 use crate::boundary::FaceFrame;
@@ -122,7 +131,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
                     }
                 }
             }
-            if !changed {
+            if !changed && !self.shared_spheres(faces)? {
                 break;
             }
         }
@@ -156,24 +165,13 @@ impl<'ir> WitnessInput<'_, 'ir> {
                 let Some(coedge) = self.owners.coedge(coedge_id.as_str()) else {
                     continue;
                 };
-                if FaceFrame::is_seam(self.owners, face, coedge) {
-                    continue;
-                }
-                let users = self.owners.edge_coedges(coedge.edge.as_str());
-                let [first, second] = users else {
-                    continue;
-                };
-                let other = if first.id == coedge.id { second } else { first };
-                if other.sense == coedge.sense {
-                    continue;
-                }
-                let Some(other_face) = self.owners.coedge_face(other) else {
+                let Some(other_face) = self.opposite_face(face_id, face, coedge) else {
                     continue;
                 };
                 let Some(neighbour) = faces.get(other_face) else {
                     continue;
                 };
-                if other_face == face_id || !established(neighbour) {
+                if !established(neighbour) {
                     continue;
                 }
                 let Some(neighbour_chart) = neighbour.chart else {
@@ -221,6 +219,141 @@ impl<'ir> WitnessInput<'_, 'ir> {
                 },
             )
         }))
+    }
+
+    /// Settle the unconfirmed faces of one sphere that their shared edges
+    /// link. Returns whether any face settled.
+    fn shared_spheres(
+        &self,
+        faces: &mut HashMap<&'ir str, FaceResult<'ir>>,
+    ) -> Result<bool, ResourceLimit> {
+        let mut groups: BTreeMap<&'ir str, &'ir str> = faces
+            .iter()
+            .filter(|(_, result)| {
+                result.verdict == Verdict::Unconfirmed
+                    && matches!(result.chart, Some(Chart::Sphere(_)))
+            })
+            .map(|(id, _)| (*id, *id))
+            .collect();
+        let mut witnesses: BTreeMap<&'ir str, &'ir str> = BTreeMap::new();
+        let members: Vec<&'ir str> = groups.keys().copied().collect();
+        for face_id in members {
+            let Some(face) = self.owners.face(face_id) else {
+                continue;
+            };
+            for loop_id in &face.loops {
+                let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
+                    continue;
+                };
+                for coedge_id in face_loop.coedges() {
+                    let Some(coedge) = self.owners.coedge(coedge_id.as_str()) else {
+                        continue;
+                    };
+                    let Some(other_face) = self.opposite_face(face_id, face, coedge) else {
+                        continue;
+                    };
+                    let (Some(first), Some(second)) = (faces.get(face_id), faces.get(other_face))
+                    else {
+                        continue;
+                    };
+                    if !groups.contains_key(other_face)
+                        || !same_sphere(first, second)
+                        || self.linked_vote(coedge.edge.as_str(), first, second)?
+                            != Some(Vote::Agree)
+                    {
+                        continue;
+                    }
+                    let keep = group_of(&groups, face_id);
+                    let merged = group_of(&groups, other_face);
+                    groups.insert(merged, keep);
+                    witnesses.insert(face_id, coedge.edge.as_str());
+                    witnesses.insert(other_face, coedge.edge.as_str());
+                }
+            }
+        }
+        let mut components: BTreeMap<&'ir str, Vec<&'ir str>> = BTreeMap::new();
+        for face in groups.keys() {
+            components
+                .entry(group_of(&groups, face))
+                .or_default()
+                .push(face);
+        }
+        let mut settled = false;
+        for members in components.into_values().filter(|group| group.len() > 1) {
+            let Some(verdict) = shared_sphere_verdict(faces, &members) else {
+                continue;
+            };
+            for face in members {
+                let Some(edge) = witnesses.get(face) else {
+                    continue;
+                };
+                if let Some(result) = faces.get_mut(face) {
+                    result.settle_reading(
+                        verdict,
+                        Some(Witness {
+                            kind: WitnessKind::SharedSphere,
+                            entity: (*edge).to_owned(),
+                            agrees: verdict == Verdict::Confirmed,
+                        }),
+                    );
+                    settled = true;
+                }
+            }
+        }
+        Ok(settled)
+    }
+
+    /// The other face of a non-seam edge that exactly two coedges with
+    /// opposite senses use.
+    fn opposite_face(
+        &self,
+        face_id: &str,
+        face: &'ir Face,
+        coedge: &'ir Coedge,
+    ) -> Option<&'ir str> {
+        if FaceFrame::is_seam(self.owners, face, coedge) {
+            return None;
+        }
+        let [first, second] = self.owners.edge_coedges(coedge.edge.as_str()) else {
+            return None;
+        };
+        let other = if first.id == coedge.id { second } else { first };
+        let other_face = (other.sense != coedge.sense)
+            .then(|| self.owners.coedge_face(other))
+            .flatten()?;
+        (other_face != face_id).then_some(other_face)
+    }
+
+    /// The vote of `edge` on two faces under their declared normals.
+    fn linked_vote(
+        &self,
+        edge: &str,
+        first: &FaceResult<'ir>,
+        second: &FaceResult<'ir>,
+    ) -> Result<Option<Vote>, ResourceLimit> {
+        let (Some(chart), Some(other), Some(edge)) =
+            (first.chart, second.chart, self.edges.get(edge))
+        else {
+            return Ok(None);
+        };
+        let slice = self.pass.face_slice();
+        let eval = Eval {
+            work: &slice,
+            ..self.eval
+        };
+        let sides = [
+            (
+                chart,
+                first.alpha,
+                sign(first.row.orientation.declared_normal),
+            ),
+            (
+                other,
+                second.alpha,
+                sign(second.row.orientation.declared_normal),
+            ),
+        ];
+        Ok(settle(edge_vote(&eval, edge, &sides))?.unwrap_or_default())
     }
 
     /// Settle the one unconfirmed face of each closed shell whose other
@@ -307,6 +440,56 @@ impl<'ir> WitnessInput<'_, 'ir> {
             (false, true) => Some((face, Verdict::Contradicted)),
             _ => None,
         }
+    }
+}
+
+/// The representative of a face's linked group.
+fn group_of<'ir>(groups: &BTreeMap<&'ir str, &'ir str>, face: &'ir str) -> &'ir str {
+    let mut current = face;
+    while let Some(parent) = groups.get(current).filter(|parent| **parent != current) {
+        current = parent;
+    }
+    current
+}
+
+/// Whether two faces rest on one sphere within their boundary allowances.
+fn same_sphere(first: &FaceResult<'_>, second: &FaceResult<'_>) -> bool {
+    let (Some(Chart::Sphere(a)), Some(Chart::Sphere(b))) = (first.chart, second.chart) else {
+        return false;
+    };
+    let allowance = first.alpha.max(second.alpha);
+    a.center.distance(b.center) <= allowance && (a.radius.abs() - b.radius.abs()).abs() <= allowance
+}
+
+/// The reading the total area of linked faces of one sphere leaves.
+fn shared_sphere_verdict(
+    faces: &HashMap<&str, FaceResult<'_>>,
+    members: &[&str],
+) -> Option<Verdict> {
+    let mut total = 0.0;
+    let mut error = 0.0;
+    let mut sphere = None;
+    let mut alpha = 0.0_f64;
+    for member in members {
+        let result = faces.get(member)?;
+        let area = result.row.measures.area.measured()?;
+        total += area.value().value.get();
+        error += area.numeric_error().get() + area.model_uncertainty().get();
+        alpha = alpha.max(result.alpha);
+        sphere = result.chart;
+    }
+    let Chart::Sphere(chart) = sphere? else {
+        return None;
+    };
+    let whole = sphere?.closed_area()?;
+    let count = f64_from_index(members.len())?;
+    error += count * 2.0 * std::f64::consts::TAU * chart.radius.abs() * alpha;
+    let declared = total + error < whole;
+    let complement = total - error > (count - 1.0) * whole;
+    match (declared, complement) {
+        (true, false) => Some(Verdict::Confirmed),
+        (false, true) => Some(Verdict::Contradicted),
+        _ => None,
     }
 }
 

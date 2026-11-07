@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
+use cadmpeg_ir::declared_measures::{
+    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::{DeclaredMeasureId, IdentityKey, ProductDefinitionId};
@@ -166,16 +168,13 @@ pub(super) fn decode(
                 kind!("declared_measure"),
                 IdentityKey::from(property_id).dash(item_id),
             ));
-            measures.insert(
-                id.clone(),
-                DeclaredMeasure {
-                    id,
-                    target: target.clone(),
-                    quantity,
-                    label: description.clone(),
-                    native_ref: Some(format!("#{item_id}")),
-                },
-            );
+            let mut measure = DeclaredMeasure::new(id.clone(), target.clone(), quantity)
+                .with_provenance(DeclaredMeasureProvenance::ValidationProperty)
+                .with_native_ref(format!("#{item_id}"));
+            if let Some(description) = description {
+                measure = measure.with_label(description.clone());
+            }
+            measures.insert(id, measure);
         }
     }
     ir.model.declared_measures.extend(measures.into_values());
