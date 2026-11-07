@@ -1237,6 +1237,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
         LinearTermination, PlanarProfileRef, ProfileRef,
@@ -1288,6 +1289,32 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     assert_eq!(parameter.name, "D1");
     assert_eq!(parameter.expression.literal_text().as_deref(), Some("25mm"));
     assert!(parameter.pmi.is_some());
+
+    let parameter_id = parameter.id.clone();
+    let mut ir = decoded.ir().clone();
+    ir.model
+        .parameters
+        .iter_mut()
+        .find(|item| item.id == parameter_id)
+        .unwrap()
+        .driving = false;
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(written.ir());
+    let feature = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Boss")
+        .unwrap();
+    assert!(!feature.dimension_properties.contains_key("D1"));
+    assert!(!feature.parameters.contains_key("D1"));
 }
 
 #[test]
