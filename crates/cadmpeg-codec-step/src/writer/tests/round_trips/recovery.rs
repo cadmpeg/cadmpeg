@@ -20,6 +20,41 @@ use crate::loss::StepLossCode;
 use crate::StepCodec;
 
 #[test]
+fn recovered_wire_edges_name_the_owning_body() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let loop_id = ir.model.faces[0].loops.iter().next().expect("loop").clone();
+    let loop_ = ir
+        .model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == loop_id)
+        .expect("loop record");
+    let mut coedges = loop_.coedges().to_vec();
+    coedges.pop();
+    loop_
+        .replace_ring(coedges, Vec::new())
+        .expect("nonempty ring");
+    ir.model.shells[0] = Shell::with_face(
+        ir.model.shells[0].id.clone(),
+        ir.model.shells[0].region.clone(),
+        ir.model.faces[0].id.clone(),
+    );
+    let body = ir.model.bodies[0].id.clone();
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write surviving geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::RegionEdgesRecovered.kind()
+            && loss.message.contains(body.as_str())
+    }));
+}
+
+#[test]
 fn missing_inner_loop_keeps_the_other_faces() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     let outer = ir.model.faces[0]
