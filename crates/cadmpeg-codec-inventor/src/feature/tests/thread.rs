@@ -242,6 +242,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let expected_face = properties[0].id();

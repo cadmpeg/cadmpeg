@@ -54,6 +54,12 @@ pub(crate) struct ProfileGeometryWork {
     crossing_loop_skipped_selections: Cell<usize>,
     crossing_loop_assumed: Cell<bool>,
     crossing_loop_assumed_selections: Cell<usize>,
+    cut_regions_assumed: Cell<bool>,
+    cut_regions_assumed_selections: Cell<usize>,
+    cap_outline_assumed: Cell<bool>,
+    cap_outline_assumed_selections: Cell<usize>,
+    cap_carrier_assumed: Cell<bool>,
+    cap_carrier_assumed_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -72,6 +78,12 @@ impl ProfileGeometryWork {
             crossing_loop_skipped_selections: Cell::new(0),
             crossing_loop_assumed: Cell::new(false),
             crossing_loop_assumed_selections: Cell::new(0),
+            cut_regions_assumed: Cell::new(false),
+            cut_regions_assumed_selections: Cell::new(0),
+            cap_outline_assumed: Cell::new(false),
+            cap_outline_assumed_selections: Cell::new(0),
+            cap_carrier_assumed: Cell::new(false),
+            cap_carrier_assumed_selections: Cell::new(0),
         }
     }
 
@@ -95,6 +107,18 @@ impl ProfileGeometryWork {
                 &self.crossing_loop_assumed,
                 &self.crossing_loop_assumed_selections,
             ),
+            (
+                &self.cut_regions_assumed,
+                &self.cut_regions_assumed_selections,
+            ),
+            (
+                &self.cap_outline_assumed,
+                &self.cap_outline_assumed_selections,
+            ),
+            (
+                &self.cap_carrier_assumed,
+                &self.cap_carrier_assumed_selections,
+            ),
         ] {
             if skipped.take() {
                 selections.set(selections.get() + 1);
@@ -106,6 +130,24 @@ impl ProfileGeometryWork {
     /// stored loop split by curve-use counts.
     pub(crate) fn note_crossing_loop_assumed(&self) {
         self.crossing_loop_assumed.set(true);
+    }
+
+    /// Record that the open selection took regions from the faces a cut
+    /// changed.
+    pub(crate) fn note_cut_regions_assumed(&self) {
+        self.cut_regions_assumed.set(true);
+    }
+
+    /// Record that the open selection took regions from an end cap whose
+    /// outline was compared partly by samples.
+    pub(crate) fn note_cap_outline_assumed(&self) {
+        self.cap_outline_assumed.set(true);
+    }
+
+    /// Record that the open selection took regions from an end cap with an
+    /// edge read from its samples.
+    pub(crate) fn note_cap_carrier_assumed(&self) {
+        self.cap_carrier_assumed.set(true);
     }
 
     /// One loss for each cap that made a closed selection skip a search.
@@ -133,6 +175,24 @@ impl ProfileGeometryWork {
         if crossing_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCrossingLoopAssumed.note(format!(
                 "{crossing_assumed} extrude profile selection(s) split a self-crossing stored loop into atomic regions by curve-use counts; the stored curve order of the loop was not checked, and atomic faces that enclose an island were assumed not to be selected."
+            )));
+        }
+        let cut_assumed = self.cut_regions_assumed_selections.get();
+        if cut_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
+                "{cut_assumed} extrude profile selection(s) took atomic regions bounded by the stored profile's curves from the faces the cut changed on planes parallel to the Sketch: a region is selected when one interior point lay on such a face before the cut and on none after it. The region boundaries were not compared with the face boundaries."
+            )));
+        }
+        let cap_outline = self.cap_outline_assumed_selections.get();
+        if cap_outline != 0 {
+            losses.push(F3dLossCode::FeatureProfileCapOutlineAssumed.note(format!(
+                "{cap_outline} extrude profile selection(s) were read from an end cap whose outline has a sketch curve that is not a line or circular arc. The boundary comparison is incomplete: only that curve's ends were checked on the cap boundary, and the cap edges it should cover were checked against its samples at their end and interior points."
+            )));
+        }
+        let cap_carrier = self.cap_carrier_assumed_selections.get();
+        if cap_carrier != 0 {
+            losses.push(F3dLossCode::FeatureProfileCapCarrierAssumed.note(format!(
+                "{cap_carrier} extrude profile selection(s) were read from an end cap with an edge whose carrier is not proven. The reading assumes, from the edge's end points and interior sample, that the edge is the straight line between its ends, or the circular arc through its ends and the sample."
             )));
         }
         losses
@@ -1926,7 +1986,7 @@ fn sketch_geometry_speed_bound(
     }
 }
 
-fn sketch_geometry_point(
+pub(super) fn sketch_geometry_point(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     parameter: f64,
     ctx: &DecodeContext<'_>,
@@ -2003,6 +2063,79 @@ fn point_on_profile_boundary_use(
             })
         }
         _ => true,
+    }
+}
+
+/// The exact carrier one profile boundary use traces over its parameter
+/// interval, in the interval's stored direction.
+pub(super) enum BoundaryCarrier {
+    Line {
+        start: Point2,
+        end: Point2,
+    },
+    /// From `start` radians through `sweep` radians about `center`; a
+    /// negative sweep turns clockwise.
+    Arc {
+        center: Point2,
+        radius: f64,
+        start: f64,
+        sweep: f64,
+    },
+}
+
+/// `count + 1` points evenly spaced in parameter along `use_`, from its
+/// first end to its last. `None` when the curve cannot be evaluated there.
+pub(super) fn boundary_use_samples(
+    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    count: u32,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Point2>>, CodecError> {
+    let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
+    let [from, to] = use_.parameter_range.endpoints();
+    let mut points = Vec::new();
+    for k in 0..=count {
+        let parameter = from + (to - from) * f64::from(k) / f64::from(count);
+        points.push(geometric!(sketch_geometry_point(
+            &entity.geometry,
+            parameter,
+            ctx
+        )?));
+    }
+    Ok(Some(points))
+}
+
+/// The line or circular arc `use_` traces. `None` for any other curve.
+pub(super) fn boundary_use_carrier(
+    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Option<BoundaryCarrier> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+    let [from, to] = use_.parameter_range.endpoints();
+    match *entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
+            let (start, end) = (start.get(), end.get());
+            let at = |parameter: f64| {
+                Point2::new(
+                    start.u + parameter * (end.u - start.u),
+                    start.v + parameter * (end.v - start.v),
+                )
+            };
+            Some(BoundaryCarrier::Line {
+                start: at(from),
+                end: at(to),
+            })
+        }
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => Some(BoundaryCarrier::Arc {
+            center: center.get(),
+            radius: radius.get(),
+            start: from,
+            sweep: to - from,
+        }),
+        _ => None,
     }
 }
 

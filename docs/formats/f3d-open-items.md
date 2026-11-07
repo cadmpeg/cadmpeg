@@ -20,6 +20,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-284. Compact sketch-profile tail flags
+
+**Question.** What do the two compact sketch-profile tail flags encode, and how do they affect profile selection?
+
+**Known.** `f3d.md` §3.1 "A sketch-driven `Extrude` scope" gives the position and admitted values of the flags. The construction-operand group tail in `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" ends its flag block with `variant` and the closing flag, and these two bytes also immediately precede the reference to `N+1`.
+
+**Need.** Controlled designs that vary each flag and establish the selected profile for each value.
+
+**Conflict.** None.
+
+**Note.** The decoder retains the flags with the sketch-profile operand, binds the profile as for flags `[0, 0]`, and emits `feature.sketch-profile-flags-assumed` when a flag is `1`.
+
+### DR-285. Compact sketch-profile tail word and final reference
+
+**Question.** What does the nonzero u32 of a compact sketch-profile tail encode, and which record does the final marked reference of a sketch-profile tail name?
+
+**Known.** `f3d.md` §3.1 "A sketch-driven `Extrude` scope" gives the 83-, 89-, and 93-byte tails, the nonzero u32, and the marked references to `N+2`, `N+1`, and a third record.
+
+**Need.** Controlled designs that vary the profile and its owning scope, with the record that carries the index of the final reference.
+
+**Conflict.** None.
+
+**Note.** The decoder checks that the u32 is nonzero, that the 93-byte tail repeats it, and that the final marked reference is present.
+
 ### DR-106. Hole extent leading word
 
 **Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?
@@ -88,6 +112,31 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Controlled evaluation and save pairs must distinguish the scalar unit, ordinal allocation event, and ordinary variant meaning. A compact-`false` control must separate invalid, default, identity, and inactive interpretations. Independent occurrence and local-geometry edits must distinguish the dual slots. Auxiliary-path forms without an admitted rigid placement need complete typed grammar before they define a relative-placement equation. Preserve these fields and forms until those distinctions are established.
 
+
+### DR-261. Different construction-group ordinals in one SurfaceOffset scope
+
+**Question.** What do different construction-group ordinals mean when the support groups of one grouped `SurfaceOffset` scope carry them?
+
+**Known.** `f3d.md` §3.1 gives the construction-group payload and its `ordinal`, and the grouped support form of `SurfaceOffset`. The groups of one feature scope usually share one ordinal; a grouped `SurfaceOffset` scope stores 252 in one document and 260 in another. DR-19 records that the ordinal's allocation event is unsettled. The decoder reads groups with different ordinals as one support-face selection and reports `feature.surface-offset-group-ordinals-assumed`.
+
+**Need.** A save of one `SurfaceOffset` whose support faces come from two selections made at different times, with the face set that Fusion shows for it.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-273. Scale frame whose payload length matches no form
+
+**Question.** Which form does a legacy `Scale` scope store when its payload length matches none of the 297-, 299- and 308-byte forms?
+
+**Known.** `f3d.md` §3.1 keys the legacy `Scale` forms on the payload length after the two serialized bytes per UTF-16 kind code unit are excluded: 297 bytes with five ordered references, 299 bytes with five, and 308 bytes with six. When the payload length matches none of them and the frame is 307 or 309 bytes with five ordered references or 318 bytes with six, the decoder reads the form whose English frame has that length. In a 309-byte frame it requires the null GUID, the reference table and the tail at the English offsets of the 299-byte-payload form. It reports `feature.scale-frame-length-form-assumed`.
+
+**Need.** A `Scale` scope whose kind spelling and frame length give a payload length outside the three forms, with its factor and center checked against the result volume.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-25. Base Feature six-byte fields
 
 **Question.** What do the six-byte fields after the Base Feature body suffixes and after the Base Feature record references hold?
@@ -144,11 +193,15 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 ### DR-31. Editable Pipe section-type carrier and path parameterization
 
-**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path?
+**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path, and does a `Pipe` whose forward and reverse fractions both equal one sweep its whole path group when its section lies inside the path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. A section shape can be bound from unique saved topology. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a new-body `Pipe` as a circular section swept along its whole path group when its result bodies are solids that no later feature changes, every face of them lies on a plane, on a cylinder whose radius is the outside radius or, for a hollow section, the inner radius, or on a torus whose minor radius is one of those radii, the faces include at least one curved face of each radius, and the forward and reverse fractions both equal one. It reports `feature.pipe-circular-section-inferred` and `feature.pipe-whole-path-extent-assumed`.
 
-**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation.
+**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ### DR-61. Cross-document selection stamp and evaluation scalar
 
@@ -546,6 +599,18 @@ travel.
 
 **Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record. The native `sketch_geometry_groups` record keeps the member run in `members` and the owning sketch reference in `sketch_reference`. A member reference that names a record without a decoded backlink to the group assigns no owner, and the decoder emits `sketch.geometry-group-member-unbacklinked`.
 
+### DR-308. Canvas flag byte before the second boundary
+
+**Question.** What does the flag byte before the second boundary segment of a Canvas geometry record select, and does a zero value change the image placement or display?
+
+**Known.** `f3d.md` §3.1 "Canvas geometry has eight fixed prefix layouts." gives the byte position in each layout. The byte is zero in the legacy layout and zero or one in the other layouts. A modern Canvas with a zero byte stores both boundary segments, the plane reference, and the payload frame at the same offsets as a modern Canvas with a one byte.
+
+**Need.** Controlled saves of one Canvas that toggle each Canvas display and selection option, compared byte for byte, to find the option that sets this byte.
+
+**Conflict.** None.
+
+**Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
@@ -892,6 +957,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.
 
+### DR-306. Marked Move transform records outside the rigid-transform rules
+
+**Question.** What does a transform record that the marked reference of a `Move` scope selects store when its class type is not the rigid-transform type, its frame is not 253, 254, 273, or 274 bytes, or its form word is not the form word of its frame length?
+
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each of the four frame lengths, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record that has the zero run, form word `1` or `5`, and a rigid matrix, and records `feature.move-transform-assumed` with each rule that the record breaks.
+
+**Need.** Controlled saves of one `Move` that change the transform type between translation, rotation, and point-to-point, each recording the class type, frame length, and form word of the marked record and the bytes from offset 176 to the paired header.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-224. `Fillet` edges that the transition leaves open
 
 **Question.** Which edges does a constant-radius `Fillet` group select when its transition inserts a blend without a cylinder or torus row, a blend with no replaced edge or with two, two groups with one radius, or more replaced edges than the group has distinct members? Can a rounded edge keep its slot?
@@ -1016,7 +1093,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What do the members of a Mirror scope's role-`0x10` group select?
 
-**Known.** `f3d.md` §3.1 "A Design Mirror scope" lists the seed and plane groups. Mirror scopes in the public native-assembly drive-unit design also store a counted role-`0x10` group whose members are class-256 persistent selection records. The same scopes store a role-`0x5` plane group with one bounded-face recipe member. These scopes do not decode a mirror construction.
+**Known.** `f3d.md` §3.1 "A Design Mirror scope" lists the seed and plane groups. Mirror scopes in the public native-assembly drive-unit design also store a counted role-`0x10` group whose members are class-256 persistent selection records. The same scopes store a role-`0x5` plane group with one bounded-face recipe member. These scopes do not decode a mirror construction. The decoder reads a role-`0x10` group as a face seed group when it is at scope-reference ordinal one, the scope has no role-`0x4` or role-`0x8` group, and every member decodes as a bounded-face operand.
 
 **Need.** Mirror features with controlled changes to the selected objects, to find which seed kind the group carries and how it relates to the seed group.
 
@@ -1082,7 +1159,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples. When the referenced faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the decoder reads that edge and reports `history.edge-selection-inferred`. Whether a recipe's candidate faces can omit the selected edge is open.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -1095,6 +1172,30 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
 
 **Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
+
+### DR-262. Faces of transition-inferred Extrude face profiles
+
+**Question.** Which preceding faces does an Extrude face profile with unresolved members select, and which of them does each unresolved member select?
+
+**Known.** The unresolved members have recipe nodes outside the two-clause structure, or positive prefix references whose face lane is empty in the preceding topology (DR-170). The decoder reads an Extrude whose native profile is the scope's one profile-role construction group in the scope's stream, whose members each have no historical face slot or one and no active face, whose resolved slots are distinct, and which has at least one unresolved member. It infers the faces from the scope's direct transition when the Extrude is one-sided and blind along the profile normal or its reverse, starts on the profile plane, and has no draft. A preceding or inserted face with several surface bindings, a surface with several plane rows, or no surface binding, and an inserted face on a surface without geometry rows, keep the root native. A preceding face on a surface without geometry rows lies on each plane that holds all its vertices, or on every plane when its loops cannot be read, and counts there as a face that cannot be read. The inserted planar faces parallel to a plane at the blind distance from it are taken as end caps that repeat the swept profile. A preceding face can be the profile when it is a resolved face, when the transition deletes or updates it, or when the Extrude makes a new body. On each such plane and side whose preceding faces can be the profile, the preceding planar faces whose interior sample points lie inside the caps are the root's faces when they can be the profile, number one per root member, include every resolved face, cover the caps' area, and have a union outline that lies on the cap boundaries and passes through every cap vertex. Each cap and selected face edge is a line on a straight carrier or a circle where the face meets a cylinder about an axis parallel to the plane normal. A loop has no readable outline when a vertex has several point bindings or positions, a coedge several rows, or an edge several vertex rows, curve bindings, axis rows or samples, or when a neighbouring loop of a circle edge has no single owner face or that face no single surface binding. The root stays native when an inserted planar face has no unit normal, when a selection that can be the profile fails these conditions, when two such selections differ, when a cap over a plane with such a face cannot be read, or when a face whose edges or sample point cannot be read reaches into a cap and either that face or the selection on its plane can be the profile. Such a face is drawn by its outline points, or by its vertices when its edges cannot be read. It reaches into a cap when its loops cannot be read, when a point is not finite, when none of its loops has three points, when one of its points lies inside the cap away from the cap boundary, when a cap vertex lies inside the face away from its loops, or when the mean of its largest loop's points or a point of a grid that divides its bounds into 24 parts on each axis lies inside both the face and the cap, away from their boundaries. This reading reports `feature.extrude-profile-cap-faces-inferred` with the faces at the blind length outside the caps, the unreadable faces clear of the caps, and the number of planes and sides whose faces no member resolves and the transition neither deletes nor updates. When no cap selects such a face set and at least one member is resolved, the transition's deleted faces are the root's faces when they are as many unique preceding planar faces as root members, include every resolved face, and lie on the plane of the resolved faces. A Cut can also delete coplanar faces outside the selection; this reading reports `feature.extrude-profile-deleted-faces-inferred` with the coplanar faces that the transition updates and keeps and the candidates that the end-cap search passes over. When both readings give a face set and the sets differ, the root stays native. Each resolved member keeps its face at its member position, and the remaining faces take the unresolved positions in increasing stable face-slot order; a profile with two or more unresolved members reports `feature.extrude-profile-face-order-assumed`.
+
+**Need.** The node grammar and the empty-lane binding of DR-170, so that each member's recipe selects its face.
+
+**Conflict.** None.
+
+**Note.** On a plane whose preceding faces can be the profile, a search past a local cap of 256 faces or 256 caps on the plane, 4096 outline points, or 4096 edges on one face keeps the root native and reports `feature.extrude-profile-face-search-capped`. A root that stays native for a contradicting or unreadable face set, or for inferred faces that fill no member order or historical selection, reports `feature.extrude-profile-face-set-disputed` with the reason.
+
+### DR-304. Fallback faces of Extrude bounded-face operands
+
+**Question.** Which faces does an `Extrude` bounded-face operand select when its recipe nodes have no unique topology binding?
+
+**Known.** The nodes of a bounded-face recipe name, by prefix-operand ordinal, faces around the boundary of the recipe's face. Without a unique binding, the decoder selects faces with the candidate and support rules of `f3d.md` §3.1 that follow the alternate-selector proof, and tests the selection unless the grouped Design-reference intersection holds a face or the operand has alternate-selector candidates. The test takes the prefix operands that the parsed nodes name, by root, first prelude value and fan values, or every prefix operand when no node parses, as naming faces around the selected face's boundary; a node without a parsed structure, or one that names an ordinal outside the operands, names none. Such an operand supplies the preceding-topology faces that its references with a nonnegative Design reference name; it contradicts nothing when a negative reference of it names a face, when another reference names no face, when a named face lies outside the preceding topology, or when a named face has no rebuilt boundary. The selection fails when every selected face has a rebuilt boundary and the selection shares no boundary vertex with the faces of one operand. A failing selection is withdrawn. The legacy start and termination candidate rule then gives the operand only a face that is not withdrawn and shares a boundary vertex with every such operand. The profile-group carrier rule pairs each member with the face of the same position in increasing stable face-slot order; it takes no face set that holds a face withdrawn from one of its members, or that pairs a withdrawn member with a face that does not share a boundary vertex with every such operand of that member. Each refused face or face set reports `feature.face-operand-fallback-contradicted`. The sketch-plane start and termination rules of the same scope can still select any candidate face, the withdrawn one included.
+
+**Need.** The node grammar and the empty-lane binding of DR-170, so that each recipe binds its own face.
+
+**Conflict.** `f3d.md` §3.1 resolves such an operand to the sole preceding candidate, or to the sole candidate that the transition chain changes. In a cut of two split top faces, that candidate is a side face that shares no boundary vertex with the faces of the recipe's prefix operands.
+
+**Note.** A withdrawn selection reports `feature.face-operand-fallback-contradicted` with the faces of the operand that it does not touch.
 
 ### DR-171. Sketch support identity
 
@@ -1131,6 +1232,30 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
+
+### DR-271. List that a two-list Combine prologue omits
+
+**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
+
+**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that is empty or names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope. The decoder reads every tool of such a `Combine` as removed. It compares the browser nodes that the tool selections name with the browser nodes that the body selections in the companion reference tables name. When the two sets differ, or a companion has no single reference table after the GUID or a selection without one browser node, it reports `feature.combine-tool-consumption-assumed`, whose note lists the tool selections that no companion selection confirms and the companion selections that name no tool. With the new-component Boolean zero, the reading of every stored field is the same for each omitted list; with the Boolean one, only the omitted browser-node list is consistent. The decoder reads a two-list prologue with a companion and two empty lists, and reports `feature.combine-new-component-native` when the Boolean is one.
+
+**Need.** A two-list prologue with a nonempty list between the tool list and the target list, or the Fusion version that adds the third list.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-272. Prologue of a Combine frame whose byte 20 is one
+
+**Question.** Which prologue does a `Combine` frame store when byte 20 is one and its fixed fields match both the standard and the operand-list prologue?
+
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24, and such an operand-list prologue without a companion also stores zero at offsets 26 through 32, as the standard prologue does. When the standard prologue reads such a frame, the decoder reads it in that prologue and reports `feature.combine-prologue-assumed`, whose note says whether the lists name the scope's operation-identity records. Otherwise the decoder reads the frame in the operand-list prologue when its lists name those records, its counted GUID and three zero bytes end at its reference table, its other fields hold, and its new-component Boolean is zero. A frame that neither prologue reads stays native: it reports `feature.combine-new-component-native` when its new-component Boolean is one, and `feature.combine-operand-list-refused` when its lists name its operands and its other fields contradict the operand-list prologue or cannot be checked.
+
+**Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ### DR-202. Fields of the older Shell frames
 
@@ -1405,6 +1530,54 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder keeps the prefix in the native occurrence frame.
 
+### DR-268. Marked reference of the standard Loft scope
+
+**Question.** What does the nonzero u64 target of a non-null marked reference at standard `Loft` scope offset 33 name, and which Loft setting selects a non-null reference?
+
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+
+**Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33 and the target, and a save whose target is not a record of the scope's reference table.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-294. Flag bytes of the three-flag Loft prefixes
+
+**Question.** Which Loft settings do the three flag bytes at offsets 21 through 23 of the three-flag compact `Loft` prefix and at offsets 25 through 27 of the three-flag standard `Loft` prefix select?
+
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the flag positions. The three-flag compact form stores `01 01` and a byte `0` or `1`. The decoder records `feature.loft-settings-assumed` with the three flag bytes for each scope in either form and projects the Loft with closed false, solid true, ruled false, and linearize false.
+
+**Need.** Saves of one three-flag `Loft` that change closed, solid, ruled, and linearize one at a time, each recording the three flag bytes.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-313. Flag bytes of the Thicken scope frame
+
+**Question.** Which Thicken settings do the prologue flag byte of the six-byte marker-one prologue and the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?
+
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the flag positions and admits `0` or `1` in each byte. The decoder records `feature.thicken-flags-assumed` with the flag bytes for each admitted scope and projects the Thicken side from the sign of the thickness scalar alone.
+
+**Need.** Saves of one `Thicken` that change the direction between one side and symmetric and change tangent-chain selection, one at a time, each recording the flag bytes.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-314. Optional u32 zero of the Thicken scope frame
+
+**Question.** What does the u32 zero that can follow the marked scalar reference of a `Thicken` scope encode, and which scopes store it?
+
+**Known.** `f3d.md` §3.1 "A `Thicken` scope primary frame stores nine zero bytes" gives the field and the u32 `1` before the marked auxiliary reference that places it. The decoder reads scopes with and without the field and keeps no value from it.
+
+**Need.** `Thicken` scopes that store a nonzero value in the field, or saves of one `Thicken` from application versions whose frames differ in the field.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-269. Marker-one Revolve frames of other lengths
 
 **Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
@@ -1425,4 +1598,62 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule.
+**Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`.
+
+### DR-286. Sketch folder flag byte, tail zero run, and closing reference
+
+**Question.** What do the flag byte at sketch folder record offset 26 and the length of the zero run between the parent collection reference and the closing reference select, and which record does the closing reference name?
+
+**Known.** The flag byte is `0` or `1`. Folders with either value carry sketch runs and a parent collection reference of the same form. The zero run is four bytes in a folder with an empty name and eight bytes in named folders. The closing reference is a non-null marked reference that ends the folder frame. The decoder reads the run as zero bytes of any length that ends at the closing reference, reads the closing reference target, and reports the target in `sketch.folder-closing-reference`.
+
+**Need.** Two saves of one folder that differ only in a folder property, folders that differ only in the zero-run length, the record type of the closing reference target, and saves of one design that change the component or the folder set of a sketch folder.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-287. Sketches omitted from their collection run
+
+**Question.** Which stored value selects the sketches whose Geometry member names an ordinal collection that does not list them?
+
+**Known.** Such sketches carry unique ordinals in the collection namespace, a Sketch feature scope, and a Sketch browser node. Their Sketch features follow every Sketch feature of a listed sketch in the timeline. The 960-byte timeline record does not distinguish them.
+
+**Need.** The record that stores the timeline end position.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-290. PathPattern settings scalars at offsets 94 and 124
+
+**Question.** What do the f64 values at offsets 94 and 124 of a path-pattern settings record encode?
+
+**Known.** `f3d.md` §3.1 gives the path-pattern settings record. The f64 at offset 94 is 3.0 on four line paths whose adjacent spacing is 3 cm and whose start point is at path parameter 0. It is −1.92699 on a circular-arc path of radius 5 cm with a 2 cm spacing and its start point at path parameter π/4. The f64 at offset 124 is 0.5 on that arc path and zero on the line paths. The decoder reads neither value.
+
+**Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
+
+**Conflict.** None.
+
+### DR-298. SurfaceTrim cell-table entries outside the removal reading
+
+**Question.** What do the entry values and the trailing value of a `SurfaceTrim` BRep-cell table encode when the entry count equals the trailing value or two entries store the same value?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceTrim` scope has two nonempty counted construction-operand groups" gives the table layout and the removal reading for a table whose entry count is less than the trailing value and whose entry values are distinct. In such a table the entry values are `1` through the entry count. The entries of one table reference distinct indexed records. A table whose entry count equals the trailing value can repeat an entry value, for example the values `1, 1` with trailing value `2`, or `1, 2, 3, 3` with trailing value `4`.
+
+**Need.** Controlled saves of one trim with a known removed region, where the trimming tool crosses one target face and then two target faces, and the entry values of each save.
+
+**Conflict.** Under the removal reading, a table whose entry count equals the trailing value removes every cell of the partition, but the trim has a result body.
+
+**Note.** The decoder keeps the entries of such a table in the native carrier, leaves the neutral `keep` region unresolved, and records `feature.trim-cell-table-native`.
+
+### DR-299. SurfaceTrim scope lanes before the ordered reference table
+
+**Question.** What do the lanes of a `SurfaceTrim` scope between the primary header and the ordered reference table encode?
+
+**Known.** Nine zero bytes follow the primary header. Byte 20 is `0` or `1`. When it is `1`, a zero u32 follows it and a u32 count is at offset 25; otherwise the u32 count is at offset 21. The count equals the member count of the target group, and that many marked record references follow it. A marked reference to the tool group follows the run. A lane of 8, 12, or 23 bytes follows; the 23-byte lane holds a zero u32, u32 `1`, a marked record reference, and a zero u32. Then u32 `1`, a marked reference to the target group, and an LP-UTF16 null GUID follow. Three bytes separate the GUID from the reference count.
+
+**Need.** Controlled saves that change one trim option at a time, with the length of the lane after the tool-group reference and the run records of each save.
+
+**Conflict.** None.
+
+**Note.** The decoder projects the scope from its ordered reference table and keeps these lanes in the native scope bytes.

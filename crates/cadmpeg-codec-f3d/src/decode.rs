@@ -327,6 +327,7 @@ struct DesignProjectionGaps {
     history_only_body_bindings: usize,
     incomplete_features: usize,
     native_reference_images: usize,
+    assumed_reference_image_flags: usize,
     native_decals: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
@@ -1322,6 +1323,11 @@ fn design_projection_gaps(
         Err(_) => None,
     };
     let mut gaps = DesignProjectionGaps {
+        assumed_reference_image_flags: native
+            .design_canvas_images
+            .iter()
+            .filter(|image| image.geometry().flag_assumed())
+            .count(),
         unresolved_body_bindings: native
             .design_body_bindings
             .iter()
@@ -1830,6 +1836,26 @@ fn design_projection_gaps(
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);
             }
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
+                use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+
+                for seed in seeds {
+                    match seed {
+                        PatternSeed::Faces(faces) => face_selection(faces),
+                        PatternSeed::Bodies(bodies) => {
+                            gaps.body_selections += native_body_selection_count(bodies);
+                        }
+                        PatternSeed::Feature(_) | PatternSeed::Occurrences(..) => {}
+                    }
+                }
+                match pattern.definition() {
+                    PatternTransform::MirrorReference { plane } => face_selection(plane),
+                    PatternTransform::CurveDriven {
+                        path: Some(path), ..
+                    } => gaps.path_selections += usize::from(!loft_path_is_resolved(path)),
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
@@ -2017,6 +2043,12 @@ fn report_design_projection_gaps(
         push_loss_vec(&mut report.losses, F3dLossCode::ReferenceImageNativeRetained, format_args!(
             "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
             gaps.native_reference_images
+        ),);
+    }
+    if gaps.assumed_reference_image_flags != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::ReferenceImageFlagAssumed, format_args!(
+            "{} Canvas image(s) store a zero flag byte before the second boundary segment; the decoder places each image by its boundary segments and payload frame and assumes that the byte leaves the placement unchanged (DR-308).",
+            gaps.assumed_reference_image_flags
         ),);
     }
     if gaps.native_decals != 0 {
