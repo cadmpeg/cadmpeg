@@ -762,3 +762,58 @@ fn damaged_form_cage_object_keeps_sibling_surface() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
 }
+
+#[test]
+fn damaged_form_cage_chain_links_keep_sibling_surface() {
+    fn chain(base: u32) -> Vec<u8> {
+        let mut object = indexed_frame(b"301", base, 200);
+        object[189] = 1;
+        object[190..198].copy_from_slice(&u64::from(base + 1).to_le_bytes());
+        let mut first = indexed_frame(b"373", base + 1, 33);
+        first[21] = 1;
+        first[22..30].copy_from_slice(&u64::from(base + 2).to_le_bytes());
+        let mut second = indexed_frame(b"362", base + 2, 29);
+        second[21..29].copy_from_slice(&u64::from(base + 3).to_le_bytes());
+        let mut carrier = indexed_frame(b"457", base + 3, 665);
+        carrier[317] = 1;
+        carrier[318..326].copy_from_slice(&2190u64.to_le_bytes());
+        carrier[339] = 1;
+        carrier[340..348].copy_from_slice(&u64::from(base + 4).to_le_bytes());
+        let paired = indexed_frame(b"264", base + 3, 15);
+        [object, first, second, carrier, paired].concat()
+    }
+    let clean = [chain(8000), chain(8300)].concat();
+    let records = crate::design::test_support::test_primary_frames(&clean);
+    for (record_index, offset) in [(8001, 21), (8002, 11), (8003, 339)] {
+        let mut bytes = clean.clone();
+        let frame = records
+            .iter()
+            .find(|frame| frame.entity_id == record_index)
+            .unwrap();
+        bytes[frame.start + offset] = 2;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let surfaces = super::form_cage_surfaces(
+            &ctx,
+            &mut parts,
+            source,
+            "Design/BulkStream.dat",
+            &records,
+            &[8000, 8300],
+            2190,
+        )
+        .unwrap();
+        assert_eq!(surfaces, Some(vec![8304]));
+        let (_, native, _, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    }
+}
