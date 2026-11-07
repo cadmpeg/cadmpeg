@@ -407,6 +407,51 @@ fn a_selection_through_a_coincident_edge_reports_the_direction_assumption() {
 }
 
 #[test]
+fn a_selection_beside_a_full_ellipse_reports_the_island_absence_assumption() {
+    // A thin ellipse across the diagonal beyond the corner (1, 1): its
+    // exact box spans u and v from 0.915, across the corner, so the
+    // square's sides cross the box.
+    let ellipse =
+        SketchGeometry::try_from(cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
+            center: Point2::new(1.2, 1.2),
+            major_angle: cadmpeg_ir::scalar::Angle::new(-std::f64::consts::FRAC_PI_4).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: cadmpeg_ir::scalar::Length::new(0.4).unwrap(),
+                minor_radius: cadmpeg_ir::scalar::Length::new(0.05).unwrap(),
+            },
+            bounds: None,
+        })
+        .unwrap();
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": -2.0}, "end": {"u": 0.0, "v": -1.0}}),
+        serde_json::to_value(ellipse).unwrap(),
+    ];
+    let (profile, losses) =
+        bound_fixture_with_losses(fixture_with(geometry, &[&[0, 1, 2, 3]], &[1, 1, 2, 3, 4]));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("square region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        hole_boundaries, ..
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureProfileIslandAbsenceAssumed.kind()
+    );
+}
+
+#[test]
 fn counted_members_match_a_region_whose_edge_two_profiles_share() {
     let geometry = vec![
         json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 0.0, "v": -1.0}}),

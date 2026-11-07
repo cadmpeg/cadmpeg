@@ -50,8 +50,13 @@ pub(super) fn resolve(
         return Ok(None);
     };
     let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), selected.regions).ok();
-    if selected.coincident && profile.is_some() {
-        resolution.profile_work.note_coincident_direction_assumed();
+    if profile.is_some() {
+        if selected.coincident {
+            resolution.profile_work.note_coincident_direction_assumed();
+        }
+        if selected.island_absence {
+            resolution.profile_work.note_island_absence_assumed();
+        }
     }
     Ok(profile)
 }

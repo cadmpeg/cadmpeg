@@ -65,6 +65,10 @@ pub(crate) struct ProfileGeometryWork {
     coincident_direction_assumed_selections: Cell<usize>,
     cut_regions_assumed: Cell<bool>,
     cut_regions_assumed_selections: Cell<usize>,
+    island_absence_assumed: Cell<bool>,
+    island_absence_assumed_selections: Cell<usize>,
+    polyline_side_assumed: Cell<bool>,
+    polyline_side_assumed_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -87,6 +91,10 @@ impl ProfileGeometryWork {
             coincident_direction_assumed_selections: Cell::new(0),
             cut_regions_assumed: Cell::new(false),
             cut_regions_assumed_selections: Cell::new(0),
+            island_absence_assumed: Cell::new(false),
+            island_absence_assumed_selections: Cell::new(0),
+            polyline_side_assumed: Cell::new(false),
+            polyline_side_assumed_selections: Cell::new(0),
         }
     }
 
@@ -118,6 +126,14 @@ impl ProfileGeometryWork {
                 &self.cut_regions_assumed,
                 &self.cut_regions_assumed_selections,
             ),
+            (
+                &self.island_absence_assumed,
+                &self.island_absence_assumed_selections,
+            ),
+            (
+                &self.polyline_side_assumed,
+                &self.polyline_side_assumed_selections,
+            ),
         ] {
             if skipped.take() {
                 selections.set(selections.get() + 1);
@@ -141,6 +157,25 @@ impl ProfileGeometryWork {
     /// changed.
     pub(crate) fn note_cut_regions_assumed(&self) {
         self.cut_regions_assumed.set(true);
+    }
+
+    /// Record that the open selection took a face that a curve outside the
+    /// arrangement can lie inside, as a face without that curve's island.
+    pub(crate) fn note_island_absence_assumed(&self) {
+        self.island_absence_assumed.set(true);
+    }
+
+    /// Record that the polyline side of a projected point decided the face
+    /// of the open selection.
+    pub(crate) fn note_polyline_side_assumed(&self) {
+        self.polyline_side_assumed.set(true);
+    }
+
+    /// Drop the island assumptions of the open selection, whose profile took
+    /// no sketch regions.
+    pub(crate) fn discard_island_assumptions(&self) {
+        self.island_absence_assumed.set(false);
+        self.polyline_side_assumed.set(false);
     }
 
     /// One loss for each cap that made a closed selection skip a search.
@@ -180,6 +215,18 @@ impl ProfileGeometryWork {
         if cut_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
                 "{cut_assumed} extrude profile selection(s) took atomic regions bounded by the stored profile's curves from the faces the cut changed on planes parallel to the Sketch: a region is selected when one interior point lay on such a face before the cut and on none after it. The region boundaries were not compared with the face boundaries."
+            )));
+        }
+        let island_absence = self.island_absence_assumed_selections.get();
+        if island_absence != 0 {
+            losses.push(F3dLossCode::FeatureProfileIslandAbsenceAssumed.note(format!(
+                "{island_absence} extrude profile selection(s) took a face that a curve outside the arrangement can lie in: a full ellipse or a periodic NURBS whose box meets or holds a piece of the face boundary or lies in a face with islands, or another curve without a box. The region was taken without an island of that curve (DR-124)."
+            )));
+        }
+        let polyline_side = self.polyline_side_assumed_selections.get();
+        if polyline_side != 0 {
+            losses.push(F3dLossCode::FeatureProfilePolylineSideAssumed.note(format!(
+                "{polyline_side} extrude profile selection(s) took the side of a face polyline for a projected point within the linear tolerance of a certified NURBS tube of the face boundary. The boundary curve can lie on the other side of the point (DR-124)."
             )));
         }
         losses
@@ -307,13 +354,51 @@ fn assign_fragment(
 }
 
 impl SketchArrangementFace {
-    /// Whether `point` lies within the deviation bound of a polyline segment,
-    /// plus `tolerance`, where the polyline cannot decide its side.
-    fn near_boundary(&self, point: Point2, tolerance: f64) -> bool {
-        polygon_edges(&self.polyline)
-            .zip(&self.deviations)
-            .any(|(edge, deviation)| point_segment_distance(point, edge) <= deviation + tolerance)
+    /// Whether the face holds `point`, decided by the exact lines and arcs
+    /// and the certified NURBS tubes of its boundary. `None` when a piece
+    /// lies within `tolerance` of the point.
+    fn holds(&self, point: Point2, tolerance: f64) -> Option<bool> {
+        self.pieces
+            .iter()
+            .all(|piece| piece.clears_point_by(point, tolerance))
+            .then(|| point_in_segment_loop(point, self.loop_segments()))
     }
+
+    /// Whether the face holds the component of `members`, decided by the
+    /// first member node that lies farther than `tolerance` from every
+    /// boundary piece. `None` when no member node does.
+    fn holds_component(&self, members: &[Point2], tolerance: f64) -> Option<bool> {
+        members.iter().find_map(|node| self.holds(*node, tolerance))
+    }
+
+    /// The segments of the boundary pieces, each followed by a line to the
+    /// start of the next piece, so that the loop closes where adjacent
+    /// pieces evaluate a shared node differently.
+    fn loop_segments(&self) -> impl Iterator<Item = ProfileBoundarySegment> + '_ {
+        self.pieces
+            .iter()
+            .zip(self.pieces.iter().cycle().skip(1))
+            .flat_map(|(piece, next)| {
+                [
+                    piece.segment(),
+                    ProfileBoundarySegment::Line {
+                        start: piece.end(),
+                        end: next.start(),
+                    },
+                ]
+            })
+    }
+}
+
+/// How the non-construction curves outside the arrangement relate to a face.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ExcludedIsland {
+    /// Each such curve lies outside the face.
+    Absent,
+    /// Such a curve can lie inside the face.
+    Possible,
+    /// Such a curve lies inside the face, which holds no island.
+    Present,
 }
 
 struct SketchArrangementFace {
@@ -321,14 +406,14 @@ struct SketchArrangementFace {
     polyline: Vec<Point2>,
     /// The outer walk of each arrangement component that lies inside the
     /// face and inside no smaller face. `None` when such a component has no
-    /// unique outer walk, when the face belongs to a component inside
-    /// another face that has no unique outer walk, or when the polylines
-    /// cannot decide whether a component lies inside the face or which of
-    /// its containers is innermost.
+    /// unique outer walk, when the face belongs to a component that has no
+    /// unique outer walk and lies inside another face, when no node of
+    /// another component clears the face's boundary pieces, or when no face
+    /// around a component inside the face is the innermost.
     holes: Option<Vec<ArrangementRing>>,
-    /// For each polyline segment, from its point to the next one, an upper
-    /// bound on the distance from the curve it samples to the segment.
-    deviations: Vec<f64>,
+    excluded_island: ExcludedIsland,
+    /// The certified pieces of the boundary curves in walk order.
+    pieces: Vec<CertifiedPiece>,
     /// The lowest and highest corners of a box that holds the face's
     /// boundary curves: exact for lines and circular arcs, and the certified
     /// tube bounds for other curves.
@@ -342,7 +427,7 @@ pub(super) fn arrangement_region_containing_points(
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+) -> Result<Option<ArrangementRegion>, CodecError> {
     let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
@@ -376,8 +461,11 @@ pub(super) fn arrangement_region_containing_points(
     }
     let mut interior = None;
     let mut interior_count = 0;
+    let mut assumed = false;
     for face in &faces {
-        let mut matches = true;
+        let mut excluded = false;
+        let mut assumed_out = false;
+        let mut assumed_in = false;
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.ring.boundary {
@@ -386,26 +474,43 @@ pub(super) fn arrangement_region_containing_points(
                     break;
                 }
             }
-            if !on_boundary && face.near_boundary(*point, tolerance) {
-                return Ok(None);
-            }
-            if on_boundary || !point_in_polygon(*point, &face.polyline) {
-                matches = false;
+            if on_boundary {
+                excluded = true;
                 break;
+            }
+            match face.holds(*point, tolerance) {
+                Some(false) => {
+                    excluded = true;
+                    break;
+                }
+                Some(true) => {}
+                None if point_in_polygon(*point, &face.polyline) => assumed_in = true,
+                None => assumed_out = true,
             }
         }
-        if matches {
-            interior_count += 1;
-            interior = Some(face);
-            if interior_count == 2 {
-                break;
-            }
+        if excluded {
+            continue;
+        }
+        if assumed_out {
+            assumed = true;
+            continue;
+        }
+        assumed |= assumed_in;
+        interior_count += 1;
+        interior = Some(face);
+        if interior_count == 2 {
+            break;
         }
     }
     if interior_count != 1 {
         return Ok(None);
     }
-    Ok(arrangement_face_region(geometric!(interior)))
+    Ok(
+        arrangement_face_region(geometric!(interior)).map(|mut found| {
+            found.polyline_side_assumed |= assumed;
+            found
+        }),
+    )
 }
 
 pub(super) fn arrangement_region_matching_curve_program(
@@ -415,7 +520,7 @@ pub(super) fn arrangement_region_matching_curve_program(
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+) -> Result<Option<ArrangementRegion>, CodecError> {
     if program.is_empty() {
         return Ok(None);
     }
@@ -471,9 +576,9 @@ pub(super) fn arrangement_region_matching_curve_program(
 /// undefined, a ring matches no walk or several walks, two rings match one
 /// face or one hole ring, a hole ring belongs to a face that no ring
 /// selects, a selected face has an island that no ring names or `None`
-/// holes, a region does not form, the work budget runs out, which also
-/// marks `arrangement_skipped`, or the Sketch has another non-construction
-/// curve without bounds or with bounds that meet a selected face.
+/// holes, a curve outside the arrangement lies inside a selected face, a
+/// region does not form, or the work budget runs out, which also marks
+/// `arrangement_skipped`.
 pub(super) fn arrangement_regions_matching_member_rings(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -484,12 +589,6 @@ pub(super) fn arrangement_regions_matching_member_rings(
 ) -> Result<Option<MemberRingRegions>, CodecError> {
     if rings.is_empty() {
         return Ok(None);
-    }
-    let mut outside = Vec::new();
-    for entity in entities.iter().filter(|entity| {
-        entity.sketch == sketch.id && !entity.construction && !arrangement_family(entity)
-    }) {
-        outside.push(geometric!(outside_curve_bounds(entity)));
     }
     let faces = geometric!(curve_arrangement_faces(
         sketch, entities, tolerance, work, ctx, true
@@ -539,13 +638,13 @@ pub(super) fn arrangement_regions_matching_member_rings(
         return Ok(None);
     }
     let mut regions = Vec::new();
+    let mut island_absence = false;
     for face_index in outers {
         let face = &faces[face_index];
-        if outside
-            .iter()
-            .any(|curve| bounds_meet(*curve, face.bounds, tolerance))
-        {
-            return Ok(None);
+        match face.excluded_island {
+            ExcludedIsland::Present => return Ok(None),
+            ExcludedIsland::Possible => island_absence = true,
+            ExcludedIsland::Absent => {}
         }
         let islands = geometric!(face.holes.as_ref());
         let named = holes
@@ -564,6 +663,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
     Ok(Some(MemberRingRegions {
         regions,
         coincident,
+        island_absence,
     }))
 }
 
@@ -574,6 +674,9 @@ pub(super) struct MemberRingRegions {
     /// member list, so that the member flags of that edge decided the
     /// selection.
     pub(super) coincident: bool,
+    /// Whether a curve outside the arrangement can lie inside a selected
+    /// face, so that its region assumes that the curve makes no island in it.
+    pub(super) island_absence: bool,
 }
 
 /// Whether the arrangement of every curve holds `entity`: a line, circle,
@@ -591,23 +694,27 @@ fn arrangement_family(entity: &cadmpeg_ir::sketches::SketchEntity) -> bool {
 }
 
 /// The lowest and highest corners of a box that holds a curve outside the
-/// arrangement families: a full ellipse, or a periodic NURBS without a
-/// negative weight. `None` for every other curve.
+/// arrangement families: the exact box of a full ellipse, or the box of the
+/// control points of a periodic NURBS without a negative weight. `None` for
+/// every other curve.
 fn outside_curve_bounds(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     match entity.geometry.definition() {
         SketchGeometryDefinition::Ellipse {
             center,
+            major_angle,
             radii,
             bounds: None,
-            ..
         } => {
             let center = center.get();
-            let reach = radii.major().get().max(radii.minor().get());
+            let (sine, cosine) = major_angle.get().sin_cos();
+            let (major, minor) = (radii.major().get(), radii.minor().get());
+            let reach_u = (major * cosine).hypot(minor * sine);
+            let reach_v = (major * sine).hypot(minor * cosine);
             Some([
-                Point2::new(center.u - reach, center.v - reach),
-                Point2::new(center.u + reach, center.v + reach),
+                Point2::new(center.u - reach_u, center.v - reach_v),
+                Point2::new(center.u + reach_u, center.v + reach_v),
             ])
         }
         SketchGeometryDefinition::Nurbs { curve }
@@ -625,6 +732,79 @@ fn outside_curve_bounds(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<[
         }
         _ => None,
     }
+}
+
+/// Whether the face holds a curve outside the arrangement with the box
+/// `bounds`. The box, widened by `tolerance`, lies wholly inside or outside
+/// the face when it meets and holds no boundary piece. `None` when the box
+/// meets or holds a piece, or the curve has no box.
+fn excluded_side(
+    face: &SketchArrangementFace,
+    bounds: Option<[Point2; 2]>,
+    tolerance: f64,
+) -> Option<bool> {
+    let bounds = bounds?;
+    if !bounds_meet(bounds, face.bounds, tolerance) {
+        return Some(false);
+    }
+    let low = Point2::new(bounds[0].u - tolerance, bounds[0].v - tolerance);
+    let high = Point2::new(bounds[1].u + tolerance, bounds[1].v + tolerance);
+    let corners = [
+        low,
+        Point2::new(high.u, low.v),
+        high,
+        Point2::new(low.u, high.v),
+    ];
+    let sides = polygon_edges(&corners)
+        .map(|(start, end)| CertifiedPiece::Exact(ProfileBoundarySegment::Line { start, end }))
+        .collect::<Vec<_>>();
+    let held =
+        |point: Point2| low.u < point.u && point.u < high.u && low.v < point.v && point.v < high.v;
+    if !certified_pieces_separated(&face.pieces, &sides)
+        || face.pieces.iter().any(|piece| held(piece.start()))
+    {
+        return None;
+    }
+    let center = Point2::new(f64::midpoint(low.u, high.u), f64::midpoint(low.v, high.v));
+    face.holds(center, tolerance)
+}
+
+/// How one curve outside the arrangement relates to each face, from its
+/// side of each face in `sides`. When every side is decided, the curve lies
+/// in the region of the smallest face that holds it and outside every
+/// other face. Otherwise each face that holds or can hold it can have it as
+/// an island.
+fn excluded_islands(
+    faces: &[SketchArrangementFace],
+    sides: &[Option<bool>],
+) -> Vec<ExcludedIsland> {
+    if sides.iter().any(Option::is_none) {
+        return sides
+            .iter()
+            .map(|side| match side {
+                Some(false) => ExcludedIsland::Absent,
+                Some(true) | None => ExcludedIsland::Possible,
+            })
+            .collect();
+    }
+    let smallest = sides
+        .iter()
+        .zip(faces)
+        .enumerate()
+        .filter(|(_, (side, _))| **side == Some(true))
+        .min_by(|(_, (_, left)), (_, (_, right))| {
+            signed_polygon_area(&left.polyline).total_cmp(&signed_polygon_area(&right.polyline))
+        })
+        .map(|(index, _)| index);
+    (0..faces.len())
+        .map(|index| {
+            if Some(index) == smallest {
+                ExcludedIsland::Present
+            } else {
+                ExcludedIsland::Absent
+            }
+        })
+        .collect()
 }
 
 /// The lowest and highest corners of the box of `points`, or `None` when
@@ -706,16 +886,31 @@ fn curve_arrangement_faces(
     sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, nodes, all_curves)
 }
 
-/// The region `face` bounds when no arrangement component lies inside it.
-fn arrangement_face_region(
-    face: &SketchArrangementFace,
-) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+/// A region that one arrangement face bounds.
+pub(super) struct ArrangementRegion {
+    pub(super) region: cadmpeg_ir::features::SketchProfileRegion,
+    /// Whether the polyline side of a projected point within the tolerance
+    /// of a NURBS tube of the face boundary decided the face.
+    pub(super) polyline_side_assumed: bool,
+    /// Whether a curve outside the arrangement can lie inside the face.
+    pub(super) island_absence_assumed: bool,
+}
+
+/// The region `face` bounds when no arrangement component and no curve
+/// outside the arrangement lies inside it.
+fn arrangement_face_region(face: &SketchArrangementFace) -> Option<ArrangementRegion> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    if face.holes.as_ref().is_none_or(|holes| !holes.is_empty()) {
+    if face.holes.as_ref().is_none_or(|holes| !holes.is_empty())
+        || face.excluded_island == ExcludedIsland::Present
+    {
         return None;
     }
-    SketchProfileRegion::trimmed(face.ring.boundary.clone(), Vec::new()).ok()
+    Some(ArrangementRegion {
+        region: SketchProfileRegion::trimmed(face.ring.boundary.clone(), Vec::new()).ok()?,
+        polyline_side_assumed: false,
+        island_absence_assumed: face.excluded_island == ExcludedIsland::Possible,
+    })
 }
 
 fn sketch_arrangement_faces(
@@ -736,6 +931,8 @@ pub(super) struct AtomicSketchRegion {
     /// Whether an island lies inside the face, so its boundary is not the
     /// whole region.
     pub(super) encloses_island: bool,
+    /// Whether a curve outside the arrangement can lie inside the face.
+    pub(super) island_absence_assumed: bool,
 }
 
 /// The bounded faces of the arrangement of every non-construction curve of
@@ -792,7 +989,9 @@ pub(super) fn atomic_sketch_regions(
             .map(|face| AtomicSketchRegion {
                 boundary: face.ring.boundary,
                 polyline: face.polyline,
-                encloses_island: face.holes.as_ref().is_none_or(|holes| !holes.is_empty()),
+                encloses_island: face.holes.as_ref().is_none_or(|holes| !holes.is_empty())
+                    || face.excluded_island == ExcludedIsland::Present,
+                island_absence_assumed: face.excluded_island == ExcludedIsland::Possible,
             })
             .collect(),
     ))
@@ -801,6 +1000,14 @@ pub(super) fn atomic_sketch_regions(
 /// Most atomic regions whose boundaries lie in one stored loop that the
 /// subset search weighs.
 const MAX_CROSSING_LOOP_CANDIDATES: usize = 16;
+
+/// The regions a self-crossing stored loop bounds.
+pub(super) struct CrossingLoopRegions {
+    pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
+    /// Whether a curve outside the arrangement can lie inside a selected
+    /// face.
+    pub(super) island_absence_assumed: bool,
+}
 
 /// The atomic regions a stored loop bounds when the loop crosses itself.
 ///
@@ -817,7 +1024,7 @@ pub(super) fn arrangement_regions_of_crossing_loop(
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<cadmpeg_ir::features::SketchProfileRegion>>, CodecError> {
+) -> Result<Option<CrossingLoopRegions>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
@@ -903,8 +1110,10 @@ pub(super) fn arrangement_regions_of_crossing_loop(
     let mask = geometric!(chosen);
     // The mask indexes the same filtered candidates the search weighed.
     let mut selected = Vec::new();
+    let mut island_absence_assumed = false;
     for (index, region) in candidate_regions.iter().enumerate() {
         if mask >> index & 1 == 1 {
+            island_absence_assumed |= region.island_absence_assumed;
             selected.push(geometric!(SketchProfileRegion::trimmed(
                 region.boundary.clone(),
                 Vec::new()
@@ -912,7 +1121,10 @@ pub(super) fn arrangement_regions_of_crossing_loop(
             .ok()));
         }
     }
-    Ok(Some(selected))
+    Ok(Some(CrossingLoopRegions {
+        regions: selected,
+        island_absence_assumed,
+    }))
 }
 
 fn sketch_arrangement_faces_with_nodes(
@@ -1212,17 +1424,6 @@ fn sketch_arrangement_faces_with_nodes(
             }
         }
     }
-    let mut edge_deviations = Vec::new();
-    for edge in &edges {
-        let entity = geometric!(entities
-            .iter()
-            .find(|entity| entity.id() == &edge.boundary.entity));
-        edge_deviations.push(geometric!(polyline_deviation(
-            &entity.geometry,
-            edge.boundary.parameter_range.endpoints(),
-            edge.polyline.len()
-        )));
-    }
     let mut edge_boxes = Vec::new();
     for (edge, certified) in edges.iter().zip(&edge_bounds) {
         edge_boxes.push(geometric!(arrangement_edge_box(edge, entities, *certified)));
@@ -1241,7 +1442,7 @@ fn sketch_arrangement_faces_with_nodes(
             let mut boundary = Vec::new();
             let mut runs = Vec::<ArrangementFragment>::new();
             let mut polyline = Vec::new();
-            let mut deviations = Vec::new();
+            let mut pieces = Vec::new();
             let mut bounds = None::<[Point2; 2]>;
             loop {
                 let (index, reverse) = current;
@@ -1294,13 +1495,18 @@ fn sketch_arrangement_faces_with_nodes(
                 if reverse {
                     for point in edge.polyline.iter().rev().take(edge.polyline.len() - 1) {
                         polyline.push(*point);
-                        deviations.push(edge_deviations[index]);
                     }
+                    pieces.extend(
+                        edge_pieces[index]
+                            .iter()
+                            .rev()
+                            .map(CertifiedPiece::reversed),
+                    );
                 } else {
                     for point in edge.polyline.iter().take(edge.polyline.len() - 1) {
                         polyline.push(*point);
-                        deviations.push(edge_deviations[index]);
                     }
+                    pieces.extend(edge_pieces[index].iter().copied());
                 }
                 let destination = edge.nodes[usize::from(!reverse)];
                 let uses = &outgoing[destination];
@@ -1337,7 +1543,8 @@ fn sketch_arrangement_faces_with_nodes(
                     ring,
                     polyline,
                     holes: Some(Vec::new()),
-                    deviations,
+                    excluded_island: ExcludedIsland::Absent,
+                    pieces,
                     bounds: geometric!(bounds),
                 });
                 face_components.push(own);
@@ -1346,49 +1553,52 @@ fn sketch_arrangement_faces_with_nodes(
             }
         }
     }
+    let mut component_nodes = HashMap::<usize, Vec<Point2>>::new();
+    for (node, owner) in component.iter().enumerate() {
+        if *owner != usize::MAX {
+            component_nodes.entry(*owner).or_default().push(nodes[node]);
+        }
+    }
     for root in &component_roots {
-        let node = nodes[*root];
+        let members = geometric!(component_nodes.get(root));
         let mut containers = Vec::new();
         let mut undecided = Vec::new();
         for (index, face) in faces.iter().enumerate() {
             if face_components[index] == *root {
                 continue;
             }
-            if face.near_boundary(node, tolerance) {
-                undecided.push(index);
-            } else if point_in_polygon(node, &face.polyline) {
-                containers.push(index);
+            match face.holds_component(members, tolerance) {
+                Some(true) => containers.push(index),
+                Some(false) => {}
+                None => undecided.push(index),
             }
         }
-        // Containers nest, and the innermost lies inside every other one. The
-        // root of a face's component, clear of another face's deviation
-        // bound, decides whether it lies inside that face; either root of a
-        // pair orders the pair.
-        let inside = |inner: usize, outer: usize| -> Option<bool> {
-            let root = nodes[face_components[inner]];
-            let face = &faces[outer];
-            if face.near_boundary(root, tolerance) {
-                return None;
+        // Containers nest, and the innermost lies inside every other one.
+        let mut innermost = Vec::new();
+        for candidate in &containers {
+            let inner = geometric!(component_nodes.get(&face_components[*candidate]));
+            let mut inside_every = Some(true);
+            for other in containers.iter().filter(|other| *other != candidate) {
+                match faces[*other].holds_component(inner, tolerance) {
+                    Some(true) => {}
+                    Some(false) => {
+                        inside_every = Some(false);
+                        break;
+                    }
+                    None => inside_every = None,
+                }
             }
-            Some(point_in_polygon(root, &face.polyline))
-        };
-        let nested = |inner: usize, outer: usize| {
-            inside(inner, outer).or_else(|| inside(outer, inner).map(|outside| !outside))
-        };
-        let mut innermost = containers.iter().copied().filter(|candidate| {
-            containers
-                .iter()
-                .filter(|other| *other != candidate)
-                .all(|other| nested(*candidate, *other) == Some(true))
-        });
-        let container = match (innermost.next(), innermost.next()) {
-            (Some(only), None) => Some(only),
-            _ => {
-                undecided.extend(&containers);
-                None
+            match inside_every {
+                Some(true) => innermost.push(*candidate),
+                Some(false) => {}
+                None => undecided.push(*candidate),
             }
+        }
+        let container = match innermost.as_slice() {
+            [only] if undecided.is_empty() => Some(*only),
+            _ => None,
         };
-        if container.is_none() && undecided.is_empty() {
+        if containers.is_empty() && undecided.is_empty() {
             continue;
         }
         let mut walks = outer_walks.iter().filter(|(own, _)| own == root);
@@ -1397,7 +1607,7 @@ fn sketch_arrangement_faces_with_nodes(
             .filter(|_| walks.next().is_none())
             .map(|(_, walk)| walk.clone());
         match (container, walk) {
-            (Some(container), Some(walk)) if undecided.is_empty() => {
+            (Some(container), Some(walk)) => {
                 if let Some(holes) = faces[container].holes.as_mut() {
                     holes.push(walk);
                 }
@@ -1405,14 +1615,40 @@ fn sketch_arrangement_faces_with_nodes(
             (container, walk) => {
                 let unwalked = walk.is_none();
                 for (index, face) in faces.iter_mut().enumerate() {
-                    if undecided.contains(&index)
-                        || container == Some(index)
-                        || (unwalked && face_components[index] == *root)
-                    {
+                    let holds = match container {
+                        Some(container) => index == container,
+                        None => containers.contains(&index) || undecided.contains(&index),
+                    };
+                    if holds || (unwalked && face_components[index] == *root) {
                         face.holes = None;
                     }
                 }
             }
+        }
+    }
+    if all_curves || sketch.profiles.is_empty() {
+        let outside = entities
+            .iter()
+            .filter(|entity| {
+                entity.sketch == sketch.id && !entity.construction && !arrangement_family(entity)
+            })
+            .map(outside_curve_bounds)
+            .collect::<Vec<_>>();
+        let mut relations = faces
+            .iter()
+            .map(|_| ExcludedIsland::Absent)
+            .collect::<Vec<_>>();
+        for bounds in &outside {
+            let sides = faces
+                .iter()
+                .map(|face| excluded_side(face, *bounds, tolerance))
+                .collect::<Vec<_>>();
+            for (relation, island) in relations.iter_mut().zip(excluded_islands(&faces, &sides)) {
+                *relation = (*relation).max(island);
+            }
+        }
+        for (face, relation) in faces.iter_mut().zip(relations) {
+            face.excluded_island = relation;
         }
     }
     Ok((!faces.is_empty()).then_some(faces))
@@ -1737,34 +1973,6 @@ fn merge_coincident(
             true
         }
     }
-}
-
-/// An upper bound on the distance from each point of a curve over `range` to
-/// the polyline of `points` points at even parameter steps on it: zero for a
-/// line, the sagitta of one step for a circular arc, and otherwise half the
-/// travel bound of one step, because each curve point lies within that
-/// travel of a step end. `None` when the curve has no speed bound, the
-/// polyline has fewer than two points, or the bound is not finite.
-fn polyline_deviation(
-    geometry: &cadmpeg_ir::sketches::SketchGeometry,
-    range: [f64; 2],
-    points: usize,
-) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometryDefinition;
-
-    let steps = f64_from_index(points.checked_sub(1).filter(|steps| *steps > 0)?)?;
-    match geometry.definition() {
-        SketchGeometryDefinition::Line { .. } => return Some(0.0),
-        SketchGeometryDefinition::Circle { radius, .. }
-        | SketchGeometryDefinition::Arc { radius, .. } => {
-            let step = (range[1] - range[0]).abs() / steps;
-            return Some(radius.get() * (1.0 - (step / 2.0).min(std::f64::consts::PI).cos()))
-                .filter(|deviation| deviation.is_finite());
-        }
-        _ => {}
-    }
-    let travel = sketch_geometry_speed_bound(geometry, range)? * (range[1] - range[0]).abs();
-    Some(travel / (2.0 * steps)).filter(|deviation| deviation.is_finite())
 }
 
 fn arrangement_edges_meet_only_at_nodes(
@@ -2559,8 +2767,8 @@ fn certified_pieces_bounds(pieces: &[CertifiedPiece]) -> Option<[Point2; 2]> {
     }))
 }
 
-/// Certify one arrangement edge: a line or arc exactly, or a whole
-/// non-periodic NURBS as chord tubes.
+/// Certify one arrangement edge in its direction: a line or arc exactly, or
+/// a whole non-periodic NURBS as chord tubes.
 fn arrangement_edge_pieces(
     edge: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -2571,7 +2779,11 @@ fn arrangement_edge_pieces(
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let Some(segment) = arrangement_analytic_segment(edge, entities) {
-        return Ok(Some(vec![CertifiedPiece::Exact(segment)]));
+        let piece = CertifiedPiece::Exact(segment);
+        if edge.boundary.reversed && piece.is_arc() {
+            return Ok(Some(vec![piece.reversed()]));
+        }
+        return Ok(Some(vec![piece]));
     }
     let entity = geometric!(entities
         .iter()
@@ -2592,7 +2804,11 @@ fn arrangement_edge_pieces(
         .fold(1.0_f64, f64::max);
     let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
     let tubes = geometric!(certified_nurbs_tubes(curve, target_error, work, ctx)?);
-    Ok(Some(tubes.into_iter().map(CertifiedPiece::Tube).collect()))
+    let pieces = tubes.into_iter().map(CertifiedPiece::Tube);
+    if edge.boundary.reversed {
+        return Ok(Some(pieces.rev().map(|piece| piece.reversed()).collect()));
+    }
+    Ok(Some(pieces.collect()))
 }
 
 fn arrangement_analytic_segment(
@@ -3232,9 +3448,45 @@ impl CertifiedPiece {
 
     /// Whether `point` is off the piece, or outside the tube of a NURBS span.
     fn clears_point(&self, point: Point2) -> bool {
+        self.clears_point_by(point, 0.0)
+    }
+
+    /// Whether `point` lies farther than `margin` from the piece, or from the
+    /// tube of a NURBS span.
+    fn clears_point_by(&self, point: Point2, margin: f64) -> bool {
         match self {
-            Self::Exact(segment) => point_boundary_segment_distance(point, segment) > 0.0,
-            Self::Tube(tube) => point_segment_distance(point, (tube.start, tube.end)) > tube.error,
+            Self::Exact(segment) => point_boundary_segment_distance(point, segment) > margin,
+            Self::Tube(tube) => {
+                point_segment_distance(point, (tube.start, tube.end)) > tube.error + margin
+            }
+        }
+    }
+
+    /// The piece traversed from its end to its start.
+    fn reversed(&self) -> Self {
+        match *self {
+            Self::Exact(ProfileBoundarySegment::Line { start, end }) => {
+                Self::Exact(ProfileBoundarySegment::Line {
+                    start: end,
+                    end: start,
+                })
+            }
+            Self::Exact(ProfileBoundarySegment::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            }) => Self::Exact(ProfileBoundarySegment::Arc {
+                center,
+                radius,
+                start_angle: end_angle,
+                end_angle: start_angle,
+            }),
+            Self::Tube(tube) => Self::Tube(CertifiedCurveTube {
+                start: tube.end,
+                end: tube.start,
+                error: tube.error,
+            }),
         }
     }
 

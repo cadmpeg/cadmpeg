@@ -794,6 +794,15 @@ pub(crate) fn bind_extrude_profile_selections(
                 .entry(cadmpeg_core::nonblank_literal!("extrude_to_distance"))
                 .or_insert_with(|| dist.to_string());
         }
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::SketchRegions { .. }),
+                ..
+            })
+        ) {
+            resolution.profile_work.discard_island_assumptions();
+        }
         resolution.profile_work.finish_selection();
     }
     Ok(())
@@ -3538,7 +3547,7 @@ pub(in crate::design) fn selection_containing_points(
     if boundaries.is_empty() && had_partial_boundary_match {
         return Ok(None);
     }
-    if let Some(region) = arrangement_region_containing_points(
+    if let Some(found) = arrangement_region_containing_points(
         sketch,
         entities,
         &projected,
@@ -3546,7 +3555,13 @@ pub(in crate::design) fn selection_containing_points(
         profile_work,
         ctx,
     )? {
-        let regions = vec![region];
+        if found.polyline_side_assumed {
+            profile_work.note_polyline_side_assumed();
+        }
+        if found.island_absence_assumed {
+            profile_work.note_island_absence_assumed();
+        }
+        let regions = vec![found.region];
         return Ok(Some(ResolvedProfileSelection::Regions(regions)));
     }
     if !boundaries.is_empty() {
@@ -3682,6 +3697,7 @@ fn resolve_profile_curve_arrangement_regions(
     };
     let mut regions = Vec::new();
     let mut assumed = false;
+    let mut island_absence = false;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3710,7 +3726,7 @@ fn resolve_profile_curve_arrangement_regions(
                 return Ok(None);
             };
             cursor = end;
-            let Some(region) = crate::design::geometry::arrangement_region_matching_curve_program(
+            let Some(found) = crate::design::geometry::arrangement_region_matching_curve_program(
                 source,
                 resolution.sketch_entities,
                 program,
@@ -3731,15 +3747,17 @@ fn resolve_profile_curve_arrangement_regions(
                     return Ok(None);
                 };
                 assumed = true;
-                for region in split {
+                island_absence |= split.island_absence_assumed;
+                for region in split.regions {
                     if !regions.contains(&region) {
                         regions.push(region);
                     }
                 }
                 continue;
             };
-            if !regions.contains(&region) {
-                regions.push(region);
+            island_absence |= found.island_absence_assumed;
+            if !regions.contains(&found.region) {
+                regions.push(found.region);
             }
         }
     }
@@ -3749,8 +3767,13 @@ fn resolve_profile_curve_arrangement_regions(
     let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
         .map(ProfileRef::Planar);
-    if assumed && profile.is_some() {
-        scoped.profile_work.note_crossing_loop_assumed();
+    if profile.is_some() {
+        if assumed {
+            scoped.profile_work.note_crossing_loop_assumed();
+        }
+        if island_absence {
+            scoped.profile_work.note_island_absence_assumed();
+        }
     }
     Ok(profile)
 }

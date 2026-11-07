@@ -317,6 +317,12 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCoincidentDirectionAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
+    /// Extrude profile selections assumed that a curve outside the
+    /// arrangement makes no island in a selected face.
+    FeatureProfileIslandAbsenceAssumed,
+    /// Extrude profile selections took the polyline side of a projected point
+    /// within the tolerance of a NURBS tube of a face boundary.
+    FeatureProfilePolylineSideAssumed,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -663,6 +669,8 @@ impl F3dLossCode {
         Self::FeatureProfileCrossingLoopAssumed,
         Self::FeatureProfileCoincidentDirectionAssumed,
         Self::FeatureProfileCutRegionsAssumed,
+        Self::FeatureProfileIslandAbsenceAssumed,
+        Self::FeatureProfilePolylineSideAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -926,6 +934,8 @@ impl F3dLossCode {
                 "feature.profile-coincident-direction-assumed"
             }
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
+            Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
+            Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -1202,6 +1212,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileCutRegionsAssumed
+            | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePolylineSideAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1404,6 +1416,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileCutRegionsAssumed
+            | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePolylineSideAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1694,6 +1708,8 @@ mod tests {
                 "feature.profile-crossing-loop-assumed",
                 "feature.profile-coincident-direction-assumed",
                 "feature.profile-cut-regions-assumed",
+                "feature.profile-island-absence-assumed",
+                "feature.profile-polyline-side-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",

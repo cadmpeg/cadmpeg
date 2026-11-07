@@ -71,6 +71,7 @@ fn typed_profile_curve_program_resolves_one_trimmed_atomic_region() {
         )
     })
     .unwrap()
+    .map(|found| found.region)
     .expect("one strip region");
     let SketchProfileRegion::Trimmed {
         outer_boundary: boundary,
@@ -100,7 +101,8 @@ fn typed_profile_curve_program_resolves_one_trimmed_atomic_region() {
             ctx,
         )
     })
-    .unwrap();
+    .unwrap()
+    .map(|found| found.region);
     assert_eq!(
         reversed_region,
         Some(SketchProfileRegion::Trimmed {
@@ -124,7 +126,8 @@ fn typed_profile_curve_program_refuses_two_half_disks_with_the_same_program() {
             ctx,
         )
     })
-    .unwrap();
+    .unwrap()
+    .map(|found| found.region);
     assert_eq!(region, None);
 }
 
@@ -433,6 +436,7 @@ fn a_counted_hole_ring_names_the_island_of_the_selected_face() {
             )
         })
         .unwrap()
+        .map(|found| found.region)
     };
     let both_loops = sketch_with_loops(id.clone(), &[&outer, &island]);
     assert_eq!(
@@ -1135,6 +1139,7 @@ fn a_curve_program_resolves_in_the_arrangement_of_the_profile_loops() {
             )
         })
         .unwrap()
+        .map(|found| found.region)
     };
     assert_eq!(program(&[1, 2, 4, 0]), None);
     let Some(SketchProfileRegion::Trimmed {
@@ -1250,6 +1255,7 @@ fn crossing_split(
         )
     })
     .unwrap()
+    .map(|split| split.regions)
 }
 
 #[test]
@@ -1274,7 +1280,8 @@ fn self_crossing_loop_splits_into_the_four_triangles_of_an_x_braced_window() {
             ctx,
         )
     })
-    .unwrap();
+    .unwrap()
+    .map(|found| found.region);
     assert_eq!(ordered, None, "no single face has the crossing loop");
     let regions = crossing_split(&sketch, &entities, &program).expect("four triangles");
     assert_eq!(regions.len(), 4);
@@ -1352,7 +1359,20 @@ fn self_crossing_loop_skips_an_island_face_and_keeps_the_candidates_it_weighed()
             "bottom", "split", "mid", "left", "top", "split", "mid", "right",
         ],
     );
-    let regions = crossing_split(&sketch, &entities, &program).expect("two diagonal quarters");
+    let split = crate::test_support::with_decode_context(|ctx| {
+        super::super::arrangement_regions_of_crossing_loop(
+            &sketch,
+            &entities,
+            &program,
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+        )
+    })
+    .unwrap()
+    .expect("two diagonal quarters");
+    assert!(!split.island_absence_assumed);
+    let regions = split.regions;
     assert_eq!(regions.len(), 2);
     let names = |region: &SketchProfileRegion| {
         let SketchProfileRegion::Trimmed {
@@ -1472,7 +1492,8 @@ fn self_crossing_loop_over_the_candidate_limit_reports_the_cap() {
             ctx,
         )
     })
-    .unwrap();
+    .unwrap()
+    .map(|split| split.regions);
     assert_eq!(split, None);
     work.finish_selection();
     let losses = work.losses();
