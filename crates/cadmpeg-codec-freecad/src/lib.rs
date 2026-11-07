@@ -1099,12 +1099,13 @@ impl CodecBackend for FcstdCodec {
                 )?;
                 cycle_affected_design_objects = cycle_affected;
                 transfer_losses.extend(design_losses);
-                design::resolve_subelement_selections(
+                design::resolve_operation_selections(
                     ctx,
                     &mut ir,
                     &graph.properties,
                     &entry_records,
                     &topology_occurrences,
+                    &cycle_affected_design_objects,
                 )?;
             }
             transfer_losses.extend(drawing_content::transfer(

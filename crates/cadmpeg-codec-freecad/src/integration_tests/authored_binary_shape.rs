@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::brep::{
+    ShapePayloadRecord, Tables, TextOrientation, TextShapeKind, TextSurface, TextTShapeGeometry,
+};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::measured;
 use cadmpeg_measure::value::Reading;
@@ -19,6 +24,65 @@ fn authored_binary_exact_shape_declared_reading_matches_source_dimensions() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     crate::test_support::test_archive::assert_valid_document(decoded.ir());
+    let payloads = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let [payload] = payloads.as_slice() else {
+        panic!("one shape payload")
+    };
+    let tables = Tables::from_payload(payload).unwrap();
+    let [root] = tables.roots else {
+        panic!("one shape root")
+    };
+    assert_eq!(root.orientation, TextOrientation::Forward);
+    let compound = tables.tshapes.resolve(root.shape).unwrap();
+    assert_eq!(compound.kind(), TextShapeKind::Compound);
+    let [solid_use] = compound.children.as_slice() else {
+        panic!("one solid use")
+    };
+    assert_eq!(solid_use.orientation, TextOrientation::Forward);
+    let solid = tables.tshapes.resolve(solid_use.shape).unwrap();
+    assert_eq!(solid.kind(), TextShapeKind::Solid);
+    let [shell_use] = solid.children.as_slice() else {
+        panic!("one shell use")
+    };
+    assert_eq!(shell_use.orientation, TextOrientation::Forward);
+    let shell = tables.tshapes.resolve(shell_use.shape).unwrap();
+    assert_eq!(shell.kind(), TextShapeKind::Shell);
+    let sphere_use = shell
+        .children
+        .iter()
+        .find(|child| {
+            let face = tables.tshapes.resolve(child.shape).unwrap();
+            matches!(&face.geometry, TextTShapeGeometry::Face { surface: Some(surface), .. }
+            if matches!(surface.resolve(tables.surfaces).unwrap(), TextSurface::Sphere { .. }))
+        })
+        .unwrap();
+    assert_eq!(sphere_use.orientation, TextOrientation::Forward);
+    let sphere = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+            )
+        })
+        .unwrap();
+    let face = decoded
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.surface == sphere.id)
+        .unwrap();
+    assert_eq!(face.sense, Sense::Forward);
     let report = measured("binary_exact_shape", decoded.ir()).unwrap();
     let [body] = report.bodies().as_slice() else {
         panic!("one fused body")

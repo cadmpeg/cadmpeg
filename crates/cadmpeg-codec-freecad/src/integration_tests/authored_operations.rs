@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{
+    patterns::PatternSeed, BodySelection, EdgeSelection, FaceSelection, FeatureDefinition,
+    FeatureOperation, PathRef, PlanarProfileRef,
+};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -9,6 +12,33 @@ use std::io::Cursor;
 const LENGTH_TOLERANCE: f64 = 1.0e-12;
 const ANGLE_TOLERANCE: f64 = 1.0e-12;
 const DIRECTION_TOLERANCE: f64 = 1.0e-12;
+
+fn shape_occurrences(
+    decoded: &cadmpeg_ir::DecodeResult,
+) -> Vec<crate::topology_transfer::TopologyOccurrence> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
+    let mut ir = decoded.ir().clone();
+    crate::topology_transfer::transfer(&ctx, &mut ir, &payloads, &properties, &mut Vec::new())
+        .unwrap()
+}
+
+fn operation_definition(feature: &cadmpeg_ir::features::Feature) -> &FeatureOperation {
+    match feature.evaluation.definition() {
+        FeatureDefinition::Operation(operation)
+        | FeatureDefinition::PostProcess { operation, .. } => operation,
+    }
+}
 
 #[test]
 fn authored_core_operations_keep_feature_operands_and_parameters() {
@@ -24,12 +54,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             .find(|f| f.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
     };
-    let operation = |name: &str| {
-        let (FeatureDefinition::Operation(op)
-        | FeatureDefinition::PostProcess { operation: op, .. }) =
-            feature(name).evaluation.definition();
-        serde_json::to_value(op).unwrap()
-    };
+    let operation = |name: &str| serde_json::to_value(operation_definition(feature(name))).unwrap();
     let native_properties = decoded
         .ir()
         .native
@@ -44,6 +69,67 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
                 property.owner == crate::native::native_id("object", owner) && property.name == name
             })
             .unwrap_or_else(|| panic!("{owner}.{name}: native property"))
+    };
+    let assert_link = |property: &crate::native::PropertyRecord,
+                       expected_object: &str,
+                       expected_subelements: &[&str]| {
+        let [Some(link)] = property.links() else {
+            panic!("{} link", property.name)
+        };
+        assert_eq!(link.document(), None, "{} document", property.name);
+        assert_eq!(
+            link.object(),
+            Some(expected_object),
+            "{} target",
+            property.name
+        );
+        assert_eq!(
+            link.subelements(),
+            expected_subelements,
+            "{} selected subelements",
+            property.name
+        );
+    };
+    let native_entries = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let assert_part_edge = |property: &crate::native::PropertyRecord, expected: [f64; 2]| {
+        let [entry_name] = property.side_entries() else {
+            panic!("{}.Edges side entry", property.owner)
+        };
+        let entry = native_entries
+            .iter()
+            .find(|entry| entry.name() == entry_name)
+            .unwrap_or_else(|| panic!("{}.Edges payload", property.owner));
+        let data = entry.data();
+        assert_eq!(u32::from_le_bytes(data[0..4].try_into().unwrap()), 1);
+        assert_eq!(i32::from_le_bytes(data[4..8].try_into().unwrap()), 1);
+        for (bytes, expected) in data[8..24].chunks_exact(8).zip(expected) {
+            assert_eq!(
+                f64::from_le_bytes(bytes.try_into().unwrap()),
+                expected,
+                "{}.Edges authored treatment",
+                property.owner
+            );
+        }
+        assert_eq!(data.len(), 24, "{}.Edges payload size", property.owner);
+    };
+    let occurrences = shape_occurrences(&decoded);
+    let expected_topology_id = |shape: &crate::native::PropertyRecord, name: &str, index| {
+        occurrences
+            .iter()
+            .find(|occurrence| {
+                occurrence.property == shape.id
+                    && occurrence.indexed_name == name
+                    && occurrence.source_index == index
+            })
+            .unwrap_or_else(|| panic!("{}.{}{} topology occurrence", shape.owner, name, index))
+            .topology_id
+            .as_str()
     };
     for (name, kind, owners) in [
         ("Revolution", "revolve", &["RevolutionProfile"][..]),
@@ -78,20 +164,53 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             );
         }
     }
+    let revolution_source = native_property("Revolution", "Source");
+    let revolution_profile_native_id = crate::native::native_id("object", "RevolutionProfile");
+    assert_link(
+        revolution_source,
+        revolution_profile_native_id.as_str(),
+        &[],
+    );
+    let revolution_sketch = model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.name.as_deref() == Some("RevolutionProfile"))
+        .unwrap();
+    let revolution_feature = feature("Revolution");
+    let FeatureOperation::Revolve {
+        construction: cadmpeg_ir::features::RevolveConstruction::Resolved { profile, .. },
+        ..
+    } = operation_definition(revolution_feature)
+    else {
+        panic!(
+            "Revolution profile resolves; decoded definition: {:#?}",
+            revolution_feature.evaluation.definition()
+        )
+    };
+    assert_eq!(
+        profile,
+        &PlanarProfileRef::Sketch(revolution_sketch.id.clone())
+    );
+
     let extrusion_base = native_property("SymmetricExtrusion", "Base");
-    let extrusion_base_id = extrusion_base.id.as_str();
+    let extrusion_profile_id = feature("ExtrusionProfile").id.as_str();
+    assert_eq!(
+        operation("SymmetricExtrusion")["profile"]["kind"].as_str(),
+        Some("feature"),
+        "extrusion profile resolves to a typed feature result"
+    );
     assert_eq!(
         operation("SymmetricExtrusion")["profile"]["value"].as_str(),
-        Some(extrusion_base_id),
-        "extrusion profile uses the authored Base property"
+        Some(extrusion_profile_id),
+        "extrusion profile feature"
     );
     let [Some(extrusion_profile)] = extrusion_base.links() else {
         panic!("SymmetricExtrusion.Base link")
     };
-    let extrusion_profile_id = crate::native::native_id("object", "ExtrusionProfile");
+    let extrusion_profile_native_id = crate::native::native_id("object", "ExtrusionProfile");
     assert_eq!(
         extrusion_profile.object(),
-        Some(extrusion_profile_id.as_str()),
+        Some(extrusion_profile_native_id.as_str()),
         "extrusion Base points to its authored profile"
     );
 
@@ -107,11 +226,12 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         .zip(loft_section_links)
         .zip(expected_loft_sections)
     {
-        assert_eq!(section["kind"].as_str(), Some("native"));
+        assert_eq!(section["kind"].as_str(), Some("feature"));
+        let expected_feature_id = feature(expected).id.as_str();
         assert_eq!(
             section["value"].as_str(),
-            link.as_ref().and_then(|link| link.object()),
-            "Loft section native reference"
+            Some(expected_feature_id),
+            "Loft section typed feature"
         );
         let expected_section_id = crate::native::native_id("object", expected);
         assert_eq!(
@@ -122,17 +242,31 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     }
 
     let sweep = operation("Sweep");
-    let sweep_section_id = crate::native::native_id("object", "SweepSection");
+    let sweep_section_feature_id = feature("SweepSection").id.as_str();
+    assert_eq!(
+        sweep["shape"]["section"]["value"]["kind"].as_str(),
+        Some("feature"),
+        "Sweep profile resolves to a typed feature result"
+    );
     assert_eq!(
         sweep["shape"]["section"]["value"]["value"].as_str(),
-        Some(sweep_section_id.as_str()),
-        "Sweep profile"
+        Some(sweep_section_feature_id),
+        "Sweep profile feature"
+    );
+    let sweep_sections = native_property("Sweep", "Sections");
+    let [Some(sweep_section)] = sweep_sections.links() else {
+        panic!("Sweep.Sections link")
+    };
+    let sweep_section_native_id = crate::native::native_id("object", "SweepSection");
+    assert_eq!(
+        sweep_section.object(),
+        Some(sweep_section_native_id.as_str())
     );
     let sweep_spine = native_property("Sweep", "Spine");
     assert_eq!(
-        sweep["path"]["value"].as_str(),
-        Some(sweep_spine.id.as_str()),
-        "Sweep path property"
+        sweep["path"]["kind"].as_str(),
+        Some("edges"),
+        "Sweep path resolves to ordered neutral edges"
     );
     let [Some(sweep_path)] = sweep_spine.links() else {
         panic!("Sweep.Spine link")
@@ -144,13 +278,31 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         "Sweep spine carrier"
     );
     assert_eq!(sweep_path.subelements(), ["Edge1", "Edge2"]);
+    let sweep_spine_shape = native_property("SweepSpine", "Shape");
+    let expected_spine_edges = [
+        expected_topology_id(sweep_spine_shape, "Edge", 1),
+        expected_topology_id(sweep_spine_shape, "Edge", 2),
+    ];
+    let sweep_feature = feature("Sweep");
+    let FeatureOperation::Sweep {
+        path: Some(PathRef::Edges(path_edges)),
+        ..
+    } = operation_definition(sweep_feature)
+    else {
+        panic!(
+            "Sweep path resolves to ordered edges; decoded definition: {:#?}",
+            sweep_feature.evaluation.definition()
+        )
+    };
+    assert_eq!(
+        path_edges
+            .iter()
+            .map(cadmpeg_ir::ids::EdgeId::as_str)
+            .collect::<Vec<_>>(),
+        expected_spine_edges.to_vec()
+    );
 
     let mirror_source = native_property("Mirror", "Source");
-    assert_eq!(
-        operation("Mirror")["source"]["value"].as_str(),
-        Some(mirror_source.id.as_str()),
-        "Mirror source property"
-    );
     let [Some(mirror_source_link)] = mirror_source.links() else {
         panic!("Mirror.Source link")
     };
@@ -160,6 +312,133 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         Some(mirror_base_id.as_str()),
         "Mirror source carrier"
     );
+    let mirror_feature = feature("Mirror");
+    let FeatureOperation::MirrorShape { source, .. } = operation_definition(mirror_feature) else {
+        panic!(
+            "Mirror operation; decoded definition: {:#?}",
+            mirror_feature.evaluation.definition()
+        )
+    };
+    let BodySelection::Resolved { bodies, native } = source else {
+        panic!("Mirror source resolves to a typed body selection")
+    };
+    assert_eq!(native, &mirror_source.id);
+    assert_eq!(
+        bodies.as_slice(),
+        feature("MirrorBase").evaluation.outputs(),
+        "Mirror selects the source feature output body"
+    );
+
+    let draft_base = native_property("Draft", "Base");
+    let draft_base_id = crate::native::native_id("object", "DraftBase");
+    assert_link(draft_base, draft_base_id.as_str(), &["Face1", "Face2"]);
+    let draft_shape = native_property("DraftBase", "Shape");
+    let expected_draft_faces = [
+        expected_topology_id(draft_shape, "Face", 1),
+        expected_topology_id(draft_shape, "Face", 2),
+    ];
+    let draft_feature = feature("Draft");
+    let FeatureOperation::Draft { faces, anchor, .. } = operation_definition(draft_feature) else {
+        panic!(
+            "Draft operation; decoded definition: {:#?}",
+            draft_feature.evaluation.definition()
+        )
+    };
+    let FaceSelection::Resolved {
+        faces: resolved_draft_faces,
+        native,
+    } = faces
+    else {
+        panic!("Draft.Base resolves to transferred faces")
+    };
+    assert_eq!(native, &draft_base.id);
+    assert_eq!(
+        resolved_draft_faces
+            .iter()
+            .map(cadmpeg_ir::ids::FaceId::as_str)
+            .collect::<Vec<_>>(),
+        expected_draft_faces
+    );
+    let draft_plane = native_property("Draft", "NeutralPlane");
+    let draft_plane_id = crate::native::native_id("object", "DatumPlane");
+    assert_link(draft_plane, draft_plane_id.as_str(), &[""]);
+    let draft_pull = native_property("Draft", "PullDirection");
+    let draft_axis_id = crate::native::native_id("object", "DatumAxis");
+    assert_link(draft_pull, draft_axis_id.as_str(), &[""]);
+    let cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+        plane: FaceSelection::Native(plane),
+        pull: Some(pull),
+    } = anchor
+    else {
+        panic!("Draft anchor retains native plane and resolved pull direction")
+    };
+    assert_eq!(plane, &draft_plane.id);
+    for (actual, expected) in [
+        (pull.direction.get().x, 0.0),
+        (pull.direction.get().y, 0.0),
+        (pull.direction.get().z, 1.0),
+    ] {
+        assert!((actual - expected).abs() < DIRECTION_TOLERANCE);
+    }
+
+    let thickness_faces = native_property("Thickness", "Faces");
+    let thickness_base_id = crate::native::native_id("object", "ThicknessBase");
+    assert_link(thickness_faces, thickness_base_id.as_str(), &["Face6"]);
+    let thickness_shape = native_property("ThicknessBase", "Shape");
+    let expected_thickness_face = expected_topology_id(thickness_shape, "Face", 6);
+    let thickness_feature = feature("Thickness");
+    let FeatureOperation::Shell {
+        removed_faces: FaceSelection::Resolved { faces, native },
+        ..
+    } = operation_definition(thickness_feature)
+    else {
+        panic!(
+            "Thickness face selection resolves with its native property; decoded definition: {:#?}",
+            thickness_feature.evaluation.definition()
+        )
+    };
+    assert_eq!(native, &thickness_faces.id);
+    assert_eq!(faces.len(), 1);
+    assert_eq!(faces[0].as_str(), expected_thickness_face);
+
+    let hole_profile = native_property("Hole", "Profile");
+    let hole_profile_native_id = crate::native::native_id("object", "HoleProfile");
+    assert_link(hole_profile, hole_profile_native_id.as_str(), &[]);
+    let hole_sketch = model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.name.as_deref() == Some("HoleProfile"))
+        .unwrap();
+    let hole_feature = feature("Hole");
+    let FeatureOperation::Hole {
+        profile: Some(PlanarProfileRef::Sketch(profile)),
+        ..
+    } = operation_definition(hole_feature)
+    else {
+        panic!(
+            "Hole.Profile should resolve to authored sketch {:?}; decoded definition: {:#?}",
+            hole_sketch.id,
+            hole_feature.evaluation.definition()
+        )
+    };
+    assert_eq!(profile, &hole_sketch.id);
+
+    let pattern_originals = native_property("LinearPattern", "Originals");
+    let pattern_base_id = crate::native::native_id("object", "PatternBase");
+    assert_link(pattern_originals, pattern_base_id.as_str(), &[]);
+    let pattern_feature = feature("LinearPattern");
+    let FeatureOperation::Pattern { seeds, .. } = operation_definition(pattern_feature) else {
+        panic!(
+            "LinearPattern operation; decoded definition: {:#?}",
+            pattern_feature.evaluation.definition()
+        )
+    };
+    assert_eq!(
+        seeds.as_slice(),
+        &[PatternSeed::Feature(feature("PatternBase").id.clone())]
+    );
+    let pattern_direction = native_property("LinearPattern", "Direction");
+    assert_link(pattern_direction, draft_axis_id.as_str(), &[""]);
     for (name, pointer, expected, tolerance) in [
         (
             "Revolution",
@@ -377,10 +656,15 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         operation("LinearPattern")["pattern"]["count"].as_u64(),
         Some(4)
     );
-    for (name, base) in [
-        ("PartFillet", "DressupBase"),
-        ("PartChamfer", "ChamferBase"),
+    for (name, base, treatment) in [
+        ("PartFillet", "DressupBase", [2.0, 2.0]),
+        ("PartChamfer", "ChamferBase", [1.5, 2.5]),
     ] {
+        let base_property = native_property(name, "Base");
+        let base_id = crate::native::native_id("object", base);
+        assert_link(base_property, base_id.as_str(), &[]);
+        let selected_edges = native_property(name, "Edges");
+        assert_part_edge(selected_edges, treatment);
         let (FeatureDefinition::Operation(op)
         | FeatureDefinition::PostProcess { operation: op, .. }) =
             feature(name).evaluation.definition();
@@ -389,12 +673,19 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             FeatureOperation::Chamfer { groups, .. } => &groups.as_slice()[0].edges,
             _ => panic!("{name}: dress-up"),
         };
-        let EdgeSelection::Resolved { edges, .. } = selection else {
+        let EdgeSelection::Resolved { edges, native } = selection else {
             panic!("{name}: source edge is unresolved")
         };
+        assert_eq!(native, &base_property.id, "{name}: native base selector");
         let [edge] = edges.as_slice() else {
             panic!("{name}: expected one selected edge")
         };
+        let source_shape = native_property(base, "Shape");
+        assert_eq!(
+            edge.as_str(),
+            expected_topology_id(source_shape, "Edge", 1),
+            "{name}: authored Edge1 selection"
+        );
         let [body] = feature(base).evaluation.outputs().as_slice() else {
             panic!("{base}: one body")
         };
@@ -464,6 +755,115 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     let (origin, _, _) = profile.placement.resolved().unwrap();
     assert!((origin.get().z - 10.0).abs() < LENGTH_TOLERANCE);
 }
+
+#[test]
+fn auxiliary_sweep_path_resolves_selected_native_edges() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::BTreeSet;
+
+    let bytes = include_bytes!("../../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = decoded.ir().native.namespace("fcstd").unwrap();
+    let mut properties = native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let entries = native
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let sweep_object_id = crate::native::native_id("object", "Sweep");
+    let auxiliary_id = crate::native::native_id("property", "Sweep.AuxiliarySpine");
+    let mut auxiliary = properties
+        .iter()
+        .find(|property| property.owner == sweep_object_id && property.name == "Spine")
+        .expect("authored Sweep.Spine selector")
+        .clone();
+    auxiliary.id = auxiliary_id.clone();
+    auxiliary.name = "AuxiliarySpine".to_owned();
+    properties.push(auxiliary);
+
+    let mut ir = decoded.ir().clone();
+    let sweep = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.native_ref.as_deref() == Some(sweep_object_id.as_str()))
+        .expect("authored Sweep feature");
+    sweep.evaluation.edit(|definition, _| {
+        let operation = match definition {
+            FeatureDefinition::Operation(operation)
+            | FeatureDefinition::PostProcess { operation, .. } => operation,
+        };
+        let FeatureOperation::Sweep { orientation, .. } = operation else {
+            panic!("authored Sweep definition: {operation:#?}")
+        };
+        *orientation = Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+            path: PathRef::Native(auxiliary_id.clone()),
+            tangent: false,
+            curvilinear: true,
+        });
+    });
+
+    let occurrences = shape_occurrences(&decoded);
+    let spine_object_id = crate::native::native_id("object", "SweepSpine");
+    let shape_id = properties
+        .iter()
+        .find(|property| property.owner == spine_object_id && property.name == "Shape")
+        .expect("authored spine shape property")
+        .id
+        .clone();
+    let expected = [1, 2]
+        .into_iter()
+        .map(|index| {
+            let id = occurrences
+                .iter()
+                .find(|occurrence| {
+                    occurrence.property == shape_id
+                        && occurrence.indexed_name == "Edge"
+                        && occurrence.source_index == index
+                })
+                .expect("authored spine edge topology");
+            cadmpeg_ir::ids::EdgeId::mint(id.topology_id.clone()).unwrap()
+        })
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
+    crate::design::resolve_operation_selections(
+        &ctx,
+        &mut ir,
+        &properties,
+        &entries,
+        &occurrences,
+        &BTreeSet::new(),
+    )
+    .unwrap();
+
+    let sweep = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(sweep_object_id.as_str()))
+        .unwrap();
+    let FeatureOperation::Sweep {
+        orientation:
+            Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+                path: PathRef::Edges(edges),
+                tangent: false,
+                curvilinear: true,
+            }),
+        ..
+    } = operation_definition(sweep)
+    else {
+        panic!(
+            "auxiliary path resolves to ordered neutral edges; decoded definition: {:#?}",
+            sweep.evaluation.definition()
+        )
+    };
+    assert_eq!(edges.as_slice(), expected.as_slice());
+}
+
 #[test]
 fn authored_core_operation_bodies_match_source_dimensions() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

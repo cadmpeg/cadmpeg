@@ -10,6 +10,17 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn placement_component_references_skip_text_and_label_operands() {
+    let expression = r#"Sketch.Placement.Base.x + "Sketch.Placement.Base.y" + 'Sketch.Placement.Base.z' + <<SketchLabel>>.Placement.Base.z"#;
+    assert_eq!(
+        super::super::expression_identifiers(expression).as_slice(),
+        &["Sketch.Placement.Base.x"]
+    );
+    let references = super::super::placement_component_references(expression).collect::<Vec<_>>();
+    assert_eq!(references.as_slice(), &[("Sketch", "x")]);
+}
+
+#[test]
 fn distinguishes_stored_base_and_application_owned_features() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

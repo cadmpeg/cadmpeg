@@ -4733,7 +4733,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "fcstd:native:object#Template: SVG stroke, fill and font appearance remain in the asset; text em sizes are millimetres",
+        "message": "fcstd:native:object#Template: SVG stroke, fill and font appearance remain in the asset; specified text em sizes are millimetres",
         "severity": "warning"
       },
       {

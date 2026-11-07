@@ -55,6 +55,16 @@ fn unnamed_occurrence(
     }
 }
 
+fn named_root_occurrence(
+    id: &str,
+    definition: &str,
+    name: &str,
+) -> cadmpeg_ir::products::Occurrence {
+    let mut occurrence = unnamed_occurrence(id, definition, None);
+    occurrence.name = Some(name.into());
+    occurrence
+}
+
 /// The name parameter of every `keyword` record, in emission order.
 fn record_names(step: &str, keyword: &str) -> Vec<String> {
     let opening = format!(" = {keyword}('");
@@ -258,6 +268,423 @@ fn world_translations(ir: &CadIr, label: &str) -> Vec<[f64; 3]> {
         .collect::<Vec<_>>();
     translations.sort_by(|left, right| left.partial_cmp(right).expect("finite"));
     translations
+}
+
+fn assert_synthetic_root_children(ir: &CadIr, expected: &[(&str, &str)]) {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+
+    let roots = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| matches!(&occurrence.parent, OccurrenceParent::Root {}))
+        .collect::<Vec<_>>();
+    assert_eq!(roots.len(), 1, "decoded synthetic root occurrence");
+    let root = roots[0];
+    let children = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                OccurrenceParent::Occurrence { occurrence: parent } if parent == &root.id
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(children.len(), expected.len());
+
+    for &(name, product_label) in expected {
+        let occurrence = children
+            .iter()
+            .find(|occurrence| occurrence.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing decoded root occurrence {name}"));
+        let PrototypeReference::Local { definition } = &occurrence.prototype else {
+            panic!("root occurrence {name} has no local product definition");
+        };
+        let product = ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|product| &product.id == definition)
+            .unwrap_or_else(|| panic!("root occurrence {name} has an unknown product"));
+        assert_eq!(product.label.as_deref(), Some(product_label));
+    }
+}
+
+#[test]
+fn writer_preserves_distinct_identity_root_occurrences() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.model.bodies[0].id.clone();
+    let mut first = unnamed_definition("test:model:product-definition#first", vec![body]);
+    first.label = Some("First part".into());
+    let mut second = unnamed_definition("test:model:product-definition#second", Vec::new());
+    second.label = Some("Second part".into());
+    ir.model.product_definitions = vec![first, second];
+    ir.model.occurrences = vec![
+        named_root_occurrence(
+            "test:model:occurrence#first-root",
+            "test:model:product-definition#first",
+            "first-root",
+        ),
+        named_root_occurrence(
+            "test:model:occurrence#second-root",
+            "test:model:product-definition#second",
+            "second-root",
+        ),
+    ];
+
+    let step = write_named(&ir, "Assembly model");
+    assert_eq!(
+        record_names(&step, "PRODUCT"),
+        ["First part", "Second part", "Assembly model"]
+    );
+    assert_eq!(
+        record_names(&step, "NEXT_ASSEMBLY_USAGE_OCCURRENCE"),
+        ["first-root", "second-root"]
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .expect("decode distinct identity roots");
+    assert_synthetic_root_children(
+        decoded.ir(),
+        &[("first-root", "First part"), ("second-root", "Second part")],
+    );
+}
+
+#[test]
+fn writer_does_not_add_a_synthetic_root_for_reused_roots_with_children() {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.model.bodies[0].id.clone();
+    let mut assembly = unnamed_definition("test:model:product-definition#assembly", Vec::new());
+    assembly.label = Some("Assembly".into());
+    let mut component = unnamed_definition("test:model:product-definition#component", vec![body]);
+    component.label = Some("Component".into());
+    let mut other = unnamed_definition("test:model:product-definition#other", Vec::new());
+    other.label = Some("Other".into());
+    ir.model.product_definitions = vec![assembly, component, other];
+
+    let first_root_id = "test:model:occurrence#first-assembly";
+    let second_root_id = "test:model:occurrence#second-assembly";
+    ir.model.occurrences = vec![
+        named_root_occurrence(
+            first_root_id,
+            "test:model:product-definition#assembly",
+            "first-assembly",
+        ),
+        named_root_occurrence(
+            second_root_id,
+            "test:model:product-definition#assembly",
+            "second-assembly",
+        ),
+        named_root_occurrence(
+            "test:model:occurrence#other-root",
+            "test:model:product-definition#other",
+            "other-root",
+        ),
+        {
+            let mut child = unnamed_occurrence(
+                "test:model:occurrence#first-component",
+                "test:model:product-definition#component",
+                Some(first_root_id),
+            );
+            child.name = Some("component".into());
+            child
+        },
+        {
+            let mut child = unnamed_occurrence(
+                "test:model:occurrence#second-component",
+                "test:model:product-definition#component",
+                Some(second_root_id),
+            );
+            child.name = Some("component".into());
+            child
+        },
+    ];
+
+    let step = write_named(&ir, "Assembly model");
+    assert_eq!(
+        record_names(&step, "PRODUCT"),
+        ["Assembly", "Component", "Other"]
+    );
+    assert_eq!(
+        record_names(&step, "NEXT_ASSEMBLY_USAGE_OCCURRENCE"),
+        ["component", "component"]
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .expect("decode repeated roots with children");
+    let decoded_ir = decoded.ir();
+    assert_eq!(decoded_ir.model.occurrences.len(), 4);
+    let assembly_definition = decoded_ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|product| product.label.as_deref() == Some("Assembly"))
+        .expect("assembly definition")
+        .id
+        .clone();
+    let assembly_root = decoded_ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            matches!(&occurrence.parent, OccurrenceParent::Root {})
+                && matches!(
+                    &occurrence.prototype,
+                    PrototypeReference::Local { definition }
+                        if definition == &assembly_definition
+                )
+        })
+        .expect("existing direct assembly root");
+    let children = decoded_ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                OccurrenceParent::Occurrence { occurrence: parent }
+                    if parent == &assembly_root.id
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(children.len(), 2);
+}
+
+#[test]
+fn writer_keeps_distinct_roots_when_reused_root_children_are_unrepresentable() {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.model.bodies[0].id.clone();
+    let mut assembly = unnamed_definition("test:model:product-definition#assembly", Vec::new());
+    assembly.label = Some("Assembly".into());
+    let mut component = unnamed_definition("test:model:product-definition#component", vec![body]);
+    component.label = Some("Component".into());
+    let mut other = unnamed_definition("test:model:product-definition#other", Vec::new());
+    other.label = Some("Other".into());
+    ir.model.product_definitions = vec![assembly, component, other];
+
+    let first_root_id = "test:model:occurrence#first-assembly";
+    let second_root_id = "test:model:occurrence#second-assembly";
+    let mut first_component = unnamed_occurrence(
+        "test:model:occurrence#first-component",
+        "test:model:product-definition#component",
+        Some(first_root_id),
+    );
+    first_component.name = Some("first-component".into());
+    first_component.scale = [2.0, 1.0, 1.0]
+        .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite scale"));
+    let mut second_component = unnamed_occurrence(
+        "test:model:occurrence#second-component",
+        "test:model:product-definition#component",
+        Some(second_root_id),
+    );
+    second_component.name = Some("second-component".into());
+    second_component.scale = [2.0, 1.0, 1.0]
+        .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite scale"));
+    ir.model.occurrences = vec![
+        named_root_occurrence(
+            first_root_id,
+            "test:model:product-definition#assembly",
+            "first-assembly",
+        ),
+        named_root_occurrence(
+            second_root_id,
+            "test:model:product-definition#assembly",
+            "second-assembly",
+        ),
+        named_root_occurrence(
+            "test:model:occurrence#other-root",
+            "test:model:product-definition#other",
+            "other-root",
+        ),
+        first_component,
+        second_component,
+    ];
+
+    let options = StepWriteOptions {
+        product_name: "Assembly model".into(),
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, StepSchema::Ap242Edition3, &options)
+        .expect("write roots with unrepresentable children");
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code == crate::loss::StepLossCode::OccurrencePlacementNotRigid.kind()
+            )
+            .count(),
+        2
+    );
+    let step = String::from_utf8(output).expect("STEP text");
+    assert_eq!(
+        record_names(&step, "NEXT_ASSEMBLY_USAGE_OCCURRENCE"),
+        ["first-assembly", "second-assembly", "other-root"]
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .expect("decode roots with unrepresentable children");
+    let decoded_ir = decoded.ir();
+    let model_definition = decoded_ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|product| product.label.as_deref() == Some("Assembly model"))
+        .expect("synthetic model definition")
+        .id
+        .clone();
+    let model_root = decoded_ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            matches!(&occurrence.parent, OccurrenceParent::Root {})
+                && matches!(
+                    &occurrence.prototype,
+                    PrototypeReference::Local { definition }
+                        if definition == &model_definition
+                )
+        })
+        .expect("synthetic model root occurrence");
+    let root_uses = decoded_ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                OccurrenceParent::Occurrence { occurrence: parent }
+                    if parent == &model_root.id
+            )
+        })
+        .map(|occurrence| occurrence.name.as_deref().expect("root usage name"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        root_uses,
+        ["first-assembly", "second-assembly", "other-root"]
+    );
+}
+
+#[test]
+fn writer_keeps_a_single_identity_root_as_the_direct_product() {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.model.bodies[0].id.clone();
+    let mut part = unnamed_definition("test:model:product-definition#part", vec![body]);
+    part.label = Some("Part".into());
+    ir.model.product_definitions = vec![part];
+    ir.model.occurrences = vec![unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#part",
+        None,
+    )];
+
+    let step = write_named(&ir, "Assembly model");
+    assert_eq!(record_names(&step, "PRODUCT"), ["Part"]);
+    assert!(record_names(&step, "NEXT_ASSEMBLY_USAGE_OCCURRENCE").is_empty());
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .expect("decode single identity root");
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    let occurrence = &decoded.ir().model.occurrences[0];
+    assert!(matches!(&occurrence.parent, OccurrenceParent::Root {}));
+    let PrototypeReference::Local { definition } = &occurrence.prototype else {
+        panic!("single root has no local product definition");
+    };
+    let product = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|product| &product.id == definition)
+        .expect("single root product");
+    assert_eq!(product.label.as_deref(), Some("Part"));
+}
+
+#[test]
+fn writer_keeps_representable_root_usage_when_another_root_is_scaled() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.model.bodies[0].id.clone();
+    let mut valid = unnamed_definition("test:model:product-definition#valid", vec![body]);
+    valid.label = Some("Valid part".into());
+    let mut scaled = unnamed_definition("test:model:product-definition#scaled", Vec::new());
+    scaled.label = Some("Scaled part".into());
+    ir.model.product_definitions = vec![valid, scaled];
+    let valid_root = named_root_occurrence(
+        "test:model:occurrence#valid-root",
+        "test:model:product-definition#valid",
+        "valid-root",
+    );
+    let mut scaled_root = named_root_occurrence(
+        "test:model:occurrence#scaled-root",
+        "test:model:product-definition#scaled",
+        "scaled-root",
+    );
+    scaled_root.scale = [2.0, 1.0, 1.0]
+        .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite scale"));
+    ir.model.occurrences = vec![valid_root, scaled_root];
+
+    let options = StepWriteOptions {
+        product_name: "Assembly model".into(),
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, StepSchema::Ap242Edition3, &options)
+        .expect("write mixed roots");
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    == crate::loss::StepLossCode::RootOccurrencePlacementNotRepresentable.kind()
+            })
+            .count(),
+        1
+    );
+    let step = String::from_utf8(output).expect("STEP text");
+    assert_eq!(
+        record_names(&step, "NEXT_ASSEMBLY_USAGE_OCCURRENCE"),
+        ["valid-root"]
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .expect("decode mixed roots");
+    let valid = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("valid-root"))
+        .expect("representable root occurrence survives decode");
+    assert!(matches!(
+        &valid.parent,
+        cadmpeg_ir::products::OccurrenceParent::Occurrence { .. }
+    ));
+    let cadmpeg_ir::products::PrototypeReference::Local { definition } = &valid.prototype else {
+        panic!("representable root has no local product definition");
+    };
+    let product = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|product| &product.id == definition)
+        .expect("representable root product");
+    assert_eq!(product.label.as_deref(), Some("Valid part"));
 }
 
 #[test]

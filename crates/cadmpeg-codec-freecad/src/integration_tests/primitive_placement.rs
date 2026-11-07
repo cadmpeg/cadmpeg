@@ -359,6 +359,134 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
                         ],
                         "{version} F14{variant}: native datum point expressions"
                     );
+
+                    let sketch_feature = model
+                        .features
+                        .iter()
+                        .find(|feature| feature.name.as_deref() == Some("Sketch"))
+                        .unwrap();
+                    let datum_feature = model
+                        .features
+                        .iter()
+                        .find(|feature| feature.name.as_deref() == Some("SketchDatumPoint"))
+                        .unwrap();
+                    let FeatureOperation::DatumPoint { position, .. } = operation(datum_feature)
+                    else {
+                        panic!("{version} F14{variant}: datum point definition")
+                    };
+                    for (actual, expected) in [
+                        (position.get().x, 5.0),
+                        (position.get().y, -7.0),
+                        (position.get().z, translation[2]),
+                    ] {
+                        assert!((actual - expected).abs() < EPS_PRIMITIVE_FRAME);
+                    }
+
+                    let sketch_native_id = crate::native::native_id("object", "Sketch");
+                    let datum_placement = native_properties
+                        .iter()
+                        .find(|property| property.owner == datum_id && property.name == "Placement")
+                        .unwrap();
+                    let sketch_placement = native_properties
+                        .iter()
+                        .find(|property| {
+                            property.owner == sketch_native_id && property.name == "Placement"
+                        })
+                        .unwrap();
+                    let expression_engine = native_properties
+                        .iter()
+                        .find(|property| {
+                            property.owner == datum_id && property.name == "ExpressionEngine"
+                        })
+                        .unwrap();
+                    let constraint_parameter = |name: &str| {
+                        model
+                            .parameters
+                            .iter()
+                            .find(|parameter| {
+                                parameter.owner.as_ref() == Some(&sketch_feature.id)
+                                    && parameter.properties.get("source_name").map(String::as_str)
+                                        == Some(name)
+                            })
+                            .unwrap_or_else(|| panic!("{version} F14{variant}: {name} parameter"))
+                    };
+                    for (axis, expected, expression, constraint) in [
+                        (
+                            "x",
+                            5.0,
+                            "Sketch.Placement.Base.x + Sketch.Constraints.point_x",
+                            Some("point_x"),
+                        ),
+                        (
+                            "y",
+                            -7.0,
+                            "Sketch.Placement.Base.y + Sketch.Constraints.point_y",
+                            Some("point_y"),
+                        ),
+                        ("z", translation[2], "Sketch.Placement.Base.z", None),
+                    ] {
+                        let placement_name = format!("Placement.Base.{axis}");
+                        let target = model
+                            .parameters
+                            .iter()
+                            .find(|parameter| {
+                                parameter.owner.as_ref() == Some(&datum_feature.id)
+                                    && parameter.name == placement_name
+                            })
+                            .unwrap_or_else(|| {
+                                panic!("{version} F14{variant}: datum {axis} parameter")
+                            });
+                        assert_eq!(target.expression, expression);
+                        assert_eq!(
+                            target.native_ref.as_deref(),
+                            Some(datum_placement.id.as_str())
+                        );
+                        assert_eq!(
+                            target
+                                .properties
+                                .get("expression_native_ref")
+                                .map(String::as_str),
+                            Some(expression_engine.id.as_str())
+                        );
+                        let Some(ParameterValue::Length(value)) = target.value.as_ref() else {
+                            panic!("{version} F14{variant}: datum {axis} length")
+                        };
+                        assert!((value.get() - expected).abs() < EPS_PRIMITIVE_FRAME);
+
+                        let sketch_parameter = model
+                            .parameters
+                            .iter()
+                            .find(|parameter| {
+                                parameter.owner.as_ref() == Some(&sketch_feature.id)
+                                    && parameter.name == placement_name
+                            })
+                            .unwrap_or_else(|| {
+                                panic!("{version} F14{variant}: sketch {axis} parameter")
+                            });
+                        let Some(ParameterValue::Length(value)) = sketch_parameter.value.as_ref()
+                        else {
+                            panic!("{version} F14{variant}: sketch {axis} length")
+                        };
+                        let expected_sketch_component =
+                            if axis == "z" { translation[2] } else { 0.0 };
+                        assert!(
+                            (value.get() - expected_sketch_component).abs() < EPS_PRIMITIVE_FRAME
+                        );
+                        assert_eq!(
+                            sketch_parameter.native_ref.as_deref(),
+                            Some(sketch_placement.id.as_str())
+                        );
+
+                        let mut expected_dependencies = vec![sketch_parameter.id.clone()];
+                        if let Some(name) = constraint {
+                            expected_dependencies.push(constraint_parameter(name).id.clone());
+                        }
+                        assert_eq!(
+                            target.dependencies.as_slice(),
+                            expected_dependencies.as_slice(),
+                            "{version} F14{variant}: datum {axis} equation dependencies"
+                        );
+                    }
                 }
             }
             let attachments = decoded

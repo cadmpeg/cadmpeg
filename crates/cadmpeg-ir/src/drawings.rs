@@ -192,6 +192,23 @@ mod tests {
     use super::{Drawing, DrawingId};
 
     #[test]
+    fn template_text_round_trips_without_a_font_height() {
+        let wire = serde_json::json!({"text": "label", "position": [10.0, 9.0]});
+        let text: super::TemplateText = serde_json::from_value(wire.clone()).unwrap();
+        assert!(text.height.is_none());
+        assert_eq!(serde_json::to_value(text).unwrap(), wire);
+        for invalid in [
+            serde_json::json!(null),
+            serde_json::json!(0),
+            serde_json::json!(-1),
+        ] {
+            let mut rejected = wire.clone();
+            rejected["height"] = invalid;
+            assert!(serde_json::from_value::<super::TemplateText>(rejected).is_err());
+        }
+    }
+
+    #[test]
     fn sheet_and_curves_wire_admission() {
         let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native",
         "sheet": {"width_mm": 210.0, "height_mm": 297.0, "fields": [{"name": "Title", "value": "Test"}]},
@@ -508,9 +525,20 @@ pub struct TemplateText {
     pub text: String,
     /// Left baseline position in page millimetres.
     pub position: crate::units::FiniteVector<2>,
-    /// Font em size in millimetres.
-    pub height: crate::scalar::PositiveLength,
+    /// Font em size in millimetres, when specified.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_template_text_height"
+    )]
+    pub height: Option<crate::scalar::PositiveLength>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_template_text_height,
+    crate::scalar::PositiveLength,
+    "height"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_template_geometry,

@@ -7,6 +7,7 @@ mod history;
 pub(crate) mod holes_extrude;
 mod ordering;
 pub(crate) mod primitives;
+mod profile_operands;
 mod resource_admission;
 mod revolution;
 pub(crate) mod sketches;
