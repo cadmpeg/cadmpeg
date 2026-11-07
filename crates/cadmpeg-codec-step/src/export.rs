@@ -1136,7 +1136,23 @@ impl<'a> Builder<'a> {
             }
         }
         let bodies_written = !self.body_step_refs.is_empty();
-        if self.ir.model.product_definitions.is_empty() {
+        let has_external_root = matches!(
+            self.schema,
+            StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
+        ) && self.ir.model.occurrences.iter().any(|occurrence| {
+            matches!(occurrence.parent, OccurrenceParent::Root {})
+                && matches!(
+                    &occurrence.prototype,
+                    PrototypeReference::External {
+                        document: cadmpeg_ir::products::ExternalDocument::Path { .. },
+                        ..
+                    }
+                )
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| transform.is_none())
+        });
+        if self.ir.model.product_definitions.is_empty() && !has_external_root {
             let product_def_shape = self.emit_product_structure();
             self.default_product_definition_shape = Some(product_def_shape);
             if bodies_written {
@@ -2817,10 +2833,27 @@ impl<'a> Builder<'a> {
             1 => root_products.pop_first(),
             _ => None,
         };
-        // A rigid root placement of a local product needs a parent product to carry it.
+        let supports_external_reference = matches!(
+            self.schema,
+            StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
+        );
+        let writable_external = |occurrence: &cadmpeg_ir::products::Occurrence| {
+            supports_external_reference
+                && matches!(
+                    &occurrence.prototype,
+                    PrototypeReference::External {
+                        document: cadmpeg_ir::products::ExternalDocument::Path { .. },
+                        ..
+                    }
+                )
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| transform.is_none())
+        };
         let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
             matches!(occurrence.parent, OccurrenceParent::Root {})
-                && occurrence_products.contains_key(&occurrence.id)
+                && (occurrence_products.contains_key(&occurrence.id)
+                    || writable_external(occurrence))
                 && occurrence.effective_transform().is_ok_and(|transform| {
                     transform.is_none_or(|transform| transform.is_proper_rigid())
                 })
@@ -3140,22 +3173,6 @@ impl<'a> Builder<'a> {
                 }
             };
             let (parent_definition, parent_representation) = parent;
-            let Some(child_product) = occurrence_products.get(&occurrence.id) else {
-                self.loss(
-                    StepLossCode::OccurrenceNoLocalProduct,
-                    format!(
-                        "occurrence '{}' has no local product definition",
-                        occurrence.id
-                    ),
-                );
-                continue;
-            };
-            let Some((&child_definition, &child_representation)) = definitions
-                .get(child_product)
-                .zip(representations.get(child_product))
-            else {
-                continue;
-            };
             let transform = match occurrence.effective_transform() {
                 Ok(transform) => transform,
                 Err(error) => {
@@ -3173,6 +3190,47 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             }
+            let (child_definition, child_representation) = if let Some(child_product) =
+                occurrence_products.get(&occurrence.id)
+            {
+                let Some((&definition, &representation)) = definitions
+                    .get(child_product)
+                    .zip(representations.get(child_product))
+                else {
+                    continue;
+                };
+                (definition, Some(representation))
+            } else if writable_external(occurrence) {
+                let PrototypeReference::External {
+                    document: cadmpeg_ir::products::ExternalDocument::Path { path },
+                    object,
+                } = &occurrence.prototype
+                else {
+                    continue;
+                };
+                let source = self.emitter.emit(
+                    "EXTERNAL_SOURCE",
+                    &format!("IDENTIFIER({})", string(path.as_str())),
+                );
+                let definition = self.emitter.emit(
+                    "PRODUCT_DEFINITION_REFERENCE",
+                    &format!(
+                        "{source},'','',{},$",
+                        string(object.as_deref().unwrap_or(""))
+                    ),
+                );
+                self.losses.push(cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!("external occurrence {} does not hold the product and formation identifiers required by PRODUCT_DEFINITION_REFERENCE", occurrence.id)));
+                (definition, None)
+            } else {
+                self.loss(
+                    StepLossCode::OccurrenceNoLocalProduct,
+                    format!(
+                        "occurrence '{}' has no writable product definition",
+                        occurrence.id
+                    ),
+                );
+                continue;
+            };
             let usage = self.emitter.emit(
                 "NEXT_ASSEMBLY_USAGE_OCCURRENCE",
                 &format!(
@@ -3184,6 +3242,9 @@ impl<'a> Builder<'a> {
             self.occurrence_step_refs
                 .insert(occurrence.id.as_str().to_owned(), usage);
             let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
+                continue;
+            };
+            let Some(child_representation) = child_representation else {
                 continue;
             };
             let usage_shape = self
@@ -8679,7 +8740,9 @@ impl<'a> Builder<'a> {
                 matches!(
                     &occurrence.prototype,
                     cadmpeg_ir::products::PrototypeReference::External { .. }
-                )
+                ) && !self
+                    .occurrence_step_refs
+                    .contains_key(occurrence.id.as_str())
             })
             .count();
         if external_occurrences > 0 {
@@ -8692,7 +8755,9 @@ impl<'a> Builder<'a> {
                     matches!(
                         &occurrence.prototype,
                         cadmpeg_ir::products::PrototypeReference::External { .. }
-                    )
+                    ) && !self
+                        .occurrence_step_refs
+                        .contains_key(occurrence.id.as_str())
                 })
                 .map(|occurrence| format!("'{}'", occurrence.id.as_str()))
                 .collect::<Vec<_>>()
