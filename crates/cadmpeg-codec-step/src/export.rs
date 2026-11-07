@@ -463,6 +463,7 @@ pub(crate) struct Builder<'a> {
     /// Bodies retained as geometric set members: the set root decodes
     /// back to faces, so the body is represented.
     surface_set_bodies: BTreeSet<String>,
+    surface_set_surfaces: BTreeSet<String>,
     /// Bodies with wire geometry retained outside their original
     /// topology: the bound wireframe decodes back to a wire body.
     wire_recovery_bodies: BTreeSet<String>,
@@ -930,6 +931,7 @@ impl<'a> Builder<'a> {
             empty_wire_regions: BTreeSet::new(),
             dropped_region_bodies: BTreeSet::new(),
             surface_set_bodies: BTreeSet::new(),
+            surface_set_surfaces: BTreeSet::new(),
             wire_recovery_bodies: BTreeSet::new(),
             missing_wire_shells: BTreeSet::new(),
             hidden_bodies_without_items: BTreeSet::new(),
@@ -1114,7 +1116,10 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|face| !self.face_step_refs.contains_key(face.id.as_str()))
             .map(|face| face.surface.as_str())
-            .filter(|surface| !retained_surfaces.contains(surface))
+            .filter(|surface| {
+                !retained_surfaces.contains(surface)
+                    && !self.surface_set_surfaces.contains(*surface)
+            })
             .filter(|surface| {
                 !self.construction_supports.contains(*surface)
                     || self.surfaces.get(*surface).is_some_and(|surface| {
@@ -3611,6 +3616,7 @@ impl<'a> Builder<'a> {
                     continue;
                 };
                 members.push(surface);
+                self.surface_set_surfaces.insert(face.surface.to_string());
                 retained_faces.push(format!("'{}'", face.id));
             }
         }

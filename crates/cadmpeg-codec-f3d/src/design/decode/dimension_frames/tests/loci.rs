@@ -34,6 +34,157 @@ fn frame(
 }
 
 #[test]
+fn damaged_locus_frames_keep_valid_siblings_and_missing_geometry_is_not_damage() {
+    for count in [2u32, 3] {
+        let mut bytes = Vec::new();
+        let mut frames = Vec::new();
+        for (index, damaged) in [(233u32, true), (234, false)] {
+            let start = bytes.len();
+            crate::test_support::indexed_header(&mut bytes, *b"277", index);
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.push(1);
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.push(1);
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            bytes.extend_from_slice(&4u32.to_le_bytes());
+            for geometry in (0..count - 1).map(|i| 192 + i) {
+                bytes.push(1);
+                bytes.extend_from_slice(&geometry.to_le_bytes());
+                let reserved = bytes.len();
+                bytes.extend_from_slice(&[0; 6]);
+                if damaged {
+                    bytes[reserved] = 1;
+                }
+                bytes.extend_from_slice(&1u32.to_le_bytes());
+            }
+            bytes.push(0);
+            let paired = bytes.len();
+            crate::test_support::indexed_header(&mut bytes, *b"273", index);
+            frames.push(frame(u64::from(index), start, paired, bytes.len()));
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, source) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        for frame in &frames {
+            super::super::contain_dimension_locus_frame(
+                &ctx,
+                &mut parts,
+                source,
+                "Design/BulkStream.dat",
+                frame,
+                228,
+                count,
+            )
+            .unwrap();
+        }
+        let good = &frames[1];
+        let geometry = HashSet::from([192, 193]);
+        let result = if count == 3 {
+            parse_dimension_locus_pair(&bytes, good, 228, &geometry)
+        } else {
+            parse_dimension_null_locus_pair(&bytes, good, 228, &geometry)
+        };
+        assert_eq!(result.unwrap().record_index, 234);
+        let unresolved = if count == 3 {
+            parse_dimension_locus_pair(&bytes, good, 228, &HashSet::new())
+        } else {
+            parse_dimension_null_locus_pair(&bytes, good, 228, &HashSet::new())
+        };
+        assert!(unresolved.is_none());
+        let (_, native, fidelity, losses) = parts.into_parts();
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Design));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    }
+}
+
+#[test]
+fn damaged_counted_locus_group_keeps_valid_sibling() {
+    let mut bytes = Vec::new();
+    let mut frames = Vec::new();
+    for (index, return_count) in [(249u32, 3u32), (250, 2)] {
+        let start = bytes.len();
+        crate::test_support::indexed_header(&mut bytes, *b"286", index);
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.push(1);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for geometry in [175u32, 217] {
+            bytes.push(1);
+            bytes.extend_from_slice(&geometry.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0, 1]);
+        bytes.extend_from_slice(&172u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&return_count.to_le_bytes());
+        for geometry in [217u32, 175] {
+            bytes.push(1);
+            bytes.extend_from_slice(&geometry.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.push(0);
+        let end = bytes.len();
+        frames.push(frame(u64::from(index), start, end, end));
+    }
+    crate::test_support::indexed_header(&mut bytes, *b"314", 251);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let sketches = HashSet::from([172]);
+    for frame in &frames {
+        super::super::contain_dimension_locus_group(
+            &ctx,
+            &mut parts,
+            source,
+            "Design/BulkStream.dat",
+            frame,
+            240,
+            &sketches,
+        )
+        .unwrap();
+    }
+    let group = parse_dimension_locus_group(
+        &bytes,
+        frames[1].start,
+        240,
+        &HashSet::from([175, 217]),
+        &sketches,
+    )
+    .unwrap();
+    assert_eq!(group.record_index, 250);
+    assert!(
+        parse_dimension_locus_group(&bytes, frames[1].start, 240, &HashSet::new(), &sketches)
+            .is_none()
+    );
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
+#[test]
 fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     let mut bytes = vec![0; 80];
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());

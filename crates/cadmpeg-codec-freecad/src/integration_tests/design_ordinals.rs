@@ -36,8 +36,8 @@ fn sparse_interleaved_objects_get_dense_dependency_first_feature_ranks() {
     let ir = decoded.ir();
     assert_eq!(ir.model.features.len(), 4);
     for (name, rank) in [
-        ("Driver", 0),
-        ("Consumer", 1),
+        ("Consumer", 0),
+        ("Driver", 1),
         ("Independent", 2),
         ("Tail", 3),
     ] {
@@ -46,7 +46,7 @@ fn sparse_interleaved_objects_get_dense_dependency_first_feature_ranks() {
     let consumer = feature(ir, "Consumer");
     let driver = feature(ir, "Driver");
     // #209 D26: stored results have no regeneration definition operands.
-    // ObjectDeps still determines source history order and remains native.
+    // ObjectDeps remains native while feature ordinals follow source order.
     for feature in [consumer, driver] {
         assert!(matches!(
             feature.evaluation.definition().operation(),

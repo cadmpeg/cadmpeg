@@ -13,6 +13,40 @@ use crate::test_support::exchange::equivalent_seam_source;
 use crate::StepCodec;
 
 #[test]
+fn topology_carrier_names_project_to_their_geometry_records() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#3=CARTESIAN_POINT('',",
+                "#3=CARTESIAN_POINT('vertex position',",
+            )
+            .replace("#17=LINE('',", "#17=LINE('edge carrier',")
+            .replace("#28=PLANE('',", "#28=PLANE('face support',");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode named topology carriers");
+    for (target, value) in [
+        ("step:data:point#3", "vertex position"),
+        ("step:data:curve#17", "edge carrier"),
+        ("step:data:surface#28", "face support"),
+    ] {
+        assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+            let target_matches = match &attribute.target {
+                AttributeTarget::Point(id) => id.as_str() == target,
+                AttributeTarget::Curve(id) => id.as_str() == target,
+                AttributeTarget::Surface(id) => id.as_str() == target,
+                _ => false,
+            };
+            target_matches && attribute.name == "name"
+                && matches!(attribute.values.as_slice(), [Some(AttributeValue::String(name))] if name == value)
+        }), "missing {value}");
+    }
+}
+
+#[test]
 fn base_edges_without_curve_carriers_remain_topological_edges() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())

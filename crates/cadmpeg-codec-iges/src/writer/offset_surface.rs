@@ -109,7 +109,7 @@ pub(super) fn entities(
         transform: None,
         transform_link: None,
     };
-    let offset_entity = Entity {
+    let mut offset_entity = Entity {
         structure: None,
         property_links: Vec::new(),
         association_links: Vec::new(),
@@ -129,5 +129,17 @@ pub(super) fn entities(
         transform: None,
         transform_link: None,
     };
+    if let Some(sequence) = surface
+        .source_object
+        .as_ref()
+        .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+        .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+    {
+        super::native_records::numeric::retain_directory(
+            ir,
+            &format!("iges:entity:directory#{sequence}"),
+            &mut offset_entity,
+        );
+    }
     Some(vec![support_entity, offset_entity])
 }

@@ -13,6 +13,7 @@ pub(super) fn directory_metadata(
     namespace: &NativeNamespace,
     record: &NativeRecord,
     entity: &mut Entity,
+    retain_tokens: bool,
 ) {
     let Some(source) = string_field(record, "source_entity") else {
         return;
@@ -24,7 +25,9 @@ pub(super) fn directory_metadata(
     else {
         return;
     };
-    super::super::native_records::numeric::retain_record(directory, entity);
+    if retain_tokens {
+        super::super::native_records::numeric::retain_record(directory, entity);
+    }
     let status = (
         directory
             .field("subordinate_status")
@@ -316,7 +319,7 @@ pub(super) fn append(
                     |native| definition(record, native, targets),
                     |native| fields.is_self_owned() && native.is_self_owned(),
                 );
-                directory_metadata(namespace, record, &mut entity);
+                directory_metadata(namespace, record, &mut entity, true);
                 let index = append_owned(entities, entity, &[], version)?;
                 Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))
             });
@@ -360,7 +363,7 @@ pub(super) fn append(
                     |native| instance(record, definition, *index, native, targets),
                     |native| fields.is_self_owned() && native.is_self_owned(),
                 );
-                directory_metadata(namespace, record, &mut entity);
+                directory_metadata(namespace, record, &mut entity, true);
                 let index = append_owned(entities, entity, &[], version)?;
                 Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))
             });

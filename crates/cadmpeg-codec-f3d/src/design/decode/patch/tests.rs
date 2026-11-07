@@ -11,6 +11,72 @@ use crate::records::identity::Sourced;
 const PATCH_GUID: &str = "BF77AE1A-E8F6-43AB-A325-A2C984AF1C6B";
 
 #[test]
+fn damaged_settings_are_retained_and_sibling_settings_decode() {
+    let mut bytes = Vec::new();
+    for (index, seed) in [(300, 2), (301, 1)] {
+        let start = bytes.len();
+        crate::test_support::indexed_header(&mut bytes, *b"999", index);
+        bytes.resize(start + 49, 0);
+        bytes[start + 21] = seed;
+        bytes[start + 30..start + 38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+        bytes[start + 38] = 1;
+        bytes[start + 39..start + 43].copy_from_slice(&100_u32.to_le_bytes());
+        crate::test_support::indexed_header(&mut bytes, *b"998", index);
+    }
+    let records = crate::design::test_support::test_primary_frames(&bytes);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#353",
+        DesignFeatureKind::SurfacePatch,
+        353,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 398;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                100, 200, 300, 101, 201, 301, 102,
+            ]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let types = std::collections::HashMap::from([
+        (100, ("2CA5A1CD-C99B-4C9B-91AF-57989148E841", 1)),
+        (101, ("2CA5A1CD-C99B-4C9B-91AF-57989148E841", 1)),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    super::contain_surface_patch_boundaries(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &records,
+        &scope,
+        &types,
+    )
+    .unwrap();
+    let boundaries =
+        super::surface_patch_boundaries(&bytes, &records, &[100, 200, 300, 101, 201, 301, 102]);
+    assert_eq!(boundaries.len(), 1);
+    assert_eq!(boundaries[0].record_index, 301);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
+#[test]
 fn source_normal_prefixes_require_the_semantic_version_and_bounded_boolean() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#353",
