@@ -93,6 +93,11 @@ fn scalar_properties_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn definition_levels_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("definition_levels"));
+}
+
+#[test]
 fn offset_circle_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("uniform_offset_circle"));
 }
