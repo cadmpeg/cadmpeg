@@ -9,6 +9,60 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn semantic_source_scan_shares_the_caller_input_account() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+
+    let ir = sourced_ir("sldprt:unknown");
+    let mut fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(b"\x42"),
+    );
+    let image = cadmpeg_ir::RetainedSourceRecord::from_bytes(
+        "file",
+        0,
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: vec![0x42] },
+    )
+    .unwrap();
+    fidelity
+        .insert_retained_record(crate::source_image_id(), image)
+        .unwrap();
+    let records = crate::source_records(&ir, &fidelity);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_input_bytes: 1,
+            ..Default::default()
+        },
+        ..DecodePolicy::default()
+    };
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx).unwrap();
+    let prior_arena = DecodeArena::new();
+    let (_prior, _) = DecodeContext::for_encode_session_root(&prior_arena, &session, b"x").unwrap();
+    let mut bytes = Vec::new();
+    let result = crate::writer::write_semantic_at(
+        &ctx,
+        &ir,
+        &fidelity.annotations,
+        &records,
+        crate::writer::SemanticOptions {
+            class_layouts: crate::writer::ClassLayouts::Source,
+            sw_version: None,
+            prepared_native: None,
+            source_trust: crate::writer::SourceTrust::Authored,
+        },
+        &mut bytes,
+    );
+    assert!(matches!(
+        result,
+        Err(crate::writer::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes
+                && limit.limit == 1 && limit.used == 1 && limit.additional == 1
+    ));
+    assert!(bytes.is_empty());
+}
+
+#[test]
 fn off_catalog_inherit_synthesizes_and_reads_the_reported_catalog_default() {
     let ir = sourced_ir("sldprt:future");
     let plan = SldprtCodec
