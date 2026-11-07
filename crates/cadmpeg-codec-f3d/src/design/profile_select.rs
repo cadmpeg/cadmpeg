@@ -33,6 +33,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 mod cap_regions;
+pub(crate) mod face_profile_sets;
 mod region_members;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
@@ -364,6 +365,63 @@ pub(crate) fn bind_split_face_sketch_selections(
             }
             if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
                 *tool = SplitFaceTool::Path(path);
+            }
+        });
+    }
+}
+
+/// Resolve `PathPattern` path groups to ordered curves in one sketch.
+pub(crate) fn bind_path_pattern_sketch_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &SketchCurveSelectionResolution<'_>,
+) {
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternTransform},
+        FeatureDefinition, FeatureOperation, PathRef,
+    };
+
+    let path_resolution = resolution.path_resolution();
+    for feature in features {
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                definition
+            else {
+                break 'feature_edit;
+            };
+            let PatternTransform::CurveDriven {
+                path: Some(PathRef::Native(group_id)),
+                spacing,
+                count,
+            } = pattern.definition()
+            else {
+                break 'feature_edit;
+            };
+            let mut matching_groups = resolution.groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.role() == DesignOperandRole::ROLE_0X5
+                    && !group.members().is_empty()
+                    && resolution.scopes.iter().any(|scope| {
+                        scope.kind()
+                            == crate::records::feature::scope::DesignFeatureKind::PathPattern
+                            && scope.record_index == group.scope_record_index
+                            && native_stream(&scope.id) == native_stream(&group.id)
+                    })
+            });
+            let Some(group) = matching_groups.next() else {
+                break 'feature_edit;
+            };
+            if matching_groups.next().is_some() {
+                break 'feature_edit;
+            }
+            let Some(path) = resolve_entity_selection_path(group, &path_resolution) else {
+                break 'feature_edit;
+            };
+            if let Ok(resolved) = PatternKind::new(PatternTransform::CurveDriven {
+                path: Some(path),
+                spacing: *spacing,
+                count: *count,
+            }) {
+                *pattern = resolved;
             }
         });
     }
@@ -792,6 +850,15 @@ pub(crate) fn bind_extrude_profile_selections(
                 .source_properties
                 .entry(cadmpeg_core::nonblank_literal!("extrude_to_distance"))
                 .or_insert_with(|| dist.to_string());
+        }
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::SketchRegions { .. }),
+                ..
+            })
+        ) {
+            resolution.profile_work.discard_island_assumptions();
         }
         resolution.profile_work.finish_selection();
     }
@@ -3537,7 +3604,7 @@ pub(in crate::design) fn selection_containing_points(
     if boundaries.is_empty() && had_partial_boundary_match {
         return Ok(None);
     }
-    if let Some(region) = arrangement_region_containing_points(
+    if let Some(found) = arrangement_region_containing_points(
         sketch,
         entities,
         &projected,
@@ -3545,7 +3612,13 @@ pub(in crate::design) fn selection_containing_points(
         profile_work,
         ctx,
     )? {
-        let regions = vec![region];
+        if found.polyline_side_assumed {
+            profile_work.note_polyline_side_assumed();
+        }
+        if found.island_absence_assumed {
+            profile_work.note_island_absence_assumed();
+        }
+        let regions = vec![found.region];
         return Ok(Some(ResolvedProfileSelection::Regions(regions)));
     }
     if !boundaries.is_empty() {
@@ -3614,7 +3687,7 @@ fn resolve_profile_curve_regions(
         if !selection.valid_layout() {
             return None;
         }
-        for loops in selection.loop_lists.iter().flatten() {
+        for loops in selection.regions() {
             let mut outer = None;
             let mut holes = Vec::new();
             let mut used = HashSet::new();
@@ -3681,6 +3754,7 @@ fn resolve_profile_curve_arrangement_regions(
     };
     let mut regions = Vec::new();
     let mut assumed = false;
+    let mut island_absence = false;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3695,7 +3769,7 @@ fn resolve_profile_curve_arrangement_regions(
         if !selection.valid_layout() {
             return Ok(None);
         }
-        for loops in selection.loop_lists.iter().flatten() {
+        for loops in selection.regions() {
             let [loop_] = loops.as_slice() else {
                 return Ok(None);
             };
@@ -3709,7 +3783,7 @@ fn resolve_profile_curve_arrangement_regions(
                 return Ok(None);
             };
             cursor = end;
-            let Some(region) = crate::design::geometry::arrangement_region_matching_curve_program(
+            let Some(found) = crate::design::geometry::arrangement_region_matching_curve_program(
                 source,
                 resolution.sketch_entities,
                 program,
@@ -3730,15 +3804,17 @@ fn resolve_profile_curve_arrangement_regions(
                     return Ok(None);
                 };
                 assumed = true;
-                for region in split {
+                island_absence |= split.island_absence_assumed;
+                for region in split.regions {
                     if !regions.contains(&region) {
                         regions.push(region);
                     }
                 }
                 continue;
             };
-            if !regions.contains(&region) {
-                regions.push(region);
+            island_absence |= found.island_absence_assumed;
+            if !regions.contains(&found.region) {
+                regions.push(found.region);
             }
         }
     }
@@ -3748,8 +3824,13 @@ fn resolve_profile_curve_arrangement_regions(
     let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
         .map(ProfileRef::Planar);
-    if assumed && profile.is_some() {
-        scoped.profile_work.note_crossing_loop_assumed();
+    if profile.is_some() {
+        if assumed {
+            scoped.profile_work.note_crossing_loop_assumed();
+        }
+        if island_absence {
+            scoped.profile_work.note_island_absence_assumed();
+        }
     }
     Ok(profile)
 }
@@ -3767,7 +3848,7 @@ fn resolve_profile_curve_path(
                 && selection.scope_record_index == group.scope_record_index
                 && selection.group_record_index == group.record_index
         })
-        .flat_map(|selection| selection.loop_lists.iter().flatten())
+        .flat_map(crate::records::topology::entity_selection::DesignProfileCurveSelection::regions)
         .any(|loops| !matches!(loops.as_slice(), [loop_] if loop_.outer))
     {
         return None;
@@ -3850,9 +3931,7 @@ fn profile_curve_selection_curves(
     let mut curves = Vec::new();
     for entry in selections.iter().flat_map(|selection| {
         selection
-            .loop_lists
-            .iter()
-            .flatten()
+            .regions()
             .flatten()
             .flat_map(|loop_| &loop_.entries)
     }) {
