@@ -260,6 +260,15 @@ pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, 
             Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(cylinder))
                 if *cylinder.frame().reference() == cylinder.frame().axis().derived_reference()
         );
+    let implicit_sphere = kind == 196
+        && parent.field("form").and_then(|value| value.as_i64()) == Some(0)
+        && parent.field("transform").and_then(|value| value.as_i64()) == Some(0)
+        && matches!(
+            surface.geometry.solved(),
+            Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Sphere(sphere))
+                if *sphere.frame().axis().as_raw() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                    && *sphere.frame().reference() == sphere.frame().axis().derived_reference()
+        );
     if implicit_cylinder {
         let Ok(body) = std::str::from_utf8(&entities[3].parameter_body) else {
             return;
@@ -288,6 +297,21 @@ pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, 
     }
     if implicit_cylinder {
         entities.remove(2);
+    }
+    if implicit_sphere {
+        let Ok(body) = std::str::from_utf8(&entities[3].parameter_body) else {
+            return;
+        };
+        let Some((prefix, _)) = body.trim_end_matches(';').rsplit_once(',') else {
+            return;
+        };
+        let Some((prefix, _)) = prefix.rsplit_once(',') else {
+            return;
+        };
+        entities[3].parameter_body = format!("{prefix};").into_bytes();
+        entities[3].form = 0;
+        retain_surface_numbers(&mut entities[3], surface, parameters);
+        entities.drain(1..3);
     }
     implicit_plane(ir, surface, entities, base);
 }
@@ -408,6 +432,46 @@ mod tests {
             .expect("valid test value")
             .ir()
             .clone()
+    }
+
+    #[test]
+    fn edited_implicit_sphere_frame_writes_explicit_directions() {
+        let bytes = owned_test_file(&[
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "CENTER".into(),
+                status: "00010000",
+                parameters: "116,0,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 196,
+                form: 0,
+                label: "SPHERE".into(),
+                status: "00000000",
+                parameters: "196,1,2;".into(),
+            },
+        ]);
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("fixture decodes");
+        let mut ir = decoded.ir().clone();
+        ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("frame is valid"),
+        ));
+        let output = written(&ir);
+        let Some(SolvedSurfaceGeometry::Sphere(sphere)) =
+            output.model.surfaces[0].geometry.solved()
+        else {
+            panic!("expected sphere");
+        };
+        assert!((sphere.frame().axis().as_raw().y - 1.0).abs() < 1e-12);
     }
 
     #[test]

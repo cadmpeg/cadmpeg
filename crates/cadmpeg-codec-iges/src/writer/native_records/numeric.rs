@@ -66,6 +66,99 @@ pub(in crate::writer) fn retain_line(ir: &CadIr, id: &CurveId, entity: &mut Enti
     }
 }
 
+pub(in crate::writer) fn retain_nurbs(ir: &CadIr, id: &CurveId, entity: &mut Entity) {
+    if entity.type_code != 126 {
+        return;
+    }
+    let Some(sequence) = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == id)
+        .and_then(|curve| curve.source_object.as_ref())
+        .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+        .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+    else {
+        return;
+    };
+    let Some(native) = ir
+        .native
+        .namespace("iges")
+        .and_then(|ns| ns.arenas().get("entities"))
+        .and_then(|records| {
+            records
+                .iter()
+                .find(|record| record.id() == format!("iges:entity:directory#{sequence}"))
+        })
+    else {
+        return;
+    };
+    if native.field("entity_type").and_then(|value| value.as_u64()) != Some(126) {
+        return;
+    }
+    let Some(parameters) = native.field("parameters") else {
+        return;
+    };
+    let Some(parameters) = parameters.as_array() else {
+        return;
+    };
+    let Some(tokens) = fields(&entity.parameter_body) else {
+        return;
+    };
+    if parameters.len() != tokens.len() + 1 || tokens.len() < 9 || tokens[2] != b"1" {
+        return;
+    }
+    let numeric = |index: usize| {
+        let value = parameters.get(index + 1)?.get("value")?;
+        match value.get("kind")?.as_str()? {
+            "integer" => value
+                .get("value")?
+                .as_i64()
+                .and_then(cadmpeg_core::convert::f64_from_i64),
+            "real" => value.get("value")?.as_f64(),
+            _ => None,
+        }
+    };
+    let current = |index: usize| {
+        std::str::from_utf8(tokens[index])
+            .ok()?
+            .replace(['D', 'd'], "E")
+            .parse::<f64>()
+            .ok()
+    };
+    let normal_start = tokens.len() - 3;
+    if (0..normal_start).any(|index| {
+        numeric(index)
+            .zip(current(index))
+            .is_none_or(|(a, b)| a != b)
+    }) {
+        return;
+    }
+    let same_normal = (normal_start..tokens.len()).all(|index| {
+        numeric(index)
+            .zip(current(index))
+            .is_some_and(|(a, b)| a == b)
+    });
+    let opposite_normal = (normal_start..tokens.len()).all(|index| {
+        numeric(index)
+            .zip(current(index))
+            .is_some_and(|(a, b)| a == -b)
+    });
+    if !same_normal && !opposite_normal {
+        return;
+    }
+    let mut output = tokens[..normal_start]
+        .iter()
+        .map(|token| String::from_utf8_lossy(token).into_owned())
+        .collect::<Vec<_>>();
+    for index in normal_start..tokens.len() {
+        let Some(value) = numeric(index) else { return };
+        output.push(value.to_string());
+    }
+    entity.parameter_body = format!("{};", output.join(",")).into_bytes();
+    retain_record(native, entity);
+}
+
 pub(in crate::writer) fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
     let Some(native) = ir
         .native

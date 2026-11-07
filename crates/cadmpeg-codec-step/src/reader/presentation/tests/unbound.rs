@@ -45,6 +45,8 @@ fn unbound_predefined_colours_report_the_construct_reduction() {
         cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0)
     );
     assert!(custom.base_color.is_none());
+    assert!(red.schema.is_none());
+    assert!(custom.schema.is_none());
     let mut bytes = Vec::new();
     let report = write_step(
         result.ir(),
@@ -74,6 +76,7 @@ fn colour_in_an_unused_style_is_unbound_and_written_as_rgb() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     let appearance = &result.ir().model.appearances[0];
     assert_eq!(appearance.name.as_deref(), Some("unused"));
+    assert!(appearance.schema.is_none());
     assert_eq!(
         appearance.base_color,
         cadmpeg_ir::topology::Color::new(0.125, 0.25, 0.5, 1.0)

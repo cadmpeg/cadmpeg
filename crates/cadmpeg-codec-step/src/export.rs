@@ -8744,10 +8744,7 @@ impl<'a> Builder<'a> {
                     || appearance.library_id.is_some()
                     || appearance.visual_guid.is_some()
                     || appearance.physical_token.is_some()
-                    || appearance
-                        .schema
-                        .as_deref()
-                        .is_some_and(|schema| schema != "step_surface_style")
+                    || appearance.schema.is_some()
                     || appearance.category.is_some()
                     || !appearance.properties.is_empty()
                     || !appearance.textures.is_empty()
