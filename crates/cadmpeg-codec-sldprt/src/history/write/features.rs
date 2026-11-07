@@ -647,6 +647,20 @@ fn synchronize_features(
                 feature.id
             ))
         })?;
+        if patch_input_names
+            && matches!(
+                feature.definition(),
+                FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+                    block: Some(_),
+                    ..
+                })
+            )
+        {
+            return Err(WriteError::Decline(format!(
+                "SLDPRT feature {} requires an authored sketch-block record",
+                feature.id
+            )));
+        }
         let NeutralFeatureEncoding {
             kind,
             parameters: encoded_parameters,
@@ -879,6 +893,11 @@ fn synchronize_features(
             )?;
         }
     }
+    let written_classes = if patch_input_names {
+        std::collections::BTreeSet::new()
+    } else {
+        crate::resolved_features::write_prepare::synthesize_feature_classes(native, Some(features))?
+    };
     let projected_features = project_features_with_native_inputs(native, &model.sketches)?;
     let mismatches = dependency_mismatches(features, &record_ids, &projected_features)?;
     if let Some((index, expected, canonical)) = mismatches.into_iter().next() {
@@ -888,11 +907,6 @@ fn synchronize_features(
             feature.id, feature.definition()
         )));
     }
-    let written_classes = if patch_input_names {
-        std::collections::BTreeSet::new()
-    } else {
-        crate::resolved_features::write_prepare::synthesize_feature_classes(native)?
-    };
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
     Ok((renames, written_classes))

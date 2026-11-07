@@ -3117,20 +3117,38 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
+        let mut seen_products = HashSet::new();
+        let mut repeated_products = HashSet::new();
+        for product in occurrence_products.values() {
+            if !seen_products.insert(product) {
+                repeated_products.insert(product);
+            }
+        }
+        let mut child_placements = HashMap::<&OccurrenceId, Vec<Ref>>::new();
+        let mut parents = HashSet::new();
+        for child in occurrences {
+            if let OccurrenceParent::Occurrence { occurrence: parent } = &child.parent {
+                parents.insert(parent);
+                if let Some(&(_, to)) = occurrence_placements.get(&child.id) {
+                    child_placements.entry(parent).or_default().push(to);
+                }
+            }
+        }
         let occurrence_specific = matches!(
             self.schema,
             StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
         ) && occurrences.iter().any(|parent| {
-            occurrences.iter().any(|other| {
-                other.id != parent.id
-                    && occurrence_products.contains_key(&other.id)
-                    && occurrence_products.get(&other.id) == occurrence_products.get(&parent.id)
-            }) && occurrences.iter().any(|child| {
-                matches!(&child.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &parent.id)
-            })
+            parents.contains(&parent.id)
+                && occurrence_products
+                    .get(&parent.id)
+                    .is_some_and(|product| repeated_products.contains(product))
         });
         let mut occurrence_definitions = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         if occurrence_specific {
+            let products_by_id: HashMap<_, _> = products
+                .iter()
+                .map(|product| (&product.id, product))
+                .collect();
             for occurrence in occurrences {
                 if matches!(occurrence.parent, OccurrenceParent::Root {}) && assembly_root.is_none()
                 {
@@ -3141,7 +3159,7 @@ impl<'a> Builder<'a> {
                 };
                 let (Some(&definition), Some(product), Some(&origin)) = (
                     definitions.get(product_id),
-                    products.iter().find(|product| &product.id == product_id),
+                    products_by_id.get(product_id),
                     product_origins.get(product_id),
                 ) else {
                     continue;
@@ -3166,13 +3184,13 @@ impl<'a> Builder<'a> {
                     })
                     .collect::<Vec<_>>();
                 let mut placements = vec![origin];
-                placements.extend(occurrences.iter().filter_map(|child| {
-                    if matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id) {
-                        occurrence_placements.get(&child.id).map(|&(_, to)| to)
-                    } else {
-                        None
-                    }
-                }));
+                placements.extend(
+                    child_placements
+                        .get(&occurrence.id)
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
                 let representation =
                     self.emit_shape_representation("", body_items, placements, context);
                 self.emitter.emit(
