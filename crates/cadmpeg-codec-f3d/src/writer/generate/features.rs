@@ -27,6 +27,8 @@ struct Extrusion {
     id: FeatureId,
     container: u32,
     distance: Scalar,
+    scope_index: u32,
+    parameter_index: Option<u32>,
     current_state: u32,
     previous_state: u32,
 }
@@ -659,7 +661,14 @@ fn select_extrusions(
         let container = *sketch.feature_containers.get(&owner.id)?;
         let distance = scalar(target, &feature.id, "AlongDistance", 2, length)?;
         if distance.value <= 0.0 { return None; }
-        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, current_state, previous_state })
+        let parameter_index = distance.parameter.as_ref().and_then(|id| {
+            let stream = crate::ids::native_stream(&scope.id)?;
+            let zero = crate::ids::neutral_parameter_id_parts(stream, 0);
+            let prefix = zero.as_str().strip_suffix('0')?;
+            let index = id.as_str().strip_prefix(prefix)?.parse::<u32>().ok()?;
+            (crate::ids::neutral_parameter_id_parts(stream, index) == *id).then_some(index)
+        });
+        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, scope_index: scope.record_index, parameter_index, current_state, previous_state })
     }).collect()
 }
 
@@ -1082,6 +1091,24 @@ pub(super) fn encode(
             .unwrap_or(0);
     }
     let mut bases = Vec::new();
+    let extrusion_identities = extrusions
+        .iter()
+        .map(|extrusion| {
+            let scope = (extrusion.scope_index != 0 && occupied.insert(extrusion.scope_index))
+                .then_some(extrusion.scope_index);
+            let frame = extrusion.parameter_index.and_then(|index| {
+                let owner = index.checked_sub(1).filter(|owner| *owner != 0)?;
+                let companion = index.checked_add(1)?;
+                let indices = [owner, index, companion];
+                if indices.iter().any(|index| occupied.contains(index)) {
+                    return None;
+                }
+                occupied.extend(indices);
+                Some(indices)
+            });
+            (scope, frame)
+        })
+        .collect::<Vec<_>>();
     for _ in &primitives {
         bases.push(reserve_indices(&mut occupied, &mut next, 16)?);
     }
@@ -1548,21 +1575,25 @@ pub(super) fn encode(
         mark(&mut secondary, index, out.len());
         header(&mut out, &tags[0], index)?;
     }
-    for (extrusion, base) in extrusions.iter().zip(extrusion_bases) {
+    for ((extrusion, base), (scope, frame)) in extrusions
+        .iter()
+        .zip(extrusion_bases)
+        .zip(extrusion_identities)
+    {
+        let scope = scope.unwrap_or(base);
         let group = base + 1;
         let profile = base + 4;
-        let owner_index = base + 8;
-        let parameter_index = base + 9;
-        let companion_index = base + 10;
+        let [owner_index, parameter_index, companion_index] =
+            frame.unwrap_or([base + 8, base + 9, base + 10]);
         let family = family_ordinals.entry("Extrude").or_default();
         *family = family
             .checked_add(1)
             .ok_or_else(|| CodecError::InvalidInput("too many F3D extrusions".into()))?;
-        extrusion_scopes.push(u64::from(base));
-        timeline_scopes.push((extrusion.ordinal, u64::from(base)));
-        mark_primary(ctx, &mut primary, base, out.len())?;
+        extrusion_scopes.push(u64::from(scope));
+        timeline_scopes.push((extrusion.ordinal, u64::from(scope)));
+        mark_primary(ctx, &mut primary, scope, out.len())?;
         let start = out.len();
-        header(&mut out, &tags[8], base)?;
+        header(&mut out, &tags[8], scope)?;
         let end = start
             .checked_add(208)
             .ok_or_else(|| CodecError::InvalidInput("F3D scope length overflows".into()))?;
@@ -1580,8 +1611,8 @@ pub(super) fn encode(
         tail[..4].copy_from_slice(&family.to_le_bytes());
         tail[31..35].copy_from_slice(&extrusion.previous_state.to_le_bytes());
         out.extend_from_slice(&tail);
-        mark(&mut secondary, base, out.len());
-        header(&mut out, &tags[0], base)?;
+        mark(&mut secondary, scope, out.len());
+        header(&mut out, &tags[0], scope)?;
         mark_primary(ctx, &mut primary, group, out.len())?;
         header(&mut out, &tags[6], group)?;
         out.extend_from_slice(&[0; 10]);
@@ -1598,7 +1629,7 @@ pub(super) fn encode(
         out.extend_from_slice(&[0; 2]);
         reference(&mut out, group + 1);
         out.push(0);
-        reference(&mut out, base);
+        reference(&mut out, scope);
         mark(&mut secondary, group, out.len());
         header(&mut out, &tags[0], group)?;
         copy_groups.push(u64::from(group));
@@ -1618,7 +1649,7 @@ pub(super) fn encode(
             id: format!("f3d:generated:owner#{owner_index}"),
             class_tag: tags[2].clone().try_into().map_err(CodecError::Malformed)?,
             record_index: owner_index,
-            scope_record_index: Some(base),
+            scope_record_index: Some(scope),
             local_ordinal: Some(2),
             evaluated_value: scalar.value,
             parameter_record_index: parameter_index,
