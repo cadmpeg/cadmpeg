@@ -11,7 +11,6 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use crate::writer::write_error::WriteError;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
@@ -177,7 +176,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     Some(crate::history::parameters::render_identifier(&name))
                 })
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    WriteError::Decline(format!(
                 "SLDPRT native feature {} references a missing canonical expression operand",
                 self.feature.id
             ))
