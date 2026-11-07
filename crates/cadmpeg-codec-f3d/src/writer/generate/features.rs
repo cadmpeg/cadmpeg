@@ -670,7 +670,11 @@ fn select_extrusions(
             let index = id.as_str().strip_prefix(prefix)?.parse::<u32>().ok()?;
             (crate::ids::neutral_parameter_id_parts(stream, index) == *id).then_some(index)
         });
-        let profile = scope.extrude_profile();
+        let profile = scope.extrude_profile().filter(|profile| {
+            profile.entity_id.suffix() == u64::from(container)
+                && crate::ids::design_segment(&scope.id)
+                    == owner.native_ref.as_deref().and_then(crate::ids::design_segment)
+        });
         let profile_asset = profile.map(|profile| profile.asset_id.clone());
         let profile_indices = profile.and_then(|profile| {
             let mut references = scope.reference_members().values().copied();
