@@ -201,6 +201,12 @@ pub(super) fn reconcile(
                             ) if kind.as_str() == "BaseFlange" => {
                                 scope.base_flange_operation().is_some()
                             }
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+                            ) if kind.as_str() == "Form" => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::Form
+                            }
                             _ => false,
                         }
                 })
