@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use crate::writer::write_error::WriteError;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -17,7 +19,7 @@ pub(crate) fn patch_partition(
     ir: &CadIr,
     annotations: &Annotations,
     scale: f64,
-) -> Result<Option<(String, Vec<u8>)>, CodecError> {
+) -> Result<Option<(String, Vec<u8>)>, WriteError> {
     if !crate::writer::requires_native_partition(ir) {
         return Ok(None);
     }
@@ -74,19 +76,29 @@ pub(crate) fn patch_partition(
         ctx,
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
-    )?;
+    )
+    .map_err(|error| match error {
+        CodecError::ResourceLimit(limit)
+            if limit.scope == cadmpeg_core::decode::LimitScope::Session =>
+        {
+            WriteError::Fatal(CodecError::ResourceLimit(limit))
+        }
+        error => WriteError::Decline(format!(
+            "SLDPRT retained partition cannot be decoded: {error}"
+        )),
+    })?;
     let colors = crate::writer::face_colors(ir);
     if native
         .faces
         .iter()
         .any(|face| colors.get(&face.id).copied() != face.color)
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Decline(
             "SLDPRT native partition patch cannot write changed face colours".into(),
         ));
     }
     if !same_pcurves(ir, &native) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(WriteError::Decline(
             "SLDPRT native partition patch cannot write changed pcurve geometry or metadata".into(),
         ));
     }
