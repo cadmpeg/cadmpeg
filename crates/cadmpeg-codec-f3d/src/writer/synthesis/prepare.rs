@@ -169,6 +169,16 @@ pub(super) fn auxiliary(
     target.model.assets.clear();
     target.model.tessellations.clear();
     for face in &mut target.model.faces {
+        if matches!(
+            face.loops,
+            cadmpeg_ir::topology::FaceLoops::Classified { .. }
+        ) {
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(face.loops.to_vec());
+            losses.push(F3dLossCode::WriterLoopClassificationOmitted.note(format!(
+                "face {} outer and inner loop classification is not encoded",
+                face.id
+            )));
+        }
         if face.tolerance.take().is_some() {
             losses.push(
                 F3dLossCode::WriterAuxiliaryOmitted
@@ -467,6 +477,16 @@ pub(super) fn dispositions(
     }
     report!(WriterGeometryOmitted; bodies, regions, shells, faces, loops, coedges,
         edges, vertices, points, surfaces, curves);
+    if coverage.faces.carries()
+        && original.model.faces.iter().any(|face| {
+            matches!(
+                face.loops,
+                cadmpeg_ir::topology::FaceLoops::Classified { .. }
+            )
+        })
+    {
+        coverage.faces = Reported;
+    }
     report!(WriterPcurveOmitted; pcurves);
     report!(WriterDesignRecordsOmitted; features, feature_input_topologies,
         feature_result_topologies, configurations, parameters, sketches,
