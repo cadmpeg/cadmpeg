@@ -2822,13 +2822,13 @@ impl<'a> Builder<'a> {
             matches!(occurrence.parent, OccurrenceParent::Root {})
                 && occurrence_products.contains_key(&occurrence.id)
                 && occurrence.effective_transform().is_ok_and(|transform| {
-                    transform.is_some_and(|transform| transform.is_proper_rigid())
+                    transform.is_none_or(|transform| transform.is_proper_rigid())
                 })
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
             placed_root(occurrence)
                 && (occurrence.effective_transform().is_ok_and(|transform| {
-                    transform.is_some_and(|transform| !is_identity(&transform.rows()))
+                    transform.is_none_or(|transform| !is_identity(&transform.rows()))
                 }) || !occurrences.iter().any(|child| {
                     matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id)
                 }))
@@ -2868,24 +2868,10 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let unknown_placements = occurrences
-            .iter()
-            .filter(|occurrence| graph.effective_transform(&occurrence.id).is_none())
-            .map(|occurrence| occurrence.id.clone())
-            .collect::<BTreeSet<_>>();
-        for id in &unknown_placements {
-            self.loss(
-                StepLossCode::OccurrencePlacementUnknown,
-                format!("occurrence '{id}' omitted because its placement or an ancestor placement is unknown"),
-            );
-        }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
-            if unknown_placements.contains(&occurrence.id) {
-                continue;
-            }
             let parent_product = match &occurrence.parent {
                 OccurrenceParent::Occurrence { occurrence: parent } => {
                     let Some(parent_product) = occurrence_products.get(parent) else {
@@ -3091,9 +3077,6 @@ impl<'a> Builder<'a> {
         let mut ordered_occurrences: Vec<_> = occurrences.iter().zip(&occurrence_names).collect();
         ordered_occurrences.sort_by_key(|(occurrence, _)| occurrence.ordinal);
         for (occurrence, &occurrence_name) in ordered_occurrences {
-            if unknown_placements.contains(&occurrence.id) {
-                continue;
-            }
             // W1: an occurrence whose local product definition is missing is
             // dropped before any use, with a shared loss at finish.
             if let Some(definition) = occurrence_products.get(&occurrence.id) {
@@ -3174,8 +3157,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = match occurrence.effective_transform() {
-                Ok(Some(transform)) => transform,
-                Ok(None) => continue,
+                Ok(transform) => transform,
                 Err(error) => {
                     self.loss(
                         StepLossCode::AssemblyGraphInvalid,
@@ -3184,7 +3166,7 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if !transform.is_proper_rigid() {
+            if transform.is_some_and(|transform| !transform.is_proper_rigid()) {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -3201,12 +3183,12 @@ impl<'a> Builder<'a> {
             );
             self.occurrence_step_refs
                 .insert(occurrence.id.as_str().to_owned(), usage);
-            let usage_shape = self
-                .emitter
-                .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
             let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
                 continue;
             };
+            let usage_shape = self
+                .emitter
+                .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
             let transform = self
                 .emitter
                 .emit("ITEM_DEFINED_TRANSFORMATION", &format!("'','',{from},{to}"));
