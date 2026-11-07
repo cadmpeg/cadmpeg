@@ -131,6 +131,20 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
         .features
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some(property.owner.as_str()));
+    if property.dynamic.is_none()
+        && matches!(property.name.as_str(), "LengthFwd" | "LengthRev")
+        && objects.iter().any(|object| {
+            object.id().as_str() == property.owner && object.type_name == "Part::Extrusion"
+        })
+        && feature.is_some_and(|feature| {
+            matches!(
+                feature.evaluation.definition().operation(),
+                FeatureOperation::Extrude { .. }
+            )
+        })
+    {
+        return true;
+    }
     if feature.is_some() && matches!(property.name.as_str(), "Label" | "Suppressed") {
         return true;
     }
