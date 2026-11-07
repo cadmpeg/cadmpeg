@@ -2950,6 +2950,29 @@ impl<'a> Builder<'a> {
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
         for (product, &name) in products.iter().zip(&product_names) {
+            if product
+                .source_name
+                .as_deref()
+                .is_some_and(|source| source != name)
+            {
+                let references = occurrences
+                    .iter()
+                    .filter_map(|occurrence| match &occurrence.prototype {
+                        PrototypeReference::Local { definition } if definition == &product.id => {
+                            Some(occurrence.id.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                self.loss(
+                    StepLossCode::ProductSourceNameReduced,
+                    format!(
+                        "product {} source name was reduced to its STEP name; occurrences: {}",
+                        product.id,
+                        references.join(", ")
+                    ),
+                );
+            }
             let product_id = product
                 .part_number
                 .as_deref()
