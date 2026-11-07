@@ -70,7 +70,7 @@ pub(super) fn write_with_limits(
 ) -> Result<Generated, CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
-    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
+    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true);
     let target = lowered.as_ref();
     let loaded_native = f3d_native(target)?;
     validate_assembly_projection(target, loaded_native.as_ref())?;
@@ -123,9 +123,7 @@ pub(super) fn write_with_limits(
                 output_ctx.charge_entities(1, "F3D parameter record")?;
                 primary.push(crate::metastream::RecordIndexEntry {
                     entity_id: u64::from(parameter.record_index),
-                    bulk_offset: u64::try_from(parameter_bytes.len()).map_err(|_| {
-                        CodecError::InvalidInput("F3D parameter stream too large".into())
-                    })?,
+                    bulk_offset: cadmpeg_core::decode::u64_from_index(parameter_bytes.len()),
                 });
                 indices.push(parameter.record_index);
                 encode_document_parameter(&mut parameter_bytes, parameter, collection_index)?;
@@ -133,9 +131,7 @@ pub(super) fn write_with_limits(
             output_ctx.charge_entities(1, "F3D parameter record")?;
             primary.push(crate::metastream::RecordIndexEntry {
                 entity_id: u64::from(collection_index),
-                bulk_offset: u64::try_from(parameter_bytes.len()).map_err(|_| {
-                    CodecError::InvalidInput("F3D parameter stream too large".into())
-                })?,
+                bulk_offset: cadmpeg_core::decode::u64_from_index(parameter_bytes.len()),
             });
             parameters::encode_collection(&mut parameter_bytes, "257", collection_index, &indices)?;
             residual_losses.push(collection_residual(
