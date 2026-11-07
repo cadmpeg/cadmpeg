@@ -328,6 +328,8 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCrossingLoopAssumed,
     /// Extrude profile selections matched a counted member to an edge of
     /// coincident curves by the direction of the curve it names.
+    /// Extrude profile selections joined stored loops to faces through the assumed reading of their first entry operand.
+    FeatureProfileLoopFlagsAssumed,
     FeatureProfileCoincidentDirectionAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
@@ -717,6 +719,7 @@ impl F3dLossCode {
         Self::FeatureProfileCrossingLoopCapped,
         Self::FeatureProfileCrossingLoopAssumed,
         Self::FeatureProfileCoincidentDirectionAssumed,
+        Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileIslandAbsenceAssumed,
         Self::FeatureProfilePolylineSideAssumed,
@@ -998,6 +1001,7 @@ impl F3dLossCode {
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
             Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
+            Self::FeatureProfileLoopFlagsAssumed => "feature.profile-loop-flags-assumed",
             Self::FeatureProfileCoincidentDirectionAssumed => {
                 "feature.profile-coincident-direction-assumed"
             }
@@ -1302,6 +1306,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -1521,6 +1526,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -1836,6 +1842,7 @@ mod tests {
                 "feature.profile-crossing-loop-capped",
                 "feature.profile-crossing-loop-assumed",
                 "feature.profile-coincident-direction-assumed",
+                "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-polyline-side-assumed",
