@@ -614,6 +614,22 @@ fn write_archive_prefix(
     losses.extend(linetype_losses);
     losses.extend(font_losses);
     for record in records_in(ir, "object_presentation") {
+        if let Some(order) = record
+            .field("display_order")
+            .filter(|value| !value.is_null())
+        {
+            if order
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .is_none()
+            {
+                losses.push(RhinoLossCode::WriterObjectDisplayOrderReduced.note(format!(
+                    "object presentation {} links {} display order {order} is omitted",
+                    record.id(),
+                    record.field("links").unwrap_or(serde_json::Value::Null)
+                )));
+            }
+        }
         if let Some(source) = record
             .field("linetype_index")
             .and_then(|value| value.as_i64())
@@ -4523,13 +4539,10 @@ fn object_attributes_payload(
         .as_ref()
         .and_then(|fields| fields.get("display_order"))
         .and_then(serde_json::Value::as_i64)
+        .and_then(|order| i32::try_from(order).ok())
     {
         payload.push(22);
-        payload.extend(
-            i32::try_from(order)
-                .map_err(CodecError::malformed)?
-                .to_le_bytes(),
-        );
+        payload.extend(order.to_le_bytes());
     }
     payload.push(0);
     Ok(payload)
