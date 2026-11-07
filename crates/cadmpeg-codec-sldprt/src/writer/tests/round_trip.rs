@@ -73,6 +73,7 @@ fn check_spatial_point_line_distance_reaches_output(
     construction: bool,
     point_construction: bool,
     second_point_construction: bool,
+    reference: bool,
 ) {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{DesignParameter, Dimension, ParameterId, ParameterValue};
@@ -106,9 +107,9 @@ fn check_spatial_point_line_distance_reaches_output(
         id: parameter.clone(),
         owner: Some(ir.model.features[0].id.clone()),
         ordinal: 0,
-        name: "D1".into(),
+        name: if reference { "D1@reference" } else { "D1" }.into(),
         expression: "4mm".into(),
-        driving: true,
+        driving: !reference,
         display: None,
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
@@ -260,6 +261,10 @@ fn check_spatial_point_line_distance_reaches_output(
     let output = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    assert!(output.ir().model.parameters.iter().any(|parameter| {
+        parameter.name == if reference { "D1@reference" } else { "D1" }
+            && parameter.driving != reference
+    }));
     assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| {
         matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
             if floats_agree(position.get().x, independent.x)
@@ -295,7 +300,10 @@ fn check_spatial_point_line_distance_reaches_output(
         let scalar = lane
             .scalars
             .iter()
-            .find(|scalar| Some(scalar.id.as_str()) == relation.parameter_scalar_ref())
+            .find(|scalar| {
+                Some(scalar.id.as_str())
+                    == relation.parameter_scalar_ref().or_else(|| relation.display_scalar_ref())
+            })
             .unwrap();
         let name = lane
             .names
@@ -378,23 +386,28 @@ fn check_spatial_point_line_distance_reaches_output(
 
 #[test]
 fn source_less_spatial_point_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(false, false, false);
+    check_spatial_point_line_distance_reaches_output(false, false, false, false);
 }
 
 #[test]
 fn source_less_spatial_construction_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, false, false);
+    check_spatial_point_line_distance_reaches_output(true, false, false, false);
 }
 
 #[test]
 fn source_less_spatial_construction_point_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, true, true);
+    check_spatial_point_line_distance_reaches_output(true, true, true, false);
 }
 
 #[test]
 fn source_less_spatial_mixed_point_roles_reach_output() {
-    check_spatial_point_line_distance_reaches_output(true, true, false);
-    check_spatial_point_line_distance_reaches_output(true, false, true);
+    check_spatial_point_line_distance_reaches_output(true, true, false, false);
+    check_spatial_point_line_distance_reaches_output(true, false, true, false);
+}
+
+#[test]
+fn source_less_spatial_reference_point_line_distance_reaches_output() {
+    check_spatial_point_line_distance_reaches_output(false, false, false, true);
 }
 
 #[test]

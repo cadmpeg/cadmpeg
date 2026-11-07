@@ -566,7 +566,9 @@ fn sketches(
         ) || matches!(constraint.definition.kind(),
             cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
                 point, line, parameter: cadmpeg_ir::features::Dimension::Parameter(id),
-            } if parameters.iter().any(|parameter| &parameter.id == id && parameter.driving && matches!(parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(_))))
+            } if parameters.iter().any(|parameter| &parameter.id == id
+                && (parameter.driving || parameter.name.strip_suffix("@reference").is_some_and(|name| !name.is_empty()))
+                && matches!(parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(_))))
                 && spatial_entities.iter().any(|entity| entity.id() == point)
                 && spatial_entities.iter().any(|entity| entity.id() == line)
         ) {
