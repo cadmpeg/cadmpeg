@@ -21,7 +21,7 @@ use cadmpeg_ir::{
     ids::{FeatureInputTopologyId, HistoricalFaceId},
 };
 
-use super::edge_selection::{matched_qualified, source_names, values};
+use super::edge_selection::{generated_family, matched_qualified, source_names, values};
 use super::{
     PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
 };
@@ -62,6 +62,11 @@ pub(in crate::feature) struct SelectedFace {
     pub(super) owner: i64,
     /// Record ordinal of the face item that lists the selector.
     pub(super) item: u32,
+    /// The pair has more than one matching attribute on the owner.
+    pub(super) repeated_attribute: bool,
+    /// A generated-name family of the owner shares no feature source index
+    /// with the generator array, and another family of the owner does.
+    pub(super) unshared_family: bool,
 }
 
 /// Parses a face selector, or `None` for another selector form.
@@ -159,9 +164,11 @@ fn is_face(record: &Record) -> bool {
 ///
 /// A selector selects a face when its source index and key have one matched
 /// owner, the owner is a face revision, the matching attribute carries the
-/// face qualifier, and the generated names of the owner, if any, include a
-/// generator of the selector. A pair with several matched owners, or with an
-/// owner of another kind or qualifier, selects nothing.
+/// face qualifier, and a generated-name family of the owner, if it has any,
+/// includes a generator of the selector. A pair with several matched owners,
+/// or with an owner of another kind or qualifier, selects nothing. The result
+/// states when the pair repeats its attribute on the owner, and when another
+/// family of the owner shares no generator.
 pub(super) fn selected(
     records: &[Record],
     selectors: &[FaceSelector],
@@ -172,17 +179,27 @@ pub(super) fn selected(
             .iter()
             .filter_map(|record| Some((i64::try_from(record.index).ok()?, record))),
     );
-    let mut matches = HashMap::<(u32, u32), HashSet<(i64, i64)>>::new();
-    let mut generated = HashMap::<i64, HashSet<u32>>::new();
+    let mut matches = HashMap::<(u32, u32), HashMap<(i64, i64), usize>>::new();
+    let mut generated = HashMap::<i64, HashMap<&str, HashSet<u32>>>::new();
     for record in records {
         if let Some((source, key, owner, qualifier)) = matched_qualified(record, schema) {
-            matches
+            *matches
                 .entry((source, key))
                 .or_default()
-                .insert((owner, qualifier));
+                .entry((owner, qualifier))
+                .or_default() += 1;
         }
-        if let Some((owner, sources)) = source_names(record, &values(record), schema) {
-            generated.entry(owner).or_default().extend(sources);
+        let fields = values(record);
+        if let (Some((owner, sources)), Some(family)) = (
+            source_names(record, &fields, schema),
+            generated_family(record, &fields),
+        ) {
+            generated
+                .entry(owner)
+                .or_default()
+                .entry(family)
+                .or_default()
+                .extend(sources);
         }
     }
     let by_source = unique_index(selectors.iter().map(|selector| (selector.source, selector)));
@@ -192,7 +209,9 @@ pub(super) fn selected(
             continue;
         };
         let mut distinct = owners.iter();
-        let (Some(&(owner, FACE_QUALIFIER)), None) = (distinct.next(), distinct.next()) else {
+        let (Some((&(owner, FACE_QUALIFIER), &attributes)), None) =
+            (distinct.next(), distinct.next())
+        else {
             continue;
         };
         let owner = &owner;
@@ -202,12 +221,20 @@ pub(super) fn selected(
         if !is_face(revision) {
             continue;
         }
-        if generated.get(owner).is_some_and(|sources| {
-            !selector
-                .generators
-                .iter()
-                .any(|generator| sources.contains(generator))
-        }) {
+        let families = generated.get(owner);
+        let shared = families.map_or(0, |families| {
+            families
+                .values()
+                .filter(|sources| {
+                    selector
+                        .generators
+                        .iter()
+                        .any(|generator| sources.contains(generator))
+                })
+                .count()
+        });
+        let family_count = families.map_or(0, HashMap::len);
+        if family_count > 0 && shared == 0 {
             continue;
         }
         let Some(item) = selector.item.record_ordinal() else {
@@ -218,6 +245,8 @@ pub(super) fn selected(
             SelectedFace {
                 owner: *owner,
                 item,
+                repeated_attribute: attributes > 1,
+                unshared_family: shared < family_count,
             },
         ));
     }
@@ -525,6 +554,46 @@ pub(crate) fn native_losses(features: &[Feature]) -> Vec<cadmpeg_ir::report::los
     } else {
         vec![crate::loss::InventorLossCode::FeatureMoveFaceSelectionNative.note(format!("Retained {count} Move Face feature(s) with face operands that do not join exactly one stored face revision."))]
     }
+}
+
+/// Notes counting the Move Face features whose selected faces rest on a reading
+/// of a repeated matching attribute or of an unshared generated-name family.
+pub(crate) fn assumption_losses(
+    features: &[Feature],
+    inventory: &crate::feature::FeatureInventory,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let ids = |flag: fn(&SelectedFace) -> bool| {
+        inventory
+            .edge_inputs
+            .faces
+            .iter()
+            .filter(|(_, face)| flag(face))
+            .filter_map(|((token, source), _)| face_id(token, *source).ok())
+            .collect::<Vec<_>>()
+    };
+    let count = |ids: &[HistoricalFaceId]| {
+        features
+            .iter()
+            .filter(|feature| {
+                let faces = match selection(feature) {
+                    Some(FaceSelection::Historical { faces, .. }) => faces.as_slice(),
+                    Some(FaceSelection::HistoricalPartial { faces, .. }) => faces.as_slice(),
+                    _ => return false,
+                };
+                faces.iter().any(|face| ids.contains(face))
+            })
+            .count()
+    };
+    let repeated = count(&ids(|face| face.repeated_attribute));
+    let unshared = count(&ids(|face| face.unshared_family));
+    let mut notes = Vec::new();
+    if repeated > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinRepeatedAttribute.note(format!("{repeated} Move Face feature(s) select a face through a matching attribute that repeats on its owner; the selection assumes that the copies state one selection.")));
+    }
+    if unshared > 0 {
+        notes.push(crate::loss::InventorLossCode::FeatureFaceJoinUnsharedFamily.note(format!("{unshared} Move Face feature(s) select a face with a generated-name family that shares no feature with the selector; the selection assumes that another family of the face identifies it.")));
+    }
+    notes
 }
 
 #[cfg(test)]
