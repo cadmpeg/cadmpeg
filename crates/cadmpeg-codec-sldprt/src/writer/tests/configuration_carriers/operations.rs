@@ -5,6 +5,213 @@ use crate::writer::tests::extrusion_authoring::source_less_extrusion;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 
 #[test]
+fn inactive_literal_expression_override_reaches_the_output() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration, Expression, ParameterValue};
+    use cadmpeg_ir::scalar::{Angle, Length};
+
+    let mut ir = source_less_extrusion();
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    let parameter_id = parameter.id.clone();
+    assert!(matches!(parameter.value, Some(ParameterValue::Length(_))));
+    let mut angular = parameter.clone();
+    angular.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#angle").unwrap();
+    angular.name = "Angle".into();
+    angular.ordinal = 1;
+    angular.expression = Expression::text("0.5rad");
+    angular.value = Some(ParameterValue::Angle(Angle::new(0.5).unwrap()));
+    let angular_id = angular.id.clone();
+    let mut ratio = angular.clone();
+    ratio.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#ratio").unwrap();
+    ratio.name = "Ratio".into();
+    ratio.ordinal = 2;
+    ratio.expression = Expression::text("0.5");
+    ratio.value = Some(ParameterValue::Real(
+        cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+    ));
+    let ratio_id = ratio.id.clone();
+    let mut count = ratio.clone();
+    count.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#count").unwrap();
+    count.name = "Count".into();
+    count.ordinal = 3;
+    count.expression = Expression::text("2");
+    count.value = Some(ParameterValue::Integer(2));
+    let count_id = count.id.clone();
+    let mut enabled = count.clone();
+    enabled.id =
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#enabled").unwrap();
+    enabled.name = "Enabled".into();
+    enabled.ordinal = 4;
+    enabled.expression = Expression::text("false");
+    enabled.value = Some(ParameterValue::Boolean(false));
+    let enabled_id = enabled.id.clone();
+    ir.model.parameters.extend([angular, ratio, count, enabled]);
+    let bodies = cadmpeg_ir::features::DistinctMembers::try_from(
+        ir.model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    ir.model.configurations = (0..2)
+        .map(|index| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:configuration#{index}")).unwrap(),
+            ordinal: index,
+            active: index == 0,
+            source_index: Some(index),
+            name: Some(format!("Config {index}")),
+            material: None,
+            properties: std::collections::BTreeMap::default(),
+            parameter_overrides: std::collections::BTreeMap::default(),
+            bodies: Some(bodies.clone()),
+            parameter_values: std::collections::BTreeMap::default(),
+            feature_states: std::collections::BTreeMap::default(),
+            native_ref: None,
+        })
+        .collect();
+    let expression = Expression::text("50mm");
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(parameter_id.clone(), expression.clone());
+    let angular_expression = Expression::text("1rad");
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(angular_id.clone(), angular_expression.clone());
+    let ratio_expression = Expression::text("1.5");
+    let count_expression = Expression::text("3");
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(ratio_id.clone(), ratio_expression.clone());
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(count_id.clone(), count_expression.clone());
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(enabled_id.clone(), Expression::text("true"));
+    ir.model.configurations[1]
+        .parameter_values
+        .insert(enabled_id.clone(), ParameterValue::Boolean(true));
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(parameter_id.as_str())
+            && loss.message.contains("expression override omitted")));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(angular_id.as_str())
+            && loss.message.contains("expression override omitted")));
+    for id in [&ratio_id, &count_id, &enabled_id] {
+        assert!(!plan.report().losses.iter().any(|loss| {
+            loss.message.contains(id.as_str())
+                && loss.message.contains("expression override omitted")
+        }));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let parameter = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    let configuration = result
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Config 1"))
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&parameter.id),
+        Some(&expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&parameter.id),
+        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
+    );
+    let angular = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Angle")
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&angular.id),
+        Some(&angular_expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&angular.id),
+        Some(&ParameterValue::Angle(Angle::new(1.0).unwrap()))
+    );
+    let ratio = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Ratio")
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&ratio.id),
+        Some(&ratio_expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&ratio.id),
+        Some(&ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap()
+        ))
+    );
+    let count = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Count")
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&count.id),
+        Some(&count_expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&count.id),
+        Some(&ParameterValue::Integer(3))
+    );
+    let enabled = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Enabled")
+        .unwrap();
+    assert_eq!(enabled.value, Some(ParameterValue::Boolean(false)));
+    assert_eq!(enabled.expression, Expression::text("false"));
+    assert_eq!(
+        configuration.parameter_values.get(&enabled.id),
+        Some(&ParameterValue::Boolean(true))
+    );
+    assert_eq!(
+        configuration.parameter_overrides.get(&enabled.id),
+        Some(&Expression::text("true"))
+    );
+}
+
+#[test]
 fn inactive_extrusion_operation_reaches_the_output() {
     use cadmpeg_ir::features::{ConfigurationFeatureState, ConfigurationId, DesignConfiguration};
 
@@ -110,6 +317,133 @@ fn inactive_extrusion_operation_reaches_the_output() {
                 .and_then(ConfigurationFeatureState::definition),
             Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
                 op: BooleanOp::Cut,
+                ..
+            }))
+        ),
+        "configuration states: {:#?}; owner: {:#?}; lanes: {:#?}; histories: {:#?}",
+        config.feature_states,
+        owner.evaluation,
+        native
+            .feature_input_lanes
+            .iter()
+            .map(|lane| (&lane.configuration, &lane.names, &lane.classes))
+            .collect::<Vec<_>>(),
+        native.feature_histories
+    );
+}
+
+#[test]
+fn inactive_join_operation_overrides_cut_extrusion() {
+    use cadmpeg_ir::features::{ConfigurationFeatureState, ConfigurationId, DesignConfiguration};
+
+    let mut ir = source_less_extrusion();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition else {
+            panic!("extrusion");
+        };
+        *op = BooleanOp::Cut;
+    });
+    let feature = &ir.model.features[0];
+    let feature_id = feature.id.clone();
+    let mut alternative = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = &mut alternative
+    else {
+        panic!("extrusion");
+    };
+    *op = BooleanOp::Join;
+    let bodies = cadmpeg_ir::features::DistinctMembers::try_from(
+        ir.model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    ir.model.configurations = (0..2)
+        .map(|index| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:configuration#{index}")).unwrap(),
+            ordinal: index,
+            active: index == 0,
+            source_index: Some(index),
+            name: Some(format!("Config {index}")),
+            material: None,
+            properties: std::collections::BTreeMap::default(),
+            parameter_overrides: std::collections::BTreeMap::default(),
+            bodies: Some(bodies.clone()),
+            parameter_values: std::collections::BTreeMap::default(),
+            feature_states: std::collections::BTreeMap::default(),
+            native_ref: None,
+        })
+        .collect();
+    ir.model.configurations[1].feature_states.insert(
+        feature_id.clone(),
+        ConfigurationFeatureState::Definition {
+            definition: Box::new(alternative),
+        },
+    );
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(feature_id.as_str())
+                && loss.message.contains("structural override")),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(result.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| lane.configuration.as_deref() == Some("1"))
+        .unwrap();
+    let name = lane.names.iter().find(|name| name.value == "Boss").unwrap();
+    let trailer = usize::try_from(name.offset).unwrap() + 6 + name.value.encode_utf16().count() * 2;
+    assert_eq!(
+        cadmpeg_core::decode::View::u16_le_at(
+            &lane.native_payload,
+            trailer + crate::layout::extrusion_sparse_operation_trailer::FAMILY
+        ),
+        Some(0x0140)
+    );
+    let owner = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    let config = result
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|config| config.name.as_deref() == Some("Config 1"))
+        .unwrap();
+    assert!(matches!(
+        owner.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Cut,
+            ..
+        })
+    ));
+    assert!(
+        matches!(
+            config
+                .feature_states
+                .get(&owner.id)
+                .and_then(ConfigurationFeatureState::definition),
+            Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+                op: BooleanOp::Join,
                 ..
             }))
         ),

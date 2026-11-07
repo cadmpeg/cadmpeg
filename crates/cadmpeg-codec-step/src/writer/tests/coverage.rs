@@ -9,6 +9,96 @@ use cadmpeg_ir::schema::EntityKind;
 use crate::StepCodec;
 
 #[test]
+fn recovered_free_vertices_keep_shell_member_order() {
+    let mut ir = unit_cube().expect("cube");
+    let order = vec![
+        ir.model.vertices[2].id.clone(),
+        ir.model.vertices[0].id.clone(),
+        ir.model.vertices[1].id.clone(),
+    ];
+    ir.model
+        .vertices
+        .retain(|vertex| order.contains(&vertex.id));
+    let point_ids: Vec<_> = ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect();
+    ir.model
+        .points
+        .retain(|point| point_ids.contains(&point.id));
+    let expected: Vec<_> = order
+        .iter()
+        .map(|id| {
+            let vertex = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| &vertex.id == id)
+                .unwrap();
+            ir.model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap()
+                .position()
+                .get()
+        })
+        .collect();
+    ir.model.coedges.clear();
+    ir.model.loops.clear();
+    ir.model.faces.clear();
+    ir.model.edges.clear();
+    ir.model.curves.clear();
+    ir.model.surfaces.clear();
+    ir.model.shells[0]
+        .edit_topology(|faces, edges, vertices| {
+            faces.clear();
+            edges.clear();
+            *vertices = order;
+        })
+        .expect("free vertices");
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write vertices");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode STEP");
+    let shell = decoded
+        .ir()
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.free_vertices().len() == expected.len())
+        .expect("vertex shell");
+    for (id, expected) in shell.free_vertices().iter().zip(expected) {
+        let vertex = decoded
+            .ir()
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == id)
+            .unwrap();
+        let actual = decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get();
+        assert!((actual.x - expected.x).abs() < 1e-12);
+        assert!((actual.y - expected.y).abs() < 1e-12);
+        assert!((actual.z - expected.z).abs() < 1e-12);
+    }
+}
+
+#[test]
 fn drawing_definition_retains_name_and_description() {
     let source =
         crate::test_support::exchange::decode_inline("#1=DRAWING_DEFINITION('Main','detail');");
@@ -702,6 +792,32 @@ fn layer_without_writable_items_is_named_in_the_loss() {
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code == crate::loss::StepLossCode::LayerItemWithoutCarrier.kind()
             && loss.message.contains("test:model:layer#unwritable")
+            && loss.message.contains("test:model:surface#unknown")
+    }));
+}
+
+#[test]
+fn empty_layer_is_named_in_the_loss() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::PresentationLayer;
+
+    let mut ir = unit_cube().expect("cube");
+    let id = LayerId::mint("test:model:layer#empty").expect("identity");
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: id.clone(),
+        native_ref: None,
+        parent: None,
+        name: "Empty".into(),
+        description: None,
+        visible: Some(true),
+        items: Vec::new(),
+    });
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write layer");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::EmptyLayerOmitted.kind()
+            && loss.message.contains(id.as_str())
     }));
 }
 
@@ -767,5 +883,49 @@ fn point_only_tessellation_is_written_as_an_ap242_point_set() {
         record.partials.iter().find(|part| part.name == "TESSELLATED_SHAPE_REPRESENTATION").is_some_and(|representation| {
             matches!(&representation.parameters[1], Value::List(items) if items.contains(&Value::Reference(point_id)))
         })
+    }));
+}
+
+#[test]
+fn coedge_losing_a_radial_neighbor_is_named() {
+    use crate::export::write_step;
+    use crate::loss::StepLossCode;
+    use crate::{StepSchema, StepWriteOptions};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let mut ir = unit_cube().expect("unit cube");
+    let omitted_loop = ir.model.faces[0].loops.iter().next().unwrap().clone();
+    let omitted: std::collections::BTreeSet<_> = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.owner_loop == omitted_loop)
+        .map(|coedge| coedge.id.clone())
+        .collect();
+    let survivor = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !omitted.contains(&coedge.id) && omitted.contains(&coedge.radial_next))
+        .expect("adjacent coedge")
+        .id
+        .clone();
+    let target = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == target)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write partial body");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::CoedgeRadialNeighborUnwritten.kind()
+            && loss.message.contains(survivor.as_str())
     }));
 }

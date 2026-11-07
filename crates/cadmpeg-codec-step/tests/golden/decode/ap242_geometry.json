@@ -61,12 +61,24 @@
             "r": 0.20000000298023224
           },
           "id": "step:presentation:appearance#30",
-          "name": "geometry blue",
-          "schema": "step_surface_style"
+          "name": "geometry blue"
         }
       ],
       "assembly_joints": [],
       "attributes": [
+        {
+          "id": "step:data:file-description#00000000000000000000",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "typed geometry"
+            }
+          ]
+        },
         {
           "id": "step:data:file-name#author",
           "name": "author",
@@ -211,7 +223,7 @@
           ]
         },
         {
-          "id": "step:data:geometry-name#49-11",
+          "id": "step:data:geometry-name#49-12",
           "name": "name",
           "target": {
             "id": "step:data:curve#48",

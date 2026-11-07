@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, SynthesisCause};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ReducedStorage, SynthesisCause};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
 use serde_json::Value;
@@ -461,6 +461,7 @@ pub fn edit_findings(
     redecode: &Redecode<'_>,
     namespace: &str,
     fidelity: &[bool],
+    reduced: &[crate::cross_closure::ReducedProbe],
     covered: &mut BTreeSet<String>,
 ) -> Vec<String> {
     let Ok(document) = serde_json::to_value(first.ir()) else {
@@ -500,6 +501,25 @@ pub fn edit_findings(
                     ));
                     continue;
                 };
+                let mut expected = expected.clone();
+                let path = collapsed_pointer(&at);
+                if let Some(row) = reduced.iter().find(|row| row.path == path) {
+                    if !encoder.reduced_fields().iter().any(|declared| {
+                        declared.path == row.path && declared.storage == row.storage
+                    }) {
+                        findings.push(format!(
+                            "edit {at}: reduced rule is not declared by the writer"
+                        ));
+                        continue;
+                    }
+                    let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
+                    if let Err(error) =
+                        normalize_edit(&mut expected, &at, row, id, &plan.report().losses)
+                    {
+                        findings.push(format!("edit {at} (fidelity {with}): {error}"));
+                        continue;
+                    }
+                }
                 let report_json = serde_json::to_value(plan.report()).unwrap_or(Value::Null);
                 let mut bytes = Vec::new();
                 if plan.write_to(&mut bytes).is_err() {
@@ -522,6 +542,49 @@ pub fn edit_findings(
         }
     }
     findings
+}
+
+fn normalize_edit(
+    expected: &mut Value,
+    pointer: &str,
+    row: &crate::cross_closure::ReducedProbe,
+    id: &str,
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) -> Result<(), String> {
+    let ReducedStorage::Normalized { loss } = row.storage else {
+        return Ok(());
+    };
+    let normalize = row
+        .normalize
+        .ok_or("normalization has no comparison rule")?;
+    let value = expected
+        .pointer_mut(pointer)
+        .ok_or("normalized value is absent")?;
+    let normalized = normalize(value);
+    if *value != normalized
+        && !losses.iter().any(|note| {
+            note.code.to_string() == loss && !id.is_empty() && note.message.contains(id)
+        })
+    {
+        return Err(format!("normalizes without a {loss} loss naming {id}"));
+    }
+    *value = normalized;
+    Ok(())
+}
+
+fn collapsed_pointer(pointer: &str) -> String {
+    let mut path = String::new();
+    for part in pointer.split('/').filter(|part| !part.is_empty()) {
+        if part.parse::<usize>().is_ok() {
+            path.push_str("[]");
+        } else {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(part);
+        }
+    }
+    path
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ use super::write_prepare::{
 use super::{CLASS_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKind};
+use crate::writer::write_error::WriteError;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -152,13 +153,9 @@ enum GeneratedValue<'a> {
 }
 
 impl GeneratedValue<'_> {
-    fn render(
-        self,
-        ir: &cadmpeg_ir::CadIr,
-        ordinal: u32,
-    ) -> Result<(String, f64), cadmpeg_core::CodecError> {
+    fn render(self, ir: &cadmpeg_ir::CadIr, ordinal: u32) -> Result<(String, f64), WriteError> {
         let missing = || {
-            cadmpeg_core::CodecError::UnsupportedContent(
+            WriteError::Decline(
                 "SLDPRT sketch dimension has no compatible evaluated canonical value".into(),
             )
         };
@@ -263,7 +260,7 @@ pub(super) fn append_generated_sketch_markers(
         let (kind, links) = match relation {
             GeneratedMarkerRelation::Unary(kind, entity) => {
                 let ids = marker_ids.get(entity).ok_or_else(|| {
-                    cadmpeg_core::CodecError::UnsupportedContent(format!(
+                    WriteError::Decline(format!(
                         "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
                         entity.as_str()
                     ))
@@ -533,9 +530,9 @@ pub(super) fn generated_marker_layout(
 fn generated_dimension<'a>(
     ir: &cadmpeg_ir::CadIr,
     definition: &'a SketchConstraintDefinitionInput,
-) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
+) -> Option<Result<GeneratedDimension<'a>, WriteError>> {
     let unsupported = || {
-        cadmpeg_core::CodecError::UnsupportedContent(
+        WriteError::Decline(
             "source-less SLDPRT distance dimensions require two entities or point/entity loci"
                 .into(),
         )
@@ -682,7 +679,7 @@ pub(super) fn append_scalar_fields(
         .into());
     }
     payload.extend_from_slice(NAME_MARKER);
-    payload.push(length);
+    super::names::append_name_length(payload, length);
     for unit in units {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
@@ -714,7 +711,7 @@ fn unique_generated_entity_marker(
     sketch: &Sketch,
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     entity: &SketchEntityId,
-) -> Result<u16, cadmpeg_core::CodecError> {
+) -> Result<u16, WriteError> {
     for (_, point, kind, local_id) in markers
         .iter()
         .filter(|(candidate, ..)| locus_entity(candidate) == entity)
@@ -736,7 +733,7 @@ fn unique_generated_entity_marker(
             return Ok(*local_id);
         }
     }
-    Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+    Err(WriteError::Decline(format!(
         "source-less SLDPRT binary relation cannot identify entity {} with one unambiguous marker locus",
         entity.as_str()
     )))
@@ -748,7 +745,7 @@ fn generated_entity_operand(
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     entity: &SketchEntityId,
     kind: FeatureInputOperandKind,
-) -> Result<u16, cadmpeg_core::CodecError> {
+) -> Result<u16, WriteError> {
     let local_id = unique_generated_entity_marker(ir, sketch, markers, entity)?;
     generated_operand_address(markers, local_id, kind, sketch)
 }
@@ -759,7 +756,7 @@ fn generated_locus_operand(
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     locus: &SketchLocus,
     kind: FeatureInputOperandKind,
-) -> Result<u16, cadmpeg_core::CodecError> {
+) -> Result<u16, WriteError> {
     let local_id = unique_generated_locus_marker(ir, sketch, markers, locus)?;
     generated_operand_address(markers, local_id, kind, sketch)
 }
@@ -769,7 +766,7 @@ fn generated_operand_address(
     local_id: u16,
     kind: FeatureInputOperandKind,
     sketch: &Sketch,
-) -> Result<u16, cadmpeg_core::CodecError> {
+) -> Result<u16, WriteError> {
     if !operand_uses_compatible_ordinal(kind) {
         return Ok(local_id);
     }
@@ -778,15 +775,15 @@ fn generated_operand_address(
         .filter(|(_, _, marker_kind, _)| operand_accepts_marker(kind, *marker_kind))
         .position(|(_, _, _, candidate)| *candidate == local_id)
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "source-less SLDPRT dimension operand cannot address marker {local_id} with tag {kind:?}"
             ))
         })?;
     u16::try_from(ordinal).map_err(|_| {
-        cadmpeg_core::CodecError::malformed(format_args!(
+        WriteError::from(cadmpeg_core::CodecError::malformed(format_args!(
             "source-less SLDPRT sketch {} exceeds the dimension operand space",
             sketch.id.as_str()
-        ))
+        )))
     })
 }
 
@@ -795,7 +792,7 @@ fn unique_generated_locus_marker(
     sketch: &Sketch,
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     locus: &SketchLocus,
-) -> Result<u16, cadmpeg_core::CodecError> {
+) -> Result<u16, WriteError> {
     for (_, point, kind, local_id) in markers.iter().filter(|(candidate, ..)| candidate == locus) {
         let mut candidates = ir
             .model
@@ -814,7 +811,7 @@ fn unique_generated_locus_marker(
             return Ok(*local_id);
         }
     }
-    Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+    Err(WriteError::Decline(format!(
         "source-less SLDPRT locus relation cannot identify {locus:?} with one unambiguous marker"
     )))
 }
@@ -853,10 +850,9 @@ pub(super) fn append_coordinate_marker_link(
         .filter(|offset| View::u32_le_at(payload, *offset + 138) == Some(u32::from(owner_local_id)))
         .collect::<Vec<_>>();
     let [offset] = offsets.as_slice() else {
-        return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Decline(format!(
             "source-less SLDPRT reverse relation cannot identify coordinate marker {owner_local_id}"
-        ))
-        .into());
+        )));
     };
     let count = usize::from(View::u16_le_at(payload, *offset + 84).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
@@ -922,14 +918,8 @@ pub(crate) fn append_generated_object_name(
 ) -> Result<(), crate::writer::write_error::WriteError> {
     let units = name.encode_utf16().collect::<Vec<_>>();
     let length = crate::writer::feature_input_name_len(units.len())?;
-    if length == 0 {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated feature name must not be empty".into(),
-        )
-        .into());
-    }
     payload.extend_from_slice(NAME_MARKER);
-    payload.push(length);
+    super::names::append_name_length(payload, length);
     for unit in units {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
@@ -947,8 +937,8 @@ mod writer_rule_tests {
     use crate::records::SketchRelationKind;
 
     #[test]
-    fn generated_names_use_the_full_u8_length_field() {
-        for length in [129, 255] {
+    fn generated_names_use_the_full_length_field() {
+        for length in [129, 255, 256, 65_535] {
             let name = "A".repeat(length);
             let mut feature = Vec::new();
             append_generated_object_name(&mut feature, &name, 1).unwrap();
@@ -956,9 +946,13 @@ mod writer_rule_tests {
             append_scalar_fields(&mut scalar, &name, 1.0, 2, &[]).unwrap();
             for bytes in [&feature, &scalar] {
                 assert_eq!(&bytes[..5], NAME_MARKER);
-                assert_eq!(usize::from(bytes[5]), length);
+                assert_eq!(usize::from(bytes[5]), length.min(usize::from(u8::MAX)));
+                let start = super::super::names::name_prefix_len(length);
+                if length >= usize::from(u8::MAX) {
+                    assert_eq!(&bytes[6..8], &u16::try_from(length).unwrap().to_le_bytes());
+                }
                 assert_eq!(
-                    &bytes[6..6 + length * 2],
+                    &bytes[start..start + length * 2],
                     &name
                         .encode_utf16()
                         .flat_map(u16::to_le_bytes)
@@ -969,12 +963,33 @@ mod writer_rule_tests {
     }
 
     #[test]
+    fn extended_scalar_name_keeps_its_value() {
+        for length in [255, 256, 65_535] {
+            let name = "A".repeat(length);
+            let mut payload = Vec::new();
+            append_generated_scalar(&mut payload, "moLengthParameter_c", &name, 1.25, 2, &[])
+                .unwrap();
+            let lane = super::super::write_prepare::generated_native_lane(
+                &[],
+                "sldprt:feature-input#long-scalar",
+                None,
+                payload,
+            )
+            .unwrap();
+            assert_eq!(lane.names.len(), 1);
+            assert_eq!(lane.names[0].value, name);
+            assert_eq!(lane.scalars.len(), 1);
+            assert!((lane.scalars[0].value.get() - 1.25).abs() < 1e-12);
+        }
+    }
+
+    #[test]
     fn generated_feature_name_reports_capacity() {
         let error =
-            append_generated_object_name(&mut Vec::new(), &"😀".repeat(128), 1).unwrap_err();
+            append_generated_object_name(&mut Vec::new(), &"😀".repeat(32_768), 1).unwrap_err();
         let error = cadmpeg_ir::codec::write::EncodeError::from(error);
         assert!(matches!(error,
-            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 }
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
                 if field.field == "feature_input.name_length"
         ));
     }
@@ -984,7 +999,7 @@ mod writer_rule_tests {
         let error = append_generated_scalar(
             &mut Vec::new(),
             "moScalerParameter_c",
-            &"😀".repeat(128),
+            &"😀".repeat(32_768),
             1.0,
             2,
             &[],
@@ -992,7 +1007,7 @@ mod writer_rule_tests {
         .unwrap_err();
         let error = cadmpeg_ir::codec::write::EncodeError::from(error);
         assert!(matches!(error,
-            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 }
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
                 if field.field == "feature_input.name_length"
         ));
     }

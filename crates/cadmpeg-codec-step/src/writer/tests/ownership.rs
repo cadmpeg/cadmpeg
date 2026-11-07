@@ -13,6 +13,40 @@ use cadmpeg_ir::{
 };
 
 #[test]
+fn recovered_bounded_surface_does_not_add_an_opaque_representation() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_geometric_set.p21");
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode bounded surface");
+    let mut bytes = Vec::new();
+    write_step(
+        decoded.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write bounded surface");
+    let written = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written surface");
+    assert_eq!(
+        written.ir().model.faces.len(),
+        decoded.ir().model.faces.len()
+    );
+    assert!(written
+        .report()
+        .losses
+        .iter()
+        .all(|loss| { loss.code != StepLossCode::OpaqueRecordPreserved.kind() }));
+}
+
+#[test]
 fn degraded_compound_surface_keeps_its_support_carriers() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::{
@@ -594,6 +628,11 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                     .losses
                     .iter()
                     .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()));
+            } else {
+                assert!(report.losses.iter().any(|loss| {
+                    loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+                        && loss.message.contains(ir.model.surfaces[0].id.as_str())
+                }));
             }
         }
     }
@@ -676,6 +715,26 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()));
+}
+
+#[test]
+fn failed_curve_construction_reports_its_unknown_support() {
+    let mut ir = standalone_subset_curve(None);
+    ir.model.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let support = ir.model.curves[0].id.clone();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write independent content");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+            && loss.message.contains(support.as_str())
+    }));
 }
 
 #[test]
@@ -1157,9 +1216,16 @@ fn scalar_attributes_characterize_their_step_geometry_items() {
             .next()
             .unwrap();
         assert!(text.contains(&format!("#{value} = {expected_value}")));
-        assert!(!report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains(attribute_id)));
+        let generic_target = ir.model.attributes.iter().any(|attribute| {
+            attribute.id.as_str() == attribute_id
+                && matches!(attribute.target, AttributeTarget::Record { .. })
+        });
+        assert_eq!(
+            report.losses.iter().any(|loss| {
+                loss.code == StepLossCode::SourceAttributeTargetNormalized.kind()
+                    && loss.message.contains(attribute_id)
+            }),
+            generic_target
+        );
     }
 }

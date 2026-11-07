@@ -12,7 +12,7 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class, is_chamfer, is_fillet};
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::features::{
     edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
     AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
@@ -24,12 +24,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_fillet(
         &self,
         groups: &[FilletGroup],
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let [group] = groups else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} requires exactly one fillet edge group",
                     feature.id
                 )));
@@ -38,13 +38,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let radius = &group.radius;
             let selection = edge_selection_value(edges);
             if selection.is_none() && !matches!(edges, EdgeSelection::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_fillet(record)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
                 )));
@@ -88,7 +88,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && !unresolved_variable
                         && (form.is_some() || !parameters.is_empty())
                     {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} has an unresolved fillet radius law",
                             feature.id
                         )));
@@ -116,13 +116,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(key, value);
                 }
                 RadiusSpec::Chordal { .. } => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} uses a chordal fillet law",
                         feature.id
                     )));
                 }
                 RadiusSpec::Asymmetric { .. } => {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(WriteError::Decline(format!(
                         "SLDPRT feature {} uses an asymmetric fillet law",
                         feature.id
                     )));
@@ -134,7 +134,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             && !indexed_name(name.as_str(), "Position")
                     });
                     if positional_radius {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} changes positional fillet form",
                             feature.id
                         )));
@@ -172,12 +172,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         groups: &[ChamferGroup],
         flip_direction: bool,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let [group] = groups else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} requires exactly one chamfer edge group",
                     feature.id
                 )));
@@ -185,20 +185,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let edges = &group.edges;
             let spec = &group.spec;
             if flip_direction {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
                     feature.id
                 )));
             }
             let selection = edge_selection_value(edges);
             if selection.is_none() && !matches!(edges, EdgeSelection::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_chamfer(record)) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
                 )));
@@ -232,7 +232,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && !unresolved_distance
                         && (form.is_some() || !parameters.is_empty())
                     {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} has unresolved chamfer dimensions",
                             feature.id
                         )));
@@ -248,7 +248,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 || record.parameters.contains_key("Angle")
                         }
                     }) {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
                         )));
@@ -276,7 +276,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 || record.parameters.contains_key("Angle")
                         }
                     }) {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
                         )));
@@ -322,7 +322,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 || record.parameters.contains_key("Distance2")
                         }
                     }) {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
                         )));
@@ -354,7 +354,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             existing
                                 .and_then(|record| record.parameters.get(angle_key.as_str()))
                                 .map(String::as_str),
-                        )?,
+                        ),
                     );
                 }
             }
@@ -381,7 +381,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         tools: &BodySelection,
         op: cadmpeg_ir::features::BooleanKind,
         keep_tools: bool,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -390,7 +390,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     && !feature_input_class(record, NativeClassKind::Combine)
             }) || keep_tools
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported combine semantics",
                     feature.id
                 )));
@@ -401,7 +401,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || (body_selection_value(tools).is_none()
                         && !matches!(tools, BodySelection::Unresolved)))
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has unresolved combine semantics",
                     feature.id
                 )));
@@ -430,7 +430,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         targets: &BodySelection,
         tools: &FaceSelection,
         reverse: Option<bool>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -440,7 +440,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if (target_value.is_none() && !matches!(targets, BodySelection::Unresolved))
                 || (tool_value.is_none() && !matches!(tools, FaceSelection::Unresolved))
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has unsupported surface-cut selections",
                     feature.id
                 )));
@@ -471,13 +471,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         bodies: &BodySelection,
         mode: BodyRetentionMode,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let selection = body_selection_value(bodies);
             if existing.is_some_and(|record| body_retention_mode(record).is_none()) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported delete-body semantics",
                     feature.id
                 )));
@@ -489,22 +489,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ) {
                     properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), selection);
                 }
-            } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
+            } else if !matches!(bodies, BodySelection::Unresolved) {
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported delete-body semantics",
                     feature.id
                 )));
             }
             match mode {
                 BodyRetentionMode::Unresolved => {
-                    let Some(record) = existing else {
-                        return Err(CodecError::UnsupportedContent(format!(
-                            "SLDPRT feature {} requires a retained unresolved body operation",
-                            feature.id
-                        )));
-                    };
-                    if body_retention_mode(record) != Some(BodyRetentionMode::Unresolved) {
-                        return Err(CodecError::UnsupportedContent(format!(
+                    if existing.is_some_and(|record| {
+                        body_retention_mode(record) != Some(BodyRetentionMode::Unresolved)
+                    }) {
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} removes a resolved body-retention mode",
                             feature.id
                         )));
@@ -521,7 +517,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(
                     || match mode {
-                        BodyRetentionMode::Unresolved => "Feature".into(),
+                        BodyRetentionMode::Unresolved => "Body-Delete/Keep".into(),
                         BodyRetentionMode::DeleteSelected => "DeleteBody".into(),
                         BodyRetentionMode::KeepSelected => "KeepBody".into(),
                     },
@@ -537,13 +533,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         faces: &FaceSelection,
         heal: bool,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let unsupported = existing.is_some_and(|record| !feature_family(record, "DeleteFace"));
             let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported delete-face semantics",
                     feature.id
                 )));
@@ -563,7 +559,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         targets: &FaceSelection,
         replacements: &FaceSelection,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -573,7 +569,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 face_selection_value(replacements),
                 unsupported,
             ) else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported replace-face semantics",
                     feature.id
                 )));
@@ -596,7 +592,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         faces: &FaceSelection,
         motion: &FaceMotion,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -604,7 +600,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let faces_value = face_selection_value(faces);
             if unsupported || (faces_value.is_none() && !matches!(faces, FaceSelection::Unresolved))
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported move-face semantics",
                     feature.id
                 )));
@@ -676,13 +672,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         translation: &Vector3,
         rotation: Option<&AxisAngle>,
         copies: u32,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let bodies_value = body_selection_value(bodies);
             if bodies_value.is_none() && !matches!(bodies, BodySelection::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has no body-motion selection",
                     feature.id
                 )));
@@ -693,7 +689,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 translation.y,
                 translation.z,
             )) else {
-                return Err(CodecError::malformed(format_args!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has a non-finite body translation",
                     feature.id
                 )));
@@ -747,19 +743,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         height: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
         elliptical: Option<bool>,
         reverse: Option<bool>,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let selection = face_selection_value(faces);
             if existing.is_some_and(|record| !feature_family(record, "Dome")) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported dome semantics",
                     feature.id
                 )));
             }
             if selection.is_none() && !matches!(faces, FaceSelection::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has unresolved dome construction",
                     feature.id
                 )));
@@ -806,12 +802,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         axis: Option<&cadmpeg_ir::features::FeatureDirection3>,
         mode: &FlexMode,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             if existing.is_some_and(|record| !feature_family(record, "Flex")) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported flex semantics",
                     feature.id
                 )));
@@ -866,7 +862,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 .get(control)
                                 .is_some_and(|value| !unresolved_control(value))
                         {
-                            return Err(CodecError::UnsupportedContent(format!(
+                            return Err(WriteError::Decline(format!(
                                 "SLDPRT feature {} has an incompatible unresolved flex control",
                                 feature.id
                             )));
@@ -924,13 +920,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         bodies: &BodySelection,
         center: Option<&ScaleCenter>,
         factors: &ScaleFactors,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
+    ) -> Result<NeutralFeatureEncoding, WriteError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let selection = body_selection_value(bodies);
             if existing.is_some_and(|record| !feature_family(record, "Scale")) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} changes unsupported scale semantics",
                     feature.id
                 )));
@@ -940,13 +936,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ScaleCenter::Point(_) | ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
             });
             if selection.is_none() && !matches!(bodies, BodySelection::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has unresolved scale construction",
                     feature.id
                 )));
             }
             if !center_valid {
-                return Err(CodecError::malformed(format_args!(
+                return Err(WriteError::Decline(format!(
                     "SLDPRT feature {} has an invalid scale transform",
                     feature.id
                 )));
@@ -959,7 +955,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             .iter()
                             .any(|name| parameters.contains_key(*name))
                     {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(WriteError::Decline(format!(
                             "SLDPRT feature {} has unresolved scale factors with native controls",
                             feature.id
                         )));

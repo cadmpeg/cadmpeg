@@ -191,6 +191,9 @@ fn project_document(
                 let Some(record) = row.as_object_mut() else {
                     continue;
                 };
+                if arena == "features" {
+                    super::comparison::graph::normalize_feature_self_reference(record);
+                }
                 let id = record.get("id").cloned();
                 let snapshot = record.clone();
                 let mut kept = serde_json::Map::new();
@@ -571,8 +574,11 @@ pub fn cross_compare(
 ) -> Vec<String> {
     let mut findings = Vec::new();
     let stripped = foreign_native_ids(before, format);
-    let projected = project_document(before, config.carried, config.fixed_paths, format);
+    let mut projected = project_document(before, config.carried, config.fixed_paths, format);
     let required = required_ids_with_source(&projected, before, config.carried, format);
+    let full_unpaired =
+        unpaired_before_ids(before, &after.ir, &Mode::Cross(CrossProjection::default())).ok();
+    prioritize_required(&mut projected, &required, full_unpaired.as_ref());
     let nulled = null_dangling(&projected, &required);
     let adjusted = apply_reduced(&nulled, config.reduced, true);
     let reduced_after = apply_reduced(&after.ir, config.reduced, false);
@@ -633,6 +639,24 @@ pub fn cross_compare(
     }
     findings.extend(structural_name_findings(&after.ir, config.members));
     findings
+}
+
+fn prioritize_required(
+    document: &mut Value,
+    required: &BTreeSet<String>,
+    full_unpaired: Option<&BTreeSet<String>>,
+) {
+    if let Some(model) = document.get_mut("model").and_then(Value::as_object_mut) {
+        for rows in model.values_mut().filter_map(Value::as_array_mut) {
+            rows.sort_by_key(|row| {
+                let id = row.get("id").and_then(Value::as_str);
+                (
+                    !id.is_some_and(|id| required.contains(id)),
+                    id.is_none_or(|id| full_unpaired.is_none_or(|ids| ids.contains(id))),
+                )
+            });
+        }
+    }
 }
 
 /// Required native records that the re-decode does not hold: the cross
@@ -1135,6 +1159,35 @@ mod tests {
     }
 
     #[test]
+    fn projection_preserves_feature_self_reference_comparison() {
+        use crate::comparison::{unpaired_before_ids, CrossProjection, Mode};
+        use serde_json::Value;
+        use std::collections::BTreeMap;
+        let feature = |native: &str| {
+            json!({"model":{"features":[{
+            "id":"feature", "native_ref":"scope", "definition":{
+                "definition":"base_feature", "bodies":{
+                    "kind":"resolved", "value":{"native":native}
+                }
+            }
+        }]}, "native":{}})
+        };
+        let original = feature("scope");
+        let projected = super::project_document(
+            &original,
+            &crate::carried::Carried::all(),
+            &BTreeMap::new(),
+            "cadir",
+        );
+        let compare = |after: &Value| {
+            unpaired_before_ids(&projected, after, &Mode::Cross(CrossProjection::default()))
+                .expect("the feature graph is valid")
+        };
+        assert!(compare(&original).is_empty());
+        assert!(compare(&feature("other")).contains("feature"));
+    }
+
+    #[test]
     fn projection_preserves_positions_of_absent_array_values() {
         let before = json!({"model":{"procedural_surfaces":[{
             "id":"surface-construction", "record_bounds":[0.0, 2.0, null, null]
@@ -1233,6 +1286,67 @@ mod tests {
         let required = super::required_ids_with_source(&projected, &source, &carried, "step");
         assert!(required.contains("supported"));
         assert!(!required.contains("unsupported"));
+    }
+
+    #[test]
+    fn cross_compare_pairs_required_record_before_an_indistinguishable_optional_record() {
+        use crate::carried::Carried;
+        use crate::writer_closure::Redecoded;
+        use std::collections::BTreeMap;
+
+        let before = json!({"model":{"drawings":[
+            {"id":"unsupported", "kind":"dimension"},
+            {"id":"supported", "kind":"view"}
+        ]}, "native":{}});
+        let after = Redecoded {
+            ir: json!({"model":{"drawings":[{"id":"written", "kind":"view"}]}, "native":{}}),
+            loss_codes: BTreeSet::new(),
+            members: Vec::new(),
+        };
+        let mut carried = Carried::default();
+        carried.arenas.insert("drawings".into());
+        carried.variants.insert("DrawingKind::View".into());
+        let fixed = BTreeMap::new();
+        let known = BTreeSet::new();
+        let config = super::CrossConfig {
+            carried: &carried,
+            fixed_paths: &fixed,
+            known_losses: &known,
+            reduced: &[],
+            members: &[],
+        };
+        let report: cadmpeg_ir::report::export::ExportReport = serde_json::from_value(json!({
+            "identity": {"payload": "native", "target": "step:ap242-e3"},
+            "census": {"basis": "target_records", "counts": {}},
+            "write_path": {"path": "synthesized", "fidelity": {"status": "not_provided"}},
+            "coverage": {"coverage": "complete"},
+            "native_dispositions": {"namespaces": {}},
+            "losses": [], "notes": []
+        }))
+        .expect("typed export report");
+
+        let findings = super::cross_compare(&before, &after, &report, "step", &config);
+        assert_eq!(
+            findings,
+            ["dropped record unsupported is named by no export loss"]
+        );
+        let mut optional = Carried::default();
+        optional.arenas.insert("drawings".into());
+        let optional_config = super::CrossConfig {
+            carried: &optional,
+            ..config.clone()
+        };
+        let findings = super::cross_compare(&before, &after, &report, "step", &optional_config);
+        assert_eq!(
+            findings,
+            ["dropped record unsupported is named by no export loss"]
+        );
+        let empty = Redecoded {
+            ir: json!({"model":{"drawings":[]}, "native":{}}),
+            ..after
+        };
+        let findings = super::cross_compare(&before, &empty, &report, "step", &config);
+        assert!(findings.contains(&"required record supported is missing".into()));
     }
 
     #[test]
@@ -1467,7 +1581,7 @@ mod tests {
         );
         assert!(
             unpaired_before_ids(&retained, &after, &Mode::Cross(CrossProjection::default()))
-                .unwrap()
+                .expect("the paired graph is valid")
                 .is_empty()
         );
 

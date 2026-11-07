@@ -50,8 +50,6 @@ const EPS_WRITE_POSITION: f64 = 1.0e-8;
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
-// Roundoff guard for geometric plane classification. This is not serialized
-// as an IGES tolerance and never supplies a normal for a non-unique plane.
 const NURBS_PLANE_COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
 #[derive(Clone, Copy)]
@@ -161,6 +159,7 @@ mod offset_curve;
 mod offset_surface;
 mod pcurve_admission;
 mod placement_entities;
+mod polynomial_curve;
 pub(crate) mod target;
 mod transformed_surface;
 mod units;
@@ -7524,6 +7523,7 @@ impl CurveEntityEmitter<'_> {
                     }
                 };
                 if sense == Sense::Forward {
+                    polynomial_curve::retain(self.ir, curve_id, geometry, &mut entity);
                     arc_curve::retain(self.ir, curve_id, geometry, span, &mut entity);
                     native_records::numeric::retain_line(self.ir, curve_id, &mut entity);
                     native_records::numeric::retain_nurbs(self.ir, curve_id, &mut entity);

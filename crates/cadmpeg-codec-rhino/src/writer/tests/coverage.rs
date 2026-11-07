@@ -1135,6 +1135,53 @@ fn placed_point_product() -> CadIr {
 }
 
 #[test]
+fn styled_point_body_retains_product_and_group_membership() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/e2_structure.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthesized product");
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("plan product");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write product");
+    let output = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written product");
+    let ir = output.ir();
+    assert_eq!(ir.model.product_definitions[0].bodies.len(), 1);
+    let source_annotation =
+        &decoded.ir().native.namespace("rhino").unwrap().arenas()["annotations"][0];
+    let written_annotation = &ir.native.namespace("rhino").unwrap().arenas()["annotations"][0];
+    assert_eq!(written_annotation.id(), source_annotation.id());
+    assert_eq!(
+        written_annotation.field("source_uuid"),
+        source_annotation.field("source_uuid")
+    );
+    let group = &ir.native.namespace("rhino").unwrap().arenas()["groups"][0];
+    assert_eq!(group.field("links").unwrap().as_array().unwrap().len(), 3);
+    let attributes = &ir.native.namespace("rhino").unwrap().arenas()["object_presentation"];
+    assert!(attributes.iter().any(|record| {
+        record
+            .field("name")
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            == Some("Member")
+            && record
+                .field("material_index")
+                .as_ref()
+                .and_then(serde_json::Value::as_i64)
+                == Some(0)
+    }));
+}
+
+#[test]
 fn product_structure_is_written_as_instance_definitions_and_references() {
     let ir = placed_point_product();
     let validation =

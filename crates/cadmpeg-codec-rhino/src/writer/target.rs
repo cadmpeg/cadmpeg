@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino target resolution and export reporting.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
@@ -29,13 +29,13 @@ pub(crate) fn plan(
         Some(version) => *version,
         None => RhinoArchiveVersion::ALL[0],
     };
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         mode: DecodeMode::Salvage,
         limits: input.limits,
     };
-    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(&ctx, input.ir)?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let (bytes, outcome) = super::write(&ctx, &recovered.document, version, &session)?;
     let mut losses = outcome.losses;
