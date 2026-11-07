@@ -314,6 +314,14 @@ fn occurrence_lists_keep_their_lengths_through_the_wire_form() {
         .expect("typed path with two lists");
     let wire = serde_json::to_value(&path).unwrap();
     assert_eq!(wire["occurrence_list_lengths"], serde_json::json!([2, 3]));
+    let mut overflowing = wire.clone();
+    overflowing["occurrence_list_lengths"] = serde_json::json!([usize::MAX, 2]);
+    assert!(
+        serde_json::from_value::<crate::records::feature::assembly::DesignAssemblyOperandPath>(
+            overflowing
+        )
+        .is_err()
+    );
     let read: crate::records::feature::assembly::DesignAssemblyOperandPath =
         serde_json::from_value(wire).unwrap();
     assert_eq!(read, path);

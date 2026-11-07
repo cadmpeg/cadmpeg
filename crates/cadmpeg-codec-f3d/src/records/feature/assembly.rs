@@ -1651,7 +1651,11 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
                     .into(),
             );
         }
-        if wire.occurrence_list_lengths.iter().sum::<usize>() != wire.occurrence_list_keys.len() {
+        let listed = wire
+            .occurrence_list_lengths
+            .iter()
+            .try_fold(0_usize, |total, length| total.checked_add(*length));
+        if listed != Some(wire.occurrence_list_keys.len()) {
             return Err("occurrence_list_lengths must count every occurrence_list_keys".into());
         }
         let mut keys = wire
