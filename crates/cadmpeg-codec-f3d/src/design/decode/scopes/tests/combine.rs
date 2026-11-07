@@ -604,6 +604,8 @@ struct OperandListFixture {
     companion_guid: &'static str,
     companion_guid_tail: [u8; 3],
     companion_record: CompanionRecord,
+    /// Records the companion table names; every tool selection by default.
+    companion_selections: Option<Vec<u32>>,
     new_component: u8,
     omit_consumed: bool,
 }
@@ -631,6 +633,7 @@ impl OperandListFixture {
             companion_guid: "00000000-0000-0000-0000-000000000000",
             companion_guid_tail: [0; 3],
             companion_record: CompanionRecord::Table,
+            companion_selections: None,
             new_component: 0,
             omit_consumed: false,
         }
@@ -777,7 +780,10 @@ impl OperandListFixture {
             lp_utf16(&mut bytes, self.companion_guid);
             bytes.extend_from_slice(&self.companion_guid_tail);
             if self.companion_record == CompanionRecord::Table {
-                marked_list(&mut bytes, &[self.tools[0].1]);
+                let selections = self.companion_selections.clone().unwrap_or_else(|| {
+                    self.tools.iter().map(|(_, selection)| *selection).collect()
+                });
+                marked_list(&mut bytes, &selections);
             }
             indexed_header(&mut bytes, *b"258", companion);
         }
@@ -1082,6 +1088,39 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
             decode_combine_frame(&count_without_references),
             None,
             "offset {offset}"
+        );
+    }
+}
+
+#[test]
+fn a_companion_that_does_not_select_every_tool_keeps_the_combine_with_a_loss() {
+    let consumption = |fixture: &OperandListFixture| {
+        let (operation, losses) = fixture.decode_with_losses();
+        let operation = operation.expect("Combine with a companion");
+        assert!(!operation.keep_tools);
+        losses
+            .into_iter()
+            .filter(|loss| loss.code == F3dLossCode::FeatureCombineToolConsumptionAssumed.kind())
+            .map(|loss| loss.message)
+            .collect::<Vec<_>>()
+    };
+    let mut fixture = OperandListFixture::new(0, 0).two_tools();
+    fixture.companions = vec![500];
+    assert!(consumption(&fixture).is_empty());
+
+    for (selections, expected) in [
+        (vec![92], "confirms tool selections 94"),
+        (
+            vec![92, 94, 96],
+            "companion body selections 96 name no tool",
+        ),
+        (vec![93], "confirms tool selections 92, 94"),
+    ] {
+        fixture.companion_selections = Some(selections);
+        let messages = consumption(&fixture);
+        assert!(
+            matches!(&messages[..], [message] if message.contains(expected)),
+            "{messages:?}"
         );
     }
 }

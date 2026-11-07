@@ -339,6 +339,10 @@ pub(crate) enum F3dLossCode {
     FeatureCombineOperandListRefused,
     /// A Combine that places its result in a new component stays native.
     FeatureCombineNewComponentNative,
+    /// A Combine with a companion `RemoveBody` scope reads every tool as
+    /// removed, though the companion body selections do not name exactly the
+    /// tools.
+    FeatureCombineToolConsumptionAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
@@ -678,6 +682,7 @@ impl F3dLossCode {
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineNewComponentNative,
+        Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureRevolveLayoutAssumed,
@@ -945,6 +950,9 @@ impl F3dLossCode {
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
+            Self::FeatureCombineToolConsumptionAssumed => {
+                "feature.combine-tool-consumption-assumed"
+            }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
@@ -1219,6 +1227,7 @@ impl F3dLossCode {
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineNewComponentNative
+            | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
@@ -1423,6 +1432,7 @@ impl F3dLossCode {
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineNewComponentNative
+            | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
@@ -1715,6 +1725,7 @@ mod tests {
                 "feature.combine-prologue-assumed",
                 "feature.combine-operand-list-refused",
                 "feature.combine-new-component-native",
+                "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.revolve-layout-assumed",

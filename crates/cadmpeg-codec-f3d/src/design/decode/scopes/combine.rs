@@ -62,7 +62,7 @@ pub(super) fn exact_combine_operation(
     for prologue in combine_prologues(bytes, start, scope) {
         let operand_lists = prologue.lists.is_some();
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
-            PrologueReading::Operation(operation) => {
+            PrologueReading::Operation(operation, unconfirmed) => {
                 if operation.form == DesignCombineForm::OperandLists
                     && standard_fields_read(bytes, start)
                 {
@@ -75,6 +75,12 @@ pub(super) fn exact_combine_operation(
                 if let Some(reason) = &operand_list_refusal {
                     losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
                         "{}: the Combine frame matches the fixed operand-list fields and {reason}; it is read in the standard prologue",
+                        scope.id
+                    )));
+                }
+                if let Some(detail) = unconfirmed.detail() {
+                    losses.push(F3dLossCode::FeatureCombineToolConsumptionAssumed.note(format!(
+                        "{}: the Combine reads every tool as removed by its companion RemoveBody scopes, but {detail}",
                         scope.id
                     )));
                 }
@@ -139,7 +145,7 @@ struct OperandLists {
 
 /// The result of reading a frame in one prologue.
 enum PrologueReading {
-    Operation(Box<DesignCombineOperation>),
+    Operation(Box<DesignCombineOperation>, UnconfirmedConsumption),
     /// The lists name the scope's operands, its fields hold, and they place
     /// the result in a new component.
     NewComponent,
@@ -378,8 +384,8 @@ fn combine_operation_with(
             first: first_tool?,
             additional: additional_tools,
         };
-        let (operation, keep_tools) = match &lists {
-            None => (operation?, keep_tools?),
+        let (operation, keep_tools, unconfirmed) = match &lists {
+            None => (operation?, keep_tools?, UnconfirmedConsumption::default()),
             Some(lists) => {
                 let table_at = usize::try_from(scope.reference_count_offset()).ok()?;
                 let stored = stored_operand_lists(
@@ -413,11 +419,13 @@ fn combine_operation_with(
                 if lists.new_component == 1 {
                     return Some(Ok(PrologueReading::NewComponent));
                 }
-                (operation, keep_tools)
+                let unconfirmed =
+                    unconfirmed_consumption(bytes, records, &lists.companions, stored.guid, &tools);
+                (operation, keep_tools, unconfirmed)
             }
         };
-        Some(Ok(PrologueReading::Operation(Box::new(
-            DesignCombineOperation {
+        Some(Ok(PrologueReading::Operation(
+            Box::new(DesignCombineOperation {
                 form,
                 operation,
                 operation_offset: u64::try_from(operation_offset).ok()?,
@@ -426,8 +434,9 @@ fn combine_operation_with(
                 target_record_index: target,
                 target_body_node,
                 tools,
-            },
-        ))))
+            }),
+            unconfirmed,
+        )))
     })()
     .unwrap_or(Ok(PrologueReading::Refused))
 }
@@ -532,9 +541,9 @@ fn operand_list_fields_hold(
         let [at, end] = records.offsets(*record_index) else {
             return Err("a companion record is not one primary and one paired header");
         };
-        if !bytes
+        if bytes
             .get(*at..*end)
-            .is_some_and(|record| guid_precedes_reference_table(record, stored.guid))
+            .is_none_or(|record| tables_after_guid(record, stored.guid).is_empty())
         {
             return Err(
                 "a companion record does not store the Combine's counted GUID and three zero bytes before a reference table",
@@ -544,24 +553,136 @@ fn operand_list_fields_hold(
     Ok(())
 }
 
-/// Whether `record` stores `guid` and three zero bytes before a nonempty
-/// reference table of marked references.
-fn guid_precedes_reference_table(record: &[u8], guid: &[u8]) -> bool {
+/// The nonempty reference tables of marked references that `record` stores
+/// after `guid` and three zero bytes.
+fn tables_after_guid(record: &[u8], guid: &[u8]) -> Vec<Vec<u32>> {
     let Some(tail) = guid.len().checked_add(3) else {
-        return false;
+        return Vec::new();
     };
-    record.windows(tail).enumerate().any(|(at, window)| {
-        let Some(mut cursor) = at.checked_add(tail) else {
-            return false;
+    record
+        .windows(tail)
+        .enumerate()
+        .filter(|(_, window)| window.starts_with(guid) && window.ends_with(&[0; 3]))
+        .filter_map(|(at, _)| {
+            let mut cursor = at.checked_add(tail)?;
+            let remaining = record.len().checked_sub(cursor)?;
+            take_marked_records(record, &mut cursor, remaining / MARKED_REFERENCE_LEN)
+                .filter(|table| !table.is_empty())
+        })
+        .collect()
+}
+
+/// Tool selections whose removal the companions of a Combine do not
+/// confirm, and companion body selections that name no tool.
+#[derive(Default)]
+struct UnconfirmedConsumption {
+    tools: Vec<u32>,
+    companion_selections: Vec<u32>,
+}
+
+impl UnconfirmedConsumption {
+    fn detail(&self) -> Option<String> {
+        let list = |records: &[u32]| {
+            records
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
         };
-        let Some(remaining) = record.len().checked_sub(cursor) else {
-            return false;
+        match (&self.tools[..], &self.companion_selections[..]) {
+            ([], []) => None,
+            (tools, []) => Some(format!(
+                "no companion body selection confirms tool selections {}",
+                list(tools)
+            )),
+            ([], extra) => Some(format!(
+                "companion body selections {} name no tool",
+                list(extra)
+            )),
+            (tools, extra) => Some(format!(
+                "no companion body selection confirms tool selections {}, and companion body selections {} name no tool",
+                list(tools),
+                list(extra)
+            )),
+        }
+    }
+}
+
+/// Compare the browser nodes that the tool selections name with the browser
+/// nodes that the body selections of the companion scopes name.
+fn unconfirmed_consumption(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    companions: &[u32],
+    guid: &[u8],
+    tools: &combine::DesignCombineTools,
+) -> UnconfirmedConsumption {
+    if companions.is_empty() {
+        return UnconfirmedConsumption::default();
+    }
+    let Some(removed) = companion_body_nodes(bytes, records, companions, guid) else {
+        return UnconfirmedConsumption {
+            tools: tools.iter().map(|tool| tool.record_index).collect(),
+            companion_selections: Vec::new(),
         };
-        window.starts_with(guid)
-            && window.ends_with(&[0; 3])
-            && take_marked_records(record, &mut cursor, remaining / MARKED_REFERENCE_LEN)
-                .is_some_and(|table| !table.is_empty())
-    })
+    };
+    let tool_nodes: HashSet<u32> = tools
+        .iter()
+        .filter_map(|tool| tool.body_node.as_ref().map(|node| node.record_index))
+        .collect();
+    let removed_nodes: HashSet<u32> = removed.iter().map(|(_, node)| *node).collect();
+    UnconfirmedConsumption {
+        tools: tools
+            .iter()
+            .filter(|tool| {
+                tool.body_node
+                    .as_ref()
+                    .is_none_or(|node| !removed_nodes.contains(&node.record_index))
+            })
+            .map(|tool| tool.record_index)
+            .collect(),
+        companion_selections: removed
+            .iter()
+            .filter(|(_, node)| !tool_nodes.contains(node))
+            .map(|(selection, _)| *selection)
+            .collect(),
+    }
+}
+
+/// Each body selection of the companion scopes with the browser node it
+/// names, or `None` when a companion has no single reference table after the
+/// Combine's GUID, names no body selection, or has a selection without one
+/// browser node.
+fn companion_body_nodes(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    companions: &[u32],
+    guid: &[u8],
+) -> Option<Vec<(u32, u32)>> {
+    let mut removed = Vec::new();
+    for companion in companions {
+        let [at, end] = records.offsets(*companion) else {
+            return None;
+        };
+        let [table] = &tables_after_guid(bytes.get(*at..*end)?, guid)[..] else {
+            return None;
+        };
+        let before = removed.len();
+        for entry in table {
+            let [entry_at, entry_end] = records.offsets(*entry) else {
+                return None;
+            };
+            if !contains_consecutive_guid_pair(bytes.get(*entry_at..*entry_end)?) {
+                continue;
+            }
+            let node = selection_body_node(bytes, records, *entry_at, *entry_end)?;
+            removed.push((*entry, node.record_index));
+        }
+        if removed.len() == before {
+            return None;
+        }
+    }
+    Some(removed)
 }
 
 fn selection_body_node(
