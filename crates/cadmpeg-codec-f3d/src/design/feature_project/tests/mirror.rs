@@ -170,3 +170,69 @@ fn a_projected_mirror_reads_a_compact_feature_seed() {
         ))]
     );
 }
+
+#[test]
+fn a_compact_plane_selection_names_the_work_plane_after_its_identity() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+
+    let mut scope = mirror_scope(40);
+    if let DesignScopePayloadMut::Mirror(Some(construction)) = scope.payload_mut() {
+        construction.plane = None;
+        construction.plane_selection_record_index = Some(31);
+    }
+    let work_plane = |kind: DesignFeatureKind, framed: bool| {
+        let mut plane = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#6", kind, 6);
+        if let (true, DesignScopePayloadMut::WorkPlane(slot)) = (framed, plane.payload_mut()) {
+            *slot = Some(crate::records::feature::scope::DesignWorkPlaneTransform {
+                work_plane_transform: [
+                    [0.0, 0.0, 1.0, 5.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+                .try_into()
+                .unwrap(),
+                work_plane_transform_offset: 0,
+                reference: None,
+                work_plane_construction: None,
+            });
+        }
+        plane
+    };
+    let groups = [
+        group(10, 40, DesignOperandRole::BODIES_B),
+        group(10, 30, DesignOperandRole::ROLE_0X5),
+    ];
+    let selection = super::pattern::compact_entity_selection(30, 31, 5);
+    let project = |plane: DesignParameterScope| {
+        project_mirror(
+            &scope,
+            &groups,
+            &[],
+            std::slice::from_ref(&selection),
+            &[scope.clone(), plane],
+        )
+    };
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        project(work_plane(DesignFeatureKind::WorkPlane, true)).expect("work-plane mirror")
+    else {
+        panic!("mirror projects a pattern");
+    };
+    let PatternTransform::Mirror {
+        plane_origin,
+        plane_normal,
+    } = pattern.definition()
+    else {
+        panic!("mirror transform");
+    };
+    assert_eq!(
+        serde_json::to_value(plane_origin).unwrap(),
+        serde_json::json!({"x": 50.0, "y": 0.0, "z": 0.0})
+    );
+    assert_eq!(
+        serde_json::to_value(plane_normal).unwrap(),
+        serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
+    );
+    assert!(project(work_plane(DesignFeatureKind::WorkPlane, false)).is_none());
+    assert!(project(work_plane(DesignFeatureKind::Extrude, true)).is_none());
+}

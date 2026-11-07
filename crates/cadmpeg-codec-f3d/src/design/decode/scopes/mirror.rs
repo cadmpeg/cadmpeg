@@ -271,20 +271,23 @@ pub(crate) fn bind_mirror_constructions(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope_record_index = scopes[index].record_index;
-        let seed_groups = unique_match(
-            groups
-                .iter()
-                .filter(|group| {
-                    native_stream(&group.id) == Some(stream.as_str())
-                        && group.scope_record_index == scope_record_index
-                })
-                .filter(|group| {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                    )
-                }),
-        );
+        let scope_groups = || {
+            groups.iter().filter(|group| {
+                native_stream(&group.id) == Some(stream.as_str())
+                    && group.scope_record_index == scope_record_index
+            })
+        };
+        let seed_groups = match unique_match(scope_groups().filter(|group| {
+            matches!(
+                group.role(),
+                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+            )
+        })) {
+            UniqueMatch::Zero => unique_match(scope_groups().filter(|group| {
+                crate::design::is_pattern_face_seed_group(&scopes[index].kind(), group)
+            })),
+            role_groups => role_groups,
+        };
         let plane_groups = unique_match(groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream.as_str())
                 && group.scope_record_index == scope_record_index
