@@ -1273,7 +1273,14 @@ fn prepare_write<'a, 'budget>(
                 baked.model.bodies[0].id
             )));
         }
-        baked = reduce::retain_faces(&baked, &selected)?;
+        baked = match reduce::retain_faces(&baked, &selected) {
+            Ok(reduced) => reduced,
+            Err(WriteError::Omit(reason)) => {
+                failed_bodies.push((baked, Some(reason)));
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         if general {
             baked.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
         }
@@ -1307,13 +1314,20 @@ fn prepare_write<'a, 'budget>(
                     candidate
                 });
                 let last_payload = std::cell::RefCell::new(None);
-                let (reduced, reduction_losses) =
-                    reduce::sheet(candidate.as_ref().unwrap_or(&baked), |candidate| {
-                        let payload = WritableModel::try_new(candidate)
-                            .and_then(|model| brep_payload(ctx, &model, archive_version))?;
-                        last_payload.replace(Some(payload));
-                        Ok(())
-                    })?;
+                let reduction = reduce::sheet(candidate.as_ref().unwrap_or(&baked), |candidate| {
+                    let payload = WritableModel::try_new(candidate)
+                        .and_then(|model| brep_payload(ctx, &model, archive_version))?;
+                    last_payload.replace(Some(payload));
+                    Ok(())
+                });
+                let (reduced, reduction_losses) = match reduction {
+                    Ok(result) => result,
+                    Err(WriteError::Omit(reason)) => {
+                        failed_bodies.push((baked, Some(reason)));
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
                     failed_bodies.push((
