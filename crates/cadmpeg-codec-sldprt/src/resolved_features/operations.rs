@@ -268,9 +268,7 @@ pub(super) fn feature_inline_operation_fields(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
 ) -> Option<(u16, u8)> {
-    let name_offset = usize::try_from(name.offset).ok()?;
-    let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
-    let trailer = name_offset.checked_add(6 + name_bytes)?;
+    let trailer = super::names::record_name_end(&lane.native_payload, name)?;
     let bytes = lane.native_payload.get(trailer..trailer + 19)?;
     let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
         || lane
