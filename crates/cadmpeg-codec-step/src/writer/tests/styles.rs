@@ -389,3 +389,75 @@ fn unbound_appearance_does_not_style_an_unrelated_carrier() {
         == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
         && loss.message.contains(id.as_str())));
 }
+
+#[test]
+fn appearance_of_omitted_face_keeps_its_color_without_a_binding() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+    use std::io::Cursor;
+
+    let mut ir = unit_cube().expect("unit cube");
+    let face = ir.model.faces[0].id.clone();
+    let surface = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|item| item.id == surface)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let appearance = AppearanceId::mint("test:model:appearance#omitted-face").expect("id");
+    let color = Color::new(0.125, 0.25, 0.5, 1.0).expect("color");
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        native_ref: None,
+        name: Some("omitted face".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(color),
+        properties: std::collections::BTreeMap::default(),
+        textures: Vec::new(),
+    });
+    let binding = "test:model:appearance-binding#omitted-face";
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: binding.try_into().expect("id"),
+        native_ref: None,
+        target: AppearanceTarget::Face(face),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::default(),
+    });
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write appearance");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(binding)));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode appearance");
+    assert!(
+        decoded
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .any(|item| item.name.as_deref() == Some("omitted face")
+                && item.base_color == Some(color))
+    );
+    assert!(decoded.ir().model.appearance_bindings.is_empty());
+}
