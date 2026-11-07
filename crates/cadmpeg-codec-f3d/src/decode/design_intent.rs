@@ -384,6 +384,10 @@ fn decode_asm_history(
 thread_local! {
     static INJECTED_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
         const { std::cell::Cell::new(None) };
+    static INJECTED_PHASE_TWO_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
+        const { std::cell::Cell::new(None) };
+    static INJECTED_LOCATION_UNAVAILABLE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 }
 
 /// Make the next Design part-location run on this thread fail with
@@ -396,11 +400,27 @@ pub(crate) fn inject_failure(failure: fn() -> CodecError) {
 /// Take a pending injected part-location failure, when one was armed.
 #[cfg(test)]
 pub(crate) fn take_injected_failure() -> Option<fn() -> CodecError> {
-    INJECTED_FAILURE.with(std::cell::Cell::take)
+    let failure = INJECTED_FAILURE.with(std::cell::Cell::take);
+    INJECTED_LOCATION_UNAVAILABLE.with(|slot| slot.set(failure.is_some()));
+    failure
+}
+
+#[cfg(test)]
+pub(crate) fn take_injected_location_unavailable() -> bool {
+    INJECTED_LOCATION_UNAVAILABLE.with(std::cell::Cell::take)
+}
+
+#[cfg(test)]
+pub(crate) fn inject_phase_two_failure(failure: fn() -> CodecError) {
+    INJECTED_PHASE_TWO_FAILURE.with(|slot| slot.set(Some(failure)));
 }
 
 /// Decode design intent over the product prerequisites.
 pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecError> {
+    #[cfg(test)]
+    if let Some(failure) = INJECTED_PHASE_TWO_FAILURE.with(std::cell::Cell::take) {
+        return Err(failure());
+    }
     let &DesignInputs {
         ctx,
         scan,
@@ -540,26 +560,38 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         curves: &design.sketch_curve_identities,
     };
     design.design_dimension_locus_pairs =
-        crate::design::decode::dimension_frames::decode_dimension_locus_pairs(&dimension_inputs)?
-            .try_into()
-            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
+        crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
+            ctx,
+            &mut design_parts,
+            &dimension_inputs,
+        )?
+        .try_into()
+        .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
     design.design_dimension_annotation_frames =
         crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &prereqs.design_entity_headers,
         )?;
     design.design_dimension_presentation_frames =
         crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &prereqs.design_entity_headers,
         )?;
     design.design_dimension_locus_groups =
         crate::design::decode::dimension_frames::decode_dimension_locus_groups(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &prereqs.design_entity_headers,
         )?;
     design.design_dimension_null_locus_pairs =
         crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
+            ctx,
+            &mut design_parts,
             &dimension_inputs,
             &design.design_dimension_locus_pairs,
             &design.design_dimension_locus_groups,
@@ -668,6 +700,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
+            ctx,
+            &mut design_parts,
             scan,
             &design.design_parameter_scopes,
         )?;
@@ -683,6 +717,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
+        &mut design_parts,
         scan,
         &design.design_parameter_scopes,
         &mut model.features,
@@ -745,6 +780,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design,
         &model.features,
         &mut model.feature_input_topologies,
+        &mut losses,
     )?;
     losses.extend(crate::history::bind_feature_outputs(
         &mut model.features,
@@ -1198,6 +1234,7 @@ fn extend_related_design_records(
         .clone_from(&prereqs.design_parameter_companions);
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
+        design_parts,
         scan,
         &prereqs.design_types,
         &design.design_parameter_scopes,
@@ -1718,6 +1755,8 @@ fn extend_related_design_records(
         )?;
     design.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
+            ctx,
+            design_parts,
             scan,
             &prereqs.design_parameters,
             &prereqs.design_parameter_owners,

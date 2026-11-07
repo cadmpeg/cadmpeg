@@ -1688,6 +1688,12 @@
       ],
       "bodies": [
         {
+          "color": {
+            "a": 1.0,
+            "b": 0.7411764860153198,
+            "g": 0.7098039388656616,
+            "r": 0.6784313917160034
+          },
           "id": "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1",
           "kind": "solid",
           "native_ref": "fcstd:native:shape-payload#Body:Shape:Body.Shape.brp:topology-use:1",
@@ -1706,6 +1712,12 @@
           "visible": false
         },
         {
+          "color": {
+            "a": 1.0,
+            "b": 0.7411764860153198,
+            "g": 0.7098039388656616,
+            "r": 0.6784313917160034
+          },
           "id": "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1",
           "kind": "solid",
           "native_ref": "fcstd:native:shape-payload#Pad:Shape:Pad.Shape.brp:topology-use:1",

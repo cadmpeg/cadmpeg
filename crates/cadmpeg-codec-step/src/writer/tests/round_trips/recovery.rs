@@ -49,7 +49,7 @@ fn missing_inner_loop_keeps_the_other_faces() {
 }
 
 #[test]
-fn unwritable_inner_loop_names_every_unwritten_coedge() {
+fn inner_loop_with_a_bare_edge_is_retained() {
     use cadmpeg_ir::ids::{CoedgeId, LoopId};
     use cadmpeg_ir::topology::{EdgeCarrier, FaceLoops, Loop, LoopBoundary, LoopRing};
 
@@ -115,7 +115,7 @@ fn unwritable_inner_loop_names_every_unwritten_coedge() {
     .expect("write surviving faces");
     for id in ids {
         assert!(
-            report.losses.iter().any(|loss| loss.code
+            !report.losses.iter().any(|loss| loss.code
                 == StepLossCode::CoedgeLoopMemberUnwritten.kind()
                 && loss.message.contains(id.as_str())),
             "coedge {id}"
@@ -124,7 +124,7 @@ fn unwritable_inner_loop_names_every_unwritten_coedge() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode surviving faces");
-    assert_eq!(decoded.ir().model.faces.len(), 5);
+    assert_eq!(decoded.ir().model.faces.len(), 6);
 }
 
 #[test]
@@ -700,12 +700,11 @@ fn fallback_wire_recovery_forms_no_body_drop() {
     )
     .expect("write fallback wire recovery");
     let text = String::from_utf8(bytes.clone()).expect("STEP is UTF-8");
-    assert!(text.contains("EDGE_BASED_WIREFRAME_MODEL("));
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::RegionEdgesRecovered.kind()
-            && loss.message.contains("test:model:edge#recovery")
-            && loss.message.contains("test:model:curve#recovery")
-    }));
+    assert!(text.contains("FACE_SURFACE("));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::RegionEdgesRecovered.kind()));
     assert!(
         !report.losses.iter().any(|loss| {
             loss.code == StepLossCode::BodyNoWritableTopology.kind()
@@ -718,5 +717,5 @@ fn fallback_wire_recovery_forms_no_body_drop() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode fallback wire recovery");
     assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.edges.len(), 1);
+    assert_eq!(decoded.ir().model.edges.len(), 2);
 }

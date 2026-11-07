@@ -399,6 +399,7 @@ pub(crate) fn project_sketch_design(
 
     let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();
+    let mut losses = Vec::new();
     for point in points {
         let Some(owner) = point.owner_reference else {
             continue;
@@ -410,6 +411,10 @@ pub(crate) fn project_sketch_design(
             continue;
         }
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
+            losses.push(crate::loss::F3dLossCode::SketchPointOwnerUnresolved.note(format!(
+                "Sketch point {} has no placement for owner {owner}.",
+                point.id
+            )));
             continue;
         };
         let sketch = crate::ids::neutral_sketch_id(placement);
@@ -627,7 +632,6 @@ pub(crate) fn project_sketch_design(
         );
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
-    let mut losses = Vec::new();
     for sketch in &mut sketches {
         let closed = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
         losses.extend(closed.losses);
