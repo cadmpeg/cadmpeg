@@ -733,9 +733,7 @@ fn primary_record_u64(
     output_ctx.charge_entities(1, "F3D Design record")?;
     Ok(crate::metastream::RecordIndexEntry {
         entity_id,
-        bulk_offset: u64::try_from(bulk_offset).map_err(|_| {
-            CodecError::InvalidInput("generated Design record offset exceeds u64".into())
-        })?,
+        bulk_offset: cadmpeg_core::decode::u64_from_index(bulk_offset),
     })
 }
 
