@@ -3,6 +3,35 @@
 #![allow(clippy::unwrap_used)]
 
 #[test]
+fn empty_body_survives_beside_a_body_with_faces() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut body = ir.model.bodies[0].clone();
+    let mut region = ir.model.regions[0].clone();
+    body.id = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#empty").unwrap();
+    region.id = cadmpeg_ir::ids::RegionId::mint("synthetic:test:region#empty").unwrap();
+    region.body = body.id.clone();
+    region.shells.clear();
+    body.regions = vec![region.id.clone()];
+    ir.model.bodies.push(body);
+    ir.model.regions.push(region);
+    ir.model.finalize();
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = crate::SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().model.regions.len(), 2);
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
 fn configuration_subset_keeps_only_owned_and_detached_curves() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let source = serde_json::to_string(&ir)

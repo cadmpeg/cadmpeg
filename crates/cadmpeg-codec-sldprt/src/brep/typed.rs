@@ -294,9 +294,7 @@ impl Facts {
                 }
             }
         }
-        if bridge_attrs.is_empty() {
-            relevant_bodies.extend(bodies.keys().copied());
-        }
+        relevant_bodies.extend(bodies.keys().copied());
 
         let mut out = Vec::new();
         let mut assigned_faces = HashSet::new();
@@ -310,10 +308,9 @@ impl Facts {
             let body_regions = region_chain(body, &regions)?;
             let body_region_attrs: HashSet<u32> =
                 body_regions.iter().map(|region| region.attr).collect();
-            if !bridge_attrs.is_empty()
-                && !relevant_regions_by_body
-                    .get(&body_attr)
-                    .is_some_and(|regions| regions.is_subset(&body_region_attrs))
+            if relevant_regions_by_body
+                .get(&body_attr)
+                .is_some_and(|regions| !regions.is_subset(&body_region_attrs))
             {
                 return None;
             }
