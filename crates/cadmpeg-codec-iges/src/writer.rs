@@ -64,6 +64,7 @@ enum EntityStatus {
     AnnotationDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
+    Blanked,
 }
 
 impl EntityStatus {
@@ -90,6 +91,7 @@ impl EntityStatus {
             Self::AnnotationDependent => "00010100",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
+            Self::Blanked => "01000000",
         }
     }
 }
@@ -902,6 +904,9 @@ fn synthesize_with_admission(
         .iter()
         .any(|annotation| emitted.contains(&annotation.id.to_string()));
     resolve_entity_references(&mut graph.entities)?;
+    attribute_export
+        .regenerated
+        .extend(entity_order::regenerated_records(ir, &graph.entities));
     let (feature_coverage, feature_losses) =
         native_records::primitive_feature_coverage(ir, &graph.entities);
     graph.losses.extend(feature_losses);
@@ -6019,6 +6024,7 @@ fn synthesized_native_dispositions(
             || loss.code == IgesLossCode::WriterPcurvesOmitted.kind()
             || loss.code == IgesLossCode::WriterBodyTransformNotApplied.kind()
     });
+    let mut regenerated_arenas = BTreeSet::new();
     for arena in namespace.arenas().keys() {
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
@@ -6055,17 +6061,23 @@ fn synthesized_native_dispositions(
         };
         if regenerated {
             dispositions.set("iges", arena, NativeDisposition::Regenerated);
+            regenerated_arenas.insert(arena.as_str());
         }
     }
     for (arena, records) in namespace.arenas() {
         for record in records {
-            if regenerated.contains(record.id()) {
-                dispositions.set_record("iges", arena, record.id(), NativeDisposition::Regenerated);
+            let disposition = if regenerated.contains(record.id()) {
+                NativeDisposition::Regenerated
             } else if written.contains(record.id()) {
-                dispositions.set_record("iges", arena, record.id(), NativeDisposition::Written);
+                NativeDisposition::Written
             } else if withdrawn.contains(record.id()) {
-                dispositions.set_record("iges", arena, record.id(), NativeDisposition::Dropped);
-            }
+                NativeDisposition::Dropped
+            } else if regenerated_arenas.contains(arena.as_str()) {
+                NativeDisposition::Regenerated
+            } else {
+                continue;
+            };
+            dispositions.set_record("iges", arena, record.id(), disposition);
         }
     }
     dispositions
@@ -6296,7 +6308,7 @@ fn append_surface_entities(
             return Ok(None);
         }
     }
-    let status = ownership.surface_status(surface);
+    let status = ownership.status(surface.source_object.as_ref());
     let base_index = entities.len();
     let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
     support_records::retain(ir, surface, &mut additions, base_index);
