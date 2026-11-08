@@ -94,6 +94,7 @@ pub(super) fn recover(face: &DecodedFace<'_>, edges: &BTreeMap<usize, &Use>) -> 
         face: face.face_pos,
         body: face.member.body,
         forward,
+        sense_inferred: carrier.roster_sense_inferred(),
         surface: solved,
         priority: super::super::sheet_group::VERTEX_RETRY_PRIORITY,
         sides,

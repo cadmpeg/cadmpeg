@@ -1610,6 +1610,7 @@ fn append_planar_two_edge_pool(
             data,
             records,
         },
+        refusal,
         admission,
     )?;
     Ok(())
@@ -1842,6 +1843,7 @@ fn append_a5_rolling_ball_pools(
                                 data,
                                 records,
                             },
+                            refusal,
                             admission,
                         )?;
                     }
@@ -1884,6 +1886,7 @@ fn attach_closed_two_edge_face(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     face: TwoEdgeFace<'_>,
+    refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let TwoEdgeFace {
@@ -1992,6 +1995,7 @@ fn attach_closed_two_edge_face(
             Exactness::Inferred,
         )?;
     }
+    annotations.field_exactness(&face_id, "sense", Exactness::Inferred)?;
     for (index, position) in positions.into_iter().enumerate() {
         let Some(position) = FinitePoint3::new(position) else {
             return Ok(());
@@ -2127,6 +2131,7 @@ fn attach_closed_two_edge_face(
         color: None,
         visible: None,
     });
+    refusal.push_two_edge_binding_inferred(owner_pos, desired_forward.is_some());
     Ok(())
 }
 

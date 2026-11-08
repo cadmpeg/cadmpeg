@@ -61,6 +61,7 @@ struct Patch {
     face: usize,
     body: RecordKey,
     forward: bool,
+    sense_inferred: bool,
     surface: SolvedSurfaceGeometry,
     priority: u8,
     sides: Vec<Use>,
@@ -411,6 +412,7 @@ fn fit(
         face,
         body: member.body,
         forward: member.forward,
+        sense_inferred: false,
         surface: SolvedSurfaceGeometry::Nurbs(fitted.surface),
         priority: 0,
         sides,
@@ -519,5 +521,5 @@ pub(super) fn append(
             patches.push(patch);
         }
     }
-    transfer::append(ir, annotations, patches, admission)
+    transfer::append(ir, annotations, patches, refusal, admission)
 }

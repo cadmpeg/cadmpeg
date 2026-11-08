@@ -318,9 +318,9 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Question.** Which owning contexts select roster controls `3` and `8`, and which native relation selects the current result from multiple valid body roots?
 
-**Known.** `catia.md` §6.4 "Member bits retain serialized occurrence order" defines the reference forms, packed control, occurrence bits, and closure. Source-closed class-`65`/`60`/`61` chains with a one-child class-`60` owner use control `1`. A one-child allocation list does not by itself identify the owning domain. The wide control-`1` roster binds its members through the allocation widths in the frame headers. Controls `3` and `8` are separate roster selectors without an assigned domain, location, or body-kind meaning.
+**Known.** `catia.md` §6.4 "Member bits retain serialized occurrence order" defines the reference forms, packed control, occurrence bits, and closure. Source-closed class-`65`/`60`/`61` chains with a one-child class-`60` owner use control `1`. A one-child allocation list does not by itself identify the owning domain. The wide control-`1` roster binds its members through the allocation widths in the frame headers. Control `3` identifies the sheet-group roster form in §6.4, with member orientation established in the native rolling-ball chart. Other carrier charts use inferred parity. The owning domain of control `8` remains open.
 
-**Need.** Resolve the active-result relation from the feature or container data. Verify chart parity for additional carrier forms. Establish a separate selector oracle for controls `3` and `8`.
+**Need.** Resolve the active-result relation from the feature or container data. Verify chart parity for additional carrier forms. Establish a selector oracle for control `8`.
 
 **Conflict.** A source-local 53-member roster and the current 700-face shell have different cardinalities. Descending numeric reference order agrees with six independent face-orientation sequences, but numeric order alone does not supply an allocation-to-standard identity relation.
 

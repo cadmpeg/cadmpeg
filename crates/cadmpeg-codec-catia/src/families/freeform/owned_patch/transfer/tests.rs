@@ -42,6 +42,7 @@ fn two_face_sheet() -> Vec<Patch> {
         face,
         body: (0, 10),
         forward,
+        sense_inferred: false,
         surface: SolvedSurfaceGeometry::Plane(plane),
         priority: 0,
         sides,
@@ -80,6 +81,7 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
             &mut ir,
             &mut annotations,
             two_face_sheet(),
+            &mut crate::nurbs::LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
         )
     })

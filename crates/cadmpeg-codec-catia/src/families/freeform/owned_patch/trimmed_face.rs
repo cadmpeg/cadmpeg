@@ -1878,6 +1878,7 @@ fn fit_ring(
         face,
         body: member.body,
         forward,
+        sense_inferred: carrier.roster_sense_inferred(),
         surface: solved,
         priority: u8::from(recover) * 8
             + match carrier {

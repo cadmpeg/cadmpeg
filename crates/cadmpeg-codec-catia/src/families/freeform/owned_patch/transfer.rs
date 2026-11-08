@@ -28,6 +28,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::assemble::annotate;
 use crate::families::FamilyEntityAdmission;
 use crate::loss::CatiaLossCode;
+use crate::nurbs::LaneRefusals;
 
 use super::{curve_point, edge_alignment, interval_parameter, Patch, Use, GAP_MM};
 
@@ -54,6 +55,7 @@ pub(super) fn append(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     patches: Vec<Patch>,
+    refusal: &mut LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<Option<LossNote>, CodecError> {
     let mut by_body = BTreeMap::<_, Vec<_>>::new();
@@ -61,6 +63,7 @@ pub(super) fn append(
         by_body.entry(patch.body).or_default().push(patch);
     }
     let mut count = 0;
+    let mut inferred_senses = 0;
     for ((source, body), mut patches) in by_body {
         patches.sort_by_key(|patch| patch.priority);
         let selected = compatible_patches(&mut patches);
@@ -88,8 +91,12 @@ pub(super) fn append(
             let patches = component.iter().map(|&i| &patches[i]).collect::<Vec<_>>();
             if append_component(ir, annotations, source, body, &patches, admission)? {
                 count += patches.len();
+                inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
             }
         }
+    }
+    if inferred_senses != 0 {
+        refusal.push_owned_patch_sense_inferred(inferred_senses);
     }
     Ok((count != 0).then(|| {
         CatiaLossCode::TopologyOwnedPatchSubset.note(format!(
@@ -371,6 +378,11 @@ fn append_component(
             tolerance,
         });
         faces.push(face);
+    }
+    for (face, patch) in faces.iter().zip(patches) {
+        if patch.sense_inferred {
+            annotations.field_exactness(face, "sense", Exactness::Inferred)?;
+        }
     }
     ir.model.shells.push(
         Shell::with_faces(shell.clone(), region.clone(), faces).map_err(CodecError::malformed)?,

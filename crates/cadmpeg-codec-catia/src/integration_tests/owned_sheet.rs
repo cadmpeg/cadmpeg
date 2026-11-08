@@ -22,6 +22,20 @@ fn native_owned_sheet_preserves_joined_faces_through_step() {
         .losses
         .iter()
         .any(|loss| { loss.code.local_code() == "topology.owned-patch-subset" }));
+    let inference = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "topology.owned-patch-sense-inferred")
+        .expect("roster-bit face sense is reported as inferred");
+    assert!(inference.message.contains("2 non-rolling-ball sheet faces"));
+    let exactness = decoded.source_fidelity().annotations.exactness();
+    for face in &decoded.ir().model.faces {
+        assert_eq!(
+            exactness[face.id.as_str()].fields()["sense"],
+            cadmpeg_ir::Exactness::Inferred
+        );
+    }
 
     let step = StepCodec::default();
     let mut exported = Vec::new();

@@ -91,6 +91,27 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_owned_patch_sense_inferred(&mut self, count: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyOwnedPatchSenseInferred.note(format!(
+                "Inferred the face sense of {count} non-rolling-ball sheet faces from their roster member bits and carrier chart parity."
+            )),
+        );
+    }
+
+    pub(crate) fn push_two_edge_binding_inferred(&mut self, owner_pos: usize, singleton: bool) {
+        let sense_evidence = if singleton {
+            "the class-61 singleton occurrence bit"
+        } else {
+            "the recovered loop winding"
+        };
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyTwoEdgeBindingInferred.note(format!(
+                "For the two-edge face at owner offset {owner_pos}, inferred pcurve binding from endpoint proximity and face sense from {sense_evidence}."
+            )),
+        );
+    }
+
     /// Report exhaustion of a bounded sheet patch search.
     pub(crate) fn push_sheet_patch_search_bounded(
         &mut self,

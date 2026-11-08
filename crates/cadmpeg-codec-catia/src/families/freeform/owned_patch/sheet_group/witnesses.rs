@@ -144,6 +144,7 @@ pub(super) fn repair_boundary(
         face: patch.face,
         body: patch.body,
         forward: patch.forward,
+        sense_inferred: patch.sense_inferred,
         surface: patch.surface.clone(),
         priority: patch.priority,
         inner_starts: patch.inner_starts.clone(),

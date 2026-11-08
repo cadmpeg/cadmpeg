@@ -107,6 +107,10 @@ pub(crate) enum CatiaLossCode {
     TopologyB5GraphUnclosed,
     /// Fitted face subsets represent only part of a native body.
     TopologyOwnedPatchSubset,
+    /// Non-rolling-ball face sense uses inferred roster and chart parity.
+    TopologyOwnedPatchSenseInferred,
+    /// Two-edge pcurve binding and face sense use inferred relations.
+    TopologyTwoEdgeBindingInferred,
     /// A bounded sheet search skipped later candidates.
     TopologySheetPatchSearchBounded,
     /// A B5 face's carrier sense or loop orientation withheld the topology plan.
@@ -173,6 +177,8 @@ impl CatiaLossCode {
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
         Self::TopologyOwnedPatchSubset,
+        Self::TopologyOwnedPatchSenseInferred,
+        Self::TopologyTwoEdgeBindingInferred,
         Self::TopologySheetPatchSearchBounded,
         Self::TopologyB5FacesWithheld,
         Self::TopologyB5PopulationBounded,
@@ -226,6 +232,8 @@ impl CatiaLossCode {
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
             Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
+            Self::TopologyOwnedPatchSenseInferred => "topology.owned-patch-sense-inferred",
+            Self::TopologyTwoEdgeBindingInferred => "topology.two-edge-binding-inferred",
             Self::TopologySheetPatchSearchBounded => "topology.sheet-patch-search-bounded",
             Self::TopologyB5FacesWithheld => "topology.b5-faces-withheld",
             Self::TopologyB5PopulationBounded => "topology.b5-population-bounded",
@@ -308,7 +316,9 @@ impl CatiaLossCode {
             | Self::TopologyZeroEntitySupportsRetained
             | Self::TopologyZeroEntityNotTransferred
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
-            Self::TopologyZeroEntityGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyZeroEntityGaugeSubstituted
+            | Self::TopologyOwnedPatchSenseInferred
+            | Self::TopologyTwoEdgeBindingInferred => LossTaxonomy::TopologyGaugeSubstituted,
             Self::AttributesMaterialsMetadataNotTransferred
             | Self::AttributesDimensionQuantityUnresolved
             | Self::AttributesVisualizationUnbound => LossTaxonomy::AttributesNotTransferred,
@@ -384,6 +394,8 @@ mod tests {
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
                 "topology.owned-patch-subset",
+                "topology.owned-patch-sense-inferred",
+                "topology.two-edge-binding-inferred",
                 "topology.sheet-patch-search-bounded",
                 "topology.b5-faces-withheld",
                 "topology.b5-population-bounded",

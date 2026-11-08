@@ -129,6 +129,10 @@ impl Carrier<'_> {
         }
     }
 
+    pub(super) fn roster_sense_inferred(&self) -> bool {
+        !matches!(self, Self::RollingBall(..) | Self::OwnedRollingBall(..))
+    }
+
     pub(super) fn reversed(&self) -> bool {
         matches!(self, Self::Cone(_, true) | Self::Torus(_, true))
     }
