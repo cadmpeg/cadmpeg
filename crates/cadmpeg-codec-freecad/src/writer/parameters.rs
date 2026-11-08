@@ -558,9 +558,11 @@ pub(super) fn write(
         }) {
             let generated = roxmltree::Document::parse(&property);
             debug_assert!(generated.is_ok(), "generated parameter XML parses");
-            let generated_root = generated.as_ref().ok().map(roxmltree::Document::root_element);
-            let generated_value =
-                generated_root.and_then(|root| root.first_element_child());
+            let generated_root = generated
+                .as_ref()
+                .ok()
+                .map(roxmltree::Document::root_element);
+            let generated_value = generated_root.and_then(|root| root.first_element_child());
             let mut source = source.clone();
             let compatible = generated_root
                 .is_some_and(|root| source.type_name == root.attribute("type").unwrap_or(""));

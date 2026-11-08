@@ -261,10 +261,7 @@ pub(super) fn write(
             ));
         }
         names.insert(joint.id.as_str().to_owned(), name.clone());
-        let Some(object) = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-        else {
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
             debug_assert!(false, "joint output is absent");
             continue;
         };

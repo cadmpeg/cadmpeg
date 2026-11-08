@@ -637,15 +637,17 @@ impl CurrentTopologyBindings {
         payload: &'a str,
     ) -> impl Iterator<Item = (&'a str, crate::brep::TextShapeKind, usize, Option<usize>)> + 'a
     {
-        self.record_native.iter().filter_map(move |(record, native)| {
-            let source = self.topology.get(native)?;
-            (source.owner == payload).then_some((
-                record.as_str(),
-                source.kind,
-                source.shape,
-                source.source_index,
-            ))
-        })
+        self.record_native
+            .iter()
+            .filter_map(move |(record, native)| {
+                let source = self.topology.get(native)?;
+                (source.owner == payload).then_some((
+                    record.as_str(),
+                    source.kind,
+                    source.shape,
+                    source.source_index,
+                ))
+            })
     }
 
     pub(crate) fn native_for_record(&self, record: &str) -> Option<&str> {

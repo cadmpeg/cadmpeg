@@ -156,8 +156,7 @@ fn collect(
 pub(super) fn bindings(
     feature: &cadmpeg_ir::features::Feature,
 ) -> Result<BTreeMap<String, Vec<(String, Measurement)>>, CodecError> {
-    let Ok(mut definition) =
-        serde_json::to_value(feature.definition()) else {
+    let Ok(mut definition) = serde_json::to_value(feature.definition()) else {
         debug_assert!(false, "a feature definition serializes");
         return Ok(BTreeMap::new());
     };

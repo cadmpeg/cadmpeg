@@ -43,21 +43,24 @@ pub(crate) fn write(
         names.insert(sketch.id.as_str().to_owned(), name);
         let object = &mut objects[index];
         object.kind = "Sketcher::SketchObject".into();
-        let transform = sketch.placement.resolved().and_then(|(origin, normal, x_axis)| {
-            let z = normal.unit_nonzero()?;
-            let x = x_axis.unit_nonzero()?;
-            let y = cadmpeg_ir::math::Vector3::new(
-                z.y * x.z - z.z * x.y,
-                z.z * x.x - z.x * x.z,
-                z.x * x.y - z.y * x.x,
-            );
-            let origin = origin.get();
-            Transform::affine([
-                [x.x, y.x, z.x, origin.x],
-                [x.y, y.y, z.y, origin.y],
-                [x.z, y.z, z.z, origin.z],
-            ])
-        });
+        let transform = sketch
+            .placement
+            .resolved()
+            .and_then(|(origin, normal, x_axis)| {
+                let z = normal.unit_nonzero()?;
+                let x = x_axis.unit_nonzero()?;
+                let y = cadmpeg_ir::math::Vector3::new(
+                    z.y * x.z - z.z * x.y,
+                    z.z * x.x - z.x * x.z,
+                    z.x * x.y - z.y * x.x,
+                );
+                let origin = origin.get();
+                Transform::affine([
+                    [x.x, y.x, z.x, origin.x],
+                    [x.y, y.y, z.y, origin.y],
+                    [x.z, y.z, z.z, origin.z],
+                ])
+            });
         if let Some(transform) = transform {
             object.set("Placement", super::placement(transform)?);
         } else {
@@ -163,7 +166,9 @@ pub(crate) fn write(
 /// a trailing decimal index orders numerically, ties by the full identity.
 fn source_order(id: &str) -> (&str, Option<u64>, &str) {
     let prefix = id.trim_end_matches(|c: char| c.is_ascii_digit());
-    let index = id.strip_prefix(prefix).and_then(|digits| digits.parse().ok());
+    let index = id
+        .strip_prefix(prefix)
+        .and_then(|digits| digits.parse().ok());
     (prefix, index, id)
 }
 

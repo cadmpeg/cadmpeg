@@ -230,7 +230,11 @@ pub(super) fn unchanged_payloads(
         return Ok(unchanged);
     };
     for payload in &payloads {
-        let Some(key) = payload.id.split_once('#').map(|(_, key)| format!("#{key}:")) else {
+        let Some(key) = payload
+            .id
+            .split_once('#')
+            .map(|(_, key)| format!("#{key}:"))
+        else {
             continue;
         };
         if PROJECTED_ARENAS
@@ -267,7 +271,10 @@ fn projected_arenas(model: &cadmpeg_ir::document::Model) -> Option<serde_json::V
                 "procedural_surfaces",
                 serde_json::to_value(&model.procedural_surfaces).ok()?,
             ),
-            ("tessellations", serde_json::to_value(&model.tessellations).ok()?),
+            (
+                "tessellations",
+                serde_json::to_value(&model.tessellations).ok()?,
+            ),
         ]
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value))
@@ -278,7 +285,12 @@ fn projected_arenas(model: &cadmpeg_ir::document::Model) -> Option<serde_json::V
 /// The held and projected records of one payload in one arena agree, by
 /// identity and value. A held body's stage fields are not compared, nor its
 /// absent root placement, which an occurrence carries instead.
-fn arena_agrees(held: &serde_json::Value, fresh: &serde_json::Value, arena: &str, key: &str) -> bool {
+fn arena_agrees(
+    held: &serde_json::Value,
+    fresh: &serde_json::Value,
+    arena: &str,
+    key: &str,
+) -> bool {
     let rows = |model: &serde_json::Value| {
         model
             .get(arena)

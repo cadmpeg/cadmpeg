@@ -429,7 +429,8 @@ fn value_content(
             }
             attributes.insert(
                 "value".into(),
-                base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&json.value).ok()?),
+                base64::engine::general_purpose::STANDARD
+                    .encode(serde_json::to_vec(&json.value).ok()?),
             );
             attributes.insert("encoded".into(), "yes".into());
             attributes.insert("json".into(), "yes".into());

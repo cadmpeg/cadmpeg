@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Occurrence-aware transfer of exact-shape topology into neutral CADIR.
 
-
 use std::collections::{HashMap, HashSet};
 
 mod locations;
