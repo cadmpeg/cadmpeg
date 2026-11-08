@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 116652,
-      "payload_sha256": "ecb1d90598979c337cc6dcd2f63704d2900dbb99f4b478385b22fa4d93e2d4d4"
+      "payload_len": 135170,
+      "payload_sha256": "134665734a952b263c5ea0f1e28f7931683dee1a586bcb3d06e385d5996de422"
     },
     {
       "name": "RevolutionProfile.InternalShape.brp",
@@ -11,9 +11,24 @@
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "name": "RevolutionProfile.Shape.brp",
+      "payload_len": 448,
+      "payload_sha256": "4212666dd720442cf37ac09a9e111bd69ae4daceda22a5d3f0564d5e293b22a0"
+    },
+    {
+      "name": "Revolution.Shape.brp",
+      "payload_len": 1614,
+      "payload_sha256": "b8e7675f715c64a2a601131aa2c166a601c08602ba5089a31a005ed225387d3c"
+    },
+    {
       "name": "ExtrusionProfile.Shape.brp",
       "payload_len": 652,
       "payload_sha256": "7cc070efc7cd640a61a1e31d747acb52825140865f333bbbc4702fac2198511a"
+    },
+    {
+      "name": "SymmetricExtrusion.Shape.brp",
+      "payload_len": 5183,
+      "payload_sha256": "6a983877c1053880ade26ddf7947f4652e33cf6f2d8e6974c0e2c94c50cb2cdb"
     },
     {
       "name": "LoftSectionA.Shape.brp",
@@ -26,6 +41,11 @@
       "payload_sha256": "191184c1108142f4c59f3a70003bd23c094ebb4ac90f9829abcadb48e38ece5a"
     },
     {
+      "name": "Loft.Shape.brp",
+      "payload_len": 1038,
+      "payload_sha256": "66acf10311c5f3bdbdc335ddd9a66112c96a36088924d6748e1b16430852b62d"
+    },
+    {
       "name": "SweepSection.Shape.brp",
       "payload_len": 347,
       "payload_sha256": "3e34037a5468505d32e2e45cba18ec178581009e33ee8dcbbb43657fb6b8658b"
@@ -36,14 +56,39 @@
       "payload_sha256": "905dbce29623eb45861515a4c2d352d2bd65c1580e76f20c9d9539869c72dda5"
     },
     {
+      "name": "Sweep.Shape.brp",
+      "payload_len": 1759,
+      "payload_sha256": "287f45d39e266aa0293a77efc1bc01a835306ca8bfbc9b5da8725685d5aa92a8"
+    },
+    {
       "name": "DressupBase.Shape.brp",
       "payload_len": 2561,
       "payload_sha256": "a6470807fe456de1620c8c084a36f8e5f149c74aded35ab3c9bbb0caf55a5d8b"
     },
     {
+      "name": "Edges",
+      "payload_len": 24,
+      "payload_sha256": "607111519765c74747f39396bf544d2989152ff4c630b0c0457b7d52a757669a"
+    },
+    {
+      "name": "PartFillet.Shape.brp",
+      "payload_len": 3877,
+      "payload_sha256": "d8423b9610ced8ace4847e61e31f23a6c17a27666024c5ecc4a66b27c1406a0f"
+    },
+    {
       "name": "ChamferBase.Shape.brp",
       "payload_len": 2536,
       "payload_sha256": "6729a8640038eab0f45eda6035508e10366fc3ce8fc1334f93183d8c7d1c1b21"
+    },
+    {
+      "name": "Edges1",
+      "payload_len": 24,
+      "payload_sha256": "4cc58197dd86871e0df2b55bf5abe0333b78fd13dc2bca6d4583b0ff5080f34a"
+    },
+    {
+      "name": "PartChamfer.Shape.brp",
+      "payload_len": 3915,
+      "payload_sha256": "523dfcf6592092de3591fdc50494d1f03e26e67d88635844010995571f8c2c21"
     },
     {
       "name": "ThicknessBase.Shape.brp",
@@ -61,6 +106,11 @@
       "payload_sha256": "572a5ebd0c31a938a72944defcfd268d373e9692d718f60f7eda0c75677e355f"
     },
     {
+      "name": "Mirror.Shape.brp",
+      "payload_len": 1037,
+      "payload_sha256": "d2c22a0e6e65a0a2e37fff6f81da7198a8fbf5c119e0e058fed54404ed74e753"
+    },
+    {
       "name": "DatumPlane.Shape.brp",
       "payload_len": 238,
       "payload_sha256": "5862db26aa2a6a6f8643922c1828f3f4735cf3eb0a6720324e43251157629d8c"
@@ -74,6 +124,11 @@
       "name": "DatumCoordinateSystem.Shape.brp",
       "payload_len": 238,
       "payload_sha256": "95446cec6759152ff7ab663c2f75478cde5d27018bad2dfcc845f46132cb58f1"
+    },
+    {
+      "name": "DraftBody.Shape.brp",
+      "payload_len": 2907,
+      "payload_sha256": "e810a0af635e3a99768113f170c8f36376c98a9d96ecdf21225bfb12c13c1324"
     },
     {
       "name": "DraftBase.Shape.brp",
@@ -91,9 +146,19 @@
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "name": "Draft.Shape.brp",
+      "payload_len": 5075,
+      "payload_sha256": "19257a67814c559c773776a56be8db64767e92e513ec59f528ff6837dc72d1e3"
+    },
+    {
       "name": "Draft.SuppressedShape.brp",
       "payload_len": 0,
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "HoleBody.Shape.brp",
+      "payload_len": 3981,
+      "payload_sha256": "d4c8cbd69a8baedca3b9887341632bd9c8cdfb3e1e0107a8924c1afef35bd528"
     },
     {
       "name": "HoleBase.Shape.brp",
@@ -111,9 +176,29 @@
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "name": "HoleProfile.Shape.brp",
+      "payload_len": 375,
+      "payload_sha256": "c7b53393e3753b6bf7c3382f58c0331dfc5cd70c70deeb87cca0bb887f8812c9"
+    },
+    {
+      "name": "Hole.AddSubShape.brp",
+      "payload_len": 2275,
+      "payload_sha256": "3cb4282c37817e68bf1d50e9793b0484357ab89e049db2dce99f05f140613144"
+    },
+    {
+      "name": "Hole.Shape.brp",
+      "payload_len": 4527,
+      "payload_sha256": "09f6cd0121b4b85ea96423e6ea1f778c726a5c5dc52b69d4d13eee975e7c9dcd"
+    },
+    {
       "name": "Hole.SuppressedShape.brp",
       "payload_len": 0,
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PatternBody.Shape.brp",
+      "payload_len": 1919,
+      "payload_sha256": "240e863dc3a550cbd0ea65bf432423227a633ad23762e017e46ec81bbb26f5b7"
     },
     {
       "name": "PatternBase.AddSubShape.brp",
@@ -131,19 +216,29 @@
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "name": "LinearPattern.Shape.brp",
+      "payload_len": 2302,
+      "payload_sha256": "658f3b5912bad4c880cc0dda92588c86960e711445157940493e7a21593dea57"
+    },
+    {
+      "name": "SpacingPattern",
+      "payload_len": 12,
+      "payload_sha256": "ca888f40c3caca805b37a5434c75de5550616e0795e7602fb91156f22dd90851"
+    },
+    {
+      "name": "SpacingPattern2",
+      "payload_len": 12,
+      "payload_sha256": "ca888f40c3caca805b37a5434c75de5550616e0795e7602fb91156f22dd90851"
+    },
+    {
+      "name": "Spacings",
+      "payload_len": 28,
+      "payload_sha256": "db12ed3d677121cb16cc8e02772ea257e683960f28c5d69571782a8bb3f5c937"
+    },
+    {
       "name": "LinearPattern.SuppressedShape.brp",
       "payload_len": 0,
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "name": "Draft.brp",
-      "payload_len": 5075,
-      "payload_sha256": "19257a67814c559c773776a56be8db64767e92e513ec59f528ff6837dc72d1e3"
-    },
-    {
-      "name": "DraftBody.brp",
-      "payload_len": 2907,
-      "payload_sha256": "e810a0af635e3a99768113f170c8f36376c98a9d96ecdf21225bfb12c13c1324"
     },
     {
       "name": "FreeGeometry.brp",
@@ -156,79 +251,9 @@
       "payload_sha256": "21b50de2e7327968148098d1da4401de1646dc6a2eb92dadd5ea9d319123290c"
     },
     {
-      "name": "Hole.brp",
-      "payload_len": 2275,
-      "payload_sha256": "3cb4282c37817e68bf1d50e9793b0484357ab89e049db2dce99f05f140613144"
-    },
-    {
-      "name": "HoleBody.brp",
-      "payload_len": 3981,
-      "payload_sha256": "d4c8cbd69a8baedca3b9887341632bd9c8cdfb3e1e0107a8924c1afef35bd528"
-    },
-    {
-      "name": "HoleProfile.brp",
-      "payload_len": 375,
-      "payload_sha256": "c7b53393e3753b6bf7c3382f58c0331dfc5cd70c70deeb87cca0bb887f8812c9"
-    },
-    {
-      "name": "Hole_1.brp",
-      "payload_len": 4527,
-      "payload_sha256": "09f6cd0121b4b85ea96423e6ea1f778c726a5c5dc52b69d4d13eee975e7c9dcd"
-    },
-    {
-      "name": "LinearPattern.brp",
-      "payload_len": 2302,
-      "payload_sha256": "658f3b5912bad4c880cc0dda92588c86960e711445157940493e7a21593dea57"
-    },
-    {
-      "name": "Loft.brp",
-      "payload_len": 1038,
-      "payload_sha256": "66acf10311c5f3bdbdc335ddd9a66112c96a36088924d6748e1b16430852b62d"
-    },
-    {
-      "name": "Mirror.brp",
-      "payload_len": 1037,
-      "payload_sha256": "d2c22a0e6e65a0a2e37fff6f81da7198a8fbf5c119e0e058fed54404ed74e753"
-    },
-    {
-      "name": "PartChamfer.brp",
-      "payload_len": 3915,
-      "payload_sha256": "523dfcf6592092de3591fdc50494d1f03e26e67d88635844010995571f8c2c21"
-    },
-    {
-      "name": "PartFillet.brp",
-      "payload_len": 3877,
-      "payload_sha256": "d8423b9610ced8ace4847e61e31f23a6c17a27666024c5ecc4a66b27c1406a0f"
-    },
-    {
-      "name": "PatternBody.brp",
-      "payload_len": 1919,
-      "payload_sha256": "240e863dc3a550cbd0ea65bf432423227a633ad23762e017e46ec81bbb26f5b7"
-    },
-    {
-      "name": "Revolution.brp",
-      "payload_len": 1614,
-      "payload_sha256": "b8e7675f715c64a2a601131aa2c166a601c08602ba5089a31a005ed225387d3c"
-    },
-    {
-      "name": "RevolutionProfile.brp",
-      "payload_len": 448,
-      "payload_sha256": "4212666dd720442cf37ac09a9e111bd69ae4daceda22a5d3f0564d5e293b22a0"
-    },
-    {
       "name": "StringHasher0.txt",
       "payload_len": 1167,
       "payload_sha256": "a39736b361e9e0f5862abe7b606c2861c8152fdc37031250af99e8832db5ba1b"
-    },
-    {
-      "name": "Sweep.brp",
-      "payload_len": 1759,
-      "payload_sha256": "287f45d39e266aa0293a77efc1bc01a835306ca8bfbc9b5da8725685d5aa92a8"
-    },
-    {
-      "name": "SymmetricExtrusion.brp",
-      "payload_len": 5183,
-      "payload_sha256": "6a983877c1053880ade26ddf7947f4652e33cf6f2d8e6974c0e2c94c50cb2cdb"
     }
   ],
   "report": {
@@ -307,7 +332,7 @@
         "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "written",
+        "attributes": "reported",
         "bodies": "reported",
         "coedges": "reported",
         "colliders": "omitted",
@@ -388,6 +413,16 @@
         },
         "message": "feature fcstd:design:feature#Thickness source tag Part::Thickness is written as PartDesign::Thickness",
         "severity": "info"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#LinearPattern:Reversed2:property conflicts with operation property Reversed2",
+        "severity": "warning"
       },
       {
         "code": {
@@ -536,7 +571,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 39 native record(s) from `fcstd.entries`: fcstd:native:entry#DatumAxis.Shape.brp, fcstd:native:entry#Draft.Shape.Map.txt, fcstd:native:entry#Draft.Shape.brp, fcstd:native:entry#DraftBody.Shape.Map.txt, fcstd:native:entry#DraftBody.Shape.brp, fcstd:native:entry#Edges, fcstd:native:entry#Edges1, fcstd:native:entry#Hole.AddSubShape.Map.txt, fcstd:native:entry#Hole.AddSubShape.brp, fcstd:native:entry#Hole.Shape.Map.txt, fcstd:native:entry#Hole.Shape.brp, fcstd:native:entry#HoleBody.Shape.Map.txt, fcstd:native:entry#HoleBody.Shape.brp, fcstd:native:entry#HoleProfile.Shape.Map.txt, fcstd:native:entry#HoleProfile.Shape.brp, fcstd:native:entry#LinearPattern.Shape.Map.txt, fcstd:native:entry#LinearPattern.Shape.brp, fcstd:native:entry#Loft.Shape.Map.txt, fcstd:native:entry#Loft.Shape.brp, fcstd:native:entry#Mirror.Shape.Map.txt, fcstd:native:entry#Mirror.Shape.brp, fcstd:native:entry#PartChamfer.Shape.Map.txt, fcstd:native:entry#PartChamfer.Shape.brp, fcstd:native:entry#PartFillet.Shape.Map.txt, fcstd:native:entry#PartFillet.Shape.brp, fcstd:native:entry#PatternBody.Shape.Map.txt, fcstd:native:entry#PatternBody.Shape.brp, fcstd:native:entry#Revolution.Shape.Map.txt, fcstd:native:entry#Revolution.Shape.brp, fcstd:native:entry#RevolutionProfile.Shape.Map.txt, fcstd:native:entry#RevolutionProfile.Shape.brp, fcstd:native:entry#SpacingPattern, fcstd:native:entry#SpacingPattern2, fcstd:native:entry#Spacings, fcstd:native:entry#StringHasher.Table.txt, fcstd:native:entry#Sweep.Shape.Map.txt, fcstd:native:entry#Sweep.Shape.brp, fcstd:native:entry#SymmetricExtrusion.Shape.Map.txt, fcstd:native:entry#SymmetricExtrusion.Shape.brp",
+        "message": "the fcstd write omits 18 native record(s) from `fcstd.entries`: fcstd:native:entry#DatumAxis.Shape.brp, fcstd:native:entry#Draft.Shape.Map.txt, fcstd:native:entry#DraftBody.Shape.Map.txt, fcstd:native:entry#Hole.AddSubShape.Map.txt, fcstd:native:entry#Hole.Shape.Map.txt, fcstd:native:entry#HoleBody.Shape.Map.txt, fcstd:native:entry#HoleProfile.Shape.Map.txt, fcstd:native:entry#LinearPattern.Shape.Map.txt, fcstd:native:entry#Loft.Shape.Map.txt, fcstd:native:entry#Mirror.Shape.Map.txt, fcstd:native:entry#PartChamfer.Shape.Map.txt, fcstd:native:entry#PartFillet.Shape.Map.txt, fcstd:native:entry#PatternBody.Shape.Map.txt, fcstd:native:entry#Revolution.Shape.Map.txt, fcstd:native:entry#RevolutionProfile.Shape.Map.txt, fcstd:native:entry#StringHasher.Table.txt, fcstd:native:entry#Sweep.Shape.Map.txt, fcstd:native:entry#SymmetricExtrusion.Shape.Map.txt",
         "severity": "info"
       },
       {
@@ -546,7 +581,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 83 native record(s) from `fcstd.properties`: fcstd:native:property#DatumAxis:ExpressionEngine, fcstd:native:property#DatumAxis:Shape, fcstd:native:property#DatumCoordinateSystem:ExpressionEngine, fcstd:native:property#DatumPlane:ExpressionEngine, fcstd:native:property#DatumPoint:ExpressionEngine, fcstd:native:property#Draft:BaseFeature, fcstd:native:property#Draft:ExpressionEngine, fcstd:native:property#Draft:Placement, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#Draft:PullDirection, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#DraftBody:BaseFeature, fcstd:native:property#DraftBody:ExpressionEngine, fcstd:native:property#DraftBody:Placement, fcstd:native:property#Hole:BaseFeature, fcstd:native:property#Hole:ExpressionEngine, fcstd:native:property#Hole:Midplane, fcstd:native:property#Hole:ModelThread, fcstd:native:property#Hole:Placement, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#Hole:Reversed, fcstd:native:property#Hole:ThreadClass, fcstd:native:property#Hole:ThreadDepthType, fcstd:native:property#Hole:ThreadDirection, fcstd:native:property#Hole:ThreadFit, fcstd:native:property#Hole:ThreadSize, fcstd:native:property#Hole:Threaded, fcstd:native:property#Hole:UpToFace, fcstd:native:property#Hole:UpToFace2, fcstd:native:property#Hole:UseCustomThreadClearance, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#HoleBody:BaseFeature, fcstd:native:property#HoleBody:ExpressionEngine, fcstd:native:property#HoleBody:Placement, fcstd:native:property#HoleProfile:ExpressionEngine, fcstd:native:property#HoleProfile:ExternalGeo, fcstd:native:property#HoleProfile:ExternalGeometry, fcstd:native:property#LinearPattern:BaseFeature, fcstd:native:property#LinearPattern:ExpressionEngine, fcstd:native:property#LinearPattern:Mode2, fcstd:native:property#LinearPattern:Placement, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#LinearPattern:Reversed, fcstd:native:property#LinearPattern:SpacingPattern, fcstd:native:property#LinearPattern:SpacingPattern2, fcstd:native:property#LinearPattern:Spacings, fcstd:native:property#LinearPattern:Spacings2, fcstd:native:property#Loft:ExpressionEngine, fcstd:native:property#Loft:Placement, fcstd:native:property#Mirror:ExpressionEngine, fcstd:native:property#Mirror:MirrorPlane, fcstd:native:property#Mirror:Placement, fcstd:native:property#PartChamfer:Edges, fcstd:native:property#PartChamfer:ExpressionEngine, fcstd:native:property#PartChamfer:Placement, fcstd:native:property#PartFillet:Edges, fcstd:native:property#PartFillet:ExpressionEngine, fcstd:native:property#PartFillet:Placement, fcstd:native:property#PatternBase:BaseFeature, fcstd:native:property#PatternBase:ExpressionEngine, fcstd:native:property#PatternBase:PreviewShape, fcstd:native:property#PatternBody:BaseFeature, fcstd:native:property#PatternBody:ExpressionEngine, fcstd:native:property#PatternBody:Placement, fcstd:native:property#Revolution:AxisLink, fcstd:native:property#Revolution:ExpressionEngine, fcstd:native:property#Revolution:FaceMakerClass, fcstd:native:property#Revolution:Placement, fcstd:native:property#Revolution:Source, fcstd:native:property#RevolutionProfile:ExpressionEngine, fcstd:native:property#RevolutionProfile:ExternalGeo, fcstd:native:property#RevolutionProfile:ExternalGeometry, fcstd:native:property#Sweep:ExpressionEngine, fcstd:native:property#Sweep:Placement, fcstd:native:property#SymmetricExtrusion:DirLink, fcstd:native:property#SymmetricExtrusion:ExpressionEngine, fcstd:native:property#SymmetricExtrusion:FaceMakerClass, fcstd:native:property#SymmetricExtrusion:FaceMakerMode, fcstd:native:property#SymmetricExtrusion:Placement, fcstd:native:property#SymmetricExtrusion:Reversed, fcstd:native:property#SymmetricExtrusion:TaperAngleRev, fcstd:native:property#Thickness:ExpressionEngine, fcstd:native:property#Thickness:Placement",
+        "message": "the fcstd write omits 7 native record(s) from `fcstd.properties`: fcstd:native:property#DatumAxis:Shape, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#PatternBase:PreviewShape",
         "severity": "info"
       },
       {
@@ -813,25 +848,46 @@
                 "fcstd:native:entry#DatumPoint.Shape.brp": "regenerated",
                 "fcstd:native:entry#Document.xml": "regenerated",
                 "fcstd:native:entry#Draft.AddSubShape.brp": "regenerated",
+                "fcstd:native:entry#Draft.Shape.brp": "regenerated",
                 "fcstd:native:entry#Draft.SuppressedShape.brp": "regenerated",
                 "fcstd:native:entry#DraftBase.Shape.brp": "regenerated",
                 "fcstd:native:entry#DraftBase.SuppressedShape.brp": "regenerated",
+                "fcstd:native:entry#DraftBody.Shape.brp": "regenerated",
                 "fcstd:native:entry#DressupBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#Edges": "regenerated",
+                "fcstd:native:entry#Edges1": "regenerated",
                 "fcstd:native:entry#ExtrusionProfile.Shape.brp": "regenerated",
+                "fcstd:native:entry#Hole.AddSubShape.brp": "regenerated",
+                "fcstd:native:entry#Hole.Shape.brp": "regenerated",
                 "fcstd:native:entry#Hole.SuppressedShape.brp": "regenerated",
                 "fcstd:native:entry#HoleBase.Shape.brp": "regenerated",
                 "fcstd:native:entry#HoleBase.SuppressedShape.brp": "regenerated",
+                "fcstd:native:entry#HoleBody.Shape.brp": "regenerated",
                 "fcstd:native:entry#HoleProfile.InternalShape.brp": "regenerated",
+                "fcstd:native:entry#HoleProfile.Shape.brp": "regenerated",
+                "fcstd:native:entry#LinearPattern.Shape.brp": "regenerated",
                 "fcstd:native:entry#LinearPattern.SuppressedShape.brp": "regenerated",
+                "fcstd:native:entry#Loft.Shape.brp": "regenerated",
                 "fcstd:native:entry#LoftSectionA.Shape.brp": "regenerated",
                 "fcstd:native:entry#LoftSectionB.Shape.brp": "regenerated",
+                "fcstd:native:entry#Mirror.Shape.brp": "regenerated",
                 "fcstd:native:entry#MirrorBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#PartChamfer.Shape.brp": "regenerated",
+                "fcstd:native:entry#PartFillet.Shape.brp": "regenerated",
                 "fcstd:native:entry#PatternBase.AddSubShape.brp": "regenerated",
                 "fcstd:native:entry#PatternBase.Shape.brp": "regenerated",
                 "fcstd:native:entry#PatternBase.SuppressedShape.brp": "regenerated",
+                "fcstd:native:entry#PatternBody.Shape.brp": "regenerated",
+                "fcstd:native:entry#Revolution.Shape.brp": "regenerated",
                 "fcstd:native:entry#RevolutionProfile.InternalShape.brp": "regenerated",
+                "fcstd:native:entry#RevolutionProfile.Shape.brp": "regenerated",
+                "fcstd:native:entry#SpacingPattern": "regenerated",
+                "fcstd:native:entry#SpacingPattern2": "regenerated",
+                "fcstd:native:entry#Spacings": "regenerated",
+                "fcstd:native:entry#Sweep.Shape.brp": "regenerated",
                 "fcstd:native:entry#SweepSection.Shape.brp": "regenerated",
                 "fcstd:native:entry#SweepSpine.Shape.brp": "regenerated",
+                "fcstd:native:entry#SymmetricExtrusion.Shape.brp": "regenerated",
                 "fcstd:native:entry#Thickness.Shape.brp": "regenerated",
                 "fcstd:native:entry#ThicknessBase.Shape.brp": "regenerated"
               }
@@ -995,6 +1051,7 @@
                 "fcstd:native:property#DatumAxis:AttacherType": "regenerated",
                 "fcstd:native:property#DatumAxis:AttachmentOffset": "regenerated",
                 "fcstd:native:property#DatumAxis:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumAxis:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DatumAxis:Label": "regenerated",
                 "fcstd:native:property#DatumAxis:Label2": "regenerated",
                 "fcstd:native:property#DatumAxis:Length": "regenerated",
@@ -1010,6 +1067,7 @@
                 "fcstd:native:property#DatumCoordinateSystem:AttacherType": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:AttachmentOffset": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumCoordinateSystem:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:Label": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:Label2": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:MapMode": "regenerated",
@@ -1024,6 +1082,7 @@
                 "fcstd:native:property#DatumPlane:AttacherType": "regenerated",
                 "fcstd:native:property#DatumPlane:AttachmentOffset": "regenerated",
                 "fcstd:native:property#DatumPlane:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumPlane:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DatumPlane:Label": "regenerated",
                 "fcstd:native:property#DatumPlane:Label2": "regenerated",
                 "fcstd:native:property#DatumPlane:Length": "regenerated",
@@ -1041,6 +1100,7 @@
                 "fcstd:native:property#DatumPoint:AttacherType": "regenerated",
                 "fcstd:native:property#DatumPoint:AttachmentOffset": "regenerated",
                 "fcstd:native:property#DatumPoint:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumPoint:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DatumPoint:Label": "regenerated",
                 "fcstd:native:property#DatumPoint:Label2": "regenerated",
                 "fcstd:native:property#DatumPoint:MapMode": "regenerated",
@@ -1054,9 +1114,13 @@
                 "fcstd:native:property#Draft:AddSubShape": "regenerated",
                 "fcstd:native:property#Draft:Angle": "regenerated",
                 "fcstd:native:property#Draft:Base": "regenerated",
+                "fcstd:native:property#Draft:BaseFeature": "regenerated",
+                "fcstd:native:property#Draft:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Draft:Label": "regenerated",
                 "fcstd:native:property#Draft:Label2": "regenerated",
                 "fcstd:native:property#Draft:NeutralPlane": "regenerated",
+                "fcstd:native:property#Draft:Placement": "regenerated",
+                "fcstd:native:property#Draft:PullDirection": "regenerated",
                 "fcstd:native:property#Draft:Refine": "regenerated",
                 "fcstd:native:property#Draft:Reversed": "regenerated",
                 "fcstd:native:property#Draft:Shape": "regenerated",
@@ -1080,10 +1144,13 @@
                 "fcstd:native:property#DraftBase:_Body": "written",
                 "fcstd:native:property#DraftBase:_ElementMapVersion": "written",
                 "fcstd:native:property#DraftBody:AllowCompound": "regenerated",
+                "fcstd:native:property#DraftBody:BaseFeature": "regenerated",
+                "fcstd:native:property#DraftBody:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DraftBody:Group": "regenerated",
                 "fcstd:native:property#DraftBody:Label": "regenerated",
                 "fcstd:native:property#DraftBody:Label2": "regenerated",
                 "fcstd:native:property#DraftBody:Origin": "regenerated",
+                "fcstd:native:property#DraftBody:Placement": "regenerated",
                 "fcstd:native:property#DraftBody:Shape": "regenerated",
                 "fcstd:native:property#DraftBody:ShapeMaterial": "written",
                 "fcstd:native:property#DraftBody:Tip": "regenerated",
@@ -1108,6 +1175,7 @@
                 "fcstd:native:property#ExtrusionProfile:_ElementMapVersion": "written",
                 "fcstd:native:property#Hole:AddSubShape": "regenerated",
                 "fcstd:native:property#Hole:AllowMultiFace": "regenerated",
+                "fcstd:native:property#Hole:BaseFeature": "regenerated",
                 "fcstd:native:property#Hole:BaseProfileType": "regenerated",
                 "fcstd:native:property#Hole:CustomThreadClearance": "regenerated",
                 "fcstd:native:property#Hole:Depth": "regenerated",
@@ -1116,6 +1184,7 @@
                 "fcstd:native:property#Hole:DrillForDepth": "regenerated",
                 "fcstd:native:property#Hole:DrillPoint": "regenerated",
                 "fcstd:native:property#Hole:DrillPointAngle": "regenerated",
+                "fcstd:native:property#Hole:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Hole:HoleCutCountersinkAngle": "regenerated",
                 "fcstd:native:property#Hole:HoleCutCustomValues": "regenerated",
                 "fcstd:native:property#Hole:HoleCutDepth": "regenerated",
@@ -1123,19 +1192,32 @@
                 "fcstd:native:property#Hole:HoleCutType": "regenerated",
                 "fcstd:native:property#Hole:Label": "regenerated",
                 "fcstd:native:property#Hole:Label2": "regenerated",
+                "fcstd:native:property#Hole:Midplane": "regenerated",
+                "fcstd:native:property#Hole:ModelThread": "regenerated",
+                "fcstd:native:property#Hole:Placement": "regenerated",
                 "fcstd:native:property#Hole:Profile": "regenerated",
                 "fcstd:native:property#Hole:Refine": "regenerated",
+                "fcstd:native:property#Hole:Reversed": "regenerated",
                 "fcstd:native:property#Hole:Shape": "regenerated",
                 "fcstd:native:property#Hole:ShapeMaterial": "written",
                 "fcstd:native:property#Hole:Suppressed": "regenerated",
                 "fcstd:native:property#Hole:SuppressedShape": "regenerated",
                 "fcstd:native:property#Hole:Tapered": "regenerated",
                 "fcstd:native:property#Hole:TaperedAngle": "regenerated",
+                "fcstd:native:property#Hole:ThreadClass": "regenerated",
                 "fcstd:native:property#Hole:ThreadDepth": "regenerated",
+                "fcstd:native:property#Hole:ThreadDepthType": "regenerated",
                 "fcstd:native:property#Hole:ThreadDiameter": "regenerated",
+                "fcstd:native:property#Hole:ThreadDirection": "regenerated",
+                "fcstd:native:property#Hole:ThreadFit": "regenerated",
+                "fcstd:native:property#Hole:ThreadSize": "regenerated",
                 "fcstd:native:property#Hole:ThreadType": "regenerated",
+                "fcstd:native:property#Hole:Threaded": "regenerated",
+                "fcstd:native:property#Hole:UpToFace": "regenerated",
+                "fcstd:native:property#Hole:UpToFace2": "regenerated",
                 "fcstd:native:property#Hole:UpToShape": "regenerated",
                 "fcstd:native:property#Hole:UpToShape2": "regenerated",
+                "fcstd:native:property#Hole:UseCustomThreadClearance": "regenerated",
                 "fcstd:native:property#Hole:Visibility": "regenerated",
                 "fcstd:native:property#Hole:_Body": "written",
                 "fcstd:native:property#Hole:_ElementMapVersion": "written",
@@ -1152,10 +1234,13 @@
                 "fcstd:native:property#HoleBase:_Body": "written",
                 "fcstd:native:property#HoleBase:_ElementMapVersion": "written",
                 "fcstd:native:property#HoleBody:AllowCompound": "regenerated",
+                "fcstd:native:property#HoleBody:BaseFeature": "regenerated",
+                "fcstd:native:property#HoleBody:ExpressionEngine": "regenerated",
                 "fcstd:native:property#HoleBody:Group": "regenerated",
                 "fcstd:native:property#HoleBody:Label": "regenerated",
                 "fcstd:native:property#HoleBody:Label2": "regenerated",
                 "fcstd:native:property#HoleBody:Origin": "regenerated",
+                "fcstd:native:property#HoleBody:Placement": "regenerated",
                 "fcstd:native:property#HoleBody:Shape": "regenerated",
                 "fcstd:native:property#HoleBody:ShapeMaterial": "written",
                 "fcstd:native:property#HoleBody:Tip": "regenerated",
@@ -1169,6 +1254,9 @@
                 "fcstd:native:property#HoleProfile:AttachmentSupport": "regenerated",
                 "fcstd:native:property#HoleProfile:Constraints": "regenerated",
                 "fcstd:native:property#HoleProfile:Exports": "regenerated",
+                "fcstd:native:property#HoleProfile:ExpressionEngine": "regenerated",
+                "fcstd:native:property#HoleProfile:ExternalGeo": "regenerated",
+                "fcstd:native:property#HoleProfile:ExternalGeometry": "regenerated",
                 "fcstd:native:property#HoleProfile:ExternalTypes": "regenerated",
                 "fcstd:native:property#HoleProfile:FullyConstrained": "regenerated",
                 "fcstd:native:property#HoleProfile:Geometry": "regenerated",
@@ -1185,22 +1273,31 @@
                 "fcstd:native:property#HoleProfile:Visibility": "regenerated",
                 "fcstd:native:property#HoleProfile:_ElementMapVersion": "written",
                 "fcstd:native:property#HoleProfile:_ExternalGeoVersion": "regenerated",
+                "fcstd:native:property#LinearPattern:BaseFeature": "regenerated",
                 "fcstd:native:property#LinearPattern:Direction": "regenerated",
                 "fcstd:native:property#LinearPattern:Direction2": "regenerated",
+                "fcstd:native:property#LinearPattern:ExpressionEngine": "regenerated",
                 "fcstd:native:property#LinearPattern:Label": "regenerated",
                 "fcstd:native:property#LinearPattern:Label2": "regenerated",
                 "fcstd:native:property#LinearPattern:Length": "regenerated",
                 "fcstd:native:property#LinearPattern:Length2": "regenerated",
                 "fcstd:native:property#LinearPattern:Mode": "regenerated",
+                "fcstd:native:property#LinearPattern:Mode2": "regenerated",
                 "fcstd:native:property#LinearPattern:Occurrences": "regenerated",
                 "fcstd:native:property#LinearPattern:Occurrences2": "regenerated",
                 "fcstd:native:property#LinearPattern:Offset": "regenerated",
                 "fcstd:native:property#LinearPattern:Offset2": "regenerated",
                 "fcstd:native:property#LinearPattern:Originals": "regenerated",
+                "fcstd:native:property#LinearPattern:Placement": "regenerated",
                 "fcstd:native:property#LinearPattern:Refine": "regenerated",
+                "fcstd:native:property#LinearPattern:Reversed": "regenerated",
                 "fcstd:native:property#LinearPattern:Reversed2": "regenerated",
                 "fcstd:native:property#LinearPattern:Shape": "regenerated",
                 "fcstd:native:property#LinearPattern:ShapeMaterial": "written",
+                "fcstd:native:property#LinearPattern:SpacingPattern": "regenerated",
+                "fcstd:native:property#LinearPattern:SpacingPattern2": "regenerated",
+                "fcstd:native:property#LinearPattern:Spacings": "regenerated",
+                "fcstd:native:property#LinearPattern:Spacings2": "regenerated",
                 "fcstd:native:property#LinearPattern:Suppressed": "regenerated",
                 "fcstd:native:property#LinearPattern:SuppressedShape": "regenerated",
                 "fcstd:native:property#LinearPattern:TransformMode": "regenerated",
@@ -1208,10 +1305,12 @@
                 "fcstd:native:property#LinearPattern:_Body": "written",
                 "fcstd:native:property#LinearPattern:_ElementMapVersion": "written",
                 "fcstd:native:property#Loft:Closed": "regenerated",
+                "fcstd:native:property#Loft:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Loft:Label": "regenerated",
                 "fcstd:native:property#Loft:Label2": "regenerated",
                 "fcstd:native:property#Loft:Linearize": "regenerated",
                 "fcstd:native:property#Loft:MaxDegree": "regenerated",
+                "fcstd:native:property#Loft:Placement": "regenerated",
                 "fcstd:native:property#Loft:Ruled": "regenerated",
                 "fcstd:native:property#Loft:Sections": "regenerated",
                 "fcstd:native:property#Loft:Shape": "regenerated",
@@ -1236,9 +1335,12 @@
                 "fcstd:native:property#LoftSectionB:Visibility": "regenerated",
                 "fcstd:native:property#LoftSectionB:_ElementMapVersion": "written",
                 "fcstd:native:property#Mirror:Base": "regenerated",
+                "fcstd:native:property#Mirror:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Mirror:Label": "regenerated",
                 "fcstd:native:property#Mirror:Label2": "regenerated",
+                "fcstd:native:property#Mirror:MirrorPlane": "regenerated",
                 "fcstd:native:property#Mirror:Normal": "regenerated",
+                "fcstd:native:property#Mirror:Placement": "regenerated",
                 "fcstd:native:property#Mirror:Shape": "regenerated",
                 "fcstd:native:property#Mirror:ShapeMaterial": "written",
                 "fcstd:native:property#Mirror:Source": "regenerated",
@@ -1302,16 +1404,22 @@
                 "fcstd:native:property#Origin:_GroupTouched": "written",
                 "fcstd:native:property#PartChamfer:Base": "regenerated",
                 "fcstd:native:property#PartChamfer:EdgeLinks": "regenerated",
+                "fcstd:native:property#PartChamfer:Edges": "regenerated",
+                "fcstd:native:property#PartChamfer:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PartChamfer:Label": "regenerated",
                 "fcstd:native:property#PartChamfer:Label2": "regenerated",
+                "fcstd:native:property#PartChamfer:Placement": "regenerated",
                 "fcstd:native:property#PartChamfer:Shape": "regenerated",
                 "fcstd:native:property#PartChamfer:ShapeMaterial": "written",
                 "fcstd:native:property#PartChamfer:Visibility": "regenerated",
                 "fcstd:native:property#PartChamfer:_ElementMapVersion": "written",
                 "fcstd:native:property#PartFillet:Base": "regenerated",
                 "fcstd:native:property#PartFillet:EdgeLinks": "regenerated",
+                "fcstd:native:property#PartFillet:Edges": "regenerated",
+                "fcstd:native:property#PartFillet:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PartFillet:Label": "regenerated",
                 "fcstd:native:property#PartFillet:Label2": "regenerated",
+                "fcstd:native:property#PartFillet:Placement": "regenerated",
                 "fcstd:native:property#PartFillet:Shape": "regenerated",
                 "fcstd:native:property#PartFillet:ShapeMaterial": "written",
                 "fcstd:native:property#PartFillet:Visibility": "regenerated",
@@ -1321,6 +1429,8 @@
                 "fcstd:native:property#PatternBase:AttacherType": "regenerated",
                 "fcstd:native:property#PatternBase:AttachmentOffset": "regenerated",
                 "fcstd:native:property#PatternBase:AttachmentSupport": "regenerated",
+                "fcstd:native:property#PatternBase:BaseFeature": "regenerated",
+                "fcstd:native:property#PatternBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PatternBase:Height": "regenerated",
                 "fcstd:native:property#PatternBase:Label": "regenerated",
                 "fcstd:native:property#PatternBase:Label2": "regenerated",
@@ -1339,10 +1449,13 @@
                 "fcstd:native:property#PatternBase:_Body": "written",
                 "fcstd:native:property#PatternBase:_ElementMapVersion": "written",
                 "fcstd:native:property#PatternBody:AllowCompound": "regenerated",
+                "fcstd:native:property#PatternBody:BaseFeature": "regenerated",
+                "fcstd:native:property#PatternBody:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PatternBody:Group": "regenerated",
                 "fcstd:native:property#PatternBody:Label": "regenerated",
                 "fcstd:native:property#PatternBody:Label2": "regenerated",
                 "fcstd:native:property#PatternBody:Origin": "regenerated",
+                "fcstd:native:property#PatternBody:Placement": "regenerated",
                 "fcstd:native:property#PatternBody:Shape": "regenerated",
                 "fcstd:native:property#PatternBody:ShapeMaterial": "written",
                 "fcstd:native:property#PatternBody:Tip": "regenerated",
@@ -1351,12 +1464,17 @@
                 "fcstd:native:property#PatternBody:_GroupTouched": "written",
                 "fcstd:native:property#Revolution:Angle": "regenerated",
                 "fcstd:native:property#Revolution:Axis": "regenerated",
+                "fcstd:native:property#Revolution:AxisLink": "regenerated",
                 "fcstd:native:property#Revolution:Base": "regenerated",
+                "fcstd:native:property#Revolution:ExpressionEngine": "regenerated",
+                "fcstd:native:property#Revolution:FaceMakerClass": "regenerated",
                 "fcstd:native:property#Revolution:Label": "regenerated",
                 "fcstd:native:property#Revolution:Label2": "regenerated",
+                "fcstd:native:property#Revolution:Placement": "regenerated",
                 "fcstd:native:property#Revolution:Shape": "regenerated",
                 "fcstd:native:property#Revolution:ShapeMaterial": "written",
                 "fcstd:native:property#Revolution:Solid": "regenerated",
+                "fcstd:native:property#Revolution:Source": "regenerated",
                 "fcstd:native:property#Revolution:Symmetric": "regenerated",
                 "fcstd:native:property#Revolution:Visibility": "regenerated",
                 "fcstd:native:property#Revolution:_ElementMapVersion": "written",
@@ -1367,6 +1485,9 @@
                 "fcstd:native:property#RevolutionProfile:AttachmentSupport": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Constraints": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Exports": "regenerated",
+                "fcstd:native:property#RevolutionProfile:ExpressionEngine": "regenerated",
+                "fcstd:native:property#RevolutionProfile:ExternalGeo": "regenerated",
+                "fcstd:native:property#RevolutionProfile:ExternalGeometry": "regenerated",
                 "fcstd:native:property#RevolutionProfile:ExternalTypes": "regenerated",
                 "fcstd:native:property#RevolutionProfile:FullyConstrained": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Geometry": "regenerated",
@@ -1383,10 +1504,12 @@
                 "fcstd:native:property#RevolutionProfile:Visibility": "regenerated",
                 "fcstd:native:property#RevolutionProfile:_ElementMapVersion": "written",
                 "fcstd:native:property#RevolutionProfile:_ExternalGeoVersion": "regenerated",
+                "fcstd:native:property#Sweep:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Sweep:Frenet": "regenerated",
                 "fcstd:native:property#Sweep:Label": "regenerated",
                 "fcstd:native:property#Sweep:Label2": "regenerated",
                 "fcstd:native:property#Sweep:Linearize": "regenerated",
+                "fcstd:native:property#Sweep:Placement": "regenerated",
                 "fcstd:native:property#Sweep:Sections": "regenerated",
                 "fcstd:native:property#Sweep:Shape": "regenerated",
                 "fcstd:native:property#Sweep:ShapeMaterial": "written",
@@ -1413,25 +1536,34 @@
                 "fcstd:native:property#SweepSpine:_ElementMapVersion": "written",
                 "fcstd:native:property#SymmetricExtrusion:Base": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Dir": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:DirLink": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:DirMode": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:ExpressionEngine": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:FaceMakerClass": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:FaceMakerMode": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:InnerWireTaper": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Label": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Label2": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:LengthFwd": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:LengthRev": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:Placement": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:Reversed": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Shape": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:ShapeMaterial": "written",
                 "fcstd:native:property#SymmetricExtrusion:Solid": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Symmetric": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:TaperAngle": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:TaperAngleRev": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Visibility": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:_ElementMapVersion": "written",
+                "fcstd:native:property#Thickness:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Thickness:Faces": "regenerated",
                 "fcstd:native:property#Thickness:Intersection": "regenerated",
                 "fcstd:native:property#Thickness:Join": "regenerated",
                 "fcstd:native:property#Thickness:Label": "regenerated",
                 "fcstd:native:property#Thickness:Label2": "regenerated",
                 "fcstd:native:property#Thickness:Mode": "regenerated",
+                "fcstd:native:property#Thickness:Placement": "regenerated",
                 "fcstd:native:property#Thickness:SelfIntersection": "regenerated",
                 "fcstd:native:property#Thickness:Shape": "regenerated",
                 "fcstd:native:property#Thickness:ShapeMaterial": "written",
