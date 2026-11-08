@@ -560,7 +560,6 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
                     .collect(),
             ),
             payload: DesignFeatureKind::Sketch.try_into().unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: "257".to_owned().try_into().unwrap(),
             paired_byte_offset: kind_offset + 96,
         })

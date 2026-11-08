@@ -108,6 +108,16 @@ impl PrimaryFrames for [PrimaryRecordFrame] {
     }
 }
 
+/// The primary frames of a Design `BulkStream`, or none when its index does
+/// not resolve. `admit_damaged_bulk_records` gives up such a stream as one
+/// `f3d.bulk_record` part, so no reader decodes a record from it.
+pub(crate) fn live_primary_record_frames(
+    meta: &MetaStream,
+    bulk_len: usize,
+) -> Vec<PrimaryRecordFrame> {
+    primary_record_frames(meta, bulk_len).unwrap_or_default()
+}
+
 /// Resolve the primary index to nonempty, strictly ordered sibling-BulkStream
 /// extents.
 pub(crate) fn primary_record_frames(

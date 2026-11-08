@@ -2893,13 +2893,6 @@ impl<'a> F3dDecodeSession<'a> {
             push_loss_vec(&mut self.report.losses, F3dLossCode::ActComponentLinkUnresolved,
                 format_args!("{unresolved_links} ACT component link(s) were retained natively without a resolved product-structure role."));
         }
-        if prereqs.xref.as_ref().is_err()
-            || prereqs
-                .xref_table()
-                .is_some_and(|table| !table.placement_failures.is_empty())
-        {
-            self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-        }
         self.native.act_tables = act.tables;
         self.native.act_types = act.types;
         self.native.act_entities = act.entities;
@@ -2937,13 +2930,9 @@ impl<'a> F3dDecodeSession<'a> {
                 );
                 self.report.losses.extend(face_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
-                match &prereqs.xref {
-                    Ok(Some(table)) => {
-                        report_xref_placement_failures(&mut self.report, table);
-                        report_xref_placement_overrides(&mut self.report, table);
-                    }
-                    Ok(None) => {}
-                    Err(error) => report_xref_parse_loss(&mut self.report, error),
+                if let Some(table) = prereqs.xref_table() {
+                    report_xref_placement_failures(&mut self.report, table);
+                    report_xref_placement_overrides(&mut self.report, table);
                 }
                 FinalizePath::Geometry(index)
             }
@@ -3144,7 +3133,7 @@ impl<'a> F3dDecodeSession<'a> {
                         &self.ir,
                     );
                 }
-                if let Ok(Some(table)) = prereqs.store(&mut self.native) {
+                if let Some(table) = prereqs.store(&mut self.native) {
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
@@ -3207,14 +3196,14 @@ impl<'a> F3dDecodeSession<'a> {
                     "admit F3D entities",
                 )?;
                 let assembly = match &xref {
-                    Ok(Some(table)) => apply_assembly_classification(
+                    Some(table) => apply_assembly_classification(
                         self.ctx,
                         &mut self.report,
                         scan,
                         table,
                         inputs.model_body_maps_empty,
                     )?,
-                    Ok(None) | Err(_) => false,
+                    None => false,
                 };
                 if mesh_projection.count > 0 {
                     apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
@@ -3235,13 +3224,9 @@ impl<'a> F3dDecodeSession<'a> {
                     );
                 }
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
-                match xref {
-                    Ok(Some(table)) => {
-                        self.native.xref_designs = table.designs;
-                        self.native.xref_references = table.references;
-                    }
-                    Ok(None) => {}
-                    Err(error) => report_xref_parse_loss(&mut self.report, &error),
+                if let Some(table) = xref {
+                    self.native.xref_designs = table.designs;
+                    self.native.xref_references = table.references;
                 }
                 self.native
                     .store(ctx, self.ir.native.namespace_mut("f3d"))?;
@@ -3515,6 +3500,7 @@ fn decode_scanned_document<'a>(
         {
             source_attributes.insert("modeling_length_unit".to_owned(), unit);
         }
+        let xref = crate::xref::decode_parts(ctx, &mut unit_parts, scan, &[])?;
         let (_, mut unit_native, unit_fidelity, unit_losses) = unit_parts.into_parts();
         let unit_stubs = unit_native
             .namespace_mut("f3d")
@@ -3532,15 +3518,8 @@ fn decode_scanned_document<'a>(
             container_losses(scan, &ModelBrepOutcome::NotAttempted),
         )?;
         report.losses.extend(unit_losses);
-        match crate::xref::decode(ctx, scan) {
-            Ok(Some(table)) => {
-                apply_assembly_classification(ctx, &mut report, scan, &table, false)?;
-            }
-            Ok(None) => {}
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-                return Err(error)
-            }
-            Err(error) => report_xref_parse_loss(&mut report, &error),
+        if let Some(table) = xref {
+            apply_assembly_classification(ctx, &mut report, scan, &table, false)?;
         }
         return decode_result(
             ctx,
@@ -4429,14 +4408,6 @@ fn annotate_docstruct(
 }
 
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
-fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
-    push_loss_vec(
-        &mut report.losses,
-        F3dLossCode::XrefTableUndecoded,
-        format_args!("external-reference table was not decoded: {error}"),
-    );
-}
-
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
@@ -4477,28 +4448,6 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
             &mut report.losses,
             F3dLossCode::XrefPlacementMetadataMissing,
             format_args!("external-reference placements were not inferred from Design streams without a paired MetaStream type table and record index"),
-        );
-    }
-    for failure in &table.placement_failures {
-        let target = table
-            .references
-            .iter()
-            .find(|reference| {
-                failure
-                    .link_names
-                    .iter()
-                    .any(|role| role == reference.neutron_role.as_str())
-            })
-            .map_or("an unresolved target", |reference| {
-                reference.relative_path.as_str()
-            });
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::XrefPlacementUndecoded,
-            format_args!(
-                "external occurrence {} has typed placement carrier {:?} for roles {:?} that did not close under its generation grammar",
-                target, failure.carrier_record_index, failure.link_names
-            ),
         );
     }
 }

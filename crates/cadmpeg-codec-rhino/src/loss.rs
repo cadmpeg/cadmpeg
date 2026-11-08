@@ -301,10 +301,14 @@ pub(crate) enum RhinoLossCode {
     WriterPointCloudAppearanceReduced,
     /// A free vertex loses its tolerance or its point's dependency role.
     WriterFreeVertexMetadataReduced,
+    /// A point and vertex are reidentified as members of a point cloud.
+    WriterPointCloudIdentityReduced,
     /// A point's display assignment replaces its containing body's color.
     WriterBodyColorReduced,
     /// A presentation state sequence is written at its stored position.
     WriterPresentationStateOrderReduced,
+    /// A camera orientation is stored as the camera frame of its rotation.
+    WriterCameraOrientationNormalized,
     /// A shared pcurve needs different native carriers for its used intervals.
     WriterPcurveExpanded,
     /// A pcurve is reparameterized to follow its trim direction.
@@ -447,7 +451,10 @@ impl RhinoLossCode {
         Self::WriterSubobjectAppearanceReduced,
         Self::WriterPointCloudAppearanceReduced,
         Self::WriterFreeVertexMetadataReduced,
+        Self::WriterPointCloudIdentityReduced,
         Self::WriterBodyColorReduced,
+        Self::WriterPresentationStateOrderReduced,
+        Self::WriterCameraOrientationNormalized,
         Self::WriterPcurveExpanded,
         Self::WriterPcurveDirectionReversed,
         Self::WriterPcurveDomainRestricted,
@@ -553,8 +560,10 @@ impl RhinoLossCode {
             Self::WriterSubobjectAppearanceReduced => "writer.subobject-appearance-reduced",
             Self::WriterPointCloudAppearanceReduced => "writer.point-cloud-appearance-reduced",
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
+            Self::WriterPointCloudIdentityReduced => "writer.point-cloud-identity-reduced",
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
             Self::WriterPresentationStateOrderReduced => "writer.presentation-state-order-reduced",
+            Self::WriterCameraOrientationNormalized => "writer.camera-orientation-normalized",
             Self::WriterPcurveExpanded => "writer.pcurve-expanded",
             Self::WriterPcurveDirectionReversed => "writer.pcurve-direction-reversed",
             Self::WriterPcurveDomainRestricted => "writer.pcurve-domain-restricted",
@@ -656,6 +665,7 @@ impl RhinoLossCode {
             Self::WriterBodyOmitted
             | Self::WriterBodyReduced
             | Self::WriterFreeVertexMetadataReduced
+            | Self::WriterPointCloudIdentityReduced
             | Self::WriterPcurveExpanded
             | Self::WriterPcurveDirectionReversed
             | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
@@ -687,6 +697,7 @@ impl RhinoLossCode {
             | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterPresentationStateOrderReduced => LossTaxonomy::AppearanceReduced,
+            Self::WriterCameraOrientationNormalized => LossTaxonomy::AppearanceReduced,
             Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAttributesOmitted
             | Self::WriterSettingColorReduced
@@ -847,6 +858,8 @@ mod tests {
                 "writer.free-vertex-metadata-reduced",
                 "writer.point-cloud-identity-reduced",
                 "writer.body-color-reduced",
+                "writer.presentation-state-order-reduced",
+                "writer.camera-orientation-normalized",
                 "writer.pcurve-expanded",
                 "writer.pcurve-direction-reversed",
                 "writer.pcurve-domain-restricted",
