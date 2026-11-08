@@ -87,33 +87,34 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             }
             _ => panic!("unexpected tolerance"),
         };
-        let target_plane = match pmi.targets.as_slice() {
-            [PmiTarget::Face { face }] => Some(face_plane(&result, face.as_str())),
-            [] => None,
-            _ => panic!("one face target"),
-        };
         let magnitude_mm = magnitude.get().value.get();
-        match (tolerance, target_plane) {
-            (GeometricToleranceKind::Flatness, Some((axis, offset))) => {
+        match (tolerance, pmi.targets.as_slice()) {
+            (GeometricToleranceKind::Flatness, [face]) => {
+                let (axis, offset) = target_plane(&result, face);
                 assert_plane(axis, offset, [0.0, 0.0, 1.0], 0.0);
             }
-            (GeometricToleranceKind::Perpendicularity, Some((axis, offset))) => {
+            (GeometricToleranceKind::Perpendicularity, [face]) => {
+                let (axis, offset) = target_plane(&result, face);
                 assert_plane(axis, offset, [1.0, 0.0, 0.0], 400.0);
             }
-            (GeometricToleranceKind::SurfaceProfile, Some((axis, offset)))
+            (GeometricToleranceKind::SurfaceProfile, [face])
                 if (magnitude_mm - 1.25).abs() < MAGNITUDE_TOLERANCE =>
             {
+                let (axis, offset) = target_plane(&result, face);
                 assert_plane(axis, offset, [0.0, 1.0, 0.0], -225.0);
             }
-            (GeometricToleranceKind::SurfaceProfile, Some((axis, offset))) => {
+            (GeometricToleranceKind::SurfaceProfile, [face]) => {
+                let (axis, offset) = target_plane(&result, face);
                 assert!(
                     axis[2].abs() < MAGNITUDE_TOLERANCE,
                     "hex side axis {axis:?}"
                 );
                 assert!((offset.abs() - 50.0).abs() < PLANE_OFFSET_TOLERANCE);
             }
-            (GeometricToleranceKind::Position, None) => {}
-            (kind, plane) => panic!("unexpected target for {kind:?}: {plane:?}"),
+            (GeometricToleranceKind::Position, targets) => {
+                assert_slot_walls(&result, targets);
+            }
+            (kind, targets) => panic!("unexpected targets for {kind:?}: {targets:?}"),
         }
         let Some(system_id) = datum_system else {
             assert!(expected.is_empty());
@@ -232,24 +233,108 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
                 })
         }));
     }
+    let mut targeted = 0;
+    for item in &result.ir().model.pmi {
+        let PmiDefinition::Dimension(dimension) = &item.definition else {
+            continue;
+        };
+        if item.targets.is_empty() {
+            continue;
+        }
+        targeted += 1;
+        let nominal = dimension.nominal().expect("targeted nominal").value.get();
+        match dimension.kind() {
+            DimensionKind::Location => assert_slot_walls(&result, &item.targets),
+            DimensionKind::Diameter => {
+                for target in &item.targets {
+                    let radius = target_cylinder_radius(&result, target);
+                    assert!((2.0 * radius - nominal).abs() < PLANE_OFFSET_TOLERANCE);
+                }
+            }
+            DimensionKind::Angular => {
+                let [first, second] = item.targets.as_slice() else {
+                    panic!("two angular targets")
+                };
+                let (first, _) = target_plane(&result, first);
+                let (second, _) = target_plane(&result, second);
+                let cosine: f64 = first.iter().zip(second).map(|(a, b)| a * b).sum();
+                assert!((cosine.abs() - nominal.cos()).abs() < MAGNITUDE_TOLERANCE);
+            }
+            kind => panic!("unexpected targeted dimension {kind:?}"),
+        }
+    }
+    assert_eq!(targeted, 5);
 }
 
-/// The unit axis and signed origin offset of a face's planar carrier.
-fn face_plane(result: &cadmpeg_ir::codec::DecodeResult, face: &str) -> ([f64; 3], f64) {
+/// Assert the two opposed slot walls of the STEP twin's position targets:
+/// faces 805 and 801 at x = -192.5 and -107.5, or faces 852 and 848 at
+/// y = 25 and -25.
+fn assert_slot_walls(result: &cadmpeg_ir::codec::DecodeResult, targets: &[PmiTarget]) {
+    let [first, second] = targets else {
+        panic!("two slot walls: {targets:?}")
+    };
+    let mut walls =
+        [target_plane(result, first), target_plane(result, second)].map(|(axis, offset)| {
+            let dominant = axis
+                .iter()
+                .position(|component| (component.abs() - 1.0).abs() < MAGNITUDE_TOLERANCE)
+                .expect("axis-aligned wall");
+            (dominant, offset * axis[dominant].signum())
+        });
+    walls.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let expected = match walls[0].0 {
+        0 => [(0, -192.5), (0, -107.5)],
+        1 => [(1, -25.0), (1, 25.0)],
+        axis => panic!("unexpected wall axis {axis}"),
+    };
+    for ((axis, offset), (expected_axis, expected_offset)) in walls.into_iter().zip(expected) {
+        assert_eq!(axis, expected_axis);
+        assert!((offset - expected_offset).abs() < PLANE_OFFSET_TOLERANCE);
+    }
+}
+
+fn target_plane(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) -> ([f64; 3], f64) {
+    let PmiTarget::Face { face } = target else {
+        panic!("face target")
+    };
+    face_plane(result, face.as_str())
+}
+
+fn target_cylinder_radius(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) -> f64 {
+    let PmiTarget::Face { face } = target else {
+        panic!("face target")
+    };
+    let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(cylinder),
+    )) = face_surface(result, face.as_str())
+    else {
+        panic!("cylindrical target carrier")
+    };
+    cylinder.radius().get()
+}
+
+fn face_surface<'a>(
+    result: &'a cadmpeg_ir::codec::DecodeResult,
+    face: &str,
+) -> Option<&'a cadmpeg_ir::geometry::SurfaceGeometry> {
     let model = &result.ir().model;
     let surface = &model
         .faces
         .iter()
-        .find(|item| item.id.as_str() == face)
-        .expect("target face")
+        .find(|item| item.id.as_str() == face)?
         .surface;
-    let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    )) = model
+    model
         .surfaces
         .iter()
         .find(|item| &item.id == surface)
         .map(|item| &item.geometry)
+}
+
+/// The unit axis and signed origin offset of a face's planar carrier.
+fn face_plane(result: &cadmpeg_ir::codec::DecodeResult, face: &str) -> ([f64; 3], f64) {
+    let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
+    )) = face_surface(result, face)
     else {
         panic!("planar target carrier")
     };

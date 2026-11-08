@@ -1595,16 +1595,20 @@ one-to-one row boundary and slot ordinal.
 curve, surface, and bounded-face targets for a geometric tolerance?
 
 **Known.** A type-1 `gtol_place_ptr` selects a dimension slot that names
-the tolerance in `gtol_ids`. A type-2 placement can carry a nested attachment
-whose identifier equals the outer identifier. Dimension and geometry
-identifiers can overlap. A surface reference can resolve without a bounded
-face. A type-2 placement and its type-`25` attachment store the same surface
-identifier; the decoder uses the surface's unique bounded face and records the
-inference. Attachments of types `1` and `16` and placements of type `5`
-remain unresolved.
+the tolerance in `gtol_ids`. Dimension and geometry identifiers can overlap.
+A surface reference can resolve without a bounded face. A type-2 placement and
+its type-`25` attachment store the same surface identifier; the decoder uses
+the surface's unique bounded face and records the inference. `creo_prt.md`
+§8.9 defines the two attachment links of an annotation dimension. The decoder
+uses the faces of two surface links, or for two distinct edge links each
+edge's face that the other edge does not bound, and a type-1 tolerance uses
+the targets of its dimension; it records both inferences. Attachments of type
+`16`, tolerance attachments of type `1`, a dimension whose two links name one
+edge, and placements of type `5` remain unresolved.
 
-**Need.** Establish each pointer's namespace and its complete owned target
-join before transferring a face or curve attachment.
+**Need.** Establish the native record that states a dimension's measured
+features before transferring an edge reference as a face target, and the
+target semantics of the unresolved attachment and placement types.
 
 **Note.** Attachment tests gave these results:
 
@@ -1619,7 +1623,8 @@ join before transferring a face or curve attachment.
 9. A dimension feature identifier selects the position target faces: the 85 mm dimension has a null `feat_id`.
 10. The dimension distance selects the position target faces: four native face pairs match each of the 85 mm and 50 mm distances.
 11. Only a flatness tolerance's type-`25` attachment selects its target: perpendicularity, profile, runout, and position attachments select the STEP-twin target surface.
-
+12. A dimension's edge links name its target faces directly: each edge bounds the face shared by both links and one STEP-twin target face.
+13. A dimension's `p_sld_info` always starts with its owner fields: a class reference can precede them.
 ### PP-25. PMI attribute units
 
 **Question.** How does a nonempty neutral attribute `unit` field affect its

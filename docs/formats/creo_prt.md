@@ -6832,6 +6832,14 @@ positionally: `e3 [f0] [f7 <class>] <type> <id> [f7 <class>] f8 <count> ...`.
 A type-2 placement and its type-`25` attachment store the same surface
 identifier.
 
+An annotation dimension's `dim_array` element stores `p_sld_info` as
+`e3 [f7 <class>] <ref_type> <ref_id> ...`; the named form labels the two
+fields `ref_type` and `ref_id`. `ref_id` and `ref_type` equal the `AE_Id` and
+`AE_Type` of the dimension's annotation element. The `attach_ptr` chain
+follows. Each link stores the attachment fields of a tolerance placement,
+and `next_attach_ptr` stores the next link. An annotation dimension stores two
+links. Attachment type `25` selects a surface and type `1` selects an edge.
+
 The `set_datum_tag_xar` named prototype stores a datum label in
 `p_datum_tag_name` and a zero-based `gtol_datum_def_xar` slot in `dtm_def_id`.
 The definition prototype's `p_ldr.note_att` type `25` selects a surface by

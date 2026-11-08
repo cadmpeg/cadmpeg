@@ -127,28 +127,34 @@ pub(super) fn transfer(
                 }
             }
         }
-        element_tables.push(elements);
+        element_tables.push((name, elements));
     }
     let scale = scan
         .framing
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
+    let dimension_targets = targets::dimension_targets(scan, &element_tables, ir);
     dimensions::transfer(
         ctx,
         &attributes,
-        &element_tables,
+        &dimensions::AnnotationIndex {
+            elements: &element_tables,
+            dimension_targets: &dimension_targets,
+        },
         scale.map(cadmpeg_ir::scalar::PositiveReal::get),
         ir,
         annotations,
         losses,
     )?;
-    let targets = targets::surface_targets(ctx, scan, &owners, &tolerances, ir)?;
+    let targets =
+        targets::tolerance_targets(ctx, scan, &owners, &tolerances, &dimension_targets, ir)?;
     let mut emitted = 0usize;
     let mut text_magnitudes = 0usize;
     let mut conflicting = 0usize;
     let mut unresolved_units = 0usize;
     let mut datum_state = DatumState::default();
     let mut inferred_targets = 0usize;
+    let mut dimension_targets_used = 0usize;
     for ((owner, owner_type), tolerance) in tolerances {
         if !matches!(owners.get(&(owner, owner_type)), Some(Some(_))) {
             unresolved += 1;
@@ -170,7 +176,16 @@ pub(super) fn transfer(
             continue;
         };
         let first_key = format!("{owner_type}:{owner}");
-        let target = targets.get(&(owner, owner_type)).cloned();
+        let target = targets.get(&(owner, owner_type));
+        let target_faces = target
+            .map(targets::ToleranceTarget::faces)
+            .unwrap_or_default();
+        let surface_target =
+            usize::from(matches!(target, Some(targets::ToleranceTarget::Surface(_))));
+        let dimension_target = usize::from(matches!(
+            target,
+            Some(targets::ToleranceTarget::Dimension(_))
+        ));
         let references = if tolerance.issues.contains(&ToleranceIssue::Datum(0)) {
             unresolved += 1;
             None
@@ -211,10 +226,11 @@ pub(super) fn transfer(
                 (&first_key, tolerance.offset),
                 (kind.clone(), value),
                 references,
-                target.clone().into_iter().collect(),
+                target_faces.clone(),
             )?;
             emitted += 1;
-            inferred_targets += usize::from(target.is_some());
+            inferred_targets += surface_target;
+            dimension_targets_used += dimension_target;
         } else {
             unresolved += 1;
         }
@@ -239,11 +255,12 @@ pub(super) fn transfer(
                     (&second_key, tolerance.offset),
                     (kind, secondary),
                     second_references,
-                    target.clone().into_iter().collect(),
+                    target_faces,
                 )?;
                 emitted += 1;
                 text_magnitudes += 1;
-                inferred_targets += usize::from(target.is_some());
+                inferred_targets += surface_target;
+                dimension_targets_used += dimension_target;
             } else {
                 unresolved += 1;
             }
@@ -276,6 +293,11 @@ pub(super) fn transfer(
     if inferred_targets != 0 {
         losses.push(CreoLossCode::PmiToleranceTargetInferred.note(format!(
             "{inferred_targets} geometric tolerance(s) use the unique face of the referenced surface as the target."
+        )));
+    }
+    if dimension_targets_used != 0 {
+        losses.push(CreoLossCode::PmiToleranceTargetInferred.note(format!(
+            "{dimension_targets_used} geometric tolerance(s) attached to a dimension use that dimension's targets."
         )));
     }
     if text_magnitudes != 0 {

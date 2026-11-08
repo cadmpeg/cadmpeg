@@ -487,3 +487,47 @@ fn compact(bytes: &mut Vec<u8>, value: u32) {
         bytes.extend_from_slice(&[0x80 | high, low]);
     }
 }
+
+/// A positional dimension element whose `p_sld_info` names owner `(3886, 219)`
+/// and whose `attach_ptr` chain holds two edge links.
+fn dimension_element(owner_references: usize, class: &[u8]) -> Vec<u8> {
+    let mut bytes = b"\xe3\xe2\xe2\xe1\x08\x05\xf6".to_vec();
+    for _ in 0..owner_references {
+        bytes.push(0xe3);
+        bytes.extend_from_slice(class);
+        bytes.extend_from_slice(b"\x80\xdb\x8f\x2e\xe1\xe1\x0a\xf6\xf6\x29\xe3\x33");
+    }
+    bytes.extend_from_slice(b"\xe3\x01\x87\xe5");
+    bytes.extend_from_slice(ATT_OFFSETS);
+    bytes.extend_from_slice(b"\xe3\xf7\x3c\x2e\x18\x18\xf7\x80\xa9\xe3\x01\x87\xe3");
+    bytes.extend_from_slice(ATT_OFFSETS);
+    bytes.extend_from_slice(b"\xe3\xf7\x3c\x2e\x18\x18");
+    bytes
+}
+
+fn attachments_of(bytes: &[u8]) -> Option<Vec<(u32, u32)>> {
+    let span = crate::feature::dimensions::ElementSpan {
+        slot: 567,
+        start: 0,
+        end: bytes.len(),
+    };
+    super::dimension_attachments(View::over_retained(bytes), span, (3886, 219))
+}
+
+#[test]
+fn dimension_attachments_follow_the_owner_reference() {
+    assert_eq!(
+        attachments_of(&dimension_element(1, b"")),
+        Some(vec![(1, 0x07e5), (1, 0x07e3)])
+    );
+    assert_eq!(
+        attachments_of(&dimension_element(1, b"\xf7\x80\x9f")),
+        Some(vec![(1, 0x07e5), (1, 0x07e3)])
+    );
+}
+
+#[test]
+fn dimension_attachments_require_one_owner_reference() {
+    assert_eq!(attachments_of(&dimension_element(0, b"")), None);
+    assert_eq!(attachments_of(&dimension_element(2, b"")), None);
+}

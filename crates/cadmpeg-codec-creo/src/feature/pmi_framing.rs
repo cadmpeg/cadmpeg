@@ -25,6 +25,8 @@ const NAME_LABEL: &[u8] = b"\xe0\x0aname\0";
 const TYPE_FIELD: &[u8] = b"\xe0\x01type\0";
 const ATTACH_ID_FIELD: &[u8] = b"\xe0\x01attach_id\0";
 const ATT_OFFSETS_FIELD: &[u8] = b"\xe0\x00att_offsets\0";
+const REF_TYPE_FIELD: &[u8] = b"\xe0\x01ref_type\0";
+const REF_ID_FIELD: &[u8] = b"\xe0\x01ref_id\0";
 
 /// The typed prefix of one geometric-tolerance row.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -182,6 +184,58 @@ fn retain_prefix<'a>(
     } else {
         *stored = Some(prefix);
     }
+}
+
+/// The typed attachments of the `dim_array` element `span` whose `p_sld_info`
+/// reference is the annotation owner `(ref_id, ref_type)`.
+///
+/// The `attach_ptr` chain follows `p_sld_info`; each link stores the
+/// attachment fields of a tolerance placement. `None` means the owner
+/// reference is absent or repeated.
+pub(crate) fn dimension_attachments(
+    section: View<'_>,
+    span: crate::feature::dimensions::ElementSpan,
+    owner: (u32, u32),
+) -> Option<Vec<(u32, u32)>> {
+    let start = section.start().checked_add(span.start)?;
+    let end = section.start().checked_add(span.end)?;
+    let element = section.child(start, end)?;
+    let anchor = owner_reference_end(element, owner)?;
+    let lane = section.child(anchor, end)?;
+    let mut attachments = Vec::new();
+    for offset in find_iter(lane.window(), &[COMPOUND_OPEN]) {
+        let link = section.child(anchor.checked_add(offset)?, end)?;
+        if let Some(AttachmentPrefix::Inline { reference_type, id }) = attachment_prefix(link) {
+            attachments.push((reference_type, id));
+        }
+    }
+    Some(attachments)
+}
+
+/// The end of the unique `p_sld_info` compound prefix that names `owner`.
+fn owner_reference_end(element: View<'_>, (owner, owner_type): (u32, u32)) -> Option<usize> {
+    let mut ends = find_iter(element.window(), &[COMPOUND_OPEN]).filter_map(|offset| {
+        let mut view = element.child(element.start().checked_add(offset)?, element.end())?;
+        expect(&mut view, &[COMPOUND_OPEN])?;
+        if view.unread().first() == Some(&CLASS_REFERENCE) {
+            class_reference(&mut view)?;
+        }
+        let named = view.unread().starts_with(REF_TYPE_FIELD);
+        if named {
+            expect(&mut view, REF_TYPE_FIELD)?;
+            framing(&mut view)?;
+        }
+        (compact(&mut view)? == owner_type).then_some(())?;
+        if named {
+            expect(&mut view, REF_ID_FIELD)?;
+            framing(&mut view)?;
+        }
+        (compact(&mut view)? == owner).then_some(view.position())
+    });
+    let (Some(end), None) = (ends.next(), ends.next()) else {
+        return None;
+    };
+    Some(end)
 }
 
 /// Read one positional row from its `e3` element opener.

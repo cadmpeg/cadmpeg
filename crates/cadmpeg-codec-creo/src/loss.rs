@@ -96,6 +96,8 @@ pub(crate) enum CreoLossCode {
     PmiDatumTargetInferred,
     /// A tolerance's surface attachment selects its unique bounded face.
     PmiToleranceTargetInferred,
+    /// A dimension's surface or edge references select its target faces.
+    PmiDimensionTargetInferred,
     /// A datum tag's definition or geometric target remains unresolved.
     PmiDatumTargetUnresolved,
     /// A datum-tag prototype uses a class-qualified boundary candidate.
@@ -324,6 +326,7 @@ impl CreoLossCode {
             Self::PmiDatumLabelUnresolved => "pmi.datum-label-unresolved",
             Self::PmiDatumTargetInferred => "pmi.datum-target-inferred",
             Self::PmiToleranceTargetInferred => "pmi.tolerance-target-inferred",
+            Self::PmiDimensionTargetInferred => "pmi.dimension-target-inferred",
             Self::PmiDatumTargetUnresolved => "pmi.datum-target-unresolved",
             Self::PmiDatumTagBoundaryAssumed => "pmi.datum-tag-boundary-assumed",
             Self::PmiDimensionKindInferred => "pmi.dimension-kind-inferred",
@@ -498,6 +501,7 @@ impl CreoLossCode {
             | Self::PmiDatumLabelUnresolved
             | Self::PmiDatumTargetInferred
             | Self::PmiToleranceTargetInferred
+            | Self::PmiDimensionTargetInferred
             | Self::PmiDatumTargetUnresolved
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDimensionKindInferred
@@ -623,6 +627,7 @@ impl CreoLossCode {
             | Self::PmiDatumIdentityInferred
             | Self::PmiDatumTargetInferred
             | Self::PmiToleranceTargetInferred
+            | Self::PmiDimensionTargetInferred
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDimensionKindInferred => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
@@ -788,6 +793,7 @@ mod tests {
                 "pmi.datum-label-unresolved",
                 "pmi.datum-target-inferred",
                 "pmi.tolerance-target-inferred",
+                "pmi.dimension-target-inferred",
                 "pmi.datum-target-unresolved",
                 "pmi.datum-tag-boundary-assumed",
                 "pmi.dimension-kind-inferred",
