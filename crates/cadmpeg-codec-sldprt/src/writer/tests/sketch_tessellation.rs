@@ -890,15 +890,28 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
             Ok(())
         })
         .unwrap();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("tessellation position exceeds f32 range"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("overflow must be rejected"),
+    };
+    assert!(
+        message.contains("tessellation position exceeds f32 range"),
+        "{message}"
+    );
 }
 
 #[test]

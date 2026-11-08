@@ -139,13 +139,28 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     .iter()
     .any(|finding| finding.message.contains("local object id does not match")));
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("local object id does not match"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("expected rejection"),
+    };
+    assert!(
+        message.contains("local object id does not match"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -170,13 +185,25 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     .iter()
     .any(|finding| finding.message.contains("object index does not match")));
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("object index does not match"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("expected rejection"),
+    };
+    assert!(message.contains("object index does not match"), "{message}");
 }
 
 #[test]
@@ -196,16 +223,26 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     });
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("expected rejection"),
+    };
     assert!(
-        error
-            .to_string()
-            .contains("expects entity ordinal 1, found 2"),
-        "{error}"
+        message.contains("expects entity ordinal 1, found 2"),
+        "{message}"
     );
 }
