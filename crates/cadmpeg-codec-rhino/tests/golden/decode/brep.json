@@ -8,49 +8,49 @@
       "attributes": [],
       "bodies": [
         {
-          "id": "rhino:object:body#record-000000-offset-177",
+          "id": "rhino:object:body#5268696e-6f49-4400-0000-000000000000",
           "kind": "sheet",
           "regions": [
-            "rhino:object:region#record-000000-offset-177.slot-1"
+            "rhino:object:region#5268696e-6f49-4400-0000-000000000000.slot-1"
           ],
           "visible": true
         }
       ],
       "coedges": [
         {
-          "edge": "rhino:object:edge#record-000000-offset-177.slot-0",
-          "id": "rhino:object:coedge#record-000000-offset-177.slot-0",
-          "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
+          "edge": "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-0",
+          "id": "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-0",
+          "owner_loop": "rhino:object:loop#5268696e-6f49-4400-0000-000000000000.slot-0",
           "pcurves": [
             {
-              "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-0"
+              "pcurve": "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-0"
             }
           ],
-          "radial_next": "rhino:object:coedge#record-000000-offset-177.slot-0",
+          "radial_next": "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-0",
           "sense": "forward"
         },
         {
-          "edge": "rhino:object:edge#record-000000-offset-177.slot-1",
-          "id": "rhino:object:coedge#record-000000-offset-177.slot-1",
-          "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
+          "edge": "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-1",
+          "id": "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-1",
+          "owner_loop": "rhino:object:loop#5268696e-6f49-4400-0000-000000000000.slot-0",
           "pcurves": [
             {
-              "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-1"
+              "pcurve": "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-1"
             }
           ],
-          "radial_next": "rhino:object:coedge#record-000000-offset-177.slot-1",
+          "radial_next": "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-1",
           "sense": "forward"
         },
         {
-          "edge": "rhino:object:edge#record-000000-offset-177.slot-2",
-          "id": "rhino:object:coedge#record-000000-offset-177.slot-2",
-          "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
+          "edge": "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-2",
+          "id": "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-2",
+          "owner_loop": "rhino:object:loop#5268696e-6f49-4400-0000-000000000000.slot-0",
           "pcurves": [
             {
-              "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-2"
+              "pcurve": "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-2"
             }
           ],
-          "radial_next": "rhino:object:coedge#record-000000-offset-177.slot-2",
+          "radial_next": "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-2",
           "sense": "forward"
         }
       ],
@@ -83,7 +83,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000000-offset-177.c3-0",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-0",
           "source_object": {
             "format": "rhino",
             "geometry_role": "support",
@@ -117,7 +117,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000000-offset-177.c3-1",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-1",
           "source_object": {
             "format": "rhino",
             "geometry_role": "support",
@@ -151,7 +151,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000000-offset-177.c3-2",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-2",
           "source_object": {
             "format": "rhino",
             "geometry_role": "support",
@@ -163,56 +163,56 @@
       "edges": [
         {
           "carrier": {
-            "curve": "rhino:object:curve#record-000000-offset-177.c3-0",
+            "curve": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-0",
             "param_range": [
               0.0,
               1.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.slot-1",
-          "id": "rhino:object:edge#record-000000-offset-177.slot-0",
-          "start": "rhino:object:vertex#record-000000-offset-177.slot-0",
+          "end": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-1",
+          "id": "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-0",
+          "start": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-0",
           "tolerance": 0.3
         },
         {
           "carrier": {
-            "curve": "rhino:object:curve#record-000000-offset-177.c3-1",
+            "curve": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-1",
             "param_range": [
               0.0,
               1.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.slot-2",
-          "id": "rhino:object:edge#record-000000-offset-177.slot-1",
-          "start": "rhino:object:vertex#record-000000-offset-177.slot-1",
+          "end": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-2",
+          "id": "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-1",
+          "start": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-1",
           "tolerance": 0.3
         },
         {
           "carrier": {
-            "curve": "rhino:object:curve#record-000000-offset-177.c3-2",
+            "curve": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-2",
             "param_range": [
               0.0,
               1.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.slot-0",
-          "id": "rhino:object:edge#record-000000-offset-177.slot-2",
-          "start": "rhino:object:vertex#record-000000-offset-177.slot-2",
+          "end": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-0",
+          "id": "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-2",
+          "start": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-2",
           "tolerance": 0.3
         }
       ],
       "faces": [
         {
-          "id": "rhino:object:face#record-000000-offset-177.slot-0",
+          "id": "rhino:object:face#5268696e-6f49-4400-0000-000000000000.slot-0",
           "loops": {
             "classification": "unspecified",
             "loops": [
-              "rhino:object:loop#record-000000-offset-177.slot-0"
+              "rhino:object:loop#5268696e-6f49-4400-0000-000000000000.slot-0"
             ]
           },
           "sense": "forward",
-          "shell": "rhino:object:shell#record-000000-offset-177.component-0",
-          "surface": "rhino:object:surface#record-000000-offset-177.slot-0"
+          "shell": "rhino:object:shell#5268696e-6f49-4400-0000-000000000000.component-0",
+          "surface": "rhino:object:surface#5268696e-6f49-4400-0000-000000000000.slot-0"
         }
       ],
       "features": [],
@@ -220,14 +220,14 @@
         {
           "boundary": {
             "coedges": [
-              "rhino:object:coedge#record-000000-offset-177.slot-0",
-              "rhino:object:coedge#record-000000-offset-177.slot-1",
-              "rhino:object:coedge#record-000000-offset-177.slot-2"
+              "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-0",
+              "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-1",
+              "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-2"
             ],
             "kind": "ring"
           },
-          "face": "rhino:object:face#record-000000-offset-177.slot-0",
-          "id": "rhino:object:loop#record-000000-offset-177.slot-0"
+          "face": "rhino:object:face#5268696e-6f49-4400-0000-000000000000.slot-0",
+          "id": "rhino:object:loop#5268696e-6f49-4400-0000-000000000000.slot-0"
         }
       ],
       "occurrences": [],
@@ -258,7 +258,7 @@
               ]
             }
           },
-          "id": "rhino:object:pcurve#record-000000-offset-177.trim-0",
+          "id": "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-0",
           "metadata": {
             "form": {
               "fit_tolerance": 0.04,
@@ -296,7 +296,7 @@
               ]
             }
           },
-          "id": "rhino:object:pcurve#record-000000-offset-177.trim-1",
+          "id": "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-1",
           "metadata": {
             "form": {
               "fit_tolerance": 0.04,
@@ -334,7 +334,7 @@
               ]
             }
           },
-          "id": "rhino:object:pcurve#record-000000-offset-177.trim-2",
+          "id": "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-2",
           "metadata": {
             "form": {
               "fit_tolerance": 0.04,
@@ -351,7 +351,7 @@
       "pmi": [],
       "points": [
         {
-          "id": "rhino:object:point#record-000000-offset-177.vertex-0",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-0",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -363,7 +363,7 @@
           }
         },
         {
-          "id": "rhino:object:point#record-000000-offset-177.vertex-1",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-1",
           "position": {
             "x": 10.0,
             "y": 0.0,
@@ -375,7 +375,7 @@
           }
         },
         {
-          "id": "rhino:object:point#record-000000-offset-177.vertex-2",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-2",
           "position": {
             "x": 0.0,
             "y": 10.0,
@@ -394,24 +394,24 @@
       "product_definitions": [],
       "regions": [
         {
-          "body": "rhino:object:body#record-000000-offset-177",
-          "id": "rhino:object:region#record-000000-offset-177.slot-1",
+          "body": "rhino:object:body#5268696e-6f49-4400-0000-000000000000",
+          "id": "rhino:object:region#5268696e-6f49-4400-0000-000000000000.slot-1",
           "shells": [
-            "rhino:object:shell#record-000000-offset-177.component-0"
+            "rhino:object:shell#5268696e-6f49-4400-0000-000000000000.component-0"
           ]
         }
       ],
       "semantic_annotations": [],
       "shells": [
         {
-          "id": "rhino:object:shell#record-000000-offset-177.component-0",
+          "id": "rhino:object:shell#5268696e-6f49-4400-0000-000000000000.component-0",
           "members": [
             {
-              "id": "rhino:object:face#record-000000-offset-177.slot-0",
+              "id": "rhino:object:face#5268696e-6f49-4400-0000-000000000000.slot-0",
               "kind": "face"
             }
           ],
-          "region": "rhino:object:region#record-000000-offset-177.slot-1"
+          "region": "rhino:object:region#5268696e-6f49-4400-0000-000000000000.slot-1"
         }
       ],
       "sketch_constraints": [],
@@ -441,7 +441,7 @@
               "z": 0.0
             }
           },
-          "id": "rhino:object:surface#record-000000-offset-177.slot-0",
+          "id": "rhino:object:surface#5268696e-6f49-4400-0000-000000000000.slot-0",
           "source_object": {
             "format": "rhino",
             "geometry_role": "support",
@@ -452,18 +452,18 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "rhino:object:vertex#record-000000-offset-177.slot-0",
-          "point": "rhino:object:point#record-000000-offset-177.vertex-0",
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-0",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-0",
           "tolerance": 0.2
         },
         {
-          "id": "rhino:object:vertex#record-000000-offset-177.slot-1",
-          "point": "rhino:object:point#record-000000-offset-177.vertex-1",
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-1",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-1",
           "tolerance": 0.2
         },
         {
-          "id": "rhino:object:vertex#record-000000-offset-177.slot-2",
-          "point": "rhino:object:point#record-000000-offset-177.vertex-2",
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-2",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-2",
           "tolerance": 0.2
         }
       ],
@@ -679,7 +679,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -708,99 +708,99 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "rhino:object:body#record-000000-offset-177": {
+        "rhino:object:body#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:coedge#record-000000-offset-177.slot-0": {
+        "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:coedge#record-000000-offset-177.slot-1": {
+        "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:coedge#record-000000-offset-177.slot-2": {
+        "rhino:object:coedge#5268696e-6f49-4400-0000-000000000000.slot-2": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000000-offset-177.c3-0": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000000-offset-177.c3-1": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000000-offset-177.c3-2": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.c3-2": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:edge#record-000000-offset-177.slot-0": {
+        "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:edge#record-000000-offset-177.slot-1": {
+        "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:edge#record-000000-offset-177.slot-2": {
+        "rhino:object:edge#5268696e-6f49-4400-0000-000000000000.slot-2": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:face#record-000000-offset-177.slot-0": {
+        "rhino:object:face#5268696e-6f49-4400-0000-000000000000.slot-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:loop#record-000000-offset-177.slot-0": {
+        "rhino:object:loop#5268696e-6f49-4400-0000-000000000000.slot-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:pcurve#record-000000-offset-177.trim-0": {
+        "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:pcurve#record-000000-offset-177.trim-1": {
+        "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:pcurve#record-000000-offset-177.trim-2": {
+        "rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.trim-2": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:point#record-000000-offset-177.vertex-0": {
+        "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:point#record-000000-offset-177.vertex-1": {
+        "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:point#record-000000-offset-177.vertex-2": {
+        "rhino:object:point#5268696e-6f49-4400-0000-000000000000.vertex-2": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:region#record-000000-offset-177.slot-1": {
+        "rhino:object:region#5268696e-6f49-4400-0000-000000000000.slot-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:shell#record-000000-offset-177.component-0": {
+        "rhino:object:shell#5268696e-6f49-4400-0000-000000000000.component-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:surface#record-000000-offset-177.slot-0": {
+        "rhino:object:surface#5268696e-6f49-4400-0000-000000000000.slot-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:vertex#record-000000-offset-177.slot-0": {
+        "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:vertex#record-000000-offset-177.slot-1": {
+        "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:vertex#record-000000-offset-177.slot-2": {
+        "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.slot-2": {
           "entity": "derived",
           "scope": "entity"
         }

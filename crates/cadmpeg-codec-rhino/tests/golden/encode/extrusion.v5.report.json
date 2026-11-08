@@ -64,7 +64,7 @@
       "assembly_joints": "omitted",
       "assets": "reported",
       "attributes": "reported",
-      "bodies": "reported",
+      "bodies": "written",
       "coedges": "written",
       "colliders": "omitted",
       "configurations": "dropped",
@@ -72,7 +72,7 @@
       "declared_measures": "omitted",
       "drawings": "omitted",
       "edges": "reported",
-      "faces": "reported",
+      "faces": "written",
       "feature_input_topologies": "omitted",
       "feature_result_topologies": "omitted",
       "features": "dropped",
@@ -117,23 +117,46 @@
   "losses": [
     {
       "code": {
-        "code": "writer.procedural-reduced",
+        "code": "writer.carrier-resolved",
         "kind": "procedural_reduced",
         "namespace": "rhino",
         "scope": "namespaced"
       },
-      "message": "surface rhino:object:surface#record-000000-offset-177.lateral-0 procedural construction rhino:object:procedural-surface#record-000000-offset-177.lateral-0 was reduced to a held solved carrier",
+      "message": "surface rhino:object:surface#5268696e-6f49-4400-0000-000000000000.lateral-0 and profile rhino:object:curve#5268696e-6f49-4400-0000-000000000000.profile-0.start.sweep-origin are written as an independent extrusion object",
       "severity": "warning"
     },
     {
       "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
+        "code": "writer.entity-omitted",
+        "kind": "geometry_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
-      "severity": "info"
+      "message": "mesh rhino:object:tessellation#5268696e-6f49-4400-0000-000000000000.cache-0 omitted: mesh rhino:object:tessellation#5268696e-6f49-4400-0000-000000000000.cache-0 has no faces for a native Rhino mesh",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "writer.plane-domain-restricted",
+        "kind": "geometry_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "plane surface rhino:object:surface#5268696e-6f49-4400-0000-000000000000.cap-0 is written with a finite 3DM parameter domain",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "writer.pcurve-reversal-defaulted",
+        "kind": "topology_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "pcurve rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.cap-0.profile-0 has no wrapper reversal value; 3DM writes false",
+      "severity": "warning"
     }
   ],
   "native_dispositions": {
@@ -162,7 +185,10 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped"
+            "disposition": "dropped",
+            "records": {
+              "rhino:document:settings#current": "written"
+            }
           },
           "embedded_images": {
             "disposition": "dropped"

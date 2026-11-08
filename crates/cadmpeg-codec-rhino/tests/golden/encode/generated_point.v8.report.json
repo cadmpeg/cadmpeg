@@ -60,8 +60,8 @@
   },
   "coverage": {
     "arenas": {
-      "appearance_bindings": "reported",
-      "appearances": "reported",
+      "appearance_bindings": "written",
+      "appearances": "written",
       "articulations": "omitted",
       "assembly_joints": "omitted",
       "assets": "reported",
@@ -108,7 +108,7 @@
       "surfaces": "reported",
       "tessellations": "reported",
       "vertices": "written",
-      "view_presentations": "reported"
+      "view_presentations": "written"
     },
     "coverage": "declared"
   },
@@ -119,16 +119,6 @@
   "losses": [
     {
       "code": {
-        "code": "writer.attributes-omitted",
-        "kind": "attributes_not_transferred",
-        "namespace": "rhino",
-        "scope": "namespaced"
-      },
-      "message": "appearance rhino:model:display-color#layer-0 /asset_guid None -> Some(\"0e2eec82-fc4f-e4f1-0acc-b6d111a5e241\"); distinct Rhino material components require unique physical UUIDs",
-      "severity": "warning"
-    },
-    {
-      "code": {
         "code": "writer.entity-omitted",
         "kind": "geometry_not_transferred",
         "namespace": "rhino",
@@ -137,26 +127,6 @@
       },
       "message": "body rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742 free-vertex region/shell grouping is reduced to independent point objects; 3 member record(s): rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742, rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742, rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742",
       "severity": "error"
-    },
-    {
-      "code": {
-        "code": "writer.attributes-omitted",
-        "kind": "attributes_not_transferred",
-        "namespace": "rhino",
-        "scope": "namespaced"
-      },
-      "message": "rhino:model:object-view#0-0: view controls without exact Rhino saved-view fields are omitted",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
-      "severity": "info"
     },
     {
       "code": {
@@ -195,7 +165,10 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped"
+            "disposition": "dropped",
+            "records": {
+              "rhino:document:settings#current": "written"
+            }
           },
           "embedded_images": {
             "disposition": "dropped"
