@@ -23,6 +23,27 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
+/// The source faces in shell member order, the order the Brep writes them.
+fn shell_ordered_faces(ir: &CadIr) -> impl Iterator<Item = &cadmpeg_ir::topology::Face> {
+    ir.model
+        .shells
+        .iter()
+        .flat_map(cadmpeg_ir::topology::Shell::faces)
+        .filter_map(|id| ir.model.faces.iter().find(|face| face.id == *id))
+}
+
+/// The written face at the shell member position of source face `id`.
+fn written_face<'a>(
+    written: &'a CadIr,
+    source: &CadIr,
+    id: &str,
+) -> &'a cadmpeg_ir::topology::Face {
+    let position = shell_ordered_faces(source)
+        .position(|face| face.id.as_str() == id)
+        .expect("source face is a shell member");
+    &written.model.faces[position]
+}
+
 #[test]
 fn unsupported_appearance_metadata_names_the_appearance() {
     let source = include_bytes!(concat!(
@@ -96,7 +117,7 @@ fn complete_face_colors_reach_supported_archives() {
         let written = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("read colored faces");
-        for (before, after) in ir.model.faces.iter().zip(&written.ir().model.faces) {
+        for (before, after) in shell_ordered_faces(&ir).zip(&written.ir().model.faces) {
             if matches!(version, RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8) {
                 assert_eq!(after.color, before.color);
                 assert!(!report
@@ -188,7 +209,10 @@ fn face_appearance_bindings_supply_native_face_colors() {
     let written = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read face color override");
-    assert_eq!(written.ir().model.faces[0].color, Some(blue));
+    assert_eq!(
+        written_face(written.ir(), &ir, ir.model.faces[0].id.as_str()).color,
+        Some(blue)
+    );
 }
 
 #[test]
@@ -221,7 +245,10 @@ fn mixed_face_colors_use_the_native_unset_sentinel() {
     let written = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read cube");
-    assert_eq!(written.ir().model.faces[0].color, ir.model.faces[0].color);
+    assert_eq!(
+        written_face(written.ir(), &ir, ir.model.faces[0].id.as_str()).color,
+        ir.model.faces[0].color
+    );
 }
 
 #[test]
