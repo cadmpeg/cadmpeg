@@ -482,6 +482,8 @@ fn write_buffered<'budget>(
         &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
         "retain Rhino archive bytes",
     )?;
+    let layer_losses = omitted_layer_item_losses(ir, &plan.losses);
+    plan.losses.extend(layer_losses);
     let free_points = ir
         .model
         .points
@@ -1520,6 +1522,41 @@ fn prepare_write<'a, 'budget>(
         topology_points,
         materials,
     })
+}
+
+/// Layers that lose a member because the write omits the member's record.
+fn omitted_layer_item_losses(ir: &CadIr, losses: &[LossNote]) -> Vec<LossNote> {
+    let omitted = |id: &str| {
+        let phrase = format!("{id} omitted");
+        losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::WriterEntityOmitted.kind() && loss.message.contains(&phrase)
+        })
+    };
+    ir.model
+        .presentation_layers
+        .iter()
+        .filter_map(|layer| {
+            let members = layer
+                .items
+                .iter()
+                .filter_map(|item| serde_json::to_value(item).ok())
+                .filter_map(|item| {
+                    item.as_object()?
+                        .iter()
+                        .filter(|(key, _)| key.as_str() != "kind")
+                        .find_map(|(_, value)| value.as_str().map(str::to_owned))
+                })
+                .filter(|id| omitted(id))
+                .collect::<Vec<_>>();
+            (!members.is_empty()).then(|| {
+                RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "layer {} loses omitted member(s) {}",
+                    layer.id,
+                    members.join(", ")
+                ))
+            })
+        })
+        .collect()
 }
 
 /// The records a baked placement writes in world coordinates: they re-decode
