@@ -208,7 +208,7 @@ pub(in crate::writer) fn encode(
     macro_rules! record {
         ($($arg:tt)*) => {{
             charge_record(ctx, charge_output)?;
-            let _ = write!(output, $($arg)*);
+            write!(output, $($arg)*).expect("write to string");
             output.push('\n');
         }};
     }
@@ -285,7 +285,7 @@ pub(in crate::writer) fn encode_symmetry(
     macro_rules! record {
         ($($args:tt)*) => {{
             charge_record(ctx, charge_output)?;
-            let _ = write!(output, $($args)*);
+            write!(output, $($args)*).expect("write to string");
             output.push('\n');
         }};
     }
