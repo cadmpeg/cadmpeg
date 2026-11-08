@@ -3,7 +3,7 @@
     "basis": "ir_arenas",
     "counts": {
       "appearance_bindings": 4,
-      "appearances": 4,
+      "appearances": 3,
       "articulations": 0,
       "assembly_joints": 0,
       "assets": 0,
@@ -67,8 +67,8 @@
   },
   "coverage": {
     "arenas": {
-      "appearance_bindings": "reported",
-      "appearances": "reported",
+      "appearance_bindings": "written",
+      "appearances": "written",
       "articulations": "omitted",
       "assembly_joints": "omitted",
       "assets": "reported",
@@ -98,10 +98,10 @@
       "presentation_layers": "written",
       "procedural_curves": "reported",
       "procedural_surfaces": "reported",
-      "product_definitions": "reported",
+      "product_definitions": "written",
       "regions": "written",
       "rigid_bodies": "omitted",
-      "semantic_annotations": "reported",
+      "semantic_annotations": "written",
       "shells": "written",
       "sketch_constraints": "dropped",
       "sketch_entities": "dropped",

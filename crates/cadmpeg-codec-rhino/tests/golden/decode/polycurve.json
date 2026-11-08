@@ -15,7 +15,7 @@
             "kind": "unknown",
             "record": "rhino:object:record#000000"
           },
-          "id": "rhino:object:curve#record-000000-offset-177",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -48,7 +48,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000000-offset-177.root.component-0",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-0",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -58,7 +58,7 @@
           "geometry": {
             "kind": "unknown"
           },
-          "id": "rhino:object:curve#record-000000-offset-177.root.component-1",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-1",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -91,7 +91,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000000-offset-177.root.component-1.component-0",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-1.component-0",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -112,15 +112,15 @@
       "presentation_layers": [],
       "procedural_curves": [
         {
-          "curve": "rhino:object:curve#record-000000-offset-177",
+          "curve": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000",
           "definition": {
             "components": [
               {
-                "component": "rhino:object:curve#record-000000-offset-177.root.component-0",
+                "component": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-0",
                 "parameter": 0.0
               },
               {
-                "component": "rhino:object:curve#record-000000-offset-177.root.component-1",
+                "component": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-1",
                 "parameter": 2.0
               }
             ],
@@ -131,14 +131,14 @@
               5.0
             ]
           },
-          "id": "rhino:object:procedural-curve#record-000000-offset-177"
+          "id": "rhino:object:procedural-curve#5268696e-6f49-4400-0000-000000000000"
         },
         {
-          "curve": "rhino:object:curve#record-000000-offset-177.root.component-1",
+          "curve": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-1",
           "definition": {
             "components": [
               {
-                "component": "rhino:object:curve#record-000000-offset-177.root.component-1.component-0",
+                "component": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-1.component-0",
                 "parameter": 10.0
               }
             ],
@@ -148,7 +148,7 @@
               20.0
             ]
           },
-          "id": "rhino:object:procedural-curve#record-000000-offset-177.root.component-1"
+          "id": "rhino:object:procedural-curve#5268696e-6f49-4400-0000-000000000000.root.component-1"
         }
       ],
       "procedural_surfaces": [],
@@ -304,7 +304,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -333,19 +333,19 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "rhino:object:curve#record-000000-offset-177": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000000-offset-177.root.component-0": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000000-offset-177.root.component-1": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000000-offset-177.root.component-1.component-0": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.root.component-1.component-0": {
           "entity": "derived",
           "scope": "entity"
         }

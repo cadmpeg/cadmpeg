@@ -121,15 +121,17 @@ fn e2_structure_fixture_matches_builder() {
         .text
         .iter()
         .any(|text| text == "legacy text"));
-    assert!(model.view_presentations.iter().any(|view| view
-        .properties
-        .iter()
-        .any(|(key, value)| key.as_str() == "name" && value == "Witness view")));
     let namespace = decoded
         .ir()
         .native
         .namespace("rhino")
         .expect("Rhino namespace");
+    assert!(namespace
+        .arenas()
+        .get("views")
+        .into_iter()
+        .flatten()
+        .any(|record| record.field("name").as_ref().and_then(|value| value.as_str()) == Some("Witness view")));
     assert_eq!(namespace.arenas()["groups"].len(), 1);
     let group = &namespace.arenas()["groups"][0];
     assert_eq!(

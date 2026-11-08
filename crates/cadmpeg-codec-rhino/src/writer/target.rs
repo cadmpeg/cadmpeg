@@ -56,6 +56,28 @@ pub(crate) fn plan(
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let (bytes, outcome) = super::write(&ctx, &recovered.document, version, &session)?;
     let mut losses = outcome.losses;
+    if let Ok(document) = serde_json::to_value(input.ir) {
+        if let Some(model) = document.get("model").and_then(serde_json::Value::as_object) {
+            let mut duplicates = std::collections::BTreeSet::new();
+            for rows in model.values() {
+                let mut seen = std::collections::BTreeSet::new();
+                if let Some(rows) = rows.as_array() {
+                    for row in rows {
+                        if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                            if !seen.insert(id.to_owned()) {
+                                duplicates.insert(id.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
+            for id in duplicates {
+                losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                    "duplicate neutral record {id} is omitted"
+                )));
+            }
+        }
+    }
     super::tables::document::uncarried_attribute_losses(input.ir, &mut losses);
     for binding in &input.ir.model.appearance_bindings {
         if !binding.channels.is_empty() {
