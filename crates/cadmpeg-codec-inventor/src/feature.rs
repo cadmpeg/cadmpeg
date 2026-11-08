@@ -4321,11 +4321,16 @@ pub(crate) fn thicken_operand_losses<'a>(
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
                 motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
-                ..
-            }) => feature
-                .native_ref
-                .as_ref()
-                .is_some_and(|id| thicken_sources.contains(id.as_str())),
+                faces,
+            }) => {
+                !matches!(
+                    faces,
+                    cadmpeg_ir::features::FaceSelection::Historical { .. }
+                ) && feature
+                    .native_ref
+                    .as_ref()
+                    .is_some_and(|id| thicken_sources.contains(id.as_str()))
+            }
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
                 kind.as_str() == "Thicken"
             }
