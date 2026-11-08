@@ -47,8 +47,30 @@ pub(in crate::writer) struct FeatureOutput {
 
 /// Write a neutral operation. Unsupported content is an internal admission
 /// signal; the caller drops that feature and charges its export loss.
+/// Retained native XML for one property, when the decoder holds its value.
+/// Returns the rendered `<Property ...>` element for comparing or replaying.
+fn retained_xml(
+    ir: &cadmpeg_ir::CadIr,
+    names: &HashMap<String, String>,
+    owner: Option<&str>,
+    name: &str,
+) -> Option<String> {
+    let owner = owner?;
+    let namespace = ir.native.namespace("fcstd")?;
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .ok()?;
+    let property = properties
+        .into_iter()
+        .find(|property| property.owner == owner && property.name == name)?;
+    xml::native_named(&property, names, &std::collections::HashSet::new())
+        .ok()
+        .flatten()
+}
+
 /// Read a retained axis-reversal flag from the native property arena.
-/// Absent flags read as clear, matching the decoder default.
+/// The decoder holds these flags on native records of the feature's
+/// object; absent flags read as clear, matching the decoder default.
 fn retained_flag(ir: &cadmpeg_ir::CadIr, owner: Option<&str>, name: &str) -> bool {
     let Some(owner) = owner else {
         return false;
@@ -254,6 +276,16 @@ pub(in crate::writer) fn write(
             let reversed1 = retained_flag(ir, feature.native_ref.as_deref(), "Reversed");
             let reversed2 = retained_flag(ir, feature.native_ref.as_deref(), "Reversed2");
             let mut pattern_json = pattern_value.clone();
+            // A native link-sub axis definition re-defines the resolved
+            // direction form entirely; the generated PropertyVector would
+            // lose its DatumAxis identity. Emitting the retained link lets
+            // the decoder read the same datum again.
+            let direction_link =
+                retained_xml(ir, names, feature.native_ref.as_deref(), "Direction")
+                    .filter(|xml| xml.contains("App::PropertyLinkSub"));
+            let direction2_link =
+                retained_xml(ir, names, feature.native_ref.as_deref(), "Direction2")
+                    .filter(|xml| xml.contains("App::PropertyLinkSub"));
             if matches!(tag(pattern_value), "linear" | "linear_offsets") {
                 if reversed1 {
                     negate_direction(&mut pattern_json);
@@ -274,6 +306,12 @@ pub(in crate::writer) fn write(
                 &mut output.entries,
                 &mut output.losses,
             )?;
+            if let Some(xml) = direction_link {
+                object.set("Direction", xml);
+            }
+            if let Some(xml) = direction2_link {
+                object.set("Direction2", xml);
+            }
         }
         "datum_plane" | "datum_three_point_plane" => {
             object.kind = "PartDesign::Plane".into();
