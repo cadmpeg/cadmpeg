@@ -59,18 +59,18 @@ impl ValidatedFinding {
     ) -> Result<Option<Self>, ResourceLimit> {
         match crate::hash::finite_json::check_cadir_finite(ctx, document) {
             Err(crate::hash::finite_json::CanonicalJsonError::Resource(limit)) => Err(limit),
-            result => Ok(Self::from_cadir_check(result)),
+            result => Ok(Self::from_cadir_check(&result)),
         }
     }
 
     pub(crate) fn for_cadir_encode(document: &CadIr) -> Option<Self> {
-        Self::from_cadir_check(crate::hash::finite_json::check_cadir_finite_for_encode(
+        Self::from_cadir_check(&crate::hash::finite_json::check_cadir_finite_for_encode(
             document,
         ))
     }
 
     fn from_cadir_check(
-        result: Result<(), crate::hash::finite_json::CanonicalJsonError>,
+        result: &Result<(), crate::hash::finite_json::CanonicalJsonError>,
     ) -> Option<Self> {
         match result {
             Err(crate::hash::finite_json::CanonicalJsonError::NonFinite { value }) => Some(Self {

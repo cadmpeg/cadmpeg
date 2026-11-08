@@ -1303,25 +1303,20 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             ..
         }
     ));
-    // #209 §1.1: the fragment holds no model part; the wrapper appends
-    // depth.not-delivered after the codec loss.
+    // #209 §1.1: full decode reports requested classes as delivered.
     assert_eq!(
         result.ir().scope,
         cadmpeg_ir::document::ContentScope {
-            model: false,
+            model: true,
             design: true
         }
     );
-    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
         crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous
             .note("")
             .code
-    );
-    assert_eq!(
-        result.report().losses[1].code.local_code(),
-        "depth.not-delivered"
     );
 }
 

@@ -393,6 +393,8 @@ pub(crate) enum StepLossCode {
     LoopEdgeMissingForOrder,
     /// An edge was omitted because it has no 3D curve.
     EdgeNo3dCurve,
+    /// A face-context edge with no 3D curve was written with a line synthesized from its vertices.
+    EdgeCurveSynthesizedFromVertices,
     /// An edge was omitted because its curve is not writable.
     EdgeCurveNotWritable,
     /// An edge was omitted because its curve is unsupported.
@@ -614,6 +616,7 @@ impl StepLossCode {
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
         Self::EdgeNo3dCurve,
+        Self::EdgeCurveSynthesizedFromVertices,
         Self::EdgeCurveNotWritable,
         Self::EdgeCurveUnsupported,
         Self::LoopNoContinuousOrdering,
@@ -837,6 +840,7 @@ impl StepLossCode {
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
             Self::EdgeNo3dCurve => "topology.edge-no-3d-curve",
+            Self::EdgeCurveSynthesizedFromVertices => "topology.edge-curve-synthesized",
             Self::EdgeCurveNotWritable => "topology.edge-curve-not-writable",
             Self::EdgeCurveUnsupported => "topology.edge-curve-unsupported",
             Self::LoopNoContinuousOrdering => "topology.loop-no-continuous-ordering",
@@ -1054,6 +1058,7 @@ impl StepLossCode {
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
             | Self::EdgeNo3dCurve
+            | Self::EdgeCurveSynthesizedFromVertices
             | Self::EdgeCurveNotWritable
             | Self::EdgeCurveUnsupported
             | Self::LoopNoContinuousOrdering
@@ -1303,6 +1308,7 @@ mod tests {
                 "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
                 "attribute.target-normalized",
+                "attribute.document-value-degraded",
                 "attribute.timestamp-normalized",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.procedural-curve-cache-tolerance-omitted",
@@ -1342,6 +1348,7 @@ mod tests {
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",
                 "topology.edge-no-3d-curve",
+                "topology.edge-curve-synthesized",
                 "topology.edge-curve-not-writable",
                 "topology.edge-curve-unsupported",
                 "topology.loop-no-continuous-ordering",
