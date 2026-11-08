@@ -786,6 +786,7 @@ The feature-family name is display text that varies with the application languag
 | `AE12AD3F-BB81-4B59-9D34-A599E58E4BF6` | `R-Pattern` |
 | `E8816367-E309-4C27-A220-7862EE1A3498` | `R-Pattern` |
 | `4A782808-FBDD-4351-A10A-F7AE5693D330` | `RemoveBody` |
+| `693D6578-4BCE-44F8-B15A-2CE5162A23EE` | `Reverse Normal` |
 | `E3849A15-2FC6-42A0-AF3A-2F1D7273B406` | `Revolve` |
 | `548B7CBE-2184-4DB5-8B56-24418E5005DF` | `Scale` |
 | `D45FD6C4-161B-4240-BFAC-83A7C2C97A0C` | `Scale` |
@@ -1127,6 +1128,8 @@ In the legacy body-group frame, `byte_offset` anchors the primary indexed header
 The class-328 `Move` form has no counted trailing-reference run.
 
 In the one-member envelope, the primary-header-relative fixed fields are `+11..+20: zero`, `+21: u32 member_count`, `+25: member reference marker`, `+26: member reference value`, `+53: u64 role`, `+71: u32 opaque_ordinal`, `+75: f64 opaque scalar`, `+83: repeated ordinal`, `+87: reference to N+2`, `+98: two-byte tail discriminant`, `+100: reference to N+1`, `+111: zero`, `+112: owning-scope reference`, and `+123: paired header`. Member, auxiliary, and trailing reference counts extend the variable runs; the paired-header index closes the frame.
+
+A `Reverse Normal` scope reverses the orientation of whole bodies. Its type GUID is `693D6578-4BCE-44F8-B15A-2CE5162A23EE`, base `666BFBBC-2150-4C5F-AAF7-09AB3C3D9E47`, version `0`. The compact Reverse Normal prefix stores ten zero bytes at offsets 11 through 20, u32 `1` at offset 21, a marked body-group reference at offset 25, the 36-code-unit LP-UTF16 GUID `00000000-0000-0000-0000-000000000000` at offset 36, and three zero bytes at offset 112. Its scope reference count is at offset 115. The shifted Reverse Normal prefix replaces the ten-zero-byte prologue with nine zero bytes, byte `1`, and four zero bytes; all later fields move four bytes forward, and its scope reference count is at offset 119. The marked reference is `01 + u32 record_index + six zero bytes` and names the first ordered scope reference. That record is a legacy body group with role `0x0000000400000000`. Its members are the remaining ordered scope references in the same order, and each member is a whole-body record of type `9716F783-676D-42E0-93F9-EBF273E7C035`, version `1`. The operation reverses the complete orientation of each member body, so every face normal of the body changes direction.
 
 The ordered persistent-face clauses of a body-recipe member identify its body through complete body-region-shell-face incidence. ASM state identifiers are scoped to their owning history; equal numeric identifiers in another history are unrelated. Resolve the unique history containing both the current and preceding states before walking the state chain. Prefer a unique preceding-history body slot. When that history state is not represented, a unique current model body is valid. Ambiguous or incomplete joins retain the exact construction-group identity as the native body selection.
 
