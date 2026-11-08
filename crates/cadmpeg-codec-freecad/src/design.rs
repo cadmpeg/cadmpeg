@@ -524,9 +524,8 @@ pub(crate) fn transfer(
         &ir.model.sketch_constraints,
         properties,
     )?);
-    crate::parameter_names::apply(ir, properties)?;
     losses.extend(crate::control_links::apply(ir, properties)?);
-    let _cycle_owners = order_parameters_by_dependencies(&mut ir.model.parameters);
+    order_parameters_by_dependencies(&mut ir.model.parameters);
     dense_parameter_ordinals(&mut ir.model.parameters)?;
     dependencies::structural(ctx, ir, properties)?;
     Ok((cycle_affected, losses))
@@ -1385,9 +1384,6 @@ fn append_custom_parameters(
     owner: Option<&FeatureId>,
 ) -> Result<(), CodecError> {
     for property in properties {
-        if crate::property_policy::is_projection_metadata(property) {
-            continue;
-        }
         if matches!(
             property.name.as_str(),
             "Label" | "Label2" | "Visibility" | "Suppressed"
@@ -3264,9 +3260,8 @@ fn dense_parameter_ordinals(parameters: &mut [DesignParameter]) -> Result<(), Co
 ///
 /// The earliest ready parameter in the current order is emitted next. A
 /// dependency on an id is met once any parameter with that id is emitted.
-/// When none is ready, the rest keep their order after the emitted ones and
-/// their owners are returned as cycle-affected.
-fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
+/// When none is ready, the rest keep their order after the emitted ones.
+fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
     let mut dependents = BTreeMap::<&ParameterId, Vec<usize>>::new();
     for parameter in parameters.iter() {
         dependents.entry(&parameter.id).or_default();
@@ -3315,15 +3310,7 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
             }
         }
     }
-    let mut cycle_features = BTreeSet::new();
-    for (position, parameter) in parameters.iter().enumerate() {
-        if !emitted[position] {
-            order.push(position);
-            if let Some(owner) = &parameter.owner {
-                cycle_features.insert(owner.clone());
-            }
-        }
-    }
+    order.extend((0..parameters.len()).filter(|position| !emitted[*position]));
     let mut slots = std::mem::take(parameters)
         .into_iter()
         .map(Some)
@@ -3331,7 +3318,6 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
     for position in order {
         parameters.extend(slots[position].take());
     }
-    cycle_features
 }
 
 fn expression_identifiers(
@@ -6391,8 +6377,7 @@ fn native_parameters(
         if matches!(
             property.name.as_str(),
             "Label" | "Label2" | "Suppressed" | "Visibility" | "Placement" | "ExpressionEngine"
-        ) || crate::property_policy::is_projection_metadata(property)
-            || !crate::property_policy::has_neutral_form(&property.name)
+        ) || !crate::property_policy::has_neutral_form(&property.name)
         {
             continue;
         }

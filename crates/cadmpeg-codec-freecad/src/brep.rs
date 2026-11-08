@@ -2198,6 +2198,18 @@ pub(crate) struct LocationFactor {
     power: i64,
 }
 
+impl LocationFactor {
+    /// The one-based index of the composed earlier location.
+    pub(crate) const fn location(&self) -> usize {
+        self.location
+    }
+
+    /// The signed composition power.
+    pub(crate) const fn power(&self) -> i64 {
+        self.power
+    }
+}
+
 /// One text B-rep location record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct TextLocation {

@@ -246,7 +246,6 @@ pub(super) struct ResolvedUse {
     pub(super) id: String,
     pub(super) owner: String,
     pub(super) node: usize,
-    pub(super) root: Option<usize>,
     key: Key,
 }
 
@@ -395,15 +394,10 @@ pub(super) fn resolve_namespace(
         let node = resolved[index]
             .ok_or_else(|| CodecError::malformed("source-use native row was not resolved"))?;
         let key = plans[row.owner.as_str()].nodes[node].key;
-        let root = match row.source_use {
-            SourceUse::Root { root } => Some(root),
-            SourceUse::Child { .. } => None,
-        };
         result.push(ResolvedUse {
             id: row.id,
             owner: row.owner,
             node,
-            root,
             key,
         });
     }
@@ -429,6 +423,8 @@ fn validation_location_error(error: LocationIdentityError) -> CodecError {
 
 struct NativeUse {
     root: usize,
+    owner: String,
+    shape: usize,
     property: String,
     kind: crate::brep::TextShapeKind,
     source_index: Option<usize>,
@@ -476,6 +472,8 @@ fn current_native_topology(
             row.id,
             NativeUse {
                 root: row.key.root,
+                owner: working_text(ctx, &row.owner)?,
+                shape: row.key.shape,
                 property: working_text(ctx, &payload.property)?,
                 kind,
                 source_index,
@@ -630,6 +628,26 @@ impl CurrentTopologyBindings {
                 .flatten()
                 .map(String::as_str),
         )
+    }
+
+    /// Current neutral records bound to one payload's source topology, each
+    /// with its kind, one-based `TShape` index and one-based indexed name.
+    pub(crate) fn payload_records<'a>(
+        &'a self,
+        payload: &'a str,
+    ) -> impl Iterator<Item = (&'a str, crate::brep::TextShapeKind, usize, Option<usize>)> + 'a
+    {
+        self.record_native
+            .iter()
+            .filter_map(move |(record, native)| {
+                let source = self.topology.get(native)?;
+                (source.owner == payload).then_some((
+                    record.as_str(),
+                    source.kind,
+                    source.shape,
+                    source.source_index,
+                ))
+            })
     }
 
     pub(crate) fn native_for_record(&self, record: &str) -> Option<&str> {
