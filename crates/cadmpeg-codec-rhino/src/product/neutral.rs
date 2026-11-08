@@ -159,7 +159,7 @@ impl Projection<'_> {
             visible: object
                 .attributes
                 .parsed()
-                .map(|attributes| attributes.visible),
+                .map_or_else(|| Some(identity.effective_visible), |attributes| Some(attributes.visible)),
             link: None,
             native_ref: Some(native_ref.clone()),
         });
