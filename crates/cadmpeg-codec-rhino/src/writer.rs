@@ -1526,20 +1526,6 @@ fn native_dispositions(
         crate::native_registry::ARENAS,
         NativeDisposition::Dropped,
     );
-    for (namespace, store) in &ir.native.0 {
-        if namespace == "rhino" {
-            continue;
-        }
-        let arenas = store.arenas().keys().map(String::as_str);
-        dispositions = {
-            let mut next = dispositions;
-            // Foreign native namespaces are not preserved by the Rhino writer.
-            let foreign =
-                NativeDispositions::for_namespace(namespace, arenas, NativeDisposition::Dropped);
-            next.namespaces.extend(foreign.namespaces);
-            next
-        };
-    }
     let materials = MaterialPlan::new(ir)?;
     if let Some(records) = ir
         .native
