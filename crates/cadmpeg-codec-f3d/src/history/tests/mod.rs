@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! History-module unit tests.
 
+mod body_bounds;
 mod body_incidence;
 mod body_recipe;
 mod body_recipe_selections;

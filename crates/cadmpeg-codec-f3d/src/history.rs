@@ -74,6 +74,7 @@ const EPS_HISTORY_PARALLEL_DIRECTIONS_E7: f64 = 1.0e-7;
 const EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9: f64 = 1.0e-9;
 const EPS_HISTORY_CYCLIC_POINT_SUBSEQUENCE_E12: f64 = 1.0e-12;
 const EPS_HISTORY_SAME_AXIS_LINE_E9: f64 = 1.0e-9;
+const EPS_HISTORY_CIRCLE_EDGE_E7: f64 = 1.0e-7;
 const EPS_HISTORY_SAME_AXIS_LINE_E8: f64 = 1.0e-8;
 const EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9: f64 = 1.0e-9;
 const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9: f64 = 1.0e-9;
@@ -659,6 +660,14 @@ struct HistoricalBodyIndex<'a> {
     edges: KeyedRows<'a, AsmHistoricalEdge>,
     vertex_points: KeyedRows<'a, AsmHistoricalCarrierBinding>,
     point_positions: KeyedRows<'a, AsmHistoricalPoint>,
+    edge_curves: KeyedRows<'a, crate::history_records::AsmHistoricalOptionalCarrierBinding>,
+    curve_axes: KeyedRows<'a, crate::history_records::AsmHistoricalCurveAxis>,
+    face_surfaces: KeyedRows<'a, AsmHistoricalCarrierBinding>,
+    cylinders: KeyedRows<'a, crate::history_records::AsmHistoricalCylinder>,
+    edge_samples: KeyedRows<'a, crate::history_records::AsmHistoricalEdgeSample>,
+    planes: KeyedRows<'a, crate::history_records::AsmHistoricalPlane>,
+    coedge_rows: &'a [AsmHistoricalCoedge],
+    loop_faces: HashMap<i64, i64>,
 }
 
 impl<'a> HistoricalBodyIndex<'a> {
@@ -675,7 +684,62 @@ impl<'a> HistoricalBodyIndex<'a> {
             edges: KeyedRows::new(&topology.edge_vertices),
             vertex_points: KeyedRows::new(&topology.vertex_points),
             point_positions: KeyedRows::new(&topology.point_positions),
+            edge_curves: KeyedRows::new(&topology.edge_curves),
+            curve_axes: KeyedRows::new(&topology.curve_axes),
+            face_surfaces: KeyedRows::new(&topology.face_surfaces),
+            cylinders: KeyedRows::new(&topology.surface_cylinders),
+            edge_samples: KeyedRows::new(&topology.edge_samples),
+            planes: KeyedRows::new(&topology.surface_planes),
+            coedge_rows: &topology.coedge_topology,
+            loop_faces: topology
+                .face_loops
+                .iter()
+                .flat_map(|face| {
+                    face.member_refs
+                        .iter()
+                        .map(|loop_| (*loop_, face.owner_ref))
+                })
+                .collect(),
         }
+    }
+
+    fn vertex_position(&self, vertex: i64) -> Option<cadmpeg_ir::math::Point3> {
+        self.vertex_points
+            .get(vertex)
+            .and_then(|binding| self.point_positions.get(binding.carrier))
+            .map(|point| point.position)
+    }
+
+    /// The centre, unit axis and radius of `edge` when it is proven circular:
+    /// its curve has an axis, and a face that uses the edge lies on a cylinder
+    /// with that axis whose radius is the start vertex's distance from it.
+    fn circle_edge(
+        &self,
+        edge: i64,
+        start: cadmpeg_ir::math::Point3,
+    ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3, f64)> {
+        let curve = self.edge_curves.get(edge)?.carrier?;
+        let axis = self.curve_axes.get(curve)?;
+        let normal = axis.direction.scale(axis.direction.norm().recip());
+        let offset = start.vector_from(axis.origin);
+        let center = axis.origin.translated(normal, offset.dot(normal));
+        let radius = start.vector_from(center).norm();
+        let tolerance = EPS_HISTORY_CIRCLE_EDGE_E7 * radius.max(1.0);
+        let on_cylinder = self
+            .coedge_rows
+            .iter()
+            .filter(|coedge| coedge.edge == edge)
+            .filter_map(|coedge| self.loop_faces.get(&coedge.owner_loop))
+            .filter_map(|face| self.face_surfaces.get(*face))
+            .filter_map(|binding| self.cylinders.get(binding.carrier))
+            .any(|cylinder| {
+                let cylinder_axis = cylinder.axis.scale(cylinder.axis.norm().recip());
+                let apart = center.vector_from(cylinder.origin);
+                cylinder_axis.cross(normal).norm() <= EPS_HISTORY_CIRCLE_EDGE_E7
+                    && apart.cross(cylinder_axis).norm() <= tolerance
+                    && (cylinder.radius - radius).abs() <= tolerance
+            });
+        (on_cylinder && radius > tolerance).then_some((center, normal, radius))
     }
 
     fn shells(&self, body: i64) -> impl Iterator<Item = i64> + '_ {
@@ -737,48 +801,182 @@ impl<'a> HistoricalBodyIndex<'a> {
         self.solid_edges(body).is_some()
     }
 
+    /// Whether `edge` is a proven straight segment: its curve has an axis
+    /// line that holds both of its distinct end points.
+    fn line_edge(
+        &self,
+        edge: i64,
+        start: cadmpeg_ir::math::Point3,
+        end: cadmpeg_ir::math::Point3,
+    ) -> bool {
+        let Some(axis) = self
+            .edge_curves
+            .get(edge)
+            .and_then(|binding| binding.carrier)
+            .and_then(|curve| self.curve_axes.get(curve))
+        else {
+            return false;
+        };
+        let length = axis.direction.norm();
+        let chord = end.vector_from(start);
+        let tolerance = EPS_HISTORY_CIRCLE_EDGE_E7 * chord.norm().max(1.0);
+        let off_axis = |point: cadmpeg_ir::math::Point3| {
+            point.vector_from(axis.origin).cross(axis.direction).norm() / length
+        };
+        length > 0.0
+            && chord.norm() > tolerance
+            && off_axis(start) <= tolerance
+            && off_axis(end) <= tolerance
+    }
+
+    /// Whether every face of `body` lies on a plane or a cylinder, so that
+    /// the body's box is the box of its edges.
+    fn faces_bound_by_edges(&self, body: i64) -> bool {
+        let mut faces = self
+            .shells(body)
+            .flat_map(|shell| self.shell_faces.members(shell).unwrap_or_default())
+            .peekable();
+        faces.peek().is_some()
+            && faces.all(|face| {
+                self.face_surfaces.get(*face).is_some_and(|binding| {
+                    self.planes.get(binding.carrier).is_some()
+                        || self.cylinders.get(binding.carrier).is_some()
+                })
+            })
+    }
+
+    /// The box of a solid `body` from its `edges`, and whether that box is
+    /// exact: every edge is a proven segment or circular arc and every face a
+    /// plane or a cylinder.
+    fn body_bounds(
+        &self,
+        body: i64,
+        edges: &[i64],
+    ) -> Option<((cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3), bool)> {
+        let bounds = self.edge_bounds(edges)?;
+        let exact = self.faces_bound_by_edges(body)
+            && edges.iter().all(|&edge| {
+                let Some(row) = self.edges.get(edge) else {
+                    return false;
+                };
+                let (Some(start), Some(end)) = (
+                    self.vertex_position(row.start_vertex),
+                    self.vertex_position(row.end_vertex),
+                ) else {
+                    return false;
+                };
+                self.line_edge(edge, start, end)
+                    || (self.circle_edge(edge, start).is_some()
+                        && (row.start_vertex == row.end_vertex
+                            || self.edge_samples.get(edge).is_some()))
+            });
+        Some((bounds, exact))
+    }
+
+    /// The box of the edges: their vertices, their interior samples, and
+    /// the axis extremes of every proven circular arc among them.
     fn edge_bounds(
         &self,
         edges: &[i64],
     ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)> {
-        let mut vertices = edges
-            .iter()
-            .filter_map(|&edge| self.edges.get(edge))
-            .flat_map(|edge| [edge.start_vertex, edge.end_vertex])
-            .collect::<Vec<_>>();
-        vertices.sort_unstable();
-        vertices.dedup();
-        let mut min_x = f64::INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut min_z = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        let mut max_z = f64::NEG_INFINITY;
-        let mut found = false;
-        for vertex in vertices {
-            let Some(point) = self
-                .vertex_points
-                .get(vertex)
-                .and_then(|binding| self.point_positions.get(binding.carrier))
-            else {
-                continue;
-            };
-            let pos = point.position;
-            min_x = min_x.min(pos.x);
-            min_y = min_y.min(pos.y);
-            min_z = min_z.min(pos.z);
-            max_x = max_x.max(pos.x);
-            max_y = max_y.max(pos.y);
-            max_z = max_z.max(pos.z);
-            found = true;
+        let mut points = Vec::new();
+        for edge in edges.iter().filter_map(|&edge| self.edges.get(edge)) {
+            let start = self.vertex_position(edge.start_vertex);
+            let end = self.vertex_position(edge.end_vertex);
+            let interior = self
+                .edge_samples
+                .get(edge.edge)
+                .map(|sample| sample.interior);
+            points.extend(start);
+            points.extend(end);
+            points.extend(interior);
+            if let (Some(start), Some(end)) = (start, end) {
+                if let Some((center, normal, radius)) = self.circle_edge(edge.edge, start) {
+                    let closed = edge.start_vertex == edge.end_vertex;
+                    points.extend(circle_arc_extremes(
+                        center, normal, radius, start, interior, end, closed,
+                    ));
+                }
+            }
         }
-        found.then(|| {
-            (
-                cadmpeg_ir::math::Point3::new(min_x, min_y, min_z),
-                cadmpeg_ir::math::Point3::new(max_x, max_y, max_z),
-            )
-        })
+        let first = *points.first()?;
+        let (mut low, mut high) = (first, first);
+        for point in points {
+            low = cadmpeg_ir::math::Point3::new(
+                low.x.min(point.x),
+                low.y.min(point.y),
+                low.z.min(point.z),
+            );
+            high = cadmpeg_ir::math::Point3::new(
+                high.x.max(point.x),
+                high.y.max(point.y),
+                high.z.max(point.z),
+            );
+        }
+        Some((low, high))
     }
+}
+
+/// The points of a circular arc that are extreme along a model axis. The arc
+/// runs from `start` through `interior` to `end` on the circle of `center`,
+/// unit `normal` and `radius`; a closed arc is the whole circle. An open arc
+/// without an interior point gives none, because its side is unknown.
+fn circle_arc_extremes(
+    center: cadmpeg_ir::math::Point3,
+    normal: cadmpeg_ir::math::Vector3,
+    radius: f64,
+    start: cadmpeg_ir::math::Point3,
+    interior: Option<cadmpeg_ir::math::Point3>,
+    end: cadmpeg_ir::math::Point3,
+    closed: bool,
+) -> Vec<cadmpeg_ir::math::Point3> {
+    use cadmpeg_ir::math::Vector3;
+    use std::f64::consts::TAU;
+    let first = start.vector_from(center).scale(radius.recip());
+    let second = normal.cross(first);
+    let angle = |point: cadmpeg_ir::math::Point3| {
+        let offset = point.vector_from(center);
+        offset.dot(second).atan2(offset.dot(first)).rem_euclid(TAU)
+    };
+    let span = if closed {
+        None
+    } else {
+        let Some(interior) = interior else {
+            return Vec::new();
+        };
+        let (middle, last) = (angle(interior), angle(end));
+        // The arc runs counterclockwise about `normal` when the interior
+        // point lies before the end in that sense.
+        Some(if middle < last {
+            (true, last)
+        } else {
+            (false, last)
+        })
+    };
+    let mut out = Vec::new();
+    for axis in [
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    ] {
+        let along = axis - normal.scale(axis.dot(normal));
+        let length = along.norm();
+        if length <= EPS_HISTORY_CIRCLE_EDGE_E7 {
+            continue;
+        }
+        for sign in [1.0, -1.0] {
+            let point = center.translated(along, sign * radius / length);
+            let keep = match span {
+                None => true,
+                Some((true, last)) => angle(point) <= last,
+                Some((false, last)) => angle(point) >= last || angle(point) == 0.0,
+            };
+            if keep {
+                out.push(point);
+            }
+        }
+    }
+    out
 }
 
 struct EdgeMidpointRequest {
@@ -949,6 +1147,7 @@ pub(crate) fn bind_feature_outputs(
     let mut state_deleted_bodies = HashMap::<i64, Vec<i64>>::new();
     let mut state_solid_bodies = HashMap::<i64, BTreeSet<i64>>::new();
     let mut state_body_centers = HashMap::<i64, Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
+    let mut state_exact_bodies = HashMap::<i64, BTreeSet<i64>>::new();
     let mut state_body_bounds =
         HashMap::<i64, Vec<(i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3))>>::new();
     let mut state_inserted_plane =
@@ -1049,9 +1248,13 @@ pub(crate) fn bind_feature_outputs(
                     .filter_map(|&b| Some((b, body_index.solid_edges(b)?)))
                     .collect();
                 let mut bounds_list = Vec::new();
+                let mut exact_bodies = BTreeSet::new();
                 for (&b, edges) in &solid_edges {
-                    if let Some(bds) = body_index.edge_bounds(edges) {
+                    if let Some((bds, exact)) = body_index.body_bounds(b, edges) {
                         bounds_list.push((b, bds));
+                        if exact {
+                            exact_bodies.insert(b);
+                        }
                     } else {
                         losses.push(
                             crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.note(
@@ -1076,6 +1279,7 @@ pub(crate) fn bind_feature_outputs(
                         .collect();
                     if !centers.is_empty() {
                         state_body_centers.insert(cur_state_id, centers);
+                        state_exact_bodies.insert(cur_state_id, exact_bodies);
                     }
                     if let Some(transition) = history.states()[index].transition.as_ref() {
                         for &fid in &transition.topology.faces.inserted {
@@ -1291,6 +1495,24 @@ pub(crate) fn bind_feature_outputs(
                     .source_properties
                     .entry(cadmpeg_core::nonblank_literal!("body_centers"))
                     .or_insert(formatted);
+            }
+            let exact = state_exact_bodies
+                .get(&state_id)
+                .into_iter()
+                .flatten()
+                .filter(|b| {
+                    !absorbed_bodies.contains(*b)
+                        && !newly_absorbed.contains(*b)
+                        && centers.iter().any(|(body, _)| body == *b)
+                })
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            if !exact.is_empty() {
+                feature
+                    .source_properties
+                    .entry(cadmpeg_core::nonblank_literal!("body_centers_exact"))
+                    .or_insert(exact);
             }
         }
         if is_split_body {
