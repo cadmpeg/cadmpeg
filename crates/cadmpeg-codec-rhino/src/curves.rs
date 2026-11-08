@@ -20,6 +20,9 @@ use crate::wire::{vector, Uuid};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
+/// Relative distance within which a line's origin and unit direction
+/// reproduce its stored endpoints: a few units in the last place of binary64.
+const EPS_LINE_RECONSTRUCTION: f64 = 1.0e-14;
 
 /// Maximum embedded curve nesting depth.
 pub(crate) const MAX_CURVE_DEPTH: usize = 32;
@@ -222,9 +225,14 @@ pub(crate) fn project_curve_leaf(
             (to.z - from.z) / span,
         ))?;
         let origin = FinitePoint3::new(from.translated(*direction.as_raw(), -range.lower()))?;
-        if origin.get().translated(*direction.as_raw(), range.lower()) != from
-            || origin.get().translated(*direction.as_raw(), range.upper()) != to
-        {
+        let reproduces = |parameter: f64, stored: Point3| {
+            let point = origin.get().translated(*direction.as_raw(), parameter);
+            let scale = stored.x.abs().max(stored.y.abs()).max(stored.z.abs()).max(1.0);
+            [point.x - stored.x, point.y - stored.y, point.z - stored.z]
+                .into_iter()
+                .all(|delta| delta.abs() <= EPS_LINE_RECONSTRUCTION * scale)
+        };
+        if !reproduces(range.lower(), from) || !reproduces(range.upper(), to) {
             return None;
         }
         Some(cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -236,6 +244,9 @@ pub(crate) fn project_curve_leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
             parameter_range,
         ),
+        None if matches!(geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
+            (geometry, parameter_range)
+        }
         None => (geometry, None),
     }
 }
@@ -567,9 +578,13 @@ pub(crate) fn decode_inner(
             curve: DecodedCurve::line(read_line(&mut reader, scale, None)?),
         },
         ARC => {
-            let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
+            let (geometry, parameter_range, warnings) = read_arc(&mut reader, scale, None, false)?;
             DecodedGeometry::Curve {
-                curve: DecodedCurve::leaf(geometry, warnings),
+                curve: DecodedCurve::Leaf {
+                    geometry,
+                    parameter_range,
+                    warnings,
+                },
             }
         }
         POLYLINE => DecodedGeometry::Curve {
@@ -1489,7 +1504,7 @@ pub(crate) fn decode_inner_2d(
             ),
         },
         ARC => {
-            let (geometry, warnings) =
+            let (geometry, _, warnings) =
                 read_arc(&mut reader, MillimeterScale::IDENTITY, Some(2), true)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
@@ -1774,7 +1789,14 @@ fn read_arc(
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
     force_nurbs: bool,
-) -> Result<(CurveGeometry, Diagnostics), GeometryError> {
+) -> Result<
+    (
+        CurveGeometry,
+        Option<cadmpeg_ir::topology::IncreasingParameterInterval>,
+        Diagnostics,
+    ),
+    GeometryError,
+> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let circle = read_circle(reader, scale)?;
@@ -1797,7 +1819,11 @@ fn read_arc(
     if delta <= 0.0 || delta > TAU + EPS_CURVE_DEGENERATE {
         return Err(error(reader.position(), "arc angle span is invalid"));
     }
-    if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
+    let full = canonical_circle(&circle, angle, domain, delta);
+    let arc_range = cadmpeg_ir::topology::IncreasingParameterInterval::new(angle)
+        .filter(|_| angular_arc(&circle, angle, domain));
+    if !force_nurbs && (full || arc_range.is_some()) {
+        let parameter_range = if full { None } else { arc_range };
         return Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
@@ -1811,6 +1837,7 @@ fn read_arc(
                     circle.radius,
                 ),
             )),
+            parameter_range,
             warnings,
         ));
     }
@@ -1822,6 +1849,7 @@ fn read_arc(
             delta,
             reader.position(),
         )?)),
+        None,
         warnings,
     ))
 }
@@ -2098,6 +2126,13 @@ fn arc_nurbs(
         false,
     )
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+}
+
+/// An arc whose domain is its angle interval: the circle parameter is the angle.
+fn angular_arc(circle: &Circle, angle: [f64; 2], domain: [f64; 2]) -> bool {
+    (domain[0] - angle[0]).abs() < CIRCLE_TOLERANCE
+        && (domain[1] - angle[1]).abs() < CIRCLE_TOLERANCE
+        && (circle.xaxis.norm() - 1.0).abs() < CIRCLE_TOLERANCE
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
