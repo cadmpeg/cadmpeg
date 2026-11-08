@@ -560,7 +560,7 @@ impl EncoderBackend for CadirEncoder {
                 return Err(limit.into());
             }
             Err(error @ crate::hash::finite_json::CanonicalJsonError::NonFinite { .. }) => {
-                if let Some(finding) = ValidatedFinding::for_cadir(&ctx, input.ir)? {
+                if let Some(finding) = ValidatedFinding::for_cadir_encode(input.ir) {
                     return Err(EncodeError::InvalidInput(finding));
                 }
                 return Err(transitional_from_codec(CodecError::malformed(

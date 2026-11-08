@@ -98,8 +98,10 @@ fn cadir_encoder_refuses_a_non_finite_document_field_with_validation_evidence() 
         incomplete_reason: None,
     }));
 
+    let mut input = EncodeInput::new(&ir, None);
+    input.limits.max_recursion_depth = 0;
     let error = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(input, TargetRequest::Inherit)
         .expect_err("CADIR cannot encode a non-finite field");
     let EncodeError::InvalidInput(proof) = error else {
         panic!("the refusal must carry validator evidence");

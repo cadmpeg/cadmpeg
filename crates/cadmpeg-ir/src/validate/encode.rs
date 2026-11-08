@@ -57,10 +57,23 @@ impl ValidatedFinding {
         ctx: &DecodeContext<'_>,
         document: &CadIr,
     ) -> Result<Option<Self>, ResourceLimit> {
-        use crate::hash::finite_json::{check_cadir_finite, CanonicalJsonError};
+        match crate::hash::finite_json::check_cadir_finite(ctx, document) {
+            Err(crate::hash::finite_json::CanonicalJsonError::Resource(limit)) => Err(limit),
+            result => Ok(Self::from_cadir_check(result)),
+        }
+    }
 
-        match check_cadir_finite(ctx, document) {
-            Err(CanonicalJsonError::NonFinite { value }) => Ok(Some(Self {
+    pub(crate) fn for_cadir_encode(document: &CadIr) -> Option<Self> {
+        Self::from_cadir_check(crate::hash::finite_json::check_cadir_finite_for_encode(
+            document,
+        ))
+    }
+
+    fn from_cadir_check(
+        result: Result<(), crate::hash::finite_json::CanonicalJsonError>,
+    ) -> Option<Self> {
+        match result {
+            Err(crate::hash::finite_json::CanonicalJsonError::NonFinite { value }) => Some(Self {
                 finding: Finding {
                     check: Check::FiniteValue,
                     severity: Severity::Error,
@@ -68,9 +81,8 @@ impl ValidatedFinding {
                     entity: None,
                     related: Vec::new(),
                 },
-            })),
-            Err(CanonicalJsonError::Resource(limit)) => Err(limit),
-            Ok(()) | Err(CanonicalJsonError::Serialize(_)) => Ok(None),
+            }),
+            _ => None,
         }
     }
 
