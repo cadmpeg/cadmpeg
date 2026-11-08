@@ -15,6 +15,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::text::TextMember;
 use super::{PmDcSketchEntity, PmDcSketchEntityKind, SketchInventory};
 use crate::compact_matrix::CompactMatrix;
+use crate::layout::{
+    pm_dc_box_frame_fixed as frame_fixed, pm_dc_box_frame_tail as frame_tail,
+    pm_dc_box_group_body as group_body_layout,
+};
 use crate::loss::InventorLossCode;
 use crate::pmdc::{content_header, Cursor, PmDcReference};
 
@@ -28,8 +32,44 @@ const GROUP_TYPE: [u8; 16] = [
 ];
 /// The segment major version whose box member bodies are admitted.
 const VERSION: u8 = 19;
+/// The size of one stored reference.
+const REFERENCE_SIZE: usize = 4;
 /// The count of references that a box group stores.
-const GROUP_REFERENCES: usize = 7;
+const GROUP_REFERENCES: usize =
+    (group_body_layout::LEN - group_body_layout::REFERENCES) / REFERENCE_SIZE;
+
+/// A fixed-layout part of a record body. It checks that each field is read at
+/// the layout offset.
+struct Part {
+    remaining: usize,
+    name: &'static str,
+}
+
+impl Part {
+    fn begin(cursor: &Cursor<'_>, name: &'static str) -> Self {
+        Self {
+            remaining: cursor.remaining(),
+            name,
+        }
+    }
+
+    /// Requires the cursor to sit at `offset` of the part.
+    fn at(&self, cursor: &Cursor<'_>, offset: usize) -> Result<(), CodecError> {
+        if self.remaining.checked_sub(cursor.remaining()) == Some(offset) {
+            Ok(())
+        } else {
+            Err(CodecError::malformed(format_args!(
+                "Inventor PmDc {} field is not at layout offset {offset}",
+                self.name
+            )))
+        }
+    }
+
+    /// Requires the part to span `len` bytes.
+    fn end(&self, cursor: &Cursor<'_>, len: usize) -> Result<(), CodecError> {
+        self.at(cursor, len)
+    }
+}
 
 /// Entity-flag bit that a box line carries.
 const BOX_LINE_FLAG: u32 = 0x8_0000;
@@ -108,41 +148,61 @@ pub(super) fn admit(
 /// The body of a box frame: the owning sketch reference, width, height, corner
 /// position, a u32 value, a compact placement matrix, and a fixed tail.
 fn frame_body(cursor: &mut Cursor<'_>) -> Result<BoxMember, CodecError> {
+    let fixed = Part::begin(cursor, "box frame");
+    fixed.at(cursor, frame_fixed::SKETCH_REFERENCE)?;
     let sketch = cursor.reference("box frame sketch reference")?;
     if sketch.index() == 0 {
         return Err(CodecError::malformed(
             "Inventor PmDc box frame has a null sketch reference",
         ));
     }
+    fixed.at(cursor, frame_fixed::WIDTH)?;
     let width = cursor.f64("box frame width")?.get();
+    fixed.at(cursor, frame_fixed::HEIGHT)?;
     let height = cursor.f64("box frame height")?.get();
     if width <= 0.0 || height <= 0.0 {
         return Err(CodecError::malformed(
             "Inventor PmDc box frame size is not positive",
         ));
     }
+    fixed.at(cursor, frame_fixed::CORNER_X)?;
     cursor.f64("box frame corner x")?;
+    fixed.at(cursor, frame_fixed::CORNER_Y)?;
     cursor.f64("box frame corner y")?;
+    fixed.at(cursor, frame_fixed::VALUE)?;
     cursor.u32("box frame value")?;
+    fixed.at(cursor, frame_fixed::VALUE_MASK)?;
     let value_mask = cursor.u16("box frame placement value mask")?;
+    fixed.at(cursor, frame_fixed::ZERO_MASK)?;
     let zero_mask = cursor.u16("box frame placement zero mask")?;
+    fixed.end(cursor, frame_fixed::LEN)?;
     CompactMatrix::try_new(value_mask, zero_mask, |_| {
         cursor.f64("box frame placement value")
     })?;
+    let tail = Part::begin(cursor, "box frame tail");
+    tail.at(cursor, frame_tail::TAIL_VALUE)?;
     cursor.u32("box frame tail value")?;
+    tail.at(cursor, frame_tail::TAIL_FLAGS)?;
     cursor.u16("box frame tail flags")?;
+    tail.at(cursor, frame_tail::TAIL_SCALE)?;
     cursor.f64("box frame tail scale")?;
+    tail.at(cursor, frame_tail::TAIL_STATE)?;
     cursor.u8("box frame tail state")?;
+    tail.end(cursor, frame_tail::LEN)?;
     Ok(BoxMember::Frame { sketch })
 }
 
 /// The body of a box group: a u32 value and seven references.
 fn group_body(cursor: &mut Cursor<'_>) -> Result<BoxMember, CodecError> {
+    let body = Part::begin(cursor, "box group");
+    body.at(cursor, group_body_layout::VALUE)?;
     cursor.u32("box group value")?;
+    body.at(cursor, group_body_layout::REFERENCES)?;
     let mut references = Vec::with_capacity(GROUP_REFERENCES);
     for _ in 0..GROUP_REFERENCES {
         references.push(cursor.reference("box group reference")?);
     }
+    body.end(cursor, group_body_layout::LEN)?;
     let references = references
         .try_into()
         .map_err(|_| CodecError::malformed("Inventor PmDc box group reference count"))?;
