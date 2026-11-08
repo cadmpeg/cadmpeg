@@ -351,7 +351,7 @@ fn encode_source_less_wires(
             !edge_vertex_ids.contains(vertex) && !free_vertex_owners.contains_key(*vertex)
         })
     {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
         ));
     }
