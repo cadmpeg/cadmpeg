@@ -581,7 +581,7 @@ fn counts_large_file(args: &QueryArgs) -> Result<()> {
     let mut reader = BufReader::new(file);
     let sniff: KindProbe = serde_json::from_reader(&mut reader)
         .with_context(|| format!("parsing {}", args.file.display()))?;
-    let kind = classify_kind(sniff, &args.file)?;
+    let kind = classify_kind(&sniff, &args.file)?;
     reader.seek(SeekFrom::Start(0))?;
     let artifact = match kind {
         ArtifactKind::Report => Artifact::Report(Box::new(serde_json::from_reader(&mut reader)?)),
@@ -641,10 +641,10 @@ fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
             path.display()
         )
     })?;
-    classify_kind(sniff, path)
+    classify_kind(&sniff, path)
 }
 
-fn classify_kind(sniff: KindProbe, path: &Path) -> Result<ArtifactKind> {
+fn classify_kind(sniff: &KindProbe, path: &Path) -> Result<ArtifactKind> {
     let kind = if sniff.command.is_some() && sniff.status.is_some() {
         ArtifactKind::Report
     } else if sniff.ir_sha256.is_some() {
