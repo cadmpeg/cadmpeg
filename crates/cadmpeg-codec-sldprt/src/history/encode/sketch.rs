@@ -29,7 +29,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         block: Option<&FeatureId>,
         placement: Option<&cadmpeg_ir::transform::Transform>,
     ) -> Result<NeutralFeatureEncoding, WriteError> {
-        if block.is_some() || placement.is_some() {
+        let supported = match (block, placement) {
+            (None, None) => true,
+            (Some(_), Some(placement)) => {
+                let rows = placement.affine_rows();
+                rows[0][..3] == [1.0, 0.0, 0.0]
+                    && rows[1][..3] == [0.0, 1.0, 0.0]
+                    && rows[2][..3] == [0.0, 0.0, 1.0]
+            }
+            _ => false,
+        };
+        if !supported {
             return Err(WriteError::Decline(format!(
                 "SLDPRT feature {} requires a native sketch-block instance record",
                 self.feature.id

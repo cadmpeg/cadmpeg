@@ -622,6 +622,7 @@ pub(super) fn plan(
     )?;
     if projected.scope.model
         && !projected.scope.design
+        && !supported.is_empty()
         && prepared_native.as_ref().is_none_or(|native| {
             native
                 .feature_histories
@@ -945,7 +946,7 @@ fn prepare_native(
             }
         }
     }
-    crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
+    crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native, None)?;
     ir.native = cadmpeg_ir::native::Native::default();
     native.store(&ctx, ir.native.namespace_mut("sldprt"))?;
     // The wipe orphaned references into the removed namespaces; write the

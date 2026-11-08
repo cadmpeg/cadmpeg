@@ -157,7 +157,10 @@ pub(super) fn reduce(
     Ok(())
 }
 
-fn appearances(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
+fn appearances(
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), super::super::write_error::WriteError> {
     let colors = ir
         .model
         .appearances
@@ -215,8 +218,8 @@ fn appearances(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecEr
     });
     match super::super::body_material(ir) {
         Ok(_) => return Ok(()),
-        Err(CodecError::UnsupportedContent(_)) => {}
-        Err(error) => return Err(error),
+        Err(super::super::MaterialError::Decline(_)) => {}
+        Err(error) => return Err(error.into()),
     }
     let mut body_colors = ir
         .model

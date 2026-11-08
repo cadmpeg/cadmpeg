@@ -2,7 +2,7 @@
 //! A transformed surface carrier leaves the semantic writer as an error, and
 //! the writer reads no basis under it.
 
-use cadmpeg_core::CodecError;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
 use cadmpeg_ir::geometry::{
     PlacedSurface, SolvedSurfaceGeometry, SurfaceGeometry, MAX_GEOMETRY_NESTING,
@@ -66,7 +66,7 @@ fn a_transformed_surface_is_unwritable_at_every_admitted_depth() {
         )
         .expect_err("a transformed surface carrier is unwritable");
         assert!(
-            matches!(refusal, CodecError::UnsupportedContent(_)),
+            matches!(refusal, WriteError::Decline(_)),
             "the refusal is the writer's unsupported-carrier route, not {refusal:?}"
         );
     }

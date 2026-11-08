@@ -106,6 +106,31 @@ fn public_rhino_plan_obeys_a_caller_limit_below_a_golden_record_count() {
 }
 
 #[test]
+fn public_rhino_plan_checks_all_neutral_input_records() {
+    let source = RhinoCodec
+        .decode(
+            &mut std::io::Cursor::new(include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/golden/fixtures/e2_structure.3dm"
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("structured golden source");
+    let count = source.ir().census().values().sum::<usize>();
+    let mut input = EncodeInput::new(source.ir(), None);
+    input.limits.max_entities = cadmpeg_core::decode::u64_from_index(count - 1);
+    let error = RhinoCodec
+        .plan(input, TargetRequest::Explicit("rhino:archive-80"))
+        .expect_err("input record count exceeds caller limit");
+    let EncodeError::ResourceLimit(limit) = error else {
+        panic!("typed entity refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::Entities);
+    assert_eq!(limit.limit, input.limits.max_entities);
+    assert_eq!(limit.operation, "inspect Rhino input records");
+}
+
+#[test]
 fn rhino_coverage_read_uses_the_same_caller_entity_budget() {
     let ir = points();
     let mut input = EncodeInput::new(&ir, None);

@@ -105,7 +105,7 @@ pub(in crate::writer) fn retain_nurbs(ir: &CadIr, id: &CurveId, entity: &mut Ent
     let Some(tokens) = fields(&entity.parameter_body) else {
         return;
     };
-    if parameters.len() != tokens.len() + 1 || tokens.len() < 9 || tokens[2] != b"1" {
+    if parameters.len() != tokens.len() + 1 || tokens.len() < 9 {
         return;
     }
     let numeric = |index: usize| {
@@ -127,7 +127,11 @@ pub(in crate::writer) fn retain_nurbs(ir: &CadIr, id: &CurveId, entity: &mut Ent
             .ok()
     };
     let normal_start = tokens.len() - 3;
+    let source_plane = tokens[2] == b"0" && numeric(2) == Some(1.0);
     if (0..normal_start).any(|index| {
+        if index == 2 && source_plane {
+            return false;
+        }
         numeric(index)
             .zip(current(index))
             .is_none_or(|(a, b)| a != b)
@@ -144,13 +148,45 @@ pub(in crate::writer) fn retain_nurbs(ir: &CadIr, id: &CurveId, entity: &mut Ent
             .zip(current(index))
             .is_some_and(|(a, b)| a == -b)
     });
-    if !same_normal && !opposite_normal {
+    if source_plane {
+        let (Some(x), Some(y), Some(z)) = (
+            numeric(normal_start),
+            numeric(normal_start + 1),
+            numeric(normal_start + 2),
+        ) else {
+            return;
+        };
+        let normal = cadmpeg_ir::math::Vector3::new(x, y, z);
+        let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve)) = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| &curve.id == id)
+            .and_then(|curve| curve.geometry.solved())
+        else {
+            return;
+        };
+        let points = curve.control_points();
+        let Some(first) = points.first() else {
+            return;
+        };
+        if normal.norm() != 1.0
+            || points
+                .iter()
+                .any(|point| normal.dot(point.get().vector_from(first.get())) != 0.0)
+        {
+            return;
+        }
+    } else if tokens[2] != b"1" || (!same_normal && !opposite_normal) {
         return;
     }
     let mut output = tokens[..normal_start]
         .iter()
         .map(|token| String::from_utf8_lossy(token).into_owned())
         .collect::<Vec<_>>();
+    if source_plane {
+        "1".clone_into(&mut output[2]);
+    }
     for index in normal_start..tokens.len() {
         let Some(value) = numeric(index) else { return };
         output.push(value.to_string());

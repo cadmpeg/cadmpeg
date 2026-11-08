@@ -735,7 +735,7 @@ fn source_less_reference_plane_retains_unresolved_construction() {
 }
 
 #[test]
-fn source_less_sketch_block_reports_unwritten_instance() {
+fn source_less_sketch_block_writes_instance() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Block" Type="SketchBlockDefinition" id="101"/><Feature Name="Use" Type="SketchBlockInstance" id="102" BlockDefinition="101" BlockOrigin="10mm,20mm,30mm"/></Keywords>"#));
     source.extend(make_block(
@@ -768,13 +768,13 @@ fn source_less_sketch_block_reports_unwritten_instance() {
         .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
         block: Some(block),
-        placement: Some(_),
+        placement: Some(placement),
     }) = instance.evaluation.definition()
     else {
         panic!("block instance");
     };
     assert_eq!(block, &definition.id);
-    let instance_id = instance.id.clone();
+    let expected_placement = *placement;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
     for feature in &mut ir.model.features {
@@ -783,10 +783,6 @@ fn source_less_sketch_block_reports_unwritten_instance() {
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert!(plan.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::SldprtLossCode::WriterDesignReduced.kind()
-            && loss.message.contains(instance_id.as_str())
-    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
@@ -810,10 +806,9 @@ fn source_less_sketch_block_reports_unwritten_instance() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Use"))
         .unwrap();
-    assert!(matches!(
-        instance.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::StoredGeometry { .. })
-    ));
+    assert!(matches!(instance.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) })
+            if block == &definition.id && placement == &expected_placement));
 }
 
 #[test]
@@ -1336,3 +1331,308 @@ fn source_less_sketch_block_definition_retains_its_sketch_geometry() {
     assert!((before_radius.get() - after_radius.get()).abs() < EPS_SKETCH_MM);
 }
 
+#[test]
+fn authored_block_instance_retains_definition_reference_and_placement() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let definition_id =
+        cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#block").unwrap();
+    let instance_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#use").unwrap();
+    let placement = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 30.0],
+    ])
+    .unwrap();
+    let feature = |id, name: &str, operation| cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id,
+        ordinal: 0,
+        name: Some(name.to_owned()),
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(operation),
+        ),
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        definition_id.clone(),
+        "Block",
+        FeatureOperation::SketchBlockDefinition { sketch: None },
+    ));
+    ir.model.features.push(feature(
+        instance_id,
+        "Use",
+        FeatureOperation::SketchBlockInstance {
+            block: Some(definition_id),
+            placement: Some(placement),
+        },
+    ));
+    ir.model.features.last_mut().unwrap().ordinal = 1;
+    let definition = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+        block: Some(block),
+        placement: Some(placement),
+    }) = instance.evaluation.definition()
+    else {
+        panic!("block instance");
+    };
+    assert_eq!(block, &definition.id);
+    let expected_placement = *placement;
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    let history = scan
+        .sections()
+        .find(|section| section.name().is_some_and(|name| name.contains("Keywords")))
+        .unwrap();
+    let text = crate::container::xml_text(history.payload()).unwrap();
+    let document = roxmltree::Document::parse(&text).unwrap();
+    let element = document
+        .descendants()
+        .find(|node| node.attribute("Name") == Some("Use"))
+        .unwrap();
+    assert!(element.attribute("BlockDefinition").is_none());
+    assert!(element.attribute("BlockOrigin").is_none());
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| {
+            lane.names.iter().any(|name| name.value == "Use")
+                && lane.names.iter().any(|name| name.value == "Block")
+        })
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )
+    .unwrap();
+    let mut reader = crate::carchive::reader::Reader::new(
+        &ctx,
+        &lane.native_payload,
+        0,
+        std::collections::HashMap::new(),
+        1,
+        None,
+    );
+    reader.ptr(None).unwrap();
+    let definition = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    assert!(
+        matches!(instance.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) }) if block == &definition.id && placement == &expected_placement)
+    );
+}
+
+#[test]
+fn source_less_sketch_block_retains_definition_reference_and_placement() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Block" Type="SketchBlockDefinition" id="101"/><Feature Name="Use" Type="SketchBlockInstance" id="102" BlockDefinition="101" BlockOrigin="10mm,20mm,30mm"/></Keywords>"#));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[
+            ("moSketchBlockDef_c", "Block", 101),
+            ("moSketchBlockInst_c", "Use", 102),
+        ]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let definition = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+        block: Some(block),
+        placement: Some(placement),
+    }) = instance.evaluation.definition()
+    else {
+        panic!("block instance");
+    };
+    assert_eq!(block, &definition.id);
+    let expected_placement = *placement;
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let definition = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    assert!(
+        matches!(instance.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) }) if block == &definition.id && placement == &expected_placement)
+    );
+}
+
+#[test]
+fn source_less_block_instances_share_their_definition() {
+    const EPS_BLOCK_MM: f64 = 1e-12;
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Block" Type="SketchBlockDefinition" id="101"/><Feature Name="First" Type="SketchBlockInstance" id="102" BlockDefinition="101" BlockOrigin="10mm,20mm,30mm"/><Feature Name="Second" Type="SketchBlockInstance" id="103" BlockDefinition="101" BlockOrigin="40mm,50mm,60mm"/></Keywords>"#));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[
+            ("moSketchBlockDef_c", "Block", 101),
+            ("moSketchBlockInst_c", "First", 102),
+            ("moSketchBlockInst_c", "Second", 103),
+        ]),
+    ));
+    let input = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| lane.names.iter().any(|name| name.value == "First"))
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )
+    .unwrap();
+    let mut reader = crate::carchive::reader::Reader::new(
+        &ctx,
+        &lane.native_payload,
+        0,
+        std::collections::HashMap::new(),
+        1,
+        None,
+    );
+    reader.ptr(None).unwrap();
+    reader.ptr(None).unwrap();
+    assert_eq!(reader.p, lane.native_payload.len());
+    let definition = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    for (name, expected) in [
+        ("First", [10.0, 20.0, 30.0]),
+        ("Second", [40.0, 50.0, 60.0]),
+    ] {
+        let feature = output
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+            block: Some(block),
+            placement: Some(placement),
+        }) = feature.definition()
+        else {
+            panic!("missing block instance {name}");
+        };
+        assert_eq!(block, &definition.id);
+        for (row, value) in placement.affine_rows().iter().zip(expected) {
+            assert!((row[3] - value).abs() < EPS_BLOCK_MM);
+        }
+    }
+}

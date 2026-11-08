@@ -136,7 +136,7 @@ fn validate_changed_annotations(
     annotations: &Annotations,
     native: &crate::brep::graph::Brep,
     section: &str,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let points = native
         .points
         .iter()
@@ -183,16 +183,16 @@ fn annotation_offset(
     annotations: &Annotations,
     id: impl std::fmt::Display,
     section: &str,
-) -> Result<usize, CodecError> {
+) -> Result<usize, WriteError> {
     let id = id.to_string();
     let provenance = annotations.provenance.get(&id).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        WriteError::Decline(format!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
     })?;
     let stream = provenance.stream();
     if stream != section {
-        return Err(CodecError::malformed(format_args!(
+        return Err(WriteError::Decline(format!(
             "SLDPRT mutation provenance for {id} references {stream}, not {section}"
         )));
     }
@@ -202,15 +202,15 @@ fn annotation_offset(
 fn raw_annotation_offset(
     annotations: &Annotations,
     id: impl std::fmt::Display,
-) -> Result<usize, CodecError> {
+) -> Result<usize, WriteError> {
     let id = id.to_string();
     let provenance = annotations.provenance.get(&id).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        WriteError::Decline(format!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
     })?;
     usize::try_from(provenance.offset).map_err(|_| {
-        CodecError::malformed(format_args!(
+        WriteError::Decline(format!(
             "SLDPRT mutation provenance offset for {id} exceeds address space"
         ))
     })
@@ -397,7 +397,7 @@ fn patch_points(
     native: &crate::brep::graph::Brep,
     payload: &mut [u8],
     scale: f64,
-) -> Result<Option<()>, CodecError> {
+) -> Result<Option<()>, WriteError> {
     let mut current = HashMap::new();
     for point in &ir.model.points {
         current.insert(&point.id, point);
@@ -442,7 +442,7 @@ fn patch_surfaces(
     native: &crate::brep::graph::Brep,
     payload: &mut [u8],
     scale: f64,
-) -> Result<Option<()>, CodecError> {
+) -> Result<Option<()>, WriteError> {
     let old = native
         .surfaces
         .iter()
@@ -505,7 +505,7 @@ fn patch_curves(
     native: &crate::brep::graph::Brep,
     payload: &mut [u8],
     scale: f64,
-) -> Result<Option<()>, CodecError> {
+) -> Result<Option<()>, WriteError> {
     let old = native
         .curves
         .iter()
