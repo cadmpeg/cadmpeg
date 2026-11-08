@@ -108,6 +108,7 @@ fn cascade_validation_errors(
                     | Check::Identity
                     | Check::WireTopology
                     | Check::CarrierReachability
+                    | Check::ParameterDomain
             )
         });
         let Some(finding) = cascaded else {
@@ -162,10 +163,60 @@ fn cascade_validation_errors(
                     )));
                 }
             }
+            Check::ParameterDomain => {
+                let Some(edge) = projected
+                    .model
+                    .edges
+                    .iter_mut()
+                    .find(|edge| edge.id.as_str() == entity)
+                    .filter(|edge| edge.param_range().is_some())
+                else {
+                    return Err(CodecError::Malformed(finding.message.clone()));
+                };
+                edge.set_param_range(None);
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "edge {entity}: its parameter range lies outside its carrier domain; the write bounds it by its vertices"
+                )));
+            }
             _ => {
                 return Err(CodecError::Malformed(finding.message.clone()));
             }
         }
+    }
+}
+
+/// Distance from unit length at which a sketch axis is stored normalized.
+const EPS_SKETCH_AXIS_UNIT_LENGTH: f64 = 1.0e-12;
+
+/// The resolved sketch axes that are not of unit length.
+fn non_unit_sketch_axes(
+    ir: &CadIr,
+) -> impl Iterator<Item = (&cadmpeg_ir::sketches::SketchId, &'static str)> {
+    ir.model.sketches.iter().flat_map(|sketch| {
+        sketch
+            .resolved_placement()
+            .into_iter()
+            .flat_map(|(_, normal, u_axis)| [("normal", normal), ("u_axis", u_axis)])
+            .filter(|(_, vector)| {
+                (vector.get().norm() - 1.0).abs() > EPS_SKETCH_AXIS_UNIT_LENGTH
+            })
+            .map(move |(axis, _)| (&sketch.id, axis))
+    })
+}
+
+/// Whether a sketch-plane axis needs the unit normalization SolidWorks
+/// stores.
+pub(super) fn sketch_axes_need_normalization(ir: &CadIr) -> bool {
+    non_unit_sketch_axes(ir).next().is_some()
+}
+
+/// SolidWorks stores sketch-plane axes as unit directions; name each sketch
+/// whose resolved axes are not of unit length.
+fn report_sketch_axis_normalization(projected: &CadIr, losses: &mut Vec<LossNote>) {
+    for (sketch, axis) in non_unit_sketch_axes(projected) {
+        losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+            "sketch {sketch}: model.sketches[].placement.frame.{axis} normalized to unit length"
+        )));
     }
 }
 
@@ -714,6 +765,7 @@ pub(super) fn plan(
         &mut losses,
     )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
+    report_sketch_axis_normalization(&projected, &mut losses);
     let held = match retained_native.as_ref().filter(|_| projected.scope.design) {
         Some(source) => crate::resolved_features::native_lane_write::held::held_lanes(
             &slot_context,
@@ -1240,10 +1292,33 @@ fn null_unresolvable_native_refs(
         owned: &std::collections::HashSet<String>,
         present: &std::collections::HashSet<String>,
         foreign_only: bool,
-        cleared: &mut Vec<(String, String)>,
+        cleared: &mut Vec<(String, String, bool)>,
     ) {
+        let dangling = |target: &str| {
+            let namespace = target.split(':').next().unwrap_or(target);
+            !owned.contains(target)
+                && (!foreign_only || !present.iter().any(|present| present == namespace))
+        };
         match value {
             serde_json::Value::Object(fields) => {
+                // A persistent input operand exists only through its native
+                // record, so an operand whose record is not retained is
+                // dropped with that record.
+                if let Some(serde_json::Value::Array(operands)) = fields.get_mut("operands") {
+                    operands.retain(|operand| {
+                        let (Some(id), Some(target)) = (
+                            operand.get("id").and_then(serde_json::Value::as_str),
+                            operand.get("native_ref").and_then(serde_json::Value::as_str),
+                        ) else {
+                            return true;
+                        };
+                        if dangling(target) {
+                            cleared.push((id.to_owned(), target.to_owned(), true));
+                            return false;
+                        }
+                        true
+                    });
+                }
                 if let (Some(id), Some(serde_json::Value::String(target))) = (
                     fields
                         .get("id")
@@ -1251,11 +1326,8 @@ fn null_unresolvable_native_refs(
                         .map(str::to_owned),
                     fields.get("native_ref"),
                 ) {
-                    let namespace = target.split(':').next().unwrap_or(target.as_str());
-                    if !owned.contains(target)
-                        && (!foreign_only || !present.iter().any(|present| present == namespace))
-                    {
-                        cleared.push((id, target.clone()));
+                    if dangling(target) {
+                        cleared.push((id, target.clone(), false));
                         fields.remove("native_ref");
                     }
                 }
@@ -1298,10 +1370,16 @@ fn null_unresolvable_native_refs(
     *model = serde_json::from_value(document)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     cleared.sort();
-    for (id, target) in &cleared {
-        losses.push(SldprtLossCode::WriterNativeReferenceCleared.note(format!(
-            "record {id} referenced native record {target} that the write does not retain; the dangling native reference was cleared"
-        )));
+    for (id, target, dropped) in &cleared {
+        if *dropped {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "input operand {id} dropped; its native record {target} is not retained by the write"
+            )));
+        } else {
+            losses.push(SldprtLossCode::WriterNativeReferenceCleared.note(format!(
+                "record {id} referenced native record {target} that the write does not retain; the dangling native reference was cleared"
+            )));
+        }
     }
     Ok(())
 }
