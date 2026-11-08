@@ -105,12 +105,18 @@ pub(super) fn write(
         )?;
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
-            &super::framed_object_record(
+            &super::framed_object_record_with_userdata(
                 SUBD_OBJECT,
                 crate::subd::ON_SUBD.to_wire(),
                 payload.as_bytes(),
                 Some(&[1]),
                 Some(attributes),
+                super::attribute_userdata_chunk(&super::object_user_strings(
+                    ir,
+                    surface.id.as_str(),
+                    display.name.unwrap_or_default(),
+                ))?,
+                &[],
             )?,
             "retain Rhino archive bytes",
         )?;

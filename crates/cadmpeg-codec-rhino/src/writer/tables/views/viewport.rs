@@ -136,7 +136,10 @@ fn canonical_orientation(raw: [f64; 4]) -> [f64; 4] {
         )
     };
     let norm = recovered[0]
-        .mul_add(recovered[0], recovered[1].mul_add(recovered[1], recovered[2] * recovered[2]))
+        .mul_add(
+            recovered[0],
+            recovered[1].mul_add(recovered[1], recovered[2] * recovered[2]),
+        )
         .sqrt();
     if norm <= f64::EPSILON {
         return [0.0, 0.0, 1.0, 0.0];

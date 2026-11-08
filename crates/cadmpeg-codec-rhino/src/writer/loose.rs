@@ -185,11 +185,10 @@ pub(super) fn write(
                 body.id
             )));
         }
-        ctx.charge_entities(1, "write Rhino object record")?;
         let name = display
             .and_then(|value| value.name)
             .or(body.name.as_deref());
-        let strings = super::object_user_strings(document, &identity, name.unwrap_or_default());
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
             &super::framed_object_record_full(
                 kind,
@@ -205,7 +204,11 @@ pub(super) fn write(
                     display.and_then(|value| value.visible).or(body.visible),
                     materials,
                 )?),
-                super::attribute_userdata_chunk(&strings)?,
+                super::attribute_userdata_chunk(&super::object_user_strings(
+                    document,
+                    &identity,
+                    name.unwrap_or_default(),
+                ))?,
             )?,
             "retain Rhino Brep records",
         )?;
