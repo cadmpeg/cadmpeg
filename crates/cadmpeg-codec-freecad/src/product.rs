@@ -758,6 +758,48 @@ pub(crate) fn transfer_neutral(
         occurrence.ordinal = u32::try_from(rank)
             .map_err(|_| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
     }
+    // A container's children rank by position in its Group (#238 §5.5).
+    let mut groups: HashMap<String, HashMap<&str, usize>> = HashMap::new();
+    for occurrence in &occurrences {
+        let Some(record) = occurrence
+            .native_ref
+            .as_deref()
+            .and_then(|object| record_by_object.get(object).copied())
+        else {
+            continue;
+        };
+        groups.insert(
+            occurrence.id.as_str().to_owned(),
+            record
+                .members()
+                .iter()
+                .enumerate()
+                .map(|(position, member)| (member.as_str(), position))
+                .collect(),
+        );
+    }
+    let mut children: HashMap<String, Vec<(usize, u32, usize)>> = HashMap::new();
+    for (index, occurrence) in occurrences.iter().enumerate() {
+        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+            continue;
+        };
+        let position = groups
+            .get(parent.as_str())
+            .zip(occurrence.native_ref.as_deref())
+            .and_then(|(group, native)| group.get(native).copied())
+            .unwrap_or(usize::MAX);
+        children
+            .entry(parent.as_str().to_owned())
+            .or_default()
+            .push((position, occurrence.ordinal, index));
+    }
+    for mut members in children.into_values() {
+        members.sort_unstable();
+        for (rank, (_, _, index)) in members.into_iter().enumerate() {
+            occurrences[index].ordinal = u32::try_from(rank)
+                .map_err(|_| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
+        }
+    }
     Ok((definitions, occurrences))
 }
 
