@@ -370,6 +370,7 @@ pub(crate) enum F3dLossCode {
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
     FeatureWorkAxisRuleUnassigned,
+    FeatureWorkAxisEndpointToleranceAssumed,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
@@ -755,6 +756,7 @@ impl F3dLossCode {
         Self::FeatureFormEmptyCagesAssumed,
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureWorkAxisRuleUnassigned,
+        Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureCombineSelectionNative,
@@ -1053,6 +1055,9 @@ impl F3dLossCode {
             Self::FeatureFormEmptyCagesAssumed => "feature.form-empty-cages-assumed",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
+            Self::FeatureWorkAxisEndpointToleranceAssumed => {
+                "feature.work-axis-endpoint-tolerance-assumed"
+            }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
@@ -1360,6 +1365,7 @@ impl F3dLossCode {
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureWorkAxisRuleUnassigned
+            | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
@@ -1589,6 +1595,7 @@ impl F3dLossCode {
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureWorkAxisRuleUnassigned
+            | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
@@ -1914,6 +1921,7 @@ mod tests {
                 "feature.form-empty-cages-assumed",
                 "feature.scale-frame-length-form-assumed",
                 "feature.work-axis-rule-unassigned",
+                "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.combine-selection-native",

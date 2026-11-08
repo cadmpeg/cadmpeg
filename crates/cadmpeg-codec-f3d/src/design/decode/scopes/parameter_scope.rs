@@ -55,6 +55,7 @@ use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
+use super::work_geometry::work_axis_loss_notes;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -272,27 +273,11 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(construction) =
-                exact_work_axis_construction(bytes, &records, &scope, &stream_types)
+            if let Some(axis) = exact_work_axis_construction(bytes, &records, &scope, &stream_types)
             {
-                if let Some(
-                    crate::records::feature::work_geometry::DesignWorkAxisSource::PointDirection {
-                        carrier_record_index,
-                        reference_type,
-                        input_record_indices,
-                    },
-                ) = &construction.source
-                {
-                    losses.push(crate::loss::F3dLossCode::FeatureWorkAxisRuleUnassigned.note(
-                        format!(
-                            "WorkAxis scope {} in {} assumes the position and direction of carrier {carrier_record_index} give its solved axis; refType {reference_type} has no assigned construction rule, and inputs {input_record_indices:?} stay native.",
-                            scope.record_index,
-                            entry.name,
-                        ),
-                    ));
-                }
+                losses.extend(work_axis_loss_notes(&scope, &axis));
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
-                    *slot = Some(construction);
+                    *slot = Some(axis.construction);
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {

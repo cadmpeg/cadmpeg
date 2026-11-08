@@ -4,9 +4,12 @@ use std::collections::HashMap;
 
 use crate::design::decode::scopes::point_data::POINT_DATA_TYPE_GUID;
 use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
-use crate::design::decode::scopes::work_geometry::exact_work_axis_construction;
+use crate::design::decode::scopes::work_geometry::{
+    exact_work_axis_construction, work_axis_loss_notes, ExactWorkAxis,
+};
+use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use crate::records::feature::work_geometry::{DesignWorkAxisConstruction, DesignWorkAxisSource};
+use crate::records::feature::work_geometry::DesignWorkAxisSource;
 use crate::test_support::indexed_header;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
@@ -129,7 +132,7 @@ fn carrier_types(version: u32) -> HashMap<u64, (&'static str, u32)> {
     HashMap::from([(u64::from(CARRIER), (POINT_DIRECTION_TYPE_GUID, version))])
 }
 
-fn read(bytes: &[u8], types: &HashMap<u64, (&str, u32)>) -> Option<DesignWorkAxisConstruction> {
+fn read(bytes: &[u8], types: &HashMap<u64, (&str, u32)>) -> Option<ExactWorkAxis> {
     exact_work_axis_construction(
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
@@ -151,7 +154,15 @@ fn point_direction_carrier_supplies_the_solved_axis_of_an_unassigned_rule() {
             ..Carrier::new(unassigned_rule_values(), 18)
         }
         .write(&mut bytes);
-        let construction = read(&bytes, &carrier_types(1)).expect("point-and-direction carrier");
+        let axis = read(&bytes, &carrier_types(1)).expect("point-and-direction carrier");
+        assert_eq!(
+            work_axis_loss_notes(&work_axis_scope(), &axis)
+                .into_iter()
+                .map(|loss| loss.code)
+                .collect::<Vec<_>>(),
+            [F3dLossCode::FeatureWorkAxisRuleUnassigned.kind()]
+        );
+        let construction = axis.construction;
         assert_eq!(
             construction.origin.map(cadmpeg_ir::scalar::FiniteReal::get),
             [1.5, -2.0, 3.25]
@@ -195,7 +206,7 @@ fn point_direction_carrier_projects_a_datum_axis() {
     if let crate::records::feature::scope::DesignScopePayloadMut::WorkAxis(slot) =
         scope.payload_mut()
     {
-        *slot = construction;
+        *slot = construction.map(|axis| axis.construction);
     }
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
         crate::test_support::with_decode_context(|ctx| {
@@ -239,7 +250,9 @@ fn point_direction_carrier_reads_version_four_and_typed_inputs() {
         ..Carrier::new(unassigned_rule_values(), 6)
     }
     .write(&mut bytes);
-    let construction = read(&bytes, &carrier_types(4)).expect("version-4 carrier");
+    let construction = read(&bytes, &carrier_types(4))
+        .expect("version-4 carrier")
+        .construction;
     assert_eq!(
         construction.source,
         Some(DesignWorkAxisSource::PointDirection {
@@ -260,9 +273,9 @@ fn two_point_rule_reads_the_point_data_endpoints() {
     let mut types = carrier_types(1);
     types.insert(u64::from(FIRST_INPUT), (POINT_DATA_TYPE_GUID, 1));
     types.insert(u64::from(SECOND_INPUT), (POINT_DATA_TYPE_GUID, 1));
-    let construction = read(&bytes, &types).expect("two-point carrier");
+    let axis = read(&bytes, &types).expect("two-point carrier");
     assert_eq!(
-        construction.source,
+        axis.construction.source,
         Some(DesignWorkAxisSource::TwoPoint {
             point_record_indices: [FIRST_INPUT, SECOND_INPUT],
             point_offsets: [
@@ -270,6 +283,41 @@ fn two_point_rule_reads_the_point_data_endpoints() {
                 u64::try_from(second_at).unwrap(),
             ],
         })
+    );
+    assert_eq!(axis.endpoint_deviation_cm, 0.0);
+    assert!(work_axis_loss_notes(&work_axis_scope(), &axis).is_empty());
+}
+
+#[test]
+fn two_point_rule_within_the_endpoint_tolerance_reports_the_assumption() {
+    let mut bytes = Vec::new();
+    Carrier::new([2.0, 1.0, -4.0, 0.0, -0.5, 0.0, 0.0, 0.0], 12).write(&mut bytes);
+    write_point_data(&mut bytes, FIRST_INPUT, [2.0 + 5.0e-10, 1.0, -4.0]);
+    write_point_data(&mut bytes, SECOND_INPUT, [2.0, 0.5, -4.0]);
+    let mut types = carrier_types(1);
+    types.insert(u64::from(FIRST_INPUT), (POINT_DATA_TYPE_GUID, 1));
+    types.insert(u64::from(SECOND_INPUT), (POINT_DATA_TYPE_GUID, 1));
+    let axis = read(&bytes, &types).expect("two-point carrier within the endpoint tolerance");
+    assert_eq!(
+        axis.construction
+            .origin
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [2.0, 1.0, -4.0]
+    );
+    assert!(matches!(
+        axis.construction.source,
+        Some(DesignWorkAxisSource::TwoPoint {
+            point_record_indices: [FIRST_INPUT, SECOND_INPUT],
+            ..
+        })
+    ));
+    assert!((axis.endpoint_deviation_cm - 5.0e-10).abs() < 1.0e-15);
+    assert_eq!(
+        work_axis_loss_notes(&work_axis_scope(), &axis)
+            .into_iter()
+            .map(|loss| loss.code)
+            .collect::<Vec<_>>(),
+        [F3dLossCode::FeatureWorkAxisEndpointToleranceAssumed.kind()]
     );
 }
 
