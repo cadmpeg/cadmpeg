@@ -20,6 +20,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-319. WorkAxis point-and-direction construction rules
+
+**Question.** What do the position, direction, construction rules, and input roles encode for the other `refType` values of a WorkAxis point-and-direction carrier?
+
+**Known.** `f3d.md` §3.1 "A `WorkAxis` scope can reference a point-and-direction carrier" describes the carrier and the two-point rule.
+
+**Need.** Controlled designs that vary one axis construction rule and its inputs at a time.
+
+**Conflict.** None.
+
+**Note.** The decoder takes position and direction as the solved axis for other values and reports `feature.work-axis-rule-unassigned`; the construction inputs remain native.
+
 ### DR-284. Compact sketch-profile tail flags
 
 **Question.** What do the two compact sketch-profile tail flags encode, and how do they affect profile selection?
