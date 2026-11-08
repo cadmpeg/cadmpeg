@@ -521,7 +521,7 @@ pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError>
     };
     layer_for(identity)
         .or_else(point_body_layer)
-        .map_or(Ok(-1), |index| {
+        .map_or(Ok(0), |index| {
             i32::try_from(index).map_err(|_| {
                 native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
             })
