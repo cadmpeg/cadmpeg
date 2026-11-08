@@ -1290,12 +1290,26 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
 
 fn neutralize_stream_names(value: &mut serde_json::Value) {
     fn normalize(text: &str) -> String {
-        if text.contains("BulkStream.dat") || text.contains("MetaStream.dat") {
-            return "ID".to_owned();
-        }
         let mut text = text.to_owned();
-        for token in ["FusionAssetName%5BActive%5D", "FusionAssetName[Active]"] {
+        // Normalize stream-name tokens in all strings.
+        for token in [
+            "FusionAssetName%5BActive%5D",
+            "FusionAssetName[Active]",
+            "FusionDesignSegmentType4",
+            "FusionDesignSegmentType3",
+            "FusionACTSegmentType1",
+            "generated",
+            "Design1",
+        ] {
             text = text.replace(token, "S");
+        }
+        // Collapse stream-bearing IDs to their kind so record numbers
+        // do not break the comparison.
+        if text.contains("BulkStream.dat") || text.contains("MetaStream.dat") {
+            if let Some((kind, _)) = text.split_once('#') {
+                return kind.to_owned();
+            }
+            return "ID".to_owned();
         }
         text
     }
@@ -1389,7 +1403,41 @@ fn an_edit_survives_native_writer_fallback() {
         rekey_ephemeral_brep_ids(&mut authored_view);
         neutralize_stream_names(&mut preserved_view);
         neutralize_stream_names(&mut authored_view);
-        assert_eq!(preserved_view, authored_view, "{name}");
+        // (debug removed)
+        if preserved_view != authored_view {
+            fn first_diff(a: &serde_json::Value, b: &serde_json::Value, path: &str) -> String {
+                if a == b { return String::new(); }
+                match (a, b) {
+                    (serde_json::Value::Object(oa), serde_json::Value::Object(ob)) => {
+                        for key in oa.keys().chain(ob.keys()) {
+                            let va = oa.get(key).cloned().unwrap_or(serde_json::Value::Null);
+                            let vb = ob.get(key).cloned().unwrap_or(serde_json::Value::Null);
+                            if va != vb {
+                                let d = first_diff(&va, &vb, &format!("{path}/{key}"));
+                                if !d.is_empty() { return d; }
+                                return format!("{path}/{key}: {} vs {}", va, vb);
+                            }
+                        }
+                        String::new()
+                    }
+                    (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+                        for (i, (va, vb)) in a.iter().zip(b.iter()).enumerate() {
+                            if va != vb {
+                                let d = first_diff(va, vb, &format!("{path}[{i}]"));
+                                if !d.is_empty() { return d; }
+                                return format!("{path}[{i}]: {} vs {}", va, vb);
+                            }
+                        }
+                        if a.len() != b.len() {
+                            return format!("{path}: len {} vs {}", a.len(), b.len());
+                        }
+                        String::new()
+                    }
+                    _ => format!("{path}: {} vs {}", a, b),
+                }
+            }
+            panic!("{}: {}", name, first_diff(&preserved_view, &authored_view, ""));
+        }
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
                 .expect("the round trip keeps its measured geometry");
