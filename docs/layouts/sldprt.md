@@ -3116,6 +3116,37 @@ Unstated regions:
 - `29..48` (19 B): Marker state, selector, and reserved bytes precede the state value.
 - `56..64` (8 B): Zero bytes before the coordinate tag.
 
+## `swift_gtol_display_head`
+
+Spec §2.1 · layout: byte offsets · size: 10 B
+
+Opening bytes of each SWIFT geometric-tolerance display after the first, which declares moDisplayGtol_c.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/swift/presentation.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `display_tag` | `u16` | little | spec | u16 LE geometric-tolerance display tag `0x8008` · value `32776` |
+| 2 | 2 | `display_word` | `u16` | little | spec | u16 LE display word |
+| 4 | 4 | `body_word` | `u32` | little | spec | u32 LE display body word `6` · value `6` |
+| 8 | 2 | `compound_tag` | `u16` | little | spec | u16 LE compound geometric-tolerance tag `0x800a` · value `32778` |
+
+## `swift_feature_reference`
+
+Spec §2.1 · layout: byte offsets · size: 10 B
+
+A tagged moSwiftFR_c object; the declared form writes the class declaration in place of the tag.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/swift/presentation.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_tag` | `u16` | little | spec | u16 LE `moSwiftFR_c` class tag |
+| 2 | 4 | `object_id` | `u32` | little | spec | u32 LE referenced presentation object identifier |
+| 6 | 4 | `stamp` | `u32` | little | spec | u32 LE reference timestamp |
+
 ## `named_object_header`
 
 Spec §2.3 · layout: byte offsets · size: 16 B

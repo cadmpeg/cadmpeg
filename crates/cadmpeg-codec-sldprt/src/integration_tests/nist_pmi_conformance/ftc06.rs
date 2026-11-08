@@ -331,3 +331,19 @@ fn ftc_06_diameter7_maps_to_its_spherical_radius_owner() {
         "Diameter7 must retain the supported spherical-radius target"
     );
 }
+
+#[test]
+fn ftc_06_row_89_display_depicts_the_individually_applied_position() {
+    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let individually = super::depicted_names(result.ir())
+        .into_iter()
+        .filter(|(text, _)| text.as_deref() == Some("4X INDIVIDUALLY"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        individually,
+        [(
+            Some("4X INDIVIDUALLY".to_owned()),
+            vec!["Position14".to_owned()]
+        )]
+    );
+}

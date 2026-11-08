@@ -1525,6 +1525,60 @@ millimetre value in `MaxTolerance`. `PerUnitAreaType` value `0` defines a
 rectangular unit from `PerUnitAreaLength` and `PerUnitAreaWidth`; value `1`
 defines a circular unit from `PerUnitAreaDiameter`.
 
+The bytes before the GDT-analysis part object hold the presentation archive: a
+u32 LE schema version and an MFC `CArchive` serialization (§2.2) of one
+`moSwiftSchema_c` object. The archive head declares `moSwiftSchema_c`,
+`moNodeName_c`, and `moDetailFolder_c` in that order and writes the folder's
+name object, so these classes take map indices 1, 3, and 5, and a name object
+opens with tag `0x8003`. The folder writes its display lists. A display list
+is a u16 LE item count and that many display objects. The first list holds the
+geometric-tolerance displays: its first item declares `moDisplayGtol_c` at map
+index 8, and each later item opens with that class's tag. The u16 LE count of
+the second list ends the last geometric-tolerance display; the second list
+holds the datum-tag displays and its first item declares `moDisplayDatumTag_c`.
+
+| Offset | Field                                                         |
+| ------ | ------------------------------------------------------------- |
+| +0     | u16 LE geometric-tolerance display tag `0x8008`               |
+| +2     | u16 LE display word                                           |
+| +4     | u32 LE display body word `6`                                  |
+| +8     | u16 LE compound geometric-tolerance tag `0x800a`              |
+
+A named presentation object carries the named-object header of §2.3. A
+positive semantic `UserAttribute` equals the object identifier of the
+presentation object whose name equals the entity's `ObjectName`.
+
+A `moSwiftFR_c` object references one presentation object. Every
+`moSwiftFR_c` object after the class declaration uses one class tag. One object
+identifier has one timestamp.
+
+| Offset | Field                                            |
+| ------ | ------------------------------------------------ |
+| +0     | u16 LE `moSwiftFR_c` class tag                   |
+| +2     | u32 LE referenced presentation object identifier |
+| +6     | u32 LE reference timestamp                       |
+
+A feature path is a u16 LE count *n* from 1 through 8 and *n* `moSwiftFR_c`
+objects. The first object names the outermost feature, such as a pattern; each
+later object names a member of the feature before it. The feature paths of one
+geometric-tolerance display are suffixes of its longest path. A path object
+identifier selects the semantic feature whose `UserAttribute` equals it, or
+else the one semantic feature whose `ObjectName` equals the presentation
+object's name.
+
+A frame row stores its characteristic as the framed string `<GTOL-name>`:
+`POSI` position, `PERP` perpendicularity, `PARA` parallelism, `ANGULAR`
+angularity, `FLAT` flatness, `STRAIGHT` straightness, `CIRC` roundness, `CYL`
+cylindricity, `SPROF` surface profile, `LPROF` line profile, `CONC`
+concentricity, `SYMMETRY` symmetry, `SRUN` circular runout, and `TRUN` total
+runout. The display's `moGtolData_c` object writes four adjacent framed
+strings: the two between-extent labels, the frame template, which contains
+`<Gtol>`, and the note below the frame. A display depicts the semantic
+geometric-tolerance annotations that directly reference a feature on its
+longest path when their characteristics equal the characteristics of its rows
+as a multiset. A composite surface profile with a lower tier supplies two
+`SPROF` rows.
+
 ### 2.2 Object stream class map
 
 `Contents/Config-N` and `Contents/Config-N-ResolvedFeatures` are MFC `CArchive` serializations. The other SW Objects streams (`Contents/CnfgObjs`, `Contents/CMgr`, `Contents/Config-N-ModelHeader`, `Contents/Definition`) use the same class declaration. An object is written as a class tag followed by the object's body; the body's layout belongs to its class and carries no length, so a body cannot be skipped without knowing its class.

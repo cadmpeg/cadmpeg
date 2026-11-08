@@ -86,6 +86,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftPositionTargetUnresolved,
     /// A counted spherical-diameter display has no established annotation association.
     PmiSwiftSphericalDiameterTargetUnresolved,
+    /// A SWIFT geometric-tolerance display has no established semantic annotation.
+    PmiSwiftPresentationUnresolved,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -316,6 +318,7 @@ impl SldprtLossCode {
         Self::PmiSwiftImplicitNominalUnresolved,
         Self::PmiSwiftPositionTargetUnresolved,
         Self::PmiSwiftSphericalDiameterTargetUnresolved,
+        Self::PmiSwiftPresentationUnresolved,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -426,6 +429,7 @@ impl SldprtLossCode {
             Self::PmiSwiftSphericalDiameterTargetUnresolved => {
                 "pmi.swift-spherical-diameter-target-unresolved"
             }
+            Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -575,6 +579,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftImplicitNominalUnresolved
             | Self::PmiSwiftPositionTargetUnresolved
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
+            | Self::PmiSwiftPresentationUnresolved
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -742,7 +747,8 @@ impl SldprtLossCode {
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PmiSwiftImplicitNominalUnresolved
             | Self::PmiSwiftPositionTargetUnresolved
-            | Self::PmiSwiftSphericalDiameterTargetUnresolved => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftSphericalDiameterTargetUnresolved
+            | Self::PmiSwiftPresentationUnresolved => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -973,6 +979,7 @@ mod tests {
                 "pmi.swift-implicit-nominal-unresolved",
                 "pmi.swift-position-target-unresolved",
                 "pmi.swift-spherical-diameter-target-unresolved",
+                "pmi.swift-presentation-unresolved",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",

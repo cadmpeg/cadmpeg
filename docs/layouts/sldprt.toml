@@ -12007,6 +12007,78 @@ section = "1"
 anchor = "Directory entries are 128 bytes and carry a NUL-terminated UTF-16LE name"
 
 [[record]]
+name = "swift_gtol_display_head"
+kind = "byte"
+section = "2.1"
+anchor = "each later item opens with that class's tag"
+size = 10
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/swift/presentation.rs"
+note = "Opening bytes of each SWIFT geometric-tolerance display after the first, which declares moDisplayGtol_c."
+
+[[record.field]]
+name = "display_tag"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "u16 LE geometric-tolerance display tag `0x8008`"
+value = 0x8008
+
+[[record.field]]
+name = "display_word"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "u16 LE display word"
+
+[[record.field]]
+name = "body_word"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 LE display body word `6`"
+value = 6
+
+[[record.field]]
+name = "compound_tag"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "u16 LE compound geometric-tolerance tag `0x800a`"
+value = 0x800a
+
+[[record]]
+name = "swift_feature_reference"
+kind = "byte"
+section = "2.1"
+anchor = "A `moSwiftFR_c` object references one presentation object"
+size = 10
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/swift/presentation.rs"
+note = "A tagged moSwiftFR_c object; the declared form writes the class declaration in place of the tag."
+
+[[record.field]]
+name = "class_tag"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "u16 LE `moSwiftFR_c` class tag"
+
+[[record.field]]
+name = "object_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "u32 LE referenced presentation object identifier"
+
+[[record.field]]
+name = "stamp"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "u32 LE reference timestamp"
+
+[[record]]
 name = "named_object_header"
 kind = "byte"
 section = "2.3"
