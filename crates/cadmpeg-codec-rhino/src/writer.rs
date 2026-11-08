@@ -482,6 +482,8 @@ fn write_buffered<'budget>(
         &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
         "retain Rhino archive bytes",
     )?;
+    let layer_losses = omitted_layer_item_losses(ir, &plan.losses);
+    plan.losses.extend(layer_losses);
     let free_points = ir
         .model
         .points
@@ -1190,7 +1192,13 @@ fn prepare_write<'a, 'budget>(
         }
         let local = baked.clone();
         match placement::bake(&mut baked) {
-            Ok(()) => {}
+            Ok(()) => {
+                if placement.is_proper_rigid()
+                    && placement != cadmpeg_ir::transform::Transform::identity()
+                {
+                    losses.push(baked_placement_loss(&baked));
+                }
+            }
             Err(WriteError::Omit(reason)) => {
                 baked = local;
                 let body = &mut baked.model.bodies[0];
@@ -1514,6 +1522,67 @@ fn prepare_write<'a, 'budget>(
         topology_points,
         materials,
     })
+}
+
+/// Layers that lose a member because the write omits the member's record.
+fn omitted_layer_item_losses(ir: &CadIr, losses: &[LossNote]) -> Vec<LossNote> {
+    let omitted = |id: &str| {
+        let phrase = format!("{id} omitted");
+        losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::WriterEntityOmitted.kind() && loss.message.contains(&phrase)
+        })
+    };
+    ir.model
+        .presentation_layers
+        .iter()
+        .filter_map(|layer| {
+            let members = layer
+                .items
+                .iter()
+                .filter_map(|item| serde_json::to_value(item).ok())
+                .filter_map(|item| {
+                    item.as_object()?
+                        .iter()
+                        .filter(|(key, _)| key.as_str() != "kind")
+                        .find_map(|(_, value)| value.as_str().map(str::to_owned))
+                })
+                .filter(|id| omitted(id))
+                .collect::<Vec<_>>();
+            (!members.is_empty()).then(|| {
+                RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "layer {} loses omitted member(s) {}",
+                    layer.id,
+                    members.join(", ")
+                ))
+            })
+        })
+        .collect()
+}
+
+/// The records a baked placement writes in world coordinates: they re-decode
+/// as records without the body's local frame.
+fn baked_placement_loss(baked: &CadIr) -> LossNote {
+    let model = &baked.model;
+    let ids = model
+        .points
+        .iter()
+        .map(|row| row.id.as_str())
+        .chain(model.curves.iter().map(|row| row.id.as_str()))
+        .chain(model.surfaces.iter().map(|row| row.id.as_str()))
+        .chain(model.vertices.iter().map(|row| row.id.as_str()))
+        .chain(model.edges.iter().map(|row| row.id.as_str()))
+        .chain(model.coedges.iter().map(|row| row.id.as_str()))
+        .chain(model.loops.iter().map(|row| row.id.as_str()))
+        .chain(model.faces.iter().map(|row| row.id.as_str()))
+        .chain(model.shells.iter().map(|row| row.id.as_str()))
+        .chain(model.regions.iter().map(|row| row.id.as_str()))
+        .collect::<Vec<_>>();
+    RhinoLossCode::WriterBodyPlacementBaked.note(format!(
+        "body {} placement is baked into its geometry; {} record(s) are written in world coordinates: {}",
+        model.bodies[0].id,
+        ids.len(),
+        ids.join(", ")
+    ))
 }
 
 fn native_dispositions(

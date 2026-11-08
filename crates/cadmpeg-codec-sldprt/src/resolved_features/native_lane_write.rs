@@ -640,6 +640,7 @@ fn marker_bytes(marker: &crate::records::SketchInputEntity) -> Option<Vec<u8>> {
 }
 
 mod coverage;
+pub(crate) mod held;
 mod sketches;
 
 #[cfg(test)]
