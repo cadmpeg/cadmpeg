@@ -69,7 +69,7 @@ list_signature u16 = 0x3000
 list_count u32 >= 1
 ```
 
-Two u32 metadata values and `list_count` u32 entries follow. The entries are followed by `list_count - 1` u32 values whose high 16 bits are zero, a u32 `0xffffffff` marker, and a trailing payload.
+Two u32 metadata values and `list_count` ordered pairs `(source_index:u32, name_value:i32)` follow. The last `name_value` is −1. A trailing payload ends the record. Section 13.11 gives the role of these records as name records.
 
 ## 5. Active part kernel carrier
 
@@ -1317,6 +1317,126 @@ A feature record has the `source_index` of its content header. The state after t
 A body key of a surface-body wrapper is the entity identifier of the kernel-entity link that the wrapper selects through the current-model join of section 13.4. A wrapper without that join has no body key.
 
 A Split with a solid target is bound only when its target body key leaves between the two states. The target wrapper is the slot-7 surface-body wrapper of the Split (section 13.3). The key is the key of a body record live in `state_before` and of no body record live in `state_after`. A Base feature is bound only when the body key of its result wrapper, the slot-1 wrapper of the Base (section 13.4), is the key of a body record live in `state_after` and of none in `state_before`. The two checks refuse a feature whose key does not resolve, whose state before is absent, or whose key does not change as stated. The disappearance or appearance of a body key without a naming tag that lists the source index does not bind a feature. Features of other kinds are bound by the naming tag alone.
+
+### 13.11 Part annotations
+
+A part-model annotation is a PmDc feature label whose owner reference selects an annotation owner. The owner type gives the dimension kind:
+
+| Owner type | Dimension | Value-record measure |
+| --- | --- | --- |
+| `e1c36665d24968ac24cea9b3cc6055cd` | linear (location) | 0 |
+| `4f02d69e384425082ea733b6a1070a20` | angular | 0 |
+| `751ade16744fe94fc498a8a8e89f29dd` | diameter | 1 |
+| `3ceb8cbe02446907d3b548a3bfc87b32` | radius | 2 |
+| `0c0074958f4a8f367f67fe821329cdbd` | hole-note diameter | 1 |
+
+These annotation records occur in segment major versions 25 and 28. An annotation header is the content header of section 12 without stamps, followed by `stamp:i32 = −1`. A dimension owner contains:
+
+```text
+header
+attachment u32
+plane reference            42df52ced011d0d20008ccbc0663dc09
+sequence u32
+list type-2 list           version 28 only, empty
+layout reference
+value reference            1f02e78b324548a6bd6d4c90711db6d0
+intents reference[]        b431796169449384e3ad409bdebf7e05
+styles reference[]         ae38b999d211c35b6000b3856c2387b0
+```
+
+The intents and styles occupy the rest of the payload; every intent precedes every style. A hole-note owner stores two further references, a hole definition and a hole feature, before the layout reference. Its value reference selects a hole value record of type `1c0ecfdd56421a02b314569215e830b1`, and a retained tail follows its styles.
+
+A value record has the content header of section 12, with stamps. Its body contains:
+
+```text
+prefix u32[3]
+measure u32
+tolerance_form u32
+controls u32[6]
+display u32
+display_controls u32[2]
+upper f64
+lower f64
+tolerance_controls u32[2]
+hole_fit counted UTF-16LE
+shaft_fit counted UTF-16LE
+block bytes[76]
+nominal_parameter reference   264d8790d011f8d10008cabc0663dc09
+reference_parameter reference 264d8790d011f8d10008cabc0663dc09
+```
+
+A retained tail follows. `measure` equals the measure of the owner type. The nominal value is the model value of the nominal parameter. `upper` and `lower` use the internal units of section 11: centimetres for lengths and radians for angles. `tolerance_form` selects the tolerance:
+
+| Code | Tolerance |
+| --- | --- |
+| 0 | none |
+| 2 | ISO 286 class: the one nonempty fit text, with deviations `lower` and `upper` |
+| 3 | limits: nominal + `lower` and nominal + `upper` |
+| 4 | single limit: the nominal is the maximum |
+| 6 | equal bilateral: ±`abs(upper)` |
+| 7 | deviations `lower` and `upper` |
+
+A hole value record has the value-record grammar with `tolerance_form` 0. Its four hole parameters are the first four consecutive parameter references after the reference parameter. They are followed by:
+
+```text
+flags bytes[16]            1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 for a plain hole
+text counted UTF-16LE
+hole_tolerance_form u32
+controls u32[3]
+upper f64
+lower f64
+```
+
+A text with the field `<HDIA>` displays the hole diameter, whose nominal value is the nominal parameter of the record. `hole_tolerance_form` 0 is no tolerance, 3 is equal bilateral ±`abs(upper)`, and 4 is the deviations `lower` and `upper`, in internal centimetres. Thread and other hole notes store other flag bytes.
+
+An uppercase fit text is a hole class and a lowercase fit text is a shaft class; its letters are the fundamental deviation and its digits the grade. `display` 1 marks a basic (theoretical) dimension and 2 a reference (auxiliary) dimension.
+
+A feature control frame owner of type `37e2b7caf54eea9d7f984ba83f1c1ab1` and a datum identifier owner of type `47596f34434bd3ef768f599a02d0efab` start with the annotation header, `attachment:u32`, a work-plane reference, `sequence:u32`, and an intent reference, which can be null. The last u32 of a frame owner is an unqualified reference to its frame row of type `261b9fa9bc4dafc38f0570970a8313ce`:
+
+```text
+header_value u32
+header_id u16
+characteristic u32
+magnitude reference        parameter
+zone_modifiers u32[3]
+second_value reference     parameter
+third_value reference      parameter
+datums reference[3]        datum features, null when absent
+datum_modifiers bytes[36]
+```
+
+Version 28 rows append 20 bytes. The magnitude is the model value of its parameter, in internal centimetres. `characteristic` selects the tolerance: 1 straightness, 2 flatness, 3 circularity, 5 surface profile, 7 perpendicularity, 9 position, 10 concentricity, 11 circular runout, 12 symmetry, and 13 total runout. The datums are the primary, secondary, and tertiary datum references in order. A row with zero `zone_modifiers`, zero `datum_modifiers`, and zero second and third values has no modifiers.
+
+A datum feature of type `7b023e033049cd9ef91b87a259829c67` has the content header of section 12 with stamps, a type-2 list with its datum identifier owner, a type-2 member list in version 25, two references, and the counted UTF-16LE datum label. In version 28 a type-2 list follows the label instead. A frame or datum owner without a resolved intent takes the faces of the tolerance feature whose label lists it as a participant. Those faces are the faces that the face selectors of the face items of the feature's face collections (`f1b2bc24d01121dd0008d0bc0663dc09`, whose last u32 is a face-item reference) select, together with those of its member tolerance features.
+
+A relation joins an intent to selection items. A relation has the annotation header, `link:u32 = 0`, the intent reference, and further references. The relation types are `3c31133b474a986bd1ea9ba730c7e57c`, `c4f81a38294bd8ee18e90eb91df9b376`, and `8e92d96f62489db9a2b24da66e312298`. Its further references of the edge-item type `6a71439ed211a50f600084b7b035c3b0` or the face-item type `896cf08ed1113c0460007cb801f31bb0` are its selection items, in order. A geometry link of type `9711327c5a4b08dd9a4421b65200c25e` has the annotation header and three references: stored geometry (`a4260cf13b48840aa3af85aaadaff65d`), a work plane, and a selection item. It ends the record.
+
+Two naming selectors name a selection item. The face selector `6805ba23324611faf6725ebb87bdfd05` has the grammar of the face naming selector of section 13 and names the stored geometry of a geometry link through its face-item reference. The face naming selector of section 13 can also name a selection item. The edge selector `022da96cd2117c10600084b7b035c3b0` has the selector prefix and two type-8 arrays of the edge naming selector of section 13, a zero byte, the item reference, the context reference, and `key:u32`. One byte can follow. The context reference of both selectors selects a naming table.
+
+A naming table of type `4220e9ccd111c5710008a7ba32a3dc09` contains:
+
+```text
+header_value u32
+header_id u16
+next u32
+last_identifier u32
+count u32
+entries (identifier u32, record reference)[count]
+```
+
+The identifiers are distinct. A selector key is a table identifier, and its entry selects a name record. A generated name record has the prefix of section 4 with its pairs. The record type gives the attribute families that the name matches and the tail values that the attribute repeats:
+
+| Name record type | Attribute families | Record tail | Attribute tail |
+| --- | --- | --- | --- |
+| `a5c245062846bbe61da9eda12072ce35`, `205fa956d111af49000887ba32a3dc09` | `NMx_Generated_Brep_tag`, `NMx_Sweep_Generated_Brep_tag`, `INV_NMX_GEN_TAG`, `INV_NMX_SWEEPGENERATED_TAG` | u32 0, u32 0, `associative_id:u32`, `role:u32` | `associative_id`, 0, `role` |
+| `7a260eaed211715d60007eb71269f1b0` | `NMx_Hole_Brep_tag`, `INV_NMX_HOLE_TAG` | u32 0, `first:u32`, `role:u16` | `first`, `role` |
+| `98415d8ec341c7a5adc5f990460579a4` | `NMx_blend_tag`, `INV_NMX_BLEND_TAG` | u32 0, `first:u8`, `second:u8`, 3 bytes, `third:u32` | `first`, `second`, `third` |
+
+The attribute tail follows the pair vector of the generated-name attribute of section 13. A face selector with a nonzero `state` selects the face of the active body that carries an attribute of a listed family with the same pairs and tail, when exactly one face carries one. A face selector with state 0 names an operand at its history position and selects no annotation target.
+
+An edge name record of type `a6e032bfd111464a000888ba32a3dc09` has the prefix of section 4 up to its list, four u32 base values, a u8 flag, a type-2 list, and `control:u32`. With an empty list, a pair count of 2 and two `(context reference, identifier)` pairs end the record. The two identifiers are face names. The edge selector then selects the one edge of the active body that bounds both selected faces.
+
+Each selection item of an intent gives one target. An item gives the target that all of its selectors select. A selector that selects nothing, or two selectors that select different entities, give the item no target.
 
 ## 14. Document kind
 
