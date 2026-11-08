@@ -1204,7 +1204,7 @@ pub(crate) fn decode_design_body_bindings(
         let memberships = super::component_bodies::owners(ctx, bytes, &metadata)?;
         let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
         let consumed = match scan.entry_view(&entry.name) {
-            Some(root) => super::body_consumers::consumed_body_entities(root, &metadata)?,
+            Some(root) => super::body_consumers::consumed_body_entities(root, &metadata),
             None => std::collections::HashSet::new(),
         };
         let Ok(selected) = selected_body_map_records(bytes, &metadata) else {
