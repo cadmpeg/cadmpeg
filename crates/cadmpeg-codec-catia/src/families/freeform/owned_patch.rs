@@ -534,3 +534,6 @@ pub(super) fn append(
     }
     transfer::append(ir, annotations, patches, refusal, admission)
 }
+
+#[cfg(test)]
+mod tests;

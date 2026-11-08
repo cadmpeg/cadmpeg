@@ -213,3 +213,16 @@ fn class25_named_sampled_witness_retains_two_arrays() {
         serde_json::json!({"target":[0.0,18.232_007_915_496_25], "source":[0.0,18.232_007_915_496_25]})
     );
 }
+
+#[test]
+fn class25_sample_lanes_admit_endpoint_rounding_within_tolerance() {
+    const FIRST_TARGET_SAMPLE: usize = 50;
+    const FIRST_SOURCE_SAMPLE: usize = FIRST_TARGET_SAMPLE + 2 * size_of::<f64>();
+    for at in [FIRST_TARGET_SAMPLE, FIRST_SOURCE_SAMPLE] {
+        let mut bytes = payload(0x1587, 0x0a, 2, false);
+        bytes[at..at + 8].copy_from_slice(&(-5.0e-8_f64).to_le_bytes());
+        assert!(parse(&bytes).is_some());
+        bytes[at..at + 8].copy_from_slice(&(-2.0e-7_f64).to_le_bytes());
+        assert!(parse(&bytes).is_none());
+    }
+}

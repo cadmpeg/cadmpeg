@@ -230,7 +230,7 @@ fn pcurve_layout(
             let encoded = *data.get(at + 1)?;
             match encoded {
                 0x06 if owned => {
-                    let count = *data.get(at + 2)?;
+                    let count = data.get(at + 2).copied().filter(|&count| count >= 0x40)?;
                     wide_extrapolation = Some(count);
                     at += 3;
                     u32::from(count)
@@ -1386,6 +1386,49 @@ mod tests {
         let pcurves = super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A);
         assert_eq!(pcurves.len(), 1);
         assert_eq!(pcurves[0].extrapolation_sites, 2);
+    }
+
+    #[test]
+    fn owned_pcurve_wide_extrapolation_requires_a_matching_wide_count() {
+        for (leading, repeated, expected) in [(64, 64, Some(64)), (64, 65, None), (63, 63, None)] {
+            let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+            bytes.splice(32..33, [0x06, repeated]);
+            bytes.splice(14..15, [0x06, leading]);
+            let length = u32::try_from(bytes.len() - 8).expect("small frame");
+            bytes[3..7].copy_from_slice(&length.to_le_bytes());
+
+            let records = consolidated_records(&bytes);
+            let parsed = super::owned_pcurve_from_record(&bytes, &records[0]);
+            assert_eq!(parsed.map(|curve| curve.extrapolation_sites), expected);
+            assert!(
+                super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A)
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn owned_pcurve_retains_odd_trailer_controls() {
+        for control in [0x03, 0x25, 0xf9, 0x06] {
+            let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+            bytes.extend([0x01, control, 0x00]);
+            let length = u32::try_from(bytes.len() - 8).expect("small frame");
+            bytes[3..7].copy_from_slice(&length.to_le_bytes());
+            let records = consolidated_records(&bytes);
+            let parsed = super::owned_pcurve_from_record(&bytes, &records[0]);
+            if control == 0x06 {
+                assert!(parsed.is_none());
+            } else {
+                assert_eq!(
+                    parsed.expect("odd owned control").tail,
+                    [0x07, 0x01, control, 0x00]
+                );
+            }
+            assert!(
+                super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A)
+                    .is_empty()
+            );
+        }
     }
 
     #[test]

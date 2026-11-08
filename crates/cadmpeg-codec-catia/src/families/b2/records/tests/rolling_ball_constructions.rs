@@ -62,3 +62,21 @@ fn rolling_ball_construction_refuses_wrong_target_and_source_gap() {
     let records = crate::wire::records::consolidated_records(&bytes);
     assert!(super::super::b2_rolling_ball_constructions_from_records(&bytes, &records).is_empty());
 }
+
+#[test]
+fn rolling_ball_construction_admits_a_class_2e_sheet_support() {
+    let (mut records, positions) = construction_stream();
+    records[positions[1] + 2] = 0x2e;
+    records[positions[1] + 5] = 0x09;
+    let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
+    let prefix = bytes.len();
+    bytes.extend(records);
+    let frames = crate::wire::records::consolidated_records(&bytes);
+    let [bridge] = super::super::b2_rolling_ball_constructions_from_records(&bytes, &frames)
+        .try_into()
+        .expect("one rolling-ball construction with a sheet support");
+    assert_eq!(
+        bridge.support_surface_positions,
+        [prefix + positions[1], prefix + positions[2]]
+    );
+}

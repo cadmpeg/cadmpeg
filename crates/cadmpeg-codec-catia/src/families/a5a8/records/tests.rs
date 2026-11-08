@@ -1020,6 +1020,25 @@ fn a5_surface_parser_reads_extended_array_marker_and_terminal() {
 }
 
 #[test]
+fn a5_sheet_surface_accepts_owned_array_marker() {
+    let mut bytes = a5_surface_stream();
+    bytes.splice(10..11, [0x08, 0x19]);
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let frames = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        super::a5_owned_surfaces_from_records(&bytes, &frames, &mut refusal)
+            .expect("parse the sheet surface")
+            .len(),
+        1,
+    );
+    assert!(super::a5_surfaces(&bytes, &mut refusal)
+        .expect("parse non-sheet records")
+        .is_empty());
+}
+
+#[test]
 fn a5_surface_parser_accepts_additional_bounded_array_markers() {
     for marker in [0x05, 0x15] {
         let mut bytes = a5_surface_stream();
@@ -1187,6 +1206,20 @@ fn a5_curve_parser_accepts_owned_array_marker() {
         crate::families::a5a8::records::a5_freeform_curves(&bytes).len(),
         1
     );
+}
+
+#[test]
+fn a5_owned_rolling_jet_accepts_alternate_compact_marker() {
+    let mut bytes = a5_freeform_curve_stream();
+    bytes.splice(11..12, [0x08, 0x1b]);
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert!(super::a5_freeform_curves(&bytes).is_empty());
+    let frames = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(super::a5_owned_rolling_curves(&bytes, &frames).count(), 1);
+
+    bytes[12] = 0x1a;
+    assert_eq!(super::a5_owned_rolling_curves(&bytes, &frames).count(), 0);
 }
 
 #[test]
