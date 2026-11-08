@@ -4804,8 +4804,13 @@ fn stage_brep_procedural_surface(
             .curves
             .iter()
             .find(|curve| curve.id == *revolution.directrix())?;
-        let (start, velocity) = linear_profile(directrix.geometry.solved()?)?;
-        revolved_linear_profile(axis_origin, axis, start, velocity)
+        match directrix.geometry.solved()? {
+            SolvedCurveGeometry::Circle(circle) => revolved_circle(axis_origin, axis, circle),
+            profile => {
+                let (start, velocity) = linear_profile(profile)?;
+                revolved_linear_profile(axis_origin, axis, start, velocity)
+            }
+        }
     });
     staged.draft.model_mut().surfaces.push(Surface {
         native_ref: None,
@@ -4835,6 +4840,54 @@ fn stage_brep_procedural_surface(
     staged.links.push(surface_id.to_string());
     staged.links.push(procedural_id.to_string());
     Ok(surface_id)
+}
+
+/// The sphere or torus a revolution surface traces when its first parameter
+/// is the angle and its profile is a circle in a plane through the axis whose
+/// angle is measured from the axis normal toward the axis: the profile angle
+/// is then the analytic carrier's second parameter, so trims carry over.
+fn revolved_circle(
+    axis_origin: cadmpeg_ir::math::Point3,
+    axis: cadmpeg_ir::math::Vector3,
+    circle: &cadmpeg_ir::geometry::analytic::CircleCurve,
+) -> Option<SolvedSurfaceGeometry> {
+    use cadmpeg_ir::math::Vector3;
+    let dot = |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let reference = *circle.frame().reference().as_raw();
+    let rise = circle.frame().axis().as_raw().cross(reference);
+    if dot(reference, axis).abs() > EPS_REVOLVED_PROFILE
+        || (dot(rise, axis) - 1.0).abs() > EPS_REVOLVED_PROFILE
+    {
+        return None;
+    }
+    let center = circle.center().get();
+    let offset = Vector3::new(
+        center.x - axis_origin.x,
+        center.y - axis_origin.y,
+        center.z - axis_origin.z,
+    );
+    let height = dot(offset, axis);
+    let radial = Vector3::new(
+        offset.x - height * axis.x,
+        offset.y - height * axis.y,
+        offset.z - height * axis.z,
+    );
+    let origin = axis_origin.translated(axis, height);
+    let radius = circle.radius().get();
+    let major = radial.norm();
+    if major <= EPS_REVOLVED_PROFILE {
+        return cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            origin, axis, reference, radius,
+        )
+        .ok()
+        .map(SolvedSurfaceGeometry::Sphere);
+    }
+    if (dot(radial, reference) - major).abs() > EPS_REVOLVED_PROFILE * major.max(1.0) {
+        return None;
+    }
+    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(origin, axis, reference, major, radius)
+        .ok()
+        .map(SolvedSurfaceGeometry::Torus)
 }
 
 /// A profile that moves linearly in its parameter: its point at parameter 0
