@@ -554,3 +554,22 @@ fn a_removed_stub_does_not_unpair_a_different_retained_reference() {
         BTreeSet::from(["removed".to_owned()])
     );
 }
+
+#[test]
+fn identical_twin_bodies_pair_consistently_when_their_records_interleave() {
+    let before = json!({"model":{
+        "bodies":[{"id":"b1","edges":["e1a","e1b"]},{"id":"b2","edges":["e2a","e2b"]}],
+        "edges":[{"id":"e1a","x":0.0},{"id":"e1b","x":1.0},{"id":"e2a","x":0.0},{"id":"e2b","x":1.0}]}});
+    let after = json!({"model":{
+        "bodies":[{"id":"p","edges":["k1","k2"]},{"id":"q","edges":["k0","k3"]}],
+        "edges":[{"id":"k0","x":0.0},{"id":"k1","x":0.0},{"id":"k2","x":1.0},{"id":"k3","x":1.0}]}});
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
+    let mut perturbed = after.clone();
+    for edge in [0, 3] {
+        perturbed["model"]["edges"][edge]["x"] = json!(1.0e-13 + f64::from(u8::from(edge == 3)));
+    }
+    assert!(agree(&before, &perturbed, &Allowances::default(), cross(&[])).is_ok());
+    let mut joined = after;
+    joined["model"]["bodies"][1]["edges"] = json!(["k1", "k3"]);
+    assert!(agree(&before, &joined, &Allowances::default(), cross(&[])).is_err());
+}

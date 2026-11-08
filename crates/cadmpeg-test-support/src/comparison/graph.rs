@@ -493,13 +493,20 @@ fn counts(
         .collect()
 }
 
+/// Refined colours of both documents. Each `individual` pair `(left, right)`
+/// receives a colour of its own, shared by the two sides, before refinement.
 pub(super) fn colours(
     before: &Document,
     after: &Document,
     include_incoming: bool,
+    individual: &[(usize, usize)],
 ) -> (Vec<String>, Vec<String>) {
-    let left_zero = initial(before);
-    let right_zero = initial(after);
+    let mut left_zero = initial(before);
+    let mut right_zero = initial(after);
+    for (rank, &(left, right)) in individual.iter().enumerate() {
+        left_zero[left] = hash(&serde_json::json!([left_zero[left], rank]));
+        right_zero[right] = hash(&serde_json::json!([right_zero[right], rank]));
+    }
     let mut left = left_zero.clone();
     let mut right = right_zero.clone();
     let mut previous = counts(before, after, &left, &right);

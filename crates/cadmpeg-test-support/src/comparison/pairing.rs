@@ -164,6 +164,45 @@ fn incoming_agrees_with_pairs(
     })
 }
 
+/// The first record whose colour class holds more than one record on either
+/// side, paired with the first record of that colour on the other side.
+///
+/// Refinement cannot split twins, such as identical bodies, so pairing each
+/// twin record independently can join the records of one twin to those of
+/// another. Individualizing one pair and refining again splits the twins
+/// consistently.
+fn first_ambiguous_match(
+    before: &Document,
+    after: &Document,
+    left: &[String],
+    right: &[String],
+) -> Option<(usize, usize)> {
+    let mut sizes = BTreeMap::<(&str, &str), (usize, usize)>::new();
+    for (record, colour) in before.records.iter().zip(left) {
+        sizes.entry((record.arena.as_str(), colour.as_str())).or_default().0 += 1;
+    }
+    for (record, colour) in after.records.iter().zip(right) {
+        sizes.entry((record.arena.as_str(), colour.as_str())).or_default().1 += 1;
+    }
+    before
+        .records
+        .iter()
+        .zip(left)
+        .enumerate()
+        .find_map(|(index, (record, colour))| {
+            let (lefts, rights) = sizes[&(record.arena.as_str(), colour.as_str())];
+            if rights == 0 || (lefts < 2 && rights < 2) {
+                return None;
+            }
+            let other = after
+                .records
+                .iter()
+                .zip(right)
+                .position(|(row, other)| row.arena == record.arena && other == colour)?;
+            Some((index, other))
+        })
+}
+
 /// Pair equal graph colours first, then find compatible unmatched records.
 pub(super) fn pair(
     before: &Document,
@@ -172,8 +211,15 @@ pub(super) fn pair(
     include_incoming: bool,
 ) -> BTreeMap<usize, usize> {
     let refined = cross.then(|| refinement_target(before, after));
-    let (before_colours, after_colours) =
-        graph::colours(before, refined.as_ref().unwrap_or(after), include_incoming);
+    let target = refined.as_ref().unwrap_or(after);
+    let mut individual = Vec::new();
+    let (before_colours, after_colours) = loop {
+        let (left, right) = graph::colours(before, target, include_incoming, &individual);
+        match first_ambiguous_match(before, after, &left, &right) {
+            Some(pair) => individual.push(pair),
+            None => break (left, right),
+        }
+    };
     let mut pairs = BTreeMap::new();
     let mut used = BTreeSet::new();
 
@@ -229,6 +275,7 @@ pub(super) fn pair(
     if cross {
         loop {
             let mut claims = BTreeMap::<usize, Vec<usize>>::new();
+            let mut ambiguous = None;
             for (left, candidate) in candidates.iter().enumerate() {
                 if pairs.contains_key(&left) {
                     continue;
@@ -251,8 +298,12 @@ pub(super) fn pair(
                             &pairs,
                         )
                 });
-                if let (Some(right), None) = (available.next(), available.next()) {
-                    claims.entry(right).or_default().push(left);
+                match (available.next(), available.next()) {
+                    (Some(right), None) => claims.entry(right).or_default().push(left),
+                    (Some(right), Some(_)) => {
+                        ambiguous.get_or_insert((left, right));
+                    }
+                    _ => {}
                 }
             }
             let mut changed = false;
@@ -280,8 +331,17 @@ pub(super) fn pair(
                     changed = true;
                 }
             }
+            // Twins, such as identical bodies, leave every record with
+            // several candidates. Pair the first such record with its first
+            // candidate; the references of that pair then single out the
+            // partners of its twin's other records.
             if !changed {
-                break;
+                let Some((left, right)) = ambiguous else {
+                    break;
+                };
+                pairs.insert(left, right);
+                owners.insert(right, left);
+                locked.insert(left);
             }
         }
     }
