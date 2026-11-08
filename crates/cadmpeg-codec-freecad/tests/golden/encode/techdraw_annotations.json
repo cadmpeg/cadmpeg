@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 22615,
-      "payload_sha256": "92c0eba687ed7d561765a141f973a3fe88988e0c7677ff625d26a1eeea0155d6"
+      "payload_len": 23031,
+      "payload_sha256": "52418df62fc4c38a5bfbece9bcf6523d95786c4dbcdc874548465ad4185e4e3f"
     },
     {
       "name": "Model.Shape.brp",
@@ -272,16 +272,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.properties`: fcstd:native:property#Model:ExpressionEngine",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the fcstd write omits 1 native record(s) from `fcstd.string_tables`: fcstd:native:string-table#0",
         "severity": "info"
       }
@@ -457,6 +447,7 @@
                 "fcstd:native:property#Model:AttacherType": "regenerated",
                 "fcstd:native:property#Model:AttachmentOffset": "regenerated",
                 "fcstd:native:property#Model:AttachmentSupport": "regenerated",
+                "fcstd:native:property#Model:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Model:Height": "regenerated",
                 "fcstd:native:property#Model:Label": "regenerated",
                 "fcstd:native:property#Model:Label2": "regenerated",
