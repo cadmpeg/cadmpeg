@@ -1414,6 +1414,16 @@ fn pcurve_parameter_seeds_on_surface(
     let Some((origin, direction)) = pcurve.geometry.line_parameters(ctx)? else {
         return Ok(unique(seeds, FiniteReal::new));
     };
+    if direction.u != 0.0
+        && matches!(
+            context.geometry.solved(),
+            Some(SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_))
+        )
+    {
+        // An antipodal vertex can be stationary for the projection from t=0.
+        let quarter_turn = std::f64::consts::FRAC_PI_2 / direction.u;
+        seeds.extend([quarter_turn, -quarter_turn]);
+    }
     let domains = match context.geometry.solved() {
         Some(geometry) => solved_surface_parameter_domains(ctx, geometry)?,
         None => None,
