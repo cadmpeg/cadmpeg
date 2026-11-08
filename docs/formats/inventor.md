@@ -988,9 +988,9 @@ A result wrapper that has no current-body join contributes no current body to it
 
 A wrapper record owns one feature label, the label in the wrapper's segment whose owner reference selects the wrapper record. The label's counted string is the stored name of the body that the wrapper identifies. A current body has this name only when exactly one wrapper joins the body, exactly one label owns that wrapper, and the string is non-blank and holds no unpaired surrogate. A body with no wrapper join, with several joined wrappers, or with zero or several owning labels has no stored name. One label names one wrapper, so one stored name applies to at most one body.
 
-The derived stored-body form has feature-label class `eecb298e2c45650820104eb55d062c80`. In segment major versions 19 and 23 its three property slots select the stored source-body wrapper, the result-body wrapper, and a source property of type `3cc048210042420ba62103b20b7f4891`, respectively. All three references are non-null and qualified. The label participant list is empty. The source-body wrapper has a non-null qualified body reference. The two body wrappers have the stored-source and current-result identity rules above. The source property in segment major versions 19 and 23 contains the content header followed by one qualified component reference, then ends. In segment major version 23, the source header includes one stamp.
+The derived stored-body form has feature-label class `eecb298e2c45650820104eb55d062c80`. In segment major versions 19, 23, 25, and 31 its three property slots select the stored source-body wrapper, the result-body wrapper, and a source property of type `3cc048210042420ba62103b20b7f4891`, respectively. All three references are non-null and qualified. The label participant list is empty. The source-body wrapper has a non-null qualified body reference. The two body wrappers have the stored-source and current-result identity rules above. The source property in segment major versions 19, 23, 25, and 31 contains the content header followed by one qualified component reference, then ends. The source header includes no stamp in version 19, one stamp in version 23, and two stamps in versions 25 and 31. In segment major version 31, the content headers of the source property and of the derived component include `flags_extension`.
 
-In segment major versions 19 and 23, a derived component has type `a034363fd31191b5c0000385e89c6b4f` and a state content header with no stamps. Its 32-byte body contains:
+In segment major versions 19, 23, 25, and 31, a derived component has type `a034363fd31191b5c0000385e89c6b4f` and a state content header with no stamps. Its 32-byte body contains:
 
 ```text
 state i32 = -1
@@ -1000,7 +1000,7 @@ count u32 = 0
 terminal u32
 ```
 
-The version-19 component ends after `terminal`. In segment major version 23, the component has a four-byte suffix, `suffix_state:u32 = 0`, after `terminal`, then ends. The four references and the terminal reference are non-null qualified references in the same segment. Their target types, in order, are `9f34363fd31191b5c0000385e89c6b4f`, `604d8790d011f8d10008cabc0663dc09`, `184d8790d011f8d10008cabc0663dc09`, `d77e5d25d311f2b5c0000385e89c6b4f`, and `a7fbcb1db64f16cfe979019eae94a4df`. The third reference selects a transform record. The result-body wrapper selects the current-model body independently of that reference.
+The version-19 component ends after `terminal`. In segment major versions 23, 25, and 31, the component has a four-byte suffix, `suffix_state:u32 = 0`, after `terminal`, then ends. The four references and the terminal reference are non-null qualified references in the same segment. Their target types, in order, are `9f34363fd31191b5c0000385e89c6b4f`, `604d8790d011f8d10008cabc0663dc09`, `184d8790d011f8d10008cabc0663dc09`, `d77e5d25d311f2b5c0000385e89c6b4f`, and `a7fbcb1db64f16cfe979019eae94a4df`. The third reference selects a transform record. The result-body wrapper selects the current-model body independently of that reference.
 
 ### 13.5 Attached plates and bend properties
 
