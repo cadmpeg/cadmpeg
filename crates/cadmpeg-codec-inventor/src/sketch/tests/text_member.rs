@@ -31,7 +31,7 @@ const CURVE_MEMBER: [u8; 16] = [
 const TEXT_ORDINAL: u32 = 30;
 
 /// Lists a record of `ordinal` in the sketch.
-fn list_member(inventory: &mut SketchInventory, ordinal: u32) {
+pub(super) fn list_member(inventory: &mut SketchInventory, ordinal: u32) {
     let sketch = &inventory.sketches[0];
     let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
     references
@@ -58,6 +58,8 @@ fn text_member(ordinal: u32) -> TextMember {
     TextMember {
         segment_token: cadmpeg_ir::identity_key!("segment"),
         record_ordinal: ordinal,
+        box_member: None,
+        role_failures: Vec::new(),
     }
 }
 
@@ -104,6 +106,7 @@ fn text_members_report_a_pinned_loss_and_other_members_keep_theirs() {
     let unresolved = HashSet::from([("generated", 0), ("generated", 1), ("generated", 2)]);
     let losses = member_loss_counts(
         &unresolved,
+        &HashSet::new(),
         [TEXT, TEXT, CURVE_MEMBER]
             .into_iter()
             .enumerate()
