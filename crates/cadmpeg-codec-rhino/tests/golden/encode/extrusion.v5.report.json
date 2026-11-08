@@ -157,6 +157,16 @@
       },
       "message": "pcurve rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.cap-0.profile-0 has no wrapper reversal value; 3DM writes false",
       "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "native.records-omitted",
+        "kind": "record_not_typed",
+        "namespace": "export",
+        "scope": "namespaced"
+      },
+      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
+      "severity": "info"
     }
   ],
   "native_dispositions": {
@@ -185,10 +195,7 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped",
-            "records": {
-              "rhino:document:settings#current": "written"
-            }
+            "disposition": "dropped"
           },
           "embedded_images": {
             "disposition": "dropped"
