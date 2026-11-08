@@ -665,6 +665,7 @@ struct HistoricalBodyIndex<'a> {
     face_surfaces: KeyedRows<'a, AsmHistoricalCarrierBinding>,
     cylinders: KeyedRows<'a, crate::history_records::AsmHistoricalCylinder>,
     edge_samples: KeyedRows<'a, crate::history_records::AsmHistoricalEdgeSample>,
+    planes: KeyedRows<'a, crate::history_records::AsmHistoricalPlane>,
     coedge_rows: &'a [AsmHistoricalCoedge],
     loop_faces: HashMap<i64, i64>,
 }
@@ -688,6 +689,7 @@ impl<'a> HistoricalBodyIndex<'a> {
             face_surfaces: KeyedRows::new(&topology.face_surfaces),
             cylinders: KeyedRows::new(&topology.surface_cylinders),
             edge_samples: KeyedRows::new(&topology.edge_samples),
+            planes: KeyedRows::new(&topology.surface_planes),
             coedge_rows: &topology.coedge_topology,
             loop_faces: topology
                 .face_loops
@@ -797,6 +799,78 @@ impl<'a> HistoricalBodyIndex<'a> {
 
     fn is_solid(&self, body: i64) -> bool {
         self.solid_edges(body).is_some()
+    }
+
+    /// Whether `edge` is a proven straight segment: its curve has an axis
+    /// line that holds both of its distinct end points.
+    fn line_edge(
+        &self,
+        edge: i64,
+        start: cadmpeg_ir::math::Point3,
+        end: cadmpeg_ir::math::Point3,
+    ) -> bool {
+        let Some(axis) = self
+            .edge_curves
+            .get(edge)
+            .and_then(|binding| binding.carrier)
+            .and_then(|curve| self.curve_axes.get(curve))
+        else {
+            return false;
+        };
+        let length = axis.direction.norm();
+        let chord = end.vector_from(start);
+        let tolerance = EPS_HISTORY_CIRCLE_EDGE_E7 * chord.norm().max(1.0);
+        let off_axis = |point: cadmpeg_ir::math::Point3| {
+            point.vector_from(axis.origin).cross(axis.direction).norm() / length
+        };
+        length > 0.0
+            && chord.norm() > tolerance
+            && off_axis(start) <= tolerance
+            && off_axis(end) <= tolerance
+    }
+
+    /// Whether every face of `body` lies on a plane or a cylinder, so that
+    /// the body's box is the box of its edges.
+    fn faces_bound_by_edges(&self, body: i64) -> bool {
+        let mut faces = self
+            .shells(body)
+            .flat_map(|shell| self.shell_faces.members(shell).unwrap_or_default())
+            .peekable();
+        faces.peek().is_some()
+            && faces.all(|face| {
+                self.face_surfaces.get(*face).is_some_and(|binding| {
+                    self.planes.get(binding.carrier).is_some()
+                        || self.cylinders.get(binding.carrier).is_some()
+                })
+            })
+    }
+
+    /// The box of a solid `body` from its `edges`, and whether that box is
+    /// exact: every edge is a proven segment or circular arc and every face a
+    /// plane or a cylinder.
+    fn body_bounds(
+        &self,
+        body: i64,
+        edges: &[i64],
+    ) -> Option<((cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3), bool)> {
+        let bounds = self.edge_bounds(edges)?;
+        let exact = self.faces_bound_by_edges(body)
+            && edges.iter().all(|&edge| {
+                let Some(row) = self.edges.get(edge) else {
+                    return false;
+                };
+                let (Some(start), Some(end)) = (
+                    self.vertex_position(row.start_vertex),
+                    self.vertex_position(row.end_vertex),
+                ) else {
+                    return false;
+                };
+                self.line_edge(edge, start, end)
+                    || (self.circle_edge(edge, start).is_some()
+                        && (row.start_vertex == row.end_vertex
+                            || self.edge_samples.get(edge).is_some()))
+            });
+        Some((bounds, exact))
     }
 
     /// The box of the edges: their vertices, their interior samples, and
@@ -1073,6 +1147,7 @@ pub(crate) fn bind_feature_outputs(
     let mut state_deleted_bodies = HashMap::<i64, Vec<i64>>::new();
     let mut state_solid_bodies = HashMap::<i64, BTreeSet<i64>>::new();
     let mut state_body_centers = HashMap::<i64, Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
+    let mut state_exact_bodies = HashMap::<i64, BTreeSet<i64>>::new();
     let mut state_body_bounds =
         HashMap::<i64, Vec<(i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3))>>::new();
     let mut state_inserted_plane =
@@ -1173,9 +1248,13 @@ pub(crate) fn bind_feature_outputs(
                     .filter_map(|&b| Some((b, body_index.solid_edges(b)?)))
                     .collect();
                 let mut bounds_list = Vec::new();
+                let mut exact_bodies = BTreeSet::new();
                 for (&b, edges) in &solid_edges {
-                    if let Some(bds) = body_index.edge_bounds(edges) {
+                    if let Some((bds, exact)) = body_index.body_bounds(b, edges) {
                         bounds_list.push((b, bds));
+                        if exact {
+                            exact_bodies.insert(b);
+                        }
                     } else {
                         losses.push(
                             crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.note(
@@ -1200,6 +1279,7 @@ pub(crate) fn bind_feature_outputs(
                         .collect();
                     if !centers.is_empty() {
                         state_body_centers.insert(cur_state_id, centers);
+                        state_exact_bodies.insert(cur_state_id, exact_bodies);
                     }
                     if let Some(transition) = history.states()[index].transition.as_ref() {
                         for &fid in &transition.topology.faces.inserted {
@@ -1415,6 +1495,24 @@ pub(crate) fn bind_feature_outputs(
                     .source_properties
                     .entry(cadmpeg_core::nonblank_literal!("body_centers"))
                     .or_insert(formatted);
+            }
+            let exact = state_exact_bodies
+                .get(&state_id)
+                .into_iter()
+                .flatten()
+                .filter(|b| {
+                    !absorbed_bodies.contains(*b)
+                        && !newly_absorbed.contains(*b)
+                        && centers.iter().any(|(body, _)| body == *b)
+                })
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            if !exact.is_empty() {
+                feature
+                    .source_properties
+                    .entry(cadmpeg_core::nonblank_literal!("body_centers_exact"))
+                    .or_insert(exact);
             }
         }
         if is_split_body {
