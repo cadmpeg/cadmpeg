@@ -441,6 +441,56 @@ fn a_use_interval_is_directed_by_the_vertex_its_surface_image_reaches() {
 }
 
 #[test]
+fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
+    use cadmpeg_ir::scalar::PositiveReal;
+
+    for vertex_tolerance in [0.001, 0.005] {
+        let (mut ir, geometry, _, mut edge) = cube_edge_with_pcurve(1.5, -0.5);
+        edge.set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
+        edge.tolerance = PositiveReal::new(0.001);
+        ir.model.edges[0] = edge.clone();
+        ir.model
+            .vertices
+            .iter_mut()
+            .find(|vertex| vertex.id == edge.start)
+            .unwrap()
+            .tolerance = PositiveReal::new(vertex_tolerance);
+
+        let pcurve = cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#active-interval").unwrap();
+        ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+            id: pcurve.clone(),
+            geometry,
+            metadata: PcurveMetadata::default(),
+        });
+        let index = ir
+            .model
+            .coedges
+            .iter()
+            .position(|coedge| coedge.edge == edge.id)
+            .unwrap();
+        ir.model.coedges[index]
+            .pcurves
+            .push(cadmpeg_ir::topology::PcurveUse {
+                pcurve,
+                isoparametric: None,
+                parameter_range: Some(DirectedParameterRange::new([0.25, 0.75]).unwrap()),
+            });
+        let mut builder =
+            super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
+        assert!(builder.emit_coedge_edge(&ir.model.coedges[index]).is_some());
+        let lines = builder.emitter.into_lines().unwrap();
+        let trimmed = lines.iter().find(|line| line.contains("TRIMMED_CURVE("));
+        if vertex_tolerance == 0.005 {
+            assert!(trimmed
+                .expect("the active interval of the pcurve must be written")
+                .contains("(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.PARAMETER."));
+        } else {
+            assert!(trimmed.is_none());
+        }
+    }
+}
+
+#[test]
 fn a_closed_edge_directs_only_an_increasing_use_interval() {
     let (mut ir, pcurve, surface, mut edge) = cube_edge_with_pcurve(0.0, 0.0);
     edge.end = edge.start.clone();

@@ -3239,7 +3239,7 @@ Offsets are relative to the primary indexed scope header. The two marked referen
 
 ## `coil_ten_reference_compact_prologue`
 
-Spec §3.1 · layout: byte offsets · size: 56 B
+Spec §3.1 · layout: byte offsets · size: 58 B
 
 Offsets are relative to the primary indexed scope header. The section lanes at offsets 92 and 107 are those of coil_compact_scope_discriminators.
 
@@ -3247,16 +3247,32 @@ Offsets are relative to the primary indexed scope header. The section lanes at o
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
-| 20 | 4 | `operation` | `u32` | little | spec | the u32 operation at offset 20 |
+| 20 | 4 | `form_constant` | `u32` | little | spec | u32 `1` at offset 20 · value `1` |
 | 25 | 1 | `left_hand` | `u8` | little | spec | the left-hand Boolean at offset 25 |
-| 26 | 4 | `structural_constant` | `u32` | little | spec | u32 `1` at offset 26 · value `1` |
+| 26 | 4 | `operation` | `u32` | little | spec | the u32 operation at offset 26 |
 | 30 | 4 | `extent` | `u32` | little | spec | the u32 extent selector at offset 30 |
-| 34 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
-| 45 | 11 | `ninth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
+| 34 | 11 | `first_member_reference` | `bytes[11]` | little | spec | A marked reference at offset 34 names a member of the ordered reference table. |
+| 45 | 11 | `second_member_reference` | `bytes[11]` | little | spec | In the unflagged form, a second marked reference at offset 45 names a member of the table |
+| 56 | 2 | `trailing_flags` | `bytes[2]` | little | spec | bytes 56 and 57 are `1` and `0` · value `[1, 0]` |
 
 Unstated regions:
 
 - `24..25` (1 B): The compact form keeps this byte for the SpirePrimitive clockwise lane.
+
+## `coil_ten_reference_flagged_prologue_tail`
+
+Spec §3.1 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the primary indexed scope header. Offsets 0 through 44 are those of coil_ten_reference_compact_prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 45 | 2 | `leading_flags` | `bytes[2]` | little | spec | In the flagged form, bytes 45 and 46 are `0` and `1` · value `[0, 1]` |
+| 47 | 11 | `second_member_reference` | `bytes[11]` | little | spec | the second marked reference starts at offset 47 and names a member of the table |
+
+Unstated regions:
+
+- `0..45` (45 B): The coil_ten_reference_compact_prologue fields precede the flag bytes.
 
 ## `coil_long_scope_matrix`
 
@@ -5677,6 +5693,71 @@ Only type version 7 assigns normal reversal to primary-scope offset 31.
 | 0 | 31 | `scope_prefix` | `bytes[31]` | little | spec | In a version-7 `SurfacePatch` type |
 | 31 | 1 | `normal_flip` | `u8` | little | spec | the byte at primary-scope offset `P + 31` reverses the whole created surface normal |
 | 32 | 4 | `following_word` | `u32` | little | spec | The following `u32le` at `P + 32` is `4` · value `4` |
+
+## `surface_patch_v5_selection_frame`
+
+Spec §3.1 · layout: byte offsets · size: 43 B
+
+Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 31 | `scope_prefix` | `bytes[31]` | little | spec | A `SurfacePatch` scope of type version 5, 6, or 7 |
+| 31 | 12 | `selection_prefix` | `bytes[12]` | little | spec | `Q` is 31 in versions 5 and 6 |
+
+## `surface_patch_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Offsets are relative to P + Q. The settings references follow at offset 12.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `leading_word` | `u32` | little | spec | The u32 at `P + Q` is `4` · value `4` |
+| 4 | 4 | `selection_word` | `u32` | little | spec | the u32 at `P + Q + 4` is `1` · value `1` |
+| 8 | 4 | `settings_count` | `u32` | little | spec | The u32 at `P + Q + 8` is the settings count `S` |
+
+## `surface_patch_v5_interior_list_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Offsets are relative to the end of the last settings reference. The interior references follow at offset 12.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `zero_run` | `bytes[8]` | little | spec | In version 5 it is eight zero bytes |
+| 8 | 4 | `interior_count` | `u32` | little | spec | the u32 interior count `I`, at prefix offset 8 |
+
+## `surface_patch_v6_interior_list_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Type versions 6 and 7. Offsets are relative to the end of the last settings reference. The interior references follow at offset 16.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `zero_run` | `bytes[12]` | little | spec | In versions 6 and 7 it is twelve zero bytes |
+| 12 | 4 | `interior_count` | `u32` | little | spec | the u32 interior count `I`, at prefix offset 12 |
+
+## `surface_patch_v5_tool_reference_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 4 B
+
+Offsets are relative to the end of the last interior reference. The tool-body reference follows at offset 4.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_run` | `bytes[4]` | little | spec | It is four zero bytes in version 5 |
+
+## `surface_patch_v6_tool_reference_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 8 B
+
+Type versions 6 and 7. Offsets are relative to the end of the last interior reference. The tool-body reference follows at offset 8.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `zero_run` | `bytes[8]` | little | spec | eight zero bytes in versions 6 and 7 |
 
 ## `hem_common_controls`
 
@@ -9024,6 +9105,79 @@ Unstated regions:
 
 - `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
 - `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
+
+## `surface_boundary_group_tail_88`
+
+Spec §3.1 · layout: byte offsets · size: 88 B
+
+Offsets are relative to the end of the boundary-carrier member run. The same-index paired header begins at offset 88.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `absent_optional_references` | `bytes[2]` | little | spec | Each tail stores two zero bytes |
+| 2 | 4 | `trailing_count` | `u32` | little | spec | `u32 trailing_count` with value 1 |
+| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference |
+| 17 | 8 | `role` | `u64` | little | spec | A u64 role follows |
+| 25 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 35 | 4 | `ordinal` | `u32` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 39 | 8 | `tolerance` | `f64` | little | spec | a positive f64 modelling tolerance in centimetres |
+| 47 | 4 | `ordinal_copy` | `u32` | little | spec | a second copy of the ordinal |
+| 51 | 11 | `second_next_reference` | `bytes[11]` | little | spec | a marked reference to record `N + 2` |
+| 62 | 1 | `flag_prefix` | `u8` | little | spec | `01 + u8 variant + u8 closing_flag` |
+| 63 | 1 | `variant` | `u8` | little | spec | `01 + u8 variant + u8 closing_flag` |
+| 64 | 1 | `closing_flag` | `u8` | little | spec | `01 + u8 variant + u8 closing_flag` |
+| 65 | 11 | `next_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 76 | 1 | `zero_byte` | `u8` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 77 | 11 | `scope_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+
+## `surface_boundary_group_tail_87`
+
+Spec §3.1 · layout: byte offsets · size: 87 B
+
+Offsets are relative to the end of the boundary-carrier member run. The same-index paired header begins at offset 87.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `absent_optional_references` | `bytes[2]` | little | spec | Each tail stores two zero bytes |
+| 2 | 4 | `trailing_count` | `u32` | little | spec | `u32 trailing_count` with value 1 |
+| 6 | 11 | `trailing_reference` | `bytes[11]` | little | spec | one marked trailing reference |
+| 17 | 8 | `role` | `u64` | little | spec | A u64 role follows |
+| 25 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 35 | 4 | `ordinal` | `u32` | little | spec | After ten zero bytes come the u32 group ordinal |
+| 39 | 8 | `tolerance` | `f64` | little | spec | a positive f64 modelling tolerance in centimetres |
+| 47 | 4 | `ordinal_copy` | `u32` | little | spec | a second copy of the ordinal |
+| 51 | 11 | `second_next_reference` | `bytes[11]` | little | spec | a marked reference to record `N + 2` |
+| 62 | 1 | `variant` | `u8` | little | spec | `u8 variant + u8 closing_flag` |
+| 63 | 1 | `closing_flag` | `u8` | little | spec | `u8 variant + u8 closing_flag` |
+| 64 | 11 | `next_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 75 | 1 | `zero_byte` | `u8` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+| 76 | 11 | `scope_reference` | `bytes[11]` | little | spec | A marked reference to record `N + 1`, one zero byte, and a marked reference to the owning scope complete the tail |
+
+## `compact_flag_record`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the record's indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | an indexed header followed by ten zero bytes |
+| 21 | 1 | `marker` | `u8` | little | spec | marker byte `01` |
+| 22 | 1 | `value` | `u8` | little | spec | a boolean byte |
+| 23 | 1 | `terminator` | `u8` | little | spec | terminator byte `00` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 
 ## `reverse_normal_prefix`
 

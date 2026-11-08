@@ -67,6 +67,8 @@ pub(crate) struct ProfileGeometryWork {
     coincident_direction_assumed_selections: Cell<usize>,
     cut_regions_assumed: Cell<bool>,
     cut_regions_assumed_selections: Cell<usize>,
+    cut_regions_beyond_profile: Cell<bool>,
+    cut_regions_beyond_profile_selections: Cell<usize>,
     island_absence_assumed: Cell<bool>,
     island_absence_assumed_selections: Cell<usize>,
     polyline_side_assumed: Cell<bool>,
@@ -75,6 +77,8 @@ pub(crate) struct ProfileGeometryWork {
     cap_outline_assumed_selections: Cell<usize>,
     cap_carrier_assumed: Cell<bool>,
     cap_carrier_assumed_selections: Cell<usize>,
+    hole_boundary_inferred_selections: Cell<usize>,
+    region_hole_inferred_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -99,6 +103,8 @@ impl ProfileGeometryWork {
             coincident_direction_assumed_selections: Cell::new(0),
             cut_regions_assumed: Cell::new(false),
             cut_regions_assumed_selections: Cell::new(0),
+            cut_regions_beyond_profile: Cell::new(false),
+            cut_regions_beyond_profile_selections: Cell::new(0),
             island_absence_assumed: Cell::new(false),
             island_absence_assumed_selections: Cell::new(0),
             polyline_side_assumed: Cell::new(false),
@@ -107,7 +113,57 @@ impl ProfileGeometryWork {
             cap_outline_assumed_selections: Cell::new(0),
             cap_carrier_assumed: Cell::new(false),
             cap_carrier_assumed_selections: Cell::new(0),
+            hole_boundary_inferred_selections: Cell::new(0),
+            region_hole_inferred_selections: Cell::new(0),
         }
+    }
+
+    pub(crate) fn record_hole_boundary_profile_inferred(&self) {
+        self.hole_boundary_inferred_selections
+            .set(self.hole_boundary_inferred_selections.get() + 1);
+    }
+
+    pub(crate) fn record_region_hole_profile_inferred(&self) {
+        self.region_hole_inferred_selections
+            .set(self.region_hole_inferred_selections.get() + 1);
+    }
+
+    pub(crate) fn inferred_counts(&self) -> (usize, usize) {
+        (
+            self.hole_boundary_inferred_selections.get(),
+            self.region_hole_inferred_selections.get(),
+        )
+    }
+
+    pub(crate) fn set_inferred_counts(&self, counts: (usize, usize)) {
+        self.hole_boundary_inferred_selections.set(counts.0);
+        self.region_hole_inferred_selections.set(counts.1);
+    }
+
+    pub(crate) fn assumed_flags(&self) -> [bool; 9] {
+        [
+            self.crossing_loop_assumed.get(),
+            self.loop_flags_assumed.get(),
+            self.coincident_direction_assumed.get(),
+            self.cut_regions_assumed.get(),
+            self.cut_regions_beyond_profile.get(),
+            self.island_absence_assumed.get(),
+            self.polyline_side_assumed.get(),
+            self.cap_outline_assumed.get(),
+            self.cap_carrier_assumed.get(),
+        ]
+    }
+
+    pub(crate) fn set_assumed_flags(&self, flags: [bool; 9]) {
+        self.crossing_loop_assumed.set(flags[0]);
+        self.loop_flags_assumed.set(flags[1]);
+        self.coincident_direction_assumed.set(flags[2]);
+        self.cut_regions_assumed.set(flags[3]);
+        self.cut_regions_beyond_profile.set(flags[4]);
+        self.island_absence_assumed.set(flags[5]);
+        self.polyline_side_assumed.set(flags[6]);
+        self.cap_outline_assumed.set(flags[7]);
+        self.cap_carrier_assumed.set(flags[8]);
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
@@ -141,6 +197,10 @@ impl ProfileGeometryWork {
             (
                 &self.cut_regions_assumed,
                 &self.cut_regions_assumed_selections,
+            ),
+            (
+                &self.cut_regions_beyond_profile,
+                &self.cut_regions_beyond_profile_selections,
             ),
             (
                 &self.island_absence_assumed,
@@ -187,6 +247,13 @@ impl ProfileGeometryWork {
     /// changed.
     pub(crate) fn note_cut_regions_assumed(&self) {
         self.cut_regions_assumed.set(true);
+    }
+
+    /// Record that the open selection took the regions a cut removed from the
+    /// planes it changed in place of the stored profile reading, with region
+    /// boundaries that include curves outside the stored profile.
+    pub(crate) fn note_cut_regions_beyond_profile(&self) {
+        self.cut_regions_beyond_profile.set(true);
     }
 
     /// Record that the open selection took a face that a curve outside the
@@ -265,6 +332,12 @@ impl ProfileGeometryWork {
                 "{cut_assumed} extrude profile selection(s) took atomic regions bounded by the stored profile's curves from the faces the cut changed on planes parallel to the Sketch: a region is selected when one interior point lay on such a face before the cut and on none after it. The region boundaries were not compared with the face boundaries."
             )));
         }
+        let beyond = self.cut_regions_beyond_profile_selections.get();
+        if beyond != 0 {
+            losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
+                "{beyond} extrude profile selection(s) took the atomic regions a cut removed from the planes it changed, in place of a stored profile reading that covers other regions: a region is removed when one interior point lay on such a face before the cut and on none after it. The extrude is a Cut, and at least one taken region is bounded by curves outside the stored profile. A region over no face of those planes before or after the cut is left unselected, and the region boundaries were not compared with the face boundaries."
+            )));
+        }
         let island_absence = self.island_absence_assumed_selections.get();
         if island_absence != 0 {
             losses.push(F3dLossCode::FeatureProfileIslandAbsenceAssumed.note(format!(
@@ -287,6 +360,18 @@ impl ProfileGeometryWork {
         if cap_carrier != 0 {
             losses.push(F3dLossCode::FeatureProfileCapCarrierAssumed.note(format!(
                 "{cap_carrier} extrude profile selection(s) were read from an end cap with an edge whose carrier is not proven. The reading assumes, from the edge's end points and interior sample, that the edge is the straight line between its ends, or the circular arc through its ends and the sample."
+            )));
+        }
+        let hole_inferred = self.hole_boundary_inferred_selections.get();
+        if hole_inferred != 0 {
+            losses.push(F3dLossCode::FeatureProfileHoleBoundaryInferred.note(format!(
+                "{hole_inferred} extrude profile selection(s) assume that the supported hole boundary of an inserted region identifies the selected profile."
+            )));
+        }
+        let region_hole_inferred = self.region_hole_inferred_selections.get();
+        if region_hole_inferred != 0 {
+            losses.push(F3dLossCode::FeatureProfileRegionHoleInferred.note(format!(
+                "{region_hole_inferred} extrude profile selection(s) assume that an inserted region's holes belong to the selected profile."
             )));
         }
         losses

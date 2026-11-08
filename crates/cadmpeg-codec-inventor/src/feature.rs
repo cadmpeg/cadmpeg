@@ -2472,15 +2472,6 @@ pub(crate) fn project(
         };
         match value {
             Some((projected_feature, result)) => {
-                if let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
-                    projected_feature.evaluation.definition()
-                {
-                    edge_treatment_losses.extend(
-                        groups
-                            .iter()
-                            .filter_map(|group| chamfer::orientation_loss(group.spec)),
-                    );
-                }
                 neutral += 1;
                 projected.push(HistoryItem {
                     record: feature.identity.record_ordinal,
@@ -2746,6 +2737,25 @@ pub(crate) fn project(
         inventory,
     )?);
     input_topologies.extend(face_selection::project(ctx, &mut features, inventory)?);
+    input_topologies.extend(chamfer::oriented::project(
+        ctx,
+        &mut features,
+        inventory,
+        |token, reference| resolve_property(token, reference.index(), &index),
+        |source, slot| length_parameter(source, slot, &index),
+    )?);
+    // The orientation notes follow the final specs, after the joins above.
+    for feature in &features {
+        if let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+            feature.evaluation.definition()
+        {
+            edge_treatment_losses.extend(
+                groups
+                    .iter()
+                    .filter_map(|group| chamfer::orientation_loss(group.spec)),
+            );
+        }
+    }
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {
@@ -4052,6 +4062,7 @@ fn project_chamfer(
         spec,
         flip_direction,
         direct,
+        ..
     } = operands;
     let (feature_id, result) = match feature_result(ctx, source, 11, index)? {
         Ok(value) => value,
@@ -4321,11 +4332,16 @@ pub(crate) fn thicken_operand_losses<'a>(
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
                 motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
-                ..
-            }) => feature
-                .native_ref
-                .as_ref()
-                .is_some_and(|id| thicken_sources.contains(id.as_str())),
+                faces,
+            }) => {
+                !matches!(
+                    faces,
+                    cadmpeg_ir::features::FaceSelection::Historical { .. }
+                ) && feature
+                    .native_ref
+                    .as_ref()
+                    .is_some_and(|id| thicken_sources.contains(id.as_str()))
+            }
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
                 kind.as_str() == "Thicken"
             }

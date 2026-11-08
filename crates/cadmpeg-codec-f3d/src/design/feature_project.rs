@@ -5,8 +5,7 @@ use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
     project_fixed_fillet_with_corners, resolved_edge_flange_group, resolved_edge_group,
-    resolved_edge_treatment_group_with_corners, resolved_surface_patch_edge_group,
-    EdgeGroupTransition,
+    resolved_edge_treatment_group_with_corners,
 };
 use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
@@ -59,6 +58,7 @@ mod path_pattern;
 mod pattern_seeds;
 mod reverse_normal;
 mod surface_offset;
+mod surface_patch;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -842,13 +842,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }),
                 Some(DesignFeatureFamily::Pipe) => native_scope_definition(scope, &parameters)?,
-                Some(DesignFeatureFamily::SurfacePatch) => project_surface_patch(
+                Some(DesignFeatureFamily::SurfacePatch) => surface_patch::project_surface_patch(
                     ctx,
                     scope,
                     construction_groups,
                     edge_operands,
                     edge_identity_operands,
                     face_boundaries,
+                    &mut projection_losses,
                 )?
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
@@ -863,25 +864,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 .map(|distance| (operation, distance))
                         })
                     {
-                        use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
-                        use cadmpeg_ir::features::{FaceSelection, SurfaceExtension};
-
-                        let method = match operation.method {
-                            DesignSurfaceExtendMethod::Natural => SurfaceExtension::Natural,
-                            DesignSurfaceExtendMethod::Tangent => SurfaceExtension::Linear,
-                            DesignSurfaceExtendMethod::Perpendicular => {
-                                SurfaceExtension::Perpendicular
-                            }
-                        };
                         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-                            faces: FaceSelection::Native(format!(
+                            faces: cadmpeg_ir::features::FaceSelection::Native(format!(
                                 "{}{}{}",
                                 native_scope,
                                 ":design-record#",
                                 u64::from(operation.boundary_record_index)
                             )),
                             distance: Some(distance),
-                            method,
+                            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1035,10 +1026,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_thicken(scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Coil) => {
-                    project_coil(scope, &parameters, construction_groups)?
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
-                }
+                Some(DesignFeatureFamily::Coil) => project_coil(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    &mut projection_losses,
+                )?
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Scale) => {
                     if let Some(operation) = scope.scale_operation() {
                         let factor =
@@ -6955,105 +6949,6 @@ fn resolved_loft_path(
     Ok(loft_path_from_edge_selection(&group.id, selection))
 }
 
-#[derive(Clone, Copy)]
-enum SurfacePatchRecipe<'a> {
-    Grouped(&'a [crate::records::topology::historical_context::AsmFaceBoundary]),
-    Direct,
-}
-
-fn resolved_surface_patch_path(
-    groups: &[&DesignConstructionOperandGroup],
-    all_groups: &[DesignConstructionOperandGroup],
-    operands: &[DesignEdgeOperand],
-    identity_operands: &[DesignEdgeIdentityOperand],
-    scope: &DesignParameterScope,
-    recipe: SurfacePatchRecipe<'_>,
-    ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
-    use cadmpeg_ir::features::PathRef;
-
-    let mut paths = Vec::new();
-    for group in groups {
-        let selection = if let SurfacePatchRecipe::Grouped(face_boundaries) = recipe {
-            resolved_surface_patch_edge_group(
-                group,
-                all_groups,
-                operands,
-                identity_operands,
-                face_boundaries,
-                EdgeGroupTransition {
-                    previous_state_id: scope.previous_history_state_id(),
-                    feature_id: &crate::ids::neutral_feature_id(scope),
-                },
-                ctx,
-            )
-        } else {
-            resolved_edge_group(
-                group,
-                all_groups,
-                operands,
-                identity_operands,
-                scope.previous_history_state_id(),
-                &crate::ids::neutral_feature_id(scope),
-                ctx,
-            )
-        }?;
-        let path = loft_path_from_edge_selection(&group.id, selection);
-        paths.push(path);
-    }
-    if matches!(recipe, SurfacePatchRecipe::Grouped(_)) && paths.len() == 1 {
-        if let Some(path) = paths.pop() {
-            return Ok(path);
-        }
-    }
-    if paths.is_empty() {
-        return Ok(PathRef::Native(scope.id.clone()));
-    }
-    if let Some(state) = paths.iter().find_map(|path| {
-        let PathRef::HistoricalEdges { state, .. } = path else {
-            return None;
-        };
-        Some(state)
-    }) {
-        if paths.iter().all(|path| {
-            matches!(path,
-            PathRef::HistoricalEdges { state: candidate, .. } if candidate == state)
-        }) {
-            let state = state.clone();
-            let mut edges = Vec::new();
-            for path in &paths {
-                if let PathRef::HistoricalEdges {
-                    edges: group_edges, ..
-                } = path
-                {
-                    edges.extend_from_slice(group_edges);
-                }
-            }
-            let members = cadmpeg_ir::features::SelectionMembers::try_from(edges);
-            let native = scope.id.clone();
-            return Ok(match members {
-                Ok(edges) => PathRef::HistoricalEdges {
-                    state,
-                    edges,
-                    native: cadmpeg_core::text::NonBlankString::new(native)
-                        .ok_or_else(|| CodecError::malformed("surface patch path is blank"))?,
-                },
-                Err(_) => PathRef::Native(native),
-            });
-        }
-    }
-    if paths.iter().all(|path| matches!(path, PathRef::Edges(_))) {
-        let mut edges = Vec::new();
-        for path in &paths {
-            if let PathRef::Edges(group_edges) = path {
-                edges.extend_from_slice(group_edges);
-            }
-        }
-        return Ok(PathRef::Edges(edges));
-    }
-    Ok(PathRef::Native(scope.id.clone()))
-}
-
 fn loft_path_from_edge_selection(
     native: &str,
     selection: cadmpeg_ir::features::EdgeSelection,
@@ -7543,321 +7438,6 @@ pub(super) fn project_fixed_sweep(
             taper,
             scale: None,
             allow_multi_profile_faces: None,
-        },
-    )))
-}
-
-/// Project each boundary condition and its resolved continuity weight.
-///
-/// An unknown continuity or unsupported active weight leaves the complete
-/// condition vector unresolved; native settings retain their source values.
-fn surface_patch_boundary_conditions(
-    scope: &DesignParameterScope,
-) -> Vec<cadmpeg_ir::features::FilledSurfaceBoundaryCondition> {
-    use crate::records::feature::surface_ops::DesignPatchContinuity;
-    use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
-
-    const DEFAULT_WEIGHT: f64 = 0.5;
-    const DEFAULT_WEIGHT_SENTINEL: f64 = -1.0;
-
-    let mut conditions = Vec::new();
-    for boundary in scope.surface_patch_boundaries() {
-        let condition = match boundary.continuity {
-            DesignPatchContinuity::Connected => FilledSurfaceBoundaryCondition::Contact {},
-            DesignPatchContinuity::Tangent | DesignPatchContinuity::Curvature => {
-                let raw = boundary.scale.get();
-                let effective = if raw == DEFAULT_WEIGHT_SENTINEL {
-                    DEFAULT_WEIGHT
-                } else {
-                    raw
-                };
-                let Some(weight) = cadmpeg_ir::scalar::PositiveReal::new(effective) else {
-                    return Vec::new();
-                };
-                if boundary.continuity == DesignPatchContinuity::Tangent {
-                    FilledSurfaceBoundaryCondition::Tangent {
-                        weight: Some(weight),
-                    }
-                } else {
-                    FilledSurfaceBoundaryCondition::Curvature {
-                        weight: Some(weight),
-                    }
-                }
-            }
-            DesignPatchContinuity::Unknown(_) => return Vec::new(),
-        };
-        conditions.push(condition);
-    }
-    conditions
-}
-
-fn surface_patch_sketch_profiles(
-    scope: &DesignParameterScope,
-    groups: &[&DesignConstructionOperandGroup],
-) -> bool {
-    let references = scope.reference_members();
-    let Some(boundary_references) = references.len().checked_sub(1) else {
-        return false;
-    };
-    if boundary_references == 0
-        || boundary_references % 2 != 0
-        || groups.len() != boundary_references / 2
-        || !scope.surface_patch_boundaries().is_empty()
-    {
-        return false;
-    }
-    let Some(tool_body) = references.values().last() else {
-        return false;
-    };
-    groups.iter().enumerate().all(|(index, group)| {
-        let ordinal = index * 2;
-        usize::try_from(group.scope_reference_ordinal).ok() == Some(ordinal)
-            && group.role() == DesignOperandRole::PROFILE
-            && group.record_index != *tool_body
-            && group
-                .members()
-                .iter()
-                .all(|member| member.value != *tool_body)
-            && references.values().nth(ordinal) == Some(&group.record_index)
-            && group
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .eq(references.values().nth(ordinal + 1).copied())
-    })
-}
-
-fn surface_patch_fixed_paths(
-    ctx: &DecodeContext<'_>,
-    scope: &DesignParameterScope,
-    groups: &[&DesignConstructionOperandGroup],
-) -> Result<bool, CodecError> {
-    let Some(reference_count) = scope.reference_members().len().checked_sub(1) else {
-        return Ok(false);
-    };
-    let boundary_count = reference_count / 3;
-    if boundary_count == 0
-        || reference_count % 3 != 0
-        || groups.len() != boundary_count
-        || scope.surface_patch_boundaries().len() != boundary_count
-    {
-        return Ok(false);
-    }
-    let mut occupied = ctx.alloc_filled(
-        scope.reference_members().len(),
-        false,
-        "f3d surface-patch reference occupancy",
-    )?;
-    for boundary in groups {
-        let Ok(group_ordinal) = usize::try_from(boundary.scope_reference_ordinal) else {
-            return Ok(false);
-        };
-        let Some(member_ordinal) = group_ordinal.checked_add(1) else {
-            return Ok(false);
-        };
-        let Some(settings_ordinal) = group_ordinal.checked_add(2) else {
-            return Ok(false);
-        };
-        let Some(group_reference) = scope.reference_members().values().nth(group_ordinal) else {
-            return Ok(false);
-        };
-        if settings_ordinal >= scope.reference_members().len()
-            || boundary.record_index != *group_reference
-            || boundary.role() != DesignOperandRole::BODIES_A
-            || !boundary
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .eq(scope
-                    .reference_members()
-                    .values()
-                    .nth(member_ordinal)
-                    .into_iter()
-                    .copied())
-            || occupied[group_ordinal]
-            || occupied[member_ordinal]
-            || occupied[settings_ordinal]
-        {
-            return Ok(false);
-        }
-        let Some(settings) = scope.surface_patch_boundaries().iter().find(|settings| {
-            usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
-        }) else {
-            return Ok(false);
-        };
-        let Some(settings_reference) = scope.reference_members().values().nth(settings_ordinal)
-        else {
-            return Ok(false);
-        };
-        if settings.record_index != *settings_reference
-            || settings.model_reference != boundary.record_index
-        {
-            return Ok(false);
-        }
-        occupied[group_ordinal] = true;
-        occupied[member_ordinal] = true;
-        occupied[settings_ordinal] = true;
-    }
-    let mut unoccupied = Vec::new();
-    for (ordinal, occupied) in occupied.iter().enumerate() {
-        if !occupied {
-            unoccupied.push(ordinal);
-        }
-    }
-    let endpoint_unoccupied = unoccupied.as_slice() == [0]
-        || scope
-            .reference_members()
-            .len()
-            .checked_sub(1)
-            .is_some_and(|last| unoccupied.as_slice() == [last]);
-    Ok(endpoint_unoccupied)
-}
-
-fn project_surface_patch(
-    ctx: &DecodeContext<'_>,
-    scope: &DesignParameterScope,
-    construction_groups: &[DesignConstructionOperandGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
-    };
-
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
-        return Ok(None);
-    }
-    if scope.surface_patch_normal().is_some_and(|normal| {
-        !matches!(
-            normal,
-            crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
-                reversed: crate::records::identity::Located { value: false, .. }
-            }
-        )
-    }) {
-        return Ok(None);
-    }
-    let Some(stream) = native_stream(&scope.id) else {
-        return Ok(None);
-    };
-    let mut groups = Vec::new();
-    for group in construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    }) {
-        groups.push(group);
-    }
-    groups.sort_by(|left, right| {
-        left.scope_reference_ordinal
-            .cmp(&right.scope_reference_ordinal)
-    });
-
-    // The single-group path form stores the group, all of its ordered edge
-    // members, and the tool body. It has no per-component settings records.
-    let Some(grouped_path_frame_length) = u64::try_from(scope.reference_members().len())
-        .ok()
-        .and_then(|count| count.checked_mul(11))
-        .and_then(|count| count.checked_add(277))
-    else {
-        return Ok(None);
-    };
-    if scope.frame_length() == grouped_path_frame_length
-        && groups
-            .first()
-            .is_some_and(|group| group.role() == DesignOperandRole::BODIES_A)
-    {
-        let [group] = groups.as_slice() else {
-            return Ok(None);
-        };
-        if scope.reference_members().len() < 3 {
-            return Ok(None);
-        }
-        let Some(first_reference) = scope.reference_members().values().next() else {
-            return Ok(None);
-        };
-        let Some(edge_references) = scope
-            .reference_members()
-            .values_in(1..scope.reference_members().len() - 1)
-        else {
-            return Ok(None);
-        };
-        if group.scope_reference_ordinal != 0
-            || group.record_index != *first_reference
-            || group.role() != DesignOperandRole::BODIES_A
-            || group.members().is_empty()
-            || !group
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .eq(edge_references.copied())
-        {
-            return Ok(None);
-        }
-        return Ok(Some(FeatureDefinition::Operation(
-            FeatureOperation::FilledSurface {
-                boundary: SurfaceBoundary::Path(resolved_surface_patch_path(
-                    std::slice::from_ref(group),
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    scope,
-                    SurfacePatchRecipe::Grouped(face_boundaries),
-                    ctx,
-                )?),
-                support_faces: FaceSelection::Faces(Vec::new()),
-                continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-                    cadmpeg_ir::features::SurfaceContinuity::Contact,
-                ),
-                merge_result: Some(false),
-            },
-        )));
-    }
-
-    match groups.first().map(|group| group.role()) {
-        Some(DesignOperandRole::PROFILE) => {
-            if !surface_patch_sketch_profiles(scope, &groups) {
-                return Ok(None);
-            }
-        }
-        Some(DesignOperandRole::BODIES_A) => {
-            if !surface_patch_fixed_paths(ctx, scope, &groups)? {
-                return Ok(None);
-            }
-        }
-        _ => return Ok(None),
-    }
-    let boundary = if let [boundary] = groups.as_slice() {
-        resolved_loft_path(
-            boundary,
-            construction_groups,
-            edge_operands,
-            edge_identity_operands,
-            scope,
-            ctx,
-        )?
-    } else {
-        resolved_surface_patch_path(
-            &groups,
-            construction_groups,
-            edge_operands,
-            edge_identity_operands,
-            scope,
-            SurfacePatchRecipe::Direct,
-            ctx,
-        )?
-    };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::FilledSurface {
-            boundary: SurfaceBoundary::Path(boundary),
-            support_faces: FaceSelection::Faces(Vec::new()),
-            continuity: cadmpeg_ir::features::NonEmptyMembers::try_from(
-                surface_patch_boundary_conditions(scope),
-            )
-            .map_or_else(
-                |_| cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),
-                cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary,
-            ),
-            merge_result: Some(false),
         },
     )))
 }
@@ -9706,6 +9286,7 @@ fn project_coil(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
@@ -9818,15 +9399,10 @@ fn project_coil(
             // Boolean target and must not suppress the typed result.
             None
         } else {
-            let expected_role = if scope.coil_has_ten_reference_target() {
-                DesignOperandRole::BODIES_A
-            } else {
-                DesignOperandRole::BODIES_B
-            };
             let mut body_groups = construction_groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-                    && group.role() == expected_role
+                    && scope.coil_target_group_admits(group.role(), group.scope_reference_ordinal)
             });
             let first_body_group = body_groups.next();
             if body_groups.next().is_some() {
@@ -9893,6 +9469,14 @@ fn project_coil(
         },
     };
     let clockwise = or_none!(scope.coil_clockwise());
+    if let Some(group) = first_body_group.filter(|group| group.members().len() != 1) {
+        losses.push(crate::loss::F3dLossCode::CoilTargetMembersAssumed.note(format!(
+            "Coil scope {} targets group {} with {} members; the group is read as one body selection.",
+            scope.id,
+            group.id,
+            group.members().len()
+        )));
+    }
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Coil {
         construction: CoilConstruction {
             placement,

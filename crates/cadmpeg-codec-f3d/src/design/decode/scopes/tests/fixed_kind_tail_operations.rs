@@ -21,8 +21,7 @@ use crate::records::feature::fixed_parameters::{
 use crate::records::feature::primitives::DesignSolidPrimitive;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::{
-    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport,
+    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
@@ -37,7 +36,16 @@ fn tested_surface_extend_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceExtendOperation> {
-    exact_surface_extend_operation(bytes, records, scope)
+    let mut losses = Vec::new();
+    let operation = exact_surface_extend_operation(bytes, records, scope, &mut losses);
+    if operation.is_some() {
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.surface-boundary-flag-record-assumed"
+        );
+    }
+    operation
 }
 
 fn tested_surface_offset_operation(
@@ -821,6 +829,37 @@ pub(super) fn fixed_kind_tail_operations(
             ..
         })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_shell_at + 21)
     ));
+    let thickness_first_inward_at = bytes.len();
+    let mut thickness_first_inward = thickness_first_shell.clone();
+    thickness_first_inward[21] = 0;
+    bytes.extend_from_slice(&thickness_first_inward);
+    let thickness_first_inward_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(thickness_first_inward_at),
+            reference_count_offset: u64_from_index(thickness_first_inward_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &thickness_first_inward_scope,
+        ),
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
+            thickness,
+            thickness_record_index: 9_000,
+            outward: false,
+            outward_offset,
+            ..
+        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_inward_at + 21)
+    ));
 
     // Negative rejection tests for the 268-byte thickness-first Shell scope:
     // 1. byte 27 = 1 rejects because the [1, 0, 0, 1] marker at 25..29 requires byte 27 == 0.
@@ -1230,8 +1269,6 @@ pub(super) fn fixed_kind_tail_operations(
             distance: crate::test_support::real(0.04),
             distance_offset: u64_from_index(extend_distance_at + 40),
             distance_record_index: extend_distance_record_index,
-            method: DesignSurfaceExtendMethod::Tangent,
-            method_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 2),
             boundary_record_index: extend_boundary_record_index,
             boundary_reference_record_index: 900,
             boundary_reference_offset: u64_from_index(
@@ -1269,7 +1306,7 @@ pub(super) fn fixed_kind_tail_operations(
         }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
-                method: cadmpeg_ir::features::SurfaceExtension::Linear,
+                method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
             }),) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]
@@ -1339,7 +1376,7 @@ pub(super) fn fixed_kind_tail_operations(
             &extend_scope,
         )
         .map(|operation| operation.support),
-        None
+        Some(operation.support.clone())
     );
     let mut zero_tolerance = bytes.clone();
     let tolerance_at = extend_boundary_at + extend_boundary_tail + 39;
@@ -1509,7 +1546,20 @@ pub(super) fn fixed_kind_tail_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &grouped_scope,
         ),
-        None
+        Some(DesignSurfaceOffsetOperation {
+            distance: crate::test_support::real(-0.4),
+            distance_offset: u64_from_index(extend_distance_at + 40),
+            distance_record_index: extend_distance_record_index,
+            support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+                boundary_record_index: grouped_record_index,
+                boundary_reference_record_index: grouped_record_index + 2,
+                boundary_reference_offset: u64_from_index(grouped_at + 36 + 6),
+                edge_record_indices: vec![grouped_member_record_index],
+                tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.0001)
+                    .expect("checked fixture value"),
+                tolerance_offset: u64_from_index(grouped_at + 36 + 39),
+            },
+        })
     );
 
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]

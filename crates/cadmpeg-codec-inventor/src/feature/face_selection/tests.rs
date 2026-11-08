@@ -589,10 +589,13 @@ fn fixture(
 fn selected_face(owner: i64, item: u32, surface: Surface) -> SelectedFace {
     SelectedFace {
         owner,
+        owners: vec![owner],
+        generators: 1,
         item,
         repeated_attribute: false,
         unshared_family: false,
         identical_owners: false,
+        form: SelectorForm::Naming,
         surface,
     }
 }
@@ -651,6 +654,40 @@ fn every_joined_face_operand_replaces_the_native_collection_in_one_input_state()
     );
     assert!(check(&inventory, &feature, &states));
     assert!(native_losses(std::slice::from_ref(&feature)).is_empty());
+}
+
+#[test]
+fn a_direct_face_selector_joins_no_face_selecting_feature() {
+    let ctx = context();
+    // Move Face keeps no joined face and no partial state for a direct selector.
+    for direct in [[true, true], [true, false], [false, true]] {
+        let (mut inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+        for (selector, direct) in [41, 43].into_iter().zip(direct) {
+            inventory
+                .edge_inputs
+                .faces
+                .get_mut(&(TOKEN.to_owned(), selector))
+                .expect("selected")
+                .form = if direct {
+                SelectorForm::Direct
+            } else {
+                SelectorForm::Naming
+            };
+        }
+        let states =
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        let joined = states.first().map_or(0, |state| state.faces.len());
+        assert_eq!(joined, 2 - direct.iter().filter(|direct| **direct).count());
+    }
+    // A Thicken face list that names a direct selector does not join.
+    let (mut inventory, mut feature) = thicken_fixture(&ctx);
+    for face in inventory.edge_inputs.faces.values_mut() {
+        face.form = SelectorForm::Direct;
+    }
+    let before = feature.clone();
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert!(states.is_empty());
+    assert_eq!(feature, before);
 }
 
 #[test]
@@ -1199,6 +1236,115 @@ fn a_thicken_selection_list_joins_the_faces_of_every_wrapper() {
     assert!(matches!(faces(&feature), FaceSelection::Native(_)));
 }
 
+fn offset_thicken_fixture(ctx: &DecodeContext<'_>) -> (crate::feature::FeatureInventory, Feature) {
+    let (inventory, mut feature) = thicken_fixture(ctx);
+    retarget(
+        &mut feature,
+        "thicken",
+        FeatureOperation::MoveFace {
+            faces: FaceSelection::Native(inventory.properties[0].id()),
+            motion: FaceMotion::Offset {
+                distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),
+            },
+        },
+    );
+    (inventory, feature)
+}
+
+#[test]
+fn a_thicken_face_offset_joins_the_faces_of_every_wrapper_and_keeps_no_partial_selection() {
+    let ctx = context();
+    let (inventory, mut feature) = offset_thicken_fixture(&ctx);
+    let sources = std::collections::HashSet::from([inventory.features[0].id()]);
+    feature.native_ref = Some(inventory.features[0].id());
+    assert_eq!(
+        crate::feature::thicken_operand_losses(std::slice::from_ref(&feature), &sources).len(),
+        1
+    );
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert_eq!(states.len(), 1);
+    let FaceSelection::Historical {
+        faces: selected,
+        native,
+        ..
+    } = faces(&feature)
+    else {
+        panic!("historical faces")
+    };
+    assert_eq!(native.as_str(), inventory.properties[0].id());
+    assert_eq!(
+        selected
+            .as_slice()
+            .iter()
+            .map(HistoricalFaceId::as_str)
+            .collect::<Vec<_>>(),
+        [
+            format!("inventor:input-face#{TOKEN}-41"),
+            format!("inventor:input-face#{TOKEN}-43")
+        ]
+    );
+    assert!(matches!(
+        selection(&feature),
+        Some((Kind::ThickenOffset, _))
+    ));
+    assert!(check(&inventory, &feature, &states));
+    // The joined selection no longer counts as a native Thicken operand, and
+    // it states the input-revision assumption like every joined face.
+    assert!(
+        crate::feature::thicken_operand_losses(std::slice::from_ref(&feature), &sources).is_empty()
+    );
+    assert_eq!(
+        assumption_losses(std::slice::from_ref(&feature), &inventory).len(),
+        1
+    );
+    // One unresolved face leaves the list native: only Move Face keeps a partial selection.
+    let (mut inventory, mut feature) = offset_thicken_fixture(&ctx);
+    inventory.edge_inputs.faces.remove(&(TOKEN.to_owned(), 43));
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+    // A repeated owner is a collision and leaves the list native.
+    let (mut inventory, mut feature) = offset_thicken_fixture(&ctx);
+    inventory
+        .edge_inputs
+        .faces
+        .insert((TOKEN.to_owned(), 43), selected_face(5, 37, Surface::Other));
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+}
+
+#[test]
+fn a_thicken_tagged_translation_takes_no_face_join() {
+    let ctx = context();
+    let (inventory, mut feature) = thicken_fixture(&ctx);
+    retarget(
+        &mut feature,
+        "thicken",
+        FeatureOperation::MoveFace {
+            faces: FaceSelection::Native(inventory.properties[0].id()),
+            motion: FaceMotion::Translate {
+                direction: cadmpeg_ir::features::FeatureDirection3::from(
+                    cadmpeg_ir::units::UnitVector3::X_AXIS,
+                ),
+                distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),
+            },
+        },
+    );
+    assert!(selection(&feature).is_none());
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+}
+
 fn cone(index: usize, sine: f64, radius: f64) -> Record {
     record(
         index,
@@ -1377,4 +1523,170 @@ fn assumption_losses_state_identical_owners_for_every_face_selecting_kind() {
     let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
     assert_eq!(notes.len(), 2);
     assert!(notes[1].message.contains("identical surface geometry"));
+}
+
+/// Fields of a synthetic direct face selector.
+struct Direct {
+    state: u32,
+    form: u8,
+    topology: u32,
+    qualifier: u32,
+    naming: u32,
+    generators: Vec<u32>,
+    secondary: Vec<u32>,
+    suffix: u8,
+}
+
+impl Direct {
+    fn new() -> Self {
+        Self {
+            state: u32::MAX,
+            form: 5,
+            topology: 2,
+            qualifier: 0,
+            naming: 2,
+            generators: vec![31, 37],
+            secondary: vec![3],
+            suffix: 0,
+        }
+    }
+
+    fn bytes(&self, version: u8) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        for word in [0_u32, 0] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        if version >= 28 {
+            bytes.extend_from_slice(&0_u32.to_le_bytes());
+        }
+        for word in [0x8000_0003_u32, SELECTOR_SOURCE, self.state] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[1, self.form]);
+        for word in [0x8000_000a_u32, self.topology] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        if !(19..=21).contains(&version) {
+            bytes.extend_from_slice(&self.qualifier.to_le_bytes());
+        }
+        bytes.extend_from_slice(&self.naming.to_le_bytes());
+        for values in [&self.generators, &self.secondary] {
+            bytes.extend_from_slice(&8_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(
+                &u32::try_from(values.len())
+                    .expect("small list")
+                    .to_le_bytes(),
+            );
+            if !values.is_empty() {
+                bytes.extend_from_slice(&[8, 0, 0, 0]);
+            }
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.push(self.suffix);
+        for word in [0x8000_0008_u32, 0x8000_0004, SELECTOR_KEY] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes
+    }
+}
+
+fn parse_direct_bytes(bytes: &[u8], version: u8) -> Result<Option<FaceSelector>, CodecError> {
+    parse_direct(&context(), View::over_retained(bytes), version)
+}
+
+#[test]
+fn a_direct_face_selector_has_the_type_and_field_order_of_the_direct_edge_selector() {
+    assert_eq!(
+        DIRECT_SELECTOR_TYPE,
+        [
+            0x55, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63,
+            0xdc, 0x09
+        ]
+    );
+    assert_ne!(DIRECT_SELECTOR_TYPE, SELECTOR_TYPE);
+    for version in [19, 20, 21, 23, 29] {
+        let bytes = Direct::new().bytes(version);
+        let selector = parse_direct_bytes(&bytes, version)
+            .expect("framed")
+            .expect("direct selector");
+        assert_eq!(selector.source, SELECTOR_SOURCE);
+        assert_eq!(selector.key, SELECTOR_KEY);
+        assert_eq!(selector.generators, [31, 37]);
+        assert_eq!(selector.item.record_ordinal(), Some(7));
+        assert_eq!(selector.body.record_ordinal(), Some(9));
+        assert_eq!(selector.context.record_ordinal(), Some(3));
+        let context_of = |ordinal| match ordinal {
+            9 => Some(BODY_TYPE),
+            7 => Some(crate::feature::FACE_ITEM_TYPE),
+            3 => Some(CONTEXT_TYPE),
+            _ => None,
+        };
+        assert!(links(&selector, context_of, |ordinal| (ordinal == 9).then_some(2)));
+        // An edge item in the item slot is no face item.
+        let edge_item = |ordinal| match ordinal {
+            7 => Some(crate::feature::EDGE_ITEM_TYPE),
+            other => context_of(other),
+        };
+        assert!(!links(&selector, edge_item, |ordinal| (ordinal == 9).then_some(2)));
+        for count in 1..=4_u32 {
+            let mut fields = Direct::new();
+            fields.generators = (1..=count).map(|value| value * 10).collect();
+            let parsed = parse_direct_bytes(&fields.bytes(version), version).expect("framed");
+            assert_eq!(
+                parsed.expect("generators").generators.len(),
+                usize::try_from(count).expect("count")
+            );
+        }
+        let mut empty = Direct::new();
+        empty.secondary.clear();
+        assert!(parse_direct_bytes(&empty.bytes(version), version)
+            .expect("framed")
+            .is_some());
+    }
+}
+
+#[test]
+fn a_direct_face_selector_that_differs_in_any_control_stays_unparsed() {
+    type Edit = fn(&mut Direct);
+    let edits: [(&str, Edit); 11] = [
+        ("state is zero", |f| f.state = 0),
+        ("form", |f| f.form = 4),
+        ("topology and naming words differ", |f| f.naming = 3),
+        ("qualifier", |f| f.qualifier = 1),
+        ("no generator", |f| f.generators.clear()),
+        ("five generators", |f| f.generators = vec![1, 2, 3, 4, 5]),
+        ("zero generator", |f| f.generators = vec![31, 0]),
+        ("repeated generator", |f| f.generators = vec![31, 31]),
+        ("zero secondary name", |f| f.secondary = vec![0]),
+        ("secondary name equals a generator", |f| {
+            f.secondary = vec![31];
+        }),
+        ("suffix", |f| f.suffix = 1),
+    ];
+    for version in [19, 23, 29] {
+        for (label, edit) in edits {
+            let mut fields = Direct::new();
+            edit(&mut fields);
+            // A qualifier word exists only outside versions 19 to 21.
+            if label == "qualifier" && (19..=21).contains(&version) {
+                continue;
+            }
+            assert!(
+                parse_direct_bytes(&fields.bytes(version), version)
+                    .expect("framed refusal")
+                    .is_none(),
+                "{label} in version {version}"
+            );
+        }
+        let bytes = Direct::new().bytes(version);
+        assert!(parse_direct_bytes(&bytes[..bytes.len() - 1], version).is_err());
+        let mut extra = bytes.clone();
+        extra.push(0);
+        assert!(parse_direct_bytes(&extra, version).is_err());
+    }
 }

@@ -3,7 +3,9 @@
 //! per boundary component.
 
 use super::sketch::IndexedRecordOffsets;
-use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+use crate::records::feature::surface_ops::{
+    DesignPatchContinuity, DesignSurfacePatchBoundary, DesignSurfacePatchSelection,
+};
 use cadmpeg_core::decode::View;
 
 /// The boundary-settings records a `SurfacePatch` scope references, in scope
@@ -72,6 +74,152 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
     })
 }
 
+const SURFACE_PATCH_TYPE: &str = "BF77AE1A-E8F6-43AB-A325-A2C984AF1C6B";
+
+pub(super) fn surface_patch_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    type_info: Option<(&str, u32)>,
+) -> Result<Option<DesignSurfacePatchSelection>, cadmpeg_core::CodecError> {
+    use crate::layout::surface_patch_selection_prefix as prefix;
+    use crate::layout::surface_patch_v5_interior_list_prefix as v5_interior;
+    use crate::layout::surface_patch_v5_selection_frame as v5_frame;
+    use crate::layout::surface_patch_v5_tool_reference_prefix as v5_tool;
+    use crate::layout::surface_patch_v6_interior_list_prefix as v6_interior;
+    use crate::layout::surface_patch_v6_tool_reference_prefix as v6_tool;
+    use crate::layout::surface_patch_v7_normal_flip_prefix as v7_frame;
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    macro_rules! parsed {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+
+    if scope.kind() != DesignFeatureKind::SurfacePatch {
+        return Ok(None);
+    }
+    let (guid, version) = parsed!(type_info);
+    if !guid.eq_ignore_ascii_case(SURFACE_PATCH_TYPE) {
+        return Ok(None);
+    }
+    let (start, interior, tool) = match version {
+        5 => (
+            v5_frame::SELECTION_PREFIX,
+            (
+                v5_interior::ZERO_RUN,
+                v5_interior::INTERIOR_COUNT,
+                v5_interior::LEN,
+            ),
+            (v5_tool::ZERO_RUN, v5_tool::LEN),
+        ),
+        6 => (
+            v5_frame::SELECTION_PREFIX,
+            (
+                v6_interior::ZERO_RUN,
+                v6_interior::INTERIOR_COUNT,
+                v6_interior::LEN,
+            ),
+            (v6_tool::ZERO_RUN, v6_tool::LEN),
+        ),
+        7 => (
+            v7_frame::FOLLOWING_WORD,
+            (
+                v6_interior::ZERO_RUN,
+                v6_interior::INTERIOR_COUNT,
+                v6_interior::LEN,
+            ),
+            (v6_tool::ZERO_RUN, v6_tool::LEN),
+        ),
+        _ => return Ok(None),
+    };
+    let start_offset = parsed!(usize::try_from(scope.byte_offset()).ok());
+    let end_offset = parsed!(usize::try_from(scope.paired_byte_offset()).ok());
+    let frame = parsed!(bytes.get(start_offset..end_offset));
+    if parsed!(View::u32_le_at(
+        frame,
+        parsed!(start.checked_add(prefix::LEADING_WORD))
+    )) != prefix::LEADING_WORD_VALUE
+        || parsed!(View::u32_le_at(
+            frame,
+            parsed!(start.checked_add(prefix::SELECTION_WORD))
+        )) != prefix::SELECTION_WORD_VALUE
+    {
+        return Ok(None);
+    }
+    let settings_count = parsed!(View::u32_le_at(
+        frame,
+        parsed!(start.checked_add(prefix::SETTINGS_COUNT))
+    ));
+    let mut cursor = parsed!(start.checked_add(prefix::LEN));
+    let settings = parsed!(local_references(ctx, frame, &mut cursor, settings_count)?);
+    let (zero_run, count_at, interior_len) = interior;
+    if !zero_bytes(
+        frame,
+        parsed!(cursor.checked_add(zero_run)),
+        parsed!(cursor.checked_add(count_at)),
+    ) {
+        return Ok(None);
+    }
+    let interior_count = parsed!(View::u32_le_at(
+        frame,
+        parsed!(cursor.checked_add(count_at))
+    ));
+    cursor = parsed!(cursor.checked_add(interior_len));
+    let interior_groups = parsed!(local_references(ctx, frame, &mut cursor, interior_count)?);
+    let (zero_run, tool_len) = tool;
+    if !zero_bytes(
+        frame,
+        parsed!(cursor.checked_add(zero_run)),
+        parsed!(cursor.checked_add(tool_len)),
+    ) {
+        return Ok(None);
+    }
+    cursor = parsed!(cursor.checked_add(tool_len));
+    let tool_body = parsed!(local_reference(frame, &mut cursor));
+    Ok(Some(DesignSurfacePatchSelection {
+        settings,
+        interior_groups,
+        tool_body,
+    }))
+}
+
+fn zero_bytes(frame: &[u8], start: usize, end: usize) -> bool {
+    frame
+        .get(start..end)
+        .is_some_and(|run| run.iter().all(|byte| *byte == 0))
+}
+
+fn local_reference(frame: &[u8], cursor: &mut usize) -> Option<u32> {
+    u32::try_from(crate::bytes::take_reference(frame, cursor)?.local()?.0).ok()
+}
+
+fn local_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    frame: &[u8],
+    cursor: &mut usize,
+    count: u32,
+) -> Result<Option<Vec<u32>>, cadmpeg_core::CodecError> {
+    let Some(remaining) = frame.len().checked_sub(*cursor) else {
+        return Ok(None);
+    };
+    let Some(count) = cadmpeg_core::decode::bounded_len(u64::from(count), 11, remaining) else {
+        return Ok(None);
+    };
+    let mut references = ctx.alloc_filled(count, 0, "f3d surface-patch references")?;
+    for reference in &mut references {
+        let Some(value) = local_reference(frame, cursor) else {
+            return Ok(None);
+        };
+        *reference = value;
+    }
+    Ok(Some(references))
+}
+
 pub(super) fn surface_patch_normal(
     bytes: &[u8],
     scope: &crate::records::feature::scope::DesignParameterScope,
@@ -87,7 +235,7 @@ pub(super) fn surface_patch_normal(
     let Some((guid, version)) = type_info else {
         return Some(DesignSurfacePatchNormalState::Unsupported);
     };
-    if !guid.eq_ignore_ascii_case("BF77AE1A-E8F6-43AB-A325-A2C984AF1C6B") {
+    if !guid.eq_ignore_ascii_case(SURFACE_PATCH_TYPE) {
         return Some(DesignSurfacePatchNormalState::Unsupported);
     }
     match version {
