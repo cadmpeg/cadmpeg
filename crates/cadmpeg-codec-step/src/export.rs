@@ -6202,6 +6202,160 @@ impl<'a> Builder<'a> {
         )
     }
 
+    fn pcurve_endpoints_discontinuous(
+        &self,
+        use_: PcurveUse<'a>,
+        edge: &Edge,
+        aligned: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+        range: Option<[f64; 2]>,
+    ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+        const EPS_WRITER_PCURVE_ENDPOINT: f64 = 1.0e-6;
+        use cadmpeg_ir::eval::admission::EvaluationAdmission;
+        use cadmpeg_ir::eval::finite_or_refusal;
+        use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+        use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+        if self.surface_chart(use_.surface).is_some() || self.surface_is_fitted_helix(use_.surface)
+        {
+            return Ok(false);
+        }
+        // A recovered edge is synthesized from its pcurve, so its emitted
+        // carrier passes through the pcurve endpoints by construction.
+        if self.recovered_edges.contains(&edge.id) {
+            return Ok(false);
+        }
+        let Some(surface) = self.surfaces.get(use_.surface) else {
+            return Ok(false);
+        };
+        let solved = match &surface.geometry {
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(solved) => solved,
+            cadmpeg_ir::geometry::SurfaceGeometry::Procedural { .. } => return Ok(false),
+        };
+        if !matches!(
+            solved,
+            SolvedSurfaceGeometry::Plane(_)
+                | SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)
+        ) {
+            return Ok(false);
+        }
+        if matches!(aligned, PcurveGeometry::Nurbs { .. }) {
+            return Ok(false);
+        }
+        let Some(_coedge) = self.coedges.get(use_.coedge) else {
+            return Ok(false);
+        };
+        // The directed interval runs from the edge's start to its end (see
+        // directed_use_range); coedge sense only orients the STEP use.
+        let start_v = &edge.start;
+        let end_v = &edge.end;
+        let Some(start) = self
+            .vertices
+            .get(start_v.as_str())
+            .and_then(|v| self.points.get(v.point.as_str()))
+            .map(|p| p.position().get())
+        else {
+            return Ok(false);
+        };
+        let Some(end) = self
+            .vertices
+            .get(end_v.as_str())
+            .and_then(|v| self.points.get(v.point.as_str()))
+            .map(|p| p.position().get())
+        else {
+            return Ok(false);
+        };
+        let tolerance = edge
+            .tolerance
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+            .max(self.ir.tolerances.linear_or_default().get())
+            .max(EPS_WRITER_PCURVE_ENDPOINT);
+        // With a directed use interval, the interval's endpoints must lift to
+        // the edge vertices: the same witness the reader fits on re-decode.
+        if let Some([first, second]) = range {
+            for (parameter, vertex) in [(first, start), (second, end)] {
+                let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                    EvaluationAdmission::Standard,
+                    aligned,
+                    parameter,
+                ))?
+                else {
+                    return Ok(false);
+                };
+                let uv = uv.get();
+                let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                    EvaluationAdmission::Standard,
+                    self.ir,
+                    &surface.geometry,
+                    uv.u,
+                    uv.v,
+                ))?
+                else {
+                    return Ok(false);
+                };
+                if point.get().distance(vertex) > tolerance {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+        // Without a declared interval the reader fits each vertex onto the
+        // curve. For a line that fit exists iff both vertices project onto it;
+        // anything else is emitted.
+        let mut basis = aligned;
+        let mut transforms = Vec::new();
+        while let PcurveGeometry::Transformed(placed) = basis {
+            transforms.push(*placed.transform());
+            basis = placed.basis();
+        }
+        let PcurveGeometry::Line(line) = basis else {
+            return Ok(false);
+        };
+        let mut origin = line.origin().get();
+        let mut direction = *line.direction().as_raw();
+        for transform in transforms.into_iter().rev() {
+            origin = transform.apply_point(origin);
+            direction = transform.apply_vector(direction);
+        }
+        let length_squared = direction.u * direction.u + direction.v * direction.v;
+        if !(length_squared.is_finite() && length_squared > 0.0) {
+            return Ok(false);
+        }
+        for vertex in [start, end] {
+            let Some(uv) = cadmpeg_ir::eval::analytic_surface_parameters_solved(solved, vertex)
+            else {
+                return Ok(false);
+            };
+            let uv = uv.get();
+            let parameter = ((uv.u - origin.u) * direction.u + (uv.v - origin.v) * direction.v)
+                / length_squared;
+            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                EvaluationAdmission::Standard,
+                aligned,
+                parameter,
+            ))?
+            else {
+                return Ok(false);
+            };
+            let uv = uv.get();
+            let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                EvaluationAdmission::Standard,
+                self.ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            ))?
+            else {
+                return Ok(false);
+            };
+            if point.get().distance(vertex) > tolerance {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn emit_pcurve(&mut self, use_: PcurveUse<'a>, edge: &Edge) -> Option<Ref> {
         let pcurve_id = use_.use_.pcurve.as_str();
         let surface_id = use_.surface;
@@ -6248,6 +6402,19 @@ impl<'a> Builder<'a> {
             Some(moved) if shift != [0.0, 0.0] => std::borrow::Cow::Owned(moved),
             _ => aligned,
         };
+        if self
+            .pcurve_endpoints_discontinuous(use_, edge, aligned.as_ref(), range)
+            .is_ok_and(|v| v)
+        {
+            self.loss(
+                StepLossCode::PcurveEndpointsDiscontinuous,
+                format!(
+                    "pcurve {pcurve_id} on coedge {} for edge {} and surface {surface_id} has mapped endpoints discontinuous with the edge vertices; the pcurve is omitted (#209 §5.2)",
+                    use_.coedge, edge.id
+                ),
+            );
+            return None;
+        }
         let curve = match self.surface_chart(surface_id) {
             Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &aligned)?,
             None => geometry::pcurve(&mut self.emitter, &aligned)?,

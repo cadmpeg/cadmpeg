@@ -578,7 +578,13 @@ fn is_named_degradation_disagreement(
         .losses
         .iter()
         .any(|loss| loss.message.contains(left_id));
-    named && rest.contains("right \"added:step:")
+    if !named {
+        return false;
+    }
+    rest.contains("right \"added:step:")
+        || rest.contains("right \"added:cadir:")
+        || rest.contains("right <absent>")
+        || rest.contains("right null")
 }
 
 fn null_added_topology_refs(
