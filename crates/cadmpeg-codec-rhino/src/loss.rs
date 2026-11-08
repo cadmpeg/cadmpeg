@@ -301,8 +301,6 @@ pub(crate) enum RhinoLossCode {
     WriterPointCloudAppearanceReduced,
     /// A free vertex loses its tolerance or its point's dependency role.
     WriterFreeVertexMetadataReduced,
-    /// A point and vertex are reidentified as members of a point cloud.
-    WriterPointCloudIdentityReduced,
     /// A point's display assignment replaces its containing body's color.
     WriterBodyColorReduced,
     /// A presentation state sequence is written at its stored position.
@@ -449,7 +447,6 @@ impl RhinoLossCode {
         Self::WriterSubobjectAppearanceReduced,
         Self::WriterPointCloudAppearanceReduced,
         Self::WriterFreeVertexMetadataReduced,
-        Self::WriterPointCloudIdentityReduced,
         Self::WriterBodyColorReduced,
         Self::WriterPcurveExpanded,
         Self::WriterPcurveDirectionReversed,
@@ -556,7 +553,6 @@ impl RhinoLossCode {
             Self::WriterSubobjectAppearanceReduced => "writer.subobject-appearance-reduced",
             Self::WriterPointCloudAppearanceReduced => "writer.point-cloud-appearance-reduced",
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
-            Self::WriterPointCloudIdentityReduced => "writer.point-cloud-identity-reduced",
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
             Self::WriterPresentationStateOrderReduced => "writer.presentation-state-order-reduced",
             Self::WriterPcurveExpanded => "writer.pcurve-expanded",
@@ -660,7 +656,6 @@ impl RhinoLossCode {
             Self::WriterBodyOmitted
             | Self::WriterBodyReduced
             | Self::WriterFreeVertexMetadataReduced
-            | Self::WriterPointCloudIdentityReduced
             | Self::WriterPcurveExpanded
             | Self::WriterPcurveDirectionReversed
             | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
