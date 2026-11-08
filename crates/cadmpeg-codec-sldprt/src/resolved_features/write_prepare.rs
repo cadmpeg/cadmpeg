@@ -119,7 +119,7 @@ pub(crate) fn prepare_sketches_for_write(
     {
         // (P): replacing a source sketch object can move references throughout
         // its input lane. Author the current document through synthesis.
-        return Err(cadmpeg_core::CodecError::UnsupportedContent(
+        return Err(cadmpeg_core::CodecError::InvalidInput(
             "SLDPRT canonical sketch regeneration requires synthesized input lanes".into(),
         )
         .into());
@@ -240,7 +240,7 @@ fn validate_generated_marker_constraint(
             }) if sketch == &constraint.sketch
         )
     }) {
-        return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+        return Err(cadmpeg_core::CodecError::InvalidInput(format!(
             "source-less SLDPRT marker relation {} requires an owning sketch feature",
             constraint.id.as_str()
         )));
@@ -271,7 +271,7 @@ fn validate_generated_marker_constraint(
             let point = constraint_locus_point(ir, constraint, point)?;
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
             let (start, end) = sketch_line(&entity.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::UnsupportedContent(format!(
+                cadmpeg_core::CodecError::InvalidInput(format!(
                     "source-less SLDPRT midpoint constraint {} requires a line entity",
                     constraint.id.as_str()
                 ))
@@ -348,7 +348,7 @@ fn validate_generated_marker_constraint(
         DimensionDefinition::from_definition(constraint.definition.kind())
     {
         let expected = value.magnitude(ir).ok_or_else(|| {
-            cadmpeg_core::CodecError::UnsupportedContent(format!(
+            cadmpeg_core::CodecError::InvalidInput(format!(
                 "SLDPRT sketch constraint {} has an unevaluated or incompatible dimension",
                 constraint.id
             ))
@@ -400,7 +400,7 @@ fn validate_generated_marker_constraint(
             if arc_angle_relation_kind(
                 ir.dimension_value(angle)
                     .ok_or_else(|| {
-                        cadmpeg_core::CodecError::UnsupportedContent(
+                        cadmpeg_core::CodecError::InvalidInput(
                             "SLDPRT arc-angle constraint is unevaluated".into(),
                         )
                     })?
@@ -408,7 +408,7 @@ fn validate_generated_marker_constraint(
             )
             .is_none()
             {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                     "source-less SLDPRT arc-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
                 )));
@@ -419,7 +419,7 @@ fn validate_generated_marker_constraint(
             if ellipse_angle_relation_kind(
                 ir.dimension_value(angle)
                     .ok_or_else(|| {
-                        cadmpeg_core::CodecError::UnsupportedContent(
+                        cadmpeg_core::CodecError::InvalidInput(
                             "SLDPRT ellipse-angle constraint is unevaluated".into(),
                         )
                     })?
@@ -427,7 +427,7 @@ fn validate_generated_marker_constraint(
             )
             .is_none()
             {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                     "source-less SLDPRT ellipse-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
                 )));
@@ -435,14 +435,14 @@ fn validate_generated_marker_constraint(
             (entity, None)
         }
         SketchConstraintDefinitionInput::Native { native_kind, .. } => {
-            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+            return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                 "source-less SLDPRT sketch constraint {} keeps native relation {}, which the synthesized writer cannot emit",
                 constraint.id.as_str(),
                 native_kind.as_str()
             )));
         }
         other => {
-            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+            return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                 "source-less SLDPRT sketch constraint {} is {}; source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations",
                 constraint.id.as_str(),
                 constraint_input_kind(other)
@@ -675,7 +675,7 @@ fn validate_solved_dimension(
         },
         DimensionDefinition::Distance { entities } => {
             let [first, second] = entities else {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                     "source-less SLDPRT distance dimension {} requires exactly two lines",
                     constraint.id.as_str()
                 )));
@@ -700,13 +700,13 @@ fn validate_solved_dimension(
             let first = sketch_constraint_entity(ir, constraint, first)?;
             let second = sketch_constraint_entity(ir, constraint, second)?;
             let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::UnsupportedContent(format!(
+                cadmpeg_core::CodecError::InvalidInput(format!(
                     "source-less SLDPRT angular dimension {} requires two lines",
                     constraint.id.as_str()
                 ))
             })?;
             let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::UnsupportedContent(format!(
+                cadmpeg_core::CodecError::InvalidInput(format!(
                     "source-less SLDPRT angular dimension {} requires two lines",
                     constraint.id.as_str()
                 ))
@@ -731,7 +731,7 @@ fn validate_solved_dimension(
                 SketchGeometryDefinition::Circle { radius, .. }
                 | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
                 _ => {
-                    return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                    return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                         "source-less SLDPRT radial dimension {} requires circular geometry",
                         constraint.id.as_str()
                     )));
@@ -768,7 +768,7 @@ fn point_line_dimension(
     constraint: &SketchConstraint,
 ) -> Result<f64, cadmpeg_core::CodecError> {
     let (start, end) = sketch_line(&line.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::UnsupportedContent(format!(
+        cadmpeg_core::CodecError::InvalidInput(format!(
             "source-less SLDPRT point-line dimension {} requires a line",
             constraint.id.as_str()
         ))
@@ -790,13 +790,13 @@ fn line_line_dimension(
     second: &SketchEntity,
 ) -> Result<f64, cadmpeg_core::CodecError> {
     let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::UnsupportedContent(format!(
+        cadmpeg_core::CodecError::InvalidInput(format!(
             "source-less SLDPRT line-line dimension {} requires two lines",
             constraint.id.as_str()
         ))
     })?;
     let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::UnsupportedContent(format!(
+        cadmpeg_core::CodecError::InvalidInput(format!(
             "source-less SLDPRT line-line dimension {} requires two lines",
             constraint.id.as_str()
         ))
@@ -1010,13 +1010,13 @@ fn validate_solved_binary_relation(
             }
         },
         Equal => equal_sketch_size(&first.geometry, &second.geometry).ok_or_else(|| {
-            cadmpeg_core::CodecError::UnsupportedContent(format!(
+            cadmpeg_core::CodecError::InvalidInput(format!(
                 "source-less SLDPRT equal constraint {} uses unsupported entity families",
                 constraint.id.as_str()
             ))
         })?,
         Tangent => solved_tangent(&first.geometry, &second.geometry).ok_or_else(|| {
-            cadmpeg_core::CodecError::UnsupportedContent(format!(
+            cadmpeg_core::CodecError::InvalidInput(format!(
                 "source-less SLDPRT tangent constraint {} uses unsupported entity families",
                 constraint.id.as_str()
             ))
@@ -1594,7 +1594,7 @@ fn source_less_lanes(
             .filter(|entity| entity.sketch == sketch.id)
             .collect::<Vec<_>>();
         if entities.is_empty() {
-            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+            return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                 "source-less SLDPRT spatial sketch {} requires at least one line",
                 sketch.id.as_str()
             ))
@@ -1619,7 +1619,7 @@ fn source_less_lanes(
                 ..
             } = constraint.definition.kind()
             else {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                     "spatial sketch constraint {} has no native serializer",
                     constraint.id
                 ))
@@ -1643,7 +1643,7 @@ fn source_less_lanes(
                     append_spatial_vertex(&mut payload, end.get());
                 }
                 _ => {
-                    return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                    return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                     "source-less SLDPRT spatial sketch {} supports point and line geometry only",
                     sketch.id
                 ))
@@ -1677,7 +1677,7 @@ fn source_less_lanes(
                 })?;
             let SpatialSketchGeometryDefinition::Point { position } = entity.geometry.definition()
             else {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(
+                return Err(cadmpeg_core::CodecError::InvalidInput(
                     "spatial relation point has no point geometry".into(),
                 )
                 .into());
@@ -1700,7 +1700,7 @@ fn source_less_lanes(
                 })?;
             let SpatialSketchGeometryDefinition::Line { start, end } = entity.geometry.definition()
             else {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(
+                return Err(cadmpeg_core::CodecError::InvalidInput(
                     "spatial relation line has no line geometry".into(),
                 )
                 .into());
@@ -1747,7 +1747,7 @@ fn source_less_lanes(
                     constraint.definition.kind(),
                     &ir.model.parameters,
                 ) {
-                    return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                    return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                         "spatial sketch constraint {} has no native serializer",
                         constraint.id
                     ))
@@ -1815,7 +1815,7 @@ fn source_less_lanes(
                 parameter,
             } = constraint.definition.kind()
             else {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
                     "spatial sketch constraint {} has no native serializer",
                     constraint.id
                 ))
@@ -1830,14 +1830,14 @@ fn source_less_lanes(
                         .find(|candidate| &candidate.id == id)
                 })
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::UnsupportedContent(
+                    cadmpeg_core::CodecError::InvalidInput(
                         "spatial point-line relation requires a bound parameter".into(),
                     )
                 })?;
             let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
                 parameter.value.as_ref()
             else {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(
+                return Err(cadmpeg_core::CodecError::InvalidInput(
                     "spatial point-line relation requires an evaluated length".into(),
                 )
                 .into());

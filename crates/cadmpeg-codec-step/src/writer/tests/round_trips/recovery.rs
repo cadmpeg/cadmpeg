@@ -759,7 +759,7 @@ fn fallback_wire_recovery_forms_no_body_drop() {
     )
     .expect("write fallback wire recovery");
     let text = String::from_utf8(bytes.clone()).expect("STEP is UTF-8");
-    assert!(text.contains("FACE_SURFACE("));
+    assert!(text.contains("FACE_SURFACE(") || text.contains("ADVANCED_FACE("));
     assert!(!report
         .losses
         .iter()

@@ -96,11 +96,13 @@ pub(crate) fn write(
         }
         // Neutral geometry/placement already incorporates the effective frame.
         // An offset would apply that transform a second time. Rebuild a neutral
-        // placement with identity local offset instead.
+        // placement with identity local offset instead. A replayed retained
+        // value at its declaration slot is left verbatim: regenerating it
+        // drops status and spelling the re-decode comparison preserves.
         let neutral_placement = object.properties.contains_key("Placement")
             || body_names.values().any(|owner| owner == name);
         if neutral_placement {
-            if record.offset().is_some() {
+            if record.offset().is_some() && !object.properties.contains_key("AttachmentOffset") {
                 object.set(
                     "AttachmentOffset",
                     super::super::design::placement(Transform::identity())?

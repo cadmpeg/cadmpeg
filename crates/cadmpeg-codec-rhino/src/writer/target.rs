@@ -4,8 +4,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
-    ArenaDispositions, CapacityField, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
+    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, CapacityField,
+    Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 
 mod coverage;
@@ -375,9 +375,18 @@ pub(crate) fn plan(
         native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {
             match error {
                 super::WriteError::Omit(message) => {
-                    transitional_from_codec(CodecError::UnsupportedContent(message))
+                    debug_assert!(false, "Rhino native disposition omission: {message}");
+                    panic!("Rhino native disposition omission: {message}");
                 }
-                super::WriteError::Fail(error) => transitional_from_codec(error),
+                super::WriteError::Fail(error) => match error {
+                    CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
+                    CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
+                    CodecError::Io(e) => EncodeError::from(e),
+                    error => {
+                        debug_assert!(false, "unmapped Rhino encode error: {error}");
+                        panic!("unmapped Rhino encode error: {error}");
+                    }
+                },
                 super::WriteError::Encode(error) => error,
             }
         })?,

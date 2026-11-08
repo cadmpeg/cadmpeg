@@ -353,9 +353,7 @@ pub(super) fn write(
             ) && ir.model.occurrences.iter().any(|occurrence| {
                 occurrence.native_ref.as_deref() == Some(original.id().as_str())
             }));
-        if represented
-            || (crate::design::is_design_object(&original.type_name)
-                && (neutral_feature.is_none() || !ir.scope.design))
+        if represented || (!ir.scope.design && crate::design::is_design_object(&original.type_name))
         {
             continue;
         }
@@ -505,11 +503,11 @@ pub(super) fn write(
                     continue;
                 }
             }
-            if neutral_owned
-                && (object.properties.contains_key(&property.name)
-                    || (crate::property_policy::has_neutral_form(&property.name)
-                        && !empty_shapes.contains(&property.id)))
-            {
+            // A native property that the regenerated object lacks is a
+            // declaration slot: replaying it verbatim preserves the order
+            // the re-decode derives, so the pairing survives sanctioned
+            // regenerated values instead of shifting into later records.
+            if neutral_owned && object.properties.contains_key(&property.name) {
                 continue;
             }
             if property
@@ -1033,24 +1031,55 @@ pub(super) fn write(
                 bodies[0].name.as_deref().unwrap_or(bodies[0].id.as_str()),
             ));
         }
-        let original_file = native_properties.iter().find_map(|property| {
-            let owner_matches = names.get(&property.owner) == Some(&name);
-            let [file] = property.side_entries() else {
-                return None;
-            };
-            (owner_matches
-                && property.name == property_name
-                && property.type_name == "Part::PropertyPartShape"
-                && file.to_ascii_lowercase().ends_with(".brp")
-                && entry_names.contains(file)
-                && native_properties
+        let original_file = native_properties
+            .iter()
+            .find_map(|property| {
+                let owner_matches = names.get(&property.owner) == Some(&name);
+                let file = property
+                    .side_entries()
                     .iter()
-                    .filter(|other| other.side_entries().contains(file))
-                    .count()
-                    == 1
-                && !entries.contains_key(file))
-            .then(|| (file.clone(), property))
-        });
+                    .find(|entry| entry.to_ascii_lowercase().ends_with(".brp"))?;
+                (owner_matches
+                    && property.name == property_name
+                    && property.type_name == "Part::PropertyPartShape"
+                    && entry_names.contains(file)
+                    && native_properties
+                        .iter()
+                        .filter(|other| other.side_entries().contains(file))
+                        .count()
+                        == 1
+                    && !entries.contains_key(file))
+                .then(|| (file.clone(), property))
+            })
+            .or_else(|| {
+                let entry = bodies.iter().find_map(|body| {
+                    let selector = source_uses.iter().find(|selector| {
+                        Some(selector.id.as_str()) == body.native_ref.as_deref()
+                    })?;
+                    let payload = shape_payloads
+                        .iter()
+                        .find(|payload| payload.id == selector.owner)?;
+                    Some(payload.entry.clone())
+                })?;
+                if !entry.to_ascii_lowercase().ends_with(".brp")
+                    || !entry_names.contains(&entry)
+                    || entries.contains_key(&entry)
+                    || native_properties
+                        .iter()
+                        .filter(|other| other.side_entries().contains(&entry))
+                        .count()
+                        > 1
+                {
+                    return None;
+                }
+                let property = native_properties.iter().find(|property| {
+                    names.get(&property.owner) == Some(&name)
+                        && property.name == property_name
+                        && property.type_name == "Part::PropertyPartShape"
+                        && property.side_entries().contains(&entry)
+                });
+                Some((entry, property?))
+            });
         let file = original_file.as_ref().map_or_else(
             || {
                 let mut file = format!("{name}.brp");
@@ -1716,15 +1745,28 @@ pub(super) fn write(
             ))
     });
     for (name, bytes) in entries {
-        archive
-            .start_file(name, options)
-            .map_err(std::io::Error::other)?;
+        match archive.start_file(name, options) {
+            Ok(()) => {}
+            Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
+            Err(error) => {
+                debug_assert!(false, "FCStd ZIP start_file: {error}");
+                return Err(CodecError::InvalidInput(format!(
+                    "FCStd ZIP start_file: {error}"
+                )));
+            }
+        }
         archive.write_all(&bytes)?;
     }
-    let bytes = archive
-        .finish()
-        .map_err(std::io::Error::other)?
-        .into_inner();
+    let bytes = match archive.finish() {
+        Ok(writer) => writer.into_inner(),
+        Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
+        Err(error) => {
+            debug_assert!(false, "FCStd ZIP finish: {error}");
+            return Err(CodecError::InvalidInput(format!(
+                "FCStd ZIP finish: {error}"
+            )));
+        }
+    };
     for curve in &ir.model.curves {
         if let Some(construction) = curve.geometry.procedural_construction().filter(|_| {
             super::geometry::located_curve(ir, curve)
@@ -1750,7 +1792,43 @@ pub(super) fn write(
             )));
         }
     }
+    for record in &ir.model.procedural_curves {
+        losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
+            "procedural curve record {} is omitted from FCStd synthesis",
+            record.id
+        )));
+    }
+    for record in &ir.model.procedural_surfaces {
+        losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
+            "procedural surface record {} is omitted from FCStd synthesis",
+            record.id
+        )));
+    }
     let mut dispositions = super::coverage::complete(ir, &mut losses);
+    // Synthesis re-serializes BREP and regenerates carriers; neutral identities
+    // that depend on regenerated topology or propagation are reported.
+    for disposition in [
+        &mut dispositions.bodies,
+        &mut dispositions.regions,
+        &mut dispositions.shells,
+        &mut dispositions.faces,
+        &mut dispositions.loops,
+        &mut dispositions.coedges,
+        &mut dispositions.edges,
+        &mut dispositions.vertices,
+        &mut dispositions.points,
+        &mut dispositions.surfaces,
+        &mut dispositions.curves,
+        &mut dispositions.pcurves,
+        &mut dispositions.procedural_surfaces,
+        &mut dispositions.procedural_curves,
+        &mut dispositions.feature_input_topologies,
+        &mut dispositions.feature_result_topologies,
+    ] {
+        if *disposition == cadmpeg_ir::codec::write::ArenaDisposition::Written {
+            *disposition = cadmpeg_ir::codec::write::ArenaDisposition::Reported;
+        }
+    }
     super::coverage::xml_reductions(&mut dispositions, document_reduced, gui_reduced);
     let mut body = ExportBody::synthesized(bytes, ir, ArenaCoverage::Declared(dispositions));
     body.native_dispositions = native_dispositions;

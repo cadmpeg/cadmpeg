@@ -860,14 +860,14 @@ mod tests {
             entity_references: vec![7, -1],
         };
         let record = AsmHistoryRecord {
-                id: "f3d:native:history_record#1".into(),
-                parent: "f3d:native:state#1".into(),
-                revision_id: Some(7),
-                byte_offset: Some(12),
-                framing,
-                raw_bytes: (b"history payload".to_vec()).into(),
-            };
-            let old = AsmHistoryRecordWire::from(record.clone());
+            id: "f3d:native:history_record#1".into(),
+            parent: "f3d:native:state#1".into(),
+            revision_id: Some(7),
+            byte_offset: Some(12),
+            framing,
+            raw_bytes: (b"history payload".to_vec()).into(),
+        };
+        let old = AsmHistoryRecordWire::from(record.clone());
         assert_eq!(
             serde_json::to_vec(&record).unwrap(),
             serde_json::to_vec(&old).unwrap()

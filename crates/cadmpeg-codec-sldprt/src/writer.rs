@@ -192,10 +192,11 @@ fn can_write_surface(geometry: &SurfaceGeometry) -> bool {
 }
 
 fn can_write_curve(ir: &CadIr, curve: &cadmpeg_ir::geometry::Curve) -> bool {
-    surface_curve::supported(ir, curve).is_some() || curve.geometry.solved().is_some_and(|solved| {
-        matches!(solved, SolvedCurveGeometry::Nurbs(_))
-            || curve_values(&CurveGeometry::Solved(solved.clone()), 1.0).is_ok()
-    })
+    surface_curve::supported(ir, curve).is_some()
+        || curve.geometry.solved().is_some_and(|solved| {
+            matches!(solved, SolvedCurveGeometry::Nurbs(_))
+                || curve_values(&CurveGeometry::Solved(solved.clone()), 1.0).is_ok()
+        })
 }
 
 /// Options for writing a semantic envelope.
@@ -222,8 +223,8 @@ pub(super) fn write_semantic_at(
         source_trust,
     } = options;
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
-    let session = cadmpeg_core::encode::EncodeSession::from_context(digest_ctx)
-        .map_err(CodecError::from)?;
+    let session =
+        cadmpeg_core::encode::EncodeSession::from_context(digest_ctx).map_err(CodecError::from)?;
     let mut native = match prepared_native {
         Some(native) => Some(native),
         None => ir
@@ -256,7 +257,7 @@ pub(super) fn write_semantic_at(
                     &entities,
                     &expected_entities,
                 ) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "feature-input lane {} sketch entities do not match their native payload",
                         lane.id
                     ))
@@ -311,7 +312,11 @@ pub(super) fn write_semantic_at(
     } else {
         let feature_input_renames =
             crate::history::write::synchronize_feature_records(digest_ctx, ir, &mut native)?;
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(digest_ctx, ir, &mut native)?;
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(
+            digest_ctx,
+            ir,
+            &mut native,
+        )?;
         crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
         crate::history::write::configurations::synchronize_configuration_records(
             ir,
@@ -344,7 +349,7 @@ pub(super) fn write_semantic_at(
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
     let mut consumed_source_layout = source_scan.is_some() || retain_native_brep;
     if !retain_native_brep && requires_native_partition(ir) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
         ).into());
     }
@@ -419,7 +424,7 @@ pub(super) fn write_semantic_at(
                 || identity_baseline
                     != Some(&swobjects_metadata_identity_local_sha256(digest_ctx, ir)?)
             {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
                         .into(),
                 ).into());
@@ -1415,7 +1420,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
         ));
     }
     if !ir.model.subds.is_empty() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
@@ -1425,13 +1430,13 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
                 let ratio = cone_surface.ratio().get();
                 let half_angle = cone_surface.half_angle().get();
                 if ratio != 1.0 {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
                         surface.id.as_str(), ratio
                     )));
                 }
                 if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
                         surface.id.as_str(), half_angle
                     )));
@@ -1444,7 +1449,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
                 } =>
             {
                 let radius = sphere_surface.radius().get();
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
                     surface.id.as_str(), radius
                 )));
@@ -1458,7 +1463,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             {
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
                     surface.id.as_str(), major_radius, minor_radius
                 )));
@@ -1472,13 +1477,13 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
                 .effective_display_color(&AppearanceTarget::Body(body.id.clone()))
                 .is_none()
         {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "SLDPRT semantic writer cannot encode a body name without a material".into(),
             ));
         }
     }
     if ir.model.faces.iter().any(|face| face.name.is_some()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "SLDPRT semantic writer does not encode face names".into(),
         ));
     }
@@ -1489,7 +1494,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             || appearance.category.is_some()
             || !appearance.properties.is_empty()
         {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "SLDPRT semantic writer supports appearance names and base colors only".into(),
             ));
         }
@@ -2265,7 +2270,7 @@ fn patch_retained_swobjects_metadata(
                 .provenance
                 .get(attribute.id.as_str())
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    CodecError::InvalidInput(format!(
                         "SLDPRT metadata attribute {} has no retained record provenance",
                         attribute.id
                     ))
@@ -2400,7 +2405,7 @@ fn patch_retained_swobjects_metadata(
                 let marker = offset + UNIT_NAME_TOKEN.len();
                 let old_len = resident_unit_name_len(payload, marker)?;
                 if usize::from(byte_len) != old_len {
-                    return Err(CodecError::UnsupportedContent(
+                    return Err(CodecError::InvalidInput(
                         "SLDPRT writer cannot resize a retained source linear unit name".into(),
                     )
                     .into());
@@ -2419,7 +2424,7 @@ fn patch_retained_swobjects_metadata(
                 payload.splice(marker..end, replacement);
             }
             Some(MetadataRecord::SourceLinearUnitCode(_)) | None => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "unsupported retained SLDPRT metadata attribute {}",
                     attribute.name
                 ))
@@ -2561,7 +2566,7 @@ fn patch_active_configuration_xml(
             .get(offset..)
             .is_some_and(|tail| tail.starts_with("</swSolidWorks>"))
         {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "SLDPRT model envelope cannot add a configuration rebuild flag".into(),
             ));
         }
@@ -2618,7 +2623,7 @@ fn resolved_feature_payload(
     if missing_class_layout {
         // (P): without source fidelity the lane bytes are absent. Synthesis
         // authors a new layout from the typed content and its semantic order.
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "feature-input lane {} has no source layout positions",
             lane.id
         ))
@@ -2630,7 +2635,7 @@ fn resolved_feature_payload(
         true,
         source_trust,
     )
-    .map_err(CodecError::UnsupportedContent)?;
+    .map_err(CodecError::InvalidInput)?;
     let expected_lane = crate::resolved_features::write_prepare::generated_native_lane(
         histories,
         &lane.id,
@@ -2651,7 +2656,7 @@ fn resolved_feature_payload(
             || entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "feature-input lane {} has inconsistent marker identity or ownership",
                 lane.id
             ))
@@ -2673,34 +2678,32 @@ fn resolved_feature_payload(
         entity
             .validate_against_payload(&lane.native_payload)
             .map_err(|error| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "feature-input lane {} entity {}: {error}",
                     lane.id,
                     entity.id()
                 ))
             })?;
         let offset = usize::try_from(entity.offset()).map_err(|_| {
-            CodecError::UnsupportedContent("feature-input offset exceeds address space".into())
+            CodecError::InvalidInput("feature-input offset exceeds address space".into())
         })?;
-        let marker_end = offset.checked_add(MARKER.len()).ok_or_else(|| {
-            CodecError::UnsupportedContent("feature-input offset overflow".into())
-        })?;
+        let marker_end = offset
+            .checked_add(MARKER.len())
+            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
         if payload.get(offset..marker_end) != Some(MARKER) {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "editing this feature-input marker layout is not implemented".into(),
             )
             .into());
         }
-        let field_start = offset.checked_add(17).ok_or_else(|| {
-            CodecError::UnsupportedContent("feature-input offset overflow".into())
-        })?;
-        let field_end = offset.checked_add(21).ok_or_else(|| {
-            CodecError::UnsupportedContent("feature-input offset overflow".into())
-        })?;
+        let field_start = offset
+            .checked_add(17)
+            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
+        let field_end = offset
+            .checked_add(21)
+            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
         let field = payload.get_mut(field_start..field_end).ok_or_else(|| {
-            CodecError::UnsupportedContent(
-                "feature-input type field exceeds retained payload".into(),
-            )
+            CodecError::InvalidInput("feature-input type field exceeds retained payload".into())
         })?;
         let code = entity.kind().native_code().to_le_bytes();
         // The scanned kind of a marker is not always the kind whose code is
@@ -2731,14 +2734,14 @@ fn resolved_feature_payload(
             }
         }
         if let Some(value) = entity.state_value {
-            let state_start = offset.checked_add(48).ok_or_else(|| {
-                CodecError::UnsupportedContent("feature-input offset overflow".into())
-            })?;
-            let state_end = state_start.checked_add(8).ok_or_else(|| {
-                CodecError::UnsupportedContent("feature-input offset overflow".into())
-            })?;
+            let state_start = offset
+                .checked_add(48)
+                .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
+            let state_end = state_start
+                .checked_add(8)
+                .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
             let state = payload.get_mut(state_start..state_end).ok_or_else(|| {
-                CodecError::UnsupportedContent(
+                CodecError::InvalidInput(
                     "feature-input state field exceeds retained payload".into(),
                 )
             })?;
@@ -2748,7 +2751,7 @@ fn resolved_feature_payload(
             let Some(stored) =
                 crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
             else {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "feature-input marker does not carry editable coordinate fields".into(),
                 )
                 .into());
@@ -2791,14 +2794,12 @@ fn resolved_feature_payload(
             for (relative, value) in [(0usize, coordinates[0]), (8, coordinates[1])] {
                 let start = coordinate_start + relative;
                 let end = start.checked_add(8).ok_or_else(|| {
-                    CodecError::UnsupportedContent(
-                        "feature-input coordinate offset overflow".into(),
-                    )
+                    CodecError::InvalidInput("feature-input coordinate offset overflow".into())
                 })?;
                 payload
                     .get_mut(start..end)
                     .ok_or_else(|| {
-                        CodecError::UnsupportedContent(
+                        CodecError::InvalidInput(
                             "feature-input coordinate field exceeds retained payload".into(),
                         )
                     })?
@@ -2811,7 +2812,7 @@ fn resolved_feature_payload(
         .filter(|rename| rename.lane == lane.id)
         .map(|rename| {
             let name = lane.names.get(rename.name_index).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "feature-input lane {} has no object name {}",
                     lane.id, rename.name_index
                 ))
@@ -2826,15 +2827,15 @@ fn resolved_feature_payload(
         let utf16 = rename.value.as_str().encode_utf16().collect::<Vec<_>>();
         let length = feature_input_name_len(utf16.len())?;
         let start = usize::try_from(name.offset).map_err(|_| {
-            CodecError::UnsupportedContent("feature-input name offset exceeds address space".into())
+            CodecError::InvalidInput("feature-input name offset exceeds address space".into())
         })?;
         let (_, end) =
             crate::resolved_features::names::name_span(&payload, start).ok_or_else(|| {
-                CodecError::UnsupportedContent("feature-input name range is invalid".into())
+                CodecError::InvalidInput("feature-input name range is invalid".into())
             })?;
         let length_at = crate::resolved_features::names::name_length_at(&payload, start)
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(
+                CodecError::InvalidInput(
                     "feature-input name marker does not match retained payload".into(),
                 )
             })?;
@@ -3115,7 +3116,7 @@ fn metadata_payloads(
     };
     for attribute in attributes {
         if attribute.target != AttributeTarget::Document {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "SLDPRT semantic writer does not support entity attributes".into(),
             )
             .into());
@@ -3181,7 +3182,7 @@ fn metadata_payloads(
                 objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }
             None => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "unsupported SLDPRT attribute {}",
                     attribute.name
                 ))
@@ -3729,13 +3730,13 @@ fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
     if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "SLDPRT display tessellation triangle groups and texture assignments are not writable"
                 .into(),
         ));
     }
     if !mesh.feature_edges().is_empty() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));
     }
@@ -3885,7 +3886,7 @@ impl From<MaterialError> for CodecError {
             MaterialError::MissingAppearance => {
                 Self::Malformed("body binding references missing appearance".into())
             }
-            MaterialError::Decline(reason) => Self::UnsupportedContent(reason.into()),
+            MaterialError::Decline(reason) => Self::InvalidInput(reason.into()),
         }
     }
 }
@@ -3916,9 +3917,9 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, MaterialError> {
         let appearance = appearances
             .get(&binding.appearance)
             .ok_or(MaterialError::MissingAppearance)?;
-        let color = appearance
-            .base_color
-            .ok_or(MaterialError::Decline("SLDPRT body appearance has no base color"))?;
+        let color = appearance.base_color.ok_or(MaterialError::Decline(
+            "SLDPRT body appearance has no base color",
+        ))?;
         let material = (appearance.name.as_deref().unwrap_or("Material"), color);
         if selected
             .as_ref()
@@ -4046,7 +4047,7 @@ pub(crate) fn brep_body(
         .iter()
         .find(|body| matches!(body.kind, BodyKind::Wire | BodyKind::General))
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "SLDPRT cannot write {:?} body {} as a solid lump",
             body.kind, body.id
         ))
@@ -4162,7 +4163,7 @@ pub(crate) fn brep_body(
             continue;
         }
         let reference = surface_reference(surface.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::UnsupportedContent("carrier has no solved geometry".into())
+            cadmpeg_core::CodecError::InvalidInput("carrier has no solved geometry".into())
         })?);
         let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
         compact(
@@ -4387,7 +4388,7 @@ pub(crate) fn brep_body(
         for value in [
             0,
             coedges[lp.coedges().first().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!("loop {} has no coedges", lp.id))
+                CodecError::InvalidInput(format!("loop {} has no coedges", lp.id))
             })?],
             faces[&lp.face],
             next_loop,
@@ -4414,7 +4415,7 @@ pub(crate) fn brep_body(
                 0
             }
             None => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "face {} has no supported loopless surface",
                     face.id
                 ))
@@ -5267,7 +5268,7 @@ fn append_homogeneous_pole(
     let homogeneous =
         [point.x, point.y, point.z].map(|value| value * length_scale * weight.unwrap_or(1.0));
     if !homogeneous.iter().all(|value| value.is_finite()) {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "SLDPRT NURBS pole {index} scaled by its weight has no finite coordinate"
         )));
     }
@@ -5457,43 +5458,43 @@ pub(super) fn curve_values(
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_)) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer does not support degenerate curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer does not support composite curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
         }
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_)) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "semantic SLDPRT writer cannot regenerate an opaque curve".into(),
             ))
         }

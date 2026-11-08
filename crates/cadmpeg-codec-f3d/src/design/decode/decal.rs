@@ -532,11 +532,14 @@ mod tests {
                     cadmpeg_ir::CodecFormat::F3d,
                     &ctx,
                 );
-                assert!(
-                    super::decode_decal_images(&ctx, &mut output, scan, std::slice::from_ref(&scope))
-                        .unwrap()
-                        .is_empty()
-                );
+                assert!(super::decode_decal_images(
+                    &ctx,
+                    &mut output,
+                    scan,
+                    std::slice::from_ref(&scope)
+                )
+                .unwrap()
+                .is_empty());
                 let (_, native, fidelity, losses) = output.into_parts();
                 assert_eq!(losses.len(), 1);
                 assert_eq!(

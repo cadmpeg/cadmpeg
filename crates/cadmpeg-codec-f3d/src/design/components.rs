@@ -1172,12 +1172,10 @@ impl<'a> Projector<'a> {
         let Some((occurrence, carrier)) = self.occurrences.get_mut(key) else {
             return;
         };
-        let stored = occurrence
-            .transform
-            .map_or_else(
-                || cadmpeg_ir::transform::Transform::identity().affine_rows(),
-                cadmpeg_ir::transform::Transform::affine_rows,
-            );
+        let stored = occurrence.transform.map_or_else(
+            || cadmpeg_ir::transform::Transform::identity().affine_rows(),
+            cadmpeg_ir::transform::Transform::affine_rows,
+        );
         let (stored, new) = (stored, local.affine_rows());
         let shift = (0..3)
             .map(|row| (new[row][3] - stored[row][3]).powi(2))

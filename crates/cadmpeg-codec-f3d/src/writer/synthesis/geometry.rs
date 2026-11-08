@@ -56,7 +56,12 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
             .edges()
             .iter()
             .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str)
-            .chain(record.members.free_vertex().map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str))
+            .chain(
+                record
+                    .members
+                    .free_vertex()
+                    .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str),
+            )
             .filter_map(|member| owners.get(member))
             .collect::<Vec<_>>();
         let Some(shell) = target.model.shells.iter().find(|shell| {
@@ -128,7 +133,11 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
         {
             return false;
         }
-        let Some(owner) = record.owner.as_ref().map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str) else {
+        let Some(owner) = record
+            .owner
+            .as_ref()
+            .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str)
+        else {
             return true;
         };
         let Some(edge) = owners.get(owner) else {

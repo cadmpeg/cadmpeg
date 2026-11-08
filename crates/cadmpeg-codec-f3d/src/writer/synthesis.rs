@@ -197,5 +197,5 @@ pub(super) fn write(
 /// limits remain preconditions. Native/neutral disagreement is an edit, so it
 /// selects neutral regeneration rather than an invalid-document refusal.
 pub(super) fn declines(error: &CodecError) -> bool {
-    matches!(error, CodecError::UnsupportedContent(_))
+    matches!(error, CodecError::NotImplemented(_))
 }

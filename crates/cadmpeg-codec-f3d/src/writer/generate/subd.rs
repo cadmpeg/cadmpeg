@@ -266,7 +266,15 @@ pub(in crate::writer) fn encode(
         );
     }
     for symmetry in cage.symmetries() {
-        if !encode_symmetry(ctx, charge_output, &mut output, symmetry, faces.len(), edges.len(), vertices.len())? {
+        if !encode_symmetry(
+            ctx,
+            charge_output,
+            &mut output,
+            symmetry,
+            faces.len(),
+            edges.len(),
+            vertices.len(),
+        )? {
             return Ok(None);
         }
     }
@@ -332,8 +340,7 @@ pub(in crate::writer) fn encode_symmetry(
     }
     match symmetry.kind() {
         SubdSymmetryKind::Correspondence {} => {
-            for ((forward, _), (f, r)) in
-                pairs.iter().zip([("fr", "f"), ("er", "e"), ("vr", "v")])
+            for ((forward, _), (f, r)) in pairs.iter().zip([("fr", "f"), ("er", "e"), ("vr", "v")])
             {
                 charge_record(ctx, charge_output)?;
                 write_correspondence(output, f, forward, false);

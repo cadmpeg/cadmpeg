@@ -402,27 +402,29 @@ pub(crate) fn project_sketch_design(
     let mut losses = Vec::new();
     for point in points {
         let Some(owner) = point.owner_reference else {
-            losses.push(crate::loss::F3dLossCode::SketchPointOwnerUnresolved.note(format!(
-                "Sketch point {} has no owner.",
-                point.id
-            )));
+            losses.push(
+                crate::loss::F3dLossCode::SketchPointOwnerUnresolved
+                    .note(format!("Sketch point {} has no owner.", point.id)),
+            );
             continue;
         };
         let Some(scope) = native_stream(&point.id) else {
-            losses.push(crate::loss::F3dLossCode::SketchPointOwnerUnresolved.note(format!(
-                "Sketch point {} has no native stream.",
-                point.id
-            )));
+            losses.push(
+                crate::loss::F3dLossCode::SketchPointOwnerUnresolved
+                    .note(format!("Sketch point {} has no native stream.", point.id)),
+            );
             continue;
         };
         if spatial_owners.contains(&(scope, owner)) {
             continue;
         }
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
-            losses.push(crate::loss::F3dLossCode::SketchPointOwnerUnresolved.note(format!(
-                "Sketch point {} has no placement for owner {owner}.",
-                point.id
-            )));
+            losses.push(
+                crate::loss::F3dLossCode::SketchPointOwnerUnresolved.note(format!(
+                    "Sketch point {} has no placement for owner {owner}.",
+                    point.id
+                )),
+            );
             continue;
         };
         let sketch = crate::ids::neutral_sketch_id(placement);

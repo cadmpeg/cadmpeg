@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Private encode-path error for the SLDPRT writer (#231, #237).
 //!
-//! `UnsupportedContent` is internal control flow: a patch that cannot express
-//! an edit declines to synthesis with `PatchDeclined`. A private typed enum
-//! carries that decision and typed target capacities through planning.
+//! A patch that cannot express an edit declines to synthesis with
+//! `Decline`. A private typed enum carries that decision and typed target
+//! capacities through planning (#239).
 
 use cadmpeg_core::CodecError;
 
@@ -40,8 +40,10 @@ impl WriteError {
 impl From<CodecError> for WriteError {
     fn from(error: CodecError) -> Self {
         match error {
-            CodecError::UnsupportedContent(reason) => Self::Decline(reason),
             CodecError::Io(error) => Self::Io(error),
+            // Writer-internal content the target cannot express declines to
+            // synthesis (#239 §5.0; declined content).
+            CodecError::InvalidInput(reason) => Self::Decline(reason),
             error => Self::Fatal(error),
         }
     }
@@ -73,10 +75,24 @@ impl From<std::io::Error> for WriteError {
 impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
     fn from(error: WriteError) -> Self {
         match error {
-            WriteError::Decline(reason) => cadmpeg_ir::codec::write::transitional_from_codec(
-                CodecError::UnsupportedContent(reason),
-            ),
-            WriteError::Fatal(error) => cadmpeg_ir::codec::write::transitional_from_codec(error),
+            WriteError::Decline(reason) => {
+                debug_assert!(
+                    false,
+                    "patch decline must be handled before encode: {reason}"
+                );
+                panic!("patch decline must be handled before encode: {reason}");
+            }
+            WriteError::Fatal(error) => match error {
+                cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
+                    Self::UnsupportedTarget(refusal)
+                }
+                cadmpeg_core::CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
+                cadmpeg_core::CodecError::Io(error) => Self::from(error),
+                error => {
+                    debug_assert!(false, "unmapped SLDPRT encode error: {error}");
+                    panic!("unmapped SLDPRT encode error: {error}");
+                }
+            },
             WriteError::Io(error) => Self::Io(error),
             WriteError::Capacity { field, value } => Self::TargetCapacity {
                 field,
@@ -92,11 +108,8 @@ mod tests {
     use super::WriteError;
 
     #[test]
-    fn unsupported_content_becomes_a_decline() {
-        let error = WriteError::from(cadmpeg_core::CodecError::UnsupportedContent(
-            "no layout".into(),
-        ));
-        assert!(matches!(error, WriteError::Decline(_)));
+    fn decline_carries_reason() {
+        let error = WriteError::Decline("no layout".into());
         assert_eq!(error.reason(), "no layout");
     }
 

@@ -1206,11 +1206,12 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
             ..
         }) if (direction.z == 1.0) && result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 5.0
     ));
-    assert!(result.ir().scope.design && !result.ir().scope.model);
-    assert_eq!(result.report().losses.len(), 1);
-    assert_eq!(
-        result.report().losses[0].code.local_code(),
-        "depth.not-delivered"
+    // #209 §1.1: full decode reports requested scope classes as delivered.
+    assert!(result.ir().scope.design && result.ir().scope.model);
+    assert!(
+        crate::test_support::non_placement_losses(result.report()).is_empty(),
+        "{:?}",
+        result.report().losses
     );
     assert_valid_document(result.ir());
 

@@ -2232,7 +2232,6 @@ mod scope_tests;
 #[cfg(test)]
 mod tests {
     mod point_frames;
-
     mod wide_scopes;
 
     mod carrier_scopes;
@@ -2244,6 +2243,7 @@ mod tests {
     };
     use crate::test_support::parasolid::framed_topology_fin;
     use crate::test_support::parasolid::framed_topology_loop;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::topology::Sense;
     use std::collections::HashMap;
     use std::collections::HashSet;
@@ -3355,10 +3355,7 @@ mod tests {
 
     #[test]
     fn an_intersection_composite_after_its_class_header_is_skipped_whole() {
-        // The first composite of a stream follows its class's edited type
-        // header (spec §4.1) with no tag of its own. Its sequence number
-        // `00 00 12 1a` holds a false `00 12` vertex header that would run
-        // over the tag of the point record that follows.
+        // First composite follows its class header (spec §4.1).
         let mut bytes = vec![0x00, 0x26, 12];
         bytes.extend([b'C'; 11]);
         bytes.push(b'A');
@@ -3594,8 +3591,7 @@ mod tests {
 
     #[test]
     fn int_values_extent_ends_where_the_next_node_begins() {
-        // `00 52` read inside another record's fields: the stated count fits
-        // the buffer, but the extent ends mid-record, so it frames nothing.
+        // `00 52` extent ends mid-record, so it frames nothing.
         let mut bytes = vec![0, 0x52];
         bytes.extend(4u32.to_be_bytes());
         bytes.extend(95u16.to_be_bytes());
@@ -4108,7 +4104,14 @@ mod tests {
         assert_eq!(decoded.ir().model.faces.len(), 1);
         assert_eq!(decoded.ir().model.loops.len(), 1);
         assert_eq!(decoded.ir().model.coedges.len(), 3);
-        let body = crate::writer::brep_body(&cadmpeg_core::decode::DecodeContext::for_encode(&cadmpeg_core::decode::DecodeArena::new(), &cadmpeg_core::decode::DecodePolicy::desktop()), decoded.ir(), 0.001, false).unwrap();
+        let arena = DecodeArena::new();
+        let body = crate::writer::brep_body(
+            &DecodeContext::for_encode(&arena, &DecodePolicy::desktop()),
+            decoded.ir(),
+            0.001,
+            false,
+        )
+        .unwrap();
         let original = scan(&body);
         assert_eq!(original.edge_uses.len(), 3);
         let edge = original
@@ -4159,9 +4162,7 @@ mod tests {
             super::super::typed::schema_prefix_end(&bytes, 0),
             Some(program_end)
         );
-        // Authored WORLD index, seven pointer fields, alive, attribute
-        // definition pointer, highest/current IDs, and the two appended
-        // nullable INT_VALUES pointers. WORLD has no visible-node ID.
+        // Authored WORLD index with seven pointer fields and no visible-node ID.
         bytes.extend(2u16.to_be_bytes());
         for reference in [1u16, 1, 900, 1, 1, 1, 1] {
             bytes.extend(reference.to_be_bytes());

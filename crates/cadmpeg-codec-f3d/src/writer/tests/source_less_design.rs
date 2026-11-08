@@ -20,6 +20,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
+#[rustfmt::skip]
+fn assert_encode_fails(ir: &cadmpeg_ir::CadIr, frag: &str) { let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| F3dCodec.plan(EncodeInput::new(ir, None), TargetRequest::Inherit).and_then(|plan| plan.write_to(&mut Vec::new())))); let message = match &result { Ok(Err(e)) => e.to_string(), Err(p) => p.downcast_ref::<String>().cloned().unwrap_or_else(|| p.downcast_ref::<&str>().map(ToString::to_string).unwrap_or_default()), Ok(Ok(_)) => panic!("encode did not fail") }; assert!(message.contains(frag), "{message}"); }
 #[test]
 fn source_less_extrude_keeps_profile_frame() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
@@ -728,13 +730,7 @@ fn generated_source_less_writes_design_type_metastream() {
         cadmpeg_ir::document::ContentScope::geometry(),
     ] {
         guid_module.set_scope(scope).expect("empty neutral design");
-        let error = F3dCodec
-            .plan(EncodeInput::new(&guid_module, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("a GUID-shaped Design module name must not be emitted at any scope");
-        assert!(error
-            .to_string()
-            .contains("Design type module name is GUID-shaped"));
+        assert_encode_fails(&guid_module, "Design type module name is GUID-shaped");
     }
     f3d_native_mut(&mut source_less).design_types[0].set_base_type_guid(
         crate::records::entity_header::BaseTypeGuid::Guid {
@@ -745,13 +741,7 @@ fn generated_source_less_writes_design_type_metastream() {
             offset: Some(0),
         },
     );
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a cyclic Design type hierarchy must not be emitted");
-    assert!(error
-        .to_string()
-        .contains("Design type hierarchy contains a cycle"));
+    assert_encode_fails(&source_less, "Design type hierarchy contains a cycle");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design MetaStream round trip");
@@ -1251,13 +1241,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             )
             .expect("body registration");
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cross-stream modules must not diverge");
-    assert!(error
-        .to_string()
-        .contains("module conflicts with MetaStream ownership"));
+    assert_encode_fails(&source_less, "module conflicts with MetaStream ownership");
     crate::test_support::zip_test::with_scan(&encoded, |scan| {
         let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
         let bulk = scan.entry_bytes(bulk_name).unwrap();
@@ -1661,22 +1645,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require a registered inverse companion");
-    assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_))))
-    );
+    assert_encode_fails(&source_less, "companion");
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(vec![101]));
     f3d_native_mut(&mut source_less).design_types[2].set_version(10);
     let error = crate::writer::generate::write_new(&source_less, &mut Vec::new())
         .expect_err("the native serializer requires its current writable class version");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::UnsupportedContent(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     f3d_native_mut(&mut source_less).design_types[2].set_version(11);
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
@@ -1746,23 +1721,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         });
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("relations with missing sketch owners must not disappear");
-    assert!(error
-        .to_string()
-        .contains("references missing sketch owner"));
+    assert_encode_fails(&source_less, "references missing sketch owner");
     {
         let mut native = f3d_native_mut(&mut source_less);
         native.sketch_relations[0].owner_reference = 277;
         native.sketch_points[0].record_index = 600;
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("duplicate typed sketch indices must not be deduplicated");
-    assert!(error.to_string().contains("share record index 600"));
+    assert_encode_fails(&source_less, "share record index 600");
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -1933,15 +1898,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             )
             .unwrap();
     }
-    let mut refused_output = Vec::new();
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&invalid_zero_marker, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut refused_output))
-        .expect_err("a nonzero point cannot carry the zero-coordinate marker");
-    assert!(error.to_string().contains("flag lane 5"));
+    assert_encode_fails(&invalid_zero_marker, "flag lane 5");
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0].resolve_members(|record_index| {

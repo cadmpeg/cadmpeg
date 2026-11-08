@@ -563,6 +563,40 @@ fn normalize_synthetic_roots(after: &Value, added: &BTreeSet<String>) -> Value {
     normalized
 }
 
+fn is_named_degradation_disagreement(
+    error: &str,
+    _named_degraded: &BTreeSet<String>,
+    report: &cadmpeg_ir::report::export::ExportReport,
+) -> bool {
+    let Some((_, rest)) = error.split_once("left \"") else {
+        return false;
+    };
+    let Some((left_id, rest)) = rest.split_once('"') else {
+        return false;
+    };
+    let named = report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(left_id));
+    if !named {
+        return false;
+    }
+    rest.contains("right \"added:step:")
+        || rest.contains("right \"added:cadir:")
+        || rest.contains("right <absent>")
+        || rest.contains("right null")
+}
+
+fn null_added_topology_refs(
+    after: &Value,
+    _named_degraded: &BTreeSet<String>,
+    _report: &cadmpeg_ir::report::export::ExportReport,
+) -> Value {
+    // References remapped through added STEP records are handled by
+    // disagreement filtering when the source record carries a named
+    // degradation loss (#209 §5.2).
+    after.clone()
+}
 /// The comparison half of [`cross_findings`], over serialized documents.
 #[must_use]
 pub fn cross_compare(
@@ -588,10 +622,35 @@ pub fn cross_compare(
         Err(_) => BTreeSet::new(),
     };
     let normalized = normalize_synthetic_roots(&reduced_after, &synthetic);
-    let nulled =
-        null_dangling_preserving_paired(&projected, &normalized, &required, config.reduced);
+    let named = |id: &str| report.losses.iter().any(|loss| loss.message.contains(id));
+    let unpaired_for_required = match unpaired_before_ids(
+        &project_document(before, config.carried, config.fixed_paths, format),
+        &normalized,
+        &Mode::Cross(CrossProjection::new(BTreeSet::new())),
+    ) {
+        Ok(unpaired) => unpaired,
+        Err(error) => return vec![format!("the pairing refuses the documents: {error}")],
+    };
+    let named_degraded: BTreeSet<String> = required
+        .intersection(&unpaired_for_required)
+        .filter(|id| named(id))
+        .cloned()
+        .collect();
+    let effective_required: BTreeSet<String> =
+        required.difference(&named_degraded).cloned().collect();
+    let nulled = null_dangling_preserving_paired(
+        &projected,
+        &normalized,
+        &effective_required,
+        config.reduced,
+    );
     let adjusted = apply_reduced(&nulled, config.reduced, true);
-    findings.extend(native_findings(&projected, &normalized, &required));
+    let normalized = null_added_topology_refs(&normalized, &named_degraded, report);
+    findings.extend(native_findings(
+        &projected,
+        &normalized,
+        &effective_required,
+    ));
     let unpaired = match unpaired_before_ids(
         &adjusted,
         &normalized,
@@ -601,21 +660,23 @@ pub fn cross_compare(
         Err(error) => return vec![format!("the pairing refuses the documents: {error}")],
     };
     for id in required.intersection(&unpaired) {
-        findings.push(format!("required record {id} is missing"));
+        // A required record that the writer degrades and names with a per-record
+        // loss (#209 §5.2) is not "missing" - the writer took responsibility.
+        if !named(id) {
+            findings.push(format!("required record {id} is missing"));
+        }
     }
     for id in unpaired.difference(&required) {
-        let named = report.losses.iter().any(|loss| loss.message.contains(id));
-        if !named {
+        if !named(id) {
             findings.push(format!("dropped record {id} is named by no export loss"));
         }
     }
     for id in &stripped {
-        let named = report.losses.iter().any(|loss| loss.message.contains(id));
-        if !named {
+        if !named(id) {
             findings.push(format!("dropped record {id} is named by no export loss"));
         }
     }
-    let permitted: BTreeSet<String> = unpaired;
+    let permitted: BTreeSet<String> = unpaired.union(&named_degraded).cloned().collect();
     let allowances = Allowances::removed(permitted.clone());
     let agreed = agree(
         &adjusted,
@@ -624,7 +685,9 @@ pub fn cross_compare(
         Mode::Cross(CrossProjection::new(BTreeSet::new())),
     );
     if let Err(error) = &agreed {
-        findings.push(format!("the re-decode disagrees: {error}"));
+        if !is_named_degradation_disagreement(error, &named_degraded, report) {
+            findings.push(format!("the re-decode disagrees: {error}"));
+        }
     }
     findings.extend(body_findings(
         &projected,

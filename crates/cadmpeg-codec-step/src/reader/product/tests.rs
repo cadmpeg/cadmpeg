@@ -1971,3 +1971,27 @@ fn reference_section_entries_supplying_prototypes_become_external_occurrences() 
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn nauo_reference_designator_cadmpeg_ordinal_preserved() {
+    let decoded = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('A','Assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('assembly','',#4,#5);
+#7=PRODUCT('C','Child','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('child','',#8,#5);
+#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('occ','occ','',#6,#9,'cadmpeg:ordinal=7');",
+    );
+    let child = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|o| o.id.as_str().contains("10"))
+        .expect("NAUO occurrence");
+    assert_eq!(child.ordinal, 7);
+}

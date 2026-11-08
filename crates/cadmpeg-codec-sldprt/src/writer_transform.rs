@@ -77,9 +77,9 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
                 .get(region_id.as_str())
                 .ok_or_else(|| WriteError::Decline("body references missing region".into()))?;
             for shell_id in &region.shells {
-                let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
-                    WriteError::Decline("region references missing shell".into())
-                })?;
+                let shell = shells
+                    .get(shell_id.as_str())
+                    .ok_or_else(|| WriteError::Decline("region references missing shell".into()))?;
                 for face_id in shell.faces() {
                     let face = faces.get(face_id.as_str()).ok_or_else(|| {
                         WriteError::Decline("shell references missing face".into())
@@ -177,9 +177,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    TessellationError::EditRefused(message) => {
-                        WriteError::Decline(message)
-                    }
+                    TessellationError::EditRefused(message) => WriteError::Decline(message),
                     error @ TessellationError::Admission { .. } => {
                         WriteError::Decline(format!("invalid transformed tessellation: {error}"))
                     }
@@ -341,9 +339,7 @@ fn transform_surface(
                 })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => WriteError::Decline(message),
-                    error => {
-                        WriteError::Decline(format!("invalid transformed NURBS: {error}"))
-                    }
+                    error => WriteError::Decline(format!("invalid transformed NURBS: {error}")),
                 })?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
@@ -425,9 +421,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => WriteError::Decline(message),
-                    error => {
-                        WriteError::Decline(format!("invalid transformed NURBS: {error}"))
-                    }
+                    error => WriteError::Decline(format!("invalid transformed NURBS: {error}")),
                 })?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
