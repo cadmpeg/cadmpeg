@@ -272,9 +272,9 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Question.** Which fields select the external source document and revision and define source update dependencies? Which component fields extend the version-19, 23, 25, and 31 forms?
 
-**Known.** Section 13.4 defines the version-19, 23, 25, and 31 derived stored-body forms, their source and result wrappers, their component references, and their transform reference. The stored-body Base family includes this derived form. Its result uses the current-model body join independently of the component transform.
+**Known.** Section 13.4 defines the version-19, 23, 25, and 31 derived stored-body forms, their source and result wrappers, their component references, and their transform reference. The stored-body Base family includes this derived form. Its result uses the current-model body join independently of the component transform. A derived result wrapper in a part that later features modify can select a kernel entity that precedes the entity of the current model body; its feature stays native.
 
-**Need.** Component references outside the transform require complete record grammars and source-document joins. Source revision selection and update dependencies require exact operands before external construction can replay. The additional component fields in other segment versions, and nonempty component lists, require their construction roles.
+**Need.** Component references outside the transform require complete record grammars and source-document joins. Source revision selection and update dependencies require exact operands before external construction can replay. The additional component fields in other segment versions, and nonempty component lists, require their construction roles. The join between an earlier body entity and the later body states that replace it requires the entity chain of the history.
 
 ### DE-12. Extrusion termination face identity
 
