@@ -153,12 +153,14 @@ fn native(
             .iter()
             .filter(|property| property.owner == record.id)
         {
+            // A side-payload property keeps its native slot, entry name and
+            // status for a neutral list that regenerates it.
+            provider
+                .native
+                .insert(property.name.clone(), property.clone());
             match xml::native_gui(property) {
                 Some(value) => {
                     provider.properties.insert(property.name.clone(), value);
-                    provider
-                        .native
-                        .insert(property.name.clone(), property.clone());
                 }
                 None => losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(
                     format!(
