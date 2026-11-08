@@ -72,9 +72,10 @@ pub(crate) fn plan(
                 }
             }
             for id in duplicates {
-                losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
-                    "duplicate neutral record {id} is omitted"
-                )));
+                losses.push(
+                    RhinoLossCode::WriterAttributesOmitted
+                        .note(format!("duplicate neutral record {id} is omitted")),
+                );
             }
         }
     }

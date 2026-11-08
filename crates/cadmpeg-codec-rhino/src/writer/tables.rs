@@ -294,7 +294,9 @@ fn layer_display_color(
             continue;
         };
         if appearance.native_ref.as_deref().is_some_and(|id| {
-            records(ir, "materials").iter().any(|record| record.id() == id)
+            records(ir, "materials")
+                .iter()
+                .any(|record| record.id() == id)
         }) {
             continue;
         }

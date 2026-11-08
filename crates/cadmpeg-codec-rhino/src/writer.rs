@@ -4572,11 +4572,11 @@ fn object_attributes_for_target(
     } else if !layer_color
         && (material.is_some()
             || (ir.model.presentation_layers.is_empty()
-            && ir
-                .model
-                .bodies
-                .iter()
-                .any(|body| body.id.as_str() == identity)))
+                && ir
+                    .model
+                    .bodies
+                    .iter()
+                    .any(|body| body.id.as_str() == identity)))
     {
         payload.extend([13, 2]);
     }
