@@ -5099,13 +5099,23 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
                 ) => group.extrude_role().is_none(),
                 Some(design::DesignFeatureFamily::Coil) => {
-                    group.role()
-                        == if scope.coil_has_ten_reference_target() {
-                            DesignOperandRole::BODIES_A
-                        } else {
-                            DesignOperandRole::BODIES_B
-                        }
+                    let admitted = |candidate: &records::topology::construction::DesignConstructionOperandGroup| {
+                        design_stream(&candidate.id) == native_stream
+                            && candidate.scope_record_index == group.scope_record_index
+                            && scope.coil_target_group_admits(
+                                candidate.role(),
+                                candidate.scope_reference_ordinal,
+                            )
+                    };
+                    admitted(group)
                         && group.extrude_role().is_none()
+                        && group.members().len() == 1
+                        && native
+                            .design_construction_operand_groups
+                            .iter()
+                            .filter(|candidate| admitted(candidate))
+                            .count()
+                            == 1
                 }
                 Some(design::DesignFeatureFamily::Move) => {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()

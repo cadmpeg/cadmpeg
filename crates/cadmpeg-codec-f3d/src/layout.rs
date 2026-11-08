@@ -3436,7 +3436,7 @@ pub(crate) mod coil_long_scope_fixed_prologue {
 
 /// Byte offsets for the `coil_ten_reference_compact_prologue` record.
 ///
-/// Spec §3.1. Record length 56 B.
+/// Spec §3.1. Record length 58 B.
 ///
 /// ```text
 /// Offsets are relative to the primary indexed scope header. The section lanes at offsets 92 and 107 are those of coil_compact_scope_discriminators.
@@ -3444,14 +3444,32 @@ pub(crate) mod coil_long_scope_fixed_prologue {
 pub(crate) mod coil_ten_reference_compact_prologue {
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
     pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `form_constant` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FORM_CONSTANT: usize = 20;
+    /// Stated value of `form_constant` (`u32`). Spec §3.1.
+    pub(crate) const FORM_CONSTANT_VALUE: u32 = 0x0000_0001;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const OPERATION: usize = 20;
-    /// Stated value of `structural_constant` (`u32`). Spec §3.1.
-    pub(crate) const STRUCTURAL_CONSTANT_VALUE: u32 = 0x0000_0001;
-    /// Offset of `fifth_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const FIFTH_REFERENCE: usize = 34;
-    /// Offset of `ninth_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const NINTH_REFERENCE: usize = 45;
+    pub(crate) const OPERATION: usize = 26;
+    /// Offset of `first_member_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_MEMBER_REFERENCE: usize = 34;
+    /// Offset of `second_member_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_MEMBER_REFERENCE: usize = 45;
+    /// Offset of `trailing_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TRAILING_FLAGS: usize = 56;
+}
+
+/// Byte offsets for the `coil_ten_reference_flagged_prologue_tail` record.
+///
+/// Spec §3.1. Record length 58 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed scope header. Offsets 0 through 44 are those of coil_ten_reference_compact_prologue.
+/// ```
+pub(crate) mod coil_ten_reference_flagged_prologue_tail {
+    /// Offset of `leading_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const LEADING_FLAGS: usize = 45;
+    /// Offset of `second_member_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_MEMBER_REFERENCE: usize = 47;
 }
 
 /// Byte offsets for the `coil_compact_persistent_selection_prefix` record.

@@ -60,6 +60,8 @@ pub(crate) enum F3dLossCode {
     ConstructionClosingFlagAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    /// A Coil's Boolean target group whose member count is not one is read as one body selection.
+    CoilTargetMembersAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -625,6 +627,7 @@ impl F3dLossCode {
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::CoilTargetMembersAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -906,6 +909,7 @@ impl F3dLossCode {
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -1287,6 +1291,7 @@ impl F3dLossCode {
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::CoilTargetMembersAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -1537,6 +1542,7 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::CoilTargetMembersAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
@@ -1864,6 +1870,7 @@ mod tests {
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.coil-target-members-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
