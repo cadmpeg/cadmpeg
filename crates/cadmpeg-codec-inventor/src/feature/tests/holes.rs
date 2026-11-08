@@ -513,16 +513,42 @@ fn invalid_recess_dimensions_and_unresolved_boolean_stay_native() {
         ));
         assert!(fixture.project(&[]).is_none());
     }
-    let mut fixture = HoleFixture::new(0, 11, 5);
-    fixture.properties[2] = test_property(
-        3,
-        PmDcFeaturePropertyKind::Boolean {
-            name: String::new(),
-            name_value: 0,
-            value: true,
-        },
-    );
-    assert!(fixture.project(&[]).is_none());
+    // A slot-17 reference that resolves to no Boolean property stays native.
+    let fixture = HoleFixture::new(0, 11, 5);
+    assert!(fixture.project(&[(17, 999)]).is_none());
+}
+
+#[test]
+fn true_slot_17_boolean_drills_along_the_sketch_normal() {
+    for (value, expected) in [(false, [0.0, 0.0, -1.0]), (true, [0.0, 0.0, 1.0])] {
+        let mut fixture = HoleFixture::new(0, 11, 5);
+        fixture.properties[2] = test_property(
+            3,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value,
+            },
+        );
+        let projected = fixture.project(&[]).expect("hole projection");
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
+            placements: Some(placements),
+            ..
+        }) = projected.evaluation.definition()
+        else {
+            panic!("hole");
+        };
+        assert_eq!(placements.len(), 2);
+        for placement in placements {
+            let HolePlacement::Directed { direction, .. } = placement else {
+                panic!("directed");
+            };
+            assert_eq!(
+                direction.get(),
+                Vector3::new(expected[0], expected[1], expected[2])
+            );
+        }
+    }
 }
 
 #[test]
