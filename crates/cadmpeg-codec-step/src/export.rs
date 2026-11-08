@@ -2685,6 +2685,10 @@ impl<'a> Builder<'a> {
                     "VALUE_REPRESENTATION_ITEM",
                     format!("NUMERIC_MEASURE({})", self.emitter.real(value.get())),
                 ),
+                AttributeValue::Boolean(value) => (
+                    "BOOLEAN_REPRESENTATION_ITEM",
+                    if *value { ".T." } else { ".F." }.to_owned(),
+                ),
                 _ => {
                     self.loss(
                         StepLossCode::DocumentAttributeValueDegraded,
