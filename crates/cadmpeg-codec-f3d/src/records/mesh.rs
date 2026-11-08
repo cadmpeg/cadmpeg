@@ -973,7 +973,7 @@ impl DesignMeshPlacement {
                 let gap = offset
                     .checked_sub(previous_end)
                     .ok_or("body references overlap")?;
-                if (index < 4 && gap != 0) || (index == 4 && gap > 1) {
+                if gap != u64::from(index == 4) {
                     return Err("body reference gaps are invalid".into());
                 }
             }

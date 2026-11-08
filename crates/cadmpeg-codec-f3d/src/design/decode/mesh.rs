@@ -782,13 +782,11 @@ fn parse_variable_mesh_body_record(
         let (_, after_preset) =
             lp_utf16_bounded(record, after_library.checked_add(4)?, 0..=record.len())?;
         let mut reference_at = after_preset;
-        if byte_at(reference_at) == Some(0) {
-            reference_at = reference_at.checked_add(1)?;
-        }
         let mut offsets = [0_u64; 5];
         let mut ids = [0_u32; 5];
         for ordinal in 0..5 {
-            if ordinal == 4 && byte_at(reference_at) == Some(0) {
+            if ordinal == 4 {
+                (byte_at(reference_at)? == 0).then_some(())?;
                 reference_at = reference_at.checked_add(1)?;
             }
             ids[ordinal] = exact_local_record_index(record, reference_at)?;
@@ -3602,7 +3600,7 @@ mod tests {
 
     #[test]
     fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
-        for compact in [false, true] {
+        for (compact, null_scope) in [(false, false), (true, false), (false, true)] {
             let mut graph = synthetic_mesh_graph(false);
             let frame = sole_typed_frame(&graph, MESH_BODY_TYPE_GUID);
             let start = frame.start;
@@ -3625,15 +3623,28 @@ mod tests {
             lp_utf16(&mut body, "11111111-2222-4333-8444-555555555555");
             lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
             body.extend_from_slice(&[0; 4]);
-            lp_utf16(&mut body, "PrismMaterial-018");
-            if !compact {
-                body.push(0);
-            }
-            body.extend_from_slice(
-                &old[mesh_body::FEATURE_SCOPE_REFERENCE
-                    ..mesh_body::CONTAINER_GUID_REFERENCE + SAME_SEGMENT_REFERENCE_BYTES],
+            lp_utf16(
+                &mut body,
+                if compact {
+                    "PrismMaterial-018"
+                } else {
+                    "PrismMaterial-1018"
+                },
             );
-            if compact {
+            if null_scope {
+                body.push(0);
+                body.extend_from_slice(
+                    &old[mesh_body::WRAPPER_REFERENCE
+                        ..mesh_body::CONTAINER_GUID_REFERENCE + SAME_SEGMENT_REFERENCE_BYTES],
+                );
+                body.extend_from_slice(
+                    &old[mesh_body::FEATURE_SCOPE_REFERENCE..mesh_body::WRAPPER_REFERENCE],
+                );
+            } else {
+                body.extend_from_slice(
+                    &old[mesh_body::FEATURE_SCOPE_REFERENCE
+                        ..mesh_body::CONTAINER_GUID_REFERENCE + SAME_SEGMENT_REFERENCE_BYTES],
+                );
                 body.push(0);
             }
             body.extend_from_slice(&old[mesh_body::SCENE_NODE_REFERENCE..mesh_body::LEN]);
@@ -3656,13 +3667,17 @@ mod tests {
                     record.bulk_offset = record.bulk_offset.checked_add_signed(delta).unwrap();
                 }
             }
-            let features = parse_mesh_design_records(
+            let parsed = parse_mesh_design_records(
                 &graph.bytes,
                 &graph.meta,
                 "Synthetic/BulkStream.dat",
                 &mut no_texture_asset,
-            )
-            .expect("variable mesh body");
+            );
+            if null_scope {
+                assert!(parsed.is_err());
+                continue;
+            }
+            let features = parsed.expect("variable mesh body");
             let [feature] = features.as_slice() else {
                 panic!("one feature")
             };
@@ -3686,8 +3701,8 @@ mod tests {
                     row["body_variable_layout"]["presence_offsets"],
                     serde_json::json!([45, 174])
                 );
-                assert_eq!(row["scope_reference_offset"], start + 513);
-                assert_eq!(row["scene_node_reference_offset"], start + 557);
+                assert_eq!(row["scope_reference_offset"], start + 514);
+                assert_eq!(row["scene_node_reference_offset"], start + 559);
             }
             let decoded: crate::records::mesh::DesignMeshFeature =
                 serde_json::from_value(wire).unwrap();
