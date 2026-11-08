@@ -405,7 +405,6 @@
           },
           {
             "id": "sldprt:feature-input:name#348:54",
-            "object_id": 7536751,
             "offset": 54,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#348",
@@ -414,7 +413,6 @@
           },
           {
             "id": "sldprt:feature-input:name#348:74",
-            "object_id": 1349807696,
             "offset": 74,
             "ordinal": 1,
             "parent": "sldprt:feature-input:resolved-features#348",
