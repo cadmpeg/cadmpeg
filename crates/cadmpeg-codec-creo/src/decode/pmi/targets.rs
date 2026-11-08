@@ -169,8 +169,10 @@ fn resolve_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<Dimension
     match attachments {
         [(SURFACE_ATTACHMENT, first), (SURFACE_ATTACHMENT, second)] => {
             let mut faces = surface_faces(ir, *first)?;
-            if second != first {
-                faces.extend(surface_faces(ir, *second)?);
+            for face in surface_faces(ir, *second)? {
+                if !faces.contains(&face) {
+                    faces.push(face);
+                }
             }
             Some(DimensionTarget {
                 faces: faces
@@ -278,3 +280,28 @@ fn edge_faces(ir: &CadIr, id: u32) -> Option<BTreeSet<FaceId>> {
         .collect();
     (!faces.is_empty()).then_some(faces)
 }
+
+/// The faces of every dimension slot whose targets are the same in each section
+/// that defines the slot.
+pub(super) fn dimension_targets_by_slot(
+    targets: &BTreeMap<(&str, u32), DimensionTarget>,
+) -> BTreeMap<u32, Vec<PmiTarget>> {
+    let mut by_slot = BTreeMap::<u32, Option<Vec<PmiTarget>>>::new();
+    for ((_, slot), target) in targets {
+        by_slot
+            .entry(*slot)
+            .and_modify(|stored| {
+                if stored.as_ref() != Some(&target.faces) {
+                    *stored = None;
+                }
+            })
+            .or_insert_with(|| Some(target.faces.clone()));
+    }
+    by_slot
+        .into_iter()
+        .filter_map(|(slot, faces)| Some((slot, faces?)))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests;

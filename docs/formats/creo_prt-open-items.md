@@ -1555,12 +1555,13 @@ include identifiers both present and absent in the vertex arena. An ASCII
 `creo_prt.md` §8.9 defines the leading fields of the datum-definition and
 datum-tag rows. The decoder assigns the later definition rows to the slots
 after the prototype in order when their count equals the number of those
-slots, and joins each tag to its definition through `dtm_def_id`. Tolerance
+slots, and joins each tag to its definition through `dtm_def_id`. A type-`5`
+leader uses the targets of the annotation dimension in that slot. Tolerance
 datum labels join datum identities by equal label.
 
 **Need.** Establish the end of a datum-definition row to assign slots when
 null slots occur between rows. Establish the namespace of `note_att` type
-`64` and the target of a datum attached to a dimension slot. Connect the
+`64`. Establish the section that owns a type-`5` slot. Connect the
 `ref_info` references of a tolerance to the datum tags.
 
 **Conflict.** The definition-row prefix search can encounter bytes in nested

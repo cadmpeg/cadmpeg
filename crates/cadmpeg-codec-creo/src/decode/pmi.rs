@@ -64,9 +64,9 @@ pub(super) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<BTreeMap<u32, Vec<PmiTarget>>, CodecError> {
     let Some(neutral) = section(scan, "NeuPrtSld") else {
-        return Ok(());
+        return Ok(BTreeMap::new());
     };
     let has_pmi_attributes = [b"PTC_GTOL_TYPE\0".as_slice(), b"PTC_DIM_TYPE\0".as_slice()]
         .into_iter()
@@ -77,14 +77,14 @@ pub(super) fn transfer(
                 .any(|bytes| bytes == marker)
         });
     if !has_pmi_attributes {
-        return Ok(());
+        return Ok(BTreeMap::new());
     }
     let Some(attributes) = attributes::attributes(ctx, neutral)? else {
         losses.push(
             CreoLossCode::PmiTableIncomplete
                 .note("The neutral attribute table containing PMI did not parse completely."),
         );
-        return Ok(());
+        return Ok(BTreeMap::new());
     };
     let mut tolerances = BTreeMap::<(u32, u32), Tolerance<'_>>::new();
     let mut unresolved = 0usize;
@@ -315,7 +315,7 @@ pub(super) fn transfer(
             datum_state.unresolved
         )));
     }
-    Ok(())
+    Ok(targets::dimension_targets_by_slot(&dimension_targets))
 }
 
 fn section<'a>(scan: &'a ContainerScan<'_>, name: &str) -> Option<View<'a>> {
