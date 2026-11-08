@@ -59,6 +59,11 @@ pub(crate) enum DesignWorkAxisSource {
         /// Enclosing scope's second ordered construction record.
         support_record_index: u32,
     },
+    PointDirection {
+        carrier_record_index: u32,
+        reference_type: u32,
+        input_record_indices: Vec<u32>,
+    },
 }
 
 /// Exact solved construction carried by a `WorkAxis` scope.

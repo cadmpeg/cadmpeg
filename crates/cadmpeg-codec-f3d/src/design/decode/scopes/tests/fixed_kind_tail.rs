@@ -685,8 +685,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         &axis_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&axis_bytes),
         &axis_scope,
+        &std::collections::HashMap::new(),
     )
-    .expect("exact two-point WorkAxis construction");
+    .expect("exact two-point WorkAxis construction")
+    .construction;
     assert_eq!(
         construction.origin.map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.0, 2.0, 3.0]

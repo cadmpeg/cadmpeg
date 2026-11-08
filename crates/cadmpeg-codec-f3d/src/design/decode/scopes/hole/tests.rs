@@ -4,7 +4,7 @@ use cadmpeg_core::decode::u64_from_index;
 use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
-use super::HOLE_POINT_DATA_TYPE_GUID;
+use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
@@ -39,7 +39,7 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
+    let types = HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]);
     let construction = exact_hole_construction_with_ctx(
         &bytes,
         &records,
@@ -141,7 +141,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
         &bytes,
         &records,
         &scope,
-        &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
+        &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]),
     )
     .expect("hole point carrier");
 
@@ -212,7 +212,7 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
         &bytes,
         &records,
         &scope,
-        &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 1))]),
+        &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 1))]),
     )
     .expect("legacy hole point carrier");
 
@@ -282,7 +282,7 @@ fn hole_construction_reads_a_version_four_class_tail_before_its_paired_header() 
         &bytes,
         &records,
         &scope,
-        &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
+        &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]),
     )
     .expect("version-four carrier with its class tail");
     assert_eq!(
@@ -306,7 +306,7 @@ fn hole_construction_refuses_another_record_before_its_paired_header() {
             &bytes,
             &records,
             &scope,
-            &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, version))]),
+            &HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, version))]),
         )
         .is_none());
     }
@@ -373,7 +373,7 @@ fn hole_locations_read_every_point_record_in_reference_order() {
         &records,
         &scope,
         &HashMap::from([
-            (55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
             (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
             (71_u64, (super::POINT_DATA_TYPE_GUID, 3)),
         ]),
@@ -414,7 +414,7 @@ fn hole_locations_keep_the_sole_input_of_a_vertex_rule_record() {
         &records,
         &scope,
         &HashMap::from([
-            (55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
             (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
             (71_u64, (super::POINT_DATA_TYPE_GUID, 3)),
         ]),
@@ -454,7 +454,7 @@ fn hole_locations_drop_the_run_when_one_point_record_does_not_read() {
         &records,
         &scope,
         &HashMap::from([
-            (55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+            (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
             (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
             (71_u64, (super::POINT_DATA_TYPE_GUID, 3)),
         ]),
