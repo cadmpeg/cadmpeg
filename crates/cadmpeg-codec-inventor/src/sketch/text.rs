@@ -28,6 +28,11 @@ const GROUP_TYPE: [u8; 16] = [
 pub(crate) struct TextMember {
     pub(crate) segment_token: cadmpeg_ir::ids::IdentityKey,
     pub(crate) record_ordinal: u32,
+    /// The parsed references of an admitted box member. Absent for a text
+    /// member.
+    pub(crate) box_member: Option<super::box_member::BoxMember>,
+    /// The box roles that the references do not satisfy.
+    pub(crate) role_failures: Vec<super::box_member::BoxRole>,
 }
 
 /// Whether `type_id` names a sketch text member record.
