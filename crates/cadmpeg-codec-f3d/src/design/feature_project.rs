@@ -2296,9 +2296,7 @@ fn bind_extrude_work_plane_targets(
         }
     }
     let sides = match extent {
-        ExtrudeExtent::OneSided { side }
-        | ExtrudeExtent::Symmetric { side }
-        | ExtrudeExtent::SymmetricPerSide { side } => vec![side],
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
         ExtrudeExtent::TwoSided { first, second } => vec![first, second],
     };
     for side in sides {
@@ -8824,13 +8822,12 @@ fn project_extrude(
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
         FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
-    use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength, ZeroLength};
+    use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength};
     // Per-side terminations without side-local modifiers; drafts and offsets
     // are attached below once they are resolved.
     enum ExtentShape {
         OneSided(LinearTermination),
         Symmetric(LinearTermination),
-        SymmetricPerSide(LinearTermination),
         TwoSided {
             first: LinearTermination,
             second: LinearTermination,
@@ -9259,7 +9256,9 @@ fn project_extrude(
                 && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::OneSided(LinearTermination::Blind { length: along }),
+                ExtentShape::OneSided(LinearTermination::Blind {
+                    length: NonZeroLength::from(along.abs()),
+                }),
                 match along_direction {
                     AlongDirection::SignedDistance => along.get() < 0.0,
                     AlongDirection::PrologueReversal => prologue.direction_reversed(),
@@ -9274,19 +9273,21 @@ fn project_extrude(
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
-            let termination = |length| match length {
-                Some(length) => LinearTermination::Blind { length },
-                None => LinearTermination::BlindZero {
-                    length: ZeroLength::ZERO,
-                },
+            let blind = |length: NonZeroLength| LinearTermination::Blind {
+                length: NonZeroLength::from(length.abs()),
             };
-            (
-                ExtentShape::TwoSided {
-                    first: termination(along),
-                    second: termination(against),
-                },
-                along.is_some_and(|length| length.get() < 0.0),
-            )
+            match (along, against) {
+                (Some(along), Some(against)) => (
+                    ExtentShape::TwoSided {
+                        first: blind(along),
+                        second: blind(against),
+                    },
+                    along.get() < 0.0,
+                ),
+                (Some(along), None) => (ExtentShape::OneSided(blind(along)), along.get() < 0.0),
+                (None, Some(against)) => (ExtentShape::OneSided(blind(against)), true),
+                (None, None) => return Ok(None),
+            }
         }
         (
             DesignExtrudeExtent::TwoSidedDistanceThroughAll,
@@ -9299,7 +9300,9 @@ fn project_extrude(
         {
             (
                 ExtentShape::TwoSided {
-                    first: LinearTermination::Blind { length: along },
+                    first: LinearTermination::Blind {
+                        length: NonZeroLength::from(along.abs()),
+                    },
                     second: LinearTermination::ThroughAll {},
                 },
                 along.get() < 0.0,
@@ -9321,7 +9324,9 @@ fn project_extrude(
             };
             (
                 ExtentShape::TwoSided {
-                    first: LinearTermination::Blind { length: along },
+                    first: LinearTermination::Blind {
+                        length: NonZeroLength::from(along.abs()),
+                    },
                     second: LinearTermination::ToFace {
                         face: selected_face(termination)?,
                         offset: side_two_offset.filter(|offset| offset.get() != 0.0),
@@ -9367,16 +9372,16 @@ fn project_extrude(
                 or_none!(target),
                 or_none!(side_one_offset)
             )?);
-            let second = match distance {
-                Some(length) => LinearTermination::Blind { length },
-                None => LinearTermination::BlindZero {
-                    length: ZeroLength::ZERO,
+            let shape = match distance {
+                Some(length) => ExtentShape::TwoSided {
+                    first,
+                    second: LinearTermination::Blind {
+                        length: NonZeroLength::from(length.abs()),
+                    },
                 },
+                None => ExtentShape::OneSided(first),
             };
-            (
-                ExtentShape::TwoSided { first, second },
-                prologue.direction_reversed(),
-            )
+            (shape, prologue.direction_reversed())
         }
         (
             DesignExtrudeExtent::TwoSidedToTargetsOptionZero
@@ -9439,13 +9444,17 @@ fn project_extrude(
                     Some(_) => false,
                     None => prologue.side_extent_discriminators() == Some([1, 1]),
                 };
-            let termination = LinearTermination::Blind { length: along };
-            let shape = if each_side {
-                ExtentShape::SymmetricPerSide(termination)
+            let length = if each_side {
+                or_none!(NonZeroLength::new(2.0 * along.get()))
             } else {
-                ExtentShape::Symmetric(termination)
+                along
             };
-            (shape, along.get() < 0.0)
+            (
+                ExtentShape::Symmetric(LinearTermination::Blind {
+                    length: NonZeroLength::from(length.abs()),
+                }),
+                along.get() < 0.0,
+            )
         }
         (DesignExtrudeExtent::TwoSidedThroughAll, None, None)
             if crate::design::decode::scopes::extrude::through_all::taper_parameters_match(
@@ -9569,9 +9578,6 @@ fn project_extrude(
             side: ExtrudeSide { termination, draft },
         },
         ExtentShape::Symmetric(termination) => ExtrudeExtent::Symmetric {
-            side: ExtrudeSide { termination, draft },
-        },
-        ExtentShape::SymmetricPerSide(termination) => ExtrudeExtent::SymmetricPerSide {
             side: ExtrudeSide { termination, draft },
         },
         ExtentShape::TwoSided { first, second } => ExtrudeExtent::TwoSided {

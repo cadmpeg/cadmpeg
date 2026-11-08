@@ -232,19 +232,19 @@ fn fixed_symmetric_distance_projects_equal_side_distances() {
         },
     );
     let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
-        extent: ExtrudeExtent::SymmetricPerSide { side },
+        extent: ExtrudeExtent::Symmetric { side },
         ..
     })) = projected(&scope)
     else {
         panic!("fixed symmetric distance");
     };
     assert!(
-        matches!(side.termination, LinearTermination::Blind { length } if length.get() == 12.0)
+        matches!(side.termination, LinearTermination::Blind { length } if length.get() == 24.0)
     );
 }
 
 #[test]
-fn two_sided_distance_keeps_a_zero_side() {
+fn two_sided_distance_with_a_zero_side_travels_the_other_side() {
     let scope = fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
         DesignFixedExtrudeParameters::default(),
@@ -279,17 +279,19 @@ fn two_sided_distance_keeps_a_zero_side() {
     .unwrap()
     .expect("two-sided Extrude with zero first side");
     let FeatureDefinition::Operation(FeatureOperation::Extrude {
-        extent: ExtrudeExtent::TwoSided { first, second },
+        direction,
+        extent: ExtrudeExtent::OneSided { side },
         ..
     }) = definition
     else {
-        panic!("two-sided Extrude definition");
+        panic!("one-sided Extrude definition");
     };
-    assert!(
-        matches!(first.termination, LinearTermination::BlindZero { length } if length.get() == 0.0)
+    assert_eq!(
+        direction,
+        cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}
     );
     assert!(
-        matches!(second.termination, LinearTermination::Blind { length } if length.get() == 12.0)
+        matches!(side.termination, LinearTermination::Blind { length } if length.get() == 12.0)
     );
 }
 
@@ -435,17 +437,6 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
                     },
                 ..
             }) => Some(length.get()),
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                extent:
-                    ExtrudeExtent::SymmetricPerSide {
-                        side:
-                            ExtrudeSide {
-                                termination: LinearTermination::Blind { length },
-                                ..
-                            },
-                    },
-                ..
-            }) => Some(2.0 * length.get()),
             _ => panic!("symmetric blind Extrude: {definition:?}"),
         }
     };

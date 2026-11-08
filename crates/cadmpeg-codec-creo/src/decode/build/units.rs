@@ -679,9 +679,7 @@ fn scale_extrude_extent(
     use cadmpeg_ir::features::ExtrudeExtent;
 
     match extent {
-        ExtrudeExtent::OneSided { side }
-        | ExtrudeExtent::Symmetric { side }
-        | ExtrudeExtent::SymmetricPerSide { side } => {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
             scale_extrude_side(side, scale)?;
         }
         ExtrudeExtent::TwoSided { first, second } => {
@@ -724,7 +722,6 @@ fn scale_linear_termination(
         }
         LinearTermination::ToPlane { plane, .. } => scale_support_plane_frame(plane, scale)?,
         LinearTermination::Unresolved {}
-        | LinearTermination::BlindZero { .. }
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}

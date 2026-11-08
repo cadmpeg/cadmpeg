@@ -129,9 +129,7 @@ fn surface_selection_face_bindings<'a>(
 
 fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide> {
     match extent {
-        ExtrudeExtent::OneSided { side }
-        | ExtrudeExtent::Symmetric { side }
-        | ExtrudeExtent::SymmetricPerSide { side } => vec![side],
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
         ExtrudeExtent::TwoSided { first, second } => vec![first, second],
     }
 }

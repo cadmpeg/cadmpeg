@@ -135,7 +135,6 @@ rewrite_enum!(ExtrudeExtent, []; {
     OneSided { side },
     TwoSided { first, second },
     Symmetric { side },
-    SymmetricPerSide { side },
 });
 
 rewrite_record!(ExtrudeSide, []; { termination, draft });
@@ -320,7 +319,6 @@ rewrite_enum!(InsertedBodies, []; {
 rewrite_enum!(LinearTermination, []; {
     Unresolved {  },
     Blind { length },
-    BlindZero { length },
     ThroughAll {  },
     ThroughNext {  },
     ToFirst {  },

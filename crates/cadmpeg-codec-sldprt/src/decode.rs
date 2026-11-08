@@ -1221,7 +1221,6 @@ fn append_design_losses(
         | LinearTermination::ToShape { target: face } => incomplete_face_selection(face),
         LinearTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
         LinearTermination::Blind { .. }
-        | LinearTermination::BlindZero { .. }
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
@@ -1241,9 +1240,7 @@ fn append_design_losses(
         | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
-        ExtrudeExtent::OneSided { side }
-        | ExtrudeExtent::Symmetric { side }
-        | ExtrudeExtent::SymmetricPerSide { side } => {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
             incomplete_linear_termination(&side.termination)
         }
         ExtrudeExtent::TwoSided { first, second } => {

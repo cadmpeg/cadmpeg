@@ -88,9 +88,9 @@ pub(super) fn extrude_extent_is_incomplete(
             || termination_dependency_is_incomplete(&side.termination, dependencies)
     };
     match extent {
-        ExtrudeExtent::OneSided { side }
-        | ExtrudeExtent::Symmetric { side }
-        | ExtrudeExtent::SymmetricPerSide { side } => side_is_incomplete(side),
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+            side_is_incomplete(side)
+        }
         ExtrudeExtent::TwoSided { first, second } => {
             side_is_incomplete(first) || side_is_incomplete(second)
         }
@@ -161,7 +161,7 @@ pub(super) fn termination_is_incomplete(termination: &LinearTermination) -> bool
         },
         LinearTermination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
         LinearTermination::ToShape { target } => face_selection_is_incomplete(target),
-        LinearTermination::Blind { .. } | LinearTermination::BlindZero { .. } => false,
+        LinearTermination::Blind { .. } => false,
         LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}

@@ -154,9 +154,7 @@ pub(super) fn collect_feature_coverage(
                         if face_selection_has_unresolved_operands(face)
                 );
                 let incomplete_termination = match extent {
-                    ExtrudeExtent::OneSided { side }
-                    | ExtrudeExtent::Symmetric { side }
-                    | ExtrudeExtent::SymmetricPerSide { side } => {
+                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                         linear_termination_has_unresolved_operands(&side.termination)
                     }
                     ExtrudeExtent::TwoSided { first, second } => {

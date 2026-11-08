@@ -14,7 +14,7 @@ use crate::math::{Point2, Point3, Vector3};
 use crate::products::JointId;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonZeroLength,
-    NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle, ZeroLength,
+    NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
 };
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
@@ -7238,11 +7238,6 @@ pub enum LinearTermination {
         /// Fixed travel distance.
         length: NonZeroLength,
     },
-    #[doc = "A fixed zero travel distance."]
-    BlindZero {
-        #[doc = "The zero travel distance."]
-        length: ZeroLength,
-    },
     /// Extends through all material.
     ThroughAll {},
     /// Extends until it exits the next material region.
@@ -7393,11 +7388,6 @@ pub enum ExtrudeExtent {
     /// total travel split evenly around the plane.
     Symmetric {
         /// The mirrored side.
-        side: ExtrudeSide,
-    },
-    #[doc = "One side mirrored across the profile plane, with blind length per side."]
-    SymmetricPerSide {
-        #[doc = "The mirrored side."]
         side: ExtrudeSide,
     },
 }

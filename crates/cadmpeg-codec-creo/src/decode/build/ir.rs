@@ -155,7 +155,6 @@ pub(super) fn linear_termination_has_unresolved_operands(termination: &LinearTer
             )
         }
         LinearTermination::Blind { .. }
-        | LinearTermination::BlindZero { .. }
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}

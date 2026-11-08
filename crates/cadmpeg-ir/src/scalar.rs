@@ -277,19 +277,6 @@ checked_scalar!(
     NonZeroLength, value, value != 0.0, "NonZeroLength must be finite and nonzero"
 );
 checked_scalar!(
-    #[doc = "A zero length in canonical millimeters."]
-    ZeroLength,
-    value,
-    value == 0.0,
-    "ZeroLength must be zero"
-);
-
-impl ZeroLength {
-    #[doc = "The zero length."]
-    pub const ZERO: Self = Self(0.0);
-}
-
-checked_scalar!(
     /// A nonnegative finite length in canonical millimeters.
     NonNegativeLength, value, value >= 0.0, "NonNegativeLength must be nonnegative and finite"
 );

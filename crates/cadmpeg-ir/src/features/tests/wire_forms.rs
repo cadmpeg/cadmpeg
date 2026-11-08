@@ -148,14 +148,6 @@ fn feature_extents_round_trip_through_json() {
                 draft: None,
             },
         },
-        ExtrudeExtent::SymmetricPerSide {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: crate::scalar::NonZeroLength::new(12.5).unwrap(),
-                },
-                draft: None,
-            },
-        },
         ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::Blind {
@@ -180,28 +172,6 @@ fn feature_extents_round_trip_through_json() {
             },
         },
     ];
-    assert_eq!(
-        serde_json::to_value(&extents[2]).unwrap(),
-        serde_json::json!({
-            "kind": "symmetric_per_side",
-            "side": { "termination": { "kind": "blind", "length": 12.5 } }
-        })
-    );
-    let zero = LinearTermination::BlindZero {
-        length: crate::scalar::ZeroLength::ZERO,
-    };
-    assert_eq!(
-        serde_json::to_value(&zero).unwrap(),
-        serde_json::json!({"kind": "blind_zero", "length": 0.0})
-    );
-    assert_eq!(
-        serde_json::from_value::<LinearTermination>(serde_json::to_value(&zero).unwrap()).unwrap(),
-        zero
-    );
-    assert!(serde_json::from_value::<LinearTermination>(
-        serde_json::json!({"kind": "blind_zero", "length": 1.0})
-    )
-    .is_err());
     let json = serde_json::to_string(&extents).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<ExtrudeExtent>>(&json).unwrap(),

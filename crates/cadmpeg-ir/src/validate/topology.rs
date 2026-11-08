@@ -4511,8 +4511,7 @@ fn definition_terminations(
     match definition {
         crate::features::FeatureOperation::Extrude { extent, .. } => match extent {
             crate::features::ExtrudeExtent::OneSided { side }
-            | crate::features::ExtrudeExtent::Symmetric { side }
-            | crate::features::ExtrudeExtent::SymmetricPerSide { side } => {
+            | crate::features::ExtrudeExtent::Symmetric { side } => {
                 terminations.push(TerminationRef::Linear(&side.termination));
             }
             crate::features::ExtrudeExtent::TwoSided { first, second } => {

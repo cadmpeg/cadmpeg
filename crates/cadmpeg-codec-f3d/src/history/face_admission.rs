@@ -297,8 +297,7 @@ impl FaceAdmission<'_, '_> {
                 };
                 match extent {
                     ExtrudeExtent::OneSided { side: value }
-                    | ExtrudeExtent::Symmetric { side: value }
-                    | ExtrudeExtent::SymmetricPerSide { side: value } => side(value)?,
+                    | ExtrudeExtent::Symmetric { side: value } => side(value)?,
                     ExtrudeExtent::TwoSided { first, second } => {
                         side(first)?;
                         side(second)?;

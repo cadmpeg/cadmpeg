@@ -83,9 +83,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )
             };
             let (first_draft, second_side_draft, any_side_offset) = match extent {
-                ExtrudeExtent::OneSided { side }
-                | ExtrudeExtent::Symmetric { side }
-                | ExtrudeExtent::SymmetricPerSide { side } => (side.draft, None, has_offset(side)),
+                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                    (side.draft, None, has_offset(side))
+                }
                 ExtrudeExtent::TwoSided { first, second } => (
                     first.draft,
                     second.draft,
@@ -207,7 +207,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match extent {
                 ExtrudeExtent::OneSided { side } => match &side.termination {
                     LinearTermination::Unresolved {} => {}
-                    LinearTermination::BlindZero { .. } => return Err(unsupported_extent()),
                     LinearTermination::Blind { length } => {
                         if properties.contains_key("EndCondition") || existing.is_none() {
                             properties.insert(
@@ -221,7 +220,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             cadmpeg_core::nonblank_literal!("Depth")
                         };
                         let value = format_length_like(
-                            length.abs().into(),
+                            (*length).into(),
                             existing
                                 .and_then(|record| record.parameters.get(key.as_str()))
                                 .map(String::as_str),
@@ -298,22 +297,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Depth"),
-                            format_length_mm(length.abs().into()),
-                        );
-                    }
-                    _ => return Err(unsupported_extent()),
-                },
-                ExtrudeExtent::SymmetricPerSide { side } => match &side.termination {
-                    LinearTermination::Blind { length } => {
-                        properties.insert(
-                            cadmpeg_core::nonblank_literal!("EndCondition"),
-                            "Symmetric".into(),
-                        );
-                        let total = cadmpeg_ir::scalar::Length::new(length.abs().get() * 2.0)
-                            .ok_or_else(unsupported_extent)?;
-                        parameters.insert(
-                            cadmpeg_core::nonblank_literal!("Depth"),
-                            format_length_mm(total),
+                            format_length_mm((*length).into()),
                         );
                     }
                     _ => return Err(unsupported_extent()),
@@ -330,11 +314,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             );
                             parameters.insert(
                                 cadmpeg_core::nonblank_literal!("Depth"),
-                                format_length_mm(first.abs().into()),
+                                format_length_mm((*first).into()),
                             );
                             parameters.insert(
                                 cadmpeg_core::nonblank_literal!("Depth2"),
-                                format_length_mm(second.abs().into()),
+                                format_length_mm((*second).into()),
                             );
                         }
                         (LinearTermination::ThroughAll {}, LinearTermination::ThroughAll {}) => {

@@ -255,7 +255,7 @@ fn distance_and_through_all_retains_auxiliary_selection() {
 }
 
 #[test]
-fn target_first_and_distance_second_keep_the_signed_parameter() {
+fn target_first_and_distance_second_travel_the_parameter_magnitude() {
     use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, LinearTermination};
     let scope = scope_with_extent(DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero);
     let profile = profile_group(100, 0);
@@ -306,7 +306,7 @@ fn target_first_and_distance_second_keep_the_signed_parameter() {
         matches!(first.termination, LinearTermination::ToShape { target: FaceSelection::Native(id) } if id == target_id)
     );
     assert!(
-        matches!(second.termination, LinearTermination::Blind { length } if length.get() == -8.0)
+        matches!(second.termination, LinearTermination::Blind { length } if length.get() == 8.0)
     );
 }
 
@@ -467,7 +467,7 @@ fn surface_extrude_retains_the_role_43_group_as_its_native_profile() {
 }
 
 #[test]
-fn signed_distance_retains_the_parameter_and_orients_the_sweep() {
+fn negative_distance_reverses_the_sweep() {
     use cadmpeg_ir::features::{ExtrudeDirection, ExtrudeExtent, LinearTermination};
     let scope = scope();
     let group = profile_group(100, 0);
@@ -494,7 +494,7 @@ fn signed_distance_retains_the_parameter_and_orients_the_sweep() {
         panic!("signed-distance Extrude definition");
     };
     assert!(
-        matches!(side.termination, LinearTermination::Blind { length } if length.get() == -15.0)
+        matches!(side.termination, LinearTermination::Blind { length } if length.get() == 15.0)
     );
 }
 

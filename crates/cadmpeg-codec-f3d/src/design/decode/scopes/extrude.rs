@@ -1309,7 +1309,8 @@ fn exact_current_extrude_prologue_with(
         && !(direction_face_extend_values[0] == 2
             && (first_side_extent == 4
                 || (first_side_extent == 2
-                    && direct_offset == start.checked_add(shifted_extrude::OPERATION)?)))
+                    && direct_offset == start.checked_add(shifted_extrude::OPERATION)?
+                    && matches!(first_target_option, Some(0 | 2)))))
     {
         return None;
     }

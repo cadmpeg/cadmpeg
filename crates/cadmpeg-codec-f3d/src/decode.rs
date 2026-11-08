@@ -538,7 +538,6 @@ fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTerm
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
         LinearTermination::Blind { .. }
-        | LinearTermination::BlindZero { .. }
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
@@ -665,7 +664,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 | ExtrudeStart::FromPlane { .. } => true,
             };
             let extent_is_resolved = match extent {
-                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } | ExtrudeExtent::SymmetricPerSide { side } => {
+                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                     linear_termination_is_resolved(&side.termination)
                 }
                 ExtrudeExtent::TwoSided { first, second } => {
@@ -1666,9 +1665,9 @@ fn design_projection_gaps(
                     face_selection(face);
                 }
                 let (first, second) = match extent {
-                    ExtrudeExtent::OneSided { side }
-                    | ExtrudeExtent::Symmetric { side }
-                    | ExtrudeExtent::SymmetricPerSide { side } => (side, None),
+                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                        (side, None)
+                    }
                     ExtrudeExtent::TwoSided { first, second } => (first, Some(second)),
                 };
                 for side in [Some(first), second].into_iter().flatten() {
@@ -1941,29 +1940,29 @@ fn report_design_projection_gaps(
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    let wall_parameters: std::collections::HashSet<(&str, u32)> = native
-        .design_parameters
-        .iter()
-        .filter(|parameter| {
-            matches!(
-                parameter.source_kind_str(),
-                "Side1WallThickness" | "Side2WallThickness"
-            )
-        })
-        .filter_map(|parameter| {
-            crate::ids::native_stream(&parameter.id).map(|stream| (stream, parameter.record_index))
-        })
-        .collect();
-    let wall_scopes: std::collections::HashSet<(&str, u32)> = native
-        .design_parameter_owners
-        .iter()
-        .filter_map(|owner| {
-            let stream = crate::ids::native_stream(owner.id())?;
-            wall_parameters
-                .contains(&(stream, owner.parameter_record_index()))
-                .then_some((stream, owner.scope_record_index()))
-        })
-        .collect();
+    let scopes_owning = |kinds: &[&str]| -> std::collections::HashSet<(&str, u32)> {
+        let parameters: std::collections::HashSet<(&str, u32)> = native
+            .design_parameters
+            .iter()
+            .filter(|parameter| kinds.contains(&parameter.source_kind_str()))
+            .filter_map(|parameter| {
+                crate::ids::native_stream(&parameter.id)
+                    .map(|stream| (stream, parameter.record_index))
+            })
+            .collect();
+        native
+            .design_parameter_owners
+            .iter()
+            .filter_map(|owner| {
+                let stream = crate::ids::native_stream(owner.id())?;
+                parameters
+                    .contains(&(stream, owner.parameter_record_index()))
+                    .then_some((stream, owner.scope_record_index()))
+            })
+            .collect()
+    };
+    let wall_scopes = scopes_owning(&["Side1WallThickness", "Side2WallThickness"]);
+    let along_scopes = scopes_owning(&["AlongDistance"]);
     let scopes_by_id: std::collections::HashMap<&str, _> = native
         .design_parameter_scopes
         .iter()
@@ -2061,7 +2060,7 @@ fn report_design_projection_gaps(
             )
         ) {
             report.losses.push(F3dLossCode::FeatureExtrudeTargetOptionAssumed.note(
-                format!("Extrude {} assumes the target option preserves the selected side terminations (DR-329).", feature.id),
+                format!("Extrude {} assumes the target option preserves the selected side terminations (DR-117).", feature.id),
             ));
         }
         if prologue.extent()
@@ -2081,30 +2080,34 @@ fn report_design_projection_gaps(
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()
         {
-            let reading = match feature.evaluation.definition() {
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Extrude {
-                        extent: cadmpeg_ir::features::ExtrudeExtent::SymmetricPerSide { .. },
-                        ..
-                    },
-                ) => Some("each side"),
+            let fixed_lane_only = scope
+                .fixed_extrude_parameters()
+                .is_some_and(|fixed| fixed.along_distance.is_some())
+                && !crate::ids::native_stream(&scope.id)
+                    .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let reading = matches!(
+                feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude {
                         extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric { .. },
                         ..
                     },
-                ) => Some("the whole travel"),
-                _ => None,
-            };
+                )
+            ) && prologue.side_extent_discriminators() != Some([1, 1]);
+            let reading = reading.then_some(if fixed_lane_only {
+                "each side"
+            } else {
+                "the whole travel"
+            });
             if let Some(reading) = reading {
                 report
                     .losses
-                    .push(F3dLossCode::FeatureExtrudeSymmetricDistanceAssumed.note(
-                    format!(
-                        "Extrude {} assumes the symmetric distance applies to {reading} (DR-329).",
+                    .push(
+                        F3dLossCode::FeatureExtrudeSymmetricDistanceAssumed.note(format!(
+                        "Extrude {} assumes the symmetric distance applies to {reading} (DR-78).",
                         feature.id
-                    ),
-                ));
+                    )),
+                    );
             }
         }
     }
