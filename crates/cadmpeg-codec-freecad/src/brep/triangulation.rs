@@ -140,9 +140,8 @@ impl TextTriangulation {
         &self.triangles
     }
 
-    #[cfg(test)]
     /// Returns optional UV coordinates in node order.
-    pub(super) fn uv_nodes(&self) -> Option<&[FinitePoint2]> {
+    pub(crate) fn uv_nodes(&self) -> Option<&[FinitePoint2]> {
         self.uv_nodes.as_ref().map(|values| values.0.as_slice())
     }
 

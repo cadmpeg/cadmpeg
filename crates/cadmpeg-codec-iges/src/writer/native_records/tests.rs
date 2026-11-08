@@ -211,6 +211,7 @@ fn native_dispositions_distinguish_emitted_and_unwritable_level_records() {
         &export.losses,
         &export.regenerated,
         &BTreeSet::new(),
+        &BTreeSet::new(),
     );
     assert_eq!(
         dispositions.record_disposition("iges", "definition_levels", emitted),

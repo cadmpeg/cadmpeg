@@ -25,7 +25,10 @@ pub(super) fn admission(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    let document = serde_json::to_value(&ir.model).map_err(CodecError::malformed)?;
+    let Ok(document) = serde_json::to_value(&ir.model) else {
+        debug_assert!(false, "the CADIR model serializes");
+        return Ok(losses);
+    };
     // Only the identity of each arena row counts. References echo record
     // identities inside nested objects; a deep walk would mistake every
     // referenced record for a duplicate.
@@ -71,10 +74,7 @@ pub(super) fn admission(
     Ok(losses)
 }
 
-pub(super) fn close(
-    objects: &mut Vec<Object>,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+pub(super) fn close(objects: &mut Vec<Object>, losses: &mut Vec<LossNote>) {
     let live: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for object in objects {
         let before = object.dependencies.len();
@@ -88,7 +88,10 @@ pub(super) fn close(
             )));
         }
         for (name, xml) in &mut object.properties {
-            let parsed = roxmltree::Document::parse(xml).map_err(CodecError::malformed)?;
+            let Ok(parsed) = roxmltree::Document::parse(xml) else {
+                debug_assert!(false, "generated property XML parses");
+                continue;
+            };
             let mut missing = Vec::new();
             for node in parsed.descendants().filter(roxmltree::Node::is_element) {
                 if !matches!(node.tag_name().name(), "Link" | "LinkSub" | "XLink")
@@ -114,7 +117,6 @@ pub(super) fn close(
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -134,7 +136,7 @@ mod tests {
             Object::new("Second".into(), "App::Feature", "Second"),
         ];
         let mut losses = Vec::new();
-        close(&mut objects, &mut losses).unwrap();
+        close(&mut objects, &mut losses);
         let xml = roxmltree::Document::parse(&objects[0].properties["Links"]).unwrap();
         let list = xml
             .descendants()

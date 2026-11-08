@@ -35,7 +35,7 @@ pub(super) fn place(
         [x.z, y.z, z.z, origin.z],
     ])
     .ok_or_else(|| FeatureError::Unsupported("feature frame is non-finite".into()))?;
-    object.set("Placement", super::super::placement(transform)?);
+    object.set("Placement", super::super::placement(transform));
     Ok(())
 }
 pub(super) fn axis_placement(

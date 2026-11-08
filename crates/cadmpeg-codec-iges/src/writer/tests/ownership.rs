@@ -100,6 +100,23 @@ fn exact_surface_export_keeps_its_active_rectangle() {
     );
 }
 
+fn has_point(ir: &CadIr, expected: [f64; 3]) -> bool {
+    ir.model.points.iter().any(|point| {
+        point
+            .position()
+            .coordinates()
+            .iter()
+            .zip(expected)
+            .all(|(coordinate, value)| (coordinate.get() - value).abs() < 1e-12)
+    })
+}
+
+fn has_withheld_support(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
+    losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
+    })
+}
+
 fn support_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Step,
@@ -109,8 +126,10 @@ fn support_association() -> SourceObjectAssociation {
     }
 }
 
+/// A support carrier whose source parent is not written reappears as
+/// standalone geometry (#209 §5.1, §5.2).
 #[test]
-fn unowned_support_surface_and_point_are_withheld_with_loss() {
+fn unowned_support_surface_and_point_write_as_standalone_geometry() {
     let mut ir = rectangle();
     let mut support = ir.model.surfaces[0].clone();
     support.id = "test:model:surface#support".try_into().unwrap();
@@ -122,42 +141,16 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
         Some(support_association()),
     ));
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
-    assert_eq!(
-        generated
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.code == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
-            })
-            .count(),
-        2
+    assert!(
+        !has_withheld_support(&generated.losses),
+        "{:?}",
+        generated.losses
     );
-    assert!(generated
-        .losses
-        .iter()
-        .filter(|loss| loss.code
-            == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind())
-        .all(|loss| loss.message.starts_with("1 support geometry record")));
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    // The owned rectangle writes with its domain-rectangle boundary while
-    // the support surface stays withheld. A face carrier re-decodes with
-    // the support role, matching every bounded-sheet decode.
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(
-        result.ir().model.surfaces[0]
-            .source_object
-            .as_ref()
-            .unwrap()
-            .geometry_role,
-        Some(SourceGeometryRole::Support)
-    );
-    // The four domain corners re-decode as points and vertices; the support
-    // point stays withheld.
-    assert_eq!(result.ir().model.points.len(), 4);
-    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().model.surfaces.len(), 2);
+    assert!(has_point(result.ir(), [2.0, 3.0, 4.0]));
 }
 
 #[test]
@@ -312,20 +305,28 @@ fn face_binding_writes_a_314_definition() {
     );
 }
 
+/// A support surface whose source parent is not written reappears as
+/// standalone geometry, so the transfer is not empty (#209 §5.1).
 #[test]
-fn support_only_surface_export_refuses_an_empty_transfer() {
+fn support_only_surface_writes_as_standalone_geometry() {
     let mut ir = rectangle();
     ir.model.surfaces[0].source_object = Some(support_association());
     let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3)
-        .expect("support-only geometry produces an empty valid file");
-    assert!(synthesis
+        .expect("support-only geometry synthesizes");
+    assert!(!synthesis
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::NoExportableSolids.kind()));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(synthesis.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.surfaces.len(), 1);
 }
 
+/// A support point whose source parent is not written reappears as
+/// standalone geometry, so the transfer is not empty (#209 §5.1).
 #[test]
-fn support_only_point_export_refuses_an_empty_transfer() {
+fn support_only_point_writes_as_standalone_geometry() {
     let mut ir = CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
@@ -333,11 +334,15 @@ fn support_only_point_export_refuses_an_empty_transfer() {
         Some(support_association()),
     ));
     let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3)
-        .expect("support-only geometry produces an empty valid file");
-    assert!(synthesis
+        .expect("support-only geometry synthesizes");
+    assert!(!synthesis
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::NoExportableSolids.kind()));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(synthesis.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(has_point(result.ir(), [2.0, 3.0, 4.0]));
 }
 
 #[test]
@@ -375,10 +380,10 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
         .is_ok());
 }
 
-/// A physically dependent entity is valid only under a written parent, so a
-/// support curve that nothing written owns is withheld.
+/// A support curve that nothing written owns reappears as standalone
+/// geometry beside the rectangle's domain boundary (#209 §5.1).
 #[test]
-fn support_curve_without_topology_is_withheld_with_loss() {
+fn support_curve_without_topology_writes_as_standalone_geometry() {
     let mut ir = rectangle();
     let fixture = IgesCodec
         .decode(
@@ -391,19 +396,21 @@ fn support_curve_without_topology_is_withheld_with_loss() {
     curve.source_object = Some(support_association());
     ir.model.curves.push(curve);
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
-    assert!(generated.losses.iter().any(|loss| loss.code
-        == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
-        && loss.message.starts_with("1 support geometry record")));
+    assert!(
+        !has_withheld_support(&generated.losses),
+        "{:?}",
+        generated.losses
+    );
     let result = round_trip(&ir);
-    // The rectangle writes with its domain-rectangle boundary; only the
-    // support curve is withheld.
-    assert_eq!(result.ir().model.curves.len(), 4);
-    assert_eq!(result.ir().model.edges.len(), 4);
+    // The four domain-boundary isocurves and the support curve.
+    assert_eq!(result.ir().model.curves.len(), 5);
     assert_eq!(result.ir().model.surfaces.len(), 1);
 }
 
+/// A physically dependent IGES curve whose parent is absent reappears as
+/// standalone geometry (#209 §5.1).
 #[test]
-fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
+fn dependent_iges_curve_without_a_parent_round_trips_as_standalone_geometry() {
     let mut file = crate::test_support::test_curves_and_surfaces::line_file(0);
     let directory = file
         .chunks_exact_mut(81)
@@ -415,18 +422,17 @@ fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
         .unwrap();
     assert_eq!(decoded.ir().model.curves.len(), 1);
     assert!(decoded.ir().model.edges.is_empty());
-    let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3)
-        .expect("an empty model is written");
-    assert!(generated
-        .losses
-        .iter()
-        .any(|loss| loss.code
-            == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()));
+    let generated =
+        super::super::synthesize(decoded.ir(), IgesVersion::V5_3).expect("the curve is written");
+    assert!(
+        !has_withheld_support(&generated.losses),
+        "{:?}",
+        generated.losses
+    );
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("the written file decodes");
-    assert!(round_trip.ir().model.curves.is_empty());
-    assert!(round_trip.ir().model.edges.is_empty());
+    assert_eq!(round_trip.ir().model.curves.len(), 1);
 }
 
 #[test]
@@ -797,8 +803,10 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
     }
 }
 
+/// A parameter-space curve that no face writes reappears as standalone
+/// geometry on the free-geometry path (#209 §5.1).
 #[test]
-fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
+fn unowned_parameter_curve_writes_as_standalone_geometry() {
     use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
     let file = owned_test_file(&[
         OwnedTestEntity {
@@ -820,14 +828,16 @@ fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
-    assert!(generated.losses.iter().any(|loss| loss.code
-        == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
-        && loss.message.contains("parameter-space carrier")));
+    assert!(
+        !has_withheld_support(&generated.losses),
+        "{:?}",
+        generated.losses
+    );
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.curves.is_empty());
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(has_point(result.ir(), [2.0, 3.0, 4.0]));
 }
 
 #[test]

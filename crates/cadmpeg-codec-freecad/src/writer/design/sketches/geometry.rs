@@ -123,7 +123,7 @@ pub(super) fn row(entity: &SketchEntity) -> Option<String> {
                 return None;
             }
             let axis = crate::writer::geometry::nurbs::axis(
-                curve.knots(),
+                curve.knots().as_slice(),
                 curve.degree(),
                 poles.len(),
                 curve.periodic(),

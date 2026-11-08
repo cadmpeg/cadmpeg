@@ -224,7 +224,7 @@ pub(super) fn pattern_offsets(
     let mut bytes = count.to_le_bytes().to_vec();
     for pair in offsets.windows(2) {
         let delta = pair[1] - pair[0];
-        let value = if angular { delta.to_degrees() } else { delta };
+        let value = if angular { xml::degrees(delta) } else { delta };
         if !value.is_finite() {
             return unsupported("pattern spacing overflows finite length");
         }

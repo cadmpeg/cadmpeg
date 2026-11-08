@@ -70,7 +70,7 @@ fn overflowing_linked_placement_keeps_occurrence_placement() {
     objects[1].set("Placement", "stale".into());
     objects[1].set("ScaleVector", "stale".into());
     let mut losses = Vec::new();
-    resolve_linked_transforms(&ir, &mut objects, &uses, &mut losses).unwrap();
+    resolve_linked_transforms(&ir, &mut objects, &uses, &mut losses);
     assert!(!objects[1].properties.contains_key("Placement"));
     assert!(!objects[1].properties.contains_key("ScaleVector"));
     assert!(objects[1].properties["LinkTransform"].contains("value=\"0\""));
