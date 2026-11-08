@@ -303,6 +303,8 @@ pub(crate) enum RhinoLossCode {
     WriterFreeVertexMetadataReduced,
     /// A point's display assignment replaces its containing body's color.
     WriterBodyColorReduced,
+    /// A presentation state sequence is written at its stored position.
+    WriterPresentationStateOrderReduced,
     /// A shared pcurve needs different native carriers for its used intervals.
     WriterPcurveExpanded,
     /// A pcurve is reparameterized to follow its trim direction.
@@ -552,6 +554,7 @@ impl RhinoLossCode {
             Self::WriterPointCloudAppearanceReduced => "writer.point-cloud-appearance-reduced",
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
+            Self::WriterPresentationStateOrderReduced => "writer.presentation-state-order-reduced",
             Self::WriterPcurveExpanded => "writer.pcurve-expanded",
             Self::WriterPcurveDirectionReversed => "writer.pcurve-direction-reversed",
             Self::WriterPcurveDomainRestricted => "writer.pcurve-domain-restricted",
@@ -683,6 +686,7 @@ impl RhinoLossCode {
             | Self::WriterSubobjectAppearanceReduced
             | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
+            Self::WriterPresentationStateOrderReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAttributesOmitted
             | Self::WriterSettingColorReduced

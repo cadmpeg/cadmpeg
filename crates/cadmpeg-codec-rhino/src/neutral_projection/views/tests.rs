@@ -51,6 +51,12 @@ fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, Cod
             has_attributes: record
                 .field("attributes")
                 .is_some_and(|value| value.is_object()),
+            camera_orientation_override: record.field("camera_orientation_override").and_then(
+                |value| {
+                    let text = value.as_str().map(str::to_owned)?;
+                    crate::views::parse_orientation_override(&text)
+                },
+            ),
             camera: record.field("viewport").and_then(|value| {
                 value.as_object().map(|fields| {
                     camera(fields).expect(

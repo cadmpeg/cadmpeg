@@ -2,11 +2,11 @@
 //! Typed presentation tables authored from current document state.
 
 use super::{
-    attributed_object_record, class_wrapper, class_wrapper_with_direct, crc_chunk,
-    crc_chunk_with_direct, default_layer_payload, framed_object_record, native_count_limit,
-    neutral_object_uuid, object_attributes_payload, short_chunk, unit_color_channel, utf16,
-    wire_index, CadIr, CodecError, LossNote, RhinoLossCode, LAYER_CLASS, TCODE_ENDOFTABLE,
-    TCODE_LAYER_RECORD,
+    attribute_userdata_chunk, attributed_object_record, class_wrapper, class_wrapper_with_direct,
+    crc_chunk, crc_chunk_with_direct, default_layer_payload, framed_object_record,
+    framed_object_record_full, native_count_limit, neutral_object_uuid, object_attributes_payload,
+    object_user_strings, short_chunk, unit_color_channel, utf16, wire_index, CadIr, CodecError,
+    LossNote, RhinoLossCode, LAYER_CLASS, TCODE_ENDOFTABLE, TCODE_LAYER_RECORD,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use serde_json::{Map, Value};

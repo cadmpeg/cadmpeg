@@ -132,9 +132,11 @@ fn encode_material(
     if let Some(minor) = legacy_minor {
         return encode_legacy_material(
             identity,
-            index,
-            name,
-            component_uuid,
+            LegacyComponent {
+                index,
+                name,
+                uuid: component_uuid,
+            },
             appearance,
             fields,
             textures,
@@ -285,24 +287,30 @@ fn legacy_material_minor(fields: Option<&Map<String, Value>>) -> Option<i32> {
         && (reflection_glossiness.is_none()
             || refraction_glossiness.is_none()
             || fresnel_ior.is_none())
-        && (alpha.is_none() || alpha.is_some_and(Value::is_null))
+        && alpha.is_none_or(Value::is_null)
     {
         return Some(3);
     }
     None
 }
 
+/// The component header of a legacy material record.
+struct LegacyComponent<'a> {
+    index: i32,
+    name: &'a str,
+    uuid: [u8; 16],
+}
+
 fn encode_legacy_material(
     identity: &str,
-    index: i32,
-    name: &str,
-    component_uuid: [u8; 16],
+    component: LegacyComponent<'_>,
     appearance: Option<&Appearance>,
     fields: Option<&Map<String, Value>>,
     textures: &[Value],
     minor: i32,
 ) -> Result<Vec<u8>, WriteError> {
-    let mut body = component_uuid.to_vec();
+    let LegacyComponent { index, name, uuid } = component;
+    let mut body = uuid.to_vec();
     body.extend(index.to_le_bytes());
     body.extend(utf16(name)?);
     body.extend(
@@ -426,7 +434,12 @@ fn encode_legacy_material(
                 .unwrap_or(false),
         ));
     }
-    let inner = anonymous_with_children(1, minor, &body, &[texture_start..texture_end])?;
+    let inner = anonymous_with_children(
+        1,
+        minor,
+        &body,
+        std::slice::from_ref(&(texture_start..texture_end)),
+    )?;
     let mut payload = vec![0x20];
     payload.extend(inner);
     Ok(crc_chunk_with_direct(
