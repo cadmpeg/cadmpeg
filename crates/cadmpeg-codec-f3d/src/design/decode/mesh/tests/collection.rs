@@ -2,8 +2,7 @@
 
 use super::*;
 
-#[test]
-fn mesh_operation_member_links_an_unlisted_body() {
+pub(super) fn operation_body_graph() -> SyntheticMeshGraph {
     let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
     let collection_start = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID).start;
     graph.bytes[collection_start + mesh_collection::BODY_COUNT
@@ -99,6 +98,12 @@ fn mesh_operation_member_links_an_unlisted_body() {
     push_reference(&mut member, 117);
     member.extend_from_slice(&[1, 2, 3, 4]);
     push_primary_frame(&mut graph.bytes, &mut graph.meta.records, 126, member);
+    graph
+}
+
+#[test]
+fn mesh_operation_member_links_an_unlisted_body() {
+    let graph = operation_body_graph();
     let features = parse_mesh_design_records(
         &graph.bytes,
         &graph.meta,
@@ -143,8 +148,7 @@ fn mesh_operation_member_links_an_unlisted_body() {
     );
 }
 
-#[test]
-fn mesh_bodies_can_share_a_guid_and_container() {
+pub(super) fn shared_guid_graph() -> SyntheticMeshGraph {
     let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
     let frames =
         typed_primary_frames(&graph.bytes, &graph.meta, MESH_BODY_TYPE_GUID, "test").unwrap();
@@ -195,6 +199,12 @@ fn mesh_bodies_can_share_a_guid_and_container() {
         PARAMESH_MODULE,
         vec![103],
     );
+    graph
+}
+
+#[test]
+fn mesh_bodies_can_share_a_guid_and_container() {
+    let graph = shared_guid_graph();
     let features = parse_mesh_design_records(
         &graph.bytes,
         &graph.meta,
@@ -220,8 +230,7 @@ fn mesh_bodies_can_share_a_guid_and_container() {
     );
 }
 
-#[test]
-fn mesh_collection_joins_bodies_from_two_scopes() {
+pub(super) fn two_scope_graph() -> SyntheticMeshGraph {
     let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
     let body_frames =
         typed_primary_frames(&graph.bytes, &graph.meta, MESH_BODY_TYPE_GUID, "test").unwrap();
@@ -256,6 +265,12 @@ fn mesh_collection_joins_bodies_from_two_scopes() {
         122,
         mesh_scope_record(263, 264, 122, &[117], 140, 112),
     );
+    graph
+}
+
+#[test]
+fn mesh_collection_joins_bodies_from_two_scopes() {
+    let graph = two_scope_graph();
     let features = parse_mesh_design_records(
         &graph.bytes,
         &graph.meta,
@@ -293,4 +308,21 @@ fn mesh_collection_joins_bodies_from_two_scopes() {
         serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(wire).unwrap(),
         *feature
     );
+}
+
+#[test]
+fn distinct_guid_records_for_one_container_do_not_join() {
+    let graph = synthetic_mesh_graph(false);
+    let parse = |stream| {
+        parse_mesh_design_records(&graph.bytes, &graph.meta, stream, &mut no_texture_asset).unwrap()
+    };
+    let first = parse("First/BulkStream.dat");
+    let second = parse("Second/BulkStream.dat");
+    let entry = first[0].bodies()[0].entry.name().to_owned();
+    let uuid = first[0].bodies()[0].guid.value().to_owned();
+    assert_eq!(
+        resolve_mesh_bodies(&[first.clone()], &entry, &uuid),
+        Some(vec![(0, 0, 0)])
+    );
+    assert_eq!(resolve_mesh_bodies(&[first, second], &entry, &uuid), None);
 }

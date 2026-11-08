@@ -229,8 +229,7 @@ fn mesh_collection_owner_versions_twenty_one_and_twenty_two_locate_their_backlin
     }
 }
 
-#[test]
-fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
+pub(super) fn version_twenty_one_owner_graph() -> SyntheticMeshGraph {
     let mut graph = synthetic_mesh_graph(false);
     graph
         .meta
@@ -252,6 +251,13 @@ fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
             record.bulk_offset += 10;
         }
     }
+    graph
+}
+
+#[test]
+fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
+    let graph = version_twenty_one_owner_graph();
+    let start = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID).start;
     let features = parse_mesh_design_records(
         &graph.bytes,
         &graph.meta,

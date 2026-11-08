@@ -1619,14 +1619,6 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     Ok(())
 }
 
-fn mesh_record_offset_is(
-    record: &records::mesh::DesignMeshRecordIdentity,
-    relative: u64,
-    offset: u64,
-) -> bool {
-    record.byte_offset().checked_add(relative) == Some(offset)
-}
-
 /// Validate complete `Base Mesh Feature` record graphs and their neutral links.
 /// The neutral feature link is checked only in a document that holds features.
 fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
@@ -1666,12 +1658,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && texture_table_records
                 .insert((stream, feature.texture_table.record().record_index()))
             && collection_owner_records
-                .insert((stream, feature.collection_owner.record().record_index()))
-            && mesh_record_offset_is(
-                feature.collection_owner.record(),
-                262,
-                feature.collection_owner.backlink_offset(),
-            );
+                .insert((stream, feature.collection_owner.record().record_index()));
         for mesh_scope in feature.scopes() {
             let scope = ctx
                 .scopes_by_index

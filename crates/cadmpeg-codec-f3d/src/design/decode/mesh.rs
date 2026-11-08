@@ -2293,7 +2293,7 @@ pub(crate) fn mesh_wrapper_tail_losses(
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
     features
         .iter()
-        .flat_map(DesignMeshFeature::bodies)
+        .flat_map(DesignMeshFeature::all_bodies)
         .filter_map(|body| {
             body.wrapper_opaque_tail.as_ref()?;
             Some(
@@ -2310,7 +2310,7 @@ pub(crate) fn mesh_body_identity_losses(
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
     features
         .iter()
-        .flat_map(DesignMeshFeature::bodies)
+        .flat_map(DesignMeshFeature::all_bodies)
         .filter(|body| body.placement.identity_assumed())
         .map(|body| {
             crate::loss::F3dLossCode::MeshBodyIdentityAssumed.note(format!(
@@ -2339,7 +2339,7 @@ pub(crate) fn mesh_body_frame_losses(
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
     features
         .iter()
-        .flat_map(DesignMeshFeature::bodies)
+        .flat_map(DesignMeshFeature::all_bodies)
         .filter_map(|body| {
             body.placement.native_frame()?;
             Some(
@@ -2473,6 +2473,7 @@ fn resolve_mesh_bodies(
 ) -> Option<Vec<(usize, usize, usize)>> {
     let mut joined = Vec::new();
     let mut body_ids = HashSet::new();
+    let mut guid_record = None;
     for (design_ordinal, design) in records.iter().enumerate() {
         for (feature_ordinal, feature) in design.iter().enumerate() {
             for (body_ordinal, body) in feature.all_bodies().enumerate() {
@@ -2482,7 +2483,10 @@ fn resolve_mesh_bodies(
                 {
                     let stream = crate::ids::native_stream(&feature.id)
                         .unwrap_or(crate::ids::DEFAULT_STREAM);
-                    if !body_ids.insert((stream, body.placement.record().record_index())) {
+                    let guid = (stream, body.guid.record().record_index());
+                    if *guid_record.get_or_insert(guid) != guid
+                        || !body_ids.insert((stream, body.placement.record().record_index()))
+                    {
                         return None;
                     }
                     joined.push((design_ordinal, feature_ordinal, body_ordinal));
@@ -2603,8 +2607,10 @@ mod tests {
 
     mod body_forms;
     mod collection;
+    mod losses;
     mod owner;
     mod placement;
+    mod validation;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
         parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,
