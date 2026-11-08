@@ -317,7 +317,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
             .map(|field| field.value.as_str()),
         Some("Prism-002")
     );
-    assert_eq!(round_trip.ir().model.appearances[0].name.as_deref(), Some("Prism-002"));
+    assert_eq!(
+        round_trip.ir().model.appearances[0].name.as_deref(),
+        Some("Prism-002")
+    );
     assert_eq!(
         round_trip.ir().model.appearances[0]
             .physical_token

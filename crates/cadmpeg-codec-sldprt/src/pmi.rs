@@ -1080,9 +1080,10 @@ fn collect_dimension_maps(
                     .ok_or_else(|| CodecError::malformed("PMI map part precedes its section"))?;
                 let end = candidates
                     .get(index)
-                    .map_or_else(|| base.checked_add(payload.len()), |(_, next)| {
-                        base.checked_add(next.checked_sub(36)?)
-                    })
+                    .map_or_else(
+                        || base.checked_add(payload.len()),
+                        |(_, next)| base.checked_add(next.checked_sub(36)?),
+                    )
                     .ok_or_else(|| CodecError::malformed("PMI map part escapes its section"))?;
                 let Some(extent) = source.child(guid_start, end) else {
                     return Err(CodecError::malformed("PMI map part escapes its section"));

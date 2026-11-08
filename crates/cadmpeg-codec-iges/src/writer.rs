@@ -345,7 +345,15 @@ impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
 impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
     fn from(error: WriteError) -> Self {
         match error {
-            WriteError::Codec(error) => cadmpeg_ir::codec::write::transitional_from_codec(error),
+            WriteError::Codec(error) => match error {
+                CodecError::UnsupportedTarget(r) => Self::UnsupportedTarget(r),
+                CodecError::ResourceLimit(l) => Self::ResourceLimit(l),
+                CodecError::Io(e) => Self::from(e),
+                error => {
+                    debug_assert!(false, "unmapped IGES encode error: {error}");
+                    panic!("unmapped IGES encode error: {error}");
+                }
+            },
             WriteError::Encode(error) => error,
         }
     }
@@ -646,9 +654,7 @@ fn synthesize_with_admission(
     } else {
         match synthesis_graph(ctx, ir, version) {
             Ok(graph) => graph,
-            Err(CodecError::InvalidInput(reason)) => {
-                degrade::graph(ctx, ir, version, &reason)?
-            }
+            Err(CodecError::InvalidInput(reason)) => degrade::graph(ctx, ir, version, &reason)?,
             Err(error) => return Err(error.into()),
         }
     };
@@ -1154,9 +1160,7 @@ fn synthesis_graph(
             let geometry = match compound::geometry(ir, curve_id) {
                 Some(geometry) => geometry,
                 None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                    CodecError::InvalidInput(
-                        "IGES curve carrier has no solved geometry".into(),
-                    )
+                    CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
                 })?)?,
             };
             let span = edge_span(ir, edge, &geometry)?;
@@ -3995,9 +3999,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     ir,
                     edge,
                     &flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                        CodecError::InvalidInput(
-                            "IGES curve carrier has no solved geometry".into(),
-                        )
+                        CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
                     })?)?,
                 )?;
                 let start_vertex = ir
@@ -6851,9 +6853,9 @@ fn revolution_surface_entities(
         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
         EvaluationFailure::NoValue
         | EvaluationFailure::NonFinite(_)
-        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(
-            "IGES Type 120 generatrix start cannot be evaluated".into(),
-        ),
+        | EvaluationFailure::WorkExhausted => {
+            CodecError::InvalidInput("IGES Type 120 generatrix start cannot be evaluated".into())
+        }
     })?;
     let end = cadmpeg_ir::eval::decode::curve_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -6880,9 +6882,7 @@ fn revolution_surface_entities(
         ) {
             Some(axis) => {
                 let geometry = flatten_curve(axis.geometry.solved().ok_or_else(|| {
-                    CodecError::InvalidInput(
-                        "IGES curve carrier has no solved geometry".into(),
-                    )
+                    CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
                 })?)?;
                 let span = curve_reference_span(ir, &axis.id, &geometry)?;
                 (geometry, span)
@@ -7714,9 +7714,7 @@ fn curve_reference_span_inner(
                         ))
                     })?;
                 let child_geometry = flatten_curve(child.geometry.solved().ok_or_else(|| {
-                    CodecError::InvalidInput(
-                        "IGES curve carrier has no solved geometry".into(),
-                    )
+                    CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
                 })?)?;
                 let child_span =
                     curve_reference_span_inner(ir, &segment.curve, &child_geometry, active)?;
@@ -7837,9 +7835,7 @@ fn curve_reference_span_inner(
                     {
                         Some(range) => range.into(),
                         None => default_range(geometry.solved().ok_or_else(|| {
-                            CodecError::InvalidInput(
-                                "IGES carrier has no solved geometry".into(),
-                            )
+                            CodecError::InvalidInput("IGES carrier has no solved geometry".into())
                         })?)?,
                     };
                     let start = cadmpeg_ir::eval::decode::curve_point(
@@ -7851,9 +7847,9 @@ fn curve_reference_span_inner(
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
                         EvaluationFailure::NoValue
                         | EvaluationFailure::NonFinite(_)
-                        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(
-                            format!("IGES composite child curve {curve_id} has no evaluable start"),
-                        ),
+                        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(format!(
+                            "IGES composite child curve {curve_id} has no evaluable start"
+                        )),
                     })?;
                     let end = cadmpeg_ir::eval::decode::curve_point(
                         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -7864,9 +7860,9 @@ fn curve_reference_span_inner(
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
                         EvaluationFailure::NoValue
                         | EvaluationFailure::NonFinite(_)
-                        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(
-                            format!("IGES composite child curve {curve_id} has no evaluable end"),
-                        ),
+                        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(format!(
+                            "IGES composite child curve {curve_id} has no evaluable end"
+                        )),
                     })?;
                     Ok(CurveSpan {
                         range,

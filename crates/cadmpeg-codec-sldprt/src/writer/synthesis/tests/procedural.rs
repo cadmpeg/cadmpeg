@@ -37,12 +37,11 @@ fn procedural_surface_cache_is_written_despite_construction_disagreement() {
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::SldprtLossCode::WriterProceduralReduced.note("").code
-            && loss.message.contains(surface.as_str())));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SldprtLossCode::WriterProceduralReduced
+            .note("")
+            .code
+        && loss.message.contains(surface.as_str())));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let decoded = SldprtCodec
@@ -57,11 +56,14 @@ fn procedural_surface_cache_is_written_despite_construction_disagreement() {
     assert!(decoded.ir().model.surfaces.iter().any(|output| {
         let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(actual),
-        ) = &output.geometry else {
+        ) = &output.geometry
+        else {
             return false;
         };
         cadmpeg_ir::math::Point3::distance(actual.origin().get(), expected.origin().get()) < 1e-12
             && (*actual.frame().axis().as_raw() - *expected.frame().axis().as_raw()).norm() < 1e-12
-            && (*actual.frame().reference().as_raw() - *expected.frame().reference().as_raw()).norm() < 1e-12
+            && (*actual.frame().reference().as_raw() - *expected.frame().reference().as_raw())
+                .norm()
+                < 1e-12
     }));
 }

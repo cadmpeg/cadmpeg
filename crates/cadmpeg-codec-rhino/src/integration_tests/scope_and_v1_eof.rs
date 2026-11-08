@@ -101,7 +101,16 @@ fn a_failed_bounded_history_record_does_not_erase_the_reached_design_part() {
         let result = decode(&bytes, depth);
         // Empty object table locates no model parts; a failed bounded history
         // record still locates the design part (#209 §1.1).
-        assert_scope(&result, delivered(depth, ContentScope { model: false, design: true }));
+        assert_scope(
+            &result,
+            delivered(
+                depth,
+                ContentScope {
+                    model: false,
+                    design: true,
+                },
+            ),
+        );
         assert!(result.ir().model.features.is_empty());
         assert!(result.report().losses.iter().any(
             |loss| loss.message.contains("history record") && loss.message.contains("degraded")

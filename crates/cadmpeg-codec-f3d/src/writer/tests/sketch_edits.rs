@@ -13,8 +13,8 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::native_test::{f3d_native, update_f3d_native};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;

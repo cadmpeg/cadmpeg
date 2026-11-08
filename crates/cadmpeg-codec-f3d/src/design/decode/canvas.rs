@@ -40,7 +40,8 @@ pub(crate) fn decode_canvas_images(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let primary = super::meta::design_primary_frames(bytes, &meta)?;
-        let frames = super::meta::primary_frame_extents_with_unindexed_pairs(&primary, bytes, &meta);
+        let frames =
+            super::meta::primary_frame_extents_with_unindexed_pairs(&primary, bytes, &meta);
         stream_frames.insert(entry.name.as_str(), frames);
     }
     super::image::decode_scoped_image_records_with_parts(

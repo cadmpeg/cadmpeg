@@ -42,7 +42,7 @@ impl From<CodecError> for WriteError {
         match error {
             CodecError::Io(error) => Self::Io(error),
             // Writer-internal content the target cannot express declines to
-            // synthesis (#239 §5.0; former UnsupportedContent).
+            // synthesis (#239 §5.0; declined content).
             CodecError::InvalidInput(reason) => Self::Decline(reason),
             error => Self::Fatal(error),
         }
@@ -76,12 +76,23 @@ impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
     fn from(error: WriteError) -> Self {
         match error {
             WriteError::Decline(reason) => {
-                debug_assert!(false, "patch decline must be handled before encode: {reason}");
-                cadmpeg_ir::codec::write::transitional_from_codec(
-                    cadmpeg_core::CodecError::InvalidInput(format!("patch declined: {reason}")),
-                )
+                debug_assert!(
+                    false,
+                    "patch decline must be handled before encode: {reason}"
+                );
+                panic!("patch decline must be handled before encode: {reason}");
             }
-            WriteError::Fatal(error) => cadmpeg_ir::codec::write::transitional_from_codec(error),
+            WriteError::Fatal(error) => match error {
+                cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
+                    Self::UnsupportedTarget(refusal)
+                }
+                cadmpeg_core::CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
+                cadmpeg_core::CodecError::Io(error) => Self::from(error),
+                error => {
+                    debug_assert!(false, "unmapped SLDPRT encode error: {error}");
+                    panic!("unmapped SLDPRT encode error: {error}");
+                }
+            },
             WriteError::Io(error) => Self::Io(error),
             WriteError::Capacity { field, value } => Self::TargetCapacity {
                 field,
