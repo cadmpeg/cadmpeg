@@ -522,7 +522,7 @@ pub(super) fn write_with_limits(
         written_component_occurrences = features.component_occurrences;
         residual_losses.push(collection_residual(
             if features.stream.is_none() {
-                "Design1"
+                "FusionDesignSegmentType4"
             } else {
                 "FusionDesignSegmentType3"
             },
@@ -547,7 +547,7 @@ pub(super) fn write_with_limits(
         ] {
             archive
                 .start_file(
-                    format!("{DESIGN_FOLDER}/Design1/{name}"),
+                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType4/{name}"),
                     options,
                 )
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
