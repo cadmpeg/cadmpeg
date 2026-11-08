@@ -2252,7 +2252,10 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
-        let name = drawing.parameters.get("name").map_or_else(|| drawing.id.as_str(), String::as_str);
+        let name = drawing
+            .parameters
+            .get("name")
+            .map_or_else(|| drawing.id.as_str(), String::as_str);
         let mut items = Vec::new();
         let mut omitted = Vec::new();
         if let Some(selections) = drawing
@@ -2647,6 +2650,13 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let [Some(value)] = attribute.values.as_slice() else {
+                self.loss(
+                    StepLossCode::DocumentAttributeValueDegraded,
+                    format!(
+                        "document attribute '{}' value cannot be held in the CAx-IF representation form",
+                        attribute.name
+                    ),
+                );
                 continue;
             };
             let (kind, value) = match value {
@@ -2659,11 +2669,16 @@ impl<'a> Builder<'a> {
                     "VALUE_REPRESENTATION_ITEM",
                     format!("NUMERIC_MEASURE({})", self.emitter.real(value.get())),
                 ),
-                AttributeValue::Boolean(value) => (
-                    "BOOLEAN_REPRESENTATION_ITEM",
-                    if *value { ".T." } else { ".F." }.to_owned(),
-                ),
-                _ => continue,
+                _ => {
+                    self.loss(
+                        StepLossCode::DocumentAttributeValueDegraded,
+                        format!(
+                            "document attribute '{}' value cannot be held in the CAx-IF representation form",
+                            attribute.name
+                        ),
+                    );
+                    continue;
+                }
             };
             let name = string(&attribute.name);
             let property = self
