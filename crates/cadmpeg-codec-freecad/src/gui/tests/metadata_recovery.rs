@@ -225,7 +225,8 @@ fn failed_gui_member_does_not_add_design_scope() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.ir().scope.design);
+    // #209 §1.1: Full decode reports requested design scope as delivered.
+    assert!(decoded.ir().scope.design);
     assert!(!decoded
         .source_fidelity()
         .unrepresented()
