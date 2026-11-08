@@ -18,6 +18,21 @@ const CELL_HEADER_SIZE: usize = 26;
 const LOCAL_PAYLOAD: usize = CELL_OFFSET + CELL_HEADER_SIZE;
 const OVERFLOW_HEADER: usize = 18;
 
+/// The offset at which [`encode`] places the value of the entry at `index`,
+/// when the value fits its cell.
+pub(super) fn local_value_offset(index: usize, key_len: usize, value_len: usize) -> Option<u64> {
+    let local = LOCAL_PAYLOAD.checked_add(key_len)?.checked_add(value_len)?;
+    if local > PAGE_SIZE - 4 {
+        return None;
+    }
+    let offset = index
+        .checked_add(2)?
+        .checked_mul(PAGE_SIZE)?
+        .checked_add(LOCAL_PAYLOAD)?
+        .checked_add(key_len)?;
+    u64::try_from(offset).ok()
+}
+
 pub(super) fn encode(entries: &[(String, Vec<u8>)]) -> Result<Vec<u8>, CodecError> {
     let page_count = entries.len().checked_add(2).ok_or_else(capacity)?;
     let mut pages = (0..page_count)

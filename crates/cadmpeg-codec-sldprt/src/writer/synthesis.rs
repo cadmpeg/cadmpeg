@@ -169,6 +169,47 @@ fn cascade_validation_errors(
     }
 }
 
+/// The sketches of held source lanes, set aside while synthesis generates
+/// lanes for the other sketches.
+struct HeldSketches {
+    sketches: Vec<cadmpeg_ir::sketches::Sketch>,
+    entities: Vec<cadmpeg_ir::sketches::SketchEntity>,
+    constraints: Vec<cadmpeg_ir::sketches::SketchConstraint>,
+}
+
+impl HeldSketches {
+    fn take(
+        projected: &mut CadIr,
+        ids: &std::collections::HashSet<cadmpeg_ir::sketches::SketchId>,
+    ) -> Self {
+        let model = &mut projected.model;
+        let (sketches, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut model.sketches)
+            .into_iter()
+            .partition(|sketch| ids.contains(&sketch.id));
+        model.sketches = kept;
+        let (entities, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut model.sketch_entities)
+            .into_iter()
+            .partition(|entity| ids.contains(&entity.sketch));
+        model.sketch_entities = kept;
+        let (constraints, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut model.sketch_constraints)
+            .into_iter()
+            .partition(|constraint| ids.contains(&constraint.sketch));
+        model.sketch_constraints = kept;
+        Self {
+            sketches,
+            entities,
+            constraints,
+        }
+    }
+
+    fn restore(self, projected: &mut CadIr) {
+        projected.model.sketches.extend(self.sketches);
+        projected.model.sketch_entities.extend(self.entities);
+        projected.model.sketch_constraints.extend(self.constraints);
+        projected.model.finalize();
+    }
+}
+
 /// The validation owner prefix of an appearance binding's reference finding.
 const APPEARANCE_BINDING_OWNER: &str = "appearance-binding:";
 
@@ -673,12 +714,35 @@ pub(super) fn plan(
         &mut losses,
     )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
+    let held = match retained_native.as_ref().filter(|_| projected.scope.design) {
+        Some(source) => crate::resolved_features::native_lane_write::held::held_lanes(
+            &slot_context,
+            input.ir,
+            source,
+        )?,
+        None => std::collections::BTreeSet::new(),
+    };
+    let held_sketch_ids = input
+        .ir
+        .model
+        .sketches
+        .iter()
+        .filter(|sketch| {
+            sketch
+                .native_ref
+                .as_ref()
+                .is_some_and(|lane| held.contains(lane))
+        })
+        .map(|sketch| sketch.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let held_sketches = HeldSketches::take(&mut projected, &held_sketch_ids);
     let mut prepared_native = design::prepare(
         &slot_context,
         &mut projected,
         &mut losses,
         input.fidelity.is_none(),
     )?;
+    held_sketches.restore(&mut projected);
     if projected.scope.model
         && !projected.scope.design
         && prepared_native.as_ref().is_none_or(|native| {
@@ -736,15 +800,19 @@ pub(super) fn plan(
             );
         }
         declared.set("sldprt", "pmi_dimensions", NativeDisposition::Regenerated);
-        if let Some(native) = retained_native.as_ref().filter(|_| input.ir.scope.model) {
+        // A source record whose map the authored database places elsewhere
+        // than its typed offsets state is not written; its content is a new
+        // record of that database.
+        if let Some(native) = retained_native.as_ref() {
+            let authored =
+                crate::pmi::write::authored_offsets(&projected, prepared_native.as_ref())
+                    .unwrap_or_default();
             for record in &native.pmi_dimensions {
-                if crate::pmi::annotation_id(record).is_ok_and(|id| {
-                    !projected
-                        .model
-                        .pmi
-                        .iter()
-                        .any(|annotation| annotation.id == id)
-                }) {
+                let held = authored.get(&record.guid).is_some_and(|(map, text)| {
+                    *map == record.offset
+                        && record.display_text_offset().is_none_or(|offset| offset == *text)
+                });
+                if !held {
                     declared.set_record(
                         "sldprt",
                         "pmi_dimensions",
@@ -758,14 +826,36 @@ pub(super) fn plan(
     };
     if let Some(source) = retained_native.as_ref() {
         let mut native = prepared_native.take().unwrap_or_default();
+        let mut regenerated = source.clone();
+        regenerated
+            .feature_input_lanes
+            .retain(|lane| !held.contains(&lane.id));
         crate::resolved_features::native_lane_write::regenerate(
             input.ir,
             &projected,
-            source,
+            &regenerated,
             &mut native,
             &mut losses,
             &mut native_dispositions,
         )?;
+        for lane in source
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| held.contains(&lane.id))
+        {
+            crate::resolved_features::native_lane_write::held::declare_written(
+                lane,
+                &mut native_dispositions,
+            );
+            native.feature_input_lanes.push(lane.clone());
+            native.nested_sketch_carriers.extend(
+                source
+                    .nested_sketch_carriers
+                    .iter()
+                    .filter(|carriers| carriers.parent == lane.id)
+                    .cloned(),
+            );
+        }
         prepared_native = Some(native);
     }
     let mut bytes = Vec::new();

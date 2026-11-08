@@ -1198,7 +1198,7 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
 }
 
 #[test]
-fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
+fn generated_source_less_reports_body_kind_that_conflicts_with_incidence() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1213,29 +1213,17 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
         cadmpeg_ir::topology::BodyKind::Sheet
     );
     source_less.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
+    let body = source_less.model.bodies[0].id.clone();
 
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("open face cannot be emitted as a solid body"),
-    };
-    assert!(
-        message.contains("unmapped F3D encode error")
-            || message.contains("InvalidInput")
-            || message.contains("solid body"),
-        "{message}"
+    let (output, report) = synthesize_document(&source_less, None);
+    assert_eq!(
+        output.ir().model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
     );
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::WriterAuxiliaryOmitted.kind()
+            && loss.message.contains(body.as_str())
+    }));
 }
 
 #[test]
