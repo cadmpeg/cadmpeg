@@ -675,9 +675,7 @@ impl RhinoLossCode {
             | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyTransformNotApplied
             | Self::WriterBodyPlacementOmitted
-            | Self::WriterBodyPlacementBaked => {
-                LossTaxonomy::BodyTransformNotApplied
-            }
+            | Self::WriterBodyPlacementBaked => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterScopeExpanded => LossTaxonomy::MetadataNotTransferred,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
