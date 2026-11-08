@@ -325,7 +325,7 @@ impl Scan<'_> {
                 | TCODE_LIGHT
                 | TCODE_HATCH_PATTERN
                 | TCODE_INSTANCE_DEFINITION
-                | TCODE_OBJECTS => true,
+                | TCODE_OBJECTS => !table.records.is_empty(),
                 TCODE_PROPERTIES => table.records.iter().any(|record| {
                     matches!(
                         record.typecode,
