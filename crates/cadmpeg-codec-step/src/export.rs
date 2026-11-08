@@ -2751,8 +2751,10 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|(kind, value)| self.emitter.emit(kind, &format!("'',{value}")))
                     .collect();
-                self.emitter
-                    .emit("ROW_REPRESENTATION_ITEM", &format!("{name},{}", refs(&items)))
+                self.emitter.emit(
+                    "ROW_REPRESENTATION_ITEM",
+                    &format!("{name},{}", refs(&items)),
+                )
             };
             let representation = self
                 .emitter
@@ -3022,17 +3024,12 @@ impl<'a> Builder<'a> {
                         _ => None,
                     }),
             )
-            .chain(
-                ir.model
-                    .appearance_bindings
-                    .iter()
-                    .filter_map(|binding| match &binding.target {
-                        cadmpeg_ir::appearance::AppearanceTarget::Occurrence(id) => {
-                            Some(id.as_str())
-                        }
-                        _ => None,
-                    }),
-            )
+            .chain(ir.model.appearance_bindings.iter().filter_map(
+                |binding| match &binding.target {
+                    cadmpeg_ir::appearance::AppearanceTarget::Occurrence(id) => Some(id.as_str()),
+                    _ => None,
+                },
+            ))
             .collect();
         // A STEP root product definition states a product and no placement,
         // name or relationship of its own; a root occurrence that holds one
@@ -3915,14 +3912,14 @@ impl<'a> Builder<'a> {
                     false
                 };
                 for &region in &body_regions {
-                if wire_written {
-                    let shells = region
-                        .shells
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>();
-                    if body_kind == BodyKind::General {
-                        self.loss(
+                    if wire_written {
+                        let shells = region
+                            .shells
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>();
+                        if body_kind == BodyKind::General {
+                            self.loss(
                             StepLossCode::BodyReducedToWire,
                             format!(
                                 "general body {} was written as wire geometry for region {}; shells: {}",
@@ -3931,8 +3928,8 @@ impl<'a> Builder<'a> {
                                 shells.join(", ")
                             ),
                         );
-                    } else {
-                        self.loss(
+                        } else {
+                            self.loss(
                             StepLossCode::BodyReducedToWire,
                             format!(
                                 "wire body {} region {} was represented as STEP wireframe geometry; shells: {}",
@@ -3941,9 +3938,9 @@ impl<'a> Builder<'a> {
                                 shells.join(", ")
                             ),
                         );
+                        }
                     }
-                }
-                self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
+                    self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 }
                 continue;
             }
@@ -5568,9 +5565,7 @@ impl<'a> Builder<'a> {
                             .coedges
                             .get(id.as_str())
                             .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
-                            .is_some_and(|edge| {
-                                edge.curve().is_none()
-                            })
+                            .is_some_and(|edge| edge.curve().is_none())
                 })
             })
         });
