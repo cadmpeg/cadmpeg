@@ -201,7 +201,52 @@ pub(super) fn payload(
 ) -> Result<(CurvePayload, Vec<LossNote>), WriteError> {
     use crate::loss::RhinoLossCode;
     let Some(compound) = construction(ir, curve) else {
-        let (value, conversion) = WritableObjectCurve::try_new(curve)?;
+        let (value, conversion) = match WritableObjectCurve::try_new(curve) {
+            Ok(result) => result,
+            Err(WriteError::Omit(reason))
+                if curve.parameter_range.is_none()
+                    && !matches!(
+                        curve
+                            .source_object
+                            .as_ref()
+                            .and_then(|source| source.geometry_role.as_ref()),
+                        Some(cadmpeg_ir::SourceGeometryRole::Support)
+                    )
+                    && matches!(
+                        curve.geometry.solved(),
+                        Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_))
+                    ) =>
+            {
+                if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Line(line)) =
+                    curve.geometry.solved()
+                {
+                    let domain = [0.0, 1.0];
+                    let origin = line.origin().get();
+                    let direction = *line.direction().as_raw();
+                    let from = origin.translated(direction, domain[0]);
+                    let to = origin.translated(direction, domain[1]);
+                    if from == to {
+                        return Err(WriteError::Omit(reason));
+                    }
+                    let payload = (
+                        super::LINE_CLASS,
+                        super::bounded_line_payload(
+                            [from.x, from.y, from.z],
+                            [to.x, to.y, to.z],
+                            domain,
+                            3,
+                        )?,
+                    );
+                    let note = RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "line curve {} had no parameter range and was written over a unit domain",
+                        curve.id
+                    ));
+                    return Ok((CurvePayload::leaf(payload, &curve.id), vec![note]));
+                }
+                return Err(WriteError::Omit(reason));
+            }
+            Err(error) => return Err(error),
+        };
         let payload = value.payload()?;
         let mut notes: Vec<LossNote> = conversion.into_iter().collect();
         if let Some(construction) = curve.geometry.procedural_construction() {
