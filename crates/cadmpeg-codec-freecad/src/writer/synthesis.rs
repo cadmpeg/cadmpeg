@@ -1750,7 +1750,9 @@ pub(super) fn write(
             Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
             Err(error) => {
                 debug_assert!(false, "FCStd ZIP start_file: {error}");
-                return Err(CodecError::InvalidInput(format!("FCStd ZIP start_file: {error}")));
+                return Err(CodecError::InvalidInput(format!(
+                    "FCStd ZIP start_file: {error}"
+                )));
             }
         }
         archive.write_all(&bytes)?;
@@ -1760,7 +1762,9 @@ pub(super) fn write(
         Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
         Err(error) => {
             debug_assert!(false, "FCStd ZIP finish: {error}");
-            return Err(CodecError::InvalidInput(format!("FCStd ZIP finish: {error}")));
+            return Err(CodecError::InvalidInput(format!(
+                "FCStd ZIP finish: {error}"
+            )));
         }
     };
     for curve in &ir.model.curves {
