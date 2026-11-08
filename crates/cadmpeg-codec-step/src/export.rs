@@ -3759,16 +3759,33 @@ impl<'a> Builder<'a> {
                         .insert(region.body.as_str().to_owned());
                     false
                 };
-                if wire_written && body_kind == BodyKind::General {
+                if wire_written {
                     let shells = region
                         .shells
                         .iter()
                         .map(ToString::to_string)
                         .collect::<Vec<_>>();
-                    self.loss(
-                        StepLossCode::BodyReducedToWire,
-                        format!("general body {} was written as wire geometry for region {}; shells: {}", region.body, region.id, shells.join(", ")),
-                    );
+                    if body_kind == BodyKind::General {
+                        self.loss(
+                            StepLossCode::BodyReducedToWire,
+                            format!(
+                                "general body {} was written as wire geometry for region {}; shells: {}",
+                                region.body,
+                                region.id,
+                                shells.join(", ")
+                            ),
+                        );
+                    } else {
+                        self.loss(
+                            StepLossCode::BodyReducedToWire,
+                            format!(
+                                "wire body {} region {} was represented as STEP wireframe geometry; shells: {}",
+                                region.body,
+                                region.id,
+                                shells.join(", ")
+                            ),
+                        );
+                    }
                 }
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
