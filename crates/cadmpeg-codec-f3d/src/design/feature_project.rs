@@ -9105,7 +9105,10 @@ fn project_extrude(
             Some(
                 DesignExtrudeExtent::TwoSidedToFaces
                     | DesignExtrudeExtent::TwoSidedDistanceToFace
-                    | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne,
+                    | DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne
+                    | DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                    | DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
+                    | DesignExtrudeExtent::TwoSidedThroughAllToFace,
             )
         )
     {
@@ -9187,6 +9190,22 @@ fn project_extrude(
                 None => Ok(FaceSelection::Native(group.id.clone())),
             }
         };
+    let selected_target = |group: &DesignConstructionOperandGroup,
+                           offset: Length|
+     -> Result<Option<LinearTermination>, CodecError> {
+        if group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination) {
+            return Ok(Some(LinearTermination::ToFace {
+                face: selected_face(group)?,
+                offset: (offset.get() != 0.0).then_some(offset),
+            }));
+        }
+        if offset.get() != 0.0 {
+            return Ok(None);
+        }
+        let target = resolved_body_recipe_shape(scope, group, body_recipe_operands)
+            .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
+        Ok(Some(LinearTermination::ToShape { target }))
+    };
     let start = match prologue.start() {
         DesignExtrudeStart::ProfilePlane if start_groups.is_empty() => {
             if profile_offset.is_some() {
@@ -9293,6 +9312,76 @@ fn project_extrude(
                     },
                 },
                 along.get() < 0.0,
+            )
+        }
+        (DesignExtrudeExtent::TwoSidedThroughAllToFace, None, None)
+            if termination_groups.len() == 1
+                && effective_side_one_offset.is_none()
+                && side_two_offset.is_some() =>
+        {
+            let [termination] = termination_groups.as_slice() else {
+                return Ok(None);
+            };
+            (
+                ExtentShape::TwoSided {
+                    first: LinearTermination::ThroughAll {},
+                    second: LinearTermination::ToFace {
+                        face: selected_face(termination)?,
+                        offset: side_two_offset.filter(|offset| offset.get() != 0.0),
+                    },
+                },
+                prologue.direction_reversed(),
+            )
+        }
+        (
+            DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero,
+            Some((distance, AlongDirection::SignedDistance)),
+            None,
+        )
+        | (DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero, None, Some(distance))
+            if termination_groups.len() + target_shape_groups.len() == 1
+                && side_one_offset.is_some()
+                && effective_side_two_offset.is_none() =>
+        {
+            let target = termination_groups
+                .first()
+                .or_else(|| target_shape_groups.first())
+                .copied();
+            let first = or_none!(selected_target(
+                or_none!(target),
+                or_none!(side_one_offset)
+            )?);
+            let second = match distance {
+                Some(length) => LinearTermination::Blind { length },
+                None => LinearTermination::BlindZero {
+                    length: ZeroLength::ZERO,
+                },
+            };
+            (
+                ExtentShape::TwoSided { first, second },
+                prologue.direction_reversed(),
+            )
+        }
+        (
+            DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+            | DesignExtrudeExtent::TwoSidedToTargetsOptionTwo,
+            None,
+            None,
+        ) if termination_groups.len() + target_shape_groups.len() == 2
+            && side_one_offset.is_some()
+            && side_two_offset.is_some() =>
+        {
+            let mut targets = termination_groups.clone();
+            targets.extend(target_shape_groups.iter().copied());
+            targets.sort_by_key(|group| group.scope_reference_ordinal);
+            let [first, second] = targets.as_slice() else {
+                return Ok(None);
+            };
+            let first = or_none!(selected_target(first, or_none!(side_one_offset))?);
+            let second = or_none!(selected_target(second, or_none!(side_two_offset))?);
+            (
+                ExtentShape::TwoSided { first, second },
+                prologue.direction_reversed(),
             )
         }
         (DesignExtrudeExtent::TwoSidedToFaces, None, None)

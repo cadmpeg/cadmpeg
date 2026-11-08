@@ -3780,7 +3780,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .is_some_and(|slot_expansion| {
                         extent_slot_expansion_valid(typed_references, slot_expansion)
                     });
-                let second_side_offset_valid = (if side_extent_discriminators == [2, 2] {
+                let second_side_offset_valid = (if side_extent_discriminators == [2, 2]
+                    || (side_extent_discriminators == [2, 1]
+                        && extent == records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero)
+                {
                     side_extent_discriminator_offsets[0].checked_add(u64_from_index(
                         crate::layout::current_extrude_face_target_payload::SECOND_SIDE_EXTENT,
                     ))
@@ -3800,11 +3803,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     side_extent_discriminators,
                 ) == Some(extent);
                 let mixed_extent = direction_face_extend_values[0] == 2
-                    && side_extent_discriminators == [1, 2]
                     && matches!(
-                        extent,
-                        records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
-                            | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne
+                        (side_extent_discriminators, extent),
+                        ([1, 2], records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
+                            | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)
+                            | ([4, 2], records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace)
+                            | ([2, 1], records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero)
+                            | ([2, 2], records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                                | records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo)
                     );
                 let dual_lane_symmetric_extent = direction_face_extend_values == [3, 2]
                     && side_extent_discriminators == [1, 1]
@@ -5996,6 +6002,29 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && side_two_offset_count == 1
                         && !prologue.direction_reversed()
                 }
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace => {
+                    along_count == 0
+                        && !has_fixed_along
+                        && against_count == 0
+                        && !has_fixed_against
+                        && side_one_offset_count == 0
+                        && side_two_offset_count == 1
+                }
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero => {
+                    ((has_one_along_carrier && against_count == 0 && !has_fixed_against)
+                        || (along_count == 0 && !has_fixed_along && has_one_against_carrier))
+                        && side_one_offset_count == 1
+                        && side_two_offset_count == 0
+                }
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                | records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo => {
+                    along_count == 0
+                        && !has_fixed_along
+                        && against_count == 0
+                        && !has_fixed_against
+                        && side_one_offset_count == 1
+                        && side_two_offset_count == 1
+                }
                 records::feature::extrude::DesignExtrudeExtent::SymmetricDistance => {
                     has_one_along_carrier
                         && against_count == 0
@@ -6062,6 +6091,14 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 extrude_extent,
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
                     | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne
+                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace
+            )) + (1usize.saturating_sub(target_shape_group_count)) * usize::from(matches!(
+                extrude_extent,
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero
+            )) + (2usize.saturating_sub(target_shape_group_count)) * usize::from(matches!(
+                extrude_extent,
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
             )) + usize::from(matches!(
                 extrude_start,
                 records::feature::extrude::DesignExtrudeStart::FromFace
@@ -6078,6 +6115,21 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .cmp(&right.scope_reference_ordinal)
             });
             let expected_face_roles = match (extrude_start, extrude_extent) {
+                (start, records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero
+                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
+                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace) => {
+                    let mut roles = Vec::new();
+                    if start == records::feature::extrude::DesignExtrudeStart::FromFace {
+                        roles.push(records::topology::extrude_selection::DesignExtrudeFaceRole::Start);
+                    }
+                    let terminations = expected_face_group_count.saturating_sub(roles.len());
+                    roles.extend(std::iter::repeat_n(
+                        records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+                        terminations,
+                    ));
+                    roles
+                }
                 (
                     records::feature::extrude::DesignExtrudeStart::FromFace,
                     records::feature::extrude::DesignExtrudeExtent::OneSidedToFace,

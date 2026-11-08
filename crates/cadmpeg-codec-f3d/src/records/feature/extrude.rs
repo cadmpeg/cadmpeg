@@ -50,6 +50,10 @@ pub(crate) enum DesignExtrudeExtent {
     TwoSidedDistanceToFace,
     TwoSidedDistanceToFaceControlOne,
     TwoSidedDistanceThroughAll,
+    TwoSidedTargetToDistanceOptionZero,
+    TwoSidedToTargetsOptionZero,
+    TwoSidedToTargetsOptionTwo,
+    TwoSidedThroughAllToFace,
     /// Travel one fixed total distance symmetrically around the profile plane.
     SymmetricDistance,
     /// Travel symmetrically through all material on both sides of the profile plane.

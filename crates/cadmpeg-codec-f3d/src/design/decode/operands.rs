@@ -2651,7 +2651,16 @@ fn extrude_operand_role(
             if scope
                 .extrude_prologue()
                 .and_then(DesignExtrudePrologue::extent)
-                == Some(DesignExtrudeExtent::OneSidedToFace) =>
+                .is_some_and(|extent| {
+                    matches!(
+                        extent,
+                        DesignExtrudeExtent::OneSidedToFace
+                            | DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero
+                            | DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                            | DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
+                            | DesignExtrudeExtent::TwoSidedThroughAllToFace
+                    )
+                }) =>
         {
             Some(PendingExtrudeRole::Faces(
                 DesignExtrudeFaceEncoding::LegacyTermination,

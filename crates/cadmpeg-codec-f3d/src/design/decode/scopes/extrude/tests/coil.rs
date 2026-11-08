@@ -272,6 +272,36 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedToFaces)
     );
+    let short_reference = scope(
+        "Extrude",
+        2,
+        (1, 2),
+        0,
+        1,
+        2,
+        Some(6),
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        reference: Some(reference),
+        operation_offset,
+        ..
+    }) = short_reference.extrude_prologue()
+    else {
+        panic!("short referenced Extrude prologue");
+    };
+    assert_eq!(reference.record_index, 77);
+    assert_eq!(reference.trailing_zero_count, 6);
+    assert_eq!(operation_offset, 36);
+    let serialized = serde_json::to_value(reference).unwrap();
+    assert_eq!(serialized["trailing_zero_count"], 6);
+    let decoded: crate::records::feature::extrude::DesignExtrudePrologueReference =
+        serde_json::from_value(serialized).unwrap();
+    assert_eq!(decoded.trailing_zero_count, 6);
+
     let compact_reference = scope(
         "Extrude",
         2,
@@ -2034,6 +2064,71 @@ fn reference_aware_two_sided_extents_keep_side_specific_references() {
         Some(DesignExtrudeExtent::TwoSidedDistanceToFace)
     );
     assert_eq!(value.side_extent_discriminators(), Some([1, 2]));
+    let face_first = |target_option: u32, second: u32| {
+        let mut bytes = make(28, 1);
+        let first = 117;
+        bytes[first..200].fill(0);
+        bytes[first..first + 4].copy_from_slice(&2u32.to_le_bytes());
+        bytes[first + 4] = 1;
+        bytes[first + 5..first + 9].copy_from_slice(&20u32.to_le_bytes());
+        bytes[first + 19..first + 23].copy_from_slice(&target_option.to_le_bytes());
+        bytes[first + 23..first + 27].copy_from_slice(&second.to_le_bytes());
+        if second == 2 {
+            bytes[first + 28] = 1;
+            bytes[first + 29..first + 33].copy_from_slice(&20u32.to_le_bytes());
+            bytes[first + 43] = 1;
+            bytes[first + 44..first + 48].copy_from_slice(&21u32.to_le_bytes());
+        }
+        bytes
+    };
+    for (target, second, expected, wire_extent) in [
+        (
+            0,
+            1,
+            DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero,
+            "two_sided_target_to_distance_option_zero",
+        ),
+        (
+            0,
+            2,
+            DesignExtrudeExtent::TwoSidedToTargetsOptionZero,
+            "two_sided_to_targets_option_zero",
+        ),
+        (
+            2,
+            2,
+            DesignExtrudeExtent::TwoSidedToTargetsOptionTwo,
+            "two_sided_to_targets_option_two",
+        ),
+    ] {
+        let bytes = face_first(target, second);
+        let value =
+            super::super::exact_extrude_prologue(&bytes, 0, 300, "300", "260", 300, &references)
+                .expect("face-first prologue");
+        assert_eq!(value.extent(), Some(expected));
+        let wire = serde_json::to_value(value).unwrap();
+        assert_eq!(wire["extent"], wire_extent);
+        assert_eq!(
+            serde_json::from_value::<DesignExtrudePrologue>(wire).unwrap(),
+            value
+        );
+    }
+    let mut through_all_to_face = make(27, 2);
+    through_all_to_face[116..120].copy_from_slice(&4u32.to_le_bytes());
+    let value = super::super::exact_extrude_prologue(
+        &through_all_to_face,
+        0,
+        300,
+        "300",
+        "260",
+        300,
+        &references,
+    )
+    .expect("through-all to face prologue");
+    assert_eq!(
+        value.extent(),
+        Some(DesignExtrudeExtent::TwoSidedThroughAllToFace)
+    );
     let mut controlled = mixed.clone();
     controlled[134] = 1;
     let value =

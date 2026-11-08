@@ -8054,12 +8054,13 @@ Spec §3.1 · layout: byte offsets · size: 54 B
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `first_side_extent` | `u32` | little | spec | The current face-target payload starts at the first-side extent |
 | 4 | 11 | `first_side_offset_reference` | `bytes[11]` | little | spec | first-side offset reference at payload offset 4 |
-| 19 | 4 | `target_option` | `u32` | little | spec | target option at offset 19 is one · value `1` |
+| 19 | 4 | `target_option` | `u32` | little | spec | target option at offset 19 is one |
 | 23 | 4 | `second_side_extent` | `u32` | little | spec | offset 23 stores the second-side extent |
 | 28 | 11 | `second_side_offset_reference` | `bytes[11]` | little | spec | offset 28 stores the second-side offset reference |
 | 43 | 11 | `second_side_taper_reference` | `bytes[11]` | little | spec | offset 43 stores the second-side taper reference |

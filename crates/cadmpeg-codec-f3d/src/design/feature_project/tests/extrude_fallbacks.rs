@@ -255,6 +255,184 @@ fn distance_and_through_all_retains_auxiliary_selection() {
 }
 
 #[test]
+fn target_first_and_distance_second_keep_the_signed_parameter() {
+    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, LinearTermination};
+    let scope = scope_with_extent(DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero);
+    let profile = profile_group(100, 0);
+    let mut target = profile_group(101, 1);
+    target.operand_role = DesignConstructionOperandRole::Other(
+        crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+    );
+    let offset = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "value",
+        "Side1Offset",
+        Some("mm"),
+        "d1",
+        0.0,
+    ))
+    .unwrap();
+    let distance = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "value",
+        "AlongDistance",
+        Some("mm"),
+        "d2",
+        -0.8,
+    ))
+    .unwrap();
+    let target_id = target.id.clone();
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(
+            ctx,
+            &scope,
+            &[(0, &offset), (1, &distance)],
+            &[profile, target],
+            &[],
+            &[],
+            &[],
+        )
+    })
+    .unwrap()
+    .expect("target and distance Extrude");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    }) = definition
+    else {
+        panic!("target and distance definition");
+    };
+    assert!(
+        matches!(first.termination, LinearTermination::ToShape { target: FaceSelection::Native(id) } if id == target_id)
+    );
+    assert!(
+        matches!(second.termination, LinearTermination::Blind { length } if length.get() == -8.0)
+    );
+}
+
+#[test]
+fn two_native_targets_keep_their_side_order() {
+    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, LinearTermination};
+    let mut draft =
+        scope_with_extent(DesignExtrudeExtent::TwoSidedToTargetsOptionZero).into_draft();
+    draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+        vec![100, 101, 102],
+        vec![185, 196, 207],
+        "reference_members",
+    )
+    .unwrap();
+    let scope = DesignParameterScope::try_new(draft.with_fixture_layout()).unwrap();
+    let profile = profile_group(100, 0);
+    let mut first = profile_group(101, 1);
+    let mut second = profile_group(102, 2);
+    first.operand_role = DesignConstructionOperandRole::Other(
+        crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+    );
+    second.operand_role = first.operand_role;
+    let first_id = first.id.clone();
+    let second_id = second.id.clone();
+    let offset = |kind: &str| {
+        parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "value",
+            kind,
+            Some("mm"),
+            "d1",
+            0.0,
+        ))
+        .unwrap()
+    };
+    let first_offset = offset("Side1Offset");
+    let second_offset = offset("Side2Offset");
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(
+            ctx,
+            &scope,
+            &[(0, &first_offset), (1, &second_offset)],
+            &[second, profile, first],
+            &[],
+            &[],
+            &[],
+        )
+    })
+    .unwrap()
+    .expect("two-target Extrude");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    }) = definition
+    else {
+        panic!("two-target definition");
+    };
+    assert!(
+        matches!(first.termination, LinearTermination::ToShape { target: FaceSelection::Native(id) } if id == first_id)
+    );
+    assert!(
+        matches!(second.termination, LinearTermination::ToShape { target: FaceSelection::Native(id) } if id == second_id)
+    );
+}
+
+#[test]
+fn through_all_and_face_use_opposite_sides() {
+    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    let mut draft = scope_with_extent(DesignExtrudeExtent::TwoSidedThroughAllToFace).into_draft();
+    draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+        vec![100, 101, 102],
+        vec![185, 196, 207],
+        "reference_members",
+    )
+    .unwrap();
+    let scope = DesignParameterScope::try_new(draft.with_fixture_layout()).unwrap();
+    let profile = profile_group(100, 0);
+    let mut auxiliary = profile_group(102, 2);
+    auxiliary.operand_role = DesignConstructionOperandRole::Other(
+        crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+    );
+    let mut face = profile_group(101, 1);
+    face.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+        encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
+        usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+    };
+    let offset = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "value",
+        "Side2Offset",
+        Some("mm"),
+        "d1",
+        0.0,
+    ))
+    .unwrap();
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(
+            ctx,
+            &scope,
+            &[(0, &offset)],
+            &[profile, face, auxiliary],
+            &[],
+            &[],
+            &[],
+        )
+    })
+    .unwrap()
+    .expect("through-all and face Extrude");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    }) = definition
+    else {
+        panic!("through-all and face definition");
+    };
+    assert!(matches!(
+        first.termination,
+        LinearTermination::ThroughAll {}
+    ));
+    assert!(matches!(
+        second.termination,
+        LinearTermination::ToFace { offset: None, .. }
+    ));
+}
+
+#[test]
 fn surface_extrude_retains_the_role_43_group_as_its_native_profile() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
     use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};

@@ -26782,7 +26782,7 @@ anchor = "a u64 indexed record identity"
 
 [[record]]
 name = "current_extrude_face_target_payload"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"]
 kind = "byte"
 section = "3.1"
 anchor = "The current face-target payload starts at the first-side extent"
@@ -26813,7 +26813,6 @@ offset = 19
 type = "u32"
 source = "spec"
 anchor = "target option at offset 19 is one"
-value = 1
 
 [[record.field]]
 name = "second_side_extent"

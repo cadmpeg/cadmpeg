@@ -292,14 +292,11 @@ at `x = 138.5` mm and `x = 162.5` mm, which is `12` mm on each side. The
 prologue stores travel direction `3`, face-extend option `2`, and side extents
 `[1, 0]`.
 
-**Need.** The neutral symmetric extent states the whole travel. A reader must
-know the measurement form to convert the stored distance. Without a
-measurement word, the decoder keeps the native feature when a fixed lane
-carries a symmetric distance.
+**Need.** Controlled symmetric Extrudes with a fixed lane or an indexed distance must establish the measurement when the word is absent.
 
-**Conflict.** Without a measurement word, the decoder converts an
-`AlongDistance` parameter of a single-lane symmetric `Extrude` to the whole
-travel.
+**Conflict.** The fixed-lane reading uses the distance on each side. The single-lane indexed-parameter reading uses the distance as the whole travel.
+
+**Note.** The decoder retains the chosen reading with `feature.extrude-symmetric-distance-assumed`.
 
 ### DR-79. Typed-reference Design record grammars
 
@@ -867,7 +864,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** The scope and ordered references stay native with `feature.extrude-extent-native` until the complete assignment is defined.
+**Note.** Target option `0` projects with `feature.extrude-target-option-assumed`; the scope and ordered references remain native. Other unresolved assignments retain `feature.extrude-extent-native`.
 
 ### DR-118. Split tool face without a tool group
 
@@ -1678,12 +1675,12 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-329. Extrude distance and face controls
 
-**Question.** Does a fixed symmetric Extrude distance without a measurement word state the travel on each side or the total travel? What does the byte after the second-side face extent control?
+**Question.** Does a symmetric Extrude distance without a measurement word state the travel on each side or the total travel? What do the byte after the second-side face extent and target options `0` and `2` control?
 
-**Known.** The scope stores a symmetric direction and a fixed distance lane. The decoder takes the lane as the travel on each side and emits `feature.extrude-symmetric-distance-assumed`. A distance-to-face extent can store byte `1` after its second-side extent; the decoder retains this value in the native extent and assumes it preserves the face termination with `feature.extrude-face-control-assumed`. The native scope retains the symmetric direction and lane.
+**Known.** The scope stores a symmetric direction and a fixed distance lane. The decoder takes a fixed lane or a shared dual lane as the travel on each side. It takes a single indexed lane as the whole travel. It emits `feature.extrude-symmetric-distance-assumed` for these readings. A distance-to-face extent can store byte `1` after its second-side extent; the decoder retains this value in the native extent and assumes it preserves the face termination with `feature.extrude-face-control-assumed`. Target options `0` and `2` occur with two-sided target payloads; the decoder reads the side terminations with `feature.extrude-target-option-assumed`. The native scope retains the symmetric direction and lane.
 
-**Need.** Controlled symmetric Extrudes with fixed distances and measured boundary positions for the remaining frame forms, and distance-to-face Extrudes that vary the second-side control.
+**Need.** Controlled symmetric Extrudes with fixed distances and measured boundary positions for the remaining frame forms, and two-sided target Extrudes that vary the second-side control and target option.
 
 **Conflict.** DR-78 records this measurement question for another fixed frame.
 
-**Note.** The neutral feature retains the symmetry constraint and its per-side distance.
+**Note.** The neutral feature retains the symmetry constraint and the selected distance measurement.

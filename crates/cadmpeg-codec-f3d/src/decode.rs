@@ -2013,11 +2013,13 @@ fn report_design_projection_gaps(
                 format!("Extrude {} retains its sketch profile in the native scope because its placement is unresolved.", feature.id),
             ));
         }
-        if prologue.extent()
-            == Some(
-                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll,
+        if matches!(
+            prologue.extent(),
+            Some(
+                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace
             )
-            && crate::ids::native_stream(&scope.id).is_some_and(|stream| {
+        ) && crate::ids::native_stream(&scope.id).is_some_and(|stream| {
                 auxiliary_selection_scopes.contains(&(stream, scope.record_index))
             })
             && matches!(
@@ -2033,6 +2035,23 @@ fn report_design_projection_gaps(
                     feature.id
                 )),
             );
+        }
+        if matches!(
+            prologue.extent(),
+            Some(
+                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
+            )
+        ) && matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+            )
+        ) {
+            report.losses.push(F3dLossCode::FeatureExtrudeTargetOptionAssumed.note(
+                format!("Extrude {} assumes the target option preserves the selected side terminations (DR-329).", feature.id),
+            ));
         }
         if prologue.extent()
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)
@@ -2050,20 +2069,32 @@ fn report_design_projection_gaps(
         if prologue.extent()
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()
-            && scope.fixed_extrude_parameters().is_some()
-            && matches!(
-                feature.evaluation.definition(),
+        {
+            let reading = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude {
                         extent: cadmpeg_ir::features::ExtrudeExtent::SymmetricPerSide { .. },
                         ..
-                    }
-                )
-            )
-        {
-            report.losses.push(F3dLossCode::FeatureExtrudeSymmetricDistanceAssumed.note(
-                format!("Extrude {} assumes the fixed symmetric distance applies on each side (DR-329).", feature.id),
-            ));
+                    },
+                ) => Some("each side"),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric { .. },
+                        ..
+                    },
+                ) => Some("the whole travel"),
+                _ => None,
+            };
+            if let Some(reading) = reading {
+                report
+                    .losses
+                    .push(F3dLossCode::FeatureExtrudeSymmetricDistanceAssumed.note(
+                    format!(
+                        "Extrude {} assumes the symmetric distance applies to {reading} (DR-329).",
+                        feature.id
+                    ),
+                ));
+            }
         }
     }
     let surface_groups: std::collections::HashSet<&str> = native

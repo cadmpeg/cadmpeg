@@ -131,19 +131,19 @@ pub(super) fn exact_extrude_prologue(
             reference_members,
         );
     }
-    let current = exact_current_extrude_prologue(
+    let current = exact_shifted_reference_aware_extrude_prologue(
         bytes,
         start,
         reference_count_at,
         reference_members,
-        legacy_class_415,
     )
     .or_else(|| {
-        exact_shifted_reference_aware_extrude_prologue(
+        exact_current_extrude_prologue(
             bytes,
             start,
             reference_count_at,
             reference_members,
+            legacy_class_415,
         )
     });
     if current.is_some() {
@@ -1295,17 +1295,26 @@ fn exact_current_extrude_prologue_with(
     }
     let first_side_extent_offset = extent_cursor;
     let first_side_extent = View::u32_le_at(bytes, first_side_extent_offset)?;
+    let first_target_option = (first_side_extent == 2)
+        .then(|| {
+            first_side_extent_offset
+                .checked_add(crate::layout::current_extrude_face_target_payload::TARGET_OPTION)
+                .and_then(|offset| View::u32_le_at(bytes, offset))
+        })
+        .flatten();
     if !typed
         && (direct_offset == start.checked_add(compact_extrude::OPERATION)?
             || direct_offset == start.checked_add(shifted_extrude::OPERATION)?)
         && first_side_extent != 1
+        && !(direction_face_extend_values[0] == 2
+            && (first_side_extent == 4
+                || (first_side_extent == 2
+                    && direct_offset == start.checked_add(shifted_extrude::OPERATION)?)))
     {
         return None;
     }
     let second_side_extent_offset = if first_side_extent == 2 {
-        let target_option = first_side_extent_offset
-            .checked_add(crate::layout::current_extrude_face_target_payload::TARGET_OPTION)
-            .and_then(|at| View::u32_le_at(bytes, at));
+        let target_option = first_target_option;
         let payload_second = first_side_extent_offset
             .checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_EXTENT);
         let payload_second_value = payload_second.and_then(|at| View::u32_le_at(bytes, at));
@@ -1320,12 +1329,33 @@ fn exact_current_extrude_prologue_with(
             }
         } else if direction_face_extend_values[0] == 2
             && first_side_target_ordinal.is_none()
-            && target_option == Some(0)
-            && payload_second_value.is_some_and(|value| value != 0)
+            && matches!(target_option, Some(0 | 2))
+            && matches!(payload_second_value, Some(1 | 2))
         {
-            // Target option zero with a second-side payload has no settled
-            // assignment (DR-117); the scope stays native.
-            return None;
+            use crate::layout::current_extrude_face_target_payload as target_payload;
+            let first_offset = first_side_extent_offset
+                .checked_add(target_payload::FIRST_SIDE_OFFSET_REFERENCE)?;
+            if first_offset.checked_add(11)? > reference_count_at
+                || !marked_record_reference(bytes, first_offset)
+                    .is_some_and(|record_index| reference_members.contains(&record_index))
+            {
+                return None;
+            }
+            if payload_second_value == Some(2) {
+                for offset in [
+                    target_payload::SECOND_SIDE_OFFSET_REFERENCE,
+                    target_payload::SECOND_SIDE_TAPER_REFERENCE,
+                ] {
+                    let at = first_side_extent_offset.checked_add(offset)?;
+                    if at.checked_add(11)? > reference_count_at
+                        || !marked_record_reference(bytes, at)
+                            .is_some_and(|record_index| reference_members.contains(&record_index))
+                    {
+                        return None;
+                    }
+                }
+            }
+            payload_second?
         } else {
             reference_count_at.checked_sub(4)?
         }
@@ -1350,33 +1380,35 @@ fn exact_current_extrude_prologue_with(
         first_side_extent,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
-    let mixed_to_face_control =
-        if !typed && direction_face_extend_values[0] == 2 && side_extent_discriminators == [1, 2] {
-            use crate::layout::current_extrude_face_target_payload as target_payload;
-            let offset_at = second_side_extent_offset.checked_add(
-                target_payload::SECOND_SIDE_OFFSET_REFERENCE - target_payload::SECOND_SIDE_EXTENT,
-            )?;
-            let taper_at = second_side_extent_offset.checked_add(
-                target_payload::SECOND_SIDE_TAPER_REFERENCE - target_payload::SECOND_SIDE_EXTENT,
-            )?;
-            let offset_end = offset_at.checked_add(11)?;
-            let taper_end = taper_at.checked_add(11)?;
-            let control = *bytes.get(second_side_extent_offset.checked_add(4)?)?;
-            (View::u32_le_at(
-                bytes,
-                first_side_extent_offset.checked_add(extrude_extent_pair::TARGET_OPTION)?,
-            ) == Some(1)
-                && matches!(control, 0 | 1)
-                && bytes.get(offset_end..taper_at) == Some(&[0; 4])
-                && taper_end <= reference_count_at
-                && [offset_at, taper_at].into_iter().all(|at| {
-                    marked_record_reference(bytes, at)
-                        .is_some_and(|record_index| reference_members.contains(&record_index))
-                }))
-            .then_some(control)
-        } else {
-            None
-        };
+    let mixed_to_face_control = if !typed
+        && direction_face_extend_values[0] == 2
+        && matches!(side_extent_discriminators, [1 | 4, 2])
+    {
+        use crate::layout::current_extrude_face_target_payload as target_payload;
+        let offset_at = second_side_extent_offset.checked_add(
+            target_payload::SECOND_SIDE_OFFSET_REFERENCE - target_payload::SECOND_SIDE_EXTENT,
+        )?;
+        let taper_at = second_side_extent_offset.checked_add(
+            target_payload::SECOND_SIDE_TAPER_REFERENCE - target_payload::SECOND_SIDE_EXTENT,
+        )?;
+        let offset_end = offset_at.checked_add(11)?;
+        let taper_end = taper_at.checked_add(11)?;
+        let control = *bytes.get(second_side_extent_offset.checked_add(4)?)?;
+        (View::u32_le_at(
+            bytes,
+            first_side_extent_offset.checked_add(extrude_extent_pair::TARGET_OPTION)?,
+        ) == Some(1)
+            && matches!(control, 0 | 1)
+            && bytes.get(offset_end..taper_at) == Some(&[0; 4])
+            && taper_end <= reference_count_at
+            && [offset_at, taper_at].into_iter().all(|at| {
+                marked_record_reference(bytes, at)
+                    .is_some_and(|record_index| reference_members.contains(&record_index))
+            }))
+        .then_some(control)
+    } else {
+        None
+    };
     let distance_tail = if first_side_extent == 2 {
         None
     } else {
@@ -1412,10 +1444,35 @@ fn exact_current_extrude_prologue_with(
     {
         return None;
     }
-    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
+    let target_option = (first_side_extent == 2 && first_side_target_ordinal.is_none())
+        .then(|| {
+            first_side_extent_offset
+                .checked_add(crate::layout::current_extrude_face_target_payload::TARGET_OPTION)
+                .and_then(|offset| View::u32_le_at(bytes, offset))
+        })
+        .flatten();
+    let unsettled_target = match (
+        direction_face_extend_values[0],
+        side_extent_discriminators,
+        target_option,
+    ) {
+        (2, [2, 1], Some(0)) => Some(DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero),
+        (2, [2, 2], Some(0)) => Some(DesignExtrudeExtent::TwoSidedToTargetsOptionZero),
+        (2, [2, 2], Some(2)) => Some(DesignExtrudeExtent::TwoSidedToTargetsOptionTwo),
+        _ => None,
+    };
+    let extent = unsettled_target
+        .or_else(|| {
+            exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
+        })
         .or_else(|| match mixed_to_face_control {
-            Some(0) => Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
-            Some(1) => Some(DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne),
+            Some(0) if first_side_extent == 1 => Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
+            Some(1) if first_side_extent == 1 => {
+                Some(DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)
+            }
+            Some(0) if first_side_extent == 4 => {
+                Some(DesignExtrudeExtent::TwoSidedThroughAllToFace)
+            }
             _ => None,
         })
         .or_else(|| {
