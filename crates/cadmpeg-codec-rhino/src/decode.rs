@@ -112,10 +112,10 @@ use crate::settings::MillimeterScale;
 pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 /// Maximum bytes retained across all Rhino object records in one document.
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
-/// Deviation of a revolved profile line's unit direction from the unit axis
-/// within which the line is parallel to the axis: a few units in the last
-/// place of binary64.
-const EPS_REVOLVED_LINE_PARALLEL: f64 = 1.0e-14;
+/// Deviation within which a revolved profile rises at unit speed along the
+/// axis and moves radially in one direction: a few units in the last place
+/// of binary64.
+const EPS_REVOLVED_PROFILE: f64 = 1.0e-12;
 
 #[derive(Debug)]
 enum CandidateError {
@@ -4794,7 +4794,7 @@ fn stage_brep_procedural_surface(
                 .then(index),
         ))
     }?;
-    let cylinder = angular_axis.and_then(|(axis_origin, axis)| {
+    let analytic = angular_axis.and_then(|(axis_origin, axis)| {
         let ProceduralSurfaceDefinition::Revolution(revolution) = &definition else {
             return None;
         };
@@ -4804,18 +4804,15 @@ fn stage_brep_procedural_surface(
             .curves
             .iter()
             .find(|curve| curve.id == *revolution.directrix())?;
-        let Some(SolvedCurveGeometry::Line(line)) = directrix.geometry.solved() else {
-            return None;
-        };
-        revolved_line_cylinder(axis_origin, axis, line)
+        let (start, velocity) = linear_profile(directrix.geometry.solved()?)?;
+        revolved_linear_profile(axis_origin, axis, start, velocity)
     });
     staged.draft.model_mut().surfaces.push(Surface {
         native_ref: None,
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(cylinder.map_or_else(
-            || SolvedSurfaceGeometry::Nurbs(geometry),
-            SolvedSurfaceGeometry::Cylinder,
-        )),
+        geometry: SurfaceGeometry::Solved(
+            analytic.unwrap_or(SolvedSurfaceGeometry::Nurbs(geometry)),
+        ),
         source_object: Some(context.association.identity.clone()),
     });
     let procedural_id = cadmpeg_ir::ids::ProceduralSurfaceId::compose(
@@ -4840,41 +4837,94 @@ fn stage_brep_procedural_surface(
     Ok(surface_id)
 }
 
-/// The cylinder a revolution surface traces when its profile is a line
-/// parallel to the axis and its first parameter is the angle: the profile
-/// parameter is then the height along the axis, so the cylinder keeps the
-/// surface parameterization.
-fn revolved_line_cylinder(
+/// A profile that moves linearly in its parameter: its point at parameter 0
+/// and its velocity.
+fn linear_profile(
+    geometry: &SolvedCurveGeometry,
+) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    match geometry {
+        SolvedCurveGeometry::Line(line) => Some((line.origin().get(), *line.direction().as_raw())),
+        SolvedCurveGeometry::Nurbs(nurbs)
+            if nurbs.degree() == 1
+                && nurbs.pole_count() == 2
+                && nurbs.pole_rows().weight_at(0).is_none() =>
+        {
+            let from = nurbs.pole_rows().point_at(0)?.get();
+            let to = nurbs.pole_rows().point_at(1)?.get();
+            let knots = nurbs.knots().as_slice();
+            let (first, last) = (*knots.first()?, *knots.last()?);
+            let span = last - first;
+            let velocity = cadmpeg_ir::math::Vector3::new(
+                (to.x - from.x) / span,
+                (to.y - from.y) / span,
+                (to.z - from.z) / span,
+            );
+            Some((from.translated(velocity, -first), velocity))
+        }
+        _ => None,
+    }
+}
+
+/// The cylinder or circular cone a revolution surface traces when its first
+/// parameter is the angle and its profile rises along the axis at unit
+/// speed: the profile parameter is then the height, as in the analytic
+/// carrier, so trims carry over.
+fn revolved_linear_profile(
     axis_origin: cadmpeg_ir::math::Point3,
     axis: cadmpeg_ir::math::Vector3,
-    line: &cadmpeg_ir::geometry::analytic::LineCurve,
-) -> Option<cadmpeg_ir::geometry::analytic::CylinderSurface> {
-    let direction = *line.direction().as_raw();
-    let parallel = direction.x * axis.x + direction.y * axis.y + direction.z * axis.z;
-    if (parallel - 1.0).abs() > EPS_REVOLVED_LINE_PARALLEL {
+    start: cadmpeg_ir::math::Point3,
+    velocity: cadmpeg_ir::math::Vector3,
+) -> Option<SolvedSurfaceGeometry> {
+    use cadmpeg_ir::math::Vector3;
+    let dot = |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let reject = |vector: Vector3| {
+        let along = dot(vector, axis);
+        Vector3::new(
+            vector.x - along * axis.x,
+            vector.y - along * axis.y,
+            vector.z - along * axis.z,
+        )
+    };
+    if (dot(velocity, axis) - 1.0).abs() > EPS_REVOLVED_PROFILE {
         return None;
     }
-    let start = line.origin().get();
-    let offset = cadmpeg_ir::math::Vector3::new(
+    let offset = Vector3::new(
         start.x - axis_origin.x,
         start.y - axis_origin.y,
         start.z - axis_origin.z,
     );
-    let height = offset.x * axis.x + offset.y * axis.y + offset.z * axis.z;
-    let radial = cadmpeg_ir::math::Vector3::new(
-        offset.x - height * axis.x,
-        offset.y - height * axis.y,
-        offset.z - height * axis.z,
-    );
+    let center = axis_origin.translated(axis, dot(offset, axis));
+    let radial = reject(offset);
+    let spread = reject(velocity);
     let radius = radial.norm();
-    let center = axis_origin.translated(axis, height);
-    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+    let slope_size = spread.norm();
+    let direction = if radius > 0.0 { radial } else { spread };
+    let length = direction.norm();
+    if length <= 0.0 {
+        return None;
+    }
+    let reference = Vector3::new(direction.x / length, direction.y / length, direction.z / length);
+    if slope_size <= EPS_REVOLVED_PROFILE {
+        return cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            center, axis, reference, radius,
+        )
+        .ok()
+        .map(SolvedSurfaceGeometry::Cylinder);
+    }
+    let slope = dot(spread, reference);
+    if (slope.abs() - slope_size).abs() > EPS_REVOLVED_PROFILE {
+        return None;
+    }
+    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
         center,
         axis,
-        cadmpeg_ir::math::Vector3::new(radial.x / radius, radial.y / radius, radial.z / radius),
+        reference,
         radius,
+        1.0,
+        slope.atan(),
     )
     .ok()
+    .map(SolvedSurfaceGeometry::Cone)
 }
 
 fn stage_curve_tree_indexed(
