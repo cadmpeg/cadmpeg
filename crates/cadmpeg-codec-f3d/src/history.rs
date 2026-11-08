@@ -2417,6 +2417,20 @@ fn bind_pattern_body_selections<'a>(
                 );
             } else {
                 bind_direct_body_recipe_body_selection(selection, scope, inputs, body_candidates);
+                // A scope that stores no preceding state takes it from its
+                // history state, where the operands bound their body slots.
+                if let Some(previous_state_id) =
+                    effective_scope_previous_history_state_id(scope, inputs.histories)
+                {
+                    bind_body_recipe_body_selection(
+                        selection,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
             }
         });
     }
