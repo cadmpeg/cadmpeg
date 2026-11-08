@@ -1198,7 +1198,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut patch_group = group(100, 0, vec![200]);
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[], &mut Vec::new())).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1234,7 +1234,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             patch.normal = Some(normal);
         }
         let projected = crate::test_support::with_decode_context(|ctx| {
-            crate::design::feature_project::project_surface_patch(
+            crate::design::feature_project::surface_patch::project_surface_patch(
                 ctx,
                 &variant,
                 std::slice::from_ref(&patch_group),
@@ -1283,7 +1283,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     second_patch_group.operand_role =
         DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group.clone()], &[], &[], &[], &mut Vec::new())).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group.clone()], &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1330,7 +1330,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     };
     let identities = vec![edge_identity(200, 100, 17), edge_identity(201, 101, 18)];
     let resolved = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_surface_patch(
+        crate::design::feature_project::surface_patch::project_surface_patch(
             decode_ctx,
             &patch_scope,
             &[patch_group.clone(), second_patch_group],
@@ -1370,7 +1370,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     }
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[], &mut Vec::new())).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1398,7 +1398,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         ])
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::feature_project::project_surface_patch(
+        crate::design::feature_project::surface_patch::project_surface_patch(
             ctx,
             &patch_scope,
             &[extra_member],
@@ -1414,7 +1414,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut claimed_tool = group(300, 2, vec![400]);
     claimed_tool.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::feature_project::project_surface_patch(
+        crate::design::feature_project::surface_patch::project_surface_patch(
             ctx,
             &patch_scope,
             &[patch_group.clone(), claimed_tool],
@@ -1432,7 +1432,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         slot.boundaries = vec![patch_boundary(2, 300, 100)];
     }
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::feature_project::project_surface_patch(
+        crate::design::feature_project::surface_patch::project_surface_patch(
             ctx,
             &settings_scope,
             std::slice::from_ref(&patch_group),
@@ -1459,7 +1459,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     second_profile.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     assert!(matches!(
         crate::test_support::with_decode_context(|ctx| {
-            crate::design::feature_project::project_surface_patch(ctx, &two_profiles_scope, &[patch_group.clone(), second_profile], &[], &[], &[], &mut Vec::new())
+            crate::design::feature_project::surface_patch::project_surface_patch(ctx, &two_profiles_scope, &[patch_group.clone(), second_profile], &[], &[], &[], &mut Vec::new())
         }).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
@@ -1488,7 +1488,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     third_profile.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     assert!(matches!(
         crate::test_support::with_decode_context(|ctx| {
-            crate::design::feature_project::project_surface_patch(ctx, &three_profiles_scope, &[patch_group.clone(), second_profile, third_profile], &[], &[], &[], &mut Vec::new())
+            crate::design::feature_project::surface_patch::project_surface_patch(ctx, &three_profiles_scope, &[patch_group.clone(), second_profile, third_profile], &[], &[], &[], &mut Vec::new())
         }).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
@@ -1508,7 +1508,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .unwrap();
     assert!(matches!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::project_surface_patch(
+            crate::design::feature_project::surface_patch::project_surface_patch(
                 decode_ctx,
                 &patch_scope,
                 std::slice::from_ref(&patch_group),
@@ -1539,7 +1539,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::project_surface_patch(
+            crate::design::feature_project::surface_patch::project_surface_patch(
                 decode_ctx,
                 &patch_scope,
                 std::slice::from_ref(&patch_group),
@@ -1564,7 +1564,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         })
         .unwrap();
     assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_surface_patch(
+        crate::design::feature_project::surface_patch::project_surface_patch(
             decode_ctx,
             &patch_scope,
             std::slice::from_ref(&patch_group),
@@ -1600,7 +1600,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         )
         .unwrap();
     let grouped_projection = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_surface_patch(
+        crate::design::feature_project::surface_patch::project_surface_patch(
             decode_ctx,
             &patch_scope,
             std::slice::from_ref(&patch_group),

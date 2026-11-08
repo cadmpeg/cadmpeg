@@ -118,7 +118,7 @@ fn project(
 ) -> (Option<FeatureDefinition>, Vec<LossNote>) {
     let mut losses = Vec::new();
     let projected = crate::test_support::with_decode_context(|ctx| {
-        crate::design::feature_project::project_surface_patch(
+        crate::design::feature_project::surface_patch::project_surface_patch(
             ctx,
             scope,
             groups,
