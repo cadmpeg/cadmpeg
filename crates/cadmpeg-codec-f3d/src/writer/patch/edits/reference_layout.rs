@@ -110,7 +110,7 @@ fn persistent_value_edit_uses_baseline_position_and_declines_when_absent() {
             baseline: Some(&baseline),
             target: Some(&target),
         }),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::NotImplemented(_))
     ));
 }
 
@@ -165,6 +165,6 @@ fn reloaded_sketch_curve_edit_requires_actual_baseline_geometry_position() {
             baseline: Some(&baseline),
             target: Some(&target),
         }),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::NotImplemented(_))
     ));
 }

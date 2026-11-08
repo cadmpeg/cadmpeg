@@ -70,8 +70,6 @@ pub enum CodecError {
     ///
     /// Encoders must catch this inside planning and degrade the entity or
     /// synthesize after a declined patch. It is never a terminal refusal.
-    #[error("unsupported writer content: {0}")]
-    UnsupportedContent(String),
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),

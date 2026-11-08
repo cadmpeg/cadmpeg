@@ -88,7 +88,7 @@ pub(super) fn write_with_limits(
             .is_none_or(|canvas| canvas.asset != asset.id)
             && decal.as_ref().is_none_or(|decal| decal.asset != asset.id)
     }) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support document assets".into(),
         ));
     }
@@ -112,7 +112,7 @@ pub(super) fn write_with_limits(
         if !native.design_parameter_owners.is_empty()
             || !native.design_parameter_companions.is_empty()
         {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::NotImplemented(
                 "source-less F3D parameter ownership requires a same-segment scope".into(),
             ));
         }
@@ -324,11 +324,11 @@ pub(super) fn write_with_limits(
             name =
                 format!("{DESIGN_FOLDER}/TSplines.BlobParts/TSpline.{ordinal}-{discriminator}.tsm");
             discriminator = discriminator.checked_add(1).ok_or_else(|| {
-                CodecError::UnsupportedContent("F3D cage name space exhausted".into())
+                CodecError::NotImplemented("F3D cage name space exhausted".into())
             })?;
         }
         let Some(program) = subd::encode(&output_ctx, surface, true)? else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "F3D cage {} has unsupported topology or controls",
                 surface.id
             )));
