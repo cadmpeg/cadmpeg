@@ -132,7 +132,7 @@ fn encode_material(
     if let Some(minor) = legacy_minor {
         return encode_legacy_material(
             identity,
-            LegacyComponent {
+            &LegacyComponent {
                 index,
                 name,
                 uuid: component_uuid,
@@ -303,13 +303,13 @@ struct LegacyComponent<'a> {
 
 fn encode_legacy_material(
     identity: &str,
-    component: LegacyComponent<'_>,
+    component: &LegacyComponent<'_>,
     appearance: Option<&Appearance>,
     fields: Option<&Map<String, Value>>,
     textures: &[Value],
     minor: i32,
 ) -> Result<Vec<u8>, WriteError> {
-    let LegacyComponent { index, name, uuid } = component;
+    let &LegacyComponent { index, name, uuid } = component;
     let mut body = uuid.to_vec();
     body.extend(index.to_le_bytes());
     body.extend(utf16(name)?);
