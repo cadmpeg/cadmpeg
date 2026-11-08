@@ -93,7 +93,7 @@ fn lp_ascii_printable(bytes: &[u8], at: usize) -> Result<Option<(String, usize)>
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
     if !appearance.textures.is_empty() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "source-less F3D cannot synthesize connected Protein texture assets".into(),
         ));
     }
@@ -153,7 +153,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         | "StructuralPlasticSchema"
         | "ThermalSolidSchema" => zero_fill_to(&mut logical, value_block + 8),
         _ => {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less Protein schema {schema} is unsupported"
             )));
         }
@@ -431,7 +431,7 @@ fn patch_instance_colors(
                     "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
                     "PrismTransparentSchema" => position + 121,
                     _ => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "Protein schema {schema} has no writable color carrier"
                         )));
                     }
@@ -458,7 +458,7 @@ fn patch_instance_colors(
                         "transparent_refraction_index"
                     }
                     _ => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
                         )));
                     }
@@ -507,7 +507,7 @@ fn patch_instance_colors(
                     }
                     ("PrismTransparentSchema", "refraction_index") => position + 169,
                     _ => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
                         )));
                     }

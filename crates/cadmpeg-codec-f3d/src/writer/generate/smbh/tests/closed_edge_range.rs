@@ -64,7 +64,7 @@ fn assert_refused(edge: &Edge, carrier: &CurveGeometry, vertex: Point3) {
     assert!(
         matches!(
             closed_edge_traversal(edge, carrier, vertex, 0.0),
-            Err(CodecError::UnsupportedContent(_))
+            Err(CodecError::InvalidInput(_))
         ),
         "an edge with no closed traversal is refused"
     );

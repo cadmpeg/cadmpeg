@@ -956,7 +956,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .expect("valid triangle group partition");
     assert!(matches!(
         crate::writer::sequential_tessellation(&attributed),
-        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+        Err(cadmpeg_core::CodecError::InvalidInput(_))
     ));
 
     let edged = mesh
@@ -964,7 +964,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .expect("valid feature edge");
     assert!(matches!(
         crate::writer::sequential_tessellation(&edged),
-        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+        Err(cadmpeg_core::CodecError::InvalidInput(_))
     ));
 }
 

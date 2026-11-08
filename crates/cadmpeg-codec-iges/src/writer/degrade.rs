@@ -141,7 +141,7 @@ fn admit(
     }
     match synthesis_graph(ctx, ir, version) {
         Ok(graph) => append(result, graph),
-        Err(CodecError::UnsupportedContent(reason)) => {
+        Err(CodecError::InvalidInput(reason)) => {
             // Type 508 can carry the model-space edge boundary without UV
             // images. Prefer that degradation to discarding an entire body.
             if ir.model.bodies.len() == 1 && !ir.model.pcurves.is_empty() {
@@ -156,7 +156,7 @@ fn admit(
                         }
                         return append(result, graph);
                     }
-                    Err(CodecError::UnsupportedContent(_)) => {}
+                    Err(CodecError::InvalidInput(_)) => {}
                     Err(error) => return Err(error),
                 }
             }

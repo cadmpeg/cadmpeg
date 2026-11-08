@@ -244,7 +244,7 @@ fn type_508_requires_an_explicit_isoparametric_flag() {
     };
     assert!(matches!(
         isoparametric_flag(&pcurve, "loop"),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -961,7 +961,7 @@ fn transformed_surface_rejects_nonrigid_placement() {
             0,
             IgesVersion::V5_3,
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -983,7 +983,7 @@ fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1003,7 +1003,7 @@ fn negative_sphere_radius_is_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1025,7 +1025,7 @@ fn torus_radii_outside_iges_interval_are_not_implemented() {
                 0,
                 IgesVersion::V5_3
             ),
-            Err(CodecError::UnsupportedContent(_))
+            Err(CodecError::InvalidInput(_))
         ));
     }
 }
@@ -1298,7 +1298,7 @@ fn revolution_sweep_within_the_angular_tolerance_states_a_full_turn() {
     else {
         panic!("a sweep beyond the angular tolerance of a full turn must be refused");
     };
-    assert!(matches!(error, CodecError::UnsupportedContent(_)));
+    assert!(matches!(error, CodecError::InvalidInput(_)));
     let text = error.to_string();
     assert!(text.contains("angular_interval"));
     assert!(text.contains("outside (0, ") && text.contains(" + ") && text.ends_with(']'));
@@ -1311,7 +1311,7 @@ fn revolution_sweep_that_overflows_between_finite_endpoints_is_refused() {
     let Err(error) = RevolutionSweep::classify(interval) else {
         panic!("a sweep that overflows must be refused");
     };
-    assert!(matches!(error, CodecError::UnsupportedContent(_)));
+    assert!(matches!(error, CodecError::InvalidInput(_)));
     let text = error.to_string();
     assert!(text.contains("angular_interval"));
     assert!(text.contains("sweep overflows"));
@@ -1466,7 +1466,7 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
             None,
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1490,7 +1490,7 @@ fn negative_nurbs_weights_are_not_implemented() {
             }),
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 
     let axis =
@@ -1515,7 +1515,7 @@ fn negative_nurbs_weights_are_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1543,7 +1543,7 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1581,7 +1581,7 @@ fn hyperbola_endpoint_overflow_is_not_implemented() {
             Some(&span),
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1605,7 +1605,7 @@ fn parabola_endpoint_overflow_is_not_implemented() {
             Some(&span),
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1637,7 +1637,7 @@ fn zero_conic_parameter_span_is_not_implemented() {
     ] {
         assert!(matches!(
             curve_entity(&geometry, Some(&span), IgesVersion::V5_3),
-            Err(CodecError::UnsupportedContent(_))
+            Err(CodecError::InvalidInput(_))
         ));
     }
 }
@@ -1670,7 +1670,7 @@ fn decreasing_polyline_parameters_are_not_implemented() {
             }),
             IgesVersion::V5_3
         ),
-        Err(CodecError::UnsupportedContent(_))
+        Err(CodecError::InvalidInput(_))
     ));
 }
 
@@ -1697,7 +1697,7 @@ fn parabola_coefficient_that_overflows_is_not_implemented() {
         Some(&span),
         IgesVersion::V5_3,
     );
-    let Err(CodecError::UnsupportedContent(message)) = written else {
+    let Err(CodecError::InvalidInput(message)) = written else {
         panic!(
             "{:?}",
             written.map(|entity| String::from_utf8_lossy(&entity.parameter_body).into_owned())

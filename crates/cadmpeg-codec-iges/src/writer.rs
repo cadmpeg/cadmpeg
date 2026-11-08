@@ -646,7 +646,7 @@ fn synthesize_with_admission(
     } else {
         match synthesis_graph(ctx, ir, version) {
             Ok(graph) => graph,
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(CodecError::InvalidInput(reason)) => {
                 degrade::graph(ctx, ir, version, &reason)?
             }
             Err(error) => return Err(error.into()),
@@ -1091,7 +1091,7 @@ fn synthesis_graph(
             .iter()
             .find(|body| !is_decoder_free_geometry_body(body))
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES semantic writer does not encode faceless body {}",
                 body.id
             )));
@@ -1154,7 +1154,7 @@ fn synthesis_graph(
             let geometry = match compound::geometry(ir, curve_id) {
                 Some(geometry) => geometry,
                 None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                    CodecError::UnsupportedContent(
+                    CodecError::InvalidInput(
                         "IGES curve carrier has no solved geometry".into(),
                     )
                 })?)?,
@@ -1415,7 +1415,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         )));
     }
     if let Some(message) = unsupported_wire {
-        return Err(CodecError::UnsupportedContent(message));
+        return Err(CodecError::InvalidInput(message));
     }
     Ok(())
 }
@@ -1699,7 +1699,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                     | SolvedSurfaceGeometry::Torus(_)
             )
         ) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES procedural surface {} has no writable solved carrier",
                 procedural.id
             )));
@@ -1727,7 +1727,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                 ))
             })?;
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+            CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
         })?)?;
         if !matches!(
             geometry,
@@ -1741,7 +1741,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                     | SolvedCurveGeometry::Polyline(_)
             )
         ) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES procedural curve {} has no writable solved carrier",
                 procedural.id
             )));
@@ -1872,7 +1872,7 @@ fn validate_brep_topology<'a>(
         .filter(|body| !is_decoder_free_geometry_body(body))
         .collect::<Vec<_>>();
     if bodies.is_empty() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES B-rep writer requires at least one supported body".into(),
         ));
     }
@@ -1892,13 +1892,13 @@ fn validate_brep_topology<'a>(
 
     for body in &bodies {
         if !matches!(body.kind, BodyKind::Solid | BodyKind::Sheet) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES B-rep writer does not encode body kind {:?} ({})",
                 body.kind, body.id
             )));
         }
         if body.regions.len() != 1 {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES B-rep writer requires one region per body ({})",
                 body.id
             )));
@@ -1926,7 +1926,7 @@ fn validate_brep_topology<'a>(
             let _ = solid_shell_roles(region)?;
         }
         if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES B-rep writer requires one shell for a sheet body ({})",
                 body.id
             )));
@@ -1956,7 +1956,7 @@ fn validate_brep_topology<'a>(
                 )));
             }
             if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "IGES B-rep writer does not encode wire edges or free vertices in shell {}",
                     shell.id
                 )));
@@ -1996,13 +1996,13 @@ fn validate_brep_topology<'a>(
                     .iter()
                     .any(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Inner);
                 if has_unspecified_loop && (has_outer_loop || has_inner_loop) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "IGES B-rep writer cannot mix classified and unspecified boundary loops ({})",
                         face.id
                     )));
                 }
                 if has_inner_loop && !has_outer_loop {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "IGES B-rep writer requires an explicit outer loop for inner boundary loops ({})",
                         face.id
                     )));
@@ -2044,7 +2044,7 @@ fn validate_brep_topology<'a>(
                             .len()
                             == 1
                 }) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "IGES B-rep writer refuses cylindrical face {} with a boundary loop that repeats one seam edge without axial bounds",
                         face.id
                     )));
@@ -2117,7 +2117,7 @@ fn validate_brep_topology<'a>(
                             .or_default()
                             .push(coedge.id.as_str().to_owned());
                         let curve_id = edge.curve().ok_or_else(|| {
-                            CodecError::UnsupportedContent(format!(
+                            CodecError::InvalidInput(format!(
                                 "IGES B-rep writer does not encode carrier-less edge {}",
                                 edge.id
                             ))
@@ -2135,7 +2135,7 @@ fn validate_brep_topology<'a>(
                             })?;
                         let geometry =
                             flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                                CodecError::UnsupportedContent(
+                                CodecError::InvalidInput(
                                     "IGES curve carrier has no solved geometry".into(),
                                 )
                             })?)?;
@@ -2235,7 +2235,7 @@ fn validate_brep_topology<'a>(
         || admitted_vertices.len() != ir.model.vertices.len()
         || used_brep_pcurve_ids(ir).len() != ir.model.pcurves.len()
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "IGES B-rep topology ownership is incomplete: regions {}/{} shells {}/{} \
              faces {}/{} loops {}/{} coedges {}/{} edges {}/{} vertices {}/{} \
              pcurves {}/{}",
@@ -2438,7 +2438,7 @@ fn brep_entities(
                 ))
             })?;
         let curve_id = edge.curve().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "IGES B-rep writer does not encode carrier-less edge {}",
                 edge.id
             ))
@@ -2455,7 +2455,7 @@ fn brep_entities(
                 ))
             })?;
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+            CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
         })?)?;
         let span = edge_span(ir, edge, &geometry)?;
         let index = append_curve_entity(
@@ -3448,7 +3448,7 @@ fn topology_entities(
             continue;
         }
         let curve_id = edge.curve().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "IGES semantic writer does not encode carrier-less edge {}",
                 edge.id
             ))
@@ -3465,7 +3465,7 @@ fn topology_entities(
                 ))
             })?;
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+            CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
         })?)?;
         mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
         consumed_points.insert(vertex_point_id(ir, &edge.start)?.as_str().to_owned());
@@ -3727,7 +3727,7 @@ fn validate_trimmed_sheet_topology<'a>(
         .collect::<BTreeMap<_, _>>();
 
     if ir.model.faces.is_empty() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES semantic writer requires at least one face for topology output".into(),
         ));
     }
@@ -3758,7 +3758,7 @@ fn validate_trimmed_sheet_topology<'a>(
         || supported_region_ids.len() != ir.model.faces.len()
         || supported_shell_count != ir.model.faces.len()
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES semantic writer currently encodes one trimmed sheet face per body".into(),
         ));
     }
@@ -3768,7 +3768,7 @@ fn validate_trimmed_sheet_topology<'a>(
             continue;
         }
         if body.kind != BodyKind::Sheet || body.regions.len() != 1 {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES semantic writer only encodes single-face sheet body {}",
                 body.id
             )));
@@ -3808,7 +3808,7 @@ fn validate_trimmed_sheet_topology<'a>(
             || !shell.wire_edges().is_empty()
             || !shell.free_vertices().is_empty()
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES semantic writer only encodes a single face in shell {}",
                 shell.id
             )));
@@ -3852,7 +3852,7 @@ fn validate_trimmed_sheet_topology<'a>(
     let ignored_carriers = ignored_carrier_geometry(ir)?;
     for face in &ir.model.faces {
         if face.sense != Sense::Forward {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES Type 144 output cannot encode reversed face sense {}",
                 face.id
             )));
@@ -3869,7 +3869,7 @@ fn validate_trimmed_sheet_topology<'a>(
         surface_entities_for_ir(ctx, ir, surface, 0, version)?;
         let loops = face_loop_order(ir, face)?;
         if loops.is_empty() && !admission::natural_domain_face(ir, face) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES semantic writer requires a boundary loop or finite NURBS domain ({})",
                 face.id
             )));
@@ -3881,7 +3881,7 @@ fn validate_trimmed_sheet_topology<'a>(
             .iter()
             .any(|loop_| face.loop_role(&loop_.id) != LoopBoundaryRole::Unspecified);
         if has_unspecified_loop && has_explicit_loop {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES semantic writer cannot mix classified and unspecified boundary loops ({})",
                 face.id
             )));
@@ -3896,7 +3896,7 @@ fn validate_trimmed_sheet_topology<'a>(
                 )));
             }
             if loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "IGES semantic writer only encodes edge loops without pole vertices ({})",
                     loop_.id
                 )));
@@ -3916,7 +3916,7 @@ fn validate_trimmed_sheet_topology<'a>(
             if !trimmed {
                 let loop_has_pcurves = first_pcurve_count != 0;
                 if bounded_representation.is_some_and(|expected| expected != loop_has_pcurves) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "IGES Type 143 requires one representation type for every boundary loop ({})",
                         face.id
                     )));
@@ -3946,13 +3946,13 @@ fn validate_trimmed_sheet_topology<'a>(
                     )));
                 }
                 if !trimmed && coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "IGES Type 141 requires consistent parameter-curve presence per loop ({})",
                         loop_.id
                     )));
                 }
                 if trimmed && coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "IGES Type 142 requires a complete parameter-curve chain when present ({})",
                         loop_.id
                     )));
@@ -3969,13 +3969,13 @@ fn validate_trimmed_sheet_topology<'a>(
                         ))
                     })?;
                 if !used_edges.insert(edge.id.as_str().to_owned()) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "IGES semantic writer does not yet encode a shared or seam edge {}",
                         edge.id
                     )));
                 }
                 let curve_id = edge.curve().ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    CodecError::InvalidInput(format!(
                         "IGES semantic writer does not encode carrier-less edge {}",
                         edge.id
                     ))
@@ -3995,7 +3995,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     ir,
                     edge,
                     &flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                        CodecError::UnsupportedContent(
+                        CodecError::InvalidInput(
                             "IGES curve carrier has no solved geometry".into(),
                         )
                     })?)?,
@@ -4042,7 +4042,7 @@ fn validate_trimmed_sheet_topology<'a>(
                 used_vertices.insert(edge.end.as_str().to_owned());
                 for pcurve_use in &coedge.pcurves {
                     if pcurve_use.isoparametric == Some(true) {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "IGES semantic writer does not encode isoparametric pcurve use {}",
                             pcurve_use.pcurve
                         )));
@@ -4057,13 +4057,13 @@ fn validate_trimmed_sheet_topology<'a>(
                             ))
                         })?;
                     if pcurve.wrapper_reversed().is_some() || pcurve.native_tail_flags().is_some() {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "IGES semantic writer does not encode pcurve wrapper metadata {}",
                             pcurve.id
                         )));
                     }
                     let Some(parameter_range) = pcurve.parameter_range() else {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "IGES semantic writer requires a parameter range for pcurve {}",
                             pcurve.id
                         )));
@@ -4073,7 +4073,7 @@ fn validate_trimmed_sheet_topology<'a>(
                         !same_range([start, end], parameter_range.get())
                             && !same_range([end, start], parameter_range.get())
                     }) {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "IGES semantic writer cannot restrict pcurve use {}",
                             pcurve_use.pcurve
                         )));
@@ -4104,7 +4104,7 @@ fn validate_trimmed_sheet_topology<'a>(
         || admitted_vertices.len() != ir.model.vertices.len()
         || used_pcurves.len() != ir.model.pcurves.len()
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES semantic writer requires every topology arena entry to belong to a supported sheet face".into(),
         ));
     }
@@ -4167,7 +4167,7 @@ fn face_loop_order<'a>(
         .count()
         > 1
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "IGES Type 144 supports one explicit outer loop per face ({})",
             face.id
         )));
@@ -4236,7 +4236,7 @@ fn boundary_coedge<'ir>(
             ))
         })?;
     let curve_id = edge.curve().ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "IGES loop {} does not encode carrier-less edge {}",
             loop_.id, edge.id
         ))
@@ -4253,7 +4253,7 @@ fn boundary_coedge<'ir>(
             ))
         })?;
     let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-        CodecError::UnsupportedContent(format!("IGES curve {curve_id} has no solved geometry"))
+        CodecError::InvalidInput(format!("IGES curve {curve_id} has no solved geometry"))
     })?)?;
     let span = edge_span(ir, edge, &geometry)?;
     Ok(BoundaryCoedge {
@@ -4546,7 +4546,7 @@ fn curve_on_surface_entity(
         );
     }
     if model_children.is_empty() {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "IGES Type 144 loop {} requires a model curve carrier",
             boundary.loop_.id
         )));
@@ -4748,7 +4748,7 @@ fn oriented_curve_entity(
     if sense == Sense::Forward {
         let mut entity = curve_entity(
             geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES carrier has no solved geometry".into())
+                CodecError::InvalidInput("IGES carrier has no solved geometry".into())
             })?,
             Some(span),
             version,
@@ -4764,7 +4764,7 @@ fn oriented_curve_entity(
     let mut entity = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => curve_entity(
             geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES carrier has no solved geometry".into())
+                CodecError::InvalidInput("IGES carrier has no solved geometry".into())
             })?,
             Some(&reversed_span),
             version,
@@ -4795,7 +4795,7 @@ fn oriented_curve_entity(
             )
             .map_err(|error| CodecError::malformed(format_args!("circular: {error}")))?
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "IGES reversed circular edge span is not convertible ({span:?})"
                 ))
             })?;
@@ -4826,7 +4826,7 @@ fn oriented_curve_entity(
             )
             .map_err(|error| CodecError::malformed(format_args!("elliptical: {error}")))?
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "IGES reversed elliptical edge span is not convertible ({span:?})"
                 ))
             })?;
@@ -4855,7 +4855,7 @@ fn oriented_curve_entity(
             )
             .map_err(|error| CodecError::malformed(format_args!("parabolic: {error}")))?
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "IGES reversed parabolic edge span is not convertible ({span:?})"
                 ))
             })?;
@@ -4914,14 +4914,14 @@ fn oriented_curve_entity(
             };
             curve_entity(
                 reversed_geometry.solved().ok_or_else(|| {
-                    CodecError::UnsupportedContent("IGES carrier has no solved geometry".into())
+                    CodecError::InvalidInput("IGES carrier has no solved geometry".into())
                 })?,
                 Some(&reversed_span),
                 version,
             )?
         }
         _ => {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES reversed Type 142 edge carrier is unsupported ({geometry:?})"
             )));
         }
@@ -5088,7 +5088,7 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
         let candidate =
             procedural_pcurve_source_map(ir, &surface_id)?.unwrap_or((1.0, 0.0, 1.0, 0.0));
         if parameter_map.is_some_and(|existing| existing != candidate) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES pcurve {} is shared by incompatible procedural surface parameterizations",
                 pcurve.id
             )));
@@ -5125,13 +5125,13 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
 fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let pcurve = source_pcurve(ir, pcurve)?;
     let range = pcurve.parameter_range().ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
             pcurve.id
         ))
     })?;
     let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "IGES semantic writer only encodes NURBS pcurves ({})",
             pcurve.id
         )));
@@ -5176,13 +5176,13 @@ fn reverse_nurbs(
 fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let pcurve = source_pcurve(ir, pcurve)?;
     let range = pcurve.parameter_range().ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
             pcurve.id
         ))
     })?;
     let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "IGES semantic writer only encodes NURBS pcurves ({})",
             pcurve.id
         )));
@@ -5325,7 +5325,7 @@ fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
 fn isoparametric_flag(pcurve_use: &PcurveUse, owner: &str) -> Result<i32, CodecError> {
     match pcurve_use.isoparametric {
         Some(isoparametric) => Ok(i32::from(isoparametric)),
-        None => Err(CodecError::UnsupportedContent(format!(
+        None => Err(CodecError::InvalidInput(format!(
             "IGES {owner} requires an explicit isoparametric flag for pcurve {}",
             pcurve_use.pcurve
         ))),
@@ -5351,7 +5351,7 @@ fn validate_brep_pcurve_uses(
                 ))
             })?;
         let range = pcurve.parameter_range().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "IGES B-rep {} requires a parameter range for pcurve {}",
                 orientation.owner, pcurve.id
             ))
@@ -5360,13 +5360,13 @@ fn validate_brep_pcurve_uses(
             let [start, end] = use_range.endpoints();
             !same_range([start, end], range.get()) && !same_range([end, start], range.get())
         }) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES B-rep {} cannot restrict pcurve use {}",
                 orientation.owner, pcurve_use.pcurve
             )));
         }
         if pcurve.wrapper_reversed().is_some() || pcurve.native_tail_flags().is_some() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES B-rep {} does not encode pcurve wrapper metadata {}",
                 orientation.owner, pcurve.id
             )));
@@ -5455,7 +5455,7 @@ impl<'a> PcurveOrientationContext<'a> {
                     ))
                 })?;
             let range = pcurve.parameter_range().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "IGES {} requires a parameter range for pcurve {}",
                     self.owner, pcurve.id
                 ))
@@ -6548,7 +6548,7 @@ fn surface_entities_for_ir(
                 ProceduralSurfaceDefinition::Extrusion(_) => {
                     extrusion_surface_entities(ir, construction, base_index, version)
                 }
-                _ => Err(CodecError::UnsupportedContent(
+                _ => Err(CodecError::InvalidInput(
                     "IGES semantic writer only encodes procedural Revolution and Extrusion surfaces as native entities".into(),
                 )),
             }
@@ -6574,7 +6574,7 @@ fn extrusion_surface_entities(
             ))
         })?;
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES semantic writer only encodes Extrusion surfaces as Type 122".into(),
         ));
     };
@@ -6584,12 +6584,12 @@ fn extrusion_surface_entities(
     let native_position = definition_payload.native_position();
     let revision_form = definition_payload.revision_form();
     if revision_form.is_some() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES Type 122 output does not encode revision-gated extrusion fields".into(),
         ));
     }
     let parameter_interval = parameter_interval.ok_or_else(|| {
-        CodecError::UnsupportedContent(
+        CodecError::InvalidInput(
             "IGES Type 122 output requires a bounded directrix parameter interval".into(),
         )
     })?;
@@ -6615,7 +6615,7 @@ fn extrusion_surface_entities(
             ))
         })?;
     let geometry = flatten_curve(source_curve.geometry.solved().ok_or_else(|| {
-        CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+        CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
     })?)?;
     let carrier_interval = construction_carrier_interval(
         ir,
@@ -6630,7 +6630,7 @@ fn extrusion_surface_entities(
     ) {
         let span = curve_reference_span(ir, directrix, &geometry)?;
         if !same_range(span.range.get(), [start_parameter, terminate_parameter]) {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "IGES Type 122 composite directrix range is not its canonical Type 102 range"
                     .into(),
             ));
@@ -6746,12 +6746,12 @@ impl RevolutionSweep {
         let [start_angle, terminate_angle] = angular_interval.endpoints();
         let sweep = terminate_angle - start_angle;
         if !sweep.is_finite() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES Type 120 angular_interval [{start_angle}, {terminate_angle}] sweep overflows"
             )));
         }
         if sweep > TAU + ANGULAR_TOLERANCE {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES Type 120 angular_interval sweep {sweep} is outside (0, {TAU} + {ANGULAR_TOLERANCE}]"
             )));
         }
@@ -6789,7 +6789,7 @@ fn revolution_surface_entities(
         })?;
     let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition()
     else {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES semantic writer only encodes procedural Revolution surfaces as Type 120".into(),
         ));
     };
@@ -6802,14 +6802,14 @@ fn revolution_surface_entities(
     let transposed = definition_payload.transposed();
     let revision_form = definition_payload.revision_form();
     if angular_parameter_interval.is_some() || *transposed || revision_form.is_some() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES Type 120 output requires the default revolution parameterization".into(),
         ));
     }
     let start_angle = angular_interval.lower();
     let terminate_angle = RevolutionSweep::classify(angular_interval)?.terminate_angle(start_angle);
     let parameter_interval = parameter_interval.ok_or_else(|| {
-        CodecError::UnsupportedContent(
+        CodecError::InvalidInput(
             "IGES Type 120 output requires a bounded generatrix parameter interval".into(),
         )
     })?;
@@ -6825,7 +6825,7 @@ fn revolution_surface_entities(
             ))
         })?;
     let geometry = flatten_curve(source_curve.geometry.solved().ok_or_else(|| {
-        CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+        CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
     })?)?;
     let carrier_interval = construction_carrier_interval(
         ir,
@@ -6851,7 +6851,7 @@ fn revolution_surface_entities(
         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
         EvaluationFailure::NoValue
         | EvaluationFailure::NonFinite(_)
-        | EvaluationFailure::WorkExhausted => CodecError::UnsupportedContent(
+        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(
             "IGES Type 120 generatrix start cannot be evaluated".into(),
         ),
     })?;
@@ -6864,7 +6864,7 @@ fn revolution_surface_entities(
         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
         EvaluationFailure::NoValue
         | EvaluationFailure::NonFinite(_)
-        | EvaluationFailure::WorkExhausted => CodecError::UnsupportedContent(
+        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(
             "IGES Type 120 generatrix terminate cannot be evaluated".into(),
         ),
     })?;
@@ -6880,7 +6880,7 @@ fn revolution_surface_entities(
         ) {
             Some(axis) => {
                 let geometry = flatten_curve(axis.geometry.solved().ok_or_else(|| {
-                    CodecError::UnsupportedContent(
+                    CodecError::InvalidInput(
                         "IGES curve carrier has no solved geometry".into(),
                     )
                 })?)?;
@@ -6911,14 +6911,14 @@ fn revolution_surface_entities(
     Ok(vec![
         curve_entity(
             axis_geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES carrier has no solved geometry".into())
+                CodecError::InvalidInput("IGES carrier has no solved geometry".into())
             })?,
             Some(&axis_span),
             version,
         )?,
         curve_entity(
             geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES carrier has no solved geometry".into())
+                CodecError::InvalidInput("IGES carrier has no solved geometry".into())
             })?,
             Some(&generatrix_span),
             version,
@@ -7045,12 +7045,12 @@ fn surface_entities(
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
             if !same_float(ratio, 1.0) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES analytic cone writer only encodes circular cones".into(),
                 ));
             }
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES cone semi-angle must be in (0, 90) degrees".into(),
                 ));
             }
@@ -7090,7 +7090,7 @@ fn surface_entities(
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let radius = sphere_surface.radius().get();
             if radius <= 0.0 {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES sphere radius must be positive".into(),
                 ));
             }
@@ -7130,7 +7130,7 @@ fn surface_entities(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if minor_radius <= 0.0 || minor_radius >= major_radius {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES torus radii must satisfy 0 < minor < major".into(),
                 ));
             }
@@ -7167,7 +7167,7 @@ fn surface_entities(
         SolvedSurfaceGeometry::Transformed(placed) => {
             transformed_surface::entities(ctx, placed, base_index, version)
         }
-        other => Err(CodecError::UnsupportedContent(format!(
+        other => Err(CodecError::InvalidInput(format!(
             "IGES semantic writer does not encode surface geometry {other:?}"
         ))),
     }
@@ -7196,12 +7196,12 @@ fn encode_nurbs_surface(
         .zip(natural)
         .any(|(active, basis)| active[0] < basis[0] || active[1] > basis[1])
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES active surface domain exceeds its NURBS basis".into(),
         ));
     }
     if u_range[0] >= u_range[1] || v_range[0] >= v_range[1] {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES NURBS surface has an empty parameter domain".into(),
         ));
     }
@@ -7212,7 +7212,7 @@ fn encode_nurbs_surface(
             [u_range.map(FiniteReal::get), v_range.map(FiniteReal::get)],
         )?
         .ok_or_else(|| {
-            CodecError::UnsupportedContent(
+            CodecError::InvalidInput(
                 "IGES cannot exactly restrict this NURBS basis to its active surface domain".into(),
             )
         })?;
@@ -7224,7 +7224,7 @@ fn encode_nurbs_surface(
     let weights = match nurbs.pole_weights() {
         Some(values) => {
             if values.iter().any(|weight| weight.get() <= 0.0) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES NURBS surface weights must be finite and positive".into(),
                 ));
             }
@@ -7502,7 +7502,7 @@ impl CurveEntityEmitter<'_> {
                             Some(entity) => entity,
                             None => curve_entity(
                                 geometry.solved().ok_or_else(|| {
-                                    CodecError::UnsupportedContent(
+                                    CodecError::InvalidInput(
                                         "IGES carrier has no solved geometry".into(),
                                     )
                                 })?,
@@ -7513,7 +7513,7 @@ impl CurveEntityEmitter<'_> {
                     }
                     Sense::Reversed => {
                         let span = span.ok_or_else(|| {
-                            CodecError::UnsupportedContent(format!(
+                            CodecError::InvalidInput(format!(
                                 "IGES reversed curve {curve_id} requires a parameter range"
                             ))
                         })?;
@@ -7566,7 +7566,7 @@ impl CurveEntityEmitter<'_> {
                     ))
                 })?;
             let child_geometry = flatten_curve(child.geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+                CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
             })?)?;
             let child_sense = match (sense, segment.same_sense) {
                 (Sense::Forward, true) | (Sense::Reversed, false) => Sense::Forward,
@@ -7602,7 +7602,7 @@ impl CurveEntityEmitter<'_> {
             }
         }
         if children.is_empty() {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 "IGES Type 102 composite has no writable curve constituents".into(),
             ));
         }
@@ -7714,7 +7714,7 @@ fn curve_reference_span_inner(
                         ))
                     })?;
                 let child_geometry = flatten_curve(child.geometry.solved().ok_or_else(|| {
-                    CodecError::UnsupportedContent(
+                    CodecError::InvalidInput(
                         "IGES curve carrier has no solved geometry".into(),
                     )
                 })?)?;
@@ -7767,7 +7767,7 @@ fn curve_reference_span_inner(
                     let endpoints = |edge: &Edge| -> Result<(Point3, Point3, f64), CodecError> {
                         if let Some(range) = edge.param_range() {
                             if !same_range(range.get(), derived_range.get()) {
-                                return Err(CodecError::UnsupportedContent(format!(
+                                return Err(CodecError::InvalidInput(format!(
                                     "IGES composite curve {curve_id} has an edge parameter range that cannot be represented by Type 102"
                                 )));
                             }
@@ -7791,7 +7791,7 @@ fn curve_reference_span_inner(
                         if !close_point_with_tolerance(edge_start, start, tolerance)
                             || !close_point_with_tolerance(edge_end, end, tolerance)
                         {
-                            return Err(CodecError::UnsupportedContent(format!(
+                            return Err(CodecError::InvalidInput(format!(
                                 "IGES composite curve {curve_id} has ambiguous edge endpoints"
                             )));
                         }
@@ -7837,7 +7837,7 @@ fn curve_reference_span_inner(
                     {
                         Some(range) => range.into(),
                         None => default_range(geometry.solved().ok_or_else(|| {
-                            CodecError::UnsupportedContent(
+                            CodecError::InvalidInput(
                                 "IGES carrier has no solved geometry".into(),
                             )
                         })?)?,
@@ -7851,7 +7851,7 @@ fn curve_reference_span_inner(
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
                         EvaluationFailure::NoValue
                         | EvaluationFailure::NonFinite(_)
-                        | EvaluationFailure::WorkExhausted => CodecError::UnsupportedContent(
+                        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(
                             format!("IGES composite child curve {curve_id} has no evaluable start"),
                         ),
                     })?;
@@ -7864,7 +7864,7 @@ fn curve_reference_span_inner(
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
                         EvaluationFailure::NoValue
                         | EvaluationFailure::NonFinite(_)
-                        | EvaluationFailure::WorkExhausted => CodecError::UnsupportedContent(
+                        | EvaluationFailure::WorkExhausted => CodecError::InvalidInput(
                             format!("IGES composite child curve {curve_id} has no evaluable end"),
                         ),
                     })?;
@@ -7879,7 +7879,7 @@ fn curve_reference_span_inner(
                         .iter()
                         .any(|edge| edge.param_range().is_none())
                     {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "IGES composite child curve {curve_id} requires a parameter range"
                         )));
                     }
@@ -7899,7 +7899,7 @@ fn curve_reference_span_inner(
                             || !close_point_with_tolerance(span.start, first.start, tolerance)
                             || !close_point_with_tolerance(span.end, first.end, tolerance)
                     }) {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "IGES composite child curve {curve_id} has ambiguous edge parameter ranges"
                         )));
                     }
@@ -8084,7 +8084,7 @@ fn append_unowned_curves(
         let geometry = match compound::geometry(ir, &curve.id) {
             Some(geometry) => geometry,
             None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+                CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
             })?)?,
         };
         let span = curve
@@ -8111,7 +8111,7 @@ fn append_unowned_curves(
         );
         match written {
             Ok(_) => {}
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(CodecError::InvalidInput(reason)) => {
                 entities.truncate(before);
                 losses.push(
                     IgesLossCode::WriterEntityOmitted
@@ -8252,7 +8252,7 @@ fn checked_edge_span(
         return curve_reference_span(ir, curve_id, geometry).map(Some);
     }
     let missing_range = || {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "IGES semantic writer requires a parameter range for edge {}",
             edge.id
         ))
@@ -8383,22 +8383,22 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<FiniteVector<2>, Code
             let values = polyline_parameters(polyline)?;
             checked([values.first, values.last])
         }
-        SolvedCurveGeometry::Line(_) => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Line(_) => Err(CodecError::InvalidInput(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        SolvedCurveGeometry::Parabola(_) => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Parabola(_) => Err(CodecError::InvalidInput(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        SolvedCurveGeometry::Hyperbola(_) => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Hyperbola(_) => Err(CodecError::InvalidInput(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        SolvedCurveGeometry::Degenerate(_) => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Degenerate(_) => Err(CodecError::InvalidInput(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        SolvedCurveGeometry::Composite { .. } => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Composite { .. } => Err(CodecError::InvalidInput(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        SolvedCurveGeometry::Unknown { .. } => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Unknown { .. } => Err(CodecError::InvalidInput(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
         SolvedCurveGeometry::Transformed(_) => Err(CodecError::Malformed(
@@ -8434,7 +8434,7 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[FiniteReal; 3], CodecEr
         (-1074 - minimum, 1023 - maximum)
     };
     if lower > upper {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES conic coefficient range is not representable".into(),
         ));
     }
@@ -8452,7 +8452,7 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[FiniteReal; 3], CodecEr
         scale(-1.0, shift),
     ];
     let [Some(a), Some(c), Some(f)] = coefficients.map(nonzero) else {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES conic coefficient range is not representable".into(),
         ));
     };
@@ -8473,7 +8473,7 @@ fn curve_entity(
     match geometry {
         SolvedCurveGeometry::Line(_) => {
             let span = span.ok_or_else(|| {
-                CodecError::UnsupportedContent(
+                CodecError::InvalidInput(
                     "IGES semantic writer cannot bound an unreferenced line".into(),
                 )
             })?;
@@ -8604,7 +8604,7 @@ fn curve_entity(
             let vertex = parabola_curve.vertex().get();
             let focal_distance = parabola_curve.focal_distance().get();
             if range[0] == range[1] {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES parabola requires a finite non-zero parameter span".into(),
                 ));
             }
@@ -8641,7 +8641,7 @@ fn curve_entity(
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             if range[0] == range[1] {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES hyperbola requires a finite non-zero parameter span".into(),
                 ));
             }
@@ -8697,16 +8697,16 @@ fn curve_entity(
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             encode_nurbs(&nurbs, range, "POLYLINE")
         }
-        SolvedCurveGeometry::Degenerate(_) => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Degenerate(_) => Err(CodecError::InvalidInput(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
-        SolvedCurveGeometry::Composite { .. } => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Composite { .. } => Err(CodecError::InvalidInput(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
-        SolvedCurveGeometry::Unknown { .. } => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Unknown { .. } => Err(CodecError::InvalidInput(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
-        SolvedCurveGeometry::Transformed(_) => Err(CodecError::UnsupportedContent(
+        SolvedCurveGeometry::Transformed(_) => Err(CodecError::InvalidInput(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
     }
@@ -8734,7 +8734,7 @@ fn encode_nurbs(
     let weights = match nurbs.weights() {
         Some(weights) => {
             if weights.iter().any(|weight| weight.get() <= 0.0) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES NURBS weights must be finite and positive".into(),
                 ));
             }
@@ -8887,7 +8887,7 @@ fn flatten_curve(geometry: &SolvedCurveGeometry) -> Result<CurveGeometry, CodecE
         SolvedCurveGeometry::Transformed(placed) => {
             let transform = placed.transform();
             if !transform.is_proper_rigid() {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::InvalidInput(
                     "IGES semantic writer only applies proper-rigid curve transforms".into(),
                 ));
             }
@@ -9062,7 +9062,7 @@ fn apply_rigid_transform(
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline))
         }
         other => {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "IGES semantic writer cannot flatten curve geometry {other:?}"
             )));
         }
@@ -9113,7 +9113,7 @@ fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placeme
         cadmpeg_ir::features::FiniteVector3::new(axis)
             .map(cadmpeg_ir::features::FiniteVector3::components)
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "IGES writer computed the non-finite placement {field} {axis:?}, which \
                      IGES cannot state"
                 ))
@@ -9132,7 +9132,7 @@ fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placeme
 fn validate_arc_sweep(range: [f64; 2]) -> Result<(), CodecError> {
     let sweep = range[1] - range[0];
     if !(0.0..=TAU + ANGULAR_TOLERANCE).contains(&sweep) || sweep == 0.0 {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES conic writer requires a non-zero ordered span no larger than one revolution"
                 .into(),
         ));
@@ -9150,7 +9150,7 @@ fn parabola_point(focal_distance: f64, parameter: f64) -> Result<[FiniteReal; 2]
         FiniteReal::new(focal_distance * parameter * parameter),
     ];
     let [Some(x), Some(y)] = point else {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES parabola endpoint is non-finite".into(),
         ));
     };
@@ -9171,7 +9171,7 @@ fn hyperbola_point(
         }?;
         Some([major_cosh, minor_sinh])
     })()
-    .ok_or_else(|| CodecError::UnsupportedContent("IGES hyperbola endpoint is non-finite".into()))
+    .ok_or_else(|| CodecError::InvalidInput("IGES hyperbola endpoint is non-finite".into()))
 }
 
 fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[FiniteReal; 2], CodecError> {
@@ -9195,7 +9195,7 @@ fn polyline_parameters(polyline: &PolylineCurve) -> Result<PolylineParameters, C
             (0..count)
                 .map(|value| {
                     cadmpeg_core::convert::f64_from_index(value).ok_or_else(|| {
-                        CodecError::UnsupportedContent(
+                        CodecError::InvalidInput(
                             "IGES polyline point index is not exactly representable as a parameter"
                                 .into(),
                         )
@@ -9210,7 +9210,7 @@ fn polyline_parameters(polyline: &PolylineCurve) -> Result<PolylineParameters, C
         },
     )?;
     if !values.windows(2).all(|pair| pair[0] < pair[1]) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "IGES polyline parameters must be finite and strictly increasing".into(),
         ));
     }
@@ -9254,7 +9254,7 @@ fn admitted_point(point: Point3, label: &str) -> Result<FinitePoint3, CodecError
 
 /// Internal entity-admission signal; synthesis catches it and charges export loss.
 fn unsupported(message: impl std::fmt::Display) -> CodecError {
-    CodecError::UnsupportedContent(message.to_string())
+    CodecError::InvalidInput(message.to_string())
 }
 
 /// The refusal of a point `label` whose coordinates are not finite.
@@ -9991,7 +9991,7 @@ fn number(value: FiniteReal) -> String {
 /// non-finite real.
 fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
     FiniteReal::new(value).ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "IGES writer computed the non-finite {field} {value}, which IGES cannot state"
         ))
     })
