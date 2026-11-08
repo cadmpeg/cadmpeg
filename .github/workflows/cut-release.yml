@@ -110,6 +110,13 @@ jobs:
               failed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}" \
                 --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion != "success")] | length')"
               if [[ "${pending}" -eq 0 && "${failed}" -gt 0 ]]; then
+                # A push to main cancels the in-progress main run, and the
+                # next main run tests every commit since the last passing run.
+                git fetch origin main
+                if [[ "$(git rev-parse origin/main)" != "${sha}" ]]; then
+                  echo "CI did not pass on ${sha}, and origin/main moved past it"
+                  return 0
+                fi
                 echo "::error::CI has not passed on main HEAD ${sha}." >&2
                 return 1
               fi
