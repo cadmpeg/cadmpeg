@@ -59,7 +59,7 @@ pub(super) struct FaceSelector {
     body: PmDcReference,
     item: PmDcReference,
     context: PmDcReference,
-    /// The selector has the direct form, which only a chamfer support face uses.
+    /// The selector has the direct form.
     direct: bool,
 }
 
