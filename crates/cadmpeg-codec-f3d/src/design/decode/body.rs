@@ -601,7 +601,7 @@ fn snapshot_body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let frames = crate::metastream::live_primary_record_frames(meta, bytes.len());
     let mut primary_by_entity = HashMap::new();
     for (ordinal, frame) in frames.iter().enumerate() {
         primary_by_entity.insert(frame.entity_id, ordinal);
@@ -813,7 +813,7 @@ fn body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let record_frames = crate::metastream::live_primary_record_frames(meta, bytes.len());
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
     for (ordinal, record) in meta.records.iter().enumerate() {
@@ -884,7 +884,9 @@ fn body_map_records(
                     )));
                 }
             };
-            let frame = record_frames[record_ordinal];
+            let Some(&frame) = record_frames.get(record_ordinal) else {
+                return Ok(Vec::new());
+            };
             let start = frame.start;
             let end = frame.end;
             let record_index = u32::try_from(entity_id).map_err(|_| {

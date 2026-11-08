@@ -1105,7 +1105,7 @@ fn typed_records(
         }
     }
     let mut records = Vec::new();
-    for frame in crate::metastream::primary_record_frames(meta, bytes.len())? {
+    for frame in crate::metastream::live_primary_record_frames(meta, bytes.len()) {
         let Some(&ordinal) = placement_entities.get(&frame.entity_id) else {
             continue;
         };

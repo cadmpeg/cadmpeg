@@ -289,6 +289,66 @@ pub(crate) fn f3d_with_damaged_design_bulkstream(smbh: &[u8]) -> Vec<u8> {
     zip.finish().expect("synthetic archive closes").into_inner()
 }
 
+/// Rebuild an archive with stored entries, passing each entry through `edit`.
+/// An entry for which `edit` returns `false` is left out.
+fn rewrite_entries(bytes: &[u8], mut edit: impl FnMut(&str, &mut Vec<u8>) -> bool) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).expect("synthetic archive opens");
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("synthetic entry opens");
+        let name = entry.name().expect("synthetic entry name").into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).expect("synthetic entry reads");
+        if edit(&name, &mut content) {
+            zip.start_file(name, stored)
+                .expect("synthetic entry writes");
+            zip.write_all(&content).expect("synthetic entry writes");
+        }
+    }
+    zip.finish().expect("synthetic archive closes").into_inner()
+}
+
+/// An archive whose Design1 primary index places its last record at the end
+/// of the sibling `BulkStream`, so that index does not resolve while every
+/// record header stays intact.
+pub(crate) fn with_damaged_design_index(bytes: &[u8]) -> Vec<u8> {
+    let bulk_len = {
+        let mut archive =
+            zip::ZipArchive::new(Cursor::new(bytes)).expect("synthetic archive opens");
+        let mut bulk = None;
+        for index in 0..archive.len() {
+            let entry = archive.by_index(index).expect("synthetic entry opens");
+            if entry
+                .name()
+                .expect("synthetic entry name")
+                .ends_with("Design1/BulkStream.dat")
+            {
+                bulk = Some(entry.size());
+            }
+        }
+        bulk.expect("synthetic archive carries a Design1 bulk stream")
+    };
+    let mut damaged = false;
+    let rewritten = rewrite_entries(bytes, |name, content| {
+        if name.ends_with("Design1/MetaStream.dat") {
+            let meta = crate::metastream::parse(content, name).expect("synthetic MetaStream");
+            let last = meta.records.last().expect("synthetic primary index entry");
+            let mut entry = last.entity_id.to_le_bytes().to_vec();
+            entry.extend_from_slice(&last.bulk_offset.to_le_bytes());
+            let at = content
+                .windows(entry.len())
+                .position(|window| window == entry)
+                .expect("primary index entry bytes");
+            content[at + 8..at + 16].copy_from_slice(&bulk_len.to_le_bytes());
+            damaged = true;
+        }
+        true
+    });
+    assert!(damaged, "synthetic archive carries a Design1 MetaStream");
+    rewritten
+}
+
 pub(crate) fn f3d_with_smbh_and_protein_guids(smbh: &[u8], guids: &[&str]) -> Vec<u8> {
     let properties = guids
         .iter()

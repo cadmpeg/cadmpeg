@@ -4,7 +4,7 @@
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::layout::sheet_metal_settings_prefix as settings_prefix;
-use crate::metastream::{primary_record_frames, PrimaryRecordFrame};
+use crate::metastream::{live_primary_record_frames, PrimaryRecordFrame};
 use crate::records::sheet_metal_settings::{
     DesignSheetMetalSettings, DesignSheetMetalSettingsInputs, DesignSheetMetalSettingsWire,
     V3RuleReferenceTail, PAIRED_GUID, PRESENTATION_GUID, RULE_GUID, SETTINGS_GUID,
@@ -87,7 +87,7 @@ pub(crate) fn decode_settings(
             }
         }
         let bytes = scan.entry_bytes(&entry.name)?;
-        let frames = primary_record_frames(&meta, bytes.len())?;
+        let frames = live_primary_record_frames(&meta, bytes.len());
         let primary =
             (frames.iter().map(|frame| frame.entity_id)).collect::<std::collections::HashSet<_>>();
         let rule_starts = frames
