@@ -3425,9 +3425,10 @@ impl<'a> Builder<'a> {
             let usage = self.emitter.emit(
                 "NEXT_ASSEMBLY_USAGE_OCCURRENCE",
                 &format!(
-                    "{},{},'',{parent_definition},{child_definition},$",
+                    "{},{},'',{parent_definition},{child_definition},{}",
                     string(occurrence.id.as_str()),
-                    string(occurrence_name)
+                    string(occurrence_name),
+                    string(&format!("cadmpeg:ordinal={}", occurrence.ordinal))
                 ),
             );
             self.occurrence_step_refs
