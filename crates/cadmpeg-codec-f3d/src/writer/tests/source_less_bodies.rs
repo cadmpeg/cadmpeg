@@ -428,13 +428,26 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     f3d_native_mut(&mut source_less)
         .creation_timestamps
         .push(duplicate);
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("duplicate generated timestamp target must be rejected");
-    assert!(error
-        .to_string()
-        .contains("multiple F3D creation timestamps target the same entity"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("duplicate generated timestamp target must be rejected"),
+    };
+    assert!(
+        message.contains("multiple F3D creation timestamps target the same entity"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -479,11 +492,23 @@ fn generated_source_less_reports_unsupported_links_and_rejects_incoherent_ordina
         design_reference: 7,
         ordinal: 1,
     }];
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("noncanonical persistent link order must not be rewritten");
-    assert!(error.to_string().contains("contiguous ordinals"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("noncanonical persistent link order must not be rewritten"),
+    };
+    assert!(message.contains("contiguous ordinals"), "{message}");
 }
 
 #[test]
@@ -513,13 +538,26 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             })
             .into();
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("duplicate edge metadata must not collapse");
-    assert!(error
-        .to_string()
-        .contains("multiple F3D edge-continuity records"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("duplicate edge metadata must not collapse"),
+    };
+    assert!(
+        message.contains("multiple F3D edge-continuity records"),
+        "{message}"
+    );
 
     {
         let mut native = f3d_native_mut(&mut source_less);
@@ -664,13 +702,26 @@ fn generated_source_less_writes_typed_asm_history_graph() {
             preamble.stream_size = 3;
         }
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("incoherent generated history preamble must be rejected");
-    assert!(error
-        .to_string()
-        .contains("head state_id == stream_size and nonnegative history_entry_count"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("incoherent generated history preamble must be rejected"),
+    };
+    assert!(
+        message.contains("head state_id == stream_size and nonnegative history_entry_count"),
+        "{message}"
+    );
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less history round trip");
@@ -715,13 +766,26 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         orphan_fields,
     )
     .expect("valid native identity");
-    let error = F3dCodec
-        .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("orphan history records must not be discarded");
-    assert!(error
-        .to_string()
-        .contains("orphaned or ambiguously parented records"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("orphan history records must not be discarded"),
+    };
+    assert!(
+        message.contains("orphaned or ambiguously parented records"),
+        "{message}"
+    );
 
     let mut duplicate = decoded.ir().clone();
     duplicate.source = None;
@@ -735,13 +799,26 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .get_mut("asm_delta_states")
         .expect("delta-state arena");
     states.push(states[0].clone());
-    let error = F3dCodec
-        .plan(EncodeInput::new(&duplicate, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("duplicate history identities must not multiply children");
-    assert!(error
-        .to_string()
-        .contains("asm_delta_states contains duplicate record ids"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&duplicate, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("duplicate history identities must not multiply children"),
+    };
+    assert!(
+        message.contains("asm_delta_states contains duplicate record ids"),
+        "{message}"
+    );
 
     // W2: chain links are source layout. A broken chain is relinked where
     // the history is carried; a history whose states hold retained payloads

@@ -1297,14 +1297,23 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             .unwrap();
     }
 
-    let Err(error) = plan_at(IgesVersion::V5_3, decoded.ir(), None) else {
-        panic!("disagreeing pcurve endpoints were accepted")
+    // #239 §5.0: malformed writer input is an encode-path invariant violation.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        plan_at(IgesVersion::V5_3, decoded.ir(), None)
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("disagreeing pcurve endpoints were accepted"),
     };
     assert!(
-        error
-            .to_string()
-            .contains("pcurve chain endpoints disagree with its directed support edge"),
-        "{error}"
+        message.contains("pcurve chain endpoints disagree with its directed support edge"),
+        "{message}"
     );
 }
 

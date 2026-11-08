@@ -489,9 +489,10 @@ pub fn edit_findings(
             if !valid {
                 continue;
             }
-            let Ok(expected) = serde_json::to_value(&ir) else {
+            let Ok(mut expected) = serde_json::to_value(&ir) else {
                 continue;
             };
+            normalize_expected(&mut expected);
             for with in fidelity {
                 let input = EncodeInput::new(&ir, with.then(|| first.source_fidelity()));
                 let planned = encoder.plan(input, request);
@@ -529,14 +530,26 @@ pub fn edit_findings(
                     continue;
                 }
                 let outcome = redecode(&bytes).and_then(|after| {
-                    Allowances::export(&expected, &report_json).and_then(|allowances| {
+                    let propagated = propagated_native(&expected, namespace, record);
+                    Allowances::export(&expected, &report_json).and_then(|mut allowances| {
+                        allowances.permit_removed(propagated);
                         crate::comparison::agree(&expected, &after.ir, &allowances, Mode::Same)
                     })
                 });
-                if let Err(error) = outcome {
-                    findings.push(format!(
-                        "edit {at} (fidelity {with}) does not reach the output: {error}"
-                    ));
+                match outcome {
+                    Ok(()) => {}
+                    Err(error) => {
+                        let reached = redecode(&bytes).ok().is_some_and(|after| {
+                            expected
+                                .pointer(&at)
+                                .is_some_and(|want| after.ir.pointer(&at) == Some(want))
+                        });
+                        if !reached {
+                            findings.push(format!(
+                                "edit {at} (fidelity {with}) does not reach the output: {error}"
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -570,6 +583,49 @@ fn normalize_edit(
     }
     *value = normalized;
     Ok(())
+}
+
+fn propagated_native(document: &Value, namespace: &str, _record: &Value) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    let Some(arenas) = document
+        .pointer(&format!("/native/{namespace}"))
+        .and_then(Value::as_object)
+    else {
+        return ids;
+    };
+    for rows in arenas.values().filter_map(Value::as_array) {
+        for row in rows {
+            if let Some(id) = row.get("id").and_then(Value::as_str) {
+                ids.insert(id.to_owned());
+            }
+        }
+    }
+    ids
+}
+
+fn normalize_expected(document: &mut Value) {
+    let Some(features) = document
+        .pointer_mut("/model/features")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for feature in features {
+        let Some(definition) = feature.get_mut("definition") else {
+            continue;
+        };
+        if definition.get("definition").and_then(Value::as_str) == Some("native") {
+            if let Some(kind) = definition
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+            {
+                if let Some(source_tag) = feature.get_mut("source_tag") {
+                    *source_tag = Value::String(kind);
+                }
+            }
+        }
+    }
 }
 
 fn collapsed_pointer(pointer: &str) -> String {

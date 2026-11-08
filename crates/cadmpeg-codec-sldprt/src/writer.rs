@@ -192,10 +192,11 @@ fn can_write_surface(geometry: &SurfaceGeometry) -> bool {
 }
 
 fn can_write_curve(ir: &CadIr, curve: &cadmpeg_ir::geometry::Curve) -> bool {
-    surface_curve::supported(ir, curve).is_some() || curve.geometry.solved().is_some_and(|solved| {
-        matches!(solved, SolvedCurveGeometry::Nurbs(_))
-            || curve_values(&CurveGeometry::Solved(solved.clone()), 1.0).is_ok()
-    })
+    surface_curve::supported(ir, curve).is_some()
+        || curve.geometry.solved().is_some_and(|solved| {
+            matches!(solved, SolvedCurveGeometry::Nurbs(_))
+                || curve_values(&CurveGeometry::Solved(solved.clone()), 1.0).is_ok()
+        })
 }
 
 /// Options for writing a semantic envelope.
@@ -222,8 +223,8 @@ pub(super) fn write_semantic_at(
         source_trust,
     } = options;
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
-    let session = cadmpeg_core::encode::EncodeSession::from_context(digest_ctx)
-        .map_err(CodecError::from)?;
+    let session =
+        cadmpeg_core::encode::EncodeSession::from_context(digest_ctx).map_err(CodecError::from)?;
     let mut native = match prepared_native {
         Some(native) => Some(native),
         None => ir
@@ -311,7 +312,11 @@ pub(super) fn write_semantic_at(
     } else {
         let feature_input_renames =
             crate::history::write::synchronize_feature_records(digest_ctx, ir, &mut native)?;
-        crate::resolved_features::write_prepare::prepare_sketches_for_write(digest_ctx, ir, &mut native)?;
+        crate::resolved_features::write_prepare::prepare_sketches_for_write(
+            digest_ctx,
+            ir,
+            &mut native,
+        )?;
         crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
         crate::history::write::configurations::synchronize_configuration_records(
             ir,
@@ -2682,25 +2687,23 @@ fn resolved_feature_payload(
         let offset = usize::try_from(entity.offset()).map_err(|_| {
             CodecError::InvalidInput("feature-input offset exceeds address space".into())
         })?;
-        let marker_end = offset.checked_add(MARKER.len()).ok_or_else(|| {
-            CodecError::InvalidInput("feature-input offset overflow".into())
-        })?;
+        let marker_end = offset
+            .checked_add(MARKER.len())
+            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
         if payload.get(offset..marker_end) != Some(MARKER) {
             return Err(CodecError::InvalidInput(
                 "editing this feature-input marker layout is not implemented".into(),
             )
             .into());
         }
-        let field_start = offset.checked_add(17).ok_or_else(|| {
-            CodecError::InvalidInput("feature-input offset overflow".into())
-        })?;
-        let field_end = offset.checked_add(21).ok_or_else(|| {
-            CodecError::InvalidInput("feature-input offset overflow".into())
-        })?;
+        let field_start = offset
+            .checked_add(17)
+            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
+        let field_end = offset
+            .checked_add(21)
+            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
         let field = payload.get_mut(field_start..field_end).ok_or_else(|| {
-            CodecError::InvalidInput(
-                "feature-input type field exceeds retained payload".into(),
-            )
+            CodecError::InvalidInput("feature-input type field exceeds retained payload".into())
         })?;
         let code = entity.kind().native_code().to_le_bytes();
         // The scanned kind of a marker is not always the kind whose code is
@@ -2731,12 +2734,12 @@ fn resolved_feature_payload(
             }
         }
         if let Some(value) = entity.state_value {
-            let state_start = offset.checked_add(48).ok_or_else(|| {
-                CodecError::InvalidInput("feature-input offset overflow".into())
-            })?;
-            let state_end = state_start.checked_add(8).ok_or_else(|| {
-                CodecError::InvalidInput("feature-input offset overflow".into())
-            })?;
+            let state_start = offset
+                .checked_add(48)
+                .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
+            let state_end = state_start
+                .checked_add(8)
+                .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
             let state = payload.get_mut(state_start..state_end).ok_or_else(|| {
                 CodecError::InvalidInput(
                     "feature-input state field exceeds retained payload".into(),
@@ -2791,9 +2794,7 @@ fn resolved_feature_payload(
             for (relative, value) in [(0usize, coordinates[0]), (8, coordinates[1])] {
                 let start = coordinate_start + relative;
                 let end = start.checked_add(8).ok_or_else(|| {
-                    CodecError::InvalidInput(
-                        "feature-input coordinate offset overflow".into(),
-                    )
+                    CodecError::InvalidInput("feature-input coordinate offset overflow".into())
                 })?;
                 payload
                     .get_mut(start..end)
@@ -3916,9 +3917,9 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, MaterialError> {
         let appearance = appearances
             .get(&binding.appearance)
             .ok_or(MaterialError::MissingAppearance)?;
-        let color = appearance
-            .base_color
-            .ok_or(MaterialError::Decline("SLDPRT body appearance has no base color"))?;
+        let color = appearance.base_color.ok_or(MaterialError::Decline(
+            "SLDPRT body appearance has no base color",
+        ))?;
         let material = (appearance.name.as_deref().unwrap_or("Material"), color);
         if selected
             .as_ref()

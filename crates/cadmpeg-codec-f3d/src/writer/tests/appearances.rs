@@ -38,12 +38,30 @@ fn direct_color_alpha_reductions_are_declared_and_named() {
     ir.model.faces[0].color = Some(translucent);
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
     for (path, id, color) in [
-        ("model.bodies[].color.a", ir.model.bodies[0].id.as_str(), output.ir().model.bodies[0].color),
-        ("model.faces[].color.a", ir.model.faces[0].id.as_str(), output.ir().model.faces[0].color),
+        (
+            "model.bodies[].color.a",
+            ir.model.bodies[0].id.as_str(),
+            output.ir().model.bodies[0].color,
+        ),
+        (
+            "model.faces[].color.a",
+            ir.model.faces[0].id.as_str(),
+            output.ir().model.faces[0].color,
+        ),
     ] {
-        assert!(<F3dCodec as EncoderBackend>::REDUCED_FIELDS.iter().any(|row| row.path == path && matches!(row.storage, ReducedStorage::Normalized { loss: "f3d/writer.appearance-properties-omitted" })));
+        assert!(<F3dCodec as EncoderBackend>::REDUCED_FIELDS
+            .iter()
+            .any(|row| row.path == path
+                && matches!(
+                    row.storage,
+                    ReducedStorage::Normalized {
+                        loss: "f3d/writer.appearance-properties-omitted"
+                    }
+                )));
         assert_eq!(color.unwrap().a(), 1.0);
-        assert!(report.losses.iter().any(|loss| loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind() && loss.message.contains(id)));
+        assert!(report.losses.iter().any(|loss| loss.code
+            == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+            && loss.message.contains(id)));
     }
 }
 
@@ -88,7 +106,9 @@ fn source_less_synthesis_writes_body_material_assignment() {
 #[test]
 fn source_less_material_assignment_without_protein_preserves_appearance() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
     let mut ir = decoded.ir().clone();
     let appearance = &mut ir.model.appearances[0];
     appearance.physical_token = Some("PrismMaterial-019".into());
@@ -102,14 +122,22 @@ fn source_less_material_assignment_without_protein_preserves_appearance() {
     let (written, _) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(written.ir().model.appearance_bindings.len(), 1);
     assert_eq!(written.ir().model.appearances.len(), 1);
-    assert_eq!(written.ir().model.appearances[0].physical_token, ir.model.appearances[0].physical_token);
+    assert_eq!(
+        written.ir().model.appearances[0].physical_token,
+        ir.model.appearances[0].physical_token
+    );
     assert_eq!(written.ir().model.appearances[0].base_color, None);
-    assert_eq!(written.ir().model.appearances[0].name, ir.model.appearances[0].name);
+    assert_eq!(
+        written.ir().model.appearances[0].name,
+        ir.model.appearances[0].name
+    );
     ir.model.appearances[0].name = Some("Custom material".into());
     let (reduced, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(reduced.ir().model.appearance_bindings.len(), 1);
     assert_eq!(reduced.ir().model.appearances[0].name, None);
-    assert!(report.losses.iter().any(|loss| loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind() && loss.message.contains(ir.model.appearances[0].id.as_str())));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+        && loss.message.contains(ir.model.appearances[0].id.as_str())));
 }
 
 #[test]
@@ -146,27 +174,52 @@ fn neutral_body_material_authors_design_registry() {
     let mut assignment_only = ir.clone();
     assignment_only.model.appearances[0].base_color = None;
     assignment_only.model.appearances[0].schema = None;
-    let (assignment_output, _) = super::source_less_analytic::synthesize_document(&assignment_only, None);
+    let (assignment_output, _) =
+        super::source_less_analytic::synthesize_document(&assignment_only, None);
     assert_eq!(assignment_output.ir().model.appearance_bindings.len(), 1);
     assert_eq!(assignment_output.ir().model.appearances.len(), 1);
     assert_eq!(assignment_output.ir().model.appearances[0].base_color, None);
-    assert_eq!(assignment_output.ir().model.appearances[0].visual_guid, assignment_only.model.appearances[0].visual_guid);
-    assert_eq!(assignment_output.ir().model.appearances[0].name, assignment_only.model.appearances[0].name);
-    assert_eq!(assignment_output.ir().model.appearances[0].physical_token, assignment_only.model.appearances[0].physical_token);
+    assert_eq!(
+        assignment_output.ir().model.appearances[0].visual_guid,
+        assignment_only.model.appearances[0].visual_guid
+    );
+    assert_eq!(
+        assignment_output.ir().model.appearances[0].name,
+        assignment_only.model.appearances[0].name
+    );
+    assert_eq!(
+        assignment_output.ir().model.appearances[0].physical_token,
+        assignment_only.model.appearances[0].physical_token
+    );
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
-    let mut unrelated = f3d_native(decoded.ir()).design_types.iter().find(|kind| {
-        ![crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
-          crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
-          crate::design::presentation::BREP_CONTAINER_TYPE_GUID]
-            .iter().any(|guid| kind.type_guid.as_str().eq_ignore_ascii_case(guid))
-    }).unwrap().clone();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut unrelated = f3d_native(decoded.ir())
+        .design_types
+        .iter()
+        .find(|kind| {
+            ![
+                crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+                crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+            ]
+            .iter()
+            .any(|guid| kind.type_guid.as_str().eq_ignore_ascii_case(guid))
+        })
+        .unwrap()
+        .clone();
     unrelated.set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
     let mut mixed = ir.clone();
     f3d_native_mut(&mut mixed).design_types.push(unrelated);
     let (mixed_output, _) = super::source_less_analytic::synthesize_document(&mixed, None);
     assert_eq!(mixed_output.ir().model.appearance_bindings.len(), 1);
-    assert_eq!(mixed_output.ir().model.appearances[0].physical_token.as_deref(), Some("PrismMaterial-019"));
+    assert_eq!(
+        mixed_output.ir().model.appearances[0]
+            .physical_token
+            .as_deref(),
+        Some("PrismMaterial-019")
+    );
     let mut without_guid = ir.clone();
     without_guid.model.appearances[0].asset_guid = None;
     without_guid.model.appearances[0].visual_guid = None;
@@ -254,9 +307,16 @@ fn neutral_body_material_authors_design_registry() {
     let mut mixed_assignments = multiple_written.ir().clone();
     let mut added_binding = multiple.model.appearance_bindings[1].clone();
     added_binding.target = AppearanceTarget::Body(mixed_assignments.model.bodies[1].id.clone());
-    mixed_assignments.model.appearances.push(multiple.model.appearances[1].clone());
-    mixed_assignments.model.appearance_bindings.push(added_binding);
-    let (mixed_written, _) = super::source_less_analytic::synthesize_document(&mixed_assignments, None);
+    mixed_assignments
+        .model
+        .appearances
+        .push(multiple.model.appearances[1].clone());
+    mixed_assignments
+        .model
+        .appearance_bindings
+        .push(added_binding);
+    let (mixed_written, _) =
+        super::source_less_analytic::synthesize_document(&mixed_assignments, None);
     assert_eq!(mixed_written.ir().model.appearance_bindings.len(), 2);
     assert_eq!(mixed_written.ir().model.appearances.len(), 2);
     let (multiple_bound, _) = super::source_less_analytic::synthesize_document(&multiple, None);

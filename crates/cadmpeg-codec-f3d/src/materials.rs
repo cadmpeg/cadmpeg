@@ -635,17 +635,16 @@ pub(crate) fn decode_with_body_bindings<'a>(
             let Some(instance) = instance_properties(ctx, protein)? else {
                 return Ok(None);
             };
-            let instance_stream = StreamName::try_from(format!(
-                "{}/AssetData/InstanceProperties.bin",
-                entry.name
-            ))
-            .map_err(CodecError::malformed)?;
+            let instance_stream =
+                StreamName::try_from(format!("{}/AssetData/InstanceProperties.bin", entry.name))
+                    .map_err(CodecError::malformed)?;
             let instance_spec = PartSpec::new("zip.entry")
                 .holding([cadmpeg_ir::document::ArenaClass::Model])
                 .in_stream(instance_stream.clone());
             let Some(record_frames) = ctx.decode_part(stage, instance, instance_spec, |_| {
                 cadmpeg_protein::framing::record_frames(instance.window())
-            })? else {
+            })?
+            else {
                 return Ok(None);
             };
             let catalog = definition_catalog(ctx, protein, &entry.name, stage)?;
@@ -2008,7 +2007,8 @@ fn definition_catalog<'a>(
         .in_stream(stream.clone());
     let Some(frames) = ctx.decode_part(output, entry, spec, |_| {
         cadmpeg_protein::framing::record_frames(entry.window())
-    })? else {
+    })?
+    else {
         return Ok(std::collections::HashMap::new());
     };
     let mut definitions = std::collections::HashMap::new();

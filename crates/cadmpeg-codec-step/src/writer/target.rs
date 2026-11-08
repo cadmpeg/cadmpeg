@@ -3,9 +3,8 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
-    ArenaDispositions, Consumption, EncodeError, EncodeInput, ExportBody, NativeDisposition,
-    NativeDispositions, WritePath,
+    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
+    EncodeError, EncodeInput, ExportBody, NativeDisposition, NativeDispositions, WritePath,
 };
 
 use cadmpeg_ir::report::loss::LossNote;
@@ -49,7 +48,15 @@ pub(crate) fn plan(
         &codec.options,
         recovered.recovered_edges,
     )
-    .map_err(transitional_from_codec)?;
+    .map_err(|error| match error {
+        cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
+        cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
+        cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
+        error => {
+            debug_assert!(false, "unmapped STEP encode error: {error}");
+            panic!("unmapped STEP encode error: {error}");
+        }
+    })?;
     let coverage = coverage(schema, &outcome.losses);
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {

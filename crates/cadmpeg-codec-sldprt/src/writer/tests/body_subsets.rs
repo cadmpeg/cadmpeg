@@ -216,14 +216,9 @@ fn detached_carriers_are_authored_without_a_body() {
         .curves
         .iter()
         .any(|item| item.geometry == curve.geometry));
-    assert!(decoded
-        .ir()
-        .model
-        .points
-        .iter()
-        .any(|item| {
-            item.position().get().distance(point.position().get()) < EPS_STANDALONE_POINT_MM
-        }));
+    assert!(decoded.ir().model.points.iter().any(|item| {
+        item.position().get().distance(point.position().get()) < EPS_STANDALONE_POINT_MM
+    }));
 }
 
 #[test]
@@ -298,9 +293,9 @@ fn omitted_wire_free_point_survives_with_solid() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::FinitePoint3;
-    use std::io::Cursor;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
+    use std::io::Cursor;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let body = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#wire").unwrap();
@@ -355,4 +350,3 @@ fn omitted_wire_free_point_survives_with_solid() {
             && (actual.z - position.z).abs() < EPS_WIRE_POINT_MM
     }));
 }
-

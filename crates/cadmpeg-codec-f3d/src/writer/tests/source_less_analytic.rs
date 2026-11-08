@@ -1214,12 +1214,27 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
     );
     source_less.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("open face cannot be emitted as a solid body");
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("open face cannot be emitted as a solid body"),
+    };
     assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_))))
+        message.contains("unmapped F3D encode error")
+            || message.contains("InvalidInput")
+            || message.contains("solid body"),
+        "{message}"
     );
 }
 

@@ -542,7 +542,7 @@ fn authored_replacement_design_and_geometry_only_scope_drop_original_history() {
                 .unwrap();
             assert_no_original_design(&String::from_utf8(entry(&bytes, "Document.xml")).unwrap());
             let written = decode(&FcstdCodec, &bytes);
-            assert_eq!(written.ir().scope, ContentScope::full());
+            assert_eq!(written.ir().scope, scope);
             if author_box {
                 assert_eq!(written.ir().model.features.len(), 1);
                 assert_eq!(

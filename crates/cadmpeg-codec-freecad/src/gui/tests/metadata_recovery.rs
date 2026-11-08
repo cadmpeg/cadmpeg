@@ -225,8 +225,9 @@ fn failed_gui_member_does_not_add_design_content() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    // #209 §1.1: design scope is held when requested; a failed GUI member
-    // does not add design content or mark design unrepresented.
+    // #209 §1.1: requested scope classes are reported as delivered; a
+    // failed GUI member does not add design content or mark design
+    // unrepresented.
     assert!(decoded.ir().scope.design);
     assert!(decoded.ir().model.features.is_empty());
     assert!(!decoded

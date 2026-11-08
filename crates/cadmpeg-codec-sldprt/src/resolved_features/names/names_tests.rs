@@ -21,7 +21,10 @@ fn empty_object_name_requires_a_typed_identifier() {
     let names = object_names(&ctx, &payload, "lane").unwrap();
     assert_eq!(names.len(), 1);
     assert_eq!(names[0].value, "");
-    assert_eq!(names[0].object_id.and_then(crate::records::ObjectId::value), Some(7));
+    assert_eq!(
+        names[0].object_id.and_then(crate::records::ObjectId::value),
+        Some(7)
+    );
 }
 
 #[test]
