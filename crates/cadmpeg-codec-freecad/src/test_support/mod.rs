@@ -50,7 +50,7 @@ pub(crate) fn non_placement_losses(
 }
 
 /// Assert a design-fragment decode holds design scope with the losses §1.1
-/// mandates. At full depth FCStd reports requested model and design classes
+/// mandates. At full depth FCStd reports requested `model` and `design` classes
 /// as delivered (#209 §1.1); fragments decoded at other depths may still
 /// omit a non-requested or undelivered class.
 pub(crate) fn assert_design_fragment_scope(result: &cadmpeg_ir::codec::DecodeResult) {
