@@ -324,6 +324,22 @@ fn closed_circle_revision_uses_the_carrier_point_at_the_parameter_midpoint() {
 }
 
 #[test]
+fn closed_reversed_circle_revision_negates_the_stored_parameters_and_the_tangent() {
+    let pi = std::f64::consts::PI;
+    let value = revision_of(&ellipse_records(&circle(
+        [-pi, pi],
+        true,
+        [-1.0, 2.0, 3.0],
+        [-1.0, 2.0, 3.0],
+    )))
+    .expect("reversed circle");
+    assert_eq!(value.start.as_raw(), &Point3::new(-10.0, 20.0, 30.0));
+    assert_eq!(value.end.as_raw(), &Point3::new(-10.0, 20.0, 30.0));
+    assert!(same_point(value.interior.as_raw(), 30.0, 20.0, 30.0));
+    assert!(same_direction(value.tangent.as_raw(), 0.0, -1.0, 0.0));
+}
+
+#[test]
 fn circle_arc_revision_interior_and_tangent_follow_the_parameter_direction() {
     let half = std::f64::consts::FRAC_PI_2;
     let value = revision_of(&ellipse_records(&circle(
@@ -405,9 +421,11 @@ fn ellipse_revisions_that_the_vertices_do_not_prove_stay_unresolved() {
     let mut spec = arc();
     spec.end = [1.0, 4.5, 3.0];
     assert!(revision_of(&ellipse_records(&spec)).is_none());
-    // A closed edge on a reversed carrier has no vertex proof of its sense.
-    let closed = circle([-pi, pi], true, [-1.0, 2.0, 3.0], [-1.0, 2.0, 3.0]);
-    assert!(revision_of(&ellipse_records(&closed)).is_none());
+    // A closed edge with an endpoint off the carrier, in either sense.
+    for reversed in [false, true] {
+        let off = circle([-pi, pi], reversed, [-1.0, 2.5, 3.0], [-1.0, 2.5, 3.0]);
+        assert!(revision_of(&ellipse_records(&off)).is_none());
+    }
     // An empty or backward parameter interval.
     let mut spec = arc();
     spec.range = [half, half];

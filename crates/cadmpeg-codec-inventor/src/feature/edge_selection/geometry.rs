@@ -260,8 +260,7 @@ fn spline(
 /// parameter `u` is `center + major * cos(u) + ratio * (normal x major) * sin(u)`;
 /// the edge sense negates the stored edge parameters. Each parameter endpoint
 /// must equal its stored vertex. The edge interval, on the carrier
-/// parameter, lies within the carrier bounds. A closed edge on a reversed carrier is
-/// refused: its vertices do not fix the sense of its parameters.
+/// parameter, lies within the carrier bounds.
 fn ellipse(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
     let (start, end) = endpoints(edge, records)?;
     let curve = records.get(&edge.ref_at(8)?)?;
@@ -300,10 +299,6 @@ fn ellipse(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometr
         || span <= 0.0
         || span > std::f64::consts::TAU + EPS_ELLIPSE_FRAME
     {
-        return None;
-    }
-    let closed = start.as_raw().distance(*end.as_raw()) <= EPS_EDGE_REVISION_POINT_MM;
-    if closed && sign < 0.0 {
         return None;
     }
     let (u_low, u_high) = if sign < 0.0 {
