@@ -444,6 +444,9 @@ pub(crate) fn project(
             .collect();
         for (target_order, (arena, id)) in record_targets.iter().enumerate() {
             for (string_index, (key, value)) in strings.iter().enumerate() {
+                if key.starts_with("cadmpeg:") {
+                    continue;
+                }
                 ctx.charge_entities(1, "rhino_object_user_strings")?;
                 let attribute_key =
                     IdentityKey::try_new(format!("{source_order}-{target_order}-{string_index}"))
