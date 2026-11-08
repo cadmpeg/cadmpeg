@@ -426,12 +426,6 @@ pub(crate) const REDUCED_FIELDS: &[(&str, ReducedStorage)] = &[
     ("model.appearances[].base_color", ReducedStorage::U8Channel),
     ("model.faces[].color", ReducedStorage::U8Channel),
     ("tolerances.angular", ReducedStorage::AngularTolerance),
-    (
-        "model.presentation_documents[].states[].order",
-        ReducedStorage::Normalized {
-            loss: "rhino/writer.presentation-state-order-reduced",
-        },
-    ),
 ];
 
 pub(crate) const PUBLIC_REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
@@ -457,12 +451,6 @@ pub(crate) const PUBLIC_REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField
             loss: "rhino/writer.angular-tolerance-reduced",
         },
     },
-    cadmpeg_ir::codec::write::ReducedField {
-        path: "model.presentation_documents[].states[].order",
-        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
-            loss: "rhino/writer.presentation-state-order-reduced",
-        },
-    },
 ];
 
 /// The reduced storage of one [`REDUCED_FIELDS`] row.
@@ -476,9 +464,6 @@ pub(crate) enum ReducedStorage {
     F32BelowArchive60,
     /// Angular tolerances above pi are stored as pi.
     AngularTolerance,
-    /// A value is stored only at its sequence position, charged with the row's
-    /// loss.
-    Normalized { loss: &'static str },
 }
 
 /// Format capacity rows (#217 §5.0): the stored fields whose width bounds the
@@ -495,7 +480,7 @@ pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
 }];
 
 const _: () = {
-    assert!(REDUCED_FIELDS.len() == 7);
+    assert!(REDUCED_FIELDS.len() == 6);
     assert!(CAPACITY_FIELDS.len() == 1);
 };
 

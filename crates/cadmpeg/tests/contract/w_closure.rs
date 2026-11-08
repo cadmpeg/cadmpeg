@@ -140,14 +140,6 @@ fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Ve
             },
             normalize: Some(|_| serde_json::json!(2)),
         }]
-    } else if output == Format::Rhino {
-        vec![ReducedProbe {
-            path: "model.presentation_documents[].states[].order",
-            storage: ReducedStorage::Normalized {
-                loss: "rhino/writer.presentation-state-order-reduced",
-            },
-            normalize: Some(|_| serde_json::json!(0)),
-        }]
     } else {
         Vec::new()
     };

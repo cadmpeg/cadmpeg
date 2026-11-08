@@ -2,9 +2,8 @@
 //! Text and leader objects regenerated from current semantic annotations.
 
 use super::{
-    anonymous, anonymous_with_children, attribute_userdata_chunk, framed_object_record_full,
-    integer, object_attributes_payload, object_user_strings, utf16, wire_index, CadIr, CodecError,
-    LossNote, Map, RhinoLossCode, Value,
+    anonymous, anonymous_with_children, framed_object_record, integer, object_attributes_payload,
+    utf16, wire_index, CadIr, CodecError, LossNote, Map, RhinoLossCode, Value,
 };
 use crate::writer::WriteError;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
@@ -709,14 +708,13 @@ pub(in crate::writer) fn records(
         {
             attributes[1..17].copy_from_slice(&uuid.to_wire());
         }
-        output.push(framed_object_record_full(
+        output.push(framed_object_record(
             if is_dot { 0x2000 } else { 0x200 },
             class,
             &payload,
             (!is_dot && !is_arrow && annotation.kind != SemanticAnnotationKind::Dimension)
                 .then_some(&[][..]),
             Some(attributes),
-            attribute_userdata_chunk(&object_user_strings(ir, annotation.id.as_str(), ""))?,
         )?);
         written.insert(annotation.id.to_string());
     }
