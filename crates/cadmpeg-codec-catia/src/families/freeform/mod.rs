@@ -5,7 +5,7 @@ pub(in crate::families) mod weighted_edges;
 mod weighted_plane;
 
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, WorkBudget};
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
@@ -51,7 +51,7 @@ use crate::math::distance;
 
 const EPS_TORUS_FRAME: f64 = 1.0e-12;
 const EPS_APEX_ALIGNMENT: f64 = 1.0e-12;
-const MAX_PATCH_CARRIERS: usize = 64;
+const MAX_PATCH_RECORD_VISITS_PER_RECORD: usize = 64;
 
 #[derive(Clone)]
 struct FreeformSurfaceCarrier {
@@ -700,8 +700,8 @@ pub(super) fn try_decode_freeform_surfaces(
             refusal,
             &mut admission,
         )));
-        let owned_patch_count = if topology_transferred {
-            0
+        let owned_patch_loss = if topology_transferred {
+            None
         } else {
             admitted!(owned_patch::append(
                 &mut ir,
@@ -894,11 +894,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 )));
             }
         }
-        if owned_patch_count != 0 {
-            losses.push(CatiaLossCode::TopologyOwnedPatchSubset.note(format!(
-                "Transferred {owned_patch_count} bounded faces as sheet subsets of their native body rosters. The complete body and its active selection remain native."
-            )));
-        }
+        losses.extend(owned_patch_loss);
         insert_unresolved_carrier_loss(&ir, &mut losses);
         if let Err(error) =
             link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations)
@@ -1676,31 +1672,27 @@ fn append_a5_rolling_ball_pools(
         mfbrp: mfbrp_data,
     } = streams;
     let mut carriers = BTreeMap::new();
-    let face_construction_positions = records
-        .windows(2)
-        .filter(|pair| {
-            pair[1].family() == crate::wire::records::ConsolidatedFamily::B
-                && pair[1].class() == 0x62
-                && pair[0].source_index() == pair[1].source_index()
-        })
-        .map(|pair| pair[0].byte_offset())
-        .collect::<HashSet<_>>();
+    let mut face_construction_positions = HashMap::new();
+    for pair in records.windows(2) {
+        if pair[1].family() == crate::wire::records::ConsolidatedFamily::B
+            && pair[1].class() == 0x62
+            && pair[0].source_index() == pair[1].source_index()
+        {
+            face_construction_positions
+                .entry((pair[0].source_index(), pair[0].byte_offset()))
+                .or_insert(pair[1].byte_offset());
+        }
+    }
     let rolling_ball_carriers =
         crate::families::b2::records::b2_rolling_ball_constructions_from_records(data, records)
             .into_iter()
-            .filter(|construction| face_construction_positions.contains(&construction.pos))
             .filter_map(|construction| {
-                records
-                    .windows(2)
-                    .find(|pair| {
-                        pair[0].byte_offset() == construction.pos && pair[1].class() == 0x62
-                    })
-                    .map(|pair| {
-                        (
-                            construction.carrier_pos,
-                            (construction.source_index, pair[1].byte_offset()),
-                        )
-                    })
+                let source = construction.source_index;
+                let &owner = face_construction_positions.get(&(source, construction.pos))?;
+                let start = records.partition_point(|record| record.source_index() < source);
+                let end = start
+                    + records[start..].partition_point(|record| record.source_index() == source);
+                Some((construction.carrier_pos, (source, owner, start..end)))
             })
             .collect::<HashMap<_, _>>();
     let boundary_corner_tables = main_data
@@ -1721,6 +1713,12 @@ fn append_a5_rolling_ball_pools(
     let six_edge_admitted = !admitted_six_edge_rosters.is_empty()
         && admitted_six_edge_rosters.len() == boundary_corner_tables.len();
     let mut claimed_boundary_tables = HashSet::new();
+    let patch_limit = records
+        .len()
+        .max(1)
+        .checked_mul(MAX_PATCH_RECORD_VISITS_PER_RECORD)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("CATIA patch work budget overflow"))?;
+    let patch_budget = WorkBudget::new(patch_limit);
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
@@ -1794,16 +1792,20 @@ fn append_a5_rolling_ball_pools(
             .procedural_surfaces
             .push(ProceduralSurface::new(procedural_id, definition, None));
         carriers.insert(jet.pos, surface_index);
-        if let Some(&(source_index, owner_pos)) = rolling_ball_carriers
+        if let Some((source_index, owner_pos, source_records)) = rolling_ball_carriers
             .get(&jet.pos)
-            .filter(|_| rolling_ball_carriers.len() <= MAX_PATCH_CARRIERS)
+            .and_then(|(source, owner, range)| {
+                patch_budget
+                    .charge_by(range.len())
+                    .then(|| (*source, *owner, &records[range.clone()]))
+            })
         {
             let carrier = &ir.model.surfaces[surface_index].geometry;
             if let Some(closed) = rolling_ball_patch::closed_patch(
                 ir,
                 carrier,
                 data,
-                records,
+                source_records,
                 source_index,
                 Some([0.0, 1.0]),
                 refusal,
@@ -1936,6 +1938,13 @@ fn append_a5_rolling_ball_pools(
         }
     }
 
+    if patch_budget.exhausted() {
+        refusal.push_sheet_patch_search_bounded(
+            "rolling-ball patch search",
+            patch_limit,
+            "record visits",
+        );
+    }
     Ok(carriers)
 }
 

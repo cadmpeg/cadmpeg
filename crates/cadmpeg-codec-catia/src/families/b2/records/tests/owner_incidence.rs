@@ -81,20 +81,22 @@ fn fixed_incidence_keeps_distinct_sources_at_the_same_physical_offsets() {
 
 #[test]
 fn counted_incidence_resolves_face_and_loop_sharing_construction_bridge() {
-    for terminal in [0x03, 0x05] {
-        let mut bytes = six_edge_incidence_stream();
-        bytes[8] = terminal;
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let relations = crate::test_support::with_service_context(|_ctx| {
-            crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
-                &bytes, &records,
-            )
-        });
-        assert_eq!(relations.len(), 1);
-        assert_eq!(relations[0].face_node.pos, 0);
-        assert_eq!(relations[0].face_node.terminal[1], terminal);
-        assert_eq!(relations[0].owner.references.last().copied(), Some(1));
-    }
+    let bytes = six_edge_incidence_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let relations = super::super::b2_adjacent_face_counted_owners_from_records(&bytes, &records);
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].face_node.pos, 0);
+    assert_eq!(relations[0].face_node.terminal[1], 0x03);
+    assert_eq!(relations[0].owner.references.last().copied(), Some(1));
+}
+
+#[test]
+fn counted_incidence_rejects_owned_child_with_five_terminal() {
+    let mut bytes = six_edge_incidence_stream();
+    bytes[8] = 0x05;
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let relations = super::super::b2_adjacent_face_counted_owners_from_records(&bytes, &records);
+    assert!(relations.is_empty());
 }
 
 #[test]

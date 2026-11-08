@@ -29,7 +29,7 @@ fn compact_face_double_three_counted_owner_survives_native_wire_roundtrip() {
 
 #[test]
 fn owned_child_face_target_survives_native_projection_and_wire_roundtrip() {
-    let bytes = [
+    let mut bytes = [
         0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x07, 0x0b, 0x03, 0xb2, 0x03, 0x30, 0x02, 0x05, 0x80,
         0x01, 0xb2, 0x03, 0x37, 0x02, 0x05, 0x81, 0x05, 0xb2, 0x03, 0x62, 0x14, 0x05, 0x8d, 0x03,
         0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x05, 0x86, 0x41, 0x17,
@@ -52,6 +52,21 @@ fn owned_child_face_target_survives_native_projection_and_wire_roundtrip() {
     assert_eq!(
         serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
             .expect("valid owner wire"),
+        *packet
+    );
+
+    bytes[8] = 0x05;
+    let records = consolidated_records(&bytes);
+    let packets = crate::native::projection::consolidated_owner_packets(&bytes, &records)
+        .expect("project owner with unsupported face link");
+    let [packet] = packets.as_slice() else {
+        panic!("retain the owner packet");
+    };
+    assert!(packet.face_node.is_none());
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("owner wire without an unsupported face link"),
         *packet
     );
 }

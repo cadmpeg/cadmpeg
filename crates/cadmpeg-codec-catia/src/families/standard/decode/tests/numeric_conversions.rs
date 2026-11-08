@@ -53,7 +53,6 @@ fn visualization_refuses_coordinate(coordinate: f64, axis: usize) -> bool {
                 use_vertex_roster: true,
                 native_edge_faces: &HashMap::new(),
                 native_edge_supports: &HashMap::new(),
-                shell_plane_evidence: false,
                 limit_curves: &[],
                 work_budget: &work_budget,
                 diagnostics: &mut diagnostics,

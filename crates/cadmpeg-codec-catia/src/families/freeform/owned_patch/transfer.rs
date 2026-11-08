@@ -17,6 +17,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
@@ -26,6 +27,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::assemble::annotate;
 use crate::families::FamilyEntityAdmission;
+use crate::loss::CatiaLossCode;
 
 use super::{curve_point, edge_alignment, interval_parameter, Patch, Use, GAP_MM};
 
@@ -53,7 +55,7 @@ pub(super) fn append(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     patches: Vec<Patch>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<usize, CodecError> {
+) -> Result<Option<LossNote>, CodecError> {
     let mut by_body = BTreeMap::<_, Vec<_>>::new();
     for patch in patches {
         by_body.entry(patch.body).or_default().push(patch);
@@ -89,7 +91,11 @@ pub(super) fn append(
             }
         }
     }
-    Ok(count)
+    Ok((count != 0).then(|| {
+        CatiaLossCode::TopologyOwnedPatchSubset.note(format!(
+            "Transferred {count} bounded faces as sheet subsets of their native body rosters. The complete body and its active selection remain native."
+        ))
+    }))
 }
 
 fn compatible_patches(patches: &mut [Patch]) -> BTreeSet<usize> {
@@ -393,3 +399,6 @@ fn sense(forward: bool) -> Sense {
         Sense::Reversed
     }
 }
+
+#[cfg(test)]
+mod tests;

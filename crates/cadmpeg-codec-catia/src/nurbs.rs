@@ -91,6 +91,20 @@ impl LaneRefusals {
         );
     }
 
+    /// Report exhaustion of a bounded sheet patch search.
+    pub(crate) fn push_sheet_patch_search_bounded(
+        &mut self,
+        search: &str,
+        limit: usize,
+        unit: &str,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologySheetPatchSearchBounded.note(format!(
+                "The {search} reached its work bound of {limit} {unit}. Later candidates were skipped."
+            )),
+        );
+    }
+
     /// Record the `7C02` catalog candidates the catalog scan skipped at its
     /// walk allowance.
     pub(crate) fn push_catalog_scan_bounded(&mut self, bounded_candidates: usize) {

@@ -15,7 +15,7 @@ mod trimmed_face;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
@@ -25,6 +25,7 @@ use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::AnnotationBuilder;
 
 use crate::families::b2::records::{b2_edge_nodes_from_records, b2_parameter_points_from_records};
@@ -40,7 +41,8 @@ use roster::{Member, RecordKey};
 
 const CHART_TOLERANCE: f64 = 1.0e-9;
 const GAP_MM: f64 = 0.001;
-const MAX_FIT_CANDIDATES: usize = 512;
+const MAX_FIT_CANDIDATES_FLOOR: usize = 512;
+const RECORDS_PER_FIT_CANDIDATE: usize = 8;
 
 struct Side {
     edge: usize,
@@ -464,7 +466,7 @@ pub(super) fn append(
     carriers: &BTreeMap<usize, usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<usize, CodecError> {
+) -> Result<Option<LossNote>, CodecError> {
     let &Stream {
         data,
         sources,
@@ -475,7 +477,7 @@ pub(super) fn append(
             .iter()
             .any(|frame| sheet_group::root(frame, data) || sheet_group::backward_root(frame, data))
     {
-        return Ok(0);
+        return Ok(None);
     }
     let (mut patches, backward_sources) =
         sheet_group::patches(admission.context(), ir, stream, carriers, refusal)?;
@@ -486,7 +488,8 @@ pub(super) fn append(
         records,
         &backward_sources,
     )?;
-    let mut attempts = 0;
+    let fit_limit = MAX_FIT_CANDIDATES_FLOOR.max(records.len().div_ceil(RECORDS_PER_FIT_CANDIDATE));
+    let fit_budget = WorkBudget::new(fit_limit);
     for (index, frame) in records.iter().enumerate() {
         let key = (frame.source_index(), frame.source_range().start);
         if frame.class() != 0x5f || frame.family() != Family::B || frame.flag() != Flag::Flag03 {
@@ -508,9 +511,9 @@ pub(super) fn append(
         let Some(&surface) = carriers.get(&boundary.carrier) else {
             continue;
         };
-        attempts += 1;
-        if attempts > MAX_FIT_CANDIDATES {
-            return Ok(0);
+        if !fit_budget.charge() {
+            refusal.push_sheet_patch_search_bounded("owned face fitting", fit_limit, "candidates");
+            break;
         }
         if let Some(patch) = fit(ir, surface, frame.byte_offset(), member, &boundary) {
             patches.push(patch);

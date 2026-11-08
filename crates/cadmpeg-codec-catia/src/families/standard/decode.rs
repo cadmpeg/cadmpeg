@@ -80,7 +80,6 @@ use crate::wire::records::ConsolidatedRecord;
 const EPS_STANDARD_DECODE_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_STANDARD_DECODE_RELAXED_GEOMETRY: f64 = 1.0e-7;
 const EPS_STANDARD_DECODE_GEOMETRY: f64 = 1.0e-9;
-const EPS_STANDARD_PLANAR_LOOP_NORMAL_PARITY: f64 = 1.0e-9;
 
 const EPS_PARAM_RESOLUTION_SPAN: f64 = EPS_STANDARD_DECODE_RELAXED_GEOMETRY;
 const EPS_PARAM_TOLERANCE_SPAN: f64 = EPS_STANDARD_DECODE_GEOMETRY;
@@ -2596,7 +2595,7 @@ fn try_decode_standard_population(
     let topology_budget = cadmpeg_core::decode::WorkBudget::new(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS);
     #[cfg(test)]
     let topology_budget = cadmpeg_core::decode::WorkBudget::new(crate::test_support::standard_topology_limit());
-    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, shell_plane_evidence: !object_evidence.shell_planes.is_empty(), work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
+    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
     .and_then(|()| {
         neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns).map_err(StandardTopologyError::Codec)?
             .then_some(())
@@ -4537,7 +4536,6 @@ struct AttachStandardTopologyInputs<
     native_edge_faces: &'input9 HashMap<u32, HashSet<u32>>,
     native_edge_supports: &'input10 HashMap<u32, StandardEdgeSupport>,
     limit_curves: &'input11 [NurbsCurve],
-    shell_plane_evidence: bool,
     work_budget: &'input13 WorkBudget,
     diagnostics: &'input14 mut StandardTopologyDiagnostics,
     bound_limit_curve_count: &'input15 mut usize,
@@ -4586,7 +4584,6 @@ fn attach_standard_topology(
         native_edge_faces,
         native_edge_supports,
         limit_curves,
-        shell_plane_evidence,
         work_budget,
         diagnostics,
         bound_limit_curve_count,
@@ -6030,7 +6027,6 @@ fn attach_standard_topology(
             native_edge_supports: &native_supports_by_row,
             limit_curve_bindings: &resolved_limit_curve_bindings,
             limit_curves,
-            shell_plane_evidence,
             refusal,
             admission,
         },
@@ -6231,7 +6227,6 @@ struct EmitStandardTopologyInputs<
     native_edge_supports: &'input9 [Option<&'input10 StandardEdgeSupport>],
     limit_curve_bindings: &'input11 [Option<StandardLimitCurveBinding>],
     limit_curves: &'input12 [NurbsCurve],
-    shell_plane_evidence: bool,
     refusal: &'input13 mut crate::nurbs::LaneRefusals,
     admission: &'input16 mut FamilyEntityAdmission<'input14, 'input15>,
 }
@@ -6273,7 +6268,6 @@ fn emit_standard_topology(
         native_edge_supports,
         limit_curve_bindings,
         limit_curves,
-        shell_plane_evidence,
         refusal,
         admission,
     } = inputs;
@@ -6602,68 +6596,6 @@ refusal)?
                 face: standard_id("face", format_args!("{face_index}"), FaceId::mint)?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
-        }
-        if !shell_plane_evidence
-            && ir.model.bodies.len() == 1
-            && ir.model.bodies[0].kind == BodyKind::Solid
-            && bindings.iter().all(|(id, _, _)| {
-                matches!(
-                    ir.model.surfaces[surface_indices[id]].geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-                )
-            })
-        {
-            let surface = &ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry;
-            if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface {
-                for (loop_index, boundary) in face_topology.boundaries().iter().enumerate() {
-                    let loop_id = standard_id(
-                        "loop",
-                        format_args!("{face_index}:{loop_index}"),
-                        LoopId::mint,
-                    )?;
-                    if face_loops.role(&loop_id) != LoopBoundaryRole::Outer
-                        || boundary.coedges().len() < 3
-                        || boundary.coedges().iter().any(|edge| {
-                            !matches!(
-                                supports[edge.edge_row].geometry,
-                                crate::families::standard::records::StandardCurveGeometry::Line
-                            )
-                        })
-                    {
-                        continue;
-                    }
-                    let point_at = |vertex: usize| {
-                        let point = ir.model.points[point_assignment[vertex]].position().get();
-                        [point.x, point.y, point.z]
-                    };
-                    let first = point_at(boundary.coedges()[0].start_vertex);
-                    let mut previous = first;
-                    let mut area = [0.0_f64; 3];
-                    for edge in boundary.coedges().iter().skip(1) {
-                        let next = point_at(edge.start_vertex);
-                        area[0] += previous[1] * next[2] - previous[2] * next[1];
-                        area[1] += previous[2] * next[0] - previous[0] * next[2];
-                        area[2] += previous[0] * next[1] - previous[1] * next[0];
-                        previous = next;
-                    }
-                    area[0] += previous[1] * first[2] - previous[2] * first[1];
-                    area[1] += previous[2] * first[0] - previous[0] * first[2];
-                    area[2] += previous[0] * first[1] - previous[1] * first[0];
-                    let normal = plane.frame().axis().as_raw();
-                    let dot = area[0] * normal.x + area[1] * normal.y + area[2] * normal.z;
-                    let magnitude = area.iter().map(|value| value * value).sum::<f64>().sqrt();
-                    if magnitude > 0.0
-                        && dot.abs() > magnitude * EPS_STANDARD_PLANAR_LOOP_NORMAL_PARITY
-                    {
-                        ir.model.faces[face_index].sense = if dot > 0.0 {
-                            Sense::Forward
-                        } else {
-                            Sense::Reversed
-                        };
-                    }
-                    break;
-                }
-            }
         }
         ir.model.faces[face_index].loops = face_loops;
     }

@@ -1776,7 +1776,7 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
         }
         if face_node.target_encoding == B2FaceNode5fTargetEncoding::OwnedChild
             && face_node.terminal[0] % 4 == 3
-            && matches!(face_node.terminal[1], 0x03 | 0x05)
+            && face_node.terminal[1] == 0x03
         {
             let loop_ordinal = usize::from(face_node.terminal[0] >> 2);
             if let Some(target_loop_idx) = face_index.checked_add(1 + loop_ordinal) {
