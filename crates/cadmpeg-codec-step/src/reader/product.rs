@@ -506,7 +506,7 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let ordinal = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 6)
+        let ordinal = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 5)
             .and_then(|value| {
                 decode_text(
                     exchange,
