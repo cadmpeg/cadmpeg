@@ -426,7 +426,12 @@ fn encode_legacy_material(
                 .unwrap_or(false),
         ));
     }
-    let inner = anonymous_with_children(1, minor, &body, &[texture_start..texture_end])?;
+    let inner = anonymous_with_children(
+        1,
+        minor,
+        &body,
+        std::slice::from_ref(&(texture_start..texture_end)),
+    )?;
     let mut payload = vec![0x20];
     payload.extend(inner);
     Ok(crc_chunk_with_direct(
