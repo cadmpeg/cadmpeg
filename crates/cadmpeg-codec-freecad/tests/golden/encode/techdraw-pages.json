@@ -82,8 +82,8 @@
     },
     "coverage": {
       "arenas": {
-        "appearance_bindings": "reported",
-        "appearances": "reported",
+        "appearance_bindings": "written",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
@@ -99,7 +99,7 @@
         "faces": "reported",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "reported",
+        "features": "written",
         "loops": "reported",
         "mass_properties": "omitted",
         "occurrences": "written",
@@ -113,7 +113,7 @@
         "presentation_layers": "dropped",
         "procedural_curves": "reported",
         "procedural_surfaces": "reported",
-        "product_definitions": "reported",
+        "product_definitions": "written",
         "regions": "reported",
         "rigid_bodies": "omitted",
         "semantic_annotations": "reported",
