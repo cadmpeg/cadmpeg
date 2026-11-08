@@ -2,8 +2,9 @@
 //! Text and leader objects regenerated from current semantic annotations.
 
 use super::{
-    anonymous, anonymous_with_children, framed_object_record, integer, object_attributes_payload,
-    utf16, wire_index, CadIr, CodecError, LossNote, Map, RhinoLossCode, Value,
+    anonymous, anonymous_with_children, attribute_userdata_chunk, framed_object_record_full,
+    integer, object_attributes_payload, object_user_strings, utf16, wire_index, CadIr, CodecError,
+    LossNote, Map, RhinoLossCode, Value,
 };
 use crate::writer::WriteError;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
@@ -85,15 +86,21 @@ fn legacy_text_payload(
     fields: &Map<String, Value>,
     leader: bool,
 ) -> Option<Vec<u8>> {
-    let justification = fields.get("legacy_justification")?.as_i64()? as i32;
-    let style_index = fields
-        .get("legacy_style_index")
-        .and_then(Value::as_i64)
-        .unwrap_or(0) as i32;
-    let text_display_mode = fields
-        .get("legacy_text_display_mode")
-        .and_then(Value::as_i64)
-        .unwrap_or(0) as i32;
+    let justification = i32::try_from(fields.get("legacy_justification")?.as_i64()?).ok()?;
+    let style_index = i32::try_from(
+        fields
+            .get("legacy_style_index")
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
+    )
+    .ok()?;
+    let text_display_mode = i32::try_from(
+        fields
+            .get("legacy_text_display_mode")
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
+    )
+    .ok()?;
     let text_height = fields
         .get("legacy_text_height")
         .and_then(Value::as_f64)
@@ -708,13 +715,14 @@ pub(in crate::writer) fn records(
         {
             attributes[1..17].copy_from_slice(&uuid.to_wire());
         }
-        output.push(framed_object_record(
+        output.push(framed_object_record_full(
             if is_dot { 0x2000 } else { 0x200 },
             class,
             &payload,
             (!is_dot && !is_arrow && annotation.kind != SemanticAnnotationKind::Dimension)
                 .then_some(&[][..]),
             Some(attributes),
+            attribute_userdata_chunk(&object_user_strings(ir, annotation.id.as_str(), ""))?,
         )?);
         written.insert(annotation.id.to_string());
     }

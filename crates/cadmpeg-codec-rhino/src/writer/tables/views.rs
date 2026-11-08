@@ -137,6 +137,9 @@ fn encode_view(
     if let Some(viewport_fields) = object(fields, "viewport") {
         children.push(viewport::encode(viewport_fields, camera)?);
     }
+    if let Some(userdata) = viewport::orientation_userdata(camera)? {
+        children.push(userdata);
+    }
     if let Some(window_fields) = object(fields, "window_position") {
         children.push(window(window_fields)?);
     }
@@ -366,6 +369,9 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> 
                 )),
             );
             continue;
+        }
+        if let Some(loss) = viewport::reduced_state_order(camera) {
+            result.losses.push(loss);
         }
         if view.is_none() && camera.is_none() && !native_only_supported(&fields) {
             let reason = if object(&fields, "viewport")
