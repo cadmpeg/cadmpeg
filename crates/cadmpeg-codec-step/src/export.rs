@@ -6131,8 +6131,8 @@ impl<'a> Builder<'a> {
         }
         // Part 42 permits at most two associated geometries; a geometric seam
         // requires exactly two pcurves on the same surface for different
-        // coedges. Multiple pcurves on the same coedge stay with a surface
-        // curve (#209 §5.2).
+        // coedges. Multiple pcurves on the same coedge are reduced to one
+        // writable association with named degradation (#209 §5.2).
         let seam_pair = emitted.iter().enumerate().find_map(|(first, (use_, _))| {
             emitted
                 .iter()
@@ -6143,10 +6143,26 @@ impl<'a> Builder<'a> {
                 })
                 .map(|(second, _)| (first, second))
         });
-        let selected = seam_pair.map_or_else(
-            || (0..emitted.len().min(2)).collect(),
-            |(first, second)| vec![first, second],
-        );
+        let mut selected = Vec::new();
+        let mut selected_coedge_surface = std::collections::BTreeSet::new();
+        if let Some((first, second)) = seam_pair {
+            selected = vec![first, second];
+            selected_coedge_surface.insert((
+                emitted[first].0.coedge.to_owned(),
+                emitted[first].0.surface.to_owned(),
+            ));
+            selected_coedge_surface.insert((
+                emitted[second].0.coedge.to_owned(),
+                emitted[second].0.surface.to_owned(),
+            ));
+        } else {
+            for (index, (use_, _)) in emitted.iter().enumerate() {
+                let key = (use_.coedge.to_owned(), use_.surface.to_owned());
+                if selected.len() < 2 && selected_coedge_surface.insert(key) {
+                    selected.push(index);
+                }
+            }
+        }
         let seam = seam_pair.is_some();
         let mut pcurve_refs = Vec::new();
         for (index, (use_, pcurve)) in emitted.into_iter().enumerate() {
@@ -6160,7 +6176,7 @@ impl<'a> Builder<'a> {
             } else {
                 self.loss(
                     StepLossCode::PcurveAssociationLimit,
-                    format!("edge '{edge_id}' cannot associate pcurve '{}' on coedge '{}' with surface '{}' because STEP surface curves admit at most two associated geometries", use_.use_.pcurve, use_.coedge, use_.surface),
+                    format!("edge '{edge_id}' cannot associate pcurve '{}' on coedge '{}' with surface '{}' because STEP surface curves admit at most one associated geometry per coedge (#209 §5.2)", use_.use_.pcurve, use_.coedge, use_.surface),
                 );
             }
         }
