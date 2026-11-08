@@ -6,7 +6,6 @@
 //! of its own.
 
 mod attributes;
-pub(crate) mod body_styles;
 mod brep;
 mod coverage;
 mod design;
@@ -18,7 +17,6 @@ mod mesh_kernel;
 mod names;
 mod native;
 mod native_geometry;
-pub(crate) mod ordinals;
 mod parameters;
 mod pcurves;
 mod point_kernel;

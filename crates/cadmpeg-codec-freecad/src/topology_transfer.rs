@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Occurrence-aware transfer of exact-shape topology into neutral CADIR.
 
-mod body_names;
-pub(crate) use body_names::apply as apply_body_names;
 
 use std::collections::{HashMap, HashSet};
 

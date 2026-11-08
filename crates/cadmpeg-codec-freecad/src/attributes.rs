@@ -16,7 +16,6 @@ pub(crate) const fn projection_held(ir: &CadIr) -> bool {
 pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectRecord]) -> bool {
     if matches!(property.name.as_str(), "Shape" | "Placement")
         || crate::application_geometry::holds_property(ir, &property.type_name, &property.owner)
-        || crate::property_policy::is_projection_metadata(property)
         || ir
             .model
             .parameters
@@ -93,11 +92,8 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
             {
                 return true;
             }
-            let dynamic_parameter = property
-                .dynamic
-                .as_ref()
-                .is_some_and(|dynamic| dynamic.group != "CADIR")
-                || object.type_name == "App::VarSet";
+            let dynamic_parameter =
+                property.dynamic.is_some() || object.type_name == "App::VarSet";
             if dynamic_parameter
                 && (crate::design::is_design_object(&object.type_name)
                     || object.type_name == "App::VarSet")
@@ -678,7 +674,6 @@ pub(crate) fn document_property(
     property: &PropertyRecord,
 ) -> Result<Option<SourceAttribute>, CodecError> {
     if matches!(property.name.as_str(), "Shape" | "Placement")
-        || crate::property_policy::is_projection_metadata(property)
         || stays_native(property)
     {
         return Ok(None);
