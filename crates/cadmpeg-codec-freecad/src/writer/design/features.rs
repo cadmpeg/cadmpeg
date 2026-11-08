@@ -433,15 +433,24 @@ pub(in crate::writer) fn write(
                 })?
                 .get(),
         };
-        object.set(
-            "FuzzyTolerance",
-            xml::scalar(
+        // A kernel-default tolerance carries no distinct value the decoder
+        // needs, and writing one appends a property outside the source
+        // declaration sequence, noisily reordering applications and
+        // schemas downstream. Emit only non-default values.
+        if !matches!(
+            fuzzy_tolerance,
+            cadmpeg_ir::features::FuzzyTolerance::KernelDefault
+        ) {
+            object.set(
                 "FuzzyTolerance",
-                "App::PropertyFloatConstraint",
-                "Float",
-                tolerance,
-            ),
-        );
+                xml::scalar(
+                    "FuzzyTolerance",
+                    "App::PropertyFloatConstraint",
+                    "Float",
+                    tolerance,
+                ),
+            );
+        }
     }
     if kind == "tree_node" {
         object.mark_grouping_only();
