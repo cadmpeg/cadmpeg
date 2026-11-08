@@ -829,6 +829,37 @@ pub(super) fn fixed_kind_tail_operations(
             ..
         })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_shell_at + 21)
     ));
+    let thickness_first_inward_at = bytes.len();
+    let mut thickness_first_inward = thickness_first_shell.clone();
+    thickness_first_inward[21] = 0;
+    bytes.extend_from_slice(&thickness_first_inward);
+    let thickness_first_inward_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(thickness_first_inward_at),
+            reference_count_offset: u64_from_index(thickness_first_inward_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &thickness_first_inward_scope,
+        ),
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
+            thickness,
+            thickness_record_index: 9_000,
+            outward: false,
+            outward_offset,
+            ..
+        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_inward_at + 21)
+    ));
 
     // Negative rejection tests for the 268-byte thickness-first Shell scope:
     // 1. byte 27 = 1 rejects because the [1, 0, 0, 1] marker at 25..29 requires byte 27 == 0.

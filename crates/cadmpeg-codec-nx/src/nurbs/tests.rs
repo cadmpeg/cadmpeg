@@ -910,6 +910,7 @@ fn dimension_four_rational_curve_stream(weights: [f64; 2]) -> Vec<u8> {
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
     put_ref(&mut stream, descriptor + 10, 4);
+    stream[descriptor + 19] = 1;
     let payload = stream
         .windows(4)
         .position(|window| window == [0, 135, 0, 41])
