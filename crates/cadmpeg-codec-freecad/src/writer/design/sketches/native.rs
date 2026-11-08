@@ -25,7 +25,7 @@ fn typed_row(ir: &CadIr, reference: &str, ordinal: usize, tag: &str) -> Option<S
         .namespace("fcstd")
         .map(crate::writer::xml::retained_entry_names)
         .unwrap_or_default();
-    let generated = xml::native(property, &available).ok()??;
+    let generated = xml::native(property, &available)?;
     let document = roxmltree::Document::parse(&generated).ok()?;
     let row = document
         .descendants()

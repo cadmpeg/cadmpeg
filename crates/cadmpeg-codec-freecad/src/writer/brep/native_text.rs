@@ -20,7 +20,7 @@ use std::fmt::Write as _;
 
 /// The OCCT text of one typed payload, or `None` for a binary or empty
 /// carrier or a table the grammar cannot restate exactly.
-pub(in crate::writer) fn text(
+pub(super) fn text(
     payload: &ShapePayloadRecord,
     polygons3d: &[Polygon3dRecord],
     polygons_on_triangulations: &[PolygonOnTriangulationRecord],
@@ -259,7 +259,7 @@ fn tshape_geometry(
                 "{} {} {} {}",
                 u8::from(*natural_restriction),
                 tolerance.get(),
-                surface.map_or(0, |surface| surface.index()),
+                surface.map_or(0, crate::brep::TableRef::index),
                 usize::from(*location)
             )
             .ok()?;

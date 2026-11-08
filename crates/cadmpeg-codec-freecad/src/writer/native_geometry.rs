@@ -32,7 +32,7 @@ pub(super) fn project(
     let property_reader = crate::property_reader::PropertyReader::typed(ctx);
     let mut typed_properties = Vec::new();
     for property in properties {
-        if super::xml::native(&property, &std::collections::HashSet::new())?.is_some() {
+        if super::xml::native(&property, &std::collections::HashSet::new()).is_some() {
             typed_properties.push(property);
         }
     }
@@ -168,7 +168,7 @@ pub(super) fn unchanged_payloads(
     let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
     let mut typed_properties = Vec::new();
     for property in properties {
-        if super::xml::native(&property, &std::collections::HashSet::new())?.is_some() {
+        if super::xml::native(&property, &std::collections::HashSet::new()).is_some() {
             typed_properties.push(property);
         }
     }

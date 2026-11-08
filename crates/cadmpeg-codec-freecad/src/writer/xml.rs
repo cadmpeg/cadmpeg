@@ -5,7 +5,6 @@ use crate::native::{
     DynamicPropertyMeta, GuiPropertyRecord, PropertyBody, PropertyFamily, PropertyRecord,
     ValueRecord,
 };
-use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
@@ -38,13 +37,13 @@ pub(super) fn report_reductions(
     value: &str,
     file: &str,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<bool, CodecError> {
+) -> bool {
     if !value.contains(REPLACEMENT) {
-        return Ok(false);
+        return false;
     }
     let Ok(document) = roxmltree::Document::parse(value) else {
         debug_assert!(false, "the generated document parses");
-        return Ok(true);
+        return true;
     };
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         // Restrict counting to this element's opening tag and direct text;
@@ -81,7 +80,7 @@ pub(super) fn report_reductions(
             )),
         );
     }
-    Ok(true)
+    true
 }
 
 pub(crate) fn element(tag: &str, attributes: &[(&str, String)]) -> String {
@@ -153,7 +152,7 @@ pub(crate) fn retained_entry_names(
 pub(crate) fn native(
     property_record: &PropertyRecord,
     available: &std::collections::HashSet<String>,
-) -> Result<Option<String>, CodecError> {
+) -> Option<String> {
     native_named(
         property_record,
         &std::collections::HashMap::new(),
@@ -186,7 +185,7 @@ pub(crate) fn validate(
     if !matches!(property_record.body, Some(PropertyBody::Persisted { .. })) {
         return Ok(());
     }
-    let Some(xml) = native(property_record, available).map_err(|_| Unwritable::Unreadable)? else {
+    let Some(xml) = native(property_record, available) else {
         return Ok(());
     };
     let parsed = roxmltree::Document::parse(&xml).map_err(|_| Unwritable::Unreadable)?;
@@ -218,26 +217,24 @@ pub(crate) fn native_named(
     property_record: &PropertyRecord,
     names: &std::collections::HashMap<String, String>,
     available: &std::collections::HashSet<String>,
-) -> Result<Option<String>, CodecError> {
+) -> Option<String> {
     let Some(PropertyBody::Persisted {
         values,
         side_entries,
         ..
     }) = &property_record.body
     else {
-        return Ok(
-            matches!(property_record.body, Some(PropertyBody::Transient)).then(|| {
-                let status = property_record
-                    .status
-                    .map(|status| format!(" status=\"{status}\""))
-                    .unwrap_or_default();
-                format!(
-                    "<_Property name=\"{}\" type=\"{}\"{status}/>",
-                    escaped(&property_record.name),
-                    escaped(&property_record.type_name)
-                )
-            }),
-        );
+        return matches!(property_record.body, Some(PropertyBody::Transient)).then(|| {
+            let status = property_record
+                .status
+                .map(|status| format!(" status=\"{status}\""))
+                .unwrap_or_default();
+            format!(
+                "<_Property name=\"{}\" type=\"{}\"{status}/>",
+                escaped(&property_record.name),
+                escaped(&property_record.type_name)
+            )
+        });
     };
     native_values(
         &PersistedProperty {
@@ -255,7 +252,7 @@ pub(crate) fn native_named(
 }
 
 /// Serialize a GUI property's actual typed fields without a source-XML adapter.
-pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Result<Option<String>, CodecError> {
+pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Option<String> {
     native_values(
         &PersistedProperty {
             name: &property.name,
@@ -286,7 +283,7 @@ fn native_values(
     property: &PersistedProperty<'_>,
     names: &std::collections::HashMap<String, String>,
     available: &std::collections::HashSet<String>,
-) -> Result<Option<String>, CodecError> {
+) -> Option<String> {
     let values = property.values;
     let side_entries = property.side_entries;
     let dynamic = property.dynamic;
@@ -295,7 +292,7 @@ fn native_values(
     // payload. An entry the writer does not emit leaves the property with
     // no independently writable typed payload.
     if !side_entries.iter().all(|entry| available.contains(entry)) {
-        return Ok(None);
+        return None;
     }
     if (property.type_name.contains("PropertyPythonObject")
         && !values.iter().any(|value| value.decoded_json.is_some()))
@@ -319,20 +316,18 @@ fn native_values(
             })
         })
     {
-        return Ok(None);
+        return None;
     }
     // A record whose typed value tree is not well formed has no writable
     // payload.
-    let Some(content) = value_content(values, names) else {
-        return Ok(None);
-    };
-    Ok(Some(property_header(
+    let content = value_content(values, names)?;
+    Some(property_header(
         property.name,
         property.type_name,
         property.status,
         dynamic,
         &content,
-    )))
+    ))
 }
 
 pub(super) fn native_property(property: &PropertyRecord, name: &str, content: &str) -> String {
@@ -532,7 +527,7 @@ impl Object {
         self.properties.insert(name.into(), property);
     }
 
-    /// The attachment support link's name: FreeCAD 1.0 renamed `Support` to
+    /// The attachment support link's name: `FreeCAD` 1.0 renamed `Support` to
     /// `AttachmentSupport`, and an object keeps the spelling it carries.
     pub(crate) fn support_field(&self) -> &'static str {
         if self.properties.contains_key("AttachmentSupport") {
@@ -616,7 +611,7 @@ pub(crate) fn property_bool_value(xml: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests;
 
-/// The shortest decimal degree value that FreeCAD stores for `radians` and
+/// The shortest decimal degree value that `FreeCAD` stores for `radians` and
 /// that converts back to the same radians, so a written angle re-reads
 /// unchanged.
 pub(crate) fn degrees(radians: f64) -> f64 {

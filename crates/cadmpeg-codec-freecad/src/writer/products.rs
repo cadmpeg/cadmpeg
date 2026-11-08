@@ -249,7 +249,7 @@ fn definitions(
             {
                 continue;
             }
-            if let Some(value) = xml::native_named(property, names, &available)? {
+            if let Some(value) = xml::native_named(property, names, &available) {
                 object.set(&property.name, value);
             } else {
                 losses.push(
@@ -343,7 +343,7 @@ fn placement(
     transform: cadmpeg_ir::transform::Transform,
     owner: &str,
     losses: &mut Vec<LossNote>,
-) -> Result<String, CodecError> {
+) -> String {
     let transform = if transform.is_proper_rigid() {
         transform
     } else {
@@ -427,7 +427,7 @@ fn replay_list_properties(
         if object.properties.contains_key(&property.name) {
             continue;
         }
-        match super::xml::native_named(property, names, &available)? {
+        match super::xml::native_named(property, names, &available) {
             Some(value) => object.set(&property.name, value),
             None => losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
@@ -722,7 +722,7 @@ pub(super) fn write(
                         split_scale(frame.transform()).unwrap_or((frame.transform(), [1.0; 3]));
                     object.set(
                         "Placement",
-                        placement(rigid, occurrence.id.as_str(), losses)?,
+                        placement(rigid, occurrence.id.as_str(), losses),
                     );
                 }
             }
@@ -782,7 +782,7 @@ pub(super) fn write(
                 let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
                 object.set(
                     "Placement",
-                    placement(rigid, occurrence.id.as_str(), losses)?,
+                    placement(rigid, occurrence.id.as_str(), losses),
                 );
                 if scale != [1.0; 3] {
                     object.set(
@@ -804,7 +804,7 @@ pub(super) fn write(
             }
         }
     }
-    resolve_linked_transforms(ir, objects, &linked_uses, losses)?;
+    resolve_linked_transforms(ir, objects, &linked_uses, losses);
     let mut children: Vec<_> = ir.model.occurrences.iter().collect();
     children.sort_by_key(|occurrence| occurrence.ordinal);
     for occurrence in children {
@@ -902,7 +902,7 @@ fn resolve_linked_transforms(
     objects: &mut [Object],
     linked_uses: &[(String, String, String, cadmpeg_ir::transform::Transform)],
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     let mut groups: BTreeMap<&str, Vec<(String, String, cadmpeg_ir::transform::Transform)>> =
         BTreeMap::new();
     for (prototype, link, occurrence, linked) in linked_uses {
@@ -918,7 +918,7 @@ fn resolve_linked_transforms(
             .all(|(_, _, linked)| Some(linked) == uses.first().map(|(_, _, first)| first))
             .then(|| uses.first().map(|(_, _, first)| *first))
             .flatten();
-        let rendered = agreed.and_then(|linked| placement(linked, prototype, losses).ok());
+        let rendered = agreed.map(|linked| placement(linked, prototype, losses));
         let consistent = match (
             &rendered,
             objects.iter().find(|object| object.name == prototype),
@@ -954,7 +954,7 @@ fn resolve_linked_transforms(
                 bool_property(object, "LinkTransform", true);
                 if let Some(transform) = current.transform {
                     let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
-                    object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
+                    object.set("Placement", placement(rigid, occurrence.as_str(), losses));
                     if scale != [1.0; 3] {
                         object.set(
                             "ScaleVector",
@@ -1009,7 +1009,7 @@ fn resolve_linked_transforms(
                 continue;
             };
             let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
-            object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
+            object.set("Placement", placement(rigid, occurrence.as_str(), losses));
             if scale != [1.0; 3] {
                 object.set(
                     "ScaleVector",
@@ -1029,7 +1029,6 @@ fn resolve_linked_transforms(
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

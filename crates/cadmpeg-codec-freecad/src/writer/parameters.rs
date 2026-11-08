@@ -581,7 +581,7 @@ pub(super) fn write(
                                 &source,
                                 names,
                                 &std::collections::HashSet::new(),
-                            )?;
+                            );
                         }
                     }
                 }
@@ -630,8 +630,8 @@ pub(super) fn write(
             ));
         }
     }
-    controls::write(ir, objects, names, &mut expressions, losses)?;
-    expressions::write(objects, expressions)?;
+    controls::write(ir, objects, names, &mut expressions, losses);
+    expressions::write(objects, expressions);
     Ok(())
 }
 
