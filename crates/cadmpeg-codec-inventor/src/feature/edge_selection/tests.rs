@@ -772,7 +772,7 @@ fn selector_bytes_without_qualifier() -> Vec<u8> {
 }
 
 #[test]
-fn only_version_19_selectors_omit_the_qualifier_word() {
+fn only_versions_19_to_21_omit_the_qualifier_word() {
     let expected = Selector {
         source: 150,
         generator: 115,
@@ -780,16 +780,18 @@ fn only_version_19_selectors_omit_the_qualifier_word() {
     };
     let without = selector_bytes_without_qualifier();
     assert_eq!(without.len() + 8, selector_bytes().len());
-    assert!(!selector_has_qualifier(19));
-    assert_eq!(
-        selector(View::over_retained(&without), 19).expect("version 19"),
-        Some(expected.clone())
-    );
+    for version in [19, 20, 21] {
+        assert!(!selector_has_qualifier(version));
+        assert_eq!(
+            selector(View::over_retained(&without), version).expect("no qualifier"),
+            Some(expected.clone())
+        );
+    }
     assert_eq!(
         selector(View::over_retained(&selector_bytes()), 29).expect("version 29"),
         Some(expected)
     );
-    for version in [20, 23, 29, 31] {
+    for version in [22, 23, 29, 31] {
         assert!(selector_has_qualifier(version));
     }
     // The other version's layout does not parse as a selector.

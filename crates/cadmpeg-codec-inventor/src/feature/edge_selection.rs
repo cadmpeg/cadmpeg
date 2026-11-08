@@ -216,11 +216,8 @@ struct Selector {
 /// Whether the direct edge selector of a `PmDc` segment major version stores
 /// the qualifier word between its topology and naming-form words.
 pub(super) const fn selector_has_qualifier(version: u8) -> bool {
-    version != SELECTOR_WITHOUT_QUALIFIER
+    !matches!(version, 19..=21)
 }
-
-/// The `PmDc` segment major version whose direct edge selector has no qualifier word.
-const SELECTOR_WITHOUT_QUALIFIER: u8 = 19;
 
 #[cfg(test)]
 fn selector(
@@ -561,9 +558,11 @@ pub(super) fn inventory(
                         key: stored.key,
                     });
                 }
-                if historical::links(&stored, |ordinal| {
-                    record_types.get(&ordinal).copied().flatten()
-                }) {
+                if historical::links(
+                    &stored,
+                    |ordinal| record_types.get(&ordinal).copied().flatten(),
+                    |ordinal| body_sources.get(&ordinal).copied().flatten(),
+                ) {
                     stored_selectors.push(stored);
                 }
             }
