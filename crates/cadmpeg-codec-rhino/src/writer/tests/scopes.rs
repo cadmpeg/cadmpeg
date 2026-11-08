@@ -483,9 +483,10 @@ fn single_free_point_keeps_distinct_body_and_point_colors() {
         decoded.ir().model.appearance_bindings[0].id.as_str(),
         ir.model.appearance_bindings[0].id.as_str()
     );
-    assert!(report.losses.iter().all(|loss| {
-        loss.code != RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
-    }));
+    assert!(report
+        .losses
+        .iter()
+        .all(|loss| { loss.code != RhinoLossCode::WriterPointCloudAppearanceReduced.kind() }));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::desktop();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);

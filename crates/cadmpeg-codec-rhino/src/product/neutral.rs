@@ -156,10 +156,10 @@ impl Projection<'_> {
             transform: Some(transform),
             linked_prototype: None,
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            visible: object
-                .attributes
-                .parsed()
-                .map_or_else(|| Some(identity.effective_visible), |attributes| Some(attributes.visible)),
+            visible: object.attributes.parsed().map_or_else(
+                || Some(identity.effective_visible),
+                |attributes| Some(attributes.visible),
+            ),
             link: None,
             native_ref: Some(native_ref.clone()),
         });

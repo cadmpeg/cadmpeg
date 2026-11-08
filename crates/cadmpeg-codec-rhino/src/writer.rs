@@ -4560,8 +4560,7 @@ pub(crate) fn object_user_strings(ir: &CadIr, identity: &str, name: &str) -> Vec
         }
     }
     if let Some(body) = ir.model.bodies.iter().find(|body| {
-        (body.name.is_some() || body.color.is_some())
-            && identity_uuid(body.id.as_str(), identity)
+        (body.name.is_some() || body.color.is_some()) && identity_uuid(body.id.as_str(), identity)
     }) {
         if let Some(body_name) = body.name.as_deref() {
             if body_name != name {
