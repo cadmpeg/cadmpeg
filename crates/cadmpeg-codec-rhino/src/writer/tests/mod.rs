@@ -1215,4 +1215,5 @@ pub(crate) fn table(
     super::table(&ctx, typecode, records)
 }
 
-mod retained_bytes;
+mod retained_bytes;mod debug_occ;
+mod debug_cmp;
