@@ -245,6 +245,26 @@ pub(super) fn align_spline_to_edge<'a>(
     aligned.map_or_else(|| Cow::Borrowed(geometry), Cow::Owned)
 }
 
+/// Preserve an active spline interval when a vertex can lie off its edge.
+pub(super) fn bounded_spline_use(geometry: &PcurveGeometry, edge: &Edge) -> Option<[f64; 2]> {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
+        return None;
+    };
+    let range = edge.param_range()?.get();
+    let domain = cadmpeg_ir::eval::nurbs_pcurve_parameter_domain(
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points().len(),
+    )?
+    .endpoints();
+    (!nurbs.periodic()
+        && range != domain
+        && domain[0] <= range[0]
+        && range[0] < range[1]
+        && range[1] <= domain[1])
+        .then_some(range)
+}
+
 /// The parameter periods of a surface's u and v directions. An analytic
 /// angle parameter has period 2π; a periodic NURBS direction has its knot
 /// domain as period.
