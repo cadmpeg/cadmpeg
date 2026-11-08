@@ -4,7 +4,6 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 
 use crate::bytes::take_reference;
 use crate::design::decode::text::fixed_guid_end;
@@ -17,17 +16,14 @@ const LOCAL_REFERENCE_LEN: usize = 11;
 
 /// Design entity suffixes of the bodies whose hidden browser nodes a consuming
 /// scope selects.
-pub(super) fn consumed_body_entities(
-    root: View<'_>,
-    meta: &MetaStream,
-) -> Result<HashSet<u64>, CodecError> {
+pub(super) fn consumed_body_entities(root: View<'_>, meta: &MetaStream) -> HashSet<u64> {
     let consumers = entities_of(meta, |guid| {
         [COMBINE_TYPE_GUID, REMOVE_BODY_TYPE_GUID]
             .iter()
             .any(|consumer| consumer.eq_ignore_ascii_case(guid))
     });
     if consumers.is_empty() {
-        return Ok(HashSet::new());
+        return HashSet::new();
     }
     let nodes = entities_of(meta, |guid| {
         crate::design::presentation::BROWSER_NODE_TYPE_GUID.eq_ignore_ascii_case(guid)
@@ -54,7 +50,7 @@ pub(super) fn consumed_body_entities(
             }
         }
     });
-    Ok(consumed)
+    consumed
 }
 
 fn entities_of(meta: &MetaStream, selected: impl Fn(&str) -> bool) -> HashSet<u64> {
