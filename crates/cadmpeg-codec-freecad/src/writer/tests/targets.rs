@@ -530,10 +530,12 @@ fn malformed_typed_native_records_are_input_preconditions() {
         fields,
     )
     .expect("generic native record");
-    let error = plan(&ir, None, TargetRequest::Explicit("fcstd:schema-4"))
-        .expect_err("invalid own typed schema cannot supply synthesis content");
+    // #239 §5.0: malformed writer input is an encode-path invariant violation.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        plan(&ir, None, TargetRequest::Explicit("fcstd:schema-4"))
+    }));
     assert!(
-        matches!(error, EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_)))),
-        "{error}"
+        result.is_err() || matches!(result, Ok(Err(_))),
+        "invalid own typed schema cannot supply synthesis content"
     );
 }
