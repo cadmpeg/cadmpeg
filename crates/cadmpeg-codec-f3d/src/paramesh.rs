@@ -25,81 +25,81 @@ use crate::records::mesh::DesignMeshUuid;
 use cadmpeg_core::decode::index_from_u32;
 
 /// Container magic.
-const MAGIC: [u8; 12] = [
+pub(crate) const MAGIC: [u8; 12] = [
     0x89, 0x55, 0x44, 0x50, 0x4D, 0x45, 0x53, 0x48, 0x0D, 0x0A, 0x1A, 0x0A,
 ];
 /// Container version accepted by this decoder.
-const VERSION: u32 = 2;
+pub(crate) const VERSION: u32 = 2;
 /// Byte offset of the u64 protobuf byte count.
 const PROTOBUF_COUNT_AT: usize = 0x30;
 /// Byte offset of the protobuf message.
 const PROTOBUF_AT: usize = 0x3C;
 /// Chunk kind holding the `MessagePack` stream-name table.
-const CHUNK_NAME_TABLE: u32 = 3;
+pub(crate) const CHUNK_NAME_TABLE: u32 = 3;
 /// Chunk kind holding one compressed stream.
-const CHUNK_STREAM: u32 = 4;
+pub(crate) const CHUNK_STREAM: u32 = 4;
 /// LZMA1 properties byte: `lc` 3, `lp` 0, `pb` 2.
-const LZMA_PROPERTIES: u8 = 0x5D;
+pub(crate) const LZMA_PROPERTIES: u8 = 0x5D;
 /// Base-2 logarithm of the LZMA1 dictionary size.
 const LZMA_DICTIONARY_LOG: u8 = 0x14;
 /// Raw-stream selector following the common properties byte.
-const RAW_STREAM_MODE: u8 = 0xfe;
+pub(crate) const RAW_STREAM_MODE: u8 = 0xfe;
 /// Largest stream this decoder inflates.
 const MAX_STREAM_BYTES: u32 = 64 * 1024 * 1024;
 /// Registry field that declares one vertex-domain attribute channel.
-const REGISTRY_VERTEX_CHANNEL: u64 = 4;
+pub(crate) const REGISTRY_VERTEX_CHANNEL: u64 = 4;
 /// Registry field that declares one triangle-domain attribute channel.
-const REGISTRY_TRIANGLE_CHANNEL: u64 = 5;
+pub(crate) const REGISTRY_TRIANGLE_CHANNEL: u64 = 5;
 /// Registry field that names the stream of classified feature-edge endpoints.
-const REGISTRY_FEATURE_EDGES: u64 = 7;
+pub(crate) const REGISTRY_FEATURE_EDGES: u64 = 7;
 /// Registry field holding one key/value property entry.
-const REGISTRY_PROPERTY: u64 = 8;
+pub(crate) const REGISTRY_PROPERTY: u64 = 8;
 /// Registry field storing the number of face-group records.
-const REGISTRY_FACE_GROUP_COUNT: u64 = 9;
+pub(crate) const REGISTRY_FACE_GROUP_COUNT: u64 = 9;
 /// Registry field storing the container-local mesh UUID.
-const REGISTRY_MESH_UUID: u64 = 12;
+pub(crate) const REGISTRY_MESH_UUID: u64 = 12;
 /// Registry field naming the vertex-position stream.
-const REGISTRY_VERTICES: u64 = 21;
+pub(crate) const REGISTRY_VERTICES: u64 = 21;
 /// Registry field naming the triangle-corner stream.
-const REGISTRY_TRIANGLES: u64 = 22;
+pub(crate) const REGISTRY_TRIANGLES: u64 = 22;
 /// Nested feature-edge field holding the stream name.
-const FEATURE_EDGE_STREAM: u64 = 4;
+pub(crate) const FEATURE_EDGE_STREAM: u64 = 4;
 /// Property-entry field holding the property key.
-const PROPERTY_KEY: u64 = 1;
+pub(crate) const PROPERTY_KEY: u64 = 1;
 /// Property-entry field holding a text value.
-const PROPERTY_TEXT: u64 = 3;
+pub(crate) const PROPERTY_TEXT: u64 = 3;
 /// Property-entry field holding a stream name.
 const PROPERTY_STREAM: u64 = 4;
 /// Channel field holding the role the attribute plays.
-const CHANNEL_ROLE: u64 = 2;
+pub(crate) const CHANNEL_ROLE: u64 = 2;
 /// Channel field holding the attribute resource GUID.
 const CHANNEL_RESOURCE: u64 = 3;
 /// Channel field holding the stream names and the element code.
-const CHANNEL_STREAMS: u64 = 5;
+pub(crate) const CHANNEL_STREAMS: u64 = 5;
 /// Channel field mapping one face-group key to its GUID.
-const CHANNEL_GROUP: u64 = 6;
+pub(crate) const CHANNEL_GROUP: u64 = 6;
 /// Face-group entry field holding the numeric group key.
-const GROUP_KEY: u64 = 1;
+pub(crate) const GROUP_KEY: u64 = 1;
 /// Face-group entry field holding the group GUID.
-const GROUP_GUID: u64 = 2;
+pub(crate) const GROUP_GUID: u64 = 2;
 /// Stream-entry field holding the element code.
-const STREAM_ELEMENT_CODE: u64 = 1;
+pub(crate) const STREAM_ELEMENT_CODE: u64 = 1;
 /// Stream-entry field holding the value-stream name.
-const STREAM_VALUES: u64 = 2;
+pub(crate) const STREAM_VALUES: u64 = 2;
 /// Stream-entry field holding the index-stream name.
-const STREAM_INDEX: u64 = 3;
+pub(crate) const STREAM_INDEX: u64 = 3;
 /// Element code of a two-component `f32` element.
 const ELEMENT_PAIR: u64 = 2;
-const ELEMENT_PAIR_CODE: u32 = 2;
+pub(crate) const ELEMENT_PAIR_CODE: u32 = 2;
 /// Element code of a four-component `f32` element.
 const ELEMENT_QUAD: u64 = 4;
-const ELEMENT_QUAD_CODE: u32 = 4;
+pub(crate) const ELEMENT_QUAD_CODE: u32 = 4;
 /// Element code of a three-component direction packed into two `f32` values.
 const ELEMENT_PACKED_DIRECTION: u64 = 5;
-const ELEMENT_PACKED_DIRECTION_CODE: u32 = 5;
+pub(crate) const ELEMENT_PACKED_DIRECTION_CODE: u32 = 5;
 /// Element code of one delta-coded value per triangle.
 const ELEMENT_TRIANGLE_DELTA: u64 = 7;
-const ELEMENT_TRIANGLE_DELTA_CODE: u32 = 7;
+pub(crate) const ELEMENT_TRIANGLE_DELTA_CODE: u32 = 7;
 /// Bytes of one [`ELEMENT_PACKED_DIRECTION`] element.
 const PACKED_DIRECTION_BYTES: u32 = 8;
 

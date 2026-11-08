@@ -31,6 +31,28 @@ fn label(record: &NativeRecord) -> Option<String> {
         .then(|| text.to_owned())
 }
 
+/// The shorter of the plain and exponent forms of `value` that parse back to
+/// it exactly. Each form keeps the decimal point that makes it an IGES real.
+fn shortest_real(value: f64) -> String {
+    let point = |text: String| {
+        if text.contains('.') {
+            text
+        } else {
+            match text.split_once('e') {
+                Some((mantissa, exponent)) => format!("{mantissa}.e{exponent}"),
+                None => format!("{text}."),
+            }
+        }
+    };
+    let plain = point(format!("{value}"));
+    let exponent = point(format!("{value:e}")).replace('e', "D");
+    if exponent.len() < plain.len() {
+        exponent
+    } else {
+        plain
+    }
+}
+
 /// Native integer/real token kinds are independent of the geometric value.
 /// Retain them only where every numeric token still equals the current support.
 pub(super) fn retain_numeric_tokens(entity: &mut Entity, record: &NativeRecord) {
@@ -71,7 +93,7 @@ pub(super) fn retain_numeric_tokens(entity: &mut Entity, record: &NativeRecord) 
             };
             output.push(integer.to_string());
         } else if kind == "real" {
-            output.push((*value).to_owned());
+            output.push(shortest_real(original));
         } else {
             return;
         }
@@ -203,23 +225,21 @@ fn retain_surface_numbers(entity: &mut Entity, surface: &Surface, parameters: &[
 }
 
 pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, base: usize) {
-    if let [entity] = entities.as_mut_slice() {
-        if entity.type_code == 128 {
-            if let Some(sequence) = surface
+    if entities.len() != 4 {
+        if let (Some(entity), Some(sequence)) = (
+            entities.last_mut(),
+            surface
                 .source_object
                 .as_ref()
                 .filter(|source| source.format == CodecFormat::Iges)
-                .and_then(|source| source.object_id.as_str().strip_prefix('D'))
-            {
-                super::native_records::numeric::retain_directory(
-                    ir,
-                    &format!("iges:entity:directory#{sequence}"),
-                    entity,
-                );
-            }
+                .and_then(|source| source.object_id.as_str().strip_prefix('D')),
+        ) {
+            super::native_records::numeric::retain_directory(
+                ir,
+                &format!("iges:entity:directory#{sequence}"),
+                entity,
+            );
         }
-    }
-    if entities.len() != 4 {
         return;
     }
     let Some(source) = surface

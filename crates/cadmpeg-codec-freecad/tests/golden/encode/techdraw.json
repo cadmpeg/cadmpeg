@@ -2,13 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 23765,
-      "payload_sha256": "aaf6f283ce6d834e3028c28d182a7c7174d3eb541f397a10ff586b6ea63a5594"
+      "payload_len": 24015,
+      "payload_sha256": "a49fcbf9d133f81a8a6188d324a3cd684b1ea3fdc11683d7e3e2217150d95a32"
     },
     {
       "name": "Box.Shape.brp",
-      "payload_len": 2561,
-      "payload_sha256": "4090c7890ba4cf04faf9a9b7f1e0e990f759a92f8b6e0ff7708cb3d6bba7b419"
+      "payload_len": 2582,
+      "payload_sha256": "26be724ca2c89c6fbd4475f4f694d3db9dddfee1daede1dcede8dcdec9ade845"
     },
     {
       "name": "techdraw-template.svg",

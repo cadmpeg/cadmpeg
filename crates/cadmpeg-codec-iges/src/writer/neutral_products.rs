@@ -7,15 +7,53 @@ use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Write as _;
 
+/// A product projected from a Type 186 solid is that solid: its label is the
+/// solid's Directory label.
+fn label_manifold_solid(
+    product: &cadmpeg_ir::products::ProductDefinition,
+    entities: &mut [Entity],
+) {
+    let [body] = product.bodies.as_slice() else {
+        return;
+    };
+    let Some(entity) = entities.iter_mut().find(|entity| {
+        entity.type_code == 186
+            && entity
+                .source_targets
+                .iter()
+                .any(|target| target == body.as_str())
+    }) else {
+        return;
+    };
+    if let Some(label) = product.label.as_deref().filter(|label| {
+        label.len() <= 8
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+    }) {
+        label.clone_into(&mut entity.label);
+    }
+    entity.source_targets.push(product.id.to_string());
+}
+
 pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>, version: crate::IgesVersion) {
     let native = ir.native.namespace("iges");
     let native_definitions = native
         .into_iter()
         .flat_map(|ns| {
-            ["subfigure_definitions", "network_definitions"]
-                .into_iter()
-                .flat_map(|arena| ns.arenas().get(arena).into_iter().flatten())
+            [
+                "subfigure_definitions",
+                "network_definitions",
+                "solid_assemblies",
+            ]
+            .into_iter()
+            .flat_map(|arena| ns.arenas().get(arena).into_iter().flatten())
         })
+        .map(cadmpeg_ir::NativeRecord::id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let manifold_solids = native
+        .into_iter()
+        .flat_map(|ns| ns.arenas().get("manifold_solids").into_iter().flatten())
         .map(cadmpeg_ir::NativeRecord::id)
         .collect::<std::collections::BTreeSet<_>>();
     let mut definitions = BTreeMap::new();
@@ -26,6 +64,14 @@ pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>, version: crate::Ige
             .as_deref()
             .is_some_and(|id| native_definitions.contains(id))
         {
+            continue;
+        }
+        if product
+            .native_ref
+            .as_deref()
+            .is_some_and(|id| manifold_solids.contains(id))
+        {
+            label_manifold_solid(product, entities);
             continue;
         }
         let Some(name) = product.label.as_deref().filter(|name| {

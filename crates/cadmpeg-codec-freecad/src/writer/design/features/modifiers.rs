@@ -14,6 +14,7 @@ pub(super) fn dress_up(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
+    source_tag: Option<&str>,
 ) -> Result<(), FeatureError> {
     let groups = value["groups"]
         .as_array()
@@ -23,6 +24,9 @@ pub(super) fn dress_up(
     }
     let group = &groups[0];
     let fillet = tag(value) == "fillet";
+    if part_dress_up(value, group, (fillet, source_tag), object, names)? {
+        return Ok(());
+    }
     object.kind = if fillet {
         "PartDesign::Fillet"
     } else {
@@ -95,12 +99,78 @@ pub(super) fn dress_up(
     }
     Ok(())
 }
+/// A `Part::Fillet` or `Part::Chamfer` keeps its type: `Base` links the
+/// solid, the replayed native `Edges` list keeps its edge numbers, and every
+/// row takes the definition's distances. A law the part tool cannot store
+/// falls back to the `PartDesign` encoding.
+fn part_dress_up(
+    value: &Value,
+    group: &Value,
+    (fillet, source_tag): (bool, Option<&str>),
+    object: &mut Object,
+    names: &HashMap<String, String>,
+) -> Result<bool, FeatureError> {
+    let expected = if fillet {
+        "Part::Fillet"
+    } else {
+        "Part::Chamfer"
+    };
+    if source_tag != Some(expected)
+        || tag(&group["edges"]) == "all"
+        || value["flip_direction"].as_bool().unwrap_or(false)
+    {
+        return Ok(false);
+    }
+    let distances = if fillet {
+        if tag(&group["radius"]) != "constant" {
+            return Ok(false);
+        }
+        let radius = number(&group["radius"]["radius"], "fillet radius")?;
+        [radius, radius]
+    } else {
+        let spec = &group["spec"];
+        match tag(spec) {
+            "distance" => {
+                let distance = number(&spec["distance"], "chamfer distance")?;
+                [distance, distance]
+            }
+            "two_distances" => [
+                number(&spec["first"], "first chamfer distance")?,
+                number(&spec["second"], "second chamfer distance")?,
+            ],
+            _ => return Ok(false),
+        }
+    };
+    object.kind = expected.into();
+    link(object, "Base", &group["edges"], names)?;
+    object.edge_distances = Some(distances);
+    Ok(true)
+}
+
 pub(super) fn shell(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
+    source_tag: Option<&str>,
 ) -> Result<(), FeatureError> {
-    if tag(value) == "shell" {
+    let part = tag(value) == "shell" && source_tag == Some("Part::Thickness");
+    if part {
+        object.kind = "Part::Thickness".into();
+        // `Part::Thickness` selects its removed faces in `Faces` and signs
+        // `Value` with the offset side.
+        selection(object, "Faces", &value["removed_faces"], names)?;
+        let thickness = number(&value["thickness"], "wall thickness")?;
+        let outward = value["outward"].as_bool().unwrap_or(true);
+        object.set(
+            "Value",
+            xml::scalar(
+                "Value",
+                "App::PropertyQuantity",
+                "Float",
+                if outward { thickness } else { -thickness },
+            ),
+        );
+    } else if tag(value) == "shell" {
         object.kind = "PartDesign::Thickness".into();
         selection(object, "Base", &value["removed_faces"], names)?;
         length(
@@ -136,7 +206,7 @@ pub(super) fn shell(
         );
     }
     if !value["join"].is_null() {
-        let variants = if tag(value) == "shell" {
+        let variants = if tag(value) == "shell" && !part {
             &["arc", "intersection"][..]
         } else {
             &["arc", "tangent", "intersection"][..]
@@ -192,9 +262,10 @@ pub(super) fn binder(
         ));
     }
     content.push_str("</LinkSubList>");
+    let field = object.support_field();
     object.set(
-        "Support",
-        xml::property("Support", "App::PropertyLinkSubList", &content),
+        field,
+        xml::property(field, "App::PropertyLinkSubList", &content),
     );
     if tag(construction) == "shape" {
         boolean(
