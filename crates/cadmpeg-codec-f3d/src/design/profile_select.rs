@@ -736,31 +736,30 @@ pub(crate) fn bind_extrude_profile_selections(
                                 curve_resolution.sketch_entities,
                             )
                         });
+                    let mut unresolved_region_operand = None;
                     if explicit_profiles.is_none() {
                         if let Some((operand, stream)) = scope
                             .extrude_profile()
                             .zip(native_stream(&scope.id))
                             .filter(|(operand, _)| operand.region_selection.is_some())
                         {
-                            let selected = region_members::resolve(
+                            if let Some(selected) = region_members::resolve(
                                 stream,
                                 operand,
                                 sketch,
                                 curve_resolution.curve_identities,
                                 curve_resolution.sketch_entities,
                                 scoped_resolution,
-                            )?;
-                            *profile = ProfileRef::Planar(selected.unwrap_or_else(|| {
-                                PlanarProfileRef::sketch_selection(
-                                    sketch_id.clone(),
-                                    vec![scope.id.clone()],
-                                )
-                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
-                            }));
-                            break 'feature_edit;
+                            )? {
+                                *profile = ProfileRef::Planar(selected);
+                                break 'feature_edit;
+                            }
+                            unresolved_region_operand = Some((operand, stream));
                         }
                     }
                     if !matching_groups.is_empty() {
+                        let inferred_before = scoped_resolution.profile_work.inferred_counts();
+                        let assumed_before = scoped_resolution.profile_work.assumed_flags();
                         let mut selections = Vec::new();
                         for group in &matching_groups {
                             let selection = resolved_extrude_profile_selection(
@@ -780,29 +779,71 @@ pub(crate) fn bind_extrude_profile_selections(
                         if let Some(merged) =
                             merge_resolved_profile_selections(sketch_id, &selections)
                         {
-                            let use_merged = match (&explicit_profiles, &merged) {
-                                (None, _) => true,
-                                (
-                                    Some(exp),
-                                    ProfileRef::Planar(PlanarProfileRef::SketchRegions {
-                                        regions,
-                                        ..
-                                    }),
-                                ) => regions.as_slice().iter().all(|reg| match reg {
-                                    cadmpeg_ir::features::SketchProfileRegion::Loops { loops } => {
-                                        exp.contains(&loops.outer())
+                            let use_merged =
+                                match (&explicit_profiles, unresolved_region_operand, &merged) {
+                                    (None, None, _) => true,
+                                    (None, Some((operand, stream)), ProfileRef::Planar(planar)) => {
+                                        planar_selection_agrees_with_region_operand(
+                                            stream,
+                                            operand,
+                                            sketch,
+                                            curve_resolution.curve_identities,
+                                            curve_resolution.sketch_entities,
+                                            planar,
+                                        )
                                     }
-                                    cadmpeg_ir::features::SketchProfileRegion::Trimmed {
-                                        ..
-                                    } => false,
-                                }),
-                                _ => false,
-                            };
+                                    (
+                                        Some(exp),
+                                        _,
+                                        ProfileRef::Planar(PlanarProfileRef::SketchRegions {
+                                            sketch: cand_sketch,
+                                            regions,
+                                        }),
+                                    ) => {
+                                        let cand_slice = regions.as_slice();
+                                        cand_sketch == sketch_id
+                                            && cand_slice.len() == exp.len()
+                                            && cand_slice.iter().all(|reg| match reg {
+                                                cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                    loops,
+                                                } => {
+                                                    loops.holes().is_empty()
+                                                        && exp.contains(&loops.outer())
+                                                }
+                                                cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+                                                    ..
+                                                } => false,
+                                            })
+                                            && exp.iter().all(|profile_idx| {
+                                                cand_slice.iter().any(|reg| {
+                                                    matches!(
+                                                        reg,
+                                                        cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                            loops,
+                                                        } if loops.holes().is_empty()
+                                                            && loops.outer() == *profile_idx
+                                                    )
+                                                })
+                                            })
+                                    }
+                                    _ => false,
+                                };
                             if use_merged {
+                                let after = scoped_resolution.profile_work.inferred_counts();
+                                scoped_resolution.profile_work.set_inferred_counts((
+                                    inferred_before.0 + usize::from(after.0 > inferred_before.0),
+                                    inferred_before.1 + usize::from(after.1 > inferred_before.1),
+                                ));
                                 *profile = merged;
                                 break 'feature_edit;
                             }
                         }
+                        scoped_resolution
+                            .profile_work
+                            .set_inferred_counts(inferred_before);
+                        scoped_resolution
+                            .profile_work
+                            .set_assumed_flags(assumed_before);
                     }
                     if let Some(profiles) = explicit_profiles {
                         let sketch_id = sketch_id.clone();
@@ -811,6 +852,69 @@ pub(crate) fn bind_extrude_profile_selections(
                                 Ok(profile) => profile,
                                 Err(_) => PlanarProfileRef::Native(scope.id.clone()),
                             },
+                        );
+                        break 'feature_edit;
+                    }
+                    if let Some((operand, stream)) = unresolved_region_operand {
+                        if matching_groups.is_empty() {
+                            if let (Some(state_id), Some(prev_state_id)) = (
+                                scope.history_state_id(),
+                                effective_previous_history_state_id,
+                            ) {
+                                let inferred_before =
+                                    scoped_resolution.profile_work.inferred_counts();
+                                let assumed_before =
+                                    scoped_resolution.profile_work.assumed_flags();
+                                if let Some(sel) = transition_profile_selection(
+                                    sketch,
+                                    scoped_resolution,
+                                    state_id,
+                                    prev_state_id,
+                                )? {
+                                    let candidate = match sel {
+                                        ResolvedProfileSelection::Loops(profiles) => {
+                                            PlanarProfileRef::sketch_profiles(
+                                                sketch_id.clone(),
+                                                profiles,
+                                            )
+                                            .ok()
+                                        }
+                                        ResolvedProfileSelection::Regions(regions) => {
+                                            PlanarProfileRef::sketch_regions(
+                                                sketch_id.clone(),
+                                                regions,
+                                            )
+                                            .ok()
+                                        }
+                                    };
+                                    if let Some(candidate) = candidate.filter(|candidate| {
+                                        planar_selection_agrees_with_region_operand(
+                                            stream,
+                                            operand,
+                                            sketch,
+                                            curve_resolution.curve_identities,
+                                            curve_resolution.sketch_entities,
+                                            candidate,
+                                        )
+                                    }) {
+                                        *profile = ProfileRef::Planar(candidate);
+                                        break 'feature_edit;
+                                    }
+                                }
+                                scoped_resolution
+                                    .profile_work
+                                    .set_inferred_counts(inferred_before);
+                                scoped_resolution
+                                    .profile_work
+                                    .set_assumed_flags(assumed_before);
+                            }
+                        }
+                        *profile = ProfileRef::Planar(
+                            PlanarProfileRef::sketch_selection(
+                                sketch_id.clone(),
+                                vec![scope.id.clone()],
+                            )
+                            .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())),
                         );
                         break 'feature_edit;
                     }
@@ -1468,6 +1572,7 @@ pub(super) fn resolved_extrude_profile_selection(
             resolution.ctx,
         )?;
     }
+    let inferred_before_transition = resolution.profile_work.inferred_counts();
     if resolved_profiles.is_none() {
         if let (Some(state_id), Some(previous_state_id)) =
             (history_state_id, previous_history_state_id)
@@ -1485,6 +1590,9 @@ pub(super) fn resolved_extrude_profile_selection(
             previous_state_id,
             resolved_profiles.as_ref(),
         )? {
+            resolution
+                .profile_work
+                .set_inferred_counts(inferred_before_transition);
             resolved_profiles = Some(proven);
         } else if let Some(proven) = cap_regions::removed_profile_selection(
             sketch,
@@ -1493,6 +1601,9 @@ pub(super) fn resolved_extrude_profile_selection(
             previous_state_id,
             resolved_profiles.as_ref(),
         )? {
+            resolution
+                .profile_work
+                .set_inferred_counts(inferred_before_transition);
             resolved_profiles = Some(proven);
         } else if cut {
             if let Some(proven) = cap_regions::removed_regions_beyond_profile(
@@ -1502,6 +1613,9 @@ pub(super) fn resolved_extrude_profile_selection(
                 previous_state_id,
                 resolved_profiles.as_ref(),
             )? {
+                resolution
+                    .profile_work
+                    .set_inferred_counts(inferred_before_transition);
                 resolved_profiles = Some(proven);
             }
         }
@@ -1725,6 +1839,7 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
     }
 
     let mut best_match: Option<(f64, Option<f64>, &cadmpeg_ir::sketches::Sketch, Vec<u32>)> = None;
+    let mut best_match_inferred_delta = (0, 0);
     for candidate_sketch in sketches.iter().rev() {
         let Some((sk_origin, sk_normal, sk_u)) = candidate_sketch.resolved_placement() else {
             continue;
@@ -1865,7 +1980,9 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                 }
             }
         }
+        let mut candidate_inferred_delta = (0, 0);
         if matched_loops.is_empty() {
+            let before = resolution.profile_work.inferred_counts();
             if let Ok(Some(ResolvedProfileSelection::Loops(loops))) = transition_profile_selection(
                 candidate_sketch,
                 resolution,
@@ -1873,7 +1990,10 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                 previous_state_id,
             ) {
                 matched_loops = loops;
+                let after = resolution.profile_work.inferred_counts();
+                candidate_inferred_delta = (after.0 - before.0, after.1 - before.1);
             }
+            resolution.profile_work.set_inferred_counts(before);
         }
         if !matched_loops.is_empty() {
             matched_loops.sort_unstable();
@@ -1888,10 +2008,16 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     candidate_sketch,
                     matched_loops,
                 ));
+                best_match_inferred_delta = candidate_inferred_delta;
             }
         }
     }
     if let Some((_, signed_plane_offset, candidate_sketch, matched_loops)) = best_match {
+        let cur = resolution.profile_work.inferred_counts();
+        resolution.profile_work.set_inferred_counts((
+            cur.0 + best_match_inferred_delta.0,
+            cur.1 + best_match_inferred_delta.1,
+        ));
         let prof_str = matched_loops
             .iter()
             .map(u32::to_string)
@@ -2103,29 +2229,63 @@ pub(in crate::design) fn transition_profile_selection(
     if chain.last().map(|(_, p)| *p) != Some(previous_state_id) {
         return Ok(None);
     }
-    for (i, (step_state, step_prev_id)) in chain.iter().enumerate() {
-        if let Some(sel) = transition_profile_selection_step(
-            sketch,
-            resolution,
-            history,
-            step_state,
-            *step_prev_id,
-        )? {
-            let intermediates_empty = chain.iter().enumerate().all(|(j, (s, _))| {
-                if j == i {
-                    true
-                } else if let Some(t) = s.transition.as_ref() {
-                    t.rows == crate::history_records::AsmHistoricalRowsDelta::default()
-                        && topology_delta_keeps_entities(&t.topology)
-                } else {
-                    false
-                }
-            });
-            if intermediates_empty {
-                return Ok(Some(sel));
-            }
+    let inferred_before = resolution.profile_work.inferred_counts();
+    let step_selections = chain
+        .iter()
+        .map(|(step_state, step_prev_id)| {
+            let before_step = resolution.profile_work.inferred_counts();
+            let sel = transition_profile_selection_step(
+                sketch,
+                resolution,
+                history,
+                step_state,
+                *step_prev_id,
+            )?;
+            let after_step = resolution.profile_work.inferred_counts();
+            let step_delta = (after_step.0 - before_step.0, after_step.1 - before_step.1);
+            resolution.profile_work.set_inferred_counts(before_step);
+            Ok((sel, step_delta))
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+
+    for (i, (sel_opt, _)) in step_selections.iter().enumerate() {
+        let Some(sel) = sel_opt.as_ref() else {
+            continue;
+        };
+        let others_agree_or_preserve =
+            chain
+                .iter()
+                .zip(&step_selections)
+                .enumerate()
+                .all(|(j, ((s, _), (other_sel, _)))| {
+                    if j == i || other_sel.as_ref() == Some(sel) {
+                        true
+                    } else if let Some(t) = s.transition.as_ref() {
+                        t.rows == crate::history_records::AsmHistoricalRowsDelta::default()
+                            && topology_delta_keeps_entities(&t.topology)
+                    } else {
+                        false
+                    }
+                });
+        if others_agree_or_preserve {
+            let hole_inferred = usize::from(
+                step_selections
+                    .iter()
+                    .any(|(other_sel, d)| other_sel.as_ref() == Some(sel) && d.0 > 0),
+            );
+            let region_inferred = usize::from(
+                step_selections
+                    .iter()
+                    .any(|(other_sel, d)| other_sel.as_ref() == Some(sel) && d.1 > 0),
+            );
+            let cur = resolution.profile_work.inferred_counts();
+            resolution
+                .profile_work
+                .set_inferred_counts((cur.0 + hole_inferred, cur.1 + region_inferred));
+            return Ok(Some(sel.clone()));
         }
     }
+    resolution.profile_work.set_inferred_counts(inferred_before);
     Ok(None)
 }
 
@@ -2885,6 +3045,23 @@ pub(in crate::design) fn transition_inserted_profile_selection(
             return Ok(selections.into_iter().flatten().next());
         }
     }
+    let single_holed_region = {
+        let mut regions = selections
+            .iter()
+            .flatten()
+            .filter_map(|selection| match selection {
+                ResolvedProfileSelection::Regions(regions) => match regions.as_slice() {
+                    [SketchProfileRegion::Loops { loops }] if !loops.holes().is_empty() => {
+                        Some((loops.outer(), loops.holes()))
+                    }
+                    _ => None,
+                },
+                ResolvedProfileSelection::Loops(_) => None,
+            });
+        regions
+            .next()
+            .filter(|&first_reg| regions.all(|candidate| candidate == first_reg))
+    };
     let mut loop_selections = selections
         .iter()
         .flatten()
@@ -2893,7 +3070,25 @@ pub(in crate::design) fn transition_inserted_profile_selection(
             _ => None,
         });
     if let Some(first) = loop_selections.next() {
-        if loop_selections.all(|candidate| candidate == first) {
+        let defer_to_holed_region = single_holed_region.is_some_and(|(outer, holes)| {
+            selections
+                .iter()
+                .flatten()
+                .all(|selection| match selection {
+                    ResolvedProfileSelection::Regions(regions) => matches!(
+                        regions.as_slice(),
+                        [SketchProfileRegion::Loops { loops }]
+                            if loops.outer() == outer && loops.holes() == holes
+                    ),
+                    ResolvedProfileSelection::Loops(loops) => {
+                        !loops.is_empty()
+                            && loops
+                                .iter()
+                                .all(|profile| *profile == outer || holes.contains(profile))
+                    }
+                })
+        });
+        if !defer_to_holed_region && loop_selections.all(|candidate| candidate == first) {
             return Ok(selections.into_iter().flatten().find(|selection| {
                 matches!(selection, ResolvedProfileSelection::Loops(loops) if !loops.is_empty())
             }));
@@ -2966,7 +3161,8 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     if regions.any(|candidate| candidate != (outer, holes)) {
         return Ok(None);
     }
-    let mut has_boundary_support = false;
+    let mut has_outer_support = false;
+    let mut supported_holes = Vec::new();
     for selection in selections.iter().flatten() {
         match selection {
             ResolvedProfileSelection::Regions(regions)
@@ -2980,12 +3176,22 @@ pub(in crate::design) fn transition_inserted_profile_selection(
                         .iter()
                         .all(|profile| *profile == outer || holes.contains(profile)) =>
             {
-                has_boundary_support = true;
+                for &profile in loops {
+                    if profile == outer {
+                        has_outer_support = true;
+                    } else if holes.contains(&profile) && !supported_holes.contains(&profile) {
+                        supported_holes.push(profile);
+                    }
+                }
             }
             _ => return Ok(None),
         }
     }
-    if !has_boundary_support {
+    if !has_outer_support {
+        if !supported_holes.is_empty() {
+            profile_work.record_hole_boundary_profile_inferred();
+            return Ok(Some(ResolvedProfileSelection::Loops(supported_holes)));
+        }
         return Ok(None);
     }
     let mut owned_holes = Vec::new();
@@ -2995,6 +3201,7 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     let Some(region) = SketchProfileRegion::loops(outer, owned_holes).ok() else {
         return Ok(None);
     };
+    profile_work.record_region_hole_profile_inferred();
     let output = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(output)))
 }
@@ -4361,6 +4568,145 @@ fn resolved_sketch_profile_regions(
         resolved.push(profile_index);
     }
     (!resolved.is_empty()).then_some(resolved)
+}
+
+fn explicit_region_matching_loop_index(
+    exp_members: &[&cadmpeg_ir::sketches::SketchEntityId],
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> Option<u32> {
+    if exp_members.is_empty() {
+        return None;
+    }
+    let mut matching = sketch.profiles.iter().enumerate().filter(|(_, loop_uses)| {
+        loop_uses.len() == exp_members.len()
+            && exp_members.iter().all(|entity| {
+                let exp_count = exp_members
+                    .iter()
+                    .filter(|candidate| *candidate == entity)
+                    .count();
+                let loop_count = loop_uses
+                    .iter()
+                    .filter(|use_| &use_.entity == *entity)
+                    .count();
+                exp_count == loop_count
+            })
+    });
+    let (index, _) = matching.next()?;
+    if matching.next().is_some() {
+        return None;
+    }
+    u32::try_from(index).ok()
+}
+
+fn explicit_region_agrees_with_candidate_region(
+    exp_members: &[&cadmpeg_ir::sketches::SketchEntityId],
+    cand_region: &cadmpeg_ir::features::SketchProfileRegion,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> bool {
+    match cand_region {
+        cadmpeg_ir::features::SketchProfileRegion::Loops { loops } => {
+            loops.holes().is_empty()
+                && explicit_region_matching_loop_index(exp_members, sketch) == Some(loops.outer())
+        }
+        cadmpeg_ir::features::SketchProfileRegion::Trimmed { .. } => false,
+    }
+}
+
+pub(in crate::design) fn planar_selection_agrees_with_region_operand(
+    stream: &str,
+    operand: &DesignSketchProfileOperand,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    curve_identities: &[SketchCurveIdentity],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    candidate: &cadmpeg_ir::features::PlanarProfileRef,
+) -> bool {
+    use cadmpeg_ir::features::PlanarProfileRef;
+
+    let Some(selection) = operand.region_selection.as_ref() else {
+        return false;
+    };
+    if selection.regions.is_empty() || selection.has_extended_incidence() {
+        return false;
+    }
+    let Ok(owner_reference) = u32::try_from(operand.entity_id.suffix()) else {
+        return false;
+    };
+    let mut explicit_regions = Vec::with_capacity(selection.regions.len());
+    for region in &selection.regions {
+        if region.members.is_empty() {
+            return false;
+        }
+        let mut members = Vec::with_capacity(region.members.len());
+        for member in &region.members {
+            let Some(entity) = sketch_profile_member_entity(
+                stream,
+                owner_reference,
+                member,
+                sketch,
+                curve_identities,
+                sketch_entities,
+            ) else {
+                return false;
+            };
+            members.push(entity);
+        }
+        explicit_regions.push(members);
+    }
+
+    match candidate {
+        PlanarProfileRef::SketchProfiles {
+            sketch: cand_sketch,
+            profiles,
+        } => {
+            if cand_sketch != &sketch.id {
+                return false;
+            }
+            let profile_slice = profiles.as_slice();
+            if profile_slice.len() != explicit_regions.len() {
+                return false;
+            }
+            let mut exp_loops = Vec::with_capacity(explicit_regions.len());
+            for exp_members in &explicit_regions {
+                let Some(loop_idx) = explicit_region_matching_loop_index(exp_members, sketch)
+                else {
+                    return false;
+                };
+                if exp_loops.contains(&loop_idx) {
+                    return false;
+                }
+                exp_loops.push(loop_idx);
+            }
+            profile_slice.iter().all(|p| exp_loops.contains(p))
+        }
+        PlanarProfileRef::SketchRegions {
+            sketch: cand_sketch,
+            regions,
+        } => {
+            if cand_sketch != &sketch.id {
+                return false;
+            }
+            let cand_slice = regions.as_slice();
+            if cand_slice.len() != explicit_regions.len() {
+                return false;
+            }
+            let mut matched = vec![false; cand_slice.len()];
+            for exp_members in &explicit_regions {
+                let Some(pos) = cand_slice.iter().enumerate().position(|(idx, cand_reg)| {
+                    !matched[idx]
+                        && explicit_region_agrees_with_candidate_region(
+                            exp_members,
+                            cand_reg,
+                            sketch,
+                        )
+                }) else {
+                    return false;
+                };
+                matched[pos] = true;
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 fn coincident_spatial_profile_geometry(
