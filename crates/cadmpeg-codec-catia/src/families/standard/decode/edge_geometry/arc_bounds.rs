@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circular and elliptic branch admission from face-local spatial bounds.
 
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::analytic::EllipseCurve;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::UnitVector3;
 
@@ -53,27 +53,17 @@ pub(in crate::families::standard::decode) fn bounded_circle_branch(
     Some((axis, reference, range))
 }
 
-/// Selects the arc of a circle or ellipse between two endpoints by its sweep
-/// against every source face box. The flag is true when the arc runs against
-/// the curve's own parameterization.
-pub(in crate::families::standard::decode) fn bounded_analytic_branch(
-    geometry: &CurveGeometry,
+/// Selects the arc of an ellipse between two endpoints by its sweep against
+/// every source face box. The flag is true when the arc runs against the
+/// ellipse's own parameterization.
+pub(in crate::families::standard::decode) fn bounded_ellipse_branch(
+    ellipse: &EllipseCurve,
     endpoints: [Point3; 2],
     bounds: &[Option<StandardFaceBounds>; 2],
 ) -> Option<(bool, [f64; 2], BranchEvidence)> {
-    let (center, frame, radii) = match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => (
-            circle.center().get(),
-            circle.frame(),
-            [circle.radius().get(); 2],
-        ),
-        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) => (
-            ellipse.center().get(),
-            ellipse.frame(),
-            [ellipse.major_radius().get(), ellipse.minor_radius().get()],
-        ),
-        _ => return None,
-    };
+    let center = ellipse.center().get();
+    let frame = ellipse.frame();
+    let radii = [ellipse.major_radius().get(), ellipse.minor_radius().get()];
     let axis = *frame.axis();
     let reference = *frame.reference().as_raw();
     let binormal = axis.as_raw().cross(reference);

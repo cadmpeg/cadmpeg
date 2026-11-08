@@ -364,7 +364,7 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Question.** Which construction produces the stored trimmed-face AABB of a curved face, and what bounds its distance from the exact face extent?
 
-**Known.** `catia.md` §5.8 "The same arc test applies" selects an arc by the smaller excess over the face boxes when neither arc fits the `2e-3` mm allowance. Plane faces and faces whose extrema lie on boundary vertices reproduce the exact extent within that allowance. On half-cylinder faces of radius `11.1125` mm the box reaches `11.1091` mm from the axis. On 32 edges of one part the selected arc exceeds the boxes by `3.4e-3` to `7.3e-3` mm, and the complementary arc exceeds them by more than the radius. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
+**Known.** `catia.md` §5.8 "The same arc test applies" selects an arc by the smaller excess over the face boxes when neither arc fits the `2e-3` mm allowance. Plane faces and faces whose extrema lie on boundary vertices reproduce the exact extent within that allowance. On half-cylinder faces of radius `11.1125` mm the box reaches `11.1091` mm from the axis. On 28 ellipse edges of one part the selected arc exceeds the boxes by `3.4e-3` to `4.5e-3` mm, and the complementary arc exceeds them by more than the radius. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
 
 **Need.** A derived bound replaces the excess-ratio rule with a containment test, and removes the loss that the ratio rule records.
 

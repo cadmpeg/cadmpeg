@@ -1428,23 +1428,19 @@ pub(super) fn build_standard_edge_curve(
                 witness,
             );
         }
-        if param_range.is_none() {
-            if let Some((reversed, range, evidence)) = arc_bounds::bounded_analytic_branch(
-                &geometry,
+        if let (None, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse))) =
+            (param_range, &mut geometry)
+        {
+            if let Some((reversed, range, evidence)) = arc_bounds::bounded_ellipse_branch(
+                ellipse,
                 endpoints,
                 &arc_bounds::support_bounds(face_bounds, support),
             ) {
                 if let arc_bounds::BranchEvidence::LeastExcess(excess) = evidence {
                     refusal.push_arc_branch_least_box_excess(support.pos, excess);
                 }
-                match &mut geometry {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) if reversed => {
-                        circle.reverse_parameterization();
-                    }
-                    CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) if reversed => {
-                        ellipse.reverse_parameterization();
-                    }
-                    _ => {}
+                if reversed {
+                    ellipse.reverse_parameterization();
                 }
                 param_range = Some(range);
             }
