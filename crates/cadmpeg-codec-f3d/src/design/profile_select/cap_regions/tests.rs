@@ -1010,3 +1010,103 @@ fn two_faces_cover_a_cap_by_their_shared_outline_and_not_their_shared_edge() {
         TOLERANCE
     ));
 }
+
+#[test]
+fn a_far_face_over_material_the_plane_already_held_selects_nothing() {
+    let window = braced_window();
+    let opening = vec![window.openings[0].clone()];
+    let after = || plane_faces(&[(3, 0.0, opening.clone()), (4, -5.0, opening.clone())]);
+    let select = |before| {
+        let history = cut_history(before, after());
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let work = crate::design::geometry::ProfileGeometryWork::new();
+        let resolution = super::super::ScopedExtrudeProfileResolution {
+            entities: &window.entities,
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            linear_tolerance: TOLERANCE,
+            angular_tolerance: 1e-9,
+            profile_work: &work,
+            ctx: &ctx,
+        };
+        super::cap_profile_selection(&window.sketch, resolution, 2, 1, None).unwrap()
+    };
+    // New material on an empty far plane is the selection.
+    assert!(select(plane_faces(&[])).is_some());
+    // The same far face over material the plane already held is what a cut left.
+    assert!(select(plane_faces(&[
+        (1, 0.0, opening.clone()),
+        (2, -5.0, opening.clone()),
+    ]))
+    .is_none());
+}
+
+#[test]
+fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_regions() {
+    use crate::loss::F3dLossCode;
+    use cadmpeg_ir::sketches::SketchEntityUse;
+    let mut window = braced_window();
+    // The stored profile is the window frame alone; the opening a cut removes
+    // is also bounded by the two bars.
+    let frame = window
+        .entities
+        .iter()
+        .filter(|entity| {
+            let id = entity.id().to_string();
+            ["bottom", "right", "top", "left"]
+                .iter()
+                .any(|side| id.ends_with(&format!("#{side}")))
+        })
+        .map(|entity| SketchEntityUse {
+            entity: entity.id().clone(),
+            reversed: false,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(frame.len(), 4);
+    window.sketch.profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(vec![frame]).unwrap();
+    let plate = vec![(-20.0, -20.0), (20.0, -20.0), (20.0, 20.0), (-20.0, 20.0)];
+    let holed = vec![plate.clone(), window.openings[0].clone()];
+    let before = plane_faces(&[(1, 0.0, vec![plate.clone()]), (2, -5.0, vec![plate])]);
+    let after = plane_faces(&[(3, 0.0, holed.clone()), (4, -5.0, holed)]);
+    let history = cut_history(before, after);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let work = crate::design::geometry::ProfileGeometryWork::new();
+    let resolution = super::super::ScopedExtrudeProfileResolution {
+        entities: &window.entities,
+        spatial_entities: &[],
+        histories: std::slice::from_ref(&history),
+        linear_tolerance: TOLERANCE,
+        angular_tolerance: 1e-9,
+        profile_work: &work,
+        ctx: &ctx,
+    };
+    let current = super::ResolvedProfileSelection::Loops(vec![0]);
+    // The reading replaces only a stored profile read as loops.
+    assert!(
+        super::removed_regions_beyond_profile(&window.sketch, resolution, 2, 1, None)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        super::removed_profile_selection(&window.sketch, resolution, 2, 1, Some(&current),)
+            .unwrap()
+            .is_none()
+    );
+    let Some(super::ResolvedProfileSelection::Regions(regions)) =
+        super::removed_regions_beyond_profile(&window.sketch, resolution, 2, 1, Some(&current))
+            .unwrap()
+    else {
+        panic!("the removed opening");
+    };
+    assert_eq!(regions.len(), 1);
+    work.finish_selection();
+    let losses = work.losses();
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureProfileCutRegionsAssumed.kind()
+    );
+    assert!(loss.message.contains("curves outside the stored profile"));
+}

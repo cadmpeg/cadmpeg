@@ -67,6 +67,8 @@ pub(crate) struct ProfileGeometryWork {
     coincident_direction_assumed_selections: Cell<usize>,
     cut_regions_assumed: Cell<bool>,
     cut_regions_assumed_selections: Cell<usize>,
+    cut_regions_beyond_profile: Cell<bool>,
+    cut_regions_beyond_profile_selections: Cell<usize>,
     island_absence_assumed: Cell<bool>,
     island_absence_assumed_selections: Cell<usize>,
     polyline_side_assumed: Cell<bool>,
@@ -99,6 +101,8 @@ impl ProfileGeometryWork {
             coincident_direction_assumed_selections: Cell::new(0),
             cut_regions_assumed: Cell::new(false),
             cut_regions_assumed_selections: Cell::new(0),
+            cut_regions_beyond_profile: Cell::new(false),
+            cut_regions_beyond_profile_selections: Cell::new(0),
             island_absence_assumed: Cell::new(false),
             island_absence_assumed_selections: Cell::new(0),
             polyline_side_assumed: Cell::new(false),
@@ -141,6 +145,10 @@ impl ProfileGeometryWork {
             (
                 &self.cut_regions_assumed,
                 &self.cut_regions_assumed_selections,
+            ),
+            (
+                &self.cut_regions_beyond_profile,
+                &self.cut_regions_beyond_profile_selections,
             ),
             (
                 &self.island_absence_assumed,
@@ -187,6 +195,13 @@ impl ProfileGeometryWork {
     /// changed.
     pub(crate) fn note_cut_regions_assumed(&self) {
         self.cut_regions_assumed.set(true);
+    }
+
+    /// Record that the open selection took the regions a cut removed from the
+    /// planes it changed in place of the stored profile reading, with region
+    /// boundaries that include curves outside the stored profile.
+    pub(crate) fn note_cut_regions_beyond_profile(&self) {
+        self.cut_regions_beyond_profile.set(true);
     }
 
     /// Record that the open selection took a face that a curve outside the
@@ -263,6 +278,12 @@ impl ProfileGeometryWork {
         if cut_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
                 "{cut_assumed} extrude profile selection(s) took atomic regions bounded by the stored profile's curves from the faces the cut changed on planes parallel to the Sketch: a region is selected when one interior point lay on such a face before the cut and on none after it. The region boundaries were not compared with the face boundaries."
+            )));
+        }
+        let beyond = self.cut_regions_beyond_profile_selections.get();
+        if beyond != 0 {
+            losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
+                "{beyond} extrude profile selection(s) took the atomic regions a cut removed from the planes it changed, in place of a stored profile reading that covers other regions: a region is removed when one interior point lay on such a face before the cut and on none after it. The extrude is a Cut, and at least one taken region is bounded by curves outside the stored profile. A region over no face of those planes before or after the cut is left unselected, and the region boundaries were not compared with the face boundaries."
             )));
         }
         let island_absence = self.island_absence_assumed_selections.get();

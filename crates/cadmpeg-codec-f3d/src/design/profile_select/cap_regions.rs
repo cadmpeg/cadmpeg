@@ -381,7 +381,7 @@ pub(super) fn cap_profile_selection(
     let Some(frame) = PlaneFrame::of_sketch(sketch) else {
         return Ok(None);
     };
-    let Some(caps) = far_caps(
+    let Some((far, caps)) = far_caps(
         &frame,
         topology,
         &transition.topology.faces.inserted,
@@ -417,6 +417,31 @@ pub(super) fn cap_profile_selection(
         return Ok(None);
     }
     selected.sort_unstable();
+    // A far face over material the plane already held is what a cut left, not
+    // what the transition selected.
+    let Some((before, _)) = unique_state(histories, previous_state_id) else {
+        return Ok(None);
+    };
+    let Some(planes) = changed_planes(
+        sketch,
+        (before, topology),
+        &transition.topology.faces,
+        tolerance,
+    ) else {
+        return Ok(None);
+    };
+    if planes
+        .iter()
+        .filter(|plane| (plane.offset - far).abs() <= tolerance)
+        .flat_map(|plane| &plane.before)
+        .any(|cap| {
+            selected
+                .iter()
+                .any(|index| cap.contains(sampled[*index].point))
+        })
+    {
+        return Ok(None);
+    }
     if let Some(current) = current {
         let points: Vec<Point2> = sampled.iter().map(|region| region.point).collect();
         if let Some(covered) =
@@ -522,6 +547,48 @@ pub(super) fn removed_profile_selection(
     previous_state_id: i64,
     current: Option<&ResolvedProfileSelection>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    removed_regions(
+        sketch,
+        resolution,
+        state_id,
+        previous_state_id,
+        current,
+        false,
+    )
+}
+
+/// The regions a Cut removed from the changed planes, whatever curves bound
+/// them, in place of a stored profile `current` read as loops. At least one
+/// taken region must use a curve outside those loops, and the taken regions
+/// must not be the regions `current` covers. Regions no changed plane holds on
+/// either side are not evidence and stay unselected. `None` when a region
+/// gains material, when one is both removed and kept, or when no region is
+/// removed. The caller runs it only for a Cut.
+pub(super) fn removed_regions_beyond_profile(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::ScopedExtrudeProfileResolution<'_>,
+    state_id: i64,
+    previous_state_id: i64,
+    current: Option<&ResolvedProfileSelection>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    removed_regions(
+        sketch,
+        resolution,
+        state_id,
+        previous_state_id,
+        current,
+        true,
+    )
+}
+
+fn removed_regions(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::ScopedExtrudeProfileResolution<'_>,
+    state_id: i64,
+    previous_state_id: i64,
+    current: Option<&ResolvedProfileSelection>,
+    beyond_profile: bool,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let Some(current @ ResolvedProfileSelection::Loops(indices)) = current else {
         return Ok(None);
     };
@@ -571,11 +638,12 @@ pub(super) fn removed_profile_selection(
     let mut selected = Vec::new();
     let mut used = HashSet::new();
     for (index, region) in sampled.iter().enumerate() {
-        if !region
-            .region
-            .boundary
-            .iter()
-            .all(|use_| curves.contains(&use_.entity))
+        if !beyond_profile
+            && !region
+                .region
+                .boundary
+                .iter()
+                .all(|use_| curves.contains(&use_.entity))
         {
             continue;
         }
@@ -592,6 +660,11 @@ pub(super) fn removed_profile_selection(
             }
         }
         if removed == kept {
+            // A region over no material on any changed plane is no evidence
+            // either way; the beyond-profile reading leaves it unselected.
+            if beyond_profile && !removed {
+                continue;
+            }
             return Ok(None);
         }
         if removed {
@@ -599,7 +672,13 @@ pub(super) fn removed_profile_selection(
             used.extend(region.region.boundary.iter().map(|use_| &use_.entity));
         }
     }
-    if selected.is_empty() || used != curves {
+    if selected.is_empty()
+        || if beyond_profile {
+            used.iter().all(|entity| curves.contains(entity))
+        } else {
+            used != curves
+        }
+    {
         return Ok(None);
     }
     let points: Vec<Point2> = sampled.iter().map(|region| region.point).collect();
@@ -610,7 +689,11 @@ pub(super) fn removed_profile_selection(
     }
     let selection = trimmed_selection(&sampled, &selected);
     if selection.is_some() {
-        work.note_cut_regions_assumed();
+        if beyond_profile {
+            work.note_cut_regions_beyond_profile();
+        } else {
+            work.note_cut_regions_assumed();
+        }
     }
     Ok(selection)
 }
@@ -861,7 +944,7 @@ fn far_caps(
     topology: &AsmHistoricalTopology,
     inserted: &[i64],
     tolerance: f64,
-) -> Option<Vec<Cap>> {
+) -> Option<(f64, Vec<Cap>)> {
     let mut caps: Vec<(f64, Cap)> = Vec::new();
     for face in inserted {
         let origin = match parallel_plane(topology, *face, frame.normal) {
@@ -882,7 +965,7 @@ fn far_caps(
         .filter(|(height, _)| (height - far).abs() <= tolerance)
         .map(|(_, cap)| cap)
         .collect();
-    (!caps.is_empty()).then_some(caps)
+    (!caps.is_empty()).then_some((far, caps))
 }
 
 /// What the surface binding of a face states about a plane parallel to a
