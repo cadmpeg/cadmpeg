@@ -438,10 +438,13 @@ pub(super) fn write(
                 names.insert(feature.id.as_str().to_owned(), name);
                 continue;
             }
-            let name = names
+            let Some(name) = names
                 .get(feature.id.as_str())
                 .cloned()
-                .ok_or_else(|| CodecError::malformed("feature has no output identity"))?;
+            else {
+                debug_assert!(false, "feature has no output identity");
+                continue;
+            };
             names.insert(feature.id.as_str().to_owned(), name.clone());
             if let Some(native_ref) = &feature.native_ref {
                 names.insert(native_ref.clone(), name.clone());
@@ -1078,7 +1081,7 @@ pub(super) fn write(
         let Some(serialized) = serialized else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                    "body {} is omitted because a required carrier has no OCCT text encoding",
+                    "body {} has no face, edge or vertex with an OCCT encoding and is omitted",
                     body.id
                 )));
                 body_names.remove(body.id.as_str());
@@ -1167,10 +1170,13 @@ pub(super) fn write(
         if property_name == "Shape" {
             brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         }
-        let object = objects
+        let Some(object) = objects
             .iter_mut()
             .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("body owner is absent"))?;
+        else {
+            debug_assert!(false, "body owner is absent");
+            continue;
+        };
         let source_property = if let Some((_, property)) = original_file {
             let mut available = available.clone();
             available.insert(file.clone());
@@ -1906,29 +1912,18 @@ pub(super) fn write(
                 right,
             ))
     });
+    // The archive is assembled in memory: a member name or finish failure
+    // is a writer invariant, never document content.
     for (name, bytes) in entries {
-        match archive.start_file(name, options) {
-            Ok(()) => {}
-            Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
-            Err(error) => {
-                debug_assert!(false, "FCStd ZIP start_file: {error}");
-                return Err(CodecError::InvalidInput(format!(
-                    "FCStd ZIP start_file: {error}"
-                )));
-            }
+        if let Err(error) = archive.start_file(name, options) {
+            debug_assert!(false, "FCStd ZIP start_file: {error}");
+            continue;
         }
         archive.write_all(&bytes)?;
     }
-    let bytes = match archive.finish() {
-        Ok(writer) => writer.into_inner(),
-        Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
-        Err(error) => {
-            debug_assert!(false, "FCStd ZIP finish: {error}");
-            return Err(CodecError::InvalidInput(format!(
-                "FCStd ZIP finish: {error}"
-            )));
-        }
-    };
+    let finished = archive.finish();
+    debug_assert!(finished.is_ok(), "an in-memory FCStd archive finishes");
+    let bytes = finished.map(Cursor::into_inner).unwrap_or_default();
     super::dispositions::verify_output(ctx, ir, &bytes, &mut native_dispositions)?;
     for curve in &ir.model.curves {
         if let Some(construction) = curve.geometry.procedural_construction().filter(|_| {

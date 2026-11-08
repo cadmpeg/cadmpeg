@@ -43,25 +43,22 @@ pub(crate) fn write(
         names.insert(sketch.id.as_str().to_owned(), name);
         let object = &mut objects[index];
         object.kind = "Sketcher::SketchObject".into();
-        if let Some((origin, normal, x_axis)) = sketch.placement.resolved() {
-            let z = normal
-                .unit_nonzero()
-                .ok_or_else(|| CodecError::malformed("sketch normal is zero"))?;
-            let x = x_axis
-                .unit_nonzero()
-                .ok_or_else(|| CodecError::malformed("sketch axis is zero"))?;
+        let transform = sketch.placement.resolved().and_then(|(origin, normal, x_axis)| {
+            let z = normal.unit_nonzero()?;
+            let x = x_axis.unit_nonzero()?;
             let y = cadmpeg_ir::math::Vector3::new(
                 z.y * x.z - z.z * x.y,
                 z.z * x.x - z.x * x.z,
                 z.x * x.y - z.y * x.x,
             );
             let origin = origin.get();
-            let transform = Transform::affine([
+            Transform::affine([
                 [x.x, y.x, z.x, origin.x],
                 [x.y, y.y, z.y, origin.y],
                 [x.z, y.z, z.z, origin.z],
             ])
-            .ok_or_else(|| CodecError::malformed("sketch placement is non-finite"))?;
+        });
+        if let Some(transform) = transform {
             object.set("Placement", super::placement(transform)?);
         } else {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
@@ -98,10 +95,11 @@ pub(crate) fn write(
             }
             let row = geometry::row(entity).or_else(|| native::geometry(ir, entity));
             if let Some(row) = row {
-                // (O-capacity) XML geometry references use signed indices.
-                let ordinal = i64::try_from(rows.len()).map_err(|_| {
-                    CodecError::InvalidInput("FreeCAD sketch index exceeds i64".into())
-                })?;
+                // XML geometry references use signed indices.
+                let Ok(ordinal) = i64::try_from(rows.len()) else {
+                    debug_assert!(false, "a geometry index fits the signed lane");
+                    continue;
+                };
                 indices.insert(id.to_owned(), (ordinal, 0));
                 rows.push(row);
             } else {

@@ -39,19 +39,29 @@ pub(super) fn project(
     let mut projected = ir.clone();
     let mut scope = projected.scope;
     scope.model = true;
-    projected.set_scope(scope).map_err(CodecError::malformed)?;
+    // Typed records that do not admit a Model projection leave the document
+    // as it holds itself.
+    if projected.set_scope(scope).is_err() {
+        return Ok(None);
+    }
     let mut curves = brep::transfer_text_curves(ctx, &payloads, &typed_properties)?;
     let surfaces = brep::transfer_text_surfaces(ctx, &payloads, &typed_properties, &mut curves)?;
     projected.model.curves = curves.curves;
-    projected
+    if projected
         .model
         .add_procedural_curves(curves.procedural)?
-        .map_err(CodecError::malformed)?;
+        .is_err()
+    {
+        return Ok(None);
+    }
     projected.model.surfaces = surfaces.surfaces;
-    projected
+    if projected
         .model
         .add_procedural_surfaces(surfaces.procedural)?
-        .map_err(CodecError::malformed)?;
+        .is_err()
+    {
+        return Ok(None);
+    }
     let mut losses = Vec::new();
     let topology_occurrences = crate::topology_transfer::transfer_projection(
         ctx,
@@ -177,20 +187,26 @@ pub(super) fn unchanged_payloads(
     model.procedural_curves.clear();
     model.procedural_surfaces.clear();
     model.tessellations.clear();
-    let projection = (|| -> Result<(), CodecError> {
+    let projection = (|| -> Result<bool, CodecError> {
         let mut curves = brep::transfer_text_curves(ctx, &payloads, &typed_properties)?;
         let surfaces =
             brep::transfer_text_surfaces(ctx, &payloads, &typed_properties, &mut curves)?;
         projected.model.curves = curves.curves;
-        projected
+        if projected
             .model
             .add_procedural_curves(curves.procedural)?
-            .map_err(CodecError::malformed)?;
+            .is_err()
+        {
+            return Ok(false);
+        }
         projected.model.surfaces = surfaces.surfaces;
-        projected
+        if projected
             .model
             .add_procedural_surfaces(surfaces.procedural)?
-            .map_err(CodecError::malformed)?;
+            .is_err()
+        {
+            return Ok(false);
+        }
         let mut losses = Vec::new();
         crate::topology_transfer::transfer_projection(
             ctx,
@@ -199,15 +215,20 @@ pub(super) fn unchanged_payloads(
             &typed_properties,
             &mut losses,
         )?;
-        Ok(())
+        Ok(true)
     })();
     match projection {
-        Ok(()) => {}
+        Ok(true) => {}
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(unchanged),
+        Ok(false) | Err(_) => return Ok(unchanged),
     }
-    let held = projected_arenas(&ir.model)?;
-    let fresh = projected_arenas(&projected.model)?;
+    let (Some(held), Some(fresh)) = (
+        projected_arenas(&ir.model),
+        projected_arenas(&projected.model),
+    ) else {
+        debug_assert!(false, "Model arenas serialize");
+        return Ok(unchanged);
+    };
     for payload in &payloads {
         let Some(key) = payload.id.split_once('#').map(|(_, key)| format!("#{key}:")) else {
             continue;
@@ -223,40 +244,35 @@ pub(super) fn unchanged_payloads(
 }
 
 /// The arenas a payload projects, as one JSON object.
-fn projected_arenas(
-    model: &cadmpeg_ir::document::Model,
-) -> Result<serde_json::Value, CodecError> {
-    let mut arenas = serde_json::Map::new();
-    let mut put = |name: &str, value: Result<serde_json::Value, serde_json::Error>| {
-        value.map(|value| {
-            arenas.insert(name.to_owned(), value);
-        })
-    };
-    put("bodies", serde_json::to_value(&model.bodies)).map_err(CodecError::malformed)?;
-    put("regions", serde_json::to_value(&model.regions)).map_err(CodecError::malformed)?;
-    put("shells", serde_json::to_value(&model.shells)).map_err(CodecError::malformed)?;
-    put("faces", serde_json::to_value(&model.faces)).map_err(CodecError::malformed)?;
-    put("loops", serde_json::to_value(&model.loops)).map_err(CodecError::malformed)?;
-    put("coedges", serde_json::to_value(&model.coedges)).map_err(CodecError::malformed)?;
-    put("edges", serde_json::to_value(&model.edges)).map_err(CodecError::malformed)?;
-    put("vertices", serde_json::to_value(&model.vertices)).map_err(CodecError::malformed)?;
-    put("points", serde_json::to_value(&model.points)).map_err(CodecError::malformed)?;
-    put("curves", serde_json::to_value(&model.curves)).map_err(CodecError::malformed)?;
-    put("surfaces", serde_json::to_value(&model.surfaces)).map_err(CodecError::malformed)?;
-    put("pcurves", serde_json::to_value(&model.pcurves)).map_err(CodecError::malformed)?;
-    put(
-        "procedural_curves",
-        serde_json::to_value(&model.procedural_curves),
-    )
-    .map_err(CodecError::malformed)?;
-    put(
-        "procedural_surfaces",
-        serde_json::to_value(&model.procedural_surfaces),
-    )
-    .map_err(CodecError::malformed)?;
-    put("tessellations", serde_json::to_value(&model.tessellations))
-        .map_err(CodecError::malformed)?;
-    Ok(serde_json::Value::Object(arenas))
+fn projected_arenas(model: &cadmpeg_ir::document::Model) -> Option<serde_json::Value> {
+    Some(serde_json::Value::Object(
+        [
+            ("bodies", serde_json::to_value(&model.bodies).ok()?),
+            ("regions", serde_json::to_value(&model.regions).ok()?),
+            ("shells", serde_json::to_value(&model.shells).ok()?),
+            ("faces", serde_json::to_value(&model.faces).ok()?),
+            ("loops", serde_json::to_value(&model.loops).ok()?),
+            ("coedges", serde_json::to_value(&model.coedges).ok()?),
+            ("edges", serde_json::to_value(&model.edges).ok()?),
+            ("vertices", serde_json::to_value(&model.vertices).ok()?),
+            ("points", serde_json::to_value(&model.points).ok()?),
+            ("curves", serde_json::to_value(&model.curves).ok()?),
+            ("surfaces", serde_json::to_value(&model.surfaces).ok()?),
+            ("pcurves", serde_json::to_value(&model.pcurves).ok()?),
+            (
+                "procedural_curves",
+                serde_json::to_value(&model.procedural_curves).ok()?,
+            ),
+            (
+                "procedural_surfaces",
+                serde_json::to_value(&model.procedural_surfaces).ok()?,
+            ),
+            ("tessellations", serde_json::to_value(&model.tessellations).ok()?),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect(),
+    ))
 }
 
 /// The held and projected records of one payload in one arena agree, by

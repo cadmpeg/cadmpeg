@@ -120,10 +120,12 @@ pub(crate) fn write(
         let output_index = if table.owner_property.is_none() {
             0
         } else {
+            let Some(next) = next_hasher.checked_add(1) else {
+                debug_assert!(false, "one hasher index per string table fits usize");
+                continue;
+            };
             let index = next_hasher;
-            next_hasher = next_hasher.checked_add(1).ok_or_else(|| {
-                CodecError::InvalidInput("FCStd hasher count exceeds address space".into())
-            })?;
+            next_hasher = next;
             index
         };
         table_indices.insert(table.index, output_index);
@@ -168,10 +170,13 @@ pub(crate) fn write(
         );
         let carrier = format!("<StringHasher saveall=\"{}\" threshold=\"{threshold}\" count=\"0\" new=\"1\"/><StringHasher2 file=\"{file}\"/>", u8::from(save_all));
         if let Some(owner) = &table.owner_property {
-            let property = properties
+            let Some(property) = properties
                 .iter()
                 .find(|property| property.id == *owner)
-                .ok_or_else(|| CodecError::malformed("admitted hasher owner disappeared"))?;
+            else {
+                debug_assert!(false, "admitted hasher owner disappeared");
+                continue;
+            };
             let shape = names
                 .get(&property.owner)
                 .and_then(|name| objects.iter_mut().find(|object| object.name == *name))

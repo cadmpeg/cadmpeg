@@ -1303,12 +1303,14 @@ fn serialize_geometry_inner(
                         ));
                         continue;
                     };
-                    let face = ir
-                        .model
-                        .faces
-                        .iter()
-                        .find(|value| value.id == *face_id)
-                        .ok_or_else(|| CodecError::malformed("shell references absent face"))?;
+                    let Some(face) = ir.model.faces.iter().find(|value| value.id == *face_id)
+                    else {
+                        shell_degraded = true;
+                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                            format!("face {face_id} in body {} is absent and is omitted", body.id),
+                        ));
+                        continue;
+                    };
                     children.push((*index, face.sense));
                 }
                 for edge in shell.wire_edges() {

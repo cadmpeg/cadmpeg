@@ -35,14 +35,15 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
         &std::collections::HashMap::new(),
     )
     .expect_err("output order cannot be inferred from identity");
-    assert!(missing_order_error
-        .to_string()
-        .contains("no retained restoration order"));
+    assert!(matches!(
+        missing_order_error,
+        crate::writer::PatchError::Declined(reason) if reason.contains("no retained restoration order")
+    ));
     let duplicate_error = validate_entry_names(&[entry.record.clone(), entry.record])
         .expect_err("duplicate output paths are refused");
     assert!(matches!(
         duplicate_error,
-        cadmpeg_core::CodecError::Malformed(_)
+        crate::writer::PatchError::Declined(_)
     ));
 }
 

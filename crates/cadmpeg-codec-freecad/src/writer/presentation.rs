@@ -349,7 +349,10 @@ pub(super) fn write(
         };
         for (key, expected) in &view.properties {
             if let Some(property) = provider.properties.get(key.as_str()) {
-                let parsed = roxmltree::Document::parse(property).map_err(CodecError::malformed)?;
+                let Ok(parsed) = roxmltree::Document::parse(property) else {
+                    debug_assert!(false, "generated GUI property XML parses");
+                    continue;
+                };
                 let actual = parsed
                     .root_element()
                     .first_element_child()

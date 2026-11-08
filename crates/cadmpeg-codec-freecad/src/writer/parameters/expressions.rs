@@ -92,11 +92,17 @@ pub(super) fn write(
         };
         let mut paths = BTreeMap::new();
         for value in &values {
-            let document = roxmltree::Document::parse(value).map_err(CodecError::malformed)?;
-            let path = document
+            let Ok(document) = roxmltree::Document::parse(value) else {
+                debug_assert!(false, "generated expression XML parses");
+                continue;
+            };
+            let Some(path) = document
                 .root_element()
                 .attribute("path")
-                .ok_or_else(|| CodecError::malformed("generated expression lacks a path"))?;
+            else {
+                debug_assert!(false, "generated expression lacks a path");
+                continue;
+            };
             paths.insert(path.to_owned(), value.as_str());
         }
         if paths.is_empty() {
