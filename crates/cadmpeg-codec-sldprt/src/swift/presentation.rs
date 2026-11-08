@@ -1,12 +1,18 @@
 //! SWIFT presentation archive: geometric-tolerance displays, their feature
 //! paths, and the semantic annotations they depict.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::PmiId;
-use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiAnnotation, PmiDefinition};
+use cadmpeg_ir::ids::{FaceId, PmiId};
+use cadmpeg_ir::pmi::{
+    DatumReference, DatumReferences, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
+    PmiTarget,
+};
+
+use crate::brep::PersistentFaceIdentity;
 
 use super::{decode_rendered_utf16, short_class, suppressed, tolerance_kind, Entity};
 use crate::layout::named_object_header as named_header;
@@ -25,6 +31,12 @@ const MAX_PATH_FEATURES: u16 = 8;
 const STRING_MARKER: [u8; 3] = [0xff, 0xfe, 0xff];
 const WIDE_STRING_COUNT: u8 = 0xff;
 const FRAME_TEMPLATE_TOKEN: &str = "<Gtol>";
+const MODIFIER_PREFIX: &str = "<MOD-";
+const COMPOSITE_LOWER_TIER_SUFFIX: &str = ":lower-tier";
+const EPS_TIER_RATIO_E9: f64 = 1.0e-9;
+
+mod faces;
+use faces::{FaceIdentity, IdentityReference};
 
 /// The geometric-tolerance displays of one presentation archive.
 #[derive(Debug, Default)]
@@ -40,7 +52,26 @@ struct GtolDisplay {
     name: Option<String>,
     characteristics: Vec<String>,
     path: FeaturePath,
+    faces: FaceAttachment,
+    rows: Vec<Row>,
     note: Option<String>,
+}
+
+/// The faces a display without a feature path attaches to.
+#[derive(Debug, PartialEq)]
+enum FaceAttachment {
+    Absent,
+    Unresolved,
+    Faces(Vec<FaceIdentity>),
+}
+
+/// One feature-control-frame row: its characteristic token, tolerance
+/// literal, and compartment labels with whether a modifier follows each.
+#[derive(Debug, PartialEq)]
+struct Row {
+    characteristic: String,
+    tolerance: Option<String>,
+    labels: Vec<(String, bool)>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -88,6 +119,7 @@ pub(super) fn parse(archive: &[u8]) -> Archive {
     let (named, names) = named_objects(archive);
     let paths = feature_paths(archive, &names);
     let texts = texts(archive);
+    let references = faces::identity_references(archive);
     let mut ends: Vec<Option<usize>> = starts.iter().skip(1).copied().map(Some).collect();
     let last = starts.last().copied().unwrap_or(gtol);
     ends.push(declaration(archive, DATUM_TAG_CLASS, last).and_then(|start| start.checked_sub(2)));
@@ -97,9 +129,13 @@ pub(super) fn parse(archive: &[u8]) -> Archive {
     };
     for (&start, end) in starts.iter().zip(ends) {
         match end.filter(|end| *end > start) {
-            Some(end) => parsed
-                .gtols
-                .push(gtol_display(start, end, &named, &paths, &texts)),
+            Some(end) => parsed.gtols.push(gtol_display(
+                start..end,
+                &named,
+                &paths,
+                &texts,
+                &references,
+            )),
             None => parsed.unbounded.push(start),
         }
     }
@@ -107,13 +143,13 @@ pub(super) fn parse(archive: &[u8]) -> Archive {
 }
 
 fn gtol_display(
-    start: usize,
-    end: usize,
+    span: std::ops::Range<usize>,
     named: &[NamedObject],
     paths: &[Path],
     texts: &[Text],
+    references: &[IdentityReference],
 ) -> GtolDisplay {
-    let inside = |offset: usize| (start..end).contains(&offset);
+    let inside = |offset: usize| span.contains(&offset);
     let name = named
         .iter()
         .find(|object| inside(object.offset))
@@ -127,13 +163,68 @@ fn gtol_display(
         .filter_map(|text| characteristic(&text.value))
         .map(str::to_owned)
         .collect();
+    let faces = face_attachment(
+        references
+            .iter()
+            .filter(|reference| inside(reference.offset)),
+    );
     GtolDisplay {
-        offset: start,
+        offset: span.start,
         name,
         characteristics,
         path: display_path(paths.iter().filter(|path| inside(path.offset))),
+        faces,
+        rows: frame_rows(&texts),
         note: frame_note(&texts),
     }
+}
+
+fn face_attachment<'a>(references: impl Iterator<Item = &'a IdentityReference>) -> FaceAttachment {
+    let mut faces = Vec::new();
+    for reference in references {
+        let Some(face) = &reference.face else {
+            return FaceAttachment::Unresolved;
+        };
+        if !faces.contains(face) {
+            faces.push(face.clone());
+        }
+    }
+    if faces.is_empty() {
+        FaceAttachment::Absent
+    } else {
+        FaceAttachment::Faces(faces)
+    }
+}
+
+/// The frame rows before the four-string block: each characteristic token,
+/// the tolerance literal after it, and the labels up to the next row.
+fn frame_rows(texts: &[&Text]) -> Vec<Row> {
+    let Some(block) = frame_block(texts) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<Row> = Vec::new();
+    let mut texts = texts.iter().take(block).map(|text| text.value.as_str());
+    while let Some(text) = texts.next() {
+        if characteristic(text).is_some() {
+            rows.push(Row {
+                characteristic: text.to_owned(),
+                tolerance: texts.next().map(str::to_owned),
+                labels: Vec::new(),
+            });
+            continue;
+        }
+        let Some(row) = rows.last_mut() else {
+            continue;
+        };
+        if text.starts_with(MODIFIER_PREFIX) {
+            if let Some(label) = row.labels.last_mut() {
+                label.1 = true;
+            }
+        } else if !text.is_empty() {
+            row.labels.push((text.to_owned(), false));
+        }
+    }
+    rows
 }
 
 /// The characteristic token of one frame row, such as `POSI` or `IGTOL-FLAT`.
@@ -151,24 +242,30 @@ fn characteristic(text: &str) -> Option<&str> {
     )
 }
 
-/// The note of the unique four-string block whose third string is the frame
-/// template.
+/// The index of the first string of the unique four-string block whose
+/// third string is the frame template.
+fn frame_block(texts: &[&Text]) -> Option<usize> {
+    let mut blocks = texts
+        .windows(4)
+        .enumerate()
+        .filter_map(|(index, block)| match block {
+            [first, second, template, note]
+                if first.end == second.offset
+                    && second.end == template.offset
+                    && template.end == note.offset
+                    && template.value.contains(FRAME_TEMPLATE_TOKEN) =>
+            {
+                Some(index)
+            }
+            _ => None,
+        });
+    let block = blocks.next()?;
+    blocks.next().is_none().then_some(block)
+}
+
+/// The note of the four-string block: its fourth string.
 fn frame_note(texts: &[&Text]) -> Option<String> {
-    let mut notes = texts.windows(4).filter_map(|block| match block {
-        [first, second, template, note]
-            if first.end == second.offset
-                && second.end == template.offset
-                && template.end == note.offset
-                && template.value.contains(FRAME_TEMPLATE_TOKEN) =>
-        {
-            Some(note)
-        }
-        _ => None,
-    });
-    let note = notes.next()?;
-    if notes.next().is_some() {
-        return None;
-    }
+    let note = texts.get(frame_block(texts)?.checked_add(3)?)?;
     Some(note.value.clone()).filter(|note| !note.trim().is_empty())
 }
 
@@ -435,16 +532,34 @@ fn framed_text(archive: &[u8], offset: usize) -> Option<Text> {
 
 /// Presentation annotations for the archive's geometric-tolerance displays
 /// and the number of displays without an established semantic association.
+/// A depicted tolerance without datum references receives the datum system
+/// its frame row displays.
 pub(super) fn annotations(
     archive: &Archive,
     root: &Entity,
-    projected: &[PmiAnnotation],
+    projected: &mut Vec<PmiAnnotation>,
+    face_identities: &[(FaceId, PersistentFaceIdentity)],
 ) -> Result<(Vec<PmiAnnotation>, usize), CodecError> {
-    let semantic = SemanticIndex::new(root, projected);
+    let faces = face_index(face_identities);
+    let (links, systems) = {
+        let semantic = SemanticIndex::new(root, projected);
+        let links = archive
+            .gtols
+            .iter()
+            .map(|display| semantic.depicted(archive, display, &faces))
+            .collect::<Vec<_>>();
+        let mut systems = Vec::new();
+        for (display, link) in archive.gtols.iter().zip(&links) {
+            if let Some(depicted) = link {
+                systems.extend(semantic.row_datum_systems(display, depicted));
+            }
+        }
+        (links, systems)
+    };
+    apply_datum_systems(projected, systems)?;
     let mut unresolved = archive.unbounded.len();
     let mut presentations = Vec::new();
-    for display in &archive.gtols {
-        let semantics = semantic.depicted(archive, display);
+    for (display, semantics) in archive.gtols.iter().zip(links) {
         if semantics.is_none() {
             unresolved = unresolved
                 .checked_add(1)
@@ -467,11 +582,68 @@ pub(super) fn annotations(
     Ok((presentations, unresolved))
 }
 
+fn face_index(
+    identities: &[(FaceId, PersistentFaceIdentity)],
+) -> HashMap<FaceIdentity, Vec<&FaceId>> {
+    let mut index: HashMap<FaceIdentity, Vec<&FaceId>> = HashMap::new();
+    for (face, identity) in identities {
+        index
+            .entry(FaceIdentity {
+                feature: identity.feature_source_id.value(),
+                local: identity.local_id,
+                tail: identity.trailing_fields.clone(),
+            })
+            .or_default()
+            .push(face);
+    }
+    index
+}
+
+fn apply_datum_systems(
+    projected: &mut Vec<PmiAnnotation>,
+    systems: Vec<(PmiId, DatumReferences)>,
+) -> Result<(), CodecError> {
+    for (tolerance, references) in systems {
+        let system = PmiId::mint(format!("{}:datum-system", tolerance.as_str()))
+            .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
+        if projected.iter().any(|annotation| annotation.id == system) {
+            continue;
+        }
+        let Some(PmiDefinition::GeometricTolerance { datum_system, .. }) = projected
+            .iter_mut()
+            .find(|annotation| annotation.id == tolerance)
+            .map(|annotation| &mut annotation.definition)
+        else {
+            continue;
+        };
+        *datum_system = Some(system.clone());
+        projected.push(PmiAnnotation {
+            id: system,
+            name: None,
+            visible: None,
+            targets: Vec::new(),
+            definition: PmiDefinition::DatumSystem { references },
+        });
+    }
+    Ok(())
+}
+
+/// One projected geometric tolerance.
+struct Tolerance<'a> {
+    id: &'a PmiId,
+    kind: &'a GeometricToleranceKind,
+    magnitude: f64,
+    datum_system: Option<&'a PmiId>,
+    faces: BTreeSet<&'a FaceId>,
+}
+
 struct SemanticIndex<'a> {
     features_by_attribute: HashMap<i32, Vec<&'a str>>,
     features_by_name: HashMap<&'a str, Vec<&'a str>>,
-    tolerances: Vec<(&'a str, BTreeSet<&'a str>)>,
-    projected: BTreeMap<&'a str, Vec<(&'a PmiId, &'a GeometricToleranceKind)>>,
+    sources: Vec<(&'a str, BTreeSet<&'a str>)>,
+    tolerances: Vec<Tolerance<'a>>,
+    datums: HashMap<&'a str, Vec<&'a PmiId>>,
+    systems: HashMap<&'a PmiId, Vec<&'a PmiId>>,
 }
 
 impl<'a> SemanticIndex<'a> {
@@ -492,7 +664,7 @@ impl<'a> SemanticIndex<'a> {
                     .push(reference.id.as_str());
             }
         }
-        let tolerances = root
+        let sources = root
             .annotations
             .references
             .iter()
@@ -510,26 +682,70 @@ impl<'a> SemanticIndex<'a> {
                 (reference.id.as_str(), features)
             })
             .collect();
-        let mut by_source: BTreeMap<&str, Vec<(&PmiId, &GeometricToleranceKind)>> = BTreeMap::new();
+        let mut tolerances = Vec::new();
+        let mut datums: HashMap<&str, Vec<&PmiId>> = HashMap::new();
+        let mut systems = HashMap::new();
         for annotation in projected {
-            let PmiDefinition::GeometricTolerance { tolerance, .. } = &annotation.definition else {
-                continue;
-            };
-            let Some(source) = annotation.id.as_str().strip_prefix("sldprt:model:pmi#") else {
-                continue;
-            };
-            let source = source.strip_suffix(":lower-tier").unwrap_or(source);
-            by_source
-                .entry(source)
-                .or_default()
-                .push((&annotation.id, tolerance));
+            match &annotation.definition {
+                PmiDefinition::GeometricTolerance {
+                    tolerance,
+                    magnitude,
+                    datum_system,
+                    ..
+                } => tolerances.push(Tolerance {
+                    id: &annotation.id,
+                    kind: tolerance,
+                    magnitude: magnitude.get().value.get(),
+                    datum_system: datum_system.as_ref(),
+                    faces: annotation
+                        .targets
+                        .iter()
+                        .filter_map(|target| match target {
+                            PmiTarget::Face { face } => Some(face),
+                            _ => None,
+                        })
+                        .collect(),
+                }),
+                PmiDefinition::Datum { identification } => datums
+                    .entry(identification.as_str())
+                    .or_default()
+                    .push(&annotation.id),
+                PmiDefinition::DatumSystem { references } => {
+                    let mut ordered = references.as_slice().iter().collect::<Vec<_>>();
+                    ordered.sort_by_key(|reference| reference.precedence);
+                    systems.insert(
+                        &annotation.id,
+                        ordered
+                            .into_iter()
+                            .map(|reference| &reference.datum)
+                            .collect(),
+                    );
+                }
+                _ => {}
+            }
         }
         Self {
             features_by_attribute,
             features_by_name,
+            sources,
             tolerances,
-            projected: by_source,
+            datums,
+            systems,
         }
+    }
+
+    fn source_tolerances<'s>(
+        &'s self,
+        source: &'s str,
+    ) -> impl Iterator<Item = &'s Tolerance<'a>> + 's {
+        self.tolerances.iter().filter(move |tolerance| {
+            tolerance
+                .id
+                .as_str()
+                .strip_prefix("sldprt:model:pmi#")
+                .map(|id| id.strip_suffix(COMPOSITE_LOWER_TIER_SUFFIX).unwrap_or(id))
+                == Some(source)
+        })
     }
 
     fn feature(&self, archive: &Archive, object: u32) -> Option<&'a str> {
@@ -546,10 +762,43 @@ impl<'a> SemanticIndex<'a> {
             })
     }
 
-    fn depicted(&self, archive: &Archive, display: &GtolDisplay) -> Option<Vec<PmiId>> {
-        let FeaturePath::Features(path) = &display.path else {
-            return None;
+    fn depicted(
+        &self,
+        archive: &Archive,
+        display: &GtolDisplay,
+        faces: &HashMap<FaceIdentity, Vec<&FaceId>>,
+    ) -> Option<Vec<PmiId>> {
+        let expected = display
+            .characteristics
+            .iter()
+            .map(|token| row_kind(token))
+            .collect::<Option<Vec<_>>>()?;
+        let depicted = match (&display.path, &display.faces) {
+            (FeaturePath::Features(path), _) => self.depicted_by_features(archive, path)?,
+            (FeaturePath::Absent, FaceAttachment::Faces(identities)) => {
+                self.depicted_by_faces(identities, faces, &expected)?
+            }
+            _ => return None,
         };
+        let mut kinds = depicted
+            .iter()
+            .map(|tolerance| tolerance.kind.clone())
+            .collect::<Vec<_>>();
+        let mut expected = expected;
+        let order = |kind: &GeometricToleranceKind| format!("{kind:?}");
+        expected.sort_by_key(order);
+        kinds.sort_by_key(order);
+        (!depicted.is_empty() && expected == kinds).then(|| {
+            depicted
+                .iter()
+                .map(|tolerance| tolerance.id.clone())
+                .collect()
+        })
+    }
+
+    /// The tolerances of every semantic annotation that directly references a
+    /// feature on the path; `None` when one of them is not projected.
+    fn depicted_by_features(&self, archive: &Archive, path: &[u32]) -> Option<Vec<&Tolerance<'a>>> {
         let features = path
             .iter()
             .filter_map(|object| self.feature(archive, *object))
@@ -557,29 +806,166 @@ impl<'a> SemanticIndex<'a> {
         if features.is_empty() {
             return None;
         }
-        let mut expected = display
-            .characteristics
-            .iter()
-            .map(|token| row_kind(token))
-            .collect::<Option<Vec<_>>>()?;
         let mut depicted = Vec::new();
-        let mut kinds = Vec::new();
-        for (source, references) in &self.tolerances {
+        for (source, references) in &self.sources {
             if references.is_disjoint(&features) {
                 continue;
             }
-            let projected = self.projected.get(source)?;
-            for (id, kind) in projected {
-                depicted.push((*id).clone());
-                kinds.push(*kind);
+            let before = depicted.len();
+            depicted.extend(self.source_tolerances(source));
+            if depicted.len() == before {
+                return None;
             }
         }
-        let mut kinds = kinds.into_iter().cloned().collect::<Vec<_>>();
-        let order = |kind: &GeometricToleranceKind| format!("{kind:?}");
-        expected.sort_by_key(order);
-        kinds.sort_by_key(order);
-        (!depicted.is_empty() && expected == kinds).then_some(depicted)
+        Some(depicted)
     }
+
+    /// The tolerances of the displayed characteristics that target a face the
+    /// display's face references select; `None` when a reference selects no
+    /// face.
+    fn depicted_by_faces(
+        &self,
+        identities: &[FaceIdentity],
+        faces: &HashMap<FaceIdentity, Vec<&FaceId>>,
+        expected: &[GeometricToleranceKind],
+    ) -> Option<Vec<&Tolerance<'a>>> {
+        let mut selected = BTreeSet::new();
+        for identity in identities {
+            let matched = faces.get(identity).filter(|matched| !matched.is_empty())?;
+            selected.extend(matched.iter().copied());
+        }
+        Some(
+            self.tolerances
+                .iter()
+                .filter(|tolerance| {
+                    expected.contains(tolerance.kind) && !tolerance.faces.is_disjoint(&selected)
+                })
+                .collect(),
+        )
+    }
+
+    /// Datum systems that a display's rows supply to depicted tolerances
+    /// without datum references. Rows pair with tolerances by characteristic
+    /// when each characteristic occurs once, and a composite profile's upper
+    /// and lower tiers pair with its two rows in order. A row whose datum
+    /// compartments disagree with an existing datum system withholds the
+    /// display's datum systems.
+    fn row_datum_systems(
+        &self,
+        display: &GtolDisplay,
+        depicted: &[PmiId],
+    ) -> Vec<(PmiId, DatumReferences)> {
+        let tolerances = depicted
+            .iter()
+            .filter_map(|id| self.tolerances.iter().find(|tolerance| tolerance.id == id))
+            .collect::<Vec<_>>();
+        let Some(pairs) = pair_rows(&display.rows, &tolerances) else {
+            return Vec::new();
+        };
+        let mut systems = Vec::new();
+        for (row, tolerance) in pairs {
+            let mut datums = Vec::new();
+            for (label, modified) in &row.labels {
+                let Some(ids) = self.datums.get(label.as_str()) else {
+                    continue;
+                };
+                let [datum] = ids.as_slice() else {
+                    return Vec::new();
+                };
+                if *modified {
+                    return Vec::new();
+                }
+                datums.push(*datum);
+            }
+            match tolerance.datum_system {
+                Some(system) => {
+                    if self.systems.get(system) != Some(&datums) {
+                        return Vec::new();
+                    }
+                }
+                None if datums.is_empty() => {}
+                None => {
+                    let Some(references) = datum_references(&datums) else {
+                        return Vec::new();
+                    };
+                    systems.push((tolerance.id.clone(), references));
+                }
+            }
+        }
+        systems
+    }
+}
+
+fn pair_rows<'r, 't, 'a>(
+    rows: &'r [Row],
+    tolerances: &[&'t Tolerance<'a>],
+) -> Option<Vec<(&'r Row, &'t Tolerance<'a>)>> {
+    if rows.len() != tolerances.len() {
+        return None;
+    }
+    let kinds = rows
+        .iter()
+        .map(|row| characteristic(&row.characteristic).and_then(row_kind))
+        .collect::<Option<Vec<_>>>()?;
+    let distinct = kinds
+        .iter()
+        .all(|kind| kinds.iter().filter(|other| *other == kind).count() == 1);
+    if distinct {
+        return rows
+            .iter()
+            .zip(&kinds)
+            .map(|(row, kind)| {
+                let mut matching = tolerances.iter().filter(|tolerance| tolerance.kind == kind);
+                let tolerance = matching.next()?;
+                matching.next().is_none().then_some((row, *tolerance))
+            })
+            .collect();
+    }
+    let ([upper_row, lower_row], [first, second]) = (rows, tolerances) else {
+        return None;
+    };
+    let (upper, lower) = if second.id.as_str().strip_suffix(COMPOSITE_LOWER_TIER_SUFFIX)
+        == Some(first.id.as_str())
+    {
+        (*first, *second)
+    } else if first.id.as_str().strip_suffix(COMPOSITE_LOWER_TIER_SUFFIX)
+        == Some(second.id.as_str())
+    {
+        (*second, *first)
+    } else {
+        return None;
+    };
+    let literal = |row: &Row| {
+        row.tolerance
+            .as_deref()?
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| *value > 0.0)
+    };
+    let displayed = literal(upper_row)? / literal(lower_row)?;
+    let stored = upper.magnitude / lower.magnitude;
+    ((displayed - stored).abs() <= EPS_TIER_RATIO_E9 * stored.abs().max(1.0))
+        .then(|| vec![(upper_row, upper), (lower_row, lower)])
+}
+
+fn datum_references(datums: &[&PmiId]) -> Option<DatumReferences> {
+    let references = datums
+        .iter()
+        .enumerate()
+        .map(|(index, datum)| {
+            let precedence = u32::try_from(index.checked_add(1)?)
+                .ok()
+                .and_then(NonZeroU32::new)?;
+            Some(DatumReference {
+                datum: (*datum).clone(),
+                precedence,
+                common_group: None,
+                modifiers: Vec::new(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    DatumReferences::try_from(references).ok()
 }
 
 fn row_kind(token: &str) -> Option<GeometricToleranceKind> {

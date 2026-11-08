@@ -12079,6 +12079,69 @@ source = "spec"
 anchor = "u32 LE reference timestamp"
 
 [[record]]
+name = "identity_reference_header"
+kind = "byte"
+section = "2.3"
+anchor = "A `moFaceRef_c` or `moEdgeRef_c` object writes a 38-byte header"
+size = 38
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/swift/presentation/faces.rs"
+note = "Header of a face or edge identity reference; the hop entries follow at +38."
+
+[[record.field]]
+name = "form"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a 38-byte header: little-endian u32 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 `0`, u32 count *c*"
+value = 0
+
+[[record.field]]
+name = "hop_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 count *c*"
+
+[[record.field]]
+name = "selector"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "a four-byte selector"
+
+[[record.field]]
+name = "record_id"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 record identifier"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "bytes[16]"
+source = "spec"
+anchor = "the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54`"
+value = [0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54]
+
+[[record.field]]
+name = "zero_tail"
+offset = 36
+type = "u16"
+source = "spec"
+anchor = "and u16 `0`"
+value = 0
+
+[[record]]
 name = "named_object_header"
 kind = "byte"
 section = "2.3"

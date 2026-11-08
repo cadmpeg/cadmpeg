@@ -1,6 +1,14 @@
+use super::faces::tests::{declared_reference, tagged_reference};
 use super::{annotations, parse, Archive, FeaturePath};
+use crate::brep::feature_source::FeatureSourceId;
+use crate::brep::PersistentFaceIdentity;
 use crate::swift::{project, Entity, Reference, ROOT_CLASS};
-use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition};
+use cadmpeg_ir::ids::{FaceId, PmiId};
+use cadmpeg_ir::pmi::zones::ToleranceConstraints;
+use cadmpeg_ir::pmi::{
+    GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiMagnitude, PmiQuantity, PmiTarget,
+};
+use cadmpeg_ir::scalar::NonNegativeReal;
 
 const FEATURE_REFERENCE_TAG: u16 = 0x8040;
 const MIRROR_TAG: u16 = 0x8050;
@@ -70,7 +78,7 @@ fn path(features: &[(FeatureReference, u32, u32)]) -> Vec<u8> {
 struct Gtol<'a> {
     name: &'a str,
     paths: Vec<Vec<u8>>,
-    rows: &'a [(&'a str, &'a str)],
+    rows: &'a [(&'a str, &'a str, &'a [&'a str])],
     note: &'a str,
 }
 
@@ -96,10 +104,14 @@ fn gtol(first: bool, display: &Gtol<'_>) -> Vec<u8> {
         bytes.extend_from_slice(&[0; 12]);
         bytes.extend_from_slice(path);
     }
-    for (symbol, tolerance) in display.rows {
+    for (symbol, tolerance, labels) in display.rows {
         bytes.extend_from_slice(&[0; 6]);
         bytes.extend(framed(symbol));
         bytes.extend(framed(tolerance));
+        for label in *labels {
+            bytes.extend_from_slice(&[0; 4]);
+            bytes.extend(framed(label));
+        }
     }
     bytes.extend_from_slice(&[0; 8]);
     for text in ["", "", "<Gtol>", display.note] {
@@ -211,16 +223,16 @@ fn two_row_display<'a>(name: &'a str, id: u32, note: &'a str, first: bool) -> Gt
     Gtol {
         name,
         paths: vec![path(&[(form, id, 7)])],
-        rows: &[("<GTOL-FLAT>", ".015"), ("<GTOL-FLAT>", ".005")],
+        rows: &[("<GTOL-FLAT>", ".015", &[]), ("<GTOL-FLAT>", ".005", &[])],
         note,
     }
 }
 
 fn presentations(image: &Image<'_>) -> (Vec<PmiAnnotation>, usize) {
     let root = root();
-    let projected = project(&root);
+    let mut projected = project(&root);
     let archive = parse(&image.bytes());
-    annotations(&archive, &root, &projected).expect("presentation annotations")
+    annotations(&archive, &root, &mut projected, &[]).expect("presentation annotations")
 }
 
 fn only<T>(items: &[T]) -> &T {
@@ -253,7 +265,7 @@ fn a_display_depicts_the_tolerances_of_features_selected_by_attribute_or_name() 
             Gtol {
                 name: "DetailItem2",
                 paths: vec![path(&[(FeatureReference::Tagged, 200, 9)])],
-                rows: &[("<GTOL-FLAT>", ".010")],
+                rows: &[("<GTOL-FLAT>", ".010", &[])],
                 note: "",
             },
         ],
@@ -289,7 +301,7 @@ fn a_feature_path_selects_its_outer_feature_and_admits_member_suffixes() {
                     (FeatureReference::Tagged, 200, 9),
                 ]),
             ],
-            rows: &[("<GTOL-FLAT>", ".010")],
+            rows: &[("<GTOL-FLAT>", ".010", &[])],
             note: "",
         }],
         datum_tags: true,
@@ -302,7 +314,7 @@ fn a_feature_path_selects_its_outer_feature_and_admits_member_suffixes() {
     );
     let root = root();
     let (presentations, unresolved) =
-        annotations(&archive, &root, &project(&root)).expect("presentation annotations");
+        annotations(&archive, &root, &mut project(&root), &[]).expect("presentation annotations");
     assert_eq!(unresolved, 0);
     assert_eq!(
         depicted(only(&presentations)).1,
@@ -317,7 +329,7 @@ fn row_kinds_that_differ_from_the_feature_tolerances_leave_the_display_unlinked(
         gtols: vec![Gtol {
             name: "DetailItem1",
             paths: vec![path(&[(FeatureReference::Declared, 100, 7)])],
-            rows: &[("<GTOL-FLAT>", ".015")],
+            rows: &[("<GTOL-FLAT>", ".015", &[])],
             note: "2 SURFACES",
         }],
         datum_tags: true,
@@ -338,7 +350,7 @@ fn feature_paths_that_disagree_leave_the_display_unlinked() {
                 path(&[(FeatureReference::Declared, 100, 7)]),
                 path(&[(FeatureReference::Tagged, 200, 9)]),
             ],
-            rows: &[("<GTOL-FLAT>", ".010")],
+            rows: &[("<GTOL-FLAT>", ".010", &[])],
             note: "",
         }],
         datum_tags: true,
@@ -348,7 +360,7 @@ fn feature_paths_that_disagree_leave_the_display_unlinked() {
     assert_eq!(only(&archive.gtols).path, FeaturePath::Inconsistent);
     let root = root();
     let (_, unresolved) =
-        annotations(&archive, &root, &project(&root)).expect("presentation annotations");
+        annotations(&archive, &root, &mut project(&root), &[]).expect("presentation annotations");
     assert_eq!(unresolved, 1);
 }
 
@@ -384,7 +396,188 @@ fn the_last_display_without_a_following_list_is_unbounded() {
     assert_eq!(archive.unbounded.len(), 1);
     let root = root();
     let (presentations, unresolved) =
-        annotations(&archive, &root, &project(&root)).expect("presentation annotations");
+        annotations(&archive, &root, &mut project(&root), &[]).expect("presentation annotations");
     assert_eq!(presentations.len(), 1);
     assert_eq!(unresolved, 1);
+}
+
+fn pmi(id: &str) -> PmiId {
+    PmiId::mint(format!("sldprt:model:pmi#{id}")).expect("PMI ID")
+}
+
+fn face(key: u32) -> FaceId {
+    FaceId::mint(format!("sldprt:brep:face#{key}")).expect("face ID")
+}
+
+fn tolerance(id: &str, kind: GeometricToleranceKind, magnitude: f64, target: u32) -> PmiAnnotation {
+    PmiAnnotation {
+        id: pmi(id),
+        name: Some(id.into()),
+        visible: None,
+        targets: vec![PmiTarget::Face { face: face(target) }],
+        definition: PmiDefinition::GeometricTolerance {
+            tolerance: kind,
+            magnitude: PmiMagnitude::from_parts(
+                NonNegativeReal::new(magnitude).expect("magnitude"),
+                PmiQuantity::Length,
+            ),
+            defined_unit: None,
+            defined_area_unit: None,
+            defined_area_second_unit: None,
+            datum_system: None,
+            modifiers: Vec::new(),
+            constraints: ToleranceConstraints::default(),
+        },
+    }
+}
+
+fn datum(id: &str, letter: &str) -> PmiAnnotation {
+    PmiAnnotation {
+        id: pmi(id),
+        name: None,
+        visible: None,
+        targets: Vec::new(),
+        definition: PmiDefinition::Datum {
+            identification: letter.into(),
+        },
+    }
+}
+
+fn persistent(feature: u32, local: u32, tail: &[u32]) -> PersistentFaceIdentity {
+    PersistentFaceIdentity {
+        feature_source_id: FeatureSourceId::try_from(feature).expect("feature"),
+        local_id: local,
+        trailing_fields: tail.to_vec(),
+    }
+}
+
+fn datum_letters(projected: &[PmiAnnotation], tolerance: &str) -> Vec<String> {
+    let Some(PmiDefinition::GeometricTolerance {
+        datum_system: Some(system),
+        ..
+    }) = projected
+        .iter()
+        .find(|annotation| annotation.id == pmi(tolerance))
+        .map(|annotation| &annotation.definition)
+    else {
+        return Vec::new();
+    };
+    let Some(PmiDefinition::DatumSystem { references }) = projected
+        .iter()
+        .find(|annotation| &annotation.id == system)
+        .map(|annotation| &annotation.definition)
+    else {
+        panic!("datum system")
+    };
+    references
+        .as_slice()
+        .iter()
+        .map(|reference| {
+            let Some(PmiDefinition::Datum { identification }) = projected
+                .iter()
+                .find(|annotation| annotation.id == reference.datum)
+                .map(|annotation| &annotation.definition)
+            else {
+                panic!("datum")
+            };
+            identification.clone()
+        })
+        .collect()
+}
+
+#[test]
+fn a_display_without_a_feature_path_depicts_the_tolerances_on_its_faces_and_supplies_tier_datums() {
+    let image = Image {
+        count: None,
+        gtols: vec![
+            Gtol {
+                name: "DetailItem1",
+                paths: vec![declared_reference(183, [1, 0, 0])],
+                rows: &[
+                    ("<GTOL-SPROF>", "2", &["D", "G", "H"]),
+                    ("<GTOL-SPROF>", "0.2", &["D"]),
+                ],
+                note: "2 SURFACES",
+            },
+            Gtol {
+                name: "DetailItem2",
+                paths: vec![tagged_reference(44, [2, 0, 5], None)],
+                rows: &[("<GTOL-FLAT>", ".01", &[])],
+                note: "",
+            },
+        ],
+        datum_tags: true,
+        mirrors: &[],
+    };
+    let root = Entity {
+        class: ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut projected = vec![
+        tolerance("A1", GeometricToleranceKind::SurfaceProfile, 2.0, 10),
+        tolerance(
+            "A1:lower-tier",
+            GeometricToleranceKind::SurfaceProfile,
+            0.2,
+            10,
+        ),
+        tolerance("A2", GeometricToleranceKind::Flatness, 0.254, 20),
+        datum("D", "D"),
+        datum("G", "G"),
+        datum("H", "H"),
+    ];
+    let identities = [
+        (face(10), persistent(183, 1, &[0, 0])),
+        (face(20), persistent(44, 2, &[0, 5])),
+    ];
+    let archive = parse(&image.bytes());
+    let (presentations, unresolved) =
+        annotations(&archive, &root, &mut projected, &identities).expect("presentations");
+    assert_eq!(unresolved, 0);
+    let [composite, flatness] = presentations.as_slice() else {
+        panic!("two presentations")
+    };
+    assert_eq!(
+        depicted(composite),
+        (
+            Some("2 SURFACES"),
+            vec!["sldprt:model:pmi#A1", "sldprt:model:pmi#A1:lower-tier"]
+        )
+    );
+    assert_eq!(depicted(flatness), (None, vec!["sldprt:model:pmi#A2"]));
+    assert_eq!(datum_letters(&projected, "A1"), ["D", "G", "H"]);
+    assert_eq!(datum_letters(&projected, "A1:lower-tier"), ["D"]);
+}
+
+#[test]
+fn a_face_identity_without_a_current_face_leaves_the_display_unlinked() {
+    let image = Image {
+        count: None,
+        gtols: vec![
+            Gtol {
+                name: "DetailItem1",
+                paths: vec![declared_reference(183, [1, 0, 0])],
+                rows: &[("<GTOL-FLAT>", ".01", &[])],
+                note: "",
+            },
+            Gtol {
+                name: "DetailItem2",
+                paths: vec![tagged_reference(44, [2, 0, 5], None)],
+                rows: &[("<GTOL-FLAT>", ".01", &[])],
+                note: "",
+            },
+        ],
+        datum_tags: true,
+        mirrors: &[],
+    };
+    let root = Entity {
+        class: ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut projected = vec![tolerance("A2", GeometricToleranceKind::Flatness, 0.254, 20)];
+    let identities = [(face(20), persistent(44, 2, &[0]))];
+    let archive = parse(&image.bytes());
+    let (_, unresolved) =
+        annotations(&archive, &root, &mut projected, &identities).expect("presentations");
+    assert_eq!(unresolved, 2);
 }

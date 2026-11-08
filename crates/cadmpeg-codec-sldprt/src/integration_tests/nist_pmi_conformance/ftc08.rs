@@ -398,3 +398,45 @@ fn ftc_08_row_99_groups_each_position_pair_under_its_simultaneous_requirement() 
         .map(|(text, names)| (text.to_owned(), names.map(str::to_owned).to_vec()))
     );
 }
+
+#[test]
+fn ftc_08_row_77_face_attached_display_depicts_the_profile_to_d_and_h_j() {
+    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let ir = result.ir();
+    let depicts_row_77 = |semantics: &[cadmpeg_ir::ids::PmiId]| {
+        let [profile] = semantics else {
+            return false;
+        };
+        let Some(annotation) = ir
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| &annotation.id == profile)
+        else {
+            return false;
+        };
+        let PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::SurfaceProfile,
+            magnitude,
+            datum_system: Some(system),
+            ..
+        } = &annotation.definition
+        else {
+            return false;
+        };
+        (magnitude.get().value.get() - 0.015 * MM_PER_INCH).abs() < VALUE_TOLERANCE
+            && datum_names(ir, system) == ["D", "H", "J"]
+    };
+    let displays = ir
+        .model
+        .pmi
+        .iter()
+        .filter(|annotation| {
+            matches!(
+                &annotation.definition,
+                PmiDefinition::Presentation { semantics, .. } if depicts_row_77(semantics)
+            )
+        })
+        .count();
+    assert_eq!(displays, 1);
+}

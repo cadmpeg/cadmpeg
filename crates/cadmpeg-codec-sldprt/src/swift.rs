@@ -579,6 +579,7 @@ pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
+    face_identities: &[(FaceId, crate::brep::PersistentFaceIdentity)],
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
     let Some(ScannedRoot {
@@ -601,7 +602,7 @@ pub(crate) fn annotations(
     projection.append_losses(losses);
     let mut projected = projection.annotations;
     let (presentations, unresolved_displays) =
-        presentation::annotations(&presentation, &root, &projected)?;
+        presentation::annotations(&presentation, &root, &mut projected, face_identities)?;
     if unresolved_displays > 0 {
         losses.push(crate::loss::SldprtLossCode::PmiSwiftPresentationUnresolved.note(format!(
             "{unresolved_displays} SWIFT geometric-tolerance display(s) retain no established semantic annotation"

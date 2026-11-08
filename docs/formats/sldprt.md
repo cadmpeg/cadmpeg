@@ -1577,7 +1577,35 @@ strings: the two between-extent labels, the frame template, which contains
 geometric-tolerance annotations that directly reference a feature on its
 longest path when their characteristics equal the characteristics of its rows
 as a multiset. A composite surface profile with a lower tier supplies two
-`SPROF` rows.
+`SPROF` rows, the upper tier first.
+
+The strings after a row's tolerance literal and before the next row or the
+four-string block are its compartments. A compartment string that equals the
+`DatumIdentifier` of a semantic `GdtDatum` names a datum reference; datum
+references take precedence in row order, and a `<MOD-` token after one
+modifies it.
+
+A geometric-tolerance display without a feature path attaches to faces through
+`moFaceRef_c` objects (§2.3). The first hop of a face reference names one
+face: its `moFR_c` feature identifier, its first own u32 as the feature-local
+face identity, and its remaining own u32 values as the ordered path fields
+form the persistent identity that `FACE_ID_2001` carries (§5). Such a display
+depicts the semantic geometric tolerances of its rows' characteristics that
+target a face its references select, when their characteristics equal those
+of its rows as a multiset.
+
+In the presentation archive, a `moExtObject_c` object written in place holds
+two object pointers to `moCStringHandle_c` objects, u16 LE `2`, a byte, a u32
+LE value, two Unicode `CString` values, 17 bytes, a Unicode `CString` holding a
+configuration name, and 12 bytes.
+
+Class map indices rise in declaration order (§2.2). When the archive declares
+as many identity-representation classes as there are class tags that open a
+hop, the sorted tags name those classes in declaration order. The tags that
+open `moFaceRef_c` and `moEdgeRef_c` objects name the declared reference
+classes in the same way. A reference tag otherwise names the one reference
+class whose declaration lies between the identity classes with the next lower
+and next higher indices.
 
 ### 2.2 Object stream class map
 
