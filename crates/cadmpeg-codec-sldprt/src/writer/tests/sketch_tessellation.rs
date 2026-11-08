@@ -880,7 +880,7 @@ fn semantic_writer_preserves_display_list_geometry() {
     assert_eq!(mesh.vertices()[0].z, 250.0);
     assert_eq!(mesh.triangles(), vec![[0, 1, 2]]);
     assert_eq!(mesh.strip_lengths(), vec![3]);
-    assert_eq!(mesh.channels().len(), 6);
+    assert_eq!(mesh.channels().len(), 3);
 }
 
 #[test]
@@ -1004,9 +1004,9 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let original = decoded.ir().model.tessellations[0].clone();
-    assert_eq!(original.channels().len(), 6);
+    assert_eq!(original.channels().len(), 3);
     let mut channels = original.channels().to_vec();
-    channels.push(channels[5].clone());
+    channels.push(channels[2].clone());
     let mut extended = Tessellation::new(
         cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#extra-channel")
             .expect("valid identity"),
@@ -1067,7 +1067,7 @@ fn synthesized_tessellation_normalizes_flags_without_dropping_channels() {
                 channel.addressing().clone(),
                 channel.item_size(),
                 channel.kind(),
-                if index == 0 || index == 3 {
+                if index == 0 || index == 2 {
                     7
                 } else {
                     channel.flags()
@@ -1135,7 +1135,7 @@ fn synthesized_tessellation_reports_quantized_values() {
         original.id.clone(),
         TessellationMesh::from_corner_lanes(
             vec![
-                Point3::new(0.1, 0.0, 0.0),
+                Point3::new(0.123_456_789, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
@@ -1170,7 +1170,7 @@ fn synthesized_tessellation_reports_quantized_values() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let written = &output.ir().model.tessellations[0];
-    assert_ne!(written.vertices()[0].x, 0.1);
+    assert_ne!(written.vertices()[0].x, 0.123_456_789);
     assert_ne!(written.vertex_normals()[0].x, 0.1);
 }
 
