@@ -863,54 +863,23 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the row roles to relate each indexed value to the correct display object or segment.
 
-### AM-05. Assembly occurrence placement
+### AM-05. Assembly placement prototype and unit selectors
 
-**Question.** Which native relations bind each placement frame to its component occurrence and assembly frame, and which field defines its translation unit?
+**Question.** Which serialized relation binds a placement to its prototype when one placement UUID covers several prototypes, and which field selects the length unit of an assembly part?
 
-**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "An assembly placement frame at the start" joins a frame to its bounded object record. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder retains placement frames and FastLoad uses in the NX native namespace. It reports `assembly.placement-frame-unresolved` while their component association, assembly frame, or translation unit remains unresolved. FastLoad uses without placement frames are reported as `assembly.occurrences-unresolved`.
+**Known.** `siemens_nx.md` §2.3 "The matrix maps the child part frame into the frame of the assembly part" defines the pose, and "A placement UUID that occurs once in the FastLoad UUID table" defines the single-prototype UUID binding. The decoder emits placements bound by that rule when every numeric length expression of the part declares millimetres, and charges `assembly.placement-unit-from-expressions`. It withholds the other placements with `assembly.placement-frame-unresolved`.
 
-**Need.** Identify generic serialized relations for component ownership and parent placement, and the selector for translation units. Validate the resulting pose reading against independently matching geometry.
+The third trailer byte has one value for all placements of one child part and distinct values for distinct child parts, also inside one UUID group. Its values increase in the order of the first placement of each child part. Most values are even. Placements whose trailer second byte is not `f0` carry other values in that position.
 
-**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The five-byte trailer has no established instance or unit role. The first trailer byte descends from `0x3f` to `0x1c` in placement-record order. The third trailer byte is constant within each UUID group.
+Numeric expressions declare their own unit. OM length values of drafting preferences take inch values in parts with inch expressions and millimetre values in parts with millimetre expressions. These values do not select a unit.
 
-Within a UUID group, trailer keys and prototype indices can interleave in
-different orders. A positional join then assigns different keys to one
-prototype. Equal-sized key groups admit multiple prototype assignments.
-With aligned prototype origins, pairwise placement distances distinguish some
-assignments. Sorting the keys and prototype indices gives incorrect assignments
-for those groups. A singleton has no within-group distance to compare. Direct
-matrix comparisons can distinguish singleton uses when their prototype and
-assembly frames agree.
+**Need.** Identify the record that the third trailer byte addresses and its relation to a FastLoad prototype or external reference. Identify the serialized part-unit selector, including for parts without length expressions.
 
-The MTC STEP assembly declares millimetres. Pairwise distances within its
-14-screw placement group match the NX placement distances at scale 1. The
-root mean square distance error at scales 25.4 and 1/25.4 is approximately
-1971 mm and 77.6 mm, respectively. The 14 NX translations use millimetres.
-The serialized unit selector remains unresolved.
-At rotation tolerance `1e-4` and translation tolerance 0.01 mm, one of the
-36 decoded NX placement matrices matches a decoded STEP occurrence matrix.
-At looser tolerances of 0.1 rad and 1 mm, the direct, transposed, full-inverse,
-and inverse-then-transposed matrix variants each match the Box and 0 of 32
-fastener poses. The tested left/right and inverse compositions of the NX and
-STEP Cover frames match at most 3 of 4 `91304A112` poses and 0 of the other 28
-fastener poses. In a representative composition, the first three matches
-differ by 0.0408 to 0.0934 rad and about 0.0501 mm; the fourth differs by
-0.10067 rad and about 0.0500 mm. The fourth pose exceeds the rotation
-tolerance.
-After one translation per prototype, the 26 non-nut placement positions match
-the STEP viewer positions within 0.003 mm. Four of the prototypes are
-singletons. The same test matches three of the ten nut positions. The two
-representations can use different frames.
-For all 36 STEP uses, the relationship endpoints are child then assembly,
-while the transformation items name an assembly-owned frame then the
-child-owned frame. All 36 NX placement owners have zero recognized
-`RecordOrdinal16` parent edges under the bounded same-section ordinal parser;
-unrecognized reference encodings remain possible. The STEP uses place all 36
-components under the assembly root, with Box and Cover as siblings. The decoded
-STEP nut rotations have nine distinct values; the NX nut rotations have two.
-Five FastLoad occurrences of that screw type carry marker `0x31`. The STEP
-assembly includes all 14 occurrences of that type. Treating `0x31` as a
-suppression marker would exclude five occurrences present in the STEP model.
+**Conflict.** The third trailer byte does not equal the FastLoad prototype ordinal, the FastLoad or UG_PART external-reference ordinal, or the half of either ordinal. Read as a reversed record ordinal in the placement record directory, it selects records that are not part objects. Positional pairing of the OM object-UUID values of a FastLoad object group with the occurrences of that group assigns wrong prototypes to more than half of the placements in a mixed UUID group.
+
+No byte of the SPLMSSTR header, the `hostglobalvariables` name table, or the streams `/Root/FastLoad/Structure`, `/Root/FastLoad/RMFastLoad`, `/Root/UG_PART/UG_PART`, `/Root/part/attrs`, and both `ExternalReferences` streams has one constant value for inch parts and another constant value for millimetre parts at a fixed position after a shared class or member name. No binary64 or placement-atom form of 25.4, 0.0254, 1/0.0254, 0.001, or 1000 occurs in every part of one unit and in no part of the other unit.
+
+**Note.** Matrix equality between an NX placement and a STEP occurrence written by another system is not a pose test: the child parts can use different frames. Compare placed child geometry.
 
 ### AM-06. Assembly pattern dimensions
 

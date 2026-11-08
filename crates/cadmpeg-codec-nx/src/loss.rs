@@ -118,8 +118,14 @@ loss_codes! {
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
     /// `FastLoad` component uses have no corresponding native placement frames.
     AssemblyOccurrencesUnresolved => ("assembly.occurrences-unresolved", Blocking, AssemblyPlacementsNotTransferred),
-    /// Native assembly placements lack a proven component relation, root frame, or translation unit.
+    /// Native assembly placements lack a unique prototype or an established translation unit.
     AssemblyPlacementFrameUnresolved => ("assembly.placement-frame-unresolved", Blocking, AssemblyPlacementsNotTransferred),
+    /// Emitted placement translations take the length unit of the part's expressions.
+    AssemblyPlacementUnitFromExpressions => ("assembly.placement-unit-from-expressions", Warning, DecodeDiagnostic),
+    /// External component filenames join roster names while directories remain unknown.
+    AssemblyExternalFilenameAssumed => ("assembly.external-filename-assumed", Warning, DecodeDiagnostic),
+    /// A roster prototype has no unique retained external document filename.
+    AssemblyExternalDocumentUnresolved => ("assembly.external-document-unresolved", Warning, MetadataNotTransferred),
     /// A carrier record of the right family states lanes the IR carrier refuses.
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
     /// A B-spline record stores a control-point weight that is zero or negative.
@@ -244,6 +250,9 @@ mod tests {
                 "assembly.components-external",
                 "assembly.occurrences-unresolved",
                 "assembly.placement-frame-unresolved",
+                "assembly.placement-unit-from-expressions",
+                "assembly.external-filename-assumed",
+                "assembly.external-document-unresolved",
                 "carrier.lanes-unpaired",
                 "carrier.spline-weight-nonpositive",
                 "carrier.spline-fields-inconsistent",
