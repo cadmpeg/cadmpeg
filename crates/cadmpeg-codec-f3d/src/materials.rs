@@ -1233,7 +1233,7 @@ fn decode_face_appearance_assignments(
         else {
             continue;
         };
-        for frame in crate::metastream::primary_record_frames(&metadata, bytes.len())? {
+        for frame in crate::metastream::live_primary_record_frames(&metadata, bytes.len()) {
             out.extend(face_appearance_assignments_in_frame(
                 &bytes[frame.start..frame.end],
             ));
