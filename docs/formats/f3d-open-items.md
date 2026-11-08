@@ -1779,7 +1779,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
-### DR-326. Shell table references outside the face-group members
+### DR-330. Shell table references outside the face-group members
 
 **Question.** What does an ordered reference of a compact, marked, or counted `Shell` scope name when it is neither the face group, the wall scalar, nor a member of the face group?
 

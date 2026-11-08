@@ -4222,7 +4222,7 @@ pub(super) fn shell_table_member_loss(
         .collect::<Vec<_>>();
     (remaining != members).then(|| {
         crate::loss::F3dLossCode::FeatureShellTableMembersAssumed.note(format!(
-            "Shell scope {} stores ordered references {remaining:?} besides face group {} and wall scalar {}, and the face group has members {members:?}; the Shell is projected from its wall slot and face group, assuming the other references leave the walls unchanged (DR-326).",
+            "Shell scope {} stores ordered references {remaining:?} besides face group {} and wall scalar {}, and the face group has members {members:?}; the Shell is projected from its wall slot and face group, assuming the other references leave the walls unchanged (DR-330).",
             scope.id, group.record_index, operation.thickness_record_index
         ))
     })
