@@ -88,24 +88,29 @@ class ApplyGithub(unittest.TestCase):
         self.assertIsNone(notes.login_of({"__typename": "User", "login": "helper[bot]"}))
 
 
-class ReleaseNotes(unittest.TestCase):
+class BreakingNotes(unittest.TestCase):
     def test_reads_lines_up_to_the_next_heading_without_comments(self) -> None:
         body = (
-            "## Summary\r\n\r\nText.\r\n\r\n## Release note\r\n\r\n"
-            "<!-- One line for users. -->\r\n- Faster STEP export.\r\n"
-            "* Breaking: `--allow-empty` is removed.\r\n\r\n## Checklist\r\n- [x] Signed off\r\n"
+            "## Summary\r\n\r\nText.\r\n\r\n## Breaking change\r\n\r\n"
+            "<!-- One line for users. -->\r\n- `--allow-empty` is removed.\r\n"
+            "* Rename `--x` to `--y`.\r\n\r\n## Checklist\r\n- [x] Signed off\r\n"
         )
         self.assertEqual(
-            notes.release_notes(body),
-            ["Faster STEP export.", "Breaking: `--allow-empty` is removed."],
+            notes.breaking_notes(body),
+            ["`--allow-empty` is removed.", "Rename `--x` to `--y`."],
         )
 
     def test_none_and_placeholder_only_give_no_notes(self) -> None:
-        self.assertEqual(notes.release_notes("## Release note\n\nNone.\n- n/a\n-\n"), [])
-        self.assertEqual(notes.release_notes("## Release note\n<!--\n## Release note\nx\n-->\n"), [])
+        self.assertEqual(notes.breaking_notes("## Breaking change\n\nNone.\n- n/a\n-\n"), [])
+        self.assertEqual(
+            notes.breaking_notes("## Breaking change\n<!--\n## Breaking change\nx\n-->\n"), []
+        )
 
     def test_body_without_the_section_gives_no_notes(self) -> None:
-        self.assertEqual(notes.release_notes("## Summary\n\nRelease note: no heading.\n"), [])
+        self.assertEqual(notes.breaking_notes("## Summary\n\nBreaking change: no heading.\n"), [])
+
+    def test_old_release_note_heading_gives_no_notes(self) -> None:
+        self.assertEqual(notes.breaking_notes("## Release note\n- Faster joints.\n"), [])
 
 
 class Areas(unittest.TestCase):
@@ -172,7 +177,7 @@ class Render(unittest.TestCase):
                 "f3d: a",
                 number=1,
                 login="zed",
-                body="## Release note\n- Breaking: drop `--x`.\n- Faster joints.\n",
+                body="## Breaking change\n- Breaking: drop `--x`.\n- Remove `--y`.\n",
             ),
             notes.Change("2" * 40, "inventor: b", number=2, login="amy"),
             notes.Change("3" * 40, "inventor: c", number=3, login="Bob"),
@@ -181,8 +186,7 @@ class Render(unittest.TestCase):
         ]
         text = self.render(changes, dependency_updates=2, ir_line="IR line.", support=["`step`: L7 → L8"])
         order = [
-            "## Compatibility\n\n- IR line.\n- drop `--x`. (#1)",
-            "## Highlights\n\n- Faster joints. (#1)",
+            "## Compatibility\n\n- IR line.\n- drop `--x`. (#1)\n- Remove `--y`. (#1)",
             "## Support levels\n\n- `step`: L7 → L8",
             "<b>Inventor</b> (2)",
             "<b>Fusion</b> (1)",
@@ -194,6 +198,7 @@ class Render(unittest.TestCase):
         ]
         positions = [text.index(part) for part in order]
         self.assertEqual(positions, sorted(positions))
+        self.assertNotIn("Highlights", text)
 
     def test_empty_release_has_only_the_footer(self) -> None:
         text = self.render([])

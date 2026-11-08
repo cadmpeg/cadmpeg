@@ -4,17 +4,15 @@
 
 The notes have these sections, each only when it has content:
 
-* Compatibility: an IR_VERSION change, and every pull-request release note
-  that starts with ``Breaking:``.
-* Highlights: the other pull-request release notes.
+* Compatibility: an IR_VERSION change, and every line of the
+  ``## Breaking change`` section of a pull-request description.
 * Support levels: changed headline levels in ``dialect-support.toml``.
 * Changes: one collapsed list per area, from the commit subject scope.
 * Contributors: the GitHub logins of the change authors, without bots.
 
-A release note is a line in the ``## Release note`` section of a pull request
-description. The changes are the first-parent commits after the previous
-release tag. Pull-request data comes from the GitHub GraphQL API through
-``gh``, so ``gh`` must be authenticated.
+The changes are the first-parent commits after the previous release tag.
+Pull-request data comes from the GitHub GraphQL API through ``gh``, so ``gh``
+must be authenticated.
 """
 
 from __future__ import annotations
@@ -33,7 +31,7 @@ SUPPORT_FILE = "crates/cadmpeg-registry/docs/dialect-support.toml"
 DEPENDENCY_BOT = "dependabot[bot]"
 SCOPE = re.compile(r"^([A-Za-z0-9][\w+-]*(?:, ?[A-Za-z0-9][\w+-]*)*): +(.+)$")
 PR_SUFFIX = re.compile(r"\s*\(#(\d+)\)$")
-NOTE_HEADING = re.compile(r"^#{2,3}\s*Release notes?\s*$", re.IGNORECASE)
+BREAKING_HEADING = re.compile(r"^#{2,3}\s*Breaking changes?\s*$", re.IGNORECASE)
 HEADING = re.compile(r"^#{1,6}\s")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 BREAKING = re.compile(r"^Breaking:\s*", re.IGNORECASE)
@@ -184,13 +182,13 @@ def fetch_github(repo: str, changes: list[Change]) -> None:
             apply_github(change, repository.get(f"c{index}"))
 
 
-def release_notes(body: str) -> list[str]:
-    """Lines of the first `## Release note` section, without comments and placeholders."""
+def breaking_notes(body: str) -> list[str]:
+    """Lines of the first `## Breaking change` section, without comments and placeholders."""
     notes = []
     inside = False
     for line in COMMENT.sub("", body).splitlines():
         if not inside:
-            inside = bool(NOTE_HEADING.match(line.strip()))
+            inside = bool(BREAKING_HEADING.match(line.strip()))
             continue
         if HEADING.match(line):
             break
@@ -290,19 +288,13 @@ def render(
     support: list[str],
 ) -> str:
     compatibility = [ir_line] if ir_line else []
-    highlights = []
     for change in changes:
-        for note in release_notes(change.body):
-            if BREAKING.match(note):
-                compatibility.append(f"{BREAKING.sub('', note)} {change.reference()}")
-            else:
-                highlights.append(f"{note} {change.reference()}")
+        for note in breaking_notes(change.body):
+            compatibility.append(f"{BREAKING.sub('', note)} {change.reference()}")
 
     parts = []
     if compatibility:
         parts.append(f"## Compatibility\n\n{bullets(compatibility)}")
-    if highlights:
-        parts.append(f"## Highlights\n\n{bullets(highlights)}")
     if support:
         parts.append(f"## Support levels\n\n{bullets(support)}")
     groups = group_changes(changes, dependency_updates)
