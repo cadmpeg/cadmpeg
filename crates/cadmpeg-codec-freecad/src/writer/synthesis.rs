@@ -503,11 +503,11 @@ pub(super) fn write(
                     continue;
                 }
             }
-            if neutral_owned
-                && (object.properties.contains_key(&property.name)
-                    || (crate::property_policy::has_neutral_form(&property.name)
-                        && !empty_shapes.contains(&property.id)))
-            {
+            // A native property that the regenerated object lacks is a
+            // declaration slot: replaying it verbatim preserves the order
+            // the re-decode derives, so the pairing survives sanctioned
+            // regenerated values instead of shifting into later records.
+            if neutral_owned && object.properties.contains_key(&property.name) {
                 continue;
             }
             if property
