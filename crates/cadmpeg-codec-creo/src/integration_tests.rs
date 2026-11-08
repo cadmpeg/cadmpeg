@@ -2,6 +2,8 @@
 //! End-to-end Creo decode contracts.
 #![allow(clippy::unwrap_used)]
 
+mod pmi;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::build_prt;
