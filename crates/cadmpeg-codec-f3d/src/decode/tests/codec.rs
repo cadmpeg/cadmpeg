@@ -835,7 +835,7 @@ fn generated_f3d_rejects_an_incoherent_delta_state_header() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("an incoherent history cannot be serialized"),

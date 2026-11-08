@@ -739,7 +739,7 @@ fn generated_source_less_writes_design_type_metastream() {
             Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
                 panic
                     .downcast_ref::<&str>()
-                    .map(|s| s.to_string())
+                    .map(ToString::to_string)
                     .unwrap_or_default()
             }),
             Ok(Ok(_)) => {
@@ -771,7 +771,7 @@ fn generated_source_less_writes_design_type_metastream() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("a cyclic Design type hierarchy must not be emitted"),
@@ -1290,7 +1290,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("cross-stream modules must not diverge"),
@@ -1713,7 +1713,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("source-less points require a registered inverse companion"),
@@ -1810,7 +1810,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("relations with missing sketch owners must not disappear"),
@@ -1835,7 +1835,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("duplicate typed sketch indices must not be deduplicated"),
@@ -2026,7 +2026,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("a nonzero point cannot carry the zero-coordinate marker"),

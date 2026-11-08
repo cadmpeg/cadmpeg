@@ -1320,7 +1320,7 @@ fn neutralize_stream_names(value: &mut serde_json::Value) {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_')
             {
-                text = format!("{}#0", prefix);
+                text = format!("{prefix}#0");
             }
         }
         // Collapse stream-bearing IDs to their kind so record numbers
@@ -1348,6 +1348,61 @@ fn neutralize_stream_names(value: &mut serde_json::Value) {
             }
         }
         _ => {}
+    }
+}
+
+fn strip_source_object(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(o) => {
+            o.remove("source_object");
+            for val in o.values_mut() {
+                strip_source_object(val);
+            }
+        }
+        serde_json::Value::Array(a) => {
+            for val in a {
+                strip_source_object(val);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn first_diff(a: &serde_json::Value, b: &serde_json::Value, path: &str) -> String {
+    if a == b {
+        return String::new();
+    }
+    match (a, b) {
+        (serde_json::Value::Object(oa), serde_json::Value::Object(ob)) => {
+            for key in oa.keys().chain(ob.keys()) {
+                let va = oa.get(key).cloned().unwrap_or(serde_json::Value::Null);
+                let vb = ob.get(key).cloned().unwrap_or(serde_json::Value::Null);
+                if va != vb {
+                    let d = first_diff(&va, &vb, &format!("{path}/{key}"));
+                    if !d.is_empty() {
+                        return d;
+                    }
+                    return format!("{path}/{key}: {va} vs {vb}");
+                }
+            }
+            String::new()
+        }
+        (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+            for (i, (va, vb)) in a.iter().zip(b.iter()).enumerate() {
+                if va != vb {
+                    let d = first_diff(va, vb, &format!("{path}[{i}]"));
+                    if !d.is_empty() {
+                        return d;
+                    }
+                    return format!("{path}[{i}]: {va} vs {vb}");
+                }
+            }
+            if a.len() != b.len() {
+                return format!("{path}: len {} vs {}", a.len(), b.len());
+            }
+            String::new()
+        }
+        _ => format!("{path}: {a} vs {b}"),
     }
 }
 
@@ -1447,64 +1502,10 @@ fn an_edit_survives_native_writer_fallback() {
                     subds.clear();
                 }
             }
-            // Remove source_object at any depth (#209 projection).
-            fn strip_source_object(v: &mut serde_json::Value) {
-                match v {
-                    serde_json::Value::Object(o) => {
-                        o.remove("source_object");
-                        for val in o.values_mut() {
-                            strip_source_object(val);
-                        }
-                    }
-                    serde_json::Value::Array(a) => {
-                        for val in a {
-                            strip_source_object(val);
-                        }
-                    }
-                    _ => {}
-                }
-            }
             strip_source_object(view);
         }
         // (debug removed)
         if preserved_view != authored_view {
-            fn first_diff(a: &serde_json::Value, b: &serde_json::Value, path: &str) -> String {
-                if a == b {
-                    return String::new();
-                }
-                match (a, b) {
-                    (serde_json::Value::Object(oa), serde_json::Value::Object(ob)) => {
-                        for key in oa.keys().chain(ob.keys()) {
-                            let va = oa.get(key).cloned().unwrap_or(serde_json::Value::Null);
-                            let vb = ob.get(key).cloned().unwrap_or(serde_json::Value::Null);
-                            if va != vb {
-                                let d = first_diff(&va, &vb, &format!("{path}/{key}"));
-                                if !d.is_empty() {
-                                    return d;
-                                }
-                                return format!("{path}/{key}: {} vs {}", va, vb);
-                            }
-                        }
-                        String::new()
-                    }
-                    (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
-                        for (i, (va, vb)) in a.iter().zip(b.iter()).enumerate() {
-                            if va != vb {
-                                let d = first_diff(va, vb, &format!("{path}[{i}]"));
-                                if !d.is_empty() {
-                                    return d;
-                                }
-                                return format!("{path}[{i}]: {} vs {}", va, vb);
-                            }
-                        }
-                        if a.len() != b.len() {
-                            return format!("{path}: len {} vs {}", a.len(), b.len());
-                        }
-                        String::new()
-                    }
-                    _ => format!("{path}: {} vs {}", a, b),
-                }
-            }
             panic!(
                 "{}: {}",
                 name,

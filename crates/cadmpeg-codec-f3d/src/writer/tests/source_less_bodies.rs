@@ -439,7 +439,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("duplicate generated timestamp target must be rejected"),
@@ -503,7 +503,7 @@ fn generated_source_less_reports_unsupported_links_and_rejects_incoherent_ordina
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("noncanonical persistent link order must not be rewritten"),
@@ -549,7 +549,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("duplicate edge metadata must not collapse"),
@@ -713,7 +713,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("incoherent generated history preamble must be rejected"),
@@ -777,7 +777,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("orphan history records must not be discarded"),
@@ -810,7 +810,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("duplicate history identities must not multiply children"),

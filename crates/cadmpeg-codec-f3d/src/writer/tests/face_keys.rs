@@ -128,7 +128,7 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("the removed native backlink cannot encode duplicate target claims"),
@@ -153,7 +153,7 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("the signed native field cannot hold u64::MAX"),
