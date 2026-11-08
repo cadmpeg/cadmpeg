@@ -85,15 +85,21 @@ fn legacy_text_payload(
     fields: &Map<String, Value>,
     leader: bool,
 ) -> Option<Vec<u8>> {
-    let justification = fields.get("legacy_justification")?.as_i64()? as i32;
-    let style_index = fields
-        .get("legacy_style_index")
-        .and_then(Value::as_i64)
-        .unwrap_or(0) as i32;
-    let text_display_mode = fields
-        .get("legacy_text_display_mode")
-        .and_then(Value::as_i64)
-        .unwrap_or(0) as i32;
+    let justification = i32::try_from(fields.get("legacy_justification")?.as_i64()?).ok()?;
+    let style_index = i32::try_from(
+        fields
+            .get("legacy_style_index")
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
+    )
+    .ok()?;
+    let text_display_mode = i32::try_from(
+        fields
+            .get("legacy_text_display_mode")
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
+    )
+    .ok()?;
     let text_height = fields
         .get("legacy_text_height")
         .and_then(Value::as_f64)
