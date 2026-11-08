@@ -1112,7 +1112,9 @@ pub(crate) fn bind_feature_outputs(
                     histories,
                 )
             } else {
-                unique_history_state_pair(histories, state_id, previous_state_id)
+                unique_history_state_pair(histories, state_id, previous_state_id).or_else(|| {
+                    output_blob_history_pair(feature, state_id, previous_state_id, histories)
+                })
             }?;
             let (history_index, _) = history_state_indexes(histories, history, previous)?;
             Some(history_index)
@@ -1944,6 +1946,59 @@ fn combine_states_applied_operation(
 }
 
 /// The history state a feature's scope produces and the state it follows.
+/// The state pair of the only history from the BREP blob that holds every
+/// body `feature` outputs, or that a Base Feature resolves. Components of
+/// one design share state numbers, and each component's bodies live in
+/// their own blob.
+fn output_blob_history_pair<'a>(
+    feature: &cadmpeg_ir::features::Feature,
+    state_id: i64,
+    previous_state_id: i64,
+    histories: &'a [AsmHistory],
+) -> Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)> {
+    let source = output_brep_source(feature)?;
+    let mut matching = histories
+        .iter()
+        .filter(|history| historical_brep_source(&history.id) == Some(source))
+        .filter_map(|history| history_state_pair(history, state_id, previous_state_id, false));
+    matching.next().filter(|_| matching.next().is_none())
+}
+
+/// The BREP blob that holds every body a feature outputs, or that a Base
+/// Feature resolves, when there is exactly one.
+fn output_brep_source(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    let outputs = feature.evaluation.outputs();
+    let bodies: Vec<&str> = if outputs.is_empty() {
+        let (FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: BodySelection::Resolved { bodies, .. },
+        })
+        | FeatureDefinition::PostProcess {
+            operation:
+                FeatureOperation::BaseFeature {
+                    bodies: BodySelection::Resolved { bodies, .. },
+                },
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            return None;
+        };
+        bodies.iter().map(cadmpeg_ir::ids::BodyId::as_str).collect()
+    } else {
+        outputs
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect()
+    };
+    let mut sources = bodies.iter().map(|body| {
+        body.strip_prefix("f3d:brep/")
+            .and_then(|rest| rest.split_once("/brep:"))
+            .map(|(source, _)| source)
+    });
+    let first = sources.next()??;
+    sources.all(|source| source == Some(first)).then_some(first)
+}
+
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
