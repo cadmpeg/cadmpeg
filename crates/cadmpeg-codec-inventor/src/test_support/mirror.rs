@@ -77,6 +77,7 @@ pub(crate) fn property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatu
             Property::Selection { .. } => crate::feature::mirror::SELECTION_TYPE,
             Property::Options { .. } => crate::feature::mirror::OPTIONS_TYPE,
             Property::InstanceMap { .. } => crate::feature::mirror::instance_map::TYPE,
+            Property::PlaneReference { .. } => crate::feature::mirror::plane_reference::TYPE,
         },
         PmDcFeaturePropertyKind::Boolean { .. } => crate::feature::BOOLEAN_TYPE,
         PmDcFeaturePropertyKind::References { family, .. } => match family {
@@ -249,6 +250,40 @@ impl Fixture {
             segment(),
             103,
         );
+        self
+    }
+
+    /// Record ordinal of the supplying work plane that `with_supplying_plane`
+    /// adds.
+    pub(crate) const SUPPLIER: u32 = 108;
+
+    /// Add a work plane that gives the slot-12 plane with different in-plane
+    /// axes, and a plane-reference record owned by the slot-12 plane that
+    /// targets it.
+    pub(crate) fn with_supplying_plane(mut self) -> Self {
+        let mut supplier = (*self.planes[0]).clone();
+        supplier.u_axis = [FiniteReal::ZERO, FiniteReal::ZERO, FiniteReal::ONE];
+        supplier.v_axis = [
+            FiniteReal::ZERO,
+            FiniteReal::new(-1.0).expect("finite"),
+            FiniteReal::ZERO,
+        ];
+        self.planes.push(Located::new(
+            supplier,
+            RecordTypeId::from_bytes(WORK_PLANE_TYPE),
+            segment(),
+            Self::SUPPLIER,
+        ));
+        self.properties.push(property(
+            109,
+            PmDcFeaturePropertyKind::Mirror {
+                definition: Property::PlaneReference {
+                    owner: reference(104),
+                    target: reference(Self::SUPPLIER + 1),
+                    role: 4,
+                },
+            },
+        ));
         self
     }
 
@@ -674,6 +709,13 @@ impl Fixture {
             .filter_map(|r| r.record_ordinal())
             .collect::<Vec<_>>();
         let mut participants = seeds.iter().map(|ordinal| ordinal + 1).collect::<Vec<_>>();
+        participants.extend(
+            self.planes
+                .iter()
+                .map(|plane| plane.identity.record_ordinal)
+                .filter(|&ordinal| ordinal == Self::SUPPLIER)
+                .map(|ordinal| ordinal + 1),
+        );
         participants.push(source.identity.record_ordinal + 1);
         let mut inventory = crate::feature::FeatureInventory::default();
         inventory.features.extend(
