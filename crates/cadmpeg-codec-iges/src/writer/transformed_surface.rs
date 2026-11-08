@@ -12,7 +12,7 @@ pub(super) fn entities(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let unsupported =
-        || CodecError::UnsupportedContent("IGES cannot preserve this surface placement".into());
+        || CodecError::InvalidInput("IGES cannot preserve this surface placement".into());
     if !matches!(
         placed.basis(),
         SolvedSurfaceGeometry::Plane(_)

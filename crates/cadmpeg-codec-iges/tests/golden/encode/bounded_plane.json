@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     108       1       0       0       0       0       0       000010000D      1\n     108       0       0       1       0                   PLANE       0D      2\n     110       2       0       0       0       0       0       000010000D      3\n     110       0       0       1       0                   EDGE1       0D      4\n     110       3       0       0       0       0       0       000010000D      5\n     110       0       0       2       0                   EDGE2       0D      6\n     110       5       0       0       0       0       0       000010000D      7\n     110       0       0       2       0                   EDGE3       0D      8\n     110       7       0       0       0       0       0       000010000D      9\n     110       0       0       1       0                   EDGE4       0D     10\n     141       8       0       0       0       0       0       000010000D     11\n     141       0       0       1       0                               0D     12\n     143       9       0       0       0       0       0       000000000D     13\n     143       0       0       1       0                 BOUNDED       0D     14\n108,0,0,1,0,0,0,0,0,0;                                                 1P      1\n110,0,0,0,1.0000000000000000D0,0,0;                                    3P      2\n110,1.0000000000000000D0,1.0000000000000000D0,0,                       5P      3\n1.0000000000000000D0,0,0;                                              5P      4\n110,1.0000000000000000D0,1.0000000000000000D0,0,0,                     7P      5\n1.0000000000000000D0,0;                                                7P      6\n110,0,1.0000000000000000D0,0,0,0,0;                                    9P      7\n141,0,1,1,4,3,1,0,5,2,0,7,1,0,9,1,0;                                  11P      8\n143,0,1,1,11;                                                         13P      9\nS0000001G0000003D0000014P0000009                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     108       1       0       0       0       0       0       000010000D      1\n     108       0       0       1       0                   PLANE       0D      2\n     110       2       0       0       0       0       0       000010000D      3\n     110       0       0       1       0                   EDGE1       0D      4\n     110       3       0       0       0       0       0       000010000D      5\n     110       0       0       1       0                   EDGE2       0D      6\n     110       4       0       0       0       0       0       000010000D      7\n     110       0       0       1       0                   EDGE3       0D      8\n     110       5       0       0       0       0       0       000010000D      9\n     110       0       0       1       0                   EDGE4       0D     10\n     141       6       0       0       0       0       0       000010000D     11\n     141       0       0       1       0                BOUNDARY       0D     12\n     143       7       0       0       0       0       0       000000000D     13\n     143       0       0       1       0                 BOUNDED       0D     14\n108,0,0,1,0,0,0,0,0,0;                                                 1P      1\n110,0,0,0,1,0,0;                                                       3P      2\n110,1,1,0,1,0,0;                                                       5P      3\n110,1,1,0,0,1,0;                                                       7P      4\n110,0,1,0,0,0,0;                                                       9P      5\n141,0,1,1,4,3,1,0,5,2,0,7,1,0,9,1,0;                                  11P      6\n143,0,1,1,11;                                                         13P      7\nS0000001G0000003D0000014P0000007                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -106,17 +106,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 5 native record(s) from `iges.entities`: iges:entity:directory#11, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
+        "message": "the iges write omits 1 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D13",
         "severity": "info"
       },
       {
@@ -201,6 +191,7 @@
               "disposition": "dropped",
               "records": {
                 "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D11": "regenerated",
                 "iges:presentation:display-attributes#D3": "regenerated",
                 "iges:presentation:display-attributes#D5": "regenerated",
                 "iges:presentation:display-attributes#D7": "regenerated",
@@ -214,7 +205,12 @@
               "disposition": "dropped",
               "records": {
                 "iges:entity:directory#1": "written",
-                "iges:entity:directory#13": "written"
+                "iges:entity:directory#11": "written",
+                "iges:entity:directory#13": "written",
+                "iges:entity:directory#3": "written",
+                "iges:entity:directory#5": "written",
+                "iges:entity:directory#7": "written",
+                "iges:entity:directory#9": "written"
               }
             },
             "external_references": {

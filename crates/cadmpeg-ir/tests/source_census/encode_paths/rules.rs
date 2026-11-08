@@ -93,12 +93,7 @@ pub(super) fn import(tree: &syn::UseTree, prefix: &[String], aliases: &mut Alias
                     "ResourceLimit",
                     "Io",
                 ],
-                Some("TargetRefusalKind") => &[
-                    "ExplicitUnavailable",
-                    "InheritedUnavailable",
-                    "DefaultUnavailable",
-                    "UnrecordedSource",
-                ],
+                Some("TargetRefusalKind") => &["UnknownExplicit", "NoDefault"],
                 _ => &[],
             };
             for name in names {
