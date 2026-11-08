@@ -844,7 +844,7 @@ fn attribute_before_timestamp(
                 )))
             }
         }
-        _ => Err(CodecError::UnsupportedContent(
+        _ => Err(CodecError::NotImplemented(
             "source-less F3D timestamp has an unsupported attribute target".into(),
         )),
     }
@@ -1069,7 +1069,7 @@ fn native_compact_custom(
                 }
             }
             _ => {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::NotImplemented(
                     "unsupported compact F3D attribute value".into(),
                 ))
             }
@@ -1210,7 +1210,7 @@ pub(super) fn encode_source_less_attributes(
                     || creation_timestamp(index, &AttributeTarget::Coedge(coedge.id.clone()))
                         .is_some()
             }) {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::NotImplemented(
                     "source-less F3D attribute target has no native owner section".into(),
                 ));
             }
@@ -1237,7 +1237,7 @@ pub(super) fn encode_source_less_attributes(
         )
         .is_none()
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "F3D creation timestamp has an unsupported or missing target: {}",
                 timestamp.id
             )));
@@ -1665,7 +1665,7 @@ fn native_color_attribute(
     retained: Option<[f64; 4]>,
 ) -> Result<(), CodecError> {
     if color.a() != 1.0 {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "source-less F3D direct color requires opaque RGB channels".into(),
         ));
     }

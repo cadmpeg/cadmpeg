@@ -1182,8 +1182,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut output =
             cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
-        let owners =
-            super::decode_parameter_owners(&ctx, &scan, &parameters, &mut output).unwrap();
+        let owners = super::decode_parameter_owners(&ctx, &scan, &parameters, &mut output).unwrap();
         let (_, _, _, losses) = output.into_parts();
         (owners, parameters, losses)
     }
@@ -1252,8 +1251,13 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let mut wrong_pair = exact.clone();
     let index_at = wrong_pair.len() - 4;
     wrong_pair[index_at..].copy_from_slice(&45u32.to_le_bytes());
-    let (owners, retained, losses) =
-        decode_owners(stream, &wrong_pair, &[(44, 0)], &[], vec![parameter.clone()]);
+    let (owners, retained, losses) = decode_owners(
+        stream,
+        &wrong_pair,
+        &[(44, 0)],
+        &[],
+        vec![parameter.clone()],
+    );
     assert!(owners.is_empty());
     assert_eq!(retained.len(), 1);
     assert_eq!(losses.len(), 1);
@@ -1336,7 +1340,9 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert!(!losses[0].dropped.contains(&parameter.id));
     assert_eq!(retained.len(), 2);
     assert!(retained.iter().any(|record| record.id == parameter.id));
-    assert!(retained.iter().any(|record| record.id == supported_parameter.id && record.record_index == 55));
+    assert!(retained
+        .iter()
+        .any(|record| record.id == supported_parameter.id && record.record_index == 55));
     assert_eq!(owners.len(), 1);
     assert_eq!(owners[0].record_index(), 54);
     assert_eq!(owners[0].parameter_record_index(), 55);

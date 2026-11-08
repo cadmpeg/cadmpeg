@@ -568,19 +568,22 @@ fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
 
     let bulk = b"unreadable Design records";
     let meta = design_metastream_with_records(
-        &[(
-            meta::FEATURE_TIMELINE_TYPE_GUID,
-            meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
-            2,
-            "Fusion",
-            &[35],
-        ), (
-            "B0556F58-EE09-46A7-B18F-E296F48E5B13",
-            "",
-            4,
-            "CommonData",
-            &[36],
-        )],
+        &[
+            (
+                meta::FEATURE_TIMELINE_TYPE_GUID,
+                meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+                2,
+                "Fusion",
+                &[35],
+            ),
+            (
+                "B0556F58-EE09-46A7-B18F-E296F48E5B13",
+                "",
+                4,
+                "CommonData",
+                &[36],
+            ),
+        ],
         &[(35, u64::try_from(bulk.len()).unwrap() + 1)],
     );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -602,11 +605,11 @@ fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
         let metadata = scan
             .parsed_metastream("FusionAssetName[Active]/Design1/MetaStream.dat")
             .unwrap();
-        assert!(meta::design_primary_frames(bulk, &metadata).unwrap().is_empty());
-        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-            cadmpeg_ir::CodecFormat::F3d,
-            &ctx,
-        );
+        assert!(meta::design_primary_frames(bulk, &metadata)
+            .unwrap()
+            .is_empty());
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
         assert!(meta::decode_feature_timeline_parts(&ctx, &mut parts, scan)
             .unwrap()
             .is_empty());

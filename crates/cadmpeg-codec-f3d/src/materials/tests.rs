@@ -1134,8 +1134,8 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
 }
 
 mod definition_recovery;
-mod schema_recovery;
 mod generated_appearance;
+mod schema_recovery;
 
 #[test]
 fn decode_gives_up_invalid_instance_property_page_framing() {

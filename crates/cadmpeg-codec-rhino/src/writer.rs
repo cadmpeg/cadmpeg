@@ -166,12 +166,23 @@ fn write<'budget>(
     session.finish()?;
     match outcome {
         Ok(outcome) => Ok((staged, outcome)),
-        Err(WriteError::Omit(message)) => Err(cadmpeg_ir::codec::write::transitional_from_codec(
-            CodecError::UnsupportedContent(message),
-        )),
-        Err(WriteError::Fail(error)) => {
-            Err(cadmpeg_ir::codec::write::transitional_from_codec(error))
+        Err(WriteError::Omit(message)) => {
+            debug_assert!(false, "Rhino encode omission reached boundary: {message}");
+            panic!("Rhino encode omission reached boundary: {message}");
         }
+        Err(WriteError::Fail(error)) => match error {
+            CodecError::UnsupportedTarget(r) => {
+                Err(cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(r))
+            }
+            CodecError::ResourceLimit(l) => {
+                Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(l))
+            }
+            CodecError::Io(e) => Err(cadmpeg_ir::codec::write::EncodeError::from(e)),
+            error => {
+                debug_assert!(false, "unmapped Rhino encode error: {error}");
+                panic!("unmapped Rhino encode error: {error}");
+            }
+        },
         Err(WriteError::Encode(error)) => Err(error),
     }
 }

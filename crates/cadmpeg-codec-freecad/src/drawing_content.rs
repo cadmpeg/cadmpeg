@@ -227,9 +227,25 @@ fn template(
     let view = entries
         .get(name.as_str())
         .ok_or_else(|| CodecError::malformed("missing template SVG"))?;
-    let text = std::str::from_utf8(view.window())
-        .map_err(|_| CodecError::malformed("template SVG is not UTF-8"))?;
-    let xml = ctx.parse_xml(text, "FreeCAD template SVG")?;
+    let mut damaged_elements = Vec::new();
+    let (_view, xml) = cadmpeg_core::decode::parse_xml_recovering(
+        ctx,
+        *view,
+        "FreeCAD template SVG",
+        "scan FreeCAD template SVG",
+        "parse FreeCAD template SVG",
+        &|detail| CodecError::malformed(format_args!("invalid FreeCAD SVG: {detail}")),
+        |_extent, tag, _ancestors, _scan| {
+            damaged_elements.push(String::from_utf8_lossy(tag).into_owned());
+            Ok(())
+        },
+    )?;
+    for tag in damaged_elements {
+        losses.push(
+            FreecadLossCode::TemplateNotTransferred
+                .note(format!("{owner}: malformed SVG element <{tag}> given up")),
+        );
+    }
     let size = size.ok_or_else(|| CodecError::malformed("template sheet is absent"))?;
     let editable = size
         .fields

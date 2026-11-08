@@ -18,27 +18,53 @@ pub(super) fn repair_body_regions(
     let regions = &target.model.regions;
     let mut dropped_body = false;
     for body in &mut target.model.bodies {
-        let invalid = body.regions.iter().filter(|id| !regions.iter().any(|region| &region.id == *id && region.body == body.id)).count();
+        let invalid = body
+            .regions
+            .iter()
+            .filter(|id| {
+                !regions
+                    .iter()
+                    .any(|region| &region.id == *id && region.body == body.id)
+            })
+            .count();
         if invalid == 0 {
             continue;
         }
-        let candidates = regions.iter().filter(|region| region.body == body.id && !body.regions.contains(&region.id)).map(|region| region.id.clone()).collect::<Vec<_>>();
+        let candidates = regions
+            .iter()
+            .filter(|region| region.body == body.id && !body.regions.contains(&region.id))
+            .map(|region| region.id.clone())
+            .collect::<Vec<_>>();
         if invalid == 1 && candidates.len() == 1 {
             for id in &mut body.regions {
-                if !regions.iter().any(|region| region.id == *id && region.body == body.id) {
+                if !regions
+                    .iter()
+                    .any(|region| region.id == *id && region.body == body.id)
+                {
                     id.clone_from(&candidates[0]);
                 }
             }
         } else {
-            body.regions.retain(|id| regions.iter().any(|region| region.id == *id && region.body == body.id));
+            body.regions.retain(|id| {
+                regions
+                    .iter()
+                    .any(|region| region.id == *id && region.body == body.id)
+            });
         }
         losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-            "body {} has an unresolved region reference", body.id
+            "body {} has an unresolved region reference",
+            body.id
         )));
         dropped_body |= body.regions.is_empty();
     }
     if dropped_body {
-        let retained = target.model.bodies.iter().filter(|body| !body.regions.is_empty()).map(|body| body.id.clone()).collect();
+        let retained = target
+            .model
+            .bodies
+            .iter()
+            .filter(|body| !body.regions.is_empty())
+            .map(|body| body.id.clone())
+            .collect();
         *target = body_graph(target, &retained, limits)?;
     }
     Ok(())
@@ -49,9 +75,12 @@ pub(super) fn omit_ambiguous_points(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut seen = BTreeSet::new();
-    let duplicates = target.model.points.iter().filter_map(|point| {
-        (!seen.insert(point.id.clone())).then_some(point.id.clone())
-    }).collect::<BTreeSet<_>>();
+    let duplicates = target
+        .model
+        .points
+        .iter()
+        .filter_map(|point| (!seen.insert(point.id.clone())).then_some(point.id.clone()))
+        .collect::<BTreeSet<_>>();
     if duplicates.is_empty() {
         return Ok(());
     }
@@ -60,43 +89,81 @@ pub(super) fn omit_ambiguous_points(
             "point {id} has a duplicate identity and is omitted"
         )));
     }
-    target.model.points.retain(|point| !duplicates.contains(&point.id));
-    let points = target.model.points.iter().map(|point| point.id.clone()).collect::<BTreeSet<_>>();
+    target
+        .model
+        .points
+        .retain(|point| !duplicates.contains(&point.id));
+    let points = target
+        .model
+        .points
+        .iter()
+        .map(|point| point.id.clone())
+        .collect::<BTreeSet<_>>();
     target.model.vertices.retain(|vertex| {
         if points.contains(&vertex.point) {
             true
         } else {
             losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-                "vertex {} has an unresolved point and is omitted", vertex.id
+                "vertex {} has an unresolved point and is omitted",
+                vertex.id
             )));
             false
         }
     });
-    let vertices = target.model.vertices.iter().map(|vertex| vertex.id.clone()).collect::<BTreeSet<_>>();
+    let vertices = target
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.id.clone())
+        .collect::<BTreeSet<_>>();
     target.model.edges.retain(|edge| {
         if vertices.contains(&edge.start) && vertices.contains(&edge.end) {
             true
         } else {
             losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-                "edge {} has an unresolved vertex and is omitted", edge.id
+                "edge {} has an unresolved vertex and is omitted",
+                edge.id
             )));
             false
         }
     });
-    let edges = target.model.edges.iter().map(|edge| edge.id.clone()).collect::<BTreeSet<_>>();
+    let edges = target
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.clone())
+        .collect::<BTreeSet<_>>();
     let mut shells = Vec::new();
     let mut omitted_shells = BTreeSet::new();
     for shell in &target.model.shells {
-        let wire_edges = shell.wire_edges().iter().filter(|id| edges.contains(*id)).cloned().collect::<Vec<_>>();
-        let free_vertices = shell.free_vertices().iter().filter(|id| vertices.contains(*id)).cloned().collect::<Vec<_>>();
+        let wire_edges = shell
+            .wire_edges()
+            .iter()
+            .filter(|id| edges.contains(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let free_vertices = shell
+            .free_vertices()
+            .iter()
+            .filter(|id| vertices.contains(*id))
+            .cloned()
+            .collect::<Vec<_>>();
         if shell.faces().is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
             losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-                "shell {} has no remaining members and is omitted", shell.id
+                "shell {} has no remaining members and is omitted",
+                shell.id
             )));
             omitted_shells.insert(shell.id.clone());
             continue;
         }
-        let mut rebuilt = cadmpeg_ir::topology::Shell::new(shell.id.clone(), shell.region.clone(), shell.faces().to_vec(), wire_edges, free_vertices).map_err(CodecError::malformed)?;
+        let mut rebuilt = cadmpeg_ir::topology::Shell::new(
+            shell.id.clone(),
+            shell.region.clone(),
+            shell.faces().to_vec(),
+            wire_edges,
+            free_vertices,
+        )
+        .map_err(CodecError::malformed)?;
         rebuilt.native_ref.clone_from(&shell.native_ref);
         shells.push(rebuilt);
     }
@@ -107,18 +174,23 @@ pub(super) fn omit_ambiguous_points(
         region.shells.retain(|id| !omitted_shells.contains(id));
         if before != region.shells.len() && region.shells.is_empty() {
             losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-                "region {} has no remaining shells and is omitted", region.id
+                "region {} has no remaining shells and is omitted",
+                region.id
             )));
             omitted_regions.insert(region.id.clone());
         }
     }
-    target.model.regions.retain(|region| !omitted_regions.contains(&region.id));
+    target
+        .model
+        .regions
+        .retain(|region| !omitted_regions.contains(&region.id));
     target.model.bodies.retain_mut(|body| {
         let before = body.regions.len();
         body.regions.retain(|id| !omitted_regions.contains(id));
         if before != body.regions.len() && body.regions.is_empty() {
             losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-                "body {} has no remaining regions and is omitted", body.id
+                "body {} has no remaining regions and is omitted",
+                body.id
             )));
             false
         } else {

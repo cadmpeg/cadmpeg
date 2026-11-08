@@ -23,7 +23,6 @@ use crate::report::{
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_core::target::TargetCatalog;
-use cadmpeg_core::CodecError;
 
 pub mod approximation;
 mod carried;
@@ -38,9 +37,7 @@ pub use crate::validate::ValidatedFinding;
 pub use cadmpeg_core::encode::{EncodeBuffer, EncodeSession};
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
-pub use error::{
-    transitional_from_codec, CapacityField, EncodeError, ReducedField, ReducedStorage,
-};
+pub use error::{CapacityField, EncodeError, ReducedField, ReducedStorage};
 pub use loss::ExportLossCode;
 pub use native::{
     NativeArenaDisposition, NativeDisposition, NativeDispositions, NativeNamespaceDispositions,
@@ -563,14 +560,25 @@ impl EncoderBackend for CadirEncoder {
                 if let Some(finding) = ValidatedFinding::for_cadir_encode(input.ir) {
                     return Err(EncodeError::InvalidInput(finding));
                 }
-                return Err(transitional_from_codec(CodecError::malformed(
-                    error.to_string(),
-                )));
+                debug_assert!(
+                    false,
+                    "CADIR non-finite serialization without validation finding: {error}"
+                );
+                return Err(session.finish().err().map_or_else(
+                    || {
+                        // The serializer reported a non-finite value but validation
+                        // found no finding; the input contract is violated.
+                        panic!("CADIR non-finite serialization without validation finding: {error}")
+                    },
+                    Into::into,
+                ));
             }
             Err(error @ crate::hash::finite_json::CanonicalJsonError::Serialize(_)) => {
-                return Err(transitional_from_codec(CodecError::malformed(
-                    error.to_string(),
-                )));
+                debug_assert!(false, "CADIR serialization invariant: {error}");
+                return Err(session.finish().err().map_or_else(
+                    || panic!("CADIR serialization invariant: {error}"),
+                    Into::into,
+                ));
             }
             Ok(()) => {}
         }

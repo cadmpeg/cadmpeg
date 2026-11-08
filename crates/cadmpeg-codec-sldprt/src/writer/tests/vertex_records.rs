@@ -53,36 +53,36 @@ fn topology_with_wide_references_redecodes() {
     use cadmpeg_ir::topology::Point;
 
     for point_count in [0x8000, 0x1_0000] {
-    let mut ir = crate::test_support::ir::source_less_cube();
-    let position = ir.model.points[0].position();
-    let mut points = (0..point_count)
-        .map(|index| {
-            Point::new(
-                PointId::mint(format!("synthetic:test:point#{index}")).unwrap(),
-                position,
-                None,
-            )
-        })
-        .collect::<Vec<_>>();
-    points.append(&mut ir.model.points);
-    ir.model.points = points;
-    let body = crate::writer::brep_body(
-        &cadmpeg_core::decode::DecodeContext::for_encode(
-            &cadmpeg_core::decode::DecodeArena::new(),
-            &cadmpeg_core::decode::DecodePolicy::desktop(),
-        ),
-        &ir,
-        0.001,
-        false,
-    )
-    .unwrap();
-    let source = crate::test_support::container::sldprt_with_body(&body);
-    let output = crate::SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        let mut ir = crate::test_support::ir::source_less_cube();
+        let position = ir.model.points[0].position();
+        let mut points = (0..point_count)
+            .map(|index| {
+                Point::new(
+                    PointId::mint(format!("synthetic:test:point#{index}")).unwrap(),
+                    position,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+        points.append(&mut ir.model.points);
+        ir.model.points = points;
+        let body = crate::writer::brep_body(
+            &cadmpeg_core::decode::DecodeContext::for_encode(
+                &cadmpeg_core::decode::DecodeArena::new(),
+                &cadmpeg_core::decode::DecodePolicy::desktop(),
+            ),
+            &ir,
+            0.001,
+            false,
+        )
         .unwrap();
-    assert_eq!(output.ir().model.bodies.len(), 1);
-    assert_eq!(output.ir().model.faces.len(), 6);
-    assert_eq!(output.ir().model.edges.len(), 12);
-    assert_eq!(output.ir().model.vertices.len(), 8);
+        let source = crate::test_support::container::sldprt_with_body(&body);
+        let output = crate::SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.bodies.len(), 1);
+        assert_eq!(output.ir().model.faces.len(), 6);
+        assert_eq!(output.ir().model.edges.len(), 12);
+        assert_eq!(output.ir().model.vertices.len(), 8);
     }
 }

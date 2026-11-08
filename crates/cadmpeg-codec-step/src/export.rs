@@ -405,6 +405,8 @@ pub(crate) struct Builder<'a> {
     /// (a shared edge is reached once per coedge) and aggregated into a single
     /// counted loss note.
     curveless_edges: BTreeSet<String>,
+    /// Face-context edges written with a 3D line synthesized from endpoint vertices.
+    synthesized_curve_edges: BTreeSet<String>,
 
     /// Degenerate carriers of point edges that need no curve record: those
     /// written as `VERTEX_LOOP` vertices, and those of collapsed edges left
@@ -895,6 +897,7 @@ impl<'a> Builder<'a> {
             sampled_curves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
+            synthesized_curve_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
             point_loop_points: BTreeSet::new(),
             collapsed_curveless_coedges: BTreeSet::new(),
@@ -2275,7 +2278,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        if !omitted.is_empty() || items.is_empty() {
+        if !omitted.is_empty() {
             self.loss(
                 StepLossCode::DrawingPresentationRecordsOmitted,
                 format!(
@@ -2285,8 +2288,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if items.is_empty() {
+        if items.is_empty()
+            && drawing.relationships.contains_key(
+                &NonBlankString::new("items".to_owned()).expect("static key is non-blank"),
+            )
+        {
             return None;
+        }
+        if items.is_empty() && omitted.is_empty() {
+            self.loss(
+                StepLossCode::DrawingPresentationRecordsOmitted,
+                format!(
+                    "drawing {} was written as an empty draughting model because its items are not representable in STEP",
+                    drawing.id
+                ),
+            );
         }
         self.mark_drawing_context(drawing);
         let model = self.emitter.emit(
@@ -3409,9 +3425,10 @@ impl<'a> Builder<'a> {
             let usage = self.emitter.emit(
                 "NEXT_ASSEMBLY_USAGE_OCCURRENCE",
                 &format!(
-                    "{},{},'',{parent_definition},{child_definition},$",
+                    "{},{},'',{parent_definition},{child_definition},{}",
                     string(occurrence.id.as_str()),
-                    string(occurrence_name)
+                    string(occurrence_name),
+                    string(&format!("cadmpeg:ordinal={}", occurrence.ordinal))
                 ),
             );
             self.occurrence_step_refs
@@ -3743,16 +3760,33 @@ impl<'a> Builder<'a> {
                         .insert(region.body.as_str().to_owned());
                     false
                 };
-                if wire_written && body_kind == BodyKind::General {
+                if wire_written {
                     let shells = region
                         .shells
                         .iter()
                         .map(ToString::to_string)
                         .collect::<Vec<_>>();
-                    self.loss(
-                        StepLossCode::BodyReducedToWire,
-                        format!("general body {} was written as wire geometry for region {}; shells: {}", region.body, region.id, shells.join(", ")),
-                    );
+                    if body_kind == BodyKind::General {
+                        self.loss(
+                            StepLossCode::BodyReducedToWire,
+                            format!(
+                                "general body {} was written as wire geometry for region {}; shells: {}",
+                                region.body,
+                                region.id,
+                                shells.join(", ")
+                            ),
+                        );
+                    } else {
+                        self.loss(
+                            StepLossCode::BodyReducedToWire,
+                            format!(
+                                "wire body {} region {} was represented as STEP wireframe geometry; shells: {}",
+                                region.body,
+                                region.id,
+                                shells.join(", ")
+                            ),
+                        );
+                    }
                 }
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
@@ -5169,11 +5203,15 @@ impl<'a> Builder<'a> {
             .map(|f| f.as_str().to_owned())
             .collect();
         let mut face_refs = Vec::new();
+        let mut retained_face_ids = Vec::new();
+        let mut omitted_face_ids = Vec::new();
         let prior_losses = self.topology_relation_losses.len();
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
+                retained_face_ids.push(fid.clone());
             } else {
+                omitted_face_ids.push(fid.clone());
                 let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
                     Some(cadmpeg_ir::topology::FaceLoops::Classified { .. }) => {
                         StepLossCode::ShellOmittedOuterFace
@@ -5188,6 +5226,15 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
+        }
+        if !retained_face_ids.is_empty() && !omitted_face_ids.is_empty() {
+            self.loss(
+                StepLossCode::ShellOmittedUnclassifiedFace,
+                format!(
+                    "shell {shell_id} retained face(s) after omissions: {}",
+                    retained_face_ids.join(", ")
+                ),
+            );
         }
         if face_refs.is_empty() {
             return None;
@@ -5228,7 +5275,10 @@ impl<'a> Builder<'a> {
                     let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
                         return false;
                     };
-                    if edge.curve().is_none() && self.emitted_coedges.contains(coedge_id.as_str()) {
+                    if edge.curve().is_none()
+                        && !self.synthesized_curve_edges.contains(edge.id.as_str())
+                        && self.emitted_coedges.contains(coedge_id.as_str())
+                    {
                         return false;
                     }
                     let degenerate = edge.start == edge.end
@@ -5366,7 +5416,10 @@ impl<'a> Builder<'a> {
                             .coedges
                             .get(id.as_str())
                             .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
-                            .is_some_and(|edge| edge.curve().is_none())
+                            .is_some_and(|edge| {
+                                edge.curve().is_none()
+                                    && !self.synthesized_curve_edges.contains(edge.id.as_str())
+                            })
                 })
             })
         });
@@ -5962,8 +6015,90 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let Some(curve_id) = edge.curve() else {
-            if !associated.is_empty() {
+        let basis_curve = if let Some(curve_id) = edge.curve() {
+            let unwritable = self
+                .curves
+                .get(curve_id.as_str())
+                .copied()
+                .is_some_and(|curve| !self.curve_is_writable(curve));
+            if unwritable {
+                self.curveless_edges.insert(edge_id.to_string());
+                self.topology_relation_loss(
+                    format!("edge:{edge_id}:unsupported-curve:{curve_id}"),
+                    StepLossCode::EdgeCurveUnsupported,
+                    format!("edge {edge_id} was omitted because curve {curve_id} is unsupported"),
+                );
+                return None;
+            }
+            let Some(basis_curve) = self.emit_curve(curve_id.as_str()) else {
+                self.topology_relation_loss(
+                    format!("edge:{edge_id}:curve:{curve_id}"),
+                    StepLossCode::EdgeCurveNotWritable,
+                    format!("edge {edge_id} was omitted because curve {curve_id} is not writable"),
+                );
+                return None;
+            };
+            basis_curve
+        } else {
+            let in_face = !associated.is_empty()
+                || self.coedges.values().any(|coedge| {
+                    coedge.edge.as_str() == edge_id
+                        && self.coedge_faces.contains_key(coedge.id.as_str())
+                });
+            let synthesized = in_face
+                && {
+                    let start = self
+                        .vertices
+                        .get(edge.start.as_str())
+                        .and_then(|v| self.points.get(v.point.as_str()))
+                        .map(|p| p.position().get());
+                    let end = self
+                        .vertices
+                        .get(edge.end.as_str())
+                        .and_then(|v| self.points.get(v.point.as_str()))
+                        .map(|p| p.position().get());
+                    matches!((start, end), (Some(s), Some(e)) if (e.x - s.x).hypot((e.y - s.y).hypot(e.z - s.z)) > 0.0)
+                };
+            if synthesized {
+                let start = self
+                    .vertices
+                    .get(edge.start.as_str())
+                    .and_then(|v| self.points.get(v.point.as_str()))
+                    .map(|p| p.position().get())
+                    .expect("synthesized edge has start position");
+                let end = self
+                    .vertices
+                    .get(edge.end.as_str())
+                    .and_then(|v| self.points.get(v.point.as_str()))
+                    .map(|p| p.position().get())
+                    .expect("synthesized edge has end position");
+                let dx = end.x - start.x;
+                let dy = end.y - start.y;
+                let dz = end.z - start.z;
+                let magnitude = (dx * dx + dy * dy + dz * dz).sqrt();
+                let dir = self.emitter.emit(
+                    "DIRECTION",
+                    &format!(
+                        "'',({},{},{})",
+                        self.emitter.real(dx / magnitude),
+                        self.emitter.real(dy / magnitude),
+                        self.emitter.real(dz / magnitude)
+                    ),
+                );
+                let vec = self.emitter.emit(
+                    "VECTOR",
+                    &format!("'',{dir},{}", self.emitter.real(magnitude)),
+                );
+                let point = geometry::distinct_point(&mut self.emitter, "", start);
+                self.synthesized_curve_edges.insert(edge_id.to_string());
+                self.loss(
+                    StepLossCode::EdgeCurveSynthesizedFromVertices,
+                    format!(
+                        "edge {edge_id} has no 3D curve; a line was synthesized from its endpoint vertices"
+                    ),
+                );
+                self.emitter.emit("LINE", &format!("'',{point},{vec}"))
+            } else if !associated.is_empty() {
                 self.curveless_edges.insert(edge_id.to_owned());
                 self.topology_relation_loss(
                     format!("edge:{edge_id}:curve"),
@@ -5971,30 +6106,9 @@ impl<'a> Builder<'a> {
                     format!("edge {edge_id} was omitted because it has no 3D curve"),
                 );
                 return None;
+            } else {
+                return Some(self.emitter.emit("EDGE", &format!("'',{v1},{v2}")));
             }
-            return Some(self.emitter.emit("EDGE", &format!("'',{v1},{v2}")));
-        };
-        let unwritable = self
-            .curves
-            .get(curve_id.as_str())
-            .copied()
-            .is_some_and(|curve| !self.curve_is_writable(curve));
-        if unwritable {
-            self.curveless_edges.insert(edge_id.to_string());
-            self.topology_relation_loss(
-                format!("edge:{edge_id}:unsupported-curve:{curve_id}"),
-                StepLossCode::EdgeCurveUnsupported,
-                format!("edge {edge_id} was omitted because curve {curve_id} is unsupported"),
-            );
-            return None;
-        }
-        let Some(basis_curve) = self.emit_curve(curve_id.as_str()) else {
-            self.topology_relation_loss(
-                format!("edge:{edge_id}:curve:{curve_id}"),
-                StepLossCode::EdgeCurveNotWritable,
-                format!("edge {edge_id} was omitted because curve {curve_id} is not writable"),
-            );
-            return None;
         };
         let mut emitted: Vec<(PcurveUse<'a>, Ref)> = Vec::new();
         for use_ in associated {
@@ -6016,20 +6130,40 @@ impl<'a> Builder<'a> {
                 self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
-        // Part 42 permits at most two associated geometries; a seam requires
-        // exactly two pcurves on the same surface.
+        // Part 42 permits at most two associated geometries; a geometric seam
+        // requires exactly two pcurves on the same surface for different
+        // coedges. Multiple pcurves on the same coedge are reduced to one
+        // writable association with named degradation (#209 §5.2).
         let seam_pair = emitted.iter().enumerate().find_map(|(first, (use_, _))| {
             emitted
                 .iter()
                 .enumerate()
                 .skip(first + 1)
-                .find(|(_, (other, _))| other.surface == use_.surface)
+                .find(|(_, (other, _))| {
+                    other.surface == use_.surface && other.coedge != use_.coedge
+                })
                 .map(|(second, _)| (first, second))
         });
-        let selected = seam_pair.map_or_else(
-            || (0..emitted.len().min(2)).collect(),
-            |(first, second)| vec![first, second],
-        );
+        let mut selected = Vec::new();
+        let mut selected_coedge_surface = std::collections::BTreeSet::new();
+        if let Some((first, second)) = seam_pair {
+            selected = vec![first, second];
+            selected_coedge_surface.insert((
+                emitted[first].0.coedge.to_owned(),
+                emitted[first].0.surface.to_owned(),
+            ));
+            selected_coedge_surface.insert((
+                emitted[second].0.coedge.to_owned(),
+                emitted[second].0.surface.to_owned(),
+            ));
+        } else {
+            for (index, (use_, _)) in emitted.iter().enumerate() {
+                let key = (use_.coedge.to_owned(), use_.surface.to_owned());
+                if selected.len() < 2 && selected_coedge_surface.insert(key) {
+                    selected.push(index);
+                }
+            }
+        }
         let seam = seam_pair.is_some();
         let mut pcurve_refs = Vec::new();
         for (index, (use_, pcurve)) in emitted.into_iter().enumerate() {
@@ -6043,7 +6177,7 @@ impl<'a> Builder<'a> {
             } else {
                 self.loss(
                     StepLossCode::PcurveAssociationLimit,
-                    format!("edge '{edge_id}' cannot associate pcurve '{}' on coedge '{}' with surface '{}' because STEP surface curves admit at most two associated geometries", use_.use_.pcurve, use_.coedge, use_.surface),
+                    format!("edge '{edge_id}' cannot associate pcurve '{}' on coedge '{}' with surface '{}' because STEP surface curves admit at most one associated geometry per coedge (#209 §5.2)", use_.use_.pcurve, use_.coedge, use_.surface),
                 );
             }
         }
@@ -6066,6 +6200,160 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T.")),
         )
+    }
+
+    fn pcurve_endpoints_discontinuous(
+        &self,
+        use_: PcurveUse<'a>,
+        edge: &Edge,
+        aligned: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+        range: Option<[f64; 2]>,
+    ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+        const EPS_WRITER_PCURVE_ENDPOINT: f64 = 1.0e-6;
+        use cadmpeg_ir::eval::admission::EvaluationAdmission;
+        use cadmpeg_ir::eval::finite_or_refusal;
+        use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+        use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+        if self.surface_chart(use_.surface).is_some() || self.surface_is_fitted_helix(use_.surface)
+        {
+            return Ok(false);
+        }
+        // A recovered edge is synthesized from its pcurve, so its emitted
+        // carrier passes through the pcurve endpoints by construction.
+        if self.recovered_edges.contains(&edge.id) {
+            return Ok(false);
+        }
+        let Some(surface) = self.surfaces.get(use_.surface) else {
+            return Ok(false);
+        };
+        let solved = match &surface.geometry {
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(solved) => solved,
+            cadmpeg_ir::geometry::SurfaceGeometry::Procedural { .. } => return Ok(false),
+        };
+        if !matches!(
+            solved,
+            SolvedSurfaceGeometry::Plane(_)
+                | SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)
+        ) {
+            return Ok(false);
+        }
+        if matches!(aligned, PcurveGeometry::Nurbs { .. }) {
+            return Ok(false);
+        }
+        let Some(_coedge) = self.coedges.get(use_.coedge) else {
+            return Ok(false);
+        };
+        // The directed interval runs from the edge's start to its end (see
+        // directed_use_range); coedge sense only orients the STEP use.
+        let start_v = &edge.start;
+        let end_v = &edge.end;
+        let Some(start) = self
+            .vertices
+            .get(start_v.as_str())
+            .and_then(|v| self.points.get(v.point.as_str()))
+            .map(|p| p.position().get())
+        else {
+            return Ok(false);
+        };
+        let Some(end) = self
+            .vertices
+            .get(end_v.as_str())
+            .and_then(|v| self.points.get(v.point.as_str()))
+            .map(|p| p.position().get())
+        else {
+            return Ok(false);
+        };
+        let tolerance = edge
+            .tolerance
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+            .max(self.ir.tolerances.linear_or_default().get())
+            .max(EPS_WRITER_PCURVE_ENDPOINT);
+        // With a directed use interval, the interval's endpoints must lift to
+        // the edge vertices: the same witness the reader fits on re-decode.
+        if let Some([first, second]) = range {
+            for (parameter, vertex) in [(first, start), (second, end)] {
+                let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                    EvaluationAdmission::Standard,
+                    aligned,
+                    parameter,
+                ))?
+                else {
+                    return Ok(false);
+                };
+                let uv = uv.get();
+                let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                    EvaluationAdmission::Standard,
+                    self.ir,
+                    &surface.geometry,
+                    uv.u,
+                    uv.v,
+                ))?
+                else {
+                    return Ok(false);
+                };
+                if point.get().distance(vertex) > tolerance {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+        // Without a declared interval the reader fits each vertex onto the
+        // curve. For a line that fit exists iff both vertices project onto it;
+        // anything else is emitted.
+        let mut basis = aligned;
+        let mut transforms = Vec::new();
+        while let PcurveGeometry::Transformed(placed) = basis {
+            transforms.push(*placed.transform());
+            basis = placed.basis();
+        }
+        let PcurveGeometry::Line(line) = basis else {
+            return Ok(false);
+        };
+        let mut origin = line.origin().get();
+        let mut direction = *line.direction().as_raw();
+        for transform in transforms.into_iter().rev() {
+            origin = transform.apply_point(origin);
+            direction = transform.apply_vector(direction);
+        }
+        let length_squared = direction.u * direction.u + direction.v * direction.v;
+        if !(length_squared.is_finite() && length_squared > 0.0) {
+            return Ok(false);
+        }
+        for vertex in [start, end] {
+            let Some(uv) = cadmpeg_ir::eval::analytic_surface_parameters_solved(solved, vertex)
+            else {
+                return Ok(false);
+            };
+            let uv = uv.get();
+            let parameter = ((uv.u - origin.u) * direction.u + (uv.v - origin.v) * direction.v)
+                / length_squared;
+            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                EvaluationAdmission::Standard,
+                aligned,
+                parameter,
+            ))?
+            else {
+                return Ok(false);
+            };
+            let uv = uv.get();
+            let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                EvaluationAdmission::Standard,
+                self.ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            ))?
+            else {
+                return Ok(false);
+            };
+            if point.get().distance(vertex) > tolerance {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn emit_pcurve(&mut self, use_: PcurveUse<'a>, edge: &Edge) -> Option<Ref> {
@@ -6114,6 +6402,19 @@ impl<'a> Builder<'a> {
             Some(moved) if shift != [0.0, 0.0] => std::borrow::Cow::Owned(moved),
             _ => aligned,
         };
+        if self
+            .pcurve_endpoints_discontinuous(use_, edge, aligned.as_ref(), range)
+            .is_ok_and(|v| v)
+        {
+            self.loss(
+                StepLossCode::PcurveEndpointsDiscontinuous,
+                format!(
+                    "pcurve {pcurve_id} on coedge {} for edge {} and surface {surface_id} has mapped endpoints discontinuous with the edge vertices; the pcurve is omitted (#209 §5.2)",
+                    use_.coedge, edge.id
+                ),
+            );
+            return None;
+        }
         let curve = match self.surface_chart(surface_id) {
             Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &aligned)?,
             None => geometry::pcurve(&mut self.emitter, &aligned)?,

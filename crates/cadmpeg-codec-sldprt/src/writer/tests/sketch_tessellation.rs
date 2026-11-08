@@ -346,19 +346,27 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         }),
         "{validation:#?}"
     );
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("expected rejection"),
+    };
     assert!(
-        matches!(
-            &error,
-            cadmpeg_ir::codec::write::EncodeError::Io(inner)
-                if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(message)) if message == "solved loci disagree with their coincidence constraint")
-        ),
-        "{error}"
+        message.contains("solved loci disagree with their coincidence constraint"),
+        "{message}"
     );
 }
 
@@ -890,15 +898,28 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
             Ok(())
         })
         .unwrap();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("tessellation position exceeds f32 range"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("overflow must be rejected"),
+    };
+    assert!(
+        message.contains("tessellation position exceeds f32 range"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -956,7 +977,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .expect("valid triangle group partition");
     assert!(matches!(
         crate::writer::sequential_tessellation(&attributed),
-        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+        Err(cadmpeg_core::CodecError::InvalidInput(_))
     ));
 
     let edged = mesh
@@ -964,7 +985,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .expect("valid feature edge");
     assert!(matches!(
         crate::writer::sequential_tessellation(&edged),
-        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+        Err(cadmpeg_core::CodecError::InvalidInput(_))
     ));
 }
 
@@ -998,15 +1019,11 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
     extended.faces = original.faces.clone();
     decoded.ir_mut().model.tessellations[0] = extended;
 
-    // #237 item 1, #217 §5.0: the patch path's refusal selects synthesis,
+    // #237 item 1, #239 §5.0: the patch path's refusal selects synthesis,
     // which writes the tessellation without the channels the table cannot
     // carry and names the omission.
-    let expected = cadmpeg_core::CodecError::InvalidInput(
-        "tessellation channels: the SLDPRT display-list table carries exactly three \
-         auxiliary channels after the strip, position and normal channels"
-            .into(),
-    )
-    .to_string();
+    let expected = "tessellation channels: the SLDPRT display-list table carries exactly three \
+         auxiliary channels after the strip, position and normal channels";
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -1020,7 +1037,7 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
     assert!(matches!(
         plan.report().synthesis_cause(),
         Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
-            if *reason == expected
+            if reason == expected
     ));
     let tessellation = original.id.to_string();
     assert!(plan.report().losses.iter().any(|loss| loss

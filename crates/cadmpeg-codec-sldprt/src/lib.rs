@@ -452,7 +452,14 @@ impl EncoderBackend for SldprtCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(Into::into)
+        match writer::target::plan(input, &target) {
+            Ok(body) => Ok(body),
+            Err(writer::write_error::WriteError::Decline(reason)) => {
+                debug_assert!(false, "patch decline escaped target planning: {reason}");
+                panic!("patch decline escaped target planning: {reason}");
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 }
 

@@ -93,7 +93,7 @@ fn lp_ascii_printable(bytes: &[u8], at: usize) -> Result<Option<(String, usize)>
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
     if !appearance.textures.is_empty() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "source-less F3D cannot synthesize connected Protein texture assets".into(),
         ));
     }
@@ -153,7 +153,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         | "StructuralPlasticSchema"
         | "ThermalSolidSchema" => zero_fill_to(&mut logical, value_block + 8),
         _ => {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less Protein schema {schema} is unsupported"
             )));
         }
@@ -431,7 +431,7 @@ fn patch_instance_colors(
                     "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
                     "PrismTransparentSchema" => position + 121,
                     _ => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} has no writable color carrier"
                         )));
                     }
@@ -458,7 +458,7 @@ fn patch_instance_colors(
                         "transparent_refraction_index"
                     }
                     _ => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
                         )));
                     }
@@ -507,7 +507,7 @@ fn patch_instance_colors(
                     }
                     ("PrismTransparentSchema", "refraction_index") => position + 169,
                     _ => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
                         )));
                     }
@@ -635,17 +635,16 @@ pub(crate) fn decode_with_body_bindings<'a>(
             let Some(instance) = instance_properties(ctx, protein)? else {
                 return Ok(None);
             };
-            let instance_stream = StreamName::try_from(format!(
-                "{}/AssetData/InstanceProperties.bin",
-                entry.name
-            ))
-            .map_err(CodecError::malformed)?;
+            let instance_stream =
+                StreamName::try_from(format!("{}/AssetData/InstanceProperties.bin", entry.name))
+                    .map_err(CodecError::malformed)?;
             let instance_spec = PartSpec::new("zip.entry")
                 .holding([cadmpeg_ir::document::ArenaClass::Model])
                 .in_stream(instance_stream.clone());
             let Some(record_frames) = ctx.decode_part(stage, instance, instance_spec, |_| {
                 cadmpeg_protein::framing::record_frames(instance.window())
-            })? else {
+            })?
+            else {
                 return Ok(None);
             };
             let catalog = definition_catalog(ctx, protein, &entry.name, stage)?;
@@ -2008,7 +2007,8 @@ fn definition_catalog<'a>(
         .in_stream(stream.clone());
     let Some(frames) = ctx.decode_part(output, entry, spec, |_| {
         cadmpeg_protein::framing::record_frames(entry.window())
-    })? else {
+    })?
+    else {
         return Ok(std::collections::HashMap::new());
     };
     let mut definitions = std::collections::HashMap::new();

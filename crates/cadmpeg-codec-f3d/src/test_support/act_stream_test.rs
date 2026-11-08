@@ -184,7 +184,9 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 pub(crate) fn generated_single_entity_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (bulk, records) = generated_act_bulkstream();
     let start = usize::try_from(records[1].1).unwrap();
-    let records = records.into_iter().skip(1)
+    let records = records
+        .into_iter()
+        .skip(1)
         .map(|(id, offset)| (id, offset - u64_from_index(start)))
         .collect();
     (bulk[start..].to_vec(), records)
@@ -202,7 +204,10 @@ pub(crate) fn generated_complete_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) 
     let mut new_entity = Vec::new();
     lp_utf16(&mut old_entity, "0_985");
     lp_utf16(&mut new_entity, "0_986");
-    let entity_at = group.windows(old_entity.len()).position(|window| window == old_entity).unwrap();
+    let entity_at = group
+        .windows(old_entity.len())
+        .position(|window| window == old_entity)
+        .unwrap();
     group[entity_at..entity_at + old_entity.len()].copy_from_slice(&new_entity);
     let added = group.len() - first_end;
     bulk.splice(..first_end, group);

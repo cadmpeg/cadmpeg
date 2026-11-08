@@ -280,6 +280,7 @@ pub(super) fn write(
             }
         }
         let Some(first) = first_by_provider.get(name) else {
+            eprintln!("  CRE {name} vis={:?}", body.visible);
             first_by_provider.insert(name, body);
             let provider = providers
                 .entry(name.clone())

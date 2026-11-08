@@ -52,7 +52,7 @@ pub(super) fn encode(
                     .any(|value| *value == u64::from(index))
             });
             let Some((ordinal, _)) = matching.next() else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "ACT record {index} has no typed class registration"
                 )));
             };
@@ -161,7 +161,7 @@ pub(super) fn encode(
             .filter(|record| record.stream() == scope)
             .any(|record| !known.contains(&record.target_record))
         {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::NotImplemented(
                 "ACT table reference has no typed target record".into(),
             ));
         }

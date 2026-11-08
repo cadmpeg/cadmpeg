@@ -11,7 +11,10 @@ use crate::loss::StepLossCode;
 use crate::StepCodec;
 
 #[test]
-fn scalar_attribute_omissions_name_each_record_and_every_source_hole() {
+fn document_attribute_omissions_name_unrepresentable_values_and_preserve_readable_dri_vri() {
+    // #209 §5.2: a representable document attribute is written as CAx-IF
+    // DRI/VRI; an attribute whose value shape cannot be held in that form is
+    // degraded and named.
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     ir.model.attributes.extend([
         SourceAttribute {
@@ -45,31 +48,37 @@ fn scalar_attribute_omissions_name_each_record_and_every_source_hole() {
             ),
         )
         .unwrap();
-    let losses = plan
+    let omitted = plan
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == StepLossCode::SourceAttributeNotWritten.kind())
         .collect::<Vec<_>>();
-    assert_eq!(losses.len(), 2);
-    assert!(losses
-        .iter()
-        .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Info));
+    assert_eq!(omitted.len(), 1);
     assert_eq!(
-        losses[0].message,
+        omitted[0].message,
         "1 source attribute record(s) were not written to STEP; None positions (zero-based) [1, 3]: test:model:attribute#z-holes"
     );
-    assert_eq!(
-        losses[1].message,
-        "1 source attribute record(s) were not written to STEP: test:model:attribute#a-readable"
-    );
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DocumentAttributeValueDegraded.kind()
+            && loss.message.contains("UnavailableMemo")
+    }));
     let mut output = Vec::new();
     plan.write_to(&mut output).unwrap();
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
-    assert!(!decoded.ir().model.attributes.iter().any(|attribute| {
-        matches!(attribute.name.as_str(), "UnavailableMemo" | "ReadableMemo")
-    }));
+    assert!(decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "ReadableMemo"));
+    assert!(!decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "UnavailableMemo"));
 }

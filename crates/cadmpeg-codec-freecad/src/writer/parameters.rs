@@ -498,7 +498,18 @@ pub(super) fn write(
                 xml::scalar(property_name, "App::PropertyFloat", "Float", value.get())
             }
             Some(ParameterValue::Integer(value)) => {
-                xml::scalar(property_name, "App::PropertyInteger", "Integer", value)
+                let kind = parameter
+                    .native_ref
+                    .as_ref()
+                    .and_then(|id| {
+                        native_properties
+                            .iter()
+                            .find(|source| &source.id == id && source.name == property_name)
+                    })
+                    .map(|source| source.type_name.as_str())
+                    .filter(|kind| *kind == "App::PropertyIntegerConstraint")
+                    .unwrap_or("App::PropertyInteger");
+                xml::scalar(property_name, kind, "Integer", value)
             }
             Some(ParameterValue::Boolean(value)) => {
                 xml::scalar(property_name, "App::PropertyBool", "Bool", u8::from(*value))
