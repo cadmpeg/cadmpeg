@@ -601,7 +601,12 @@ pub fn cross_compare(
         Err(error) => return vec![format!("the pairing refuses the documents: {error}")],
     };
     for id in required.intersection(&unpaired) {
-        findings.push(format!("required record {id} is missing"));
+        // A required record that the writer degrades and names with a per-record
+        // loss (#209 §5.2) is not "missing" - the writer took responsibility.
+        let named = report.losses.iter().any(|loss| loss.message.contains(id));
+        if !named {
+            findings.push(format!("required record {id} is missing"));
+        }
     }
     for id in unpaired.difference(&required) {
         let named = report.losses.iter().any(|loss| loss.message.contains(id));
