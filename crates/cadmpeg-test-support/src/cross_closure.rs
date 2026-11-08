@@ -584,41 +584,12 @@ fn is_named_degradation_disagreement(
 fn null_added_topology_refs(
     after: &Value,
     _named_degraded: &BTreeSet<String>,
-    report: &cadmpeg_ir::report::export::ExportReport,
+    _report: &cadmpeg_ir::report::export::ExportReport,
 ) -> Value {
-    fn walk(value: &mut Value, report: &cadmpeg_ir::report::export::ExportReport) {
-        match value {
-            Value::String(text) => {
-                // Keep added IDs; references to added step topology that correspond
-                // to named degradations are handled by disagreement filtering.
-                let _ = (text, report);
-            }
-            Value::Array(items) => items.iter_mut().for_each(|item| walk(item, report)),
-            Value::Object(fields) => {
-                // When a region/body topology reference points to an added step
-                // record and the paired left target was degraded+named, null the
-                // reference to accept the §5.2 structural consequence.
-                let topology_ref = [
-                    "body", "region", "shell", "face", "surface", "outer", "base",
-                ];
-                for key in topology_ref {
-                    if let Some(Value::String(text)) = fields.get(key) {
-                        if text.starts_with("added:step:") || text.starts_with("step:") {
-                            // only null if this looks like a cross-format added remap target?
-                            // comparison remaps, so in normalized we see original step IDs.
-                            // leave to disagree filter; nulling original step IDs would be wrong.
-                            let _ = text;
-                        }
-                    }
-                }
-                fields.values_mut().for_each(|item| walk(item, report));
-            }
-            _ => {}
-        }
-    }
-    let mut out = after.clone();
-    walk(&mut out, report);
-    out
+    // References remapped through added STEP records are handled by
+    // disagreement filtering when the source record carries a named
+    // degradation loss (#209 §5.2).
+    after.clone()
 }
 /// The comparison half of [`cross_findings`], over serialized documents.
 #[must_use]
