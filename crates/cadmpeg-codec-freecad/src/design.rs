@@ -2152,7 +2152,12 @@ fn parse_sketch(
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
-            name: Some(object.name().to_owned()),
+            name: property(properties, "Label")
+                .map(|property| string_property_value(ctx, property))
+                .transpose()?
+                .flatten()
+                .filter(|name| !name.trim().is_empty())
+                .or_else(|| Some(object.name().to_owned())),
             configuration: None,
             visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
