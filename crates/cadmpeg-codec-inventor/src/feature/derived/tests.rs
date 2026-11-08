@@ -4,7 +4,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use super::{parse_component, parse_source, Property};
 use crate::feature::{PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload};
 use crate::layout::pm_dc_derived_component_fields as fields;
-use crate::test_support::test_fixtures::{content, push_u32};
+use crate::test_support::test_fixtures::{content, content_at, push_u32};
 
 fn component() -> Vec<u8> {
     let mut bytes = content(4);
@@ -113,7 +113,7 @@ fn property_wire_keeps_all_source_references() {
 #[test]
 fn unsupported_component_versions_lengths_and_lists_remain_untyped() {
     let bytes = component();
-    for version in [18, 20, 22, 24, 25, 31] {
+    for version in [18, 20, 22, 24, 26, 28, 32] {
         assert!(super::parser(
             super::COMPONENT_TYPE,
             cadmpeg_core::decode::View::over_retained(&bytes),
@@ -203,4 +203,84 @@ fn version_23_component_suffix_is_zero_and_source_header_has_one_stamp() {
     for len in 0..source.len() {
         assert!(parsed(&source[..len], true, 23).is_err());
     }
+}
+
+fn view(bytes: &[u8]) -> cadmpeg_core::decode::View<'_> {
+    cadmpeg_core::decode::View::over_retained(bytes)
+}
+
+fn source_at(version: u8, stamps: &[i32]) -> Vec<u8> {
+    let mut bytes = content_at(5, version, stamps);
+    push_u32(&mut bytes, 0x8000_0006);
+    bytes
+}
+
+fn component_at(version: u8, suffix: u32) -> Vec<u8> {
+    let mut bytes = content_at(4, version, &[]);
+    push_u32(&mut bytes, u32::MAX);
+    for value in [1, 2, 3, 4] {
+        push_u32(&mut bytes, 0x8000_0000 | value);
+    }
+    push_u32(&mut bytes, fields::MARKER_VALUE);
+    push_u32(&mut bytes, fields::COUNT_VALUE);
+    push_u32(&mut bytes, 0x8000_0005);
+    push_u32(&mut bytes, suffix);
+    bytes
+}
+
+#[test]
+fn versions_25_and_31_source_has_two_stamps_and_component_has_suffix() {
+    for (version, source_len, component_len) in [(25_u8, 34_usize, 58_usize), (31, 38, 62)] {
+        let source = source_at(version, &[-1, 7]);
+        assert_eq!(source.len(), source_len);
+        let record = parsed(&source, true, version).expect("source");
+        assert_eq!(record.header.stamps, [-1, 7]);
+        assert_eq!(record.header.flags_extension.is_some(), version == 31);
+        assert!(super::parser(super::SOURCE_TYPE, view(&source), version).is_some());
+
+        let component = component_at(version, 0);
+        assert_eq!(component.len(), component_len);
+        let record = parsed(&component, false, version).expect("component");
+        assert!(record.header.stamps.is_empty());
+        assert!(super::parser(super::COMPONENT_TYPE, view(&component), version).is_some());
+    }
+}
+
+#[test]
+fn versions_25_and_31_refuse_wrong_stamp_count_length_suffix_and_version() {
+    for version in [25_u8, 31] {
+        for stamps in [&[][..], &[-1][..], &[-1, 7, 8][..]] {
+            let source = source_at(version, stamps);
+            assert!(super::parser(super::SOURCE_TYPE, view(&source), version).is_none());
+            assert!(parsed(&source, true, version).is_err());
+        }
+        let source = source_at(version, &[-1, 7]);
+        assert!(super::parser(super::SOURCE_TYPE, view(&source), version ^ 2).is_none());
+        for len in 0..source.len() {
+            assert!(parsed(&source[..len], true, version).is_err());
+        }
+        let mut long = source;
+        long.push(0);
+        assert!(parsed(&long, true, version).is_err());
+        assert!(super::parser(super::SOURCE_TYPE, view(&long), version).is_none());
+
+        let component = component_at(version, 0);
+        for len in 0..component.len() {
+            assert!(
+                super::parser(super::COMPONENT_TYPE, view(&component[..len]), version).is_none()
+            );
+            assert!(parsed(&component[..len], false, version).is_err());
+        }
+        let no_suffix = &component[..component.len() - 4];
+        assert!(super::parser(super::COMPONENT_TYPE, view(no_suffix), version).is_none());
+        for suffix in [1, u32::MAX] {
+            let bad = component_at(version, suffix);
+            assert!(super::parser(super::COMPONENT_TYPE, view(&bad), version).is_none());
+            assert!(parsed(&bad, false, version).is_err());
+        }
+    }
+    let v25_source = source_at(25, &[-1, 7]);
+    assert!(super::parser(super::SOURCE_TYPE, view(&v25_source), 31).is_none());
+    let v31_component = component_at(31, 0);
+    assert!(super::parser(super::COMPONENT_TYPE, view(&v31_component), 25).is_none());
 }

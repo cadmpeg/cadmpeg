@@ -255,7 +255,7 @@ anchor = "third_reference u32"
 name = "pm_dc_derived_source_field"
 kind = "byte"
 section = "13.4"
-anchor = "source property in segment major versions 19 and 23"
+anchor = "source property in segment major versions 19, 23, 25, and 31"
 size = 4
 note = "Offset starts after the versioned content header."
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
@@ -271,9 +271,9 @@ anchor = "one qualified component reference"
 name = "pm_dc_derived_component_fields"
 kind = "byte"
 section = "13.4"
-anchor = "In segment major versions 19 and 23, a derived component"
+anchor = "In segment major versions 19, 23, 25, and 31, a derived component"
 size = 32
-note = "Offsets start after the state content header in segment major versions 19 and 23."
+note = "Offsets start after the state content header in segment major versions 19, 23, 25, and 31."
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
 
 [[record.field]]
@@ -318,9 +318,9 @@ anchor = "terminal u32"
 name = "pm_dc_derived_source_stamp"
 kind = "byte"
 section = "13.4"
-anchor = "In segment major version 23, the source header includes one stamp"
+anchor = "one stamp in version 23, and two stamps in versions 25 and 31"
 size = 4
-note = "Offset starts after the 22-byte content header in segment major version 23."
+note = "Offset of each stamp starts after the content header, 22 bytes before segment major version 28 and 26 bytes from it."
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
 
 [[record.field]]
@@ -328,15 +328,15 @@ name = "stamp"
 offset = 0
 type = "i32"
 source = "spec"
-anchor = "In segment major version 23, the source header includes one stamp"
+anchor = "one stamp in version 23, and two stamps in versions 25 and 31"
 
 [[record]]
 name = "pm_dc_derived_component_suffix"
 kind = "byte"
 section = "13.4"
-anchor = "In segment major version 23, the component has a four-byte suffix"
+anchor = "In segment major versions 23, 25, and 31, the component has a four-byte suffix"
 size = 4
-note = "Offsets start after the component terminal reference in segment major version 23."
+note = "Offsets start after the component terminal reference in segment major versions 23, 25, and 31."
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
 
 [[record.field]]

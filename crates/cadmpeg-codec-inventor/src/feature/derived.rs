@@ -9,9 +9,9 @@ use super::{
     PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
 };
 use crate::layout::{
-    pm_dc_content_header as header, pm_dc_derived_component_fields as fields,
-    pm_dc_derived_component_suffix as suffix, pm_dc_derived_source_field as source_field,
-    pm_dc_derived_source_stamp as stamp,
+    pm_dc_content_header as header, pm_dc_content_header_v28 as header_v28,
+    pm_dc_derived_component_fields as fields, pm_dc_derived_component_suffix as suffix,
+    pm_dc_derived_source_field as source_field, pm_dc_derived_source_stamp as stamp,
 };
 use crate::pmdc::{content_header, state_content_header, Cursor, PmDcReference};
 use crate::sketch::PmDcTransform;
@@ -59,14 +59,15 @@ pub(super) fn parser(
     mut source: View<'_>,
     version: u8,
 ) -> Option<super::PropertyParser> {
-    let (source_len, component_len) = record_lengths(version)?;
+    let shape = Shape::of(version)?;
+    let (source_len, component_len) = (shape.source_len(), shape.component_len());
     match type_id {
         SOURCE_TYPE if source.remaining() == source_len => {
             source.take(source_len - source_field::LEN)?;
             local_reference(PmDcReference::from_packed(source.u32_le()?)).then_some(parse_source)
         }
         COMPONENT_TYPE if source.remaining() == component_len => {
-            source.take(header::LEN)?;
+            source.take(shape.header_len())?;
             if source.i32_le()? != fields::STATE_VALUE {
                 return None;
             }
@@ -83,7 +84,7 @@ pub(super) fn parser(
                 return None;
             }
             if !local_reference(PmDcReference::from_packed(source.u32_le()?))
-                || (version == 23 && source.u32_le()? != suffix::STATE_VALUE)
+                || (shape.suffix && source.u32_le()? != suffix::STATE_VALUE)
             {
                 return None;
             }
@@ -93,14 +94,45 @@ pub(super) fn parser(
     }
 }
 
-fn record_lengths(version: u8) -> Option<(usize, usize)> {
-    match version {
-        19 => Some((header::LEN + source_field::LEN, header::LEN + fields::LEN)),
-        23 => Some((
-            header::LEN + stamp::LEN + source_field::LEN,
-            header::LEN + fields::LEN + suffix::LEN,
-        )),
-        _ => None,
+/// The version-dependent layout of the two records. The source property holds
+/// the stamps of its version's content header; the component holds none.
+#[derive(Clone, Copy)]
+struct Shape {
+    source_stamps: usize,
+    flags_extension: bool,
+    suffix: bool,
+}
+
+impl Shape {
+    fn of(version: u8) -> Option<Self> {
+        match version {
+            19 => Some((0, false, false)),
+            23 => Some((1, false, true)),
+            25 => Some((2, false, true)),
+            31 => Some((2, true, true)),
+            _ => None,
+        }
+        .map(|(source_stamps, flags_extension, suffix)| Self {
+            source_stamps,
+            flags_extension,
+            suffix,
+        })
+    }
+
+    fn header_len(self) -> usize {
+        if self.flags_extension {
+            header_v28::LEN
+        } else {
+            header::LEN
+        }
+    }
+
+    fn source_len(self) -> usize {
+        self.header_len() + self.source_stamps * stamp::LEN + source_field::LEN
+    }
+
+    fn component_len(self) -> usize {
+        self.header_len() + fields::LEN + if self.suffix { suffix::LEN } else { 0 }
     }
 }
 
@@ -113,7 +145,7 @@ fn parse_source(
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
-    if record_lengths(version).is_none() {
+    if Shape::of(version).is_none() {
         return Err(CodecError::malformed(
             "Inventor derived source version is outside the stored-body form",
         ));
@@ -136,7 +168,7 @@ fn parse_component(
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
-    if record_lengths(version).is_none() {
+    if Shape::of(version).is_none() {
         return Err(CodecError::malformed(
             "Inventor derived component version is outside the stored-body form",
         ));
@@ -158,7 +190,9 @@ fn parse_component(
         ));
     }
     let terminal = cursor.reference("derived component terminal")?;
-    if version == 23 && cursor.u32("derived component suffix state")? != suffix::STATE_VALUE {
+    if Shape::of(version).is_some_and(|shape| shape.suffix)
+        && cursor.u32("derived component suffix state")? != suffix::STATE_VALUE
+    {
         return Err(CodecError::malformed(
             "Inventor derived component suffix state is unsupported",
         ));
@@ -188,7 +222,8 @@ pub(crate) fn operands<'a>(
     mut record: impl FnMut(u32) -> Option<(String, u64)>,
     transforms: &'a [PmDcTransform],
 ) -> Option<SourceOperands<'a>> {
-    let (source_len, component_len) = record_lengths(feature.save_version_major)?;
+    let shape = Shape::of(feature.save_version_major)?;
+    let (source_len, component_len) = (shape.source_len(), shape.component_len());
     let slots = feature.properties.references();
     if feature.properties.marker() != 2
         || slots.len() != 3
@@ -199,9 +234,9 @@ pub(crate) fn operands<'a>(
     let source = property(slots[2].record_ordinal()?)?;
     let source_record = record(source.identity.record_ordinal)?;
     if source.save_version_major != feature.save_version_major
-        || source.header.stamps.len() != usize::from(feature.save_version_major == 23)
+        || source.header.stamps.len() != shape.source_stamps
         || source.header.stamps.iter().any(|stamp| *stamp < -1)
-        || source.header.flags_extension.is_some()
+        || source.header.flags_extension.is_some() != shape.flags_extension
         || source.identity.type_id.as_str() != crate::pmdc::type_id_string(SOURCE_TYPE)
         || source_record.0 != source.identity.type_id.as_str()
         || source_record.1 != cadmpeg_core::decode::u64_from_index(source_len)
@@ -221,7 +256,7 @@ pub(crate) fn operands<'a>(
     let source_record = record(source.identity.record_ordinal)?;
     if source.save_version_major != feature.save_version_major
         || !source.header.stamps.is_empty()
-        || source.header.flags_extension.is_some()
+        || source.header.flags_extension.is_some() != shape.flags_extension
         || source.identity.type_id.as_str() != crate::pmdc::type_id_string(COMPONENT_TYPE)
         || source_record.0 != source.identity.type_id.as_str()
         || source_record.1 != cadmpeg_core::decode::u64_from_index(component_len)

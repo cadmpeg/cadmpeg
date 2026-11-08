@@ -97,7 +97,7 @@ Parsed by:
 
 Spec §13.4 · layout: byte offsets · size: 32 B
 
-Offsets start after the state content header in segment major versions 19 and 23.
+Offsets start after the state content header in segment major versions 19, 23, 25, and 31.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
@@ -114,20 +114,20 @@ Parsed by:
 
 Spec §13.4 · layout: byte offsets · size: 4 B
 
-Offset starts after the 22-byte content header in segment major version 23.
+Offset of each stamp starts after the content header, 22 bytes before segment major version 28 and 26 bytes from it.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `stamp` | `i32` | little | spec | In segment major version 23, the source header includes one stamp |
+| 0 | 4 | `stamp` | `i32` | little | spec | one stamp in version 23, and two stamps in versions 25 and 31 |
 
 ## `pm_dc_derived_component_suffix`
 
 Spec §13.4 · layout: byte offsets · size: 4 B
 
-Offsets start after the component terminal reference in segment major version 23.
+Offsets start after the component terminal reference in segment major versions 23, 25, and 31.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`

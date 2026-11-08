@@ -21,7 +21,7 @@ pub(crate) mod pm_dc_derived_source_field {
 /// Spec §13.4. Record length 32 B.
 ///
 /// ```text
-/// Offsets start after the state content header in segment major versions 19 and 23.
+/// Offsets start after the state content header in segment major versions 19, 23, 25, and 31.
 /// ```
 pub(crate) mod pm_dc_derived_component_fields {
     /// Record length in bytes. Spec §13.4.
@@ -51,7 +51,7 @@ pub(crate) mod pm_dc_derived_component_fields {
 /// Spec §13.4. Record length 4 B.
 ///
 /// ```text
-/// Offset starts after the 22-byte content header in segment major version 23.
+/// Offset of each stamp starts after the content header, 22 bytes before segment major version 28 and 26 bytes from it.
 /// ```
 pub(crate) mod pm_dc_derived_source_stamp {
     /// Record length in bytes. Spec §13.4.
@@ -63,7 +63,7 @@ pub(crate) mod pm_dc_derived_source_stamp {
 /// Spec §13.4. Record length 4 B.
 ///
 /// ```text
-/// Offsets start after the component terminal reference in segment major version 23.
+/// Offsets start after the component terminal reference in segment major versions 23, 25, and 31.
 /// ```
 pub(crate) mod pm_dc_derived_component_suffix {
     /// Record length in bytes. Spec §13.4.
