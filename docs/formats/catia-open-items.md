@@ -364,17 +364,37 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Question.** Which construction produces the stored trimmed-face AABB of a curved face, and what bounds its distance from the exact face extent?
 
-**Known.** `catia.md` §5.8 "The same arc test applies" selects an arc by the smaller excess over the face boxes when neither arc fits the `2e-3` mm allowance. Plane faces and faces whose extrema lie on boundary vertices reproduce the exact extent within that allowance. On half-cylinder faces of radius `11.1125` mm the box reaches `11.1091` mm from the axis. On 28 ellipse edges of one part the selected arc exceeds the boxes by `3.4e-3` to `4.5e-3` mm, and the complementary arc exceeds them by more than the radius. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
+**Known.** `catia.md` §5.8 "The same arc test applies" selects an arc by the smaller excess over the face boxes when neither arc fits the `2e-3` mm allowance. Across 8,601 measured standard faces in 79 files, the box exceeds the exact face extent by at most binary32 rounding on all but 13 faces, and lies inside it on 1,854 faces by more than `2e-3` mm. The following readings are falsified:
 
-**Need.** A derived bound replaces the excess-ratio rule with a containment test, and removes the loss that the ratio rule records.
+- The box is the exact trimmed extent: 1,273 of 4,027 cylinder faces fall short by more than `2e-3` mm.
+- The box covers only the boundary vertices: half-cylinder faces whose four vertices lie in one axial plane reach `11.1091` mm from that plane at radius `11.1125` mm.
+- The box is a control-net or conservative bound: it never exceeds the exact extent.
+- The shortfall is binary32 rounding: `3.4e-3` mm is several hundred ulps at the coordinate scale.
+- The shortfall follows a fixed angular step: in one part, radius `2.197` mm falls short by `7.3e-3` mm and radius `11.1125` mm by `3.4e-3` mm.
+- The shortfall is bounded by `0.01` mm: 41 files peak at `0.0034`–`0.0100` mm, but 13 files reach `0.020`–`0.26` mm.
+- The bound scales with part size: in the first group the peak stays at or below `0.0100` mm for part sizes from `4.8` to `780` mm.
+- The saving release selects the bound: files saved by the same release fall in both groups.
+
+The two groups match a tessellation chord tolerance that differs between files. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
+
+**Need.** A stored or derived per-file tolerance replaces the excess-ratio rule with a containment test, and removes the loss that the ratio rule records.
 
 ### SN-39. Boundary gauge without planar evidence
 
 **Question.** Which source relation fixes the absolute gauge of a boundary parity component that contains no evaluable plane-face boundary?
 
-**Known.** `catia.md` §5.4.2 "The face orientation fixes the absolute gauge" anchors a component from the boundaries of its plane faces. Trim-mesh boundary cycles of one face share the mesh orientation. Incidence-cycle reconstruction starts each cycle at its lowest edge in stored direction and carries no orientation; tying all boundaries of one such face to one reversal makes the parity system inconsistent. A component without an anchor keeps the gauge of the parity solve's first boundary.
+**Known.** `catia.md` §5.4.2 "The face orientation fixes the absolute gauge" anchors a component from the boundaries of its plane faces. Across 79 files, 976 of 1,281 components take an anchor, none receives conflicting votes, and 479 reverse their solved gauge. The following readings are falsified:
 
-**Need.** Components bounded only by curved faces, or by plane faces with unresolved edge intervals, have no absolute loop direction; region and volume measurement on spheres and tori depend on it.
+- One reversal for all boundaries of a face: incidence-cycle reconstruction starts each cycle at its lowest edge in stored direction, and tying the cycles of one face makes the parity system inconsistent.
+- The stored cycle direction is absolute: in FTC-07 it disagrees with the STEP loop direction on faces of every carrier kind.
+- The solved gauge of the first boundary is absolute: 479 of 976 anchored components reverse it.
+- Every unanchored component lacks a plane face: 39 of the 305 unanchored components contain one.
+- The vertex-polygon outer/inner classification anchors plane faces with unevaluable loops: it adds 2 of the 39.
+- A curved-face winding anchor reaches the remainder: 273 of the 305 contain no boundary whose every edge has a carrier and an interval.
+
+A component without an anchor keeps the gauge of the parity solve's first boundary.
+
+**Need.** Components bounded only by curved faces, or by plane faces with unresolved edge intervals, have no absolute loop direction; region and volume measurement on spheres and tori depend on it. Resolving their edge carriers and intervals is a precondition for any geometric anchor.
 
 ## 4. Object stream
 
