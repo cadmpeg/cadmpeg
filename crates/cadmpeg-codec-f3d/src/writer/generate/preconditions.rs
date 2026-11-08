@@ -164,8 +164,17 @@ pub(super) fn validate_source_less_topology_tolerances(
     Ok(())
 }
 
-pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecError> {
-    if let Some(tessellation) = target.model.tessellations.first() {
+pub(super) fn validate_source_less_auxiliary_geometry(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    let authored = super::mesh::authored_tessellations(target, native);
+    if let Some(tessellation) = target
+        .model
+        .tessellations
+        .iter()
+        .find(|tessellation| !authored.contains(&tessellation.id))
+    {
         return Err(CodecError::NotImplemented(format!(
             "source-less F3D cannot serialize neutral tessellation {} losslessly",
             tessellation.id
