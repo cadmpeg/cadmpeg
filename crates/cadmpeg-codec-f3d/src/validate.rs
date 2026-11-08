@@ -5075,12 +5075,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
                 ) => group.extrude_role().is_none(),
                 Some(design::DesignFeatureFamily::Coil) => {
-                    group.role()
-                        == if scope.coil_has_ten_reference_target() {
-                            DesignOperandRole::BODIES_A
-                        } else {
-                            DesignOperandRole::BODIES_B
-                        }
+                    scope.coil_target_group_admits(group.role(), group.scope_reference_ordinal)
                         && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Move) => {
