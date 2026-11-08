@@ -234,9 +234,11 @@ fn multiloop_fallback_selects_smallest_profile() {
             &[member],
             &sketch,
             scoped_resolution,
-            None,
-            None,
-            false,
+            crate::design::profile_select::ExtrudeTransition {
+                history_state_id: None,
+                previous_history_state_id: None,
+                cut: false,
+            },
         )
         .unwrap();
 
@@ -282,9 +284,11 @@ fn multiloop_fallback_fails_when_member_not_curve() {
             &[member],
             &sketch,
             scoped_resolution,
-            None,
-            None,
-            false,
+            crate::design::profile_select::ExtrudeTransition {
+                history_state_id: None,
+                previous_history_state_id: None,
+                cut: false,
+            },
         )
         .unwrap();
 
