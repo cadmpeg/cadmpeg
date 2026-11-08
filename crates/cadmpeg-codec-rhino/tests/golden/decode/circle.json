@@ -30,7 +30,7 @@
               "z": 0.0
             }
           },
-          "id": "rhino:object:curve#record-000000-offset-177",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -203,7 +203,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -232,7 +232,7 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "rhino:object:curve#record-000000-offset-177": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         }
