@@ -6842,8 +6842,17 @@ links. Attachment type `25` selects a surface and type `1` selects an edge.
 
 The `set_datum_tag_xar` named prototype stores a datum label in
 `p_datum_tag_name` and a zero-based `gtol_datum_def_xar` slot in `dtm_def_id`.
-The definition prototype's `p_ldr.note_att` type `25` selects a surface by
-`attach_id`.
+A later tag row starts `e3 <attributes> <dtm_def_id> e3 [f7 <class>]
+<ref_type> <ref_id>`; `<attributes>` and `<dtm_def_id>` are compact integers,
+and the second compound is the positional `p_sld_info`.
+
+The `gtol_datum_def_xar` prototype labels `datum_type`, `datum_id`, `feat_id`,
+`gtol_id`, and `p_ldr`; `p_ldr` labels `ldr_attrib` and `note_att`. A later
+definition row starts `e3 <datum_type> <datum_id> <feat_id> <gtol_id>
+e3 <ldr_attrib> <note_att>`, where the three identifiers are `f6` or compact
+integers. `note_att` stores the attachment fields of a tolerance placement:
+named in its first occurrence, then `e3 [f0] [f7 <class>] <type> <attach_id>`.
+Attachment type `25` selects a surface. Type `5` selects a `dim_array` slot.
 
 ## 9. Assembly component table
 

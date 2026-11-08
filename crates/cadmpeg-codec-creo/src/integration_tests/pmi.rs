@@ -154,12 +154,30 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             .collect();
         assert_eq!(actual, expected);
     }
-    let datum_a = result.ir().model.pmi.iter().find(|item| {
-        matches!(&item.definition, PmiDefinition::Datum { identification } if identification == "A")
-    }).expect("datum A");
+    let datum = |label: &str| {
+        result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|item| {
+                matches!(&item.definition, PmiDefinition::Datum { identification } if identification == label)
+            })
+            .expect("datum")
+    };
     assert!(
-        matches!(datum_a.targets.as_slice(), [PmiTarget::Face { face }] if face.as_str() == "creo:visibgeom:face#106")
+        matches!(datum("A").targets.as_slice(), [PmiTarget::Face { face }] if face.as_str() == "creo:visibgeom:face#106")
     );
+    for (label, center_x) in [("B", -325.0), ("C", 325.0)] {
+        let [target] = datum(label).targets.as_slice() else {
+            panic!("one datum {label} target")
+        };
+        let (origin, axis, radius) = target_cylinder(&result, target);
+        assert!((axis[2].abs() - 1.0).abs() < MAGNITUDE_TOLERANCE);
+        assert!((origin[0] - center_x).abs() < PLANE_OFFSET_TOLERANCE);
+        assert!((origin[1] + 175.0).abs() < PLANE_OFFSET_TOLERANCE);
+        assert!((radius - 17.5).abs() < PLANE_OFFSET_TOLERANCE);
+    }
     let dimensions: Vec<_> = result
         .ir()
         .model
@@ -301,6 +319,14 @@ fn target_plane(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) ->
 }
 
 fn target_cylinder_radius(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) -> f64 {
+    target_cylinder(result, target).2
+}
+
+/// The origin, unit axis, and radius of a face target's cylindrical carrier.
+fn target_cylinder(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    target: &PmiTarget,
+) -> ([f64; 3], [f64; 3], f64) {
     let PmiTarget::Face { face } = target else {
         panic!("face target")
     };
@@ -310,7 +336,11 @@ fn target_cylinder_radius(result: &cadmpeg_ir::codec::DecodeResult, target: &Pmi
     else {
         panic!("cylindrical target carrier")
     };
-    cylinder.radius().get()
+    (
+        <[f64; 3]>::from(cylinder.origin().get()),
+        <[f64; 3]>::from(*cylinder.frame().axis().as_raw()),
+        cylinder.radius().get(),
+    )
 }
 
 fn face_surface<'a>(

@@ -1551,31 +1551,20 @@ group can occur on tolerances with different feature owners. A group can
 include identifiers both present and absent in the vertex arena. An ASCII
 `Sld_FullData` root can also own a `gtol_datum_def` array with `datum_type`,
 `datum_id`, `feat_id`, and `dim_id` fields. A reference's `datum_type` and
-`ref_info.ref_id` can match a row's `datum_type` and `datum_id`. A binary
-`gtol_datum_def_xar` prototype can carry `datum_type` 1 and null `datum_id`,
-`feat_id`, and `gtol_id` fields, followed by a `p_ldr` compound. The window
-before `set_datum_tag_xar` can contain one `e3 01 f6 f6 f6 e3` candidate per
-remaining slot after the leading nulls and prototype. The `p_ldr` data also
-contains nested `e3` markers. The first datum-tag prototype's `dtm_def_id`
-selects the first populated `gtol_datum_def_xar` slot. A class-qualified
-prototype-boundary candidate precedes the positional rows.
-Positional tag rows carry a definition-slot value before `p_sld_info` and a
-datum label in the text fields. The typed one-byte slot form is `01` followed
-by a compact value; extended slot-value encodings remain unresolved. The
-candidate positional datum-definition row is `e3 01 f6 f6 f6 e3`. Counting
-these typed rows after the first prototype provides a candidate ordinal-to-slot
-mapping. An `ext_ref` continuation under a `frame_datum_refs` candidate can carry
-identifier sequences that differ from the tag definition slots. The enclosing
-row production is unresolved.
+`ref_info.ref_id` can match a row's `datum_type` and `datum_id`.
+`creo_prt.md` §8.9 defines the leading fields of the datum-definition and
+datum-tag rows. The decoder assigns the later definition rows to the slots
+after the prototype in order when their count equals the number of those
+slots, and joins each tag to its definition through `dtm_def_id`. Tolerance
+datum labels join datum identities by equal label.
 
-**Need.** Connect the ordered labels in neutral tolerance attributes to the
-owned reference tables and their datum-feature targets. Confirm that the
-candidate datum-definition terminator yields one row per occupied slot in
-ordinal order before using its row count to assert slot identity.
+**Need.** Establish the end of a datum-definition row to assign slots when
+null slots occur between rows. Establish the namespace of `note_att` type
+`64` and the target of a datum attached to a dimension slot. Connect the
+`ref_info` references of a tolerance to the datum tags.
 
-**Conflict.** The class-boundary search can encounter bytes in nested `p_ldr`
-data, and the count of typed `e3` row candidates does not establish a
-one-to-one row boundary and slot ordinal.
+**Conflict.** The definition-row prefix search can encounter bytes in nested
+`p_ldr` data; the row count is the only check of the slot assignment.
 
 **Note.** Identity tests gave these results:
 
@@ -1586,9 +1575,12 @@ one-to-one row boundary and slot ordinal.
 5. Reference identifiers select tag slots: candidate identifiers differ from tag definition slots.
 6. `dtm_def_id` selects the tag's own slot: the two ordinals can differ.
 7. The first prototype's `dtm_def_id` selects the first populated definition slot: the values agree.
-8. A count of typed positional candidates proves their slot ordinals: nested leader data can contain the same markers.
-9. Each populated definition carries a leader: the CTC-01 definition array has three occupied candidates and one typed leader.
-
+8. A count of `e3 01 f6 f6 f6 e3` candidates proves their slot ordinals: nested leader data can contain the same markers.
+9. Only the prototype definition carries a leader: every later definition row replays `p_ldr.note_att`.
+10. A later tag row's `attributes` is the one-byte `01`: two-byte values such as `a0 81` occur.
+11. Every definition leader selects a surface: leaders of types `5` and `64` occur.
+12. A type-`25` definition leader selects the datum feature: every attached surface whose carrier decodes equals the STEP-twin datum face carrier.
+13. A type-`5` definition leader selects a `dim_array` slot: the slot's dimension references cylinders coaxial with the STEP-twin datum face.
 ### PP-24. Geometric-tolerance attachment targets
 
 **Question.** Which pointer and nested attachment types select dimension,

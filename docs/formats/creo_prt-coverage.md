@@ -437,7 +437,7 @@ that gate.
   annotation-element owners. The same owner join transfers dimensional
   characteristics, values, and supported tolerance modes. Shared datum
   identities are inferred from equal labels. A uniquely bounded datum-leader
-  surface can select a datum face. A type-2 tolerance placement with a surface
+  surface of the prototype or of a later definition row can select a datum face. A type-2 tolerance placement with a surface
   attachment selects the unique bounded face of that surface for every
   tolerance segment. An annotation dimension's two attachment links select the
   faces of their surfaces, or for two edges each edge's face that the other
