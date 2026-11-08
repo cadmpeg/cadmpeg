@@ -1511,14 +1511,22 @@ transfer the rest of legacy persistence.
 `geom_tol_array` element and its nested fields?
 
 **Known.** The array header has an `f8` slot count and a class reference. A
-populated element contains nested `dtl_named_item`, `dtl_item`, and `tol_text`
-fields. The first nested `e3` precedes `db_type`, `gtol_place_ptr`, and datum
-reference fields. The ASCII object-array depth grammar has separate row
-boundaries.
+populated element contains type-`00` `dtl_named_item`, `dtl_item`, and
+`tol_text` fields. The first two can start with `e2`; `tol_text` can start with
+`f8 01 f7 0a fb`, followed by `e3` and a named `db_type` field. The named
+binary text row's `owner_id` can equal the first occupied slot. A depth-bounded
+ASCII text row can carry its enclosing slot index in `owner_id`. The binary
+window from the first `dtl_named_item` to the next `dim_array` marker contains
+`value_string`, `datum_refs`, and `frame_datum_refs`.
+Depth-bounded ASCII elements can instead contain direct `value` and
+`datum_refs_array` fields. The ASCII object-array depth grammar has separate
+row boundaries. A typed positional prefix can carry the tolerance type, value,
+nested text owner, and placement pointer. A named row can carry null
+`drfs_data`, leaving the following positional scan without a `drf_id` anchor.
 
 **Need.** Establish the complete binary element and array extent from their
-serialized productions. Consume nested fields and distinguish later slots
-before transferring a tolerance or its attachments.
+serialized productions. Consume nested fields and distinguish later slots to
+transfer their datum and target references.
 
 ### PP-23. Geometric-tolerance datum identities
 
@@ -1528,24 +1536,67 @@ references to datum identities and datum features?
 **Known.** A tolerance attachment can carry `datum_refs`,
 `frame_datum_refs`, and a null `datum_def_id`. Its `ref_info` identifiers can
 also occur in both vertex and feature-entity namespaces. A numeric match to
-either namespace leaves the datum reference unresolved.
+either namespace leaves the datum reference unresolved. A depth-bounded ASCII
+`datum_refs_array` contains counted `gtol_dtm_xar2` groups. The same reference
+group can occur on tolerances with different feature owners. A group can
+include identifiers both present and absent in the vertex arena. An ASCII
+`Sld_FullData` root can also own a `gtol_datum_def` array with `datum_type`,
+`datum_id`, `feat_id`, and `dim_id` fields. A reference's `datum_type` and
+`ref_info.ref_id` can match a row's `datum_type` and `datum_id`. A binary
+`gtol_datum_def_xar` prototype can carry `datum_type` 1 and null `datum_id`,
+`feat_id`, and `gtol_id` fields, followed by a `p_ldr` compound. The window
+before `set_datum_tag_xar` can contain one `e3 01 f6 f6 f6 e3` candidate per
+remaining slot after the leading nulls and prototype. The `p_ldr` data also
+contains nested `e3` markers. The first datum-tag prototype's `dtm_def_id`
+selects the first populated `gtol_datum_def_xar` slot. A class-qualified
+prototype-boundary candidate precedes the positional rows.
+Positional tag rows carry a definition-slot value before `p_sld_info` and a
+datum label in the text fields. The typed one-byte slot form is `01` followed
+by a compact value; extended slot-value encodings remain unresolved. The
+candidate positional datum-definition row is `e3 01 f6 f6 f6 e3`. Counting
+these typed rows after the first prototype provides a candidate ordinal-to-slot
+mapping. An `ext_ref` continuation under a `frame_datum_refs` candidate can carry
+identifier sequences that differ from the tag definition slots. The enclosing
+row production is unresolved.
 
-**Need.** Resolve the owned reference tables, ordered datum compartments, and
-their datum-feature targets before constructing a datum system.
+**Need.** Connect the ordered labels in neutral tolerance attributes to the
+owned reference tables and their datum-feature targets. Confirm that the
+candidate datum-definition terminator yields one row per occupied slot in
+ordinal order before using its row count to assert slot identity.
+
+**Conflict.** The class-boundary search can encounter bytes in nested `p_ldr`
+data, and the count of typed `e3` row candidates does not establish a
+one-to-one row boundary and slot ordinal.
 
 ### PP-24. Geometric-tolerance attachment targets
 
 **Question.** Which pointer and nested attachment types select dimension,
 curve, surface, and bounded-face targets for a geometric tolerance?
 
-**Known.** A type-1 `gtol_place_ptr` can refer to a dimension slot that names
+**Known.** A type-1 `gtol_place_ptr` selects a dimension slot that names
 the tolerance in `gtol_ids`. A type-2 placement can carry a nested attachment
 whose identifier equals the outer identifier. Dimension and geometry
 identifiers can overlap. A surface reference can resolve without a bounded
-face.
+face. A type-2 placement can contain a type-`25` attachment to a surface;
+the decoder uses its unique bounded face when one is present and records the
+inference.
+Some positional placement identifiers start with `c0` and remain unresolved.
 
 **Need.** Establish each pointer's namespace and its complete owned target
 join before transferring a face or curve attachment.
+
+### PP-25. PMI attribute units
+
+**Question.** How does a nonempty neutral attribute `unit` field affect its
+PMI numeric value?
+
+**Known.** Neutral attribute rows carry a unit field. PMI attributes with an
+empty unit field use the principal model length unit for length values. For a
+nonempty unit field, the decoder uses the model length unit or stored radians
+and records that assumption.
+
+**Need.** Compare nonempty PMI unit fields with independently measured values
+to establish their conversion and precedence over the model unit.
 
 ## 6. Assembly component table
 

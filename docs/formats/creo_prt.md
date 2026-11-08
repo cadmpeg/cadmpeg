@@ -6745,6 +6745,56 @@ display-to-model placement. Unmatched objects remain in the display namespace.
 PGL display data does not replace analytical body topology or establish its
 absence ([PTC, Introduction to pgl2pv](https://support.ptc.com/help/creo/view/r13.0/it/creo_view/adapter_install_config_guide/Config-PGL-Files/CVAdapterPGLIntro/Introduction_to_pgl2pv.html)).
 
+### 8.9 Neutral geometric-tolerance attributes
+
+The `NeuPrtSld` `attributes` field stores an object array. Its header has
+`f4 05 f8 <count> f7 <class> fb`. The first row labels `name`, `value`,
+`ref_id`, `ref_type`, `ref_name`, `unit`, and `designated`. Later rows store
+those fields in that order without the labels. A value has an `e2` compound
+and a type: `32` is a real, `33` is a null-terminated byte string, `34` is an
+integer, and `35` is a logical value. A named value prototype can introduce a
+value class that later rows reference with `f7`. `ref_id` and `ref_type`
+identify the attribute owner.
+
+In the attribute real lane, the single-byte tokens `09`, `0a`, `0b`, `0c`,
+`0d`, `0e`, and `0f` encode 0.005, 0.01, 0.06, 0.1, 0.25, 0.5, and 1.0.
+Tokens `00`, `01`, and `02` select a constant and replace its low one, two,
+or three IEEE bytes. Other real tokens follow the scalar grammar in §9.1.
+
+The `BasFullData` or `FullMData` `annot_elems` array stores annotation-element
+identities. Each row has an `AE_Id`, `AE_Type`, `Annot_Id`, and `Annot_Type`.
+`Annot_Type` 32 identifies a geometric tolerance. The `AE_Id` and `AE_Type`
+pair selects neutral attributes with matching `ref_id` and `ref_type`.
+`PTC_GTOL_TYPE` states the tolerance characteristic and
+`PTC_GTOL_PRIMARY_TOL` states its magnitude in the model length unit.
+`PTC_GTOL_1_DTM_PRIM_STRING`, `PTC_GTOL_1_DTM_SEC_STRING`, and
+`PTC_GTOL_1_DTM_TERT_STRING` state the primary, secondary, and tertiary
+datum-reference labels of the first tolerance segment. The corresponding
+`PTC_GTOL_2_DTM_*` fields state the second segment's labels. A hyphen joins
+labels in one common-datum compartment. A circled M or L after a label states
+its maximum- or least-material requirement. `PTC_GTOL_2_TOL_STRING` carries
+the displayed second-segment magnitude and its tolerance-zone symbols.
+
+`Annot_Type` 8 identifies a dimension. Its neutral attributes include
+`PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`. `Limits`
+stores absolute bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
+`+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
+`Plus-Minus` stores deviation magnitudes in `PTC_DIM_LOWER_TOL_VALUE` and
+`PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values use
+the model length unit. Angular numeric values use radians; the
+`PTC_DIM_ANGULARDIM_UNIT` field selects the display unit.
+
+A geometric tolerance's type-1 `gtol_place_ptr.id` selects a zero-based
+`dim_array` slot. That dimension's `gtol_ids` includes the tolerance's
+zero-based `geom_tol_array` slot. A dimension can reference several tolerances.
+A type-2 placement can contain an attachment of type `25`; its `attach_id`
+selects a surface.
+
+The `set_datum_tag_xar` named prototype stores a datum label in
+`p_datum_tag_name` and a zero-based `gtol_datum_def_xar` slot in `dtm_def_id`.
+The definition prototype's `p_ldr.note_att` type `25` selects a surface by
+`attach_id`.
+
 ## 9. Assembly component table
 
 The second token of the `#UGC:2` header line is the model kind: `PART`,
