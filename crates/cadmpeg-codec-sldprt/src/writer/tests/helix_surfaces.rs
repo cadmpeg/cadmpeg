@@ -1157,9 +1157,12 @@ fn filled_surface_round_trip(
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity,
             merge_result: Some(false),
+            interior_constraints,
+            reverse_normal: None,
         }) if continuity.uniform_value() == Some(SurfaceContinuity::Tangent)
             && edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face
+            && interior_constraints.is_empty()
     ));
 
     {
@@ -1170,6 +1173,7 @@ fn filled_surface_round_trip(
                 support_faces,
                 continuity,
                 merge_result,
+                ..
             }) = definition
             else {
                 panic!("typed filled surface");
@@ -1256,6 +1260,56 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
         matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("weighted filled-surface condition")),
         "{error}"
     );
+}
+
+#[test]
+fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_normal() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+    let mut source = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    let edge = base.ir().model.edges[0].id.as_str();
+    let face = base.ir().model.faces[0].id.as_str();
+    let xml = format!(
+        r#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36" Boundary="{edge}" SupportFaces="{face}" Continuity="Contact" MergeResult="false"/></Keywords>"#
+    );
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for interior in [true, false] {
+        let mut edited = EditableDecodeResult::from(decoded.clone());
+        {
+            let mut ir_edit = edited.ir_mut();
+            ir_edit.model.features[0].evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                    interior_constraints,
+                    reverse_normal,
+                    ..
+                }) = definition
+                else {
+                    panic!("filled surface");
+                };
+                if interior {
+                    interior_constraints.push(PathRef::Native("interior".into()));
+                } else {
+                    *reverse_normal = Some(true);
+                }
+            });
+        }
+        let mut encoded = Vec::new();
+        let error = crate::test_support::plan_inherited_write(
+            edited.ir(),
+            edited.source_fidelity(),
+            &mut encoded,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("interior constraints or a reversed normal")),
+            "{error}"
+        );
+    }
 }
 
 #[test]

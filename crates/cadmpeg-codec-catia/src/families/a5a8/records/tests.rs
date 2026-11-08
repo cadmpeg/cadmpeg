@@ -31,19 +31,40 @@ use crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_ch
 fn surface_tail_scans_continuation_without_materializing_a_lane() {
     let mut short = a5_surface_short_tail();
     assert_eq!(
-        super::parse_surface_tail(&short, 0, short.len()),
+        super::parse_surface_tail(&short, 0, short.len(), false),
         Some(short.len())
     );
     short[71..79].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(super::parse_surface_tail(&short, 0, short.len()), None);
+    assert_eq!(
+        super::parse_surface_tail(&short, 0, short.len(), false),
+        None
+    );
     let mut long = a5_surface_tail();
     long[71..79].copy_from_slice(&1.0f64.to_le_bytes());
     assert_eq!(
-        super::parse_surface_tail(&long, 0, long.len()),
+        super::parse_surface_tail(&long, 0, long.len(), false),
         Some(long.len())
     );
     long[71..79].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert_eq!(super::parse_surface_tail(&long, 0, long.len()), None);
+    assert_eq!(super::parse_surface_tail(&long, 0, long.len(), false), None);
+}
+
+#[test]
+fn owned_surface_tail_retains_descending_v_limits() {
+    use crate::layout::surface_terminal_span_tail as layout;
+
+    let mut tail = a5_surface_tail();
+    tail.truncate(layout::SUFFIX);
+    tail.extend([0x01, 0, 0x09, 0x01, 0x05, 0x07, 0x07]);
+    tail[layout::CONTROLS + 2] = 0x01;
+    let v_start = layout::PARAMETERS + 16;
+    tail[v_start..v_start + 8].copy_from_slice(&3.0_f64.to_le_bytes());
+    tail[v_start + 8..v_start + 16].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), false), None);
+    assert_eq!(
+        super::parse_surface_tail(&tail, 0, tail.len(), true),
+        Some(tail.len())
+    );
 }
 use crate::test_support::test_bytes::le_f64;
 use crate::test_support::test_container::object_main_catpart;
@@ -942,6 +963,98 @@ fn a5_surface_parser_accepts_each_structured_tail_variant() {
 }
 
 #[test]
+fn a5_surface_parser_accepts_additional_terminal_spans() {
+    let mut short = a5_surface_tail();
+    let short_suffix = short.len() - 6;
+    short[short_suffix + 2] = 0x09;
+    let mut extended = a5_surface_extrapolated_tail();
+    let extended_suffix = extended.len() - 7;
+    extended[extended_suffix..extended_suffix + 5].copy_from_slice(&[0x19, 0x00, 0x19, 0x01, 0x0d]);
+    for tail in [short, extended] {
+        let surfaces = crate::families::a5a8::records::a5_surfaces(
+            &a5_surface_stream_with_tail(&tail),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("decode the A5 surfaces");
+        assert_eq!(surfaces.len(), 1);
+    }
+}
+
+#[test]
+fn a5_surface_parser_reads_extended_array_marker_and_terminal() {
+    let mut tail = a5_surface_extrapolated_tail();
+    let terminal_index = tail.len() - 5;
+    tail[terminal_index] = 0x01;
+    let mut bytes = a5_surface_stream_with_tail(&tail);
+    bytes.splice(10..11, [0x08, 0x0d]);
+    let payload_len = u32::try_from(bytes.len() - 8).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let surfaces =
+        crate::families::a5a8::records::a5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the A5 surfaces");
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(
+        (
+            surfaces[0].geometry.u_count(),
+            surfaces[0].geometry.v_count()
+        ),
+        (2, 2)
+    );
+
+    bytes[11] = 0x11;
+    assert_eq!(crate::families::a5a8::records::a5_surfaces(
+        &bytes,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A5 surfaces")
+    .len(), 1);
+
+    bytes[11] = 0x19;
+    assert!(crate::families::a5a8::records::a5_surfaces(
+        &bytes,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the A5 surfaces")
+    .is_empty());
+}
+
+#[test]
+fn a5_sheet_surface_accepts_owned_array_marker() {
+    let mut bytes = a5_surface_stream();
+    bytes.splice(10..11, [0x08, 0x19]);
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let frames = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        super::a5_owned_surfaces_from_records(&bytes, &frames, &mut refusal)
+            .expect("parse the sheet surface")
+            .len(),
+        1,
+    );
+    assert!(super::a5_surfaces(&bytes, &mut refusal)
+        .expect("parse non-sheet records")
+        .is_empty());
+}
+
+#[test]
+fn a5_surface_parser_accepts_additional_bounded_array_markers() {
+    for marker in [0x05, 0x15] {
+        let mut bytes = a5_surface_stream();
+        bytes.splice(10..11, [0x08, marker]);
+        let payload_len = u32::try_from(bytes.len() - 8).expect("test length");
+        bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+        let surfaces = crate::families::a5a8::records::a5_surfaces(
+            &bytes,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("decode the A5 surfaces");
+        assert_eq!(surfaces.len(), 1);
+    }
+}
+
+#[test]
 fn a5_surface_parser_rejects_unclosed_or_nonfinite_tail_data() {
     let mut trailing = a5_surface_stream();
     trailing.push(0);
@@ -1083,6 +1196,61 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
 }
 
 #[test]
+fn a5_curve_parser_accepts_owned_array_marker() {
+    let mut bytes = a5_freeform_curve_stream();
+    bytes[11] = 0x08;
+    bytes.insert(12, 0x0f);
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert_eq!(
+        crate::families::a5a8::records::a5_freeform_curves(&bytes).len(),
+        1
+    );
+}
+
+#[test]
+fn a5_owned_rolling_jet_accepts_alternate_compact_marker() {
+    let mut bytes = a5_freeform_curve_stream();
+    bytes.splice(11..12, [0x08, 0x1b]);
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert!(super::a5_freeform_curves(&bytes).is_empty());
+    let frames = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(super::a5_owned_rolling_curves(&bytes, &frames).count(), 1);
+
+    bytes[12] = 0x1a;
+    assert_eq!(super::a5_owned_rolling_curves(&bytes, &frames).count(), 0);
+}
+
+#[test]
+fn rolling_ball_radius_reports_only_actual_rail_movement() {
+    let mut jet = super::a5_freeform_curves(&a5_freeform_curve_stream())
+        .pop()
+        .expect("rolling-ball fixture");
+    jet.sites[1].site = jet.sites[0].site.clone();
+    let (_, unchanged) = jet
+        .clone()
+        .definition_at_radius(1.0)
+        .expect("matching radius");
+    assert_eq!(unchanged, 0.0);
+
+    let radius = 1.000_000_2;
+    let (definition, moved) = jet
+        .clone()
+        .definition_at_radius(radius)
+        .expect("nearby radius");
+    assert_eq!(moved, radius - 1.0);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(stations) = definition
+    else {
+        panic!("rolling-ball definition");
+    };
+    let site = &stations.stations()[0].site;
+    assert_eq!(site.first_limit.distance(site.center.get()), radius);
+    assert_eq!(site.second_limit.distance(site.center.get()), radius);
+    assert!(jet.definition_at_radius(1.001).is_none());
+}
+
+#[test]
 fn a5_curve_parser_rejects_untyped_continuation() {
     let mut bytes = a5_freeform_curve_stream();
     bytes.extend(std::iter::repeat_n(0, 4097));
@@ -1138,6 +1306,46 @@ fn a5_rolling_ball_tails_close_all_three_productions() {
 }
 
 #[test]
+fn a5_rolling_ball_extended_tail_admits_state_and_terminal() {
+    let original = a5_freeform_curve_stream();
+    let tail_start = original.len() - 79;
+    for state in [0, 1] {
+        let mut bytes = original.clone();
+        bytes[tail_start + 60] = state;
+        bytes.extend_from_slice(&original[tail_start + 32..tail_start + 40]);
+        bytes.extend_from_slice(&[0, 0]);
+        let payload_len = u32::try_from(bytes.len() - 8).expect("test length");
+        bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+        assert_eq!(
+            crate::families::a5a8::records::a5_freeform_curves(&bytes).len(),
+            1
+        );
+        let terminal = bytes.len() - 1;
+        bytes[terminal] = 1;
+        assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+    }
+    let mut bytes = original.clone();
+    bytes[tail_start + 59] = 1;
+    bytes[tail_start + 60] = 1;
+    bytes.extend_from_slice(&original[tail_start + 32..tail_start + 40]);
+    bytes.extend_from_slice(&[0, 0]);
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test length");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert_eq!(
+        crate::families::a5a8::records::a5_freeform_curves(&bytes).len(),
+        1
+    );
+    let trimmed_upper = bytes.len() - 18;
+    bytes[trimmed_upper..trimmed_upper + 8].copy_from_slice(&0.75f64.to_le_bytes());
+    assert_eq!(
+        crate::families::a5a8::records::a5_freeform_curves(&bytes).len(),
+        1
+    );
+    bytes[tail_start + 60] = 0;
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+}
+
+#[test]
 fn a5_rolling_ball_tail_refuses_truncation_and_invalid_lanes() {
     let original = a5_freeform_curve_stream();
     let tail_start = original.len() - 79;
@@ -1172,6 +1380,34 @@ fn a5_rolling_ball_tail_refuses_truncation_and_invalid_lanes() {
         bytes[tail_start + offset] = 0x02;
         assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
     }
+}
+
+#[test]
+fn owned_rolling_ball_uses_the_terminal_transverse_gauge() {
+    let bytes = a5_freeform_curve_stream();
+    let mut tail = bytes[bytes.len() - 79..].to_vec();
+    tail[24..32].copy_from_slice(&le_f64(1.0));
+    tail[49..57].copy_from_slice(&le_f64(1.0));
+    tail.extend(le_f64(2.0));
+    tail.extend([0, 0]);
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        Some(2.0)
+    );
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], false),
+        None
+    );
+    tail[63..71].copy_from_slice(&le_f64(0.25));
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        None
+    );
+    tail[59] = 1;
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        Some(2.0)
+    );
 }
 
 #[test]
