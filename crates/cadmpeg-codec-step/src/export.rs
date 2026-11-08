@@ -12,7 +12,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::declared_measures::{DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
-    analytic::TorusSurface,
+    analytic::{ConeSurface, TorusSurface},
     pcurve::{Pcurve, PcurveGeometry},
     Curve, CurveGeometry, HelixCurveConstruction, HelixSurfaceConstruction, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -139,17 +139,30 @@ pub(crate) fn write_step_outcome(
 
 /// Whether the cone carrier has no valid STEP surface encoding. A zero-angle
 /// cone over a positive section is a cylinder and is encodable.
-fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> bool {
+fn unwritable_cone(geometry: &SolvedSurfaceGeometry) -> bool {
+    cone_basis(geometry).is_some_and(|cone| {
+        let angle = cone.half_angle().get();
+        let radius = cone.radius().get();
+        angle.abs() >= std::f64::consts::FRAC_PI_2
+            || (angle == 0.0 && (radius <= 0.0 || radius * cone.ratio().get() <= 0.0))
+            || elliptical_cone(geometry)
+    })
+}
+
+/// A cone with an elliptical section and a non-zero half angle. ISO 10303-42
+/// `conical_surface` is circular, and a semi-angle 0 cone is written as its
+/// cylinder.
+fn elliptical_cone(geometry: &SolvedSurfaceGeometry) -> bool {
+    cone_basis(geometry)
+        .is_some_and(|cone| cone.ratio().get() != 1.0 && cone.half_angle().get() != 0.0)
+}
+
+fn cone_basis(mut geometry: &SolvedSurfaceGeometry) -> Option<&ConeSurface> {
     loop {
         match geometry {
-            SolvedSurfaceGeometry::Cone(cone) => {
-                let angle = cone.half_angle().get();
-                let radius = cone.radius().get();
-                return angle.abs() >= std::f64::consts::FRAC_PI_2
-                    || (angle == 0.0 && (radius <= 0.0 || radius * cone.ratio().get() <= 0.0));
-            }
+            SolvedSurfaceGeometry::Cone(cone) => return Some(cone),
             SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
-            _ => return false,
+            _ => return None,
         }
     }
 }
@@ -406,7 +419,6 @@ pub(crate) struct Builder<'a> {
     /// counted loss note.
     curveless_edges: BTreeSet<String>,
     /// Face-context edges written with a 3D line synthesized from endpoint vertices.
-    synthesized_curve_edges: BTreeSet<String>,
 
     /// Degenerate carriers of point edges that need no curve record: those
     /// written as `VERTEX_LOOP` vertices, and those of collapsed edges left
@@ -897,7 +909,6 @@ impl<'a> Builder<'a> {
             sampled_curves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
-            synthesized_curve_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
             point_loop_points: BTreeSet::new(),
             collapsed_curveless_coedges: BTreeSet::new(),
@@ -1627,6 +1638,12 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let name = appearance.name.as_deref().unwrap_or("");
+            if color.a() < 1.0 {
+                // A transparency is stated by a surface rendering, so the
+                // colour is written as the unattached style that holds both.
+                self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs);
+                continue;
+            }
             let rgb = format!(
                 "{},{},{}",
                 self.emitter.real(f64::from(color.r())),
@@ -2948,13 +2965,61 @@ impl<'a> Builder<'a> {
                     transform.is_none_or(|transform| geometry::is_similarity_transform(&transform))
                 })
         };
+        let mut prototype_uses = HashMap::<&ProductDefinitionId, usize>::new();
+        for product in occurrence_products.values() {
+            *prototype_uses.entry(product).or_default() += 1;
+        }
+        let referenced_occurrences: HashSet<&str> = ir
+            .model
+            .attributes
+            .iter()
+            .filter_map(|attribute| match &attribute.target {
+                AttributeTarget::Occurrence(id) => Some(id.as_str()),
+                AttributeTarget::Record { arena, id } if arena.as_str() == "occurrences" => {
+                    Some(id.as_str())
+                }
+                _ => None,
+            })
+            .chain(
+                ir.model
+                    .presentation_layers
+                    .iter()
+                    .flat_map(|layer| &layer.items)
+                    .filter_map(|item| match item {
+                        PresentationItem::Occurrence { occurrence } => Some(occurrence.as_str()),
+                        _ => None,
+                    }),
+            )
+            .chain(
+                ir.model
+                    .appearance_bindings
+                    .iter()
+                    .filter_map(|binding| match &binding.target {
+                        cadmpeg_ir::appearance::AppearanceTarget::Occurrence(id) => {
+                            Some(id.as_str())
+                        }
+                        _ => None,
+                    }),
+            )
+            .collect();
+        // A STEP root product definition states a product and no placement,
+        // name or relationship of its own; a root occurrence that holds one
+        // of these is written under an assembly root. A root assembly with
+        // no placement keeps it as a usage with no placement.
         let assembly_root = occurrences.iter().any(|occurrence| {
+            let childless = !occurrences.iter().any(|child| {
+                matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id)
+            });
             placed_root(occurrence)
                 && (occurrence.effective_transform().is_ok_and(|transform| {
-                    transform.is_none_or(|transform| !is_identity(&transform.rows()))
-                }) || !occurrences.iter().any(|child| {
-                    matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id)
-                }))
+                    transform.map_or(!childless, |transform| !is_identity(&transform.rows()))
+                }) || (childless
+                    && (occurrence.name.is_some()
+                        || occurrence.visible.is_some()
+                        || referenced_occurrences.contains(occurrence.id.as_str())
+                        || occurrence_products
+                            .get(&occurrence.id)
+                            .is_none_or(|product| prototype_uses[product] > 1))))
         });
         let product_names = distinct_names(
             &products
@@ -3794,6 +3859,14 @@ impl<'a> Builder<'a> {
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
             }
+            // A sheet whose faces have no bounds is a set of whole surfaces,
+            // which a geometric set states and decodes to the same faces.
+            if body_kind == BodyKind::Sheet
+                && region.shells.len() == 1
+                && self.emit_surface_set(region, context, &mut items, false)
+            {
+                continue;
+            }
             let closed = body_kind == BodyKind::Solid;
             let Some((outer_id, void_ids)) = region.shells.split_first() else {
                 self.empty_regions.insert(region.id.as_str().to_owned());
@@ -3843,7 +3916,7 @@ impl<'a> Builder<'a> {
             let mut shell_refs = outer.iter().map(|(shell, _)| *shell).collect::<Vec<_>>();
             shell_refs.extend(voids.iter().map(|(shell, _)| *shell));
             let Some(first_shell) = shell_refs.first().copied() else {
-                if self.emit_surface_set_fallback(region, context, &mut items) {
+                if self.emit_surface_set(region, context, &mut items, true) {
                     continue;
                 }
                 self.emit_region_fallback_geometry(region, context, false, &mut items);
@@ -3852,7 +3925,7 @@ impl<'a> Builder<'a> {
             if closed && !solid {
                 self.loss(
                     StepLossCode::RegionSolidReducedToSheet,
-                    format!("body {} region {} was written as a surface model because its solid shells are incomplete or open", region.body, region.id),
+                    format!("body {} region {} was written as a surface model because faces of its solid shells were omitted", region.body, region.id),
                 );
             }
             let item = if !solid {
@@ -3944,16 +4017,18 @@ impl<'a> Builder<'a> {
     /// Write a sheet region whose faces carry boundary surfaces but no edge
     /// topology as a geometric set: the source geometric-set fixture decodes
     /// to such a body, and the set representation round-trips it. Only a
-    /// face with no loops on a self-bounded surface qualifies: a failed
-    /// loop never promotes its support to a root.
-    fn emit_surface_set_fallback(
+    /// face with no loops qualifies. A `recovered` region had its shells
+    /// omitted, and only a face on a self-bounded surface qualifies: a
+    /// failed loop never promotes its support to a root. An unrecovered
+    /// region qualifies only when every one of its faces does.
+    fn emit_surface_set(
         &mut self,
         region: &cadmpeg_ir::topology::Region,
         context: Ref,
         items: &mut Vec<Ref>,
+        recovered: bool,
     ) -> bool {
-        let mut members = Vec::new();
-        let mut retained_faces = Vec::new();
+        let mut faces = Vec::new();
         for shell_id in &region.shells {
             let Some(shell) = self.shells.get(shell_id.as_str()) else {
                 continue;
@@ -3962,34 +4037,45 @@ impl<'a> Builder<'a> {
                 if self.face_step_refs.contains_key(face_id.as_str()) {
                     continue;
                 }
-                let Some(face) = self.faces.get(face_id.as_str()).copied() else {
-                    continue;
-                };
-                if !face.loops.is_empty() || !self.surface_is_self_bounded(face) {
-                    continue;
+                let qualifies = self.faces.get(face_id.as_str()).copied().filter(|face| {
+                    face.loops.is_empty() && (!recovered || self.surface_is_self_bounded(face))
+                });
+                match qualifies {
+                    Some(face) => faces.push(face),
+                    None if !recovered => return false,
+                    None => {}
                 }
-                let Some(surface) = self.emit_surface(face.surface.as_str()) else {
-                    continue;
-                };
-                members.push(surface);
-                self.surface_set_surfaces.insert(face.surface.to_string());
-                retained_faces.push(format!("'{}'", face.id));
             }
+        }
+        let mut members = Vec::new();
+        let mut retained_faces = Vec::new();
+        for face in faces {
+            let Some(surface) = self.emit_surface(face.surface.as_str()) else {
+                if !recovered {
+                    self.unknown_surface_faces.insert(face.id.to_string());
+                }
+                continue;
+            };
+            members.push(surface);
+            self.surface_set_surfaces.insert(face.surface.to_string());
+            retained_faces.push(format!("'{}'", face.id));
         }
         if members.is_empty() {
             return false;
         }
         self.surface_set_bodies
             .insert(region.body.as_str().to_owned());
-        self.loss(
-            StepLossCode::RegionFacesRecoveredAsSet,
-            format!(
-                "region {} retained {} face surface(s) as geometric set members after their topology was omitted: {}",
-                region.id,
-                members.len(),
-                retained_faces.join(", "),
-            ),
-        );
+        if recovered {
+            self.loss(
+                StepLossCode::RegionFacesRecoveredAsSet,
+                format!(
+                    "region {} retained {} face surface(s) as geometric set members after their topology was omitted: {}",
+                    region.id,
+                    members.len(),
+                    retained_faces.join(", "),
+                ),
+            );
+        }
         let set = self
             .emitter
             .emit("GEOMETRIC_SET", &format!("'',{}", refs(&members)));
@@ -4554,28 +4640,9 @@ impl<'a> Builder<'a> {
         let mut members = Vec::new();
         let mut has_surfaces = false;
         for surface_id in surface_ids {
-            let reference = self.emit_surface(&surface_id).or_else(|| {
-                let surface = self.surfaces.get(surface_id.as_str())?;
-                if self.construction_supports.contains(&surface_id)
-                    || !matches!(
-                        surface.geometry.solved(),
-                        Some(SolvedSurfaceGeometry::Unknown { .. })
-                    )
-                {
-                    return None;
-                }
-                let name = Self::carrier_name(&self.carrier_names, &surface_id);
-                let reference = self.emitter.emit("SURFACE", &string(name));
-                self.surface_refs.insert(
-                    surface_id.clone(),
-                    WrittenSurface {
-                        reference,
-                        chart: None,
-                        reversed_normal: false,
-                    },
-                );
-                Some(reference)
-            });
+            let reference = self
+                .emit_surface(&surface_id)
+                .or_else(|| self.emit_unknown_surface(&surface_id));
             if let Some(reference) = reference {
                 let ranges =
                     self.procedural_surfaces
@@ -5244,8 +5311,7 @@ impl<'a> Builder<'a> {
         }
         let closed = closed
             && face_refs.len() == face_ids.len()
-            && self.topology_relation_losses.len() == prior_losses
-            && self.shell_is_closed(shell);
+            && self.topology_relation_losses.len() == prior_losses;
         Some((
             self.emitter.emit(
                 if closed { "CLOSED_SHELL" } else { "OPEN_SHELL" },
@@ -5253,64 +5319,6 @@ impl<'a> Builder<'a> {
             ),
             closed,
         ))
-    }
-
-    fn shell_is_closed(&self, shell: &Shell) -> bool {
-        let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
-        let mut loops_seen = 0;
-        let mut vertex_only = true;
-        for face_id in shell.faces() {
-            let Some(face) = self.faces.get(face_id.as_str()) else {
-                return false;
-            };
-            for loop_id in &face.loops {
-                let Some(lp) = self.loops.get(loop_id.as_str()) else {
-                    return false;
-                };
-                loops_seen += 1;
-                if !lp.coedges().is_empty() {
-                    vertex_only = false;
-                }
-                for coedge_id in lp.coedges() {
-                    let Some(coedge) = self.coedges.get(coedge_id.as_str()) else {
-                        return false;
-                    };
-                    let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
-                        return false;
-                    };
-                    if edge.curve().is_none()
-                        && !self.synthesized_curve_edges.contains(edge.id.as_str())
-                        && self.emitted_coedges.contains(coedge_id.as_str())
-                    {
-                        return false;
-                    }
-                    let degenerate = edge.start == edge.end
-                        && (self
-                            .collapsed_curveless_coedges
-                            .contains(coedge_id.as_str())
-                            || edge
-                                .curve()
-                                .and_then(|id| self.curves.get(id.as_str()))
-                                .is_some_and(|curve| {
-                                    matches!(
-                                        curve.geometry.solved(),
-                                        Some(SolvedCurveGeometry::Degenerate(_))
-                                    )
-                                }));
-                    if !degenerate {
-                        let count = uses.entry(edge.id.as_str()).or_default();
-                        count[usize::from(coedge.sense == Sense::Reversed)] += 1;
-                    }
-                }
-            }
-        }
-        if !uses.is_empty() {
-            return uses.values().all(|[forward, reversed]| forward == reversed);
-        }
-        // A skin whose every bound is a pole vertex loop is closed: a sphere
-        // with two VERTEX_LOOP poles decodes to such a shell with no edge
-        // uses to count.
-        loops_seen > 0 && vertex_only
     }
 
     /// Writes the face use, or its reverse when `reversed` is set: the
@@ -5331,9 +5339,15 @@ impl<'a> Builder<'a> {
 
         // Surface emission admits either a writable construction or a solved
         // carrier. An absent or opaque solved cache cannot veto a construction.
-        let Some(surf_ref) = self.emit_surface(surface_id) else {
-            self.unknown_surface_faces.insert(face_id.to_string());
-            return None;
+        let (surf_ref, unknown_surface) = match self.emit_surface(surface_id) {
+            Some(reference) => (reference, false),
+            None => {
+                let Some(reference) = self.emit_unknown_surface(surface_id) else {
+                    self.unknown_surface_faces.insert(face_id.to_string());
+                    return None;
+                };
+                (reference, true)
+            }
         };
 
         let mut bound_refs = Vec::new();
@@ -5421,13 +5435,12 @@ impl<'a> Builder<'a> {
                             .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
                             .is_some_and(|edge| {
                                 edge.curve().is_none()
-                                    && !self.synthesized_curve_edges.contains(edge.id.as_str())
                             })
                 })
             })
         });
         let advanced_face = self.emitter.emit(
-            if has_unattributed_edge {
+            if has_unattributed_edge || unknown_surface {
                 "FACE_SURFACE"
             } else {
                 "ADVANCED_FACE"
@@ -5843,15 +5856,6 @@ impl<'a> Builder<'a> {
                 if has_extent && self.collapsed_curveless_coedges.contains(coedge_key) {
                     continue;
                 }
-                if !coedge.pcurves.is_empty() {
-                    self.curveless_edges.insert(edge_key.to_string());
-                    self.topology_relation_loss(
-                        format!("edge:{edge_key}:curve"),
-                        StepLossCode::EdgeNo3dCurve,
-                        format!("edge {edge_key} was omitted because it has no 3D curve"),
-                    );
-                    continue;
-                }
             }
             let (start_vertex, end_vertex) = match coedge.sense {
                 Sense::Forward => (&edge.start, &edge.end),
@@ -6043,75 +6047,18 @@ impl<'a> Builder<'a> {
             };
             basis_curve
         } else {
-            let in_face = !associated.is_empty()
-                || self.coedges.values().any(|coedge| {
-                    coedge.edge.as_str() == edge_id
-                        && self.coedge_faces.contains_key(coedge.id.as_str())
-                });
-            let synthesized = in_face
-                && {
-                    let start = self
-                        .vertices
-                        .get(edge.start.as_str())
-                        .and_then(|v| self.points.get(v.point.as_str()))
-                        .map(|p| p.position().get());
-                    let end = self
-                        .vertices
-                        .get(edge.end.as_str())
-                        .and_then(|v| self.points.get(v.point.as_str()))
-                        .map(|p| p.position().get());
-                    matches!((start, end), (Some(s), Some(e)) if (e.x - s.x).hypot((e.y - s.y).hypot(e.z - s.z)) > 0.0)
-                };
-            if synthesized {
-                let start = self
-                    .vertices
-                    .get(edge.start.as_str())
-                    .and_then(|v| self.points.get(v.point.as_str()))
-                    .map(|p| p.position().get())
-                    .expect("synthesized edge has start position");
-                let end = self
-                    .vertices
-                    .get(edge.end.as_str())
-                    .and_then(|v| self.points.get(v.point.as_str()))
-                    .map(|p| p.position().get())
-                    .expect("synthesized edge has end position");
-                let dx = end.x - start.x;
-                let dy = end.y - start.y;
-                let dz = end.z - start.z;
-                let magnitude = (dx * dx + dy * dy + dz * dz).sqrt();
-                let dir = self.emitter.emit(
-                    "DIRECTION",
-                    &format!(
-                        "'',({},{},{})",
-                        self.emitter.real(dx / magnitude),
-                        self.emitter.real(dy / magnitude),
-                        self.emitter.real(dz / magnitude)
-                    ),
-                );
-                let vec = self.emitter.emit(
-                    "VECTOR",
-                    &format!("'',{dir},{}", self.emitter.real(magnitude)),
-                );
-                let point = geometry::distinct_point(&mut self.emitter, "", start);
-                self.synthesized_curve_edges.insert(edge_id.to_string());
+            // A pcurve is written only on the surface curve of a 3D curve, so
+            // an edge with no 3D curve is written as its topology alone.
+            for use_ in &associated {
                 self.loss(
-                    StepLossCode::EdgeCurveSynthesizedFromVertices,
+                    StepLossCode::PcurveCarrierUnwritable,
                     format!(
-                        "edge {edge_id} has no 3D curve; a line was synthesized from its endpoint vertices"
+                        "pcurve {} on coedge {} was omitted because edge {edge_id} has no 3D curve to carry it",
+                        use_.use_.pcurve, use_.coedge
                     ),
                 );
-                self.emitter.emit("LINE", &format!("'',{point},{vec}"))
-            } else if !associated.is_empty() {
-                self.curveless_edges.insert(edge_id.to_owned());
-                self.topology_relation_loss(
-                    format!("edge:{edge_id}:curve"),
-                    StepLossCode::EdgeNo3dCurve,
-                    format!("edge {edge_id} was omitted because it has no 3D curve"),
-                );
-                return None;
-            } else {
-                return Some(self.emitter.emit("EDGE", &format!("'',{v1},{v2}")));
             }
+            return Some(self.emitter.emit("EDGE", &format!("'',{v1},{v2}")));
         };
         let mut emitted: Vec<(PcurveUse<'a>, Ref)> = Vec::new();
         for use_ in associated {
@@ -6689,6 +6636,12 @@ impl<'a> Builder<'a> {
                     return None;
                 }
                 let reference = self.emit_procedural_surface(&name, solved, &definition)?;
+                if matches!(definition, ProceduralSurfaceDefinition::SubSurface(_)) {
+                    self.loss(
+                        StepLossCode::ProceduralSubSurfaceNormalized,
+                        format!("procedural surface '{id}' was written as a rectangular trim of its support"),
+                    );
+                }
                 let chart = match &definition {
                     ProceduralSurfaceDefinition::ParallelOffset(payload) => {
                         self.surface_chart(payload.support().as_str())
@@ -6751,13 +6704,6 @@ impl<'a> Builder<'a> {
                         format!("surface '{surface_id}' uses a positive radius and an adjusted parameter chart in STEP"),
                     );
                 }
-                if matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.ratio().get() != 1.0 && cone.half_angle().get() != 0.0)
-                {
-                    self.loss(
-                        StepLossCode::EllipticalConeReduced,
-                        format!("surface '{surface_id}' elliptical cone was reduced to a circular STEP CONICAL_SURFACE"),
-                    );
-                }
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let chart = geometry::WrittenChart::of(basis);
@@ -6765,6 +6711,12 @@ impl<'a> Builder<'a> {
                     || matches!(basis, SolvedSurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed());
                 (reference, chart, reversed_normal)
             } else {
+                if solved.is_some_and(elliptical_cone) {
+                    self.loss(
+                        StepLossCode::EllipticalConeReduced,
+                        format!("surface '{surface_id}' is an elliptical cone, which AP242 does not hold, and was omitted"),
+                    );
+                }
                 let procedural = self.procedural_surfaces.get(surface_id)?.id.to_string();
                 let surface = self.approximations.surface(surface_id)?;
                 let reference = geometry::surface(&mut self.emitter, &name, &surface)?;
@@ -6787,6 +6739,31 @@ impl<'a> Builder<'a> {
             return Some(r);
         }
         None
+    }
+
+    /// Writes a surface whose geometry the document leaves unknown as a bare
+    /// `SURFACE`, which states a surface and no geometry.
+    fn emit_unknown_surface(&mut self, surface_id: &str) -> Option<Ref> {
+        let surface = self.surfaces.get(surface_id)?;
+        if self.construction_supports.contains(surface_id)
+            || !matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            )
+        {
+            return None;
+        }
+        let name = Self::carrier_name(&self.carrier_names, surface_id);
+        let reference = self.emitter.emit("SURFACE", &string(name));
+        self.surface_refs.insert(
+            surface_id.to_owned(),
+            WrittenSurface {
+                reference,
+                chart: None,
+                reversed_normal: false,
+            },
+        );
+        Some(reference)
     }
 
     fn surface_normal_reversed(&self, surface_id: &str) -> bool {
@@ -6914,6 +6891,17 @@ impl<'a> Builder<'a> {
                     [u_sense, v_sense],
                     chart,
                 ))
+            }
+            // A sub-surface keeps its support's parameterization over a
+            // parameter rectangle: the rectangular trim states exactly that.
+            ProceduralSurfaceDefinition::SubSurface(payload) => {
+                let parameter_ranges = payload
+                    .parameter_ranges()
+                    .map(cadmpeg_ir::units::FiniteVector::get);
+                let senses = parameter_ranges.map(|[start, end]| end >= start);
+                let support = self.emit_surface(payload.support().as_str())?;
+                let chart = self.surface_chart(payload.support().as_str());
+                Some(self.emit_rectangular_trim(name, support, parameter_ranges, senses, chart))
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
                 let source = self.emit_surface(source.as_str())?;

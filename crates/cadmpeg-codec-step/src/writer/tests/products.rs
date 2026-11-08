@@ -604,7 +604,7 @@ fn writer_names_the_model_product_from_options_on_both_paths() {
         None,
     )];
     let step = write_named(&ir, "Bracket model");
-    assert_eq!(record_names(&step, "PRODUCT"), ["part-0", "Bracket model"]);
+    assert_eq!(record_names(&step, "PRODUCT"), ["Bracket model"]);
 }
 
 #[test]
@@ -623,7 +623,7 @@ fn writer_names_a_product_by_its_part_number() {
     )];
     let step = write_named(&ir, "Bracket model")
         .replace("PRODUCT('P-1001','P-1001',", "PRODUCT('P-1001','',");
-    assert_eq!(record_names(&step, "PRODUCT"), ["", "Bracket model"]);
+    assert_eq!(record_names(&step, "PRODUCT"), [""]);
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(step), &DecodeOptions::default())
@@ -637,7 +637,7 @@ fn writer_names_a_product_by_its_part_number() {
     assert_eq!(product.label, None);
     assert_eq!(product.part_number.as_deref(), Some("P-1001"));
     let step = write_named(decoded.ir(), "Bracket model");
-    assert_eq!(record_names(&step, "PRODUCT"), ["P-1001", "Bracket model"]);
+    assert_eq!(record_names(&step, "PRODUCT"), ["P-1001"]);
 }
 
 /// World translation of every decoded use of a product labeled `label`.

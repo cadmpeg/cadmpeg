@@ -215,7 +215,7 @@ pub(crate) enum StepLossCode {
     TopologyUnreachableFromRegion,
     /// Signed or self-intersecting analytic surfaces were normalized.
     AnalyticSurfaceNormalized,
-    /// Elliptical cone surfaces were reduced to circular `CONICAL_SURFACE`.
+    /// An elliptical cone surface was omitted; ISO 10303-42 cones are circular.
     EllipticalConeReduced,
     /// Edges have no typed 3D curve or carry an unsupported transform.
     CurvelessEdgeOmitted,
@@ -321,6 +321,8 @@ pub(crate) enum StepLossCode {
     ProceduralSurfaceCacheToleranceOmitted,
     /// Extrusion constructions were written as linear sweeps.
     ProceduralExtrusionNormalized,
+    /// Sub-surface constructions were written as rectangular trims.
+    ProceduralSubSurfaceNormalized,
     /// Helix definitions without a solved carrier were written as fitted
     /// cubic B-splines.
     HelixFittedToBspline,
@@ -336,7 +338,7 @@ pub(crate) enum StepLossCode {
     RegionNoWritableOuterShell,
     /// A region omitted a void shell with no writable faces.
     RegionOmittedVoidShell,
-    /// A solid region was written as a surface model because its shells are open.
+    /// A solid region was written as a surface model because faces of its shells were omitted.
     RegionSolidReducedToSheet,
     /// Vertices of unwritable topology were retained as standalone points.
     RegionVerticesRecovered,
@@ -393,8 +395,6 @@ pub(crate) enum StepLossCode {
     LoopEdgeMissingForOrder,
     /// An edge was omitted because it has no 3D curve.
     EdgeNo3dCurve,
-    /// A face-context edge with no 3D curve was written with a line synthesized from its vertices.
-    EdgeCurveSynthesizedFromVertices,
     /// An edge was omitted because its curve is not writable.
     EdgeCurveNotWritable,
     /// An edge was omitted because its curve is unsupported.
@@ -582,6 +582,7 @@ impl StepLossCode {
         Self::ProceduralCurveCacheToleranceOmitted,
         Self::ProceduralSurfaceCacheToleranceOmitted,
         Self::ProceduralExtrusionNormalized,
+        Self::ProceduralSubSurfaceNormalized,
         Self::HelixFittedToBspline,
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
@@ -616,7 +617,6 @@ impl StepLossCode {
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
         Self::EdgeNo3dCurve,
-        Self::EdgeCurveSynthesizedFromVertices,
         Self::EdgeCurveNotWritable,
         Self::EdgeCurveUnsupported,
         Self::LoopNoContinuousOrdering,
@@ -804,6 +804,7 @@ impl StepLossCode {
                 "geometry.procedural-surface-cache-tolerance-omitted"
             }
             Self::ProceduralExtrusionNormalized => "geometry.procedural-extrusion-normalized",
+            Self::ProceduralSubSurfaceNormalized => "geometry.procedural-sub-surface-normalized",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
@@ -840,7 +841,6 @@ impl StepLossCode {
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
             Self::EdgeNo3dCurve => "topology.edge-no-3d-curve",
-            Self::EdgeCurveSynthesizedFromVertices => "topology.edge-curve-synthesized",
             Self::EdgeCurveNotWritable => "topology.edge-curve-not-writable",
             Self::EdgeCurveUnsupported => "topology.edge-curve-unsupported",
             Self::LoopNoContinuousOrdering => "topology.loop-no-continuous-ordering",
@@ -932,6 +932,7 @@ impl StepLossCode {
             | Self::ProceduralCurveCacheToleranceOmitted
             | Self::ProceduralSurfaceCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
+            | Self::ProceduralSubSurfaceNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
             | Self::NonManifoldEdgeSplit => Severity::Info,
@@ -1058,7 +1059,6 @@ impl StepLossCode {
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
             | Self::EdgeNo3dCurve
-            | Self::EdgeCurveSynthesizedFromVertices
             | Self::EdgeCurveNotWritable
             | Self::EdgeCurveUnsupported
             | Self::LoopNoContinuousOrdering
@@ -1135,6 +1135,7 @@ impl StepLossCode {
             | Self::ProceduralCurveCacheToleranceOmitted
             | Self::ProceduralSurfaceCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
+            | Self::ProceduralSubSurfaceNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
         }
@@ -1314,6 +1315,7 @@ mod tests {
                 "geometry.procedural-curve-cache-tolerance-omitted",
                 "geometry.procedural-surface-cache-tolerance-omitted",
                 "geometry.procedural-extrusion-normalized",
+                "geometry.procedural-sub-surface-normalized",
                 "geometry.helix-fitted-to-bspline",
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
@@ -1348,7 +1350,6 @@ mod tests {
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",
                 "topology.edge-no-3d-curve",
-                "topology.edge-curve-synthesized",
                 "topology.edge-curve-not-writable",
                 "topology.edge-curve-unsupported",
                 "topology.loop-no-continuous-ordering",
