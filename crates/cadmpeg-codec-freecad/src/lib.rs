@@ -1546,6 +1546,9 @@ impl EncoderBackend for FcstdCodec {
             cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
             cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
             cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
+            error @ cadmpeg_core::CodecError::Malformed(_) => {
+                EncodeError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+            }
             error => {
                 debug_assert!(false, "unmapped FreeCAD encode error: {error}");
                 panic!("unmapped FreeCAD encode error: {error}");
