@@ -183,6 +183,8 @@ fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Ve
                 normalize: Some(camera_frame_orientation),
             },
         ]
+    } else if output == Format::Fcstd {
+        super::freecad_storage::probes()
     } else {
         Vec::new()
     };
