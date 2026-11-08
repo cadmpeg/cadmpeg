@@ -62,6 +62,13 @@ impl Allowances {
     pub fn absent_field_ids(&self) -> &BTreeSet<(String, String)> {
         &self.absent_fields
     }
+
+    /// Allow additional record identities to be unpaired in `before`. Used by
+    /// edit closure when a writer propagates model edits into native carrier
+    /// records that the expected JSON does not reflect.
+    pub fn permit_removed(&mut self, ids: impl IntoIterator<Item = String>) {
+        self.removed.extend(ids);
+    }
 }
 
 /// Records of `before` that `after` does not pair, with no pruning (#232
@@ -291,11 +298,27 @@ fn agree_once_pruned(
         return unpruned;
     }
     let unpaired = pairing_gaps(before, after, fields, cross)?;
-    let removed = unpaired
+    let mut removed = unpaired
         .intersection(permitted)
         .cloned()
         .collect::<BTreeSet<_>>();
-    agree_once(before, after, fields, &removed, Some(&removed), cross)
+    loop {
+        match agree_once(before, after, fields, &removed, Some(&removed), cross) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                if let Some(id) = error
+                    .split(": required record ")
+                    .nth(1)
+                    .and_then(|rest| rest.strip_suffix(" is missing"))
+                {
+                    if permitted.contains(id) && removed.insert(id.to_owned()) {
+                        continue;
+                    }
+                }
+                return Err(error);
+            }
+        }
+    }
 }
 
 /// The records of `before` that `after` does not pair, with no pruning.
