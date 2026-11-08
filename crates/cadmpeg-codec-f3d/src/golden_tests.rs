@@ -1290,16 +1290,11 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
 
 fn neutralize_stream_names(value: &mut serde_json::Value) {
     fn normalize(text: &str) -> String {
+        if text.contains("BulkStream.dat") || text.contains("MetaStream.dat") {
+            return "ID".to_owned();
+        }
         let mut text = text.to_owned();
-        for token in [
-            "FusionAssetName%5BActive%5D",
-            "FusionAssetName[Active]",
-            "FusionDesignSegmentType4",
-            "FusionDesignSegmentType3",
-            "FusionACTSegmentType1",
-            "generated",
-            "Design1",
-        ] {
+        for token in ["FusionAssetName%5BActive%5D", "FusionAssetName[Active]"] {
             text = text.replace(token, "S");
         }
         text
