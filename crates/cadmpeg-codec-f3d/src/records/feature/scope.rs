@@ -691,10 +691,6 @@ pub(crate) struct DesignParameterScope {
     pub(crate) occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
     /// Family-specific construction records.
     payload: DesignScopePayload,
-    /// Reference members whose records open a construction-operand group the
-    /// group grammar does not close.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Source frame of the scope.
@@ -755,9 +751,6 @@ pub(crate) struct DesignParameterScopeDraft {
     pub(crate) reference_members: ReferenceRun<u32>,
     /// Family-specific construction records.
     pub(crate) payload: DesignScopePayload,
-    /// Reference members whose records open a construction-operand group the
-    /// group grammar does not close.
-    pub(crate) unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -1047,10 +1040,6 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_work_point_construction"
     )]
     work_point_construction: Option<DesignWorkPointConstruction>,
-    /// Reference members whose records open a construction-operand group the
-    /// group grammar does not close.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    unclosed_construction_operand_groups: Vec<u32>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(
         default,
@@ -2001,7 +1990,6 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             previous_history_state_id: wire.previous_history_state_id,
             reference_members: ReferenceRun::unlocated(wire.reference_members),
             payload,
-            unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
             paired_class_tag: wire
                 .paired_class_tag
                 .try_into()
@@ -2032,7 +2020,6 @@ struct DesignParameterScopeWireFields {
     previous_history_state_id: Option<i64>,
     reference_members: ReferenceRun<u32>,
     payload: DesignScopePayload,
-    unclosed_construction_operand_groups: Vec<u32>,
     paired_class_tag: DesignClassTag,
 }
 
@@ -2089,7 +2076,6 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             work_axis_construction: None,
             joint_origin_frame: None,
             work_point_construction: None,
-            unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
             hole_construction: None,
             hole_extent: None,
             sketch_entity: None,
@@ -2467,7 +2453,6 @@ impl DesignParameterScope {
             previous_history_state_id: draft.previous_history_state_id,
             reference_members: draft.reference_members,
             payload: draft.payload,
-            unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             paired_class_tag: draft.paired_class_tag,
         })?;
         scope.source = source;
@@ -2518,7 +2503,6 @@ impl DesignParameterScope {
             reference_members: fields.reference_members,
             occurrence_transfer: None,
             payload: fields.payload,
-            unclosed_construction_operand_groups: fields.unclosed_construction_operand_groups,
             paired_class_tag: fields.paired_class_tag,
             source: DesignScopeSource::default(),
         };
@@ -2550,7 +2534,6 @@ impl DesignParameterScope {
             reference_count_offset: source.reference_count_offset?,
             reference_members: self.reference_members.clone(),
             payload: self.payload.clone(),
-            unclosed_construction_operand_groups: self.unclosed_construction_operand_groups.clone(),
             paired_class_tag: self.paired_class_tag.clone(),
             paired_byte_offset: source.paired_byte_offset?,
         })
@@ -3277,7 +3260,6 @@ impl DesignParameterScope {
                 offset: 14,
             }]),
             payload: payload.try_into().unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
             paired_byte_offset: 128,
         })

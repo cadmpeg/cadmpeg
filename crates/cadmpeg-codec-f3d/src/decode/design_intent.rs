@@ -781,7 +781,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design,
         &model.features,
         &mut model.feature_input_topologies,
-        &mut losses,
     )?;
     losses.extend(crate::history::bind_feature_outputs(
         &mut model.features,
@@ -1309,6 +1308,8 @@ fn extend_related_design_records(
     )?;
     design.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(
+            ctx,
+            &mut *design_parts,
             scan,
             &mut design.design_parameter_scopes,
             &design.design_record_headers,
