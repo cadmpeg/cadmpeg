@@ -2,7 +2,8 @@
 
 `cadmpeg` inspects native CAD containers, dumps supported model data into
 CADIR, checks and compares CADIR models, and exports CADIR, STEP Part 21
-(AP203, AP214, or AP242), and bounded IGES 5.1, 5.2, or 5.3 Fixed ASCII. It also writes
+(AP203, AP214, or AP242), bounded IGES 5.1, 5.2, or 5.3 Fixed ASCII, and
+OpenUSD USDA layers. It also writes
 supported `.FCStd`, `.f3d`, `.sldprt`, and `.3dm` models.
 
 Native codecs transfer different subsets of geometry, topology, design intent,
@@ -77,7 +78,7 @@ Compressed ASCII and Binary sources: converting one back to IGES replays the
 original bytes, which the writer could not synthesize, and asking for a
 different target is a synthesis request that says so.
 
-The output extension selects `step`, `iges`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
+The output extension selects `step`, `iges`, `fcstd`, `f3d`, `sldprt`, `rhino`, `usd`, or
 `cadir`. Pass `--to` when the filename does not identify the format, or when a
 text format (`cadir`, `step`) goes to standard output:
 
