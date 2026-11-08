@@ -375,7 +375,7 @@ A line whose two endpoint references resolve to one position stores no segment, 
 
 Types `013cbb1fd2114d68a0009e9a3c3aa076`, `7f341025ae4a79961d9047869d5f4e48`, and `0ead987ab9495ceefc186787a2a20643` are text member records of a planar sketch. The first stores a text; the second binds a text to a sketch point; the third groups the box points and lines of a text. None stores a curve. The points and lines that they name are ordinary planar entity records, and the box lines carry bit `0x80000`. A sketch that lists a text member record is not open because of it: the record stays native, the named entities project as sketch entities, and no text outline enters a profile. The reader reports the records with the loss `sketch.text-member-native`.
 
-Types `08db93dcc149f26ff229ecb1804d9784` and `5f33ec8f6c4fb6be9fcc71963ad1b9df` are the box frame and the box group of a planar sketch. They occur with a group record of type `0ead987ab9495ceefc186787a2a20643`. In segment major version 19, a box frame stores these fields after the 22-byte content header:
+Types `08db93dcc149f26ff229ecb1804d9784` and `5f33ec8f6c4fb6be9fcc71963ad1b9df` are the box frame and the box group of a planar sketch. In segment major version 19, a box frame stores these fields after the 22-byte content header:
 
 ```text
 sketch_reference u32     non-null
