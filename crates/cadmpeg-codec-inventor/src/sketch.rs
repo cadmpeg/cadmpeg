@@ -816,16 +816,20 @@ pub(crate) fn inventory(
                 inventory.text_members.push(text::TextMember {
                     segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
+                    box_member: None,
+                    role_failures: Vec::new(),
                 });
                 continue;
             }
             if box_member::is_box_member_type(record.type_id) {
                 match box_member::admit(record.type_id, record.payload, version) {
-                    Ok(()) => {
+                    Ok(member) => {
                         ctx.charge_entities(1, "admit Inventor PmDc sketch box member")?;
                         inventory.text_members.push(text::TextMember {
                             segment_token: segment.pair.token.key().clone(),
                             record_ordinal: record.ordinal,
+                            box_member: Some(member),
+                            role_failures: Vec::new(),
                         });
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -946,6 +950,7 @@ pub(crate) fn inventory(
             }
         }
     }
+    box_member::check_roles(&mut inventory);
     Ok(inventory)
 }
 

@@ -31,7 +31,7 @@ const CURVE_MEMBER: [u8; 16] = [
 const TEXT_ORDINAL: u32 = 30;
 
 /// Lists a record of `ordinal` in the sketch.
-fn list_member(inventory: &mut SketchInventory, ordinal: u32) {
+pub(super) fn list_member(inventory: &mut SketchInventory, ordinal: u32) {
     let sketch = &inventory.sketches[0];
     let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
     references
@@ -58,6 +58,8 @@ fn text_member(ordinal: u32) -> TextMember {
     TextMember {
         segment_token: cadmpeg_ir::identity_key!("segment"),
         record_ordinal: ordinal,
+        box_member: None,
+        role_failures: Vec::new(),
     }
 }
 

@@ -3,11 +3,18 @@
 
 use std::collections::HashSet;
 
+use super::closed_square_inventory;
+use super::text_member::list_member;
 use crate::container::InventorContainer;
+use crate::pmdc::PmDcReference;
+use crate::record_identity::Located;
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-use crate::sketch::box_member::{admit, is_box_member_type, member_loss};
+use crate::sketch::box_member::{
+    admit, check_roles, is_box_member_type, member_loss, role_losses, BoxMember, BoxRole,
+};
 use crate::sketch::curve::member_loss_counts;
-use crate::sketch::{inventory, SketchInventory};
+use crate::sketch::text::TextMember;
+use crate::sketch::{inventory, PmDcSketchEntityPayload, SketchInventory};
 use crate::test_support::test_fixtures::content;
 use crate::test_support::test_fixtures::primary_envelope_fixture;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
@@ -221,4 +228,217 @@ fn admitted_box_members_report_a_pinned_loss_and_unadmitted_ones_keep_theirs() {
             && loss.message.contains("Retained 1")));
     assert_eq!(losses.len(), 2);
     assert_eq!(member_loss(2).message, boxed.message);
+}
+
+/// Record ordinal of the frame in the synthetic sketch.
+const FRAME_ORDINAL: u32 = 20;
+/// Record ordinal of the group in the synthetic sketch.
+const GROUP_ORDINAL: u32 = 21;
+/// Reference index of the frame record.
+const FRAME_INDEX: u32 = FRAME_ORDINAL + 1;
+/// Reference index of the sketch record of the square.
+const SKETCH_INDEX: u32 = 3;
+/// Reference index that no record of the synthetic sketch holds.
+const OTHER_SKETCH_INDEX: u32 = 99;
+/// Reference indices of the four corner points of the square.
+const POINTS: [u32; 4] = [4, 5, 6, 7];
+/// Reference indices of the four lines of the square.
+const LINES: [u32; 4] = [8, 9, 10, 11];
+/// Entity-flag bit of a box line.
+const BOX_LINE_BIT: u32 = 0x8_0000;
+
+fn reference_to(index: u32) -> PmDcReference {
+    PmDcReference::new(index, false).expect("test reference index fits 31 bits")
+}
+
+fn replace_entity(
+    inventory: &mut SketchInventory,
+    index: usize,
+    edit: impl FnOnce(&mut PmDcSketchEntityPayload),
+) {
+    let mut payload = PmDcSketchEntityPayload::clone(&inventory.entities[index]);
+    edit(&mut payload);
+    let identity = inventory.entities[index].identity.clone();
+    inventory.entities[index] = Located::new(
+        payload,
+        identity.type_id.clone(),
+        identity.segment_token.clone(),
+        identity.record_ordinal,
+    );
+}
+
+/// The square with box lines, a frame, and a group, all listed by the sketch.
+/// `frame_sketch` is the frame sketch reference and `group` the seven group
+/// references.
+fn box_inventory(frame_sketch: u32, group: [u32; 7]) -> SketchInventory {
+    let (mut inventory, _) = closed_square_inventory();
+    for index in 4..8 {
+        replace_entity(&mut inventory, index, |payload| {
+            payload.entity_flags = BOX_LINE_BIT;
+        });
+    }
+    let token = cadmpeg_ir::identity_key!("segment");
+    inventory.text_members.push(TextMember {
+        segment_token: token.clone(),
+        record_ordinal: FRAME_ORDINAL,
+        box_member: Some(BoxMember::Frame {
+            sketch: reference_to(frame_sketch),
+        }),
+        role_failures: Vec::new(),
+    });
+    inventory.text_members.push(TextMember {
+        segment_token: token,
+        record_ordinal: GROUP_ORDINAL,
+        box_member: Some(BoxMember::Group {
+            references: group.map(reference_to),
+        }),
+        role_failures: Vec::new(),
+    });
+    list_member(&mut inventory, FRAME_ORDINAL);
+    list_member(&mut inventory, GROUP_ORDINAL);
+    inventory
+}
+
+fn good_group() -> [u32; 7] {
+    [
+        POINTS[0],
+        LINES[0],
+        LINES[1],
+        LINES[2],
+        LINES[3],
+        FRAME_INDEX,
+        POINTS[0],
+    ]
+}
+
+/// The failed roles of the frame and of the group after the role check.
+fn failures(mut inventory: SketchInventory) -> (Vec<BoxRole>, Vec<BoxRole>) {
+    check_roles(&mut inventory);
+    assert_eq!(inventory.text_members.len(), 2);
+    (
+        inventory.text_members[0].role_failures.clone(),
+        inventory.text_members[1].role_failures.clone(),
+    )
+}
+
+#[test]
+fn a_frame_and_a_group_that_fill_their_roles_report_no_failure() {
+    let (frame, group) = failures(box_inventory(SKETCH_INDEX, good_group()));
+    assert!(frame.is_empty());
+    assert!(group.is_empty());
+}
+
+#[test]
+fn a_frame_that_names_another_sketch_fails_the_sketch_role() {
+    let (frame, group) = failures(box_inventory(OTHER_SKETCH_INDEX, good_group()));
+    assert_eq!(frame, [BoxRole::FrameSketch]);
+    assert!(group.is_empty());
+}
+
+#[test]
+fn a_group_whose_last_reference_differs_from_its_corner_fails_the_corner_role() {
+    let mut references = good_group();
+    references[6] = POINTS[1];
+    let (frame, group) = failures(box_inventory(SKETCH_INDEX, references));
+    assert!(frame.is_empty());
+    assert_eq!(group, [BoxRole::GroupCorner]);
+}
+
+#[test]
+fn a_group_corner_that_is_not_a_point_fails_the_corner_role() {
+    let mut references = good_group();
+    references[0] = LINES[0];
+    references[6] = LINES[0];
+    let (_, group) = failures(box_inventory(SKETCH_INDEX, references));
+    assert_eq!(group, [BoxRole::GroupCorner]);
+}
+
+#[test]
+fn a_group_corner_point_of_another_sketch_fails_the_corner_role() {
+    let mut inventory = box_inventory(SKETCH_INDEX, good_group());
+    replace_entity(&mut inventory, 0, |payload| {
+        payload.sketch = reference_to(OTHER_SKETCH_INDEX);
+    });
+    let (_, group) = failures(inventory);
+    assert_eq!(group, [BoxRole::GroupCorner]);
+}
+
+#[test]
+fn a_group_frame_reference_that_is_not_an_admitted_frame_fails_the_frame_role() {
+    for target in [POINTS[1], GROUP_ORDINAL + 1, 40] {
+        let mut references = good_group();
+        references[5] = target;
+        let (frame, group) = failures(box_inventory(SKETCH_INDEX, references));
+        assert!(frame.is_empty());
+        assert_eq!(group, [BoxRole::GroupFrame], "target {target}");
+    }
+}
+
+#[test]
+fn a_group_line_without_the_box_bit_or_of_another_sketch_fails_the_lines_role() {
+    let mut unflagged = box_inventory(SKETCH_INDEX, good_group());
+    replace_entity(&mut unflagged, 6, |payload| payload.entity_flags = 0);
+    assert_eq!(failures(unflagged).1, [BoxRole::GroupLines]);
+
+    let mut elsewhere = box_inventory(SKETCH_INDEX, good_group());
+    replace_entity(&mut elsewhere, 7, |payload| {
+        payload.sketch = reference_to(OTHER_SKETCH_INDEX);
+    });
+    assert_eq!(failures(elsewhere).1, [BoxRole::GroupLines]);
+
+    let mut references = good_group();
+    references[2] = POINTS[2];
+    assert_eq!(
+        failures(box_inventory(SKETCH_INDEX, references)).1,
+        [BoxRole::GroupLines]
+    );
+}
+
+#[test]
+fn every_failed_role_of_a_group_is_reported() {
+    let references = [40, 41, 42, 43, 44, 45, 46];
+    let (_, group) = failures(box_inventory(SKETCH_INDEX, references));
+    assert_eq!(
+        group,
+        [
+            BoxRole::GroupCorner,
+            BoxRole::GroupFrame,
+            BoxRole::GroupLines
+        ]
+    );
+}
+
+#[test]
+fn a_role_failure_keeps_the_record_admitted_and_reports_a_pinned_loss_that_names_the_role() {
+    let mut references = good_group();
+    references[6] = POINTS[1];
+    let mut inventory = box_inventory(SKETCH_INDEX, references);
+    check_roles(&mut inventory);
+    assert_eq!(inventory.text_members.len(), 2);
+    let losses = role_losses(&inventory.text_members);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "sketch.box-role-mismatch");
+    assert!(losses[0].message.contains("Retained 1"));
+    assert!(losses[0]
+        .message
+        .contains("references 1 and 7 of a box group name one point"));
+    let mut clean = box_inventory(SKETCH_INDEX, good_group());
+    check_roles(&mut clean);
+    assert!(role_losses(&clean.text_members).is_empty());
+}
+
+#[test]
+fn the_inventory_admits_a_group_with_unresolved_roles_and_records_the_failures() {
+    let inventory =
+        inventory_with_record_at(GROUP, &group(7), DecodePolicy::service(), Some(VERSION))
+            .expect("inventory");
+    assert_eq!(inventory.text_members.len(), 1);
+    assert_eq!(
+        inventory.text_members[0].role_failures,
+        [
+            BoxRole::GroupCorner,
+            BoxRole::GroupFrame,
+            BoxRole::GroupLines
+        ]
+    );
 }

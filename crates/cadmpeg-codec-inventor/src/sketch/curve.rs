@@ -184,15 +184,16 @@ pub(crate) fn member_losses(
         })
         .filter(|key| !known.contains(key))
         .collect::<HashSet<_>>();
+    let mut losses = super::box_member::role_losses(&inventory.text_members);
     if unresolved.is_empty() {
-        return Vec::new();
+        return losses;
     }
     let admitted = inventory
         .text_members
         .iter()
         .map(|member| (member.segment_token.as_str(), member.record_ordinal))
         .collect::<HashSet<_>>();
-    member_loss_counts(
+    losses.extend(member_loss_counts(
         &unresolved,
         &admitted,
         document
@@ -214,7 +215,8 @@ pub(crate) fn member_losses(
                 }))
             })
             .flatten(),
-    )
+    ));
+    losses
 }
 
 pub(super) fn member_loss_counts<'a>(
