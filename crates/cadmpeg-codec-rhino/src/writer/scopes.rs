@@ -203,7 +203,7 @@ pub(super) fn construction_curves(
             serde_json::Value::String(text) => out.push(text.clone()),
             serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
             serde_json::Value::Object(fields) => {
-                fields.values().for_each(|item| strings(item, out))
+                fields.values().for_each(|item| strings(item, out));
             }
             _ => {}
         }
