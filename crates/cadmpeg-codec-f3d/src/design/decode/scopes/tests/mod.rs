@@ -27,6 +27,7 @@ mod move_transform;
 mod named_empty_label;
 mod named_variable_tail;
 mod offset_faces;
+mod point_direction_work_axes;
 mod referenced_revolve;
 mod remove_body_named_tail;
 mod scale;

@@ -15,8 +15,8 @@ use cadmpeg_core::{
 };
 use cadmpeg_ir::{
     features::{
-        DistinctMembers, FaceSelection, Feature, FeatureDefinition, FeatureInputTopology,
-        FeatureOperation,
+        DistinctMembers, FaceMotion, FaceSelection, Feature, FeatureDefinition,
+        FeatureInputTopology, FeatureOperation,
     },
     ids::{FeatureInputTopologyId, HistoricalFaceId},
 };
@@ -494,6 +494,9 @@ enum Kind {
     Thread,
     /// Thicken without the face-offset form; the selection list is the native selection.
     Thicken,
+    /// Thicken in the face-offset form, a Move Face operation that carries the
+    /// Thicken source tag; the selection list is the native selection.
+    ThickenOffset,
 }
 
 fn selections_mut(definition: &mut FeatureDefinition) -> Option<&mut FaceSelection> {
@@ -512,8 +515,8 @@ fn selections_mut(definition: &mut FeatureDefinition) -> Option<&mut FaceSelecti
 }
 
 /// The kind and face selection of a feature that takes the join. A Thicken
-/// feature in the face-offset form, which is a Move Face operation that
-/// carries the Thicken source tag, keeps its native selection.
+/// feature in the face-offset form is a Move Face operation that carries the
+/// Thicken source tag.
 fn selection(feature: &Feature) -> Option<(Kind, &FaceSelection)> {
     let tag = feature.source_tag.as_deref();
     match (tag, feature.evaluation.definition()) {
@@ -533,6 +536,13 @@ fn selection(feature: &Feature) -> Option<(Kind, &FaceSelection)> {
             Some("thicken"),
             FeatureDefinition::Operation(FeatureOperation::Thicken { faces, .. }),
         ) => Some((Kind::Thicken, faces)),
+        (
+            Some("thicken"),
+            FeatureDefinition::Operation(FeatureOperation::MoveFace {
+                faces,
+                motion: FaceMotion::Offset { .. },
+            }),
+        ) => Some((Kind::ThickenOffset, faces)),
         _ => None,
     }
 }

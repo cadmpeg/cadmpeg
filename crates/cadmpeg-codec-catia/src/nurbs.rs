@@ -107,6 +107,59 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_owned_patch_sense_inferred(&mut self, count: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyOwnedPatchSenseInferred.note(format!(
+                "Inferred the face sense of {count} non-rolling-ball sheet faces from their roster member bits and carrier chart parity."
+            )),
+        );
+    }
+
+    pub(crate) fn push_two_edge_binding_inferred(&mut self, owner_pos: usize, singleton: bool) {
+        let sense_evidence = if singleton {
+            "the class-61 singleton occurrence bit"
+        } else {
+            "the recovered loop winding"
+        };
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyTwoEdgeBindingInferred.note(format!(
+                "For the two-edge face at owner offset {owner_pos}, inferred pcurve binding from endpoint proximity and face sense from {sense_evidence}."
+            )),
+        );
+    }
+
+    pub(crate) fn push_sheet_surface_fitted(
+        &mut self,
+        rolling_ball: usize,
+        offset: usize,
+        ruled: usize,
+        extrusion: usize,
+    ) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySheetSurfaceFitted.note(format!(
+            "Transferred fitted B-spline surfaces for {rolling_ball} rolling-ball, {offset} offset, {ruled} ruled, and {extrusion} extrusion sheet faces. The fits use sampled geometric checks."
+        )));
+    }
+
+    pub(crate) fn push_rolling_ball_rails_adjusted(&mut self, faces: usize, max_shift_mm: f64) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryRollingBallRailsAdjusted.note(format!(
+            "Fitted {faces} rolling-ball sheet faces after moving rail points onto the construction radius. The largest rail-point movement was {max_shift_mm} mm."
+        )));
+    }
+
+    /// Report exhaustion of a bounded sheet patch search.
+    pub(crate) fn push_sheet_patch_search_bounded(
+        &mut self,
+        search: &str,
+        limit: usize,
+        unit: &str,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologySheetPatchSearchBounded.note(format!(
+                "The {search} reached its work bound of {limit} {unit}. Later candidates were skipped."
+            )),
+        );
+    }
+
     /// Record the `7C02` catalog candidates the catalog scan skipped at its
     /// walk allowance.
     pub(crate) fn push_catalog_scan_bounded(&mut self, bounded_candidates: usize) {

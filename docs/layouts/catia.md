@@ -1040,6 +1040,18 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| nonzero reference count prefix `80+n` \| |
 
+## `consolidated_wide_face_roster_prefix`
+
+Spec §6.4 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/roster.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| wide count marker `18` \| |
+| 1 | 2 | `face_count` | `u16` | little | spec | \| `+1` \| `u16le` \| nonzero face count \| |
+
 ## `consolidated_plane_implicit_axis_payload`
 
 Spec §6.3 · layout: byte offsets · size: 50 B
