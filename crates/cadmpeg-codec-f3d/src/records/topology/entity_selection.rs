@@ -1122,8 +1122,17 @@ pub(crate) struct DesignProfileCurveSelection {
     /// Byte offset of the identity record at the selection index plus three.
     pub(crate) identity_record_offset: u64,
     pub(crate) identity_end_offset: u64,
-    /// Ordered region lists with their boundary loops.
-    pub(crate) loop_lists: [Vec<Vec<DesignProfileCurveLoop>>; 2],
+    /// Ordered region groups with their boundary loops.
+    pub(crate) groups: Vec<DesignProfileRegionGroup>,
+}
+
+/// One stored region and the further regions counted after it.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignProfileRegionGroup {
+    /// The group's first region.
+    pub(crate) region: Vec<DesignProfileCurveLoop>,
+    /// The further regions of the group, in stored order.
+    pub(crate) further: Vec<Vec<DesignProfileCurveLoop>>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -1137,35 +1146,48 @@ impl DesignProfileCurveSelection {
         self.lists_end() == Some(self.identity_end_offset)
     }
 
+    /// Every region in stored order: each group's first region, then its
+    /// further regions.
+    pub(crate) fn regions(&self) -> impl Iterator<Item = &Vec<DesignProfileCurveLoop>> {
+        self.groups
+            .iter()
+            .flat_map(|group| std::iter::once(&group.region).chain(&group.further))
+    }
+
     pub(crate) fn lists_end(&self) -> Option<u64> {
-        let mut cursor =
-            self.identity_record_offset
-                .checked_add(cadmpeg_core::decode::u64_from_index(
-                    crate::layout::typed_reference_profile_identity_record::FIRST_REGION_COUNT,
-                ))?;
-        if self.loop_lists[0].is_empty() {
-            return None;
-        }
-        for regions in &self.loop_lists {
-            cursor = cursor.checked_add(4)?;
-            for loops in regions {
-                if loops.is_empty() || loops.iter().filter(|loop_| loop_.outer).count() != 1 {
+        fn region_end(region: &[DesignProfileCurveLoop], cursor: u64) -> Option<u64> {
+            if region.is_empty() || region.iter().filter(|loop_| loop_.outer).count() != 1 {
+                return None;
+            }
+            let mut cursor = cursor.checked_add(4)?;
+            for loop_ in region {
+                if loop_.entries.is_empty() {
                     return None;
                 }
                 cursor = cursor.checked_add(4)?;
-                for loop_ in loops {
-                    if loop_.entries.is_empty() {
+                for entry in &loop_.entries {
+                    if entry.primary_id_offset != cursor.checked_add(4)? {
                         return None;
                     }
-                    cursor = cursor.checked_add(4)?;
-                    for entry in &loop_.entries {
-                        if entry.primary_id_offset != cursor.checked_add(4)? {
-                            return None;
-                        }
-                        cursor = cursor.checked_add(40)?;
-                    }
-                    cursor = cursor.checked_add(1)?;
+                    cursor = cursor.checked_add(40)?;
                 }
+                cursor = cursor.checked_add(1)?;
+            }
+            Some(cursor)
+        }
+        if self.groups.is_empty() {
+            return None;
+        }
+        let mut cursor = self
+            .identity_record_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                crate::layout::typed_reference_profile_identity_record::REGION_GROUP_COUNT,
+            ))?
+            .checked_add(4)?;
+        for group in &self.groups {
+            cursor = region_end(&group.region, cursor)?.checked_add(4)?;
+            for region in &group.further {
+                cursor = region_end(region, cursor)?;
             }
         }
         Some(cursor)

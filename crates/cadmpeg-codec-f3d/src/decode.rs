@@ -311,6 +311,14 @@ fn report_unresolved_configuration_rules(
             "{count} Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
         ),);
     }
+    let count = crate::design::configurations::inferred_configuration_suppression_count(
+        &ir.model.configurations,
+    );
+    if count != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationSuppressionInferred, format_args!(
+            "{count} suppressed feature state(s) of the active Design configuration were taken from the current feature state, assuming that no suppression column without a neutral feature names those features."
+        ),);
+    }
 }
 
 fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
@@ -327,6 +335,7 @@ struct DesignProjectionGaps {
     history_only_body_bindings: usize,
     incomplete_features: usize,
     native_reference_images: usize,
+    assumed_reference_image_flags: usize,
     native_decals: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
@@ -838,6 +847,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !body_selection_is_resolved(bodies)
                 || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
         }
+        FeatureDefinition::Operation(FeatureOperation::ReverseShape { source }) => {
+            !body_selection_is_resolved(source)
+        }
         FeatureDefinition::Operation(FeatureOperation::InsertComponent { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::Shell {
@@ -1322,6 +1334,11 @@ fn design_projection_gaps(
         Err(_) => None,
     };
     let mut gaps = DesignProjectionGaps {
+        assumed_reference_image_flags: native
+            .design_canvas_images
+            .iter()
+            .filter(|image| image.geometry().flag_assumed())
+            .count(),
         unresolved_body_bindings: native
             .design_body_bindings
             .iter()
@@ -2037,6 +2054,12 @@ fn report_design_projection_gaps(
         push_loss_vec(&mut report.losses, F3dLossCode::ReferenceImageNativeRetained, format_args!(
             "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
             gaps.native_reference_images
+        ),);
+    }
+    if gaps.assumed_reference_image_flags != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::ReferenceImageFlagAssumed, format_args!(
+            "{} Canvas image(s) store a zero flag byte before the second boundary segment; the decoder places each image by its boundary segments and payload frame and assumes that the byte leaves the placement unchanged (DR-308).",
+            gaps.assumed_reference_image_flags
         ),);
     }
     if gaps.native_decals != 0 {
@@ -3142,6 +3165,12 @@ impl<'a> F3dDecodeSession<'a> {
                 let xref = prereqs.store(&mut self.native);
                 let projected = match design {
                     DesignState::Projected(design) => {
+                        report_unresolved_configuration_rules(
+                            &mut self.report,
+                            &design.design_configurations,
+                            design.configuration_roots_unbound,
+                            &self.ir,
+                        );
                         design.store(&mut self.native);
                         crate::design::decode::sketch_owners::attach(
                             ctx,

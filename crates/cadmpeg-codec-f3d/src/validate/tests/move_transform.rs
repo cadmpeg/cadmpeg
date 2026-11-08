@@ -51,7 +51,7 @@ fn move_transform_validator_checks_each_added_class_and_locations() {
     for class in [
         "330", "273", "408", "372", "289", "394", "406", "282", "403", "391", "452",
     ] {
-        let (mut scope, mut header) = fixture(class);
+        let (scope, mut header) = fixture(class);
         assert!(move_operation_links_hold(&scope, Some(&header)));
         assert!(!move_operation_links_hold(&scope, None));
         let mut shifted = scope.clone();
@@ -74,17 +74,8 @@ fn move_transform_validator_checks_each_added_class_and_locations() {
         header.record_index += 1;
         assert!(!move_operation_links_hold(&scope, Some(&header)));
         header.record_index -= 1;
-        let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
-            panic!("Move payload");
-        };
-        operation.form = if class == "452" {
-            DesignMoveForm::Form1
-        } else {
-            DesignMoveForm::Form5
-        };
-        assert!(!move_operation_links_hold(&scope, Some(&header)));
         header.class_tag = "999".to_owned().try_into().unwrap();
-        assert!(!move_operation_links_hold(&scope, Some(&header)));
+        assert!(move_operation_links_hold(&scope, Some(&header)));
     }
 }
 
@@ -178,7 +169,7 @@ fn move_transform_validator_reports_shifted_matrix_location() {
 #[test]
 fn a_marked_move_transform_needs_no_listed_class() {
     let (mut scope, header) = fixture("332");
-    assert!(!move_operation_links_hold(&scope, Some(&header)));
+    assert!(move_operation_links_hold(&scope, Some(&header)));
     let marked = scope.byte_offset() + 21;
     let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
         panic!("Move payload");

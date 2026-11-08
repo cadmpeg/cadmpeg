@@ -214,6 +214,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         )
     })
     .expect("arrangement collection admitted")
+    .map(|found| found.region)
     else {
         panic!("selected face must resolve from raw sketch geometry")
     };
@@ -665,7 +666,7 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     let SketchProfileRegion::Trimmed {
         outer_boundary,
         hole_boundaries,
-    } = selected
+    } = selected.region
     else {
         panic!("arrangement selection must emit a trimmed boundary")
     };

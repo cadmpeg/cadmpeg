@@ -295,6 +295,9 @@ pub(crate) fn definition(
                 *operands = resolved;
             }
         }
+        FeatureDefinition::Operation(FeatureOperation::MirrorShape { source, .. }) => {
+            selection(source, bodies, None);
+        }
         FeatureDefinition::Operation(
             FeatureOperation::MoveBody {
                 bodies: selected, ..
@@ -484,6 +487,9 @@ pub(crate) fn native_losses(
                         targets: bodies, ..
                     },
                 ) => native(bodies),
+                FeatureDefinition::Operation(FeatureOperation::MirrorShape { source, .. }) => {
+                    native(source)
+                }
                 _ => 0,
             }
         })

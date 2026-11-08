@@ -351,7 +351,7 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     assert_eq!(geometry.curves.len(), 6);
     assert_eq!(geometry.texts[0].text, "Synthetic box");
     assert_eq!(geometry.texts[0].position, [115.0, 19.0]);
-    assert_eq!(geometry.texts[0].height.get(), 4.0);
+    assert_eq!(geometry.texts[0].height.unwrap().get(), 4.0);
     let dimension = ir
         .model
         .semantic_annotations
@@ -610,7 +610,11 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
             [115.0, 19.0],
             "{name} template title"
         );
-        assert_eq!(geometry.texts[0].height.get(), 4.0, "{name} template title");
+        assert_eq!(
+            geometry.texts[0].height.unwrap().get(),
+            4.0,
+            "{name} template title"
+        );
         let note_name = format!("{name}Note");
         let note = result
             .ir()

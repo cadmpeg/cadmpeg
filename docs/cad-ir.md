@@ -321,7 +321,7 @@ three distinct points on its circle within relative radial error 1e-9.
 `template_geometry` belongs only to templates and holds ordered curves and
 baseline-positioned texts in physical page millimetres, X right and Y up. It
 reuses `DrawingCurveGeometry` in this page frame. Each text has a resolved string,
-finite baseline position, and positive em height in millimetres. `x_direction`
+finite baseline position, and an optional positive em height in millimetres. `x_direction`
 belongs only to view, projection, section, or detail drawings and gives their
 finite nonzero horizontal model direction.
 

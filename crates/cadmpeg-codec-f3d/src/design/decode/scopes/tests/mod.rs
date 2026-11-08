@@ -27,6 +27,7 @@ mod move_transform;
 mod named_empty_label;
 mod named_variable_tail;
 mod offset_faces;
+mod point_direction_work_axes;
 mod referenced_revolve;
 mod remove_body_named_tail;
 mod scale;
@@ -40,3 +41,18 @@ mod typed_references;
 
 mod fixed_kind_path_operations;
 mod fixed_kind_tail_operations;
+
+fn move_transform_type(guid: &str, version: u32) -> crate::records::entity_header::SegmentType {
+    crate::records::entity_header::SegmentType::try_new(
+        "f3d:Design/MetaStream.dat:design-type#0".into(),
+        crate::design::test_support::design_type(guid, None, version, "Fusion", vec![]),
+    )
+    .unwrap()
+}
+
+fn move_transform_types<'a>(
+    row: &'a crate::records::entity_header::SegmentType,
+    tags: &[u32],
+) -> std::collections::HashMap<u32, &'a crate::records::entity_header::SegmentType> {
+    tags.iter().map(|&tag| (tag, row)).collect()
+}
