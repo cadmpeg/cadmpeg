@@ -126,6 +126,15 @@ fn cascade_validation_errors(
         };
         let entity = finding.entity.clone().unwrap_or_default();
         match finding.check {
+            Check::ReferentialIntegrity if entity.starts_with(APPEARANCE_BINDING_OWNER) => {
+                for binding in dangling_appearance_bindings(projected, &entity)? {
+                    for dropped in drop_model_record(projected, &binding)? {
+                        losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                            "record {dropped} dropped; it needs a record the document does not hold"
+                        )));
+                    }
+                }
+            }
             Check::ReferentialIntegrity => {
                 for dropped in drop_model_record(projected, &entity)? {
                     losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
@@ -160,6 +169,52 @@ fn cascade_validation_errors(
     }
 }
 
+/// The validation owner prefix of an appearance binding's reference finding.
+const APPEARANCE_BINDING_OWNER: &str = "appearance-binding:";
+
+/// Bindings of the finding's appearance whose appearance or target the
+/// document does not hold.
+fn dangling_appearance_bindings(
+    projected: &CadIr,
+    owner: &str,
+) -> Result<Vec<String>, CodecError> {
+    let appearance = &owner[APPEARANCE_BINDING_OWNER.len()..];
+    let model = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
+    let held = model
+        .as_object()
+        .into_iter()
+        .flat_map(|arenas| arenas.values())
+        .filter_map(serde_json::Value::as_array)
+        .flatten()
+        .filter_map(|row| row.get("id")?.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let mut dangling = Vec::new();
+    for binding in projected
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| binding.appearance.as_str() == appearance)
+    {
+        let target = serde_json::to_value(&binding.target).map_err(CodecError::malformed)?;
+        let unresolved = target
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(key, _)| key.as_str() != "kind")
+            .filter_map(|(_, value)| value.as_str())
+            .any(|id| !held.contains(id));
+        if !held.contains(appearance) || unresolved {
+            dangling.push(binding.id.as_str().to_owned());
+        }
+    }
+    if dangling.is_empty() {
+        return Err(CodecError::malformed(format_args!(
+            "SLDPRT cascade finds no dangling binding of {appearance}"
+        )));
+    }
+    Ok(dangling)
+}
+
 /// Drop one model record by id through JSON, keeping admission order.
 /// Dropping a feature also drops the features it parents: regeneration and
 /// tree links stay valid at every step because model admission validates
@@ -168,6 +223,7 @@ fn drop_model_record(
     projected: &mut CadIr,
     id: &str,
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
+    projected.model.finalize();
     let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     let mut dropped = std::collections::BTreeSet::from([id.to_owned()]);
     if let Some(model) = document.as_object() {
@@ -225,6 +281,7 @@ fn drop_model_record(
 
 /// Drop every later repeat of one model identity, keeping the first row.
 fn drop_duplicate_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> {
+    projected.model.finalize();
     let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     let mut dropped = false;
     if let Some(model) = document.as_object_mut() {
@@ -608,6 +665,8 @@ pub(super) fn plan(
             .as_ref()
             .is_none_or(|body| supported.contains(body))
     });
+    projected.model.finalize();
+    cascade_validation_errors(&mut projected, &mut losses)?;
     crate::history::write::configurations::ensure_default_configuration(
         &mut projected,
         &supported,
@@ -622,7 +681,6 @@ pub(super) fn plan(
     )?;
     if projected.scope.model
         && !projected.scope.design
-        && !supported.is_empty()
         && prepared_native.as_ref().is_none_or(|native| {
             native
                 .feature_histories
@@ -637,11 +695,13 @@ pub(super) fn plan(
             &supported,
             &mut losses,
         )?;
-        super::assign_configuration_indices(&mut carrier.model.configurations)?;
-        crate::history::write::configurations::sync_neutral_configurations(
-            &carrier.model.configurations,
-            &mut prepared_native,
-        );
+        if !carrier.model.configurations.is_empty() {
+            super::assign_configuration_indices(&mut carrier.model.configurations)?;
+            crate::history::write::configurations::sync_neutral_configurations(
+                &carrier.model.configurations,
+                &mut prepared_native,
+            );
+        }
     }
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
