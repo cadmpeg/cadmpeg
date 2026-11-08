@@ -28,6 +28,13 @@ pub struct Allowances {
     /// Fields of records that contain a given-up part (#215 rule 1). The
     /// comparison refuses a held value in one and otherwise prunes it.
     absent_fields: BTreeSet<(String, String)>,
+    /// Native records the writer regenerated; an edit comparison's expected
+    /// native state is stale, so content differences are allowed and identity
+    /// maps by id without cascading dependent removal.
+    regenerated: BTreeSet<String>,
+    /// The export declared scope expansion (e.g. damaged input written as a
+    /// valid model archive); scope differences are allowed.
+    scope_expanded: bool,
 }
 
 impl Allowances {
@@ -45,6 +52,8 @@ impl Allowances {
             removed: ids,
             removed_fields: BTreeSet::new(),
             absent_fields: BTreeSet::new(),
+            regenerated: BTreeSet::new(),
+            scope_expanded: false,
         }
     }
 
@@ -208,6 +217,18 @@ pub fn agree(
                     recovered_parent.remove(*key);
                 }
             }
+            if allowances.scope_expanded {
+                if let (Some(o), Some(r)) = (
+                    original.get_mut("scope").and_then(Value::as_object_mut),
+                    recovered.get("scope"),
+                ) {
+                    if o.get("model") == Some(&Value::Bool(false))
+                        && r.get("model") == Some(&Value::Bool(true))
+                    {
+                        o.insert("model".to_owned(), Value::Bool(true));
+                    }
+                }
+            }
             cadmpeg_ir::compare::values_agree(&original, &recovered)?;
             agree_pruned(before, after, allowances, false)
         }
@@ -238,11 +259,30 @@ fn agree_pruned(
     cross: bool,
 ) -> Result<(), String> {
     verify_absent_fields(after, &allowances.absent_fields)?;
-    let before = without_fields(before, &allowances.absent_fields);
+    let mut before = without_fields(before, &allowances.absent_fields);
     let after = without_fields(after, &allowances.absent_fields);
+    if allowances.scope_expanded {
+        if let (Some(b), Some(a)) = (
+            before.get_mut("scope").and_then(Value::as_object_mut),
+            after.get("scope"),
+        ) {
+            if b.get("model") == Some(&Value::Bool(false))
+                && a.get("model") == Some(&Value::Bool(true))
+            {
+                b.insert("model".to_owned(), Value::Bool(true));
+            }
+        }
+    }
     let mut result = Err(String::new());
     for fields in [&BTreeSet::new(), &allowances.removed_fields] {
-        result = agree_once_pruned(&before, &after, &allowances.removed, fields, cross);
+        result = agree_once_pruned(
+            &before,
+            &after,
+            &allowances.removed,
+            &allowances.regenerated,
+            fields,
+            cross,
+        );
         if result.is_ok() || allowances.removed_fields.is_empty() {
             break;
         }
@@ -290,10 +330,19 @@ fn agree_once_pruned(
     before: &Value,
     after: &Value,
     permitted: &BTreeSet<String>,
+    regenerated: &BTreeSet<String>,
     fields: &BTreeSet<(String, String)>,
     cross: bool,
 ) -> Result<(), String> {
-    let unpruned = agree_once(before, after, fields, &BTreeSet::new(), None, cross);
+    let unpruned = agree_once(
+        before,
+        after,
+        fields,
+        &BTreeSet::new(),
+        None,
+        regenerated,
+        cross,
+    );
     if let Ok(()) = &unpruned {
         return unpruned;
     }
@@ -303,7 +352,15 @@ fn agree_once_pruned(
         .cloned()
         .collect::<BTreeSet<_>>();
     loop {
-        match agree_once(before, after, fields, &removed, Some(&removed), cross) {
+        match agree_once(
+            before,
+            after,
+            fields,
+            &removed,
+            Some(&removed),
+            regenerated,
+            cross,
+        ) {
             Ok(()) => return Ok(()),
             Err(error) => {
                 if let Some(id) = error
@@ -383,27 +440,54 @@ fn agree_once(
     fields: &BTreeSet<(String, String)>,
     pruned: &BTreeSet<String>,
     permitted: Option<&BTreeSet<String>>,
+    regenerated: &BTreeSet<String>,
     cross: bool,
 ) -> Result<(), String> {
     let before = without_fields(before, fields);
     let before = Document::read(&before, pruned)?;
     let after = Document::read(after, &BTreeSet::new())?;
-    if agree_pairing(before.clone(), after.clone(), permitted, cross, false).is_ok() {
+    if agree_pairing(
+        before.clone(),
+        after.clone(),
+        permitted,
+        regenerated,
+        cross,
+        false,
+    )
+    .is_ok()
+    {
         return Ok(());
     }
-    agree_pairing(before, after, permitted, cross, true)
+    agree_pairing(before, after, permitted, regenerated, cross, true)
 }
 
 fn agree_pairing(
     mut before: Document,
     mut after: Document,
     permitted: Option<&BTreeSet<String>>,
+    regenerated: &BTreeSet<String>,
     cross: bool,
     include_incoming: bool,
 ) -> Result<(), String> {
-    let pairs = pair(&before, &after, cross, include_incoming);
+    let mut pairs = pair(&before, &after, cross, include_incoming);
+    // Regenerated records may not pair when expected native is stale; map by id.
+    for (index, record) in before.records.iter().enumerate() {
+        if pairs.contains_key(&index) || !regenerated.contains(&record.id) {
+            continue;
+        }
+        if let Some(other) = after
+            .records
+            .iter()
+            .position(|candidate| candidate.id == record.id && candidate.arena == record.arena)
+        {
+            pairs.insert(index, other);
+        }
+    }
     for (index, record) in before.records.iter().enumerate() {
         if pairs.contains_key(&index) {
+            continue;
+        }
+        if regenerated.contains(&record.id) {
             continue;
         }
         if !permitted.is_some_and(|permitted| permitted.contains(&record.id)) {
@@ -430,6 +514,9 @@ fn agree_pairing(
     }
     for (index, other) in pairs {
         let record = &before.records[index];
+        if regenerated.contains(&record.id) {
+            continue;
+        }
         let mapped = remap(&after.records[other].value, &identities, true);
         if cross {
             cross::values_agree(&record.value, &mapped)

@@ -2,11 +2,11 @@
 //! Typed presentation tables authored from current document state.
 
 use super::{
-    attributed_object_record, class_wrapper, class_wrapper_with_direct, crc_chunk,
-    crc_chunk_with_direct, default_layer_payload, framed_object_record, native_count_limit,
-    neutral_object_uuid, object_attributes_payload, short_chunk, unit_color_channel, utf16,
-    wire_index, CadIr, CodecError, LossNote, RhinoLossCode, LAYER_CLASS, TCODE_ENDOFTABLE,
-    TCODE_LAYER_RECORD,
+    attribute_userdata_chunk, attributed_object_record, class_wrapper, class_wrapper_with_direct,
+    crc_chunk, crc_chunk_with_direct, default_layer_payload, framed_object_record,
+    framed_object_record_full, native_count_limit, neutral_object_uuid, object_attributes_payload,
+    object_user_strings, short_chunk, unit_color_channel, utf16, wire_index, CadIr, CodecError,
+    LossNote, RhinoLossCode, LAYER_CLASS, TCODE_ENDOFTABLE, TCODE_LAYER_RECORD,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use serde_json::{Map, Value};
@@ -521,7 +521,7 @@ pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError>
     };
     layer_for(identity)
         .or_else(point_body_layer)
-        .map_or(Ok(-1), |index| {
+        .map_or(Ok(0), |index| {
             i32::try_from(index).map_err(|_| {
                 native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
             })

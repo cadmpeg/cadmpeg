@@ -14,9 +14,9 @@ use crate::loss::RhinoLossCode;
 
 use super::{
     attributed_object_record, bounded_line_payload, check_frame, check_nurbs_curve, circle_payload,
-    close_point, curve_object_record, framed_object_record, nurbs_curve_payload,
-    object_attributes_for_target, point_cloud_payload, WritableEdgeCurve, WriteError, ARC_CLASS,
-    LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
+    close_point, curve_object_record, nurbs_curve_payload, object_attributes_for_target,
+    point_cloud_payload, WritableEdgeCurve, WriteError, ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS,
+    POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(
@@ -114,27 +114,7 @@ pub(super) fn write(
         )));
     }
     if !points.is_empty() {
-        let distinct_point_color = points.len() == 1
-            && ir.model.faces.is_empty()
-            && ir.model.edges.is_empty()
-            && point_targets[0].as_ref().is_some_and(|(_, target)| {
-                matches!(target, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
-                    && body.color.is_some()
-                    && document
-                        .effective_display_color(target)
-                        .is_some_and(|color| Some(color) != body.color)
-            });
-        if distinct_point_color {
-            for id in &free {
-                if let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == **id) {
-                    losses.push(RhinoLossCode::WriterPointCloudIdentityReduced.note(format!(
-                        "body {} free vertex {} and point {} are written as a point cloud to retain their separate colors",
-                        body.id, vertex.id, vertex.point
-                    )));
-                }
-            }
-        }
-        let (kind, class, payload) = if points.len() == 1 && !distinct_point_color {
+        let (kind, class, payload) = if points.len() == 1 {
             let point = points[0];
             let mut payload = vec![0x10];
             payload.extend(point.x.to_le_bytes());
@@ -180,7 +160,7 @@ pub(super) fn write(
                 point_cloud_payload(&points, colors.as_deref())?,
             )
         };
-        let individual = if points.len() == 1 && !distinct_point_color {
+        let individual = if points.len() == 1 {
             point_targets[0].as_ref()
         } else {
             None
@@ -206,8 +186,12 @@ pub(super) fn write(
             )));
         }
         ctx.charge_entities(1, "write Rhino object record")?;
+        let name = display
+            .and_then(|value| value.name)
+            .or(body.name.as_deref());
+        let strings = super::object_user_strings(document, &identity, name.unwrap_or_default());
         output.append(
-            &framed_object_record(
+            &super::framed_object_record_full(
                 kind,
                 class,
                 &payload,
@@ -216,13 +200,12 @@ pub(super) fn write(
                     document,
                     &identity,
                     individual.map_or(identity.as_str(), |(target, _)| target),
-                    display
-                        .and_then(|value| value.name)
-                        .or(body.name.as_deref()),
+                    name,
                     display.and_then(|value| value.color).or(body.color),
                     display.and_then(|value| value.visible).or(body.visible),
                     materials,
                 )?),
+                super::attribute_userdata_chunk(&strings)?,
             )?,
             "retain Rhino Brep records",
         )?;

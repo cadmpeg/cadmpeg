@@ -105,18 +105,44 @@ fn encode_material(
     } else {
         source_uuid
     };
-    let mut payload = component(
-        identity,
-        index,
-        match appearance {
-            Some(appearance) => appearance.name.as_deref().unwrap_or(""),
-            None => fields
-                .and_then(|fields| fields.get("name"))
-                .and_then(Value::as_str)
-                .unwrap_or(""),
-        },
-        source_uuid,
-    )?;
+    let name = match appearance {
+        Some(appearance) => appearance.name.as_deref().unwrap_or(""),
+        None => fields
+            .and_then(|fields| fields.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+    };
+    let component_uuid = authored
+        .as_ref()
+        .or_else(|| {
+            if appearance.is_none() && source_uuid.is_some_and(Value::is_null) {
+                Some(&nil)
+            } else {
+                source_uuid
+            }
+        })
+        .and_then(Value::as_str)
+        .and_then(crate::presentation::parse_uuid_text)
+        .map_or_else(
+            || crate::writer::neutral_object_uuid(identity),
+            crate::wire::Uuid::to_wire,
+        );
+
+    let legacy_minor = legacy_material_minor(fields);
+    if let Some(minor) = legacy_minor {
+        return encode_legacy_material(
+            identity,
+            index,
+            name,
+            component_uuid,
+            appearance,
+            fields,
+            textures,
+            minor,
+        );
+    }
+
+    let mut payload = component(identity, index, name, source_uuid)?;
     let component_end = payload.len();
     payload.extend(
         fields
@@ -231,6 +257,185 @@ fn encode_material(
     )?)
 }
 
+fn legacy_material_minor(fields: Option<&Map<String, Value>>) -> Option<i32> {
+    let fields = fields?;
+    let alpha = fields.get("diffuse_texture_alpha_transparency");
+    let rdk = fields.get("rdk_instance_uuid");
+    let reflection_glossiness = fields.get("reflection_glossiness");
+    let refraction_glossiness = fields.get("refraction_glossiness");
+    let fresnel_ior = fields.get("fresnel_index_of_refraction");
+    let shareable = fields.get("shareable");
+    let disable_lighting = fields.get("disable_lighting");
+
+    if alpha.is_some_and(Value::is_boolean) {
+        return None;
+    }
+    if rdk.is_some_and(|v| !v.is_null()) {
+        return None;
+    }
+    let fresnel_absent = reflection_glossiness.is_some_and(Value::is_null)
+        && refraction_glossiness.is_some_and(Value::is_null)
+        && fresnel_ior.is_some_and(Value::is_null);
+    let shareable_present =
+        shareable.is_some_and(Value::is_boolean) || disable_lighting.is_some_and(Value::is_boolean);
+    if fresnel_absent && shareable_present {
+        return Some(3);
+    }
+    if shareable_present
+        && (reflection_glossiness.is_none()
+            || refraction_glossiness.is_none()
+            || fresnel_ior.is_none())
+        && (alpha.is_none() || alpha.is_some_and(Value::is_null))
+    {
+        return Some(3);
+    }
+    None
+}
+
+fn encode_legacy_material(
+    identity: &str,
+    index: i32,
+    name: &str,
+    component_uuid: [u8; 16],
+    appearance: Option<&Appearance>,
+    fields: Option<&Map<String, Value>>,
+    textures: &[Value],
+    minor: i32,
+) -> Result<Vec<u8>, WriteError> {
+    let mut body = component_uuid.to_vec();
+    body.extend(index.to_le_bytes());
+    body.extend(utf16(name)?);
+    body.extend(
+        fields
+            .and_then(|fields| fields.get("plugin_uuid"))
+            .and_then(Value::as_str)
+            .and_then(crate::presentation::parse_uuid_text)
+            .map_or([0; 16], crate::wire::Uuid::to_wire),
+    );
+    for color_name in [
+        "ambient",
+        "diffuse",
+        "emission",
+        "specular",
+        "reflection",
+        "transparent",
+    ] {
+        let packed = if color_name == "diffuse" {
+            if let Some(color) = appearance.and_then(|value| value.base_color) {
+                [
+                    unit_color_channel(color.r())?,
+                    unit_color_channel(color.g())?,
+                    unit_color_channel(color.b())?,
+                    unit_color_channel(1.0 - color.a())?,
+                ]
+            } else if appearance.is_some() {
+                [0, 0, 0, 0]
+            } else {
+                material_color(fields, color_name)?
+            }
+        } else {
+            material_color(fields, color_name)?
+        };
+        body.extend(packed);
+    }
+    for (scalar_name, default) in [
+        ("index_of_refraction", 1.0),
+        ("reflectivity", 0.0),
+        ("shine", 0.0),
+        ("transparency", 0.0),
+    ] {
+        body.extend(
+            appearance
+                .map_or_else(
+                    || {
+                        fields
+                            .and_then(|fields| fields.get(scalar_name))
+                            .and_then(Value::as_f64)
+                            .unwrap_or(default)
+                    },
+                    |appearance| scalar(appearance, fields, scalar_name, default),
+                )
+                .to_le_bytes(),
+        );
+    }
+    let texture_start = body.len();
+    let texture_bytes = texture_array(textures, identity)?;
+    body.extend(&texture_bytes);
+    let texture_end = body.len();
+    if minor >= 1 {
+        body.extend(utf16(name)?);
+    }
+    if minor >= 2 {
+        body.extend(0i32.to_le_bytes());
+    }
+    if minor >= 3 {
+        body.push(u8::from(
+            fields
+                .and_then(|fields| fields.get("shareable"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ));
+        body.push(u8::from(
+            fields
+                .and_then(|fields| fields.get("disable_lighting"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ));
+    }
+    if minor >= 4 {
+        body.push(u8::from(
+            fields
+                .and_then(|fields| fields.get("fresnel_reflections"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ));
+        for (scalar_name, default) in [
+            ("reflection_glossiness", 0.0),
+            ("refraction_glossiness", 0.0),
+            ("fresnel_index_of_refraction", 1.0),
+        ] {
+            body.extend(
+                appearance
+                    .map_or_else(
+                        || {
+                            fields
+                                .and_then(|fields| fields.get(scalar_name))
+                                .and_then(Value::as_f64)
+                                .unwrap_or(default)
+                        },
+                        |appearance| scalar(appearance, fields, scalar_name, default),
+                    )
+                    .to_le_bytes(),
+            );
+        }
+    }
+    if minor >= 5 {
+        body.extend(
+            fields
+                .and_then(|fields| fields.get("rdk_instance_uuid"))
+                .and_then(Value::as_str)
+                .and_then(crate::presentation::parse_uuid_text)
+                .map_or([0; 16], crate::wire::Uuid::to_wire),
+        );
+    }
+    if minor >= 6 {
+        body.push(u8::from(
+            fields
+                .and_then(|fields| fields.get("diffuse_texture_alpha_transparency"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ));
+    }
+    let inner = anonymous_with_children(1, minor, &body, &[texture_start..texture_end])?;
+    let mut payload = vec![0x20];
+    payload.extend(inner);
+    Ok(crc_chunk_with_direct(
+        0x2000_8040,
+        &class_wrapper_with_direct(MATERIAL_CLASS, &payload, &[0x20])?,
+        &[],
+    )?)
+}
+
 pub(in crate::writer) fn bound_appearance<'a>(
     ir: &'a CadIr,
     identity: &str,
@@ -297,9 +502,6 @@ fn native_base_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
             "reflectivity",
             "shine",
             "transparency",
-            "reflection_glossiness",
-            "refraction_glossiness",
-            "fresnel_index_of_refraction",
         ]
         .iter()
         .all(|name| {
@@ -309,13 +511,22 @@ fn native_base_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
                 .is_some_and(f64::is_finite)
         })
         && [
-            "shareable",
-            "disable_lighting",
-            "fresnel_reflections",
-            "diffuse_texture_alpha_transparency",
+            "reflection_glossiness",
+            "refraction_glossiness",
+            "fresnel_index_of_refraction",
         ]
         .iter()
-        .all(|name| fields.get(*name).is_some_and(Value::is_boolean))
+        .all(|name| {
+            fields
+                .get(*name)
+                .is_some_and(|value| value.is_null() || value.as_f64().is_some_and(f64::is_finite))
+        })
+        && ["shareable", "disable_lighting", "fresnel_reflections"]
+            .iter()
+            .all(|name| fields.get(*name).is_some_and(Value::is_boolean))
+        && fields
+            .get("diffuse_texture_alpha_transparency")
+            .is_some_and(|value| value.is_null() || value.is_boolean())
         && fields.get("source_uuid").is_some_and(|value| {
             value.is_null()
                 || value

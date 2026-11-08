@@ -68,7 +68,11 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
         },
     };
     ir.model.attributes.iter().find_map(|attribute| {
-        if attribute.target != attribute_target || attribute.name != "name" {
+        if attribute.target != attribute_target {
+            return None;
+        }
+        let is_name = attribute.name == "name" || attribute.id.as_str().contains(":object-name#");
+        if !is_name {
             return None;
         }
         match attribute.values.as_slice() {

@@ -155,7 +155,12 @@ fn assert_none(findings: &[String]) {
 
 #[test]
 fn rhino_cross_closure_carries_other_formats() {
-    let observed = observe();
+    let mut observed = observe();
+    // Cross-format B-reps written through Rhino may re-decode with fallback
+    // topology (#235, #209 §5).
+    observed
+        .known_losses
+        .insert("rhino/topology.brep-fallback".to_owned());
     let mut findings = Vec::new();
     for format in ["step", "iges", "fcstd", "f3d", "sldprt", "catia", "creo"] {
         findings.extend(run_other_format(format, &observed));
@@ -640,7 +645,9 @@ fn observe_f3d() -> ObservedF3d {
             path: row.path,
             storage: row.storage,
             normalize: match row.path {
-                "model.bodies[].color.a" | "model.faces[].color.a" => Some(|_| serde_json::Value::from(1.0)),
+                "model.bodies[].color.a" | "model.faces[].color.a" => {
+                    Some(|_| serde_json::Value::from(1.0))
+                }
                 _ => None,
             },
         })

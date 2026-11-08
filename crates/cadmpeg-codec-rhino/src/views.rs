@@ -17,7 +17,7 @@ use crate::chunks::{
 };
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
-use crate::objects::parse_userdata;
+use crate::objects::{parse_userdata, UserdataDescriptor};
 use crate::settings::{plane, utf16_deferred, utf16_retained, MillimeterScale, Plane, UnitBinding};
 use crate::wire::{flag_i32, scaled_coordinate, uuid};
 
@@ -83,6 +83,12 @@ struct ViewRecord {
     list_kind: ViewListKind,
     list_index: usize,
     name: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_camera_orientation_override"
+    )]
+    camera_orientation_override: Option<String>,
     target_millimeters: Option<[FiniteReal; 3]>,
     window_position: Option<WindowPosition>,
     show_construction_grid: bool,
@@ -104,6 +110,7 @@ pub(crate) struct ViewProjection {
     pub(crate) legacy_display_mode: Option<i64>,
     pub(crate) modern_display_mode: Option<String>,
     pub(crate) has_attributes: bool,
+    pub(crate) camera_orientation_override: Option<[f64; 4]>,
     pub(crate) camera: Option<CameraProjection>,
 }
 
@@ -124,6 +131,10 @@ impl From<ViewRecord> for ViewProjection {
             legacy_display_mode: view.legacy_display_mode,
             modern_display_mode: view.attributes.and_then(|attributes| attributes.display),
             has_attributes,
+            camera_orientation_override: view
+                .camera_orientation_override
+                .as_deref()
+                .and_then(parse_orientation_override),
             camera: view.viewport.map(|viewport| CameraProjection {
                 location: viewport.camera_location_mm,
                 direction: viewport.camera_direction,
@@ -133,6 +144,34 @@ impl From<ViewRecord> for ViewProjection {
                 z_axis: viewport.camera_z_axis,
             }),
         }
+    }
+}
+
+fn serialize_camera_orientation_override<S: serde::Serializer>(
+    value: &Option<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(value.as_deref().unwrap_or_default())
+}
+
+pub(crate) fn parse_orientation_override(text: &str) -> Option<[f64; 4]> {
+    let mut parts = text.split(',');
+    let x = parts.next()?.parse().ok()?;
+    let y = parts.next()?.parse().ok()?;
+    let z = parts.next()?.parse().ok()?;
+    let angle = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some([x, y, z, angle])
+}
+
+fn format_orientation_override(orientation: [f64; 4]) -> Option<String> {
+    let [x, y, z, angle] = orientation;
+    if x.is_finite() && y.is_finite() && z.is_finite() && angle.is_finite() {
+        Some(format!("{x:e},{y:e},{z:e},{angle:e}"))
+    } else {
+        None
     }
 }
 
@@ -157,6 +196,7 @@ fn serialize_view_attributes<S: serde::Serializer>(
 struct ViewportUserdataScan {
     children: Vec<std::ops::Range<usize>>,
     has_untyped_content: bool,
+    strings: Vec<(String, String)>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1040,6 +1080,7 @@ fn view_child_checksum_warning_excluding(
 }
 
 fn scan_viewport_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -1047,6 +1088,7 @@ fn scan_viewport_userdata(
 ) -> Result<ViewportUserdataScan, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let mut children = Vec::new();
+    let mut strings: Vec<(String, String)> = Vec::new();
     let mut has_untyped_content = false;
     loop {
         if reader.position() == reader.end() {
@@ -1092,8 +1134,43 @@ fn scan_viewport_userdata(
                         ),
                     );
                 }
+                let typed = if let Ok(UserdataDescriptor::Known(descriptor)) = parsed.clone() {
+                    descriptor.class_uuid == crate::objects::USER_STRING_LIST
+                        && descriptor.item_uuid == crate::objects::USER_STRING_LIST
+                } else {
+                    false
+                };
+                if typed {
+                    if let Ok(UserdataDescriptor::Known(descriptor)) = parsed.clone() {
+                        let payload_range = descriptor.payload_range.clone();
+                        let entries = match crate::objects::parse_user_string_list(
+                            ctx,
+                            data,
+                            payload_range,
+                            archive,
+                        ) {
+                            Ok(entries) => entries,
+                            Err(FramingError::Resource(limit)) => {
+                                return Err(FramingError::Resource(limit));
+                            }
+                            Err(error) => {
+                                push_view_loss(
+                                    losses,
+                                    crate::loss::RhinoLossCode::ObjectDecodeDiagnostic,
+                                    child.header_start,
+                                    "VIEW/VIEWPORT_USERDATA",
+                                    format_args!(
+                                        "viewport user-string userdata could not be transferred: {error}"
+                                    ),
+                                );
+                                Vec::new()
+                            }
+                        };
+                        strings.extend(entries);
+                    }
+                }
                 parsed?;
-                has_untyped_content = true;
+                has_untyped_content = has_untyped_content || !typed;
             }
             TCODE_CLASS_END => {
                 if !child.short() || child.value()? != 0 {
@@ -1105,6 +1182,7 @@ fn scan_viewport_userdata(
                 return Ok(ViewportUserdataScan {
                     children,
                     has_untyped_content,
+                    strings,
                 });
             }
             0 => {
@@ -1133,6 +1211,7 @@ fn parse_view(
     } = slot;
     let mut offset = record.body().start;
     let mut name = String::new();
+    let mut camera_orientation_override: Option<String> = None;
     let mut target = None;
     let mut window_position = None;
     let mut show_grid = true;
@@ -1291,7 +1370,7 @@ fn parse_view(
                         ),
                     );
                 } else {
-                    match scan_viewport_userdata(data, child.body().clone(), archive, losses) {
+                    match scan_viewport_userdata(ctx, data, child.body().clone(), archive, losses) {
                         Ok(scan) => {
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
@@ -1315,6 +1394,13 @@ fn parse_view(
                                         child.header_start
                                     ),
                                 );
+                            }
+                            if let Some((_, value)) = scan
+                                .strings
+                                .iter()
+                                .find(|(key, _)| key == "cadmpeg:camera-orientation")
+                            {
+                                camera_orientation_override = Some(value.clone());
                             }
                         }
                         Err(FramingError::Resource(limit)) => {
@@ -1378,11 +1464,16 @@ fn parse_view(
             format_args!("{warning}"),
         );
     }
+    let camera_orientation_override = camera_orientation_override
+        .as_deref()
+        .and_then(parse_orientation_override)
+        .and_then(format_orientation_override);
     Ok(ViewRecord {
         id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
         list_kind,
         list_index,
         name,
+        camera_orientation_override,
         target_millimeters: target,
         window_position,
         show_construction_grid: show_grid,

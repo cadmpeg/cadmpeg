@@ -21,11 +21,7 @@ mod one_fact;
 mod rhino;
 #[cfg(feature = "fcstd")]
 mod stale_sidecar;
-#[cfg(any(
-    feature = "iges",
-    feature = "inventor",
-    feature = "catia"
-))]
+#[cfg(any(feature = "iges", feature = "inventor", feature = "catia"))]
 mod structure;
 
 use std::io::Cursor;

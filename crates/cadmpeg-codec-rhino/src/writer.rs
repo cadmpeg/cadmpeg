@@ -1519,6 +1519,20 @@ fn native_dispositions(
         crate::native_registry::ARENAS,
         NativeDisposition::Dropped,
     );
+    for (namespace, store) in &ir.native.0 {
+        if namespace == "rhino" {
+            continue;
+        }
+        let arenas = store.arenas().keys().map(String::as_str);
+        dispositions = {
+            let mut next = dispositions;
+            // Foreign native namespaces are not preserved by the Rhino writer.
+            let foreign =
+                NativeDispositions::for_namespace(namespace, arenas, NativeDisposition::Dropped);
+            next.namespaces.extend(foreign.namespaces);
+            next
+        };
+    }
     let materials = MaterialPlan::new(ir)?;
     if let Some(records) = ir
         .native
@@ -4287,7 +4301,9 @@ fn attributed_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    framed_object_record(
+    let name = display.name.unwrap_or_default();
+    let strings = object_user_strings(ir, identity, name);
+    framed_object_record_with_userdata(
         object_type,
         class_uuid,
         payload,
@@ -4300,6 +4316,8 @@ fn attributed_object_record(
             display.visible,
             materials,
         )?),
+        attribute_userdata_chunk(&strings)?,
+        &[],
     )
 }
 
@@ -4310,7 +4328,9 @@ fn surface_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    framed_object_record(
+    let name = display.name.unwrap_or_default();
+    let strings = object_user_strings(ir, identity, name);
+    framed_object_record_with_userdata(
         if payload.class == crate::extrusion::ON_EXTRUSION.to_wire() {
             0x10
         } else {
@@ -4327,6 +4347,8 @@ fn surface_object_record(
             display.visible,
             materials,
         )?),
+        attribute_userdata_chunk(&strings)?,
+        &[],
     )
 }
 
@@ -4337,7 +4359,9 @@ fn curve_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    framed_object_record(
+    let name = display.name.unwrap_or_default();
+    let strings = object_user_strings(ir, identity, name);
+    framed_object_record_with_userdata(
         4,
         payload.class,
         &payload.body,
@@ -4350,6 +4374,8 @@ fn curve_object_record(
             display.visible,
             materials,
         )?),
+        attribute_userdata_chunk(&strings)?,
+        &[],
     )
 }
 
@@ -4360,7 +4386,9 @@ fn mesh_object_record(
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    framed_object_record(
+    let name = display.name.unwrap_or_default();
+    let strings = object_user_strings(ir, identity, name);
+    framed_object_record_with_userdata(
         0x20,
         MESH_CLASS,
         &payload.body,
@@ -4373,6 +4401,8 @@ fn mesh_object_record(
             display.visible,
             materials,
         )?),
+        attribute_userdata_chunk(&strings)?,
+        &[],
     )
 }
 
@@ -4385,7 +4415,8 @@ fn brep_object_record(
     visible: Option<bool>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    framed_object_record(
+    let strings = object_user_strings(ir, identity, name.unwrap_or_default());
+    framed_object_record_with_userdata(
         0x10,
         BREP_CLASS,
         &payload.body,
@@ -4393,6 +4424,8 @@ fn brep_object_record(
         Some(object_attributes_payload(
             ir, identity, name, color, visible, materials,
         )?),
+        attribute_userdata_chunk(&strings)?,
+        &[],
     )
 }
 
@@ -4402,6 +4435,45 @@ fn framed_object_record(
     payload: &[u8],
     direct_class_data: Option<&[u8]>,
     attributes: Option<Vec<u8>>,
+) -> Result<Vec<u8>, CodecError> {
+    framed_object_record_with_userdata(
+        object_type,
+        class_uuid,
+        payload,
+        direct_class_data,
+        attributes,
+        None,
+        &[],
+    )
+}
+
+pub(super) fn framed_object_record_full(
+    object_type: i64,
+    class_uuid: [u8; 16],
+    payload: &[u8],
+    direct_class_data: Option<&[u8]>,
+    attributes: Option<Vec<u8>>,
+    attributes_userdata: Option<Vec<u8>>,
+) -> Result<Vec<u8>, CodecError> {
+    framed_object_record_with_userdata(
+        object_type,
+        class_uuid,
+        payload,
+        direct_class_data,
+        attributes,
+        attributes_userdata,
+        &[],
+    )
+}
+
+fn framed_object_record_with_userdata(
+    object_type: i64,
+    class_uuid: [u8; 16],
+    payload: &[u8],
+    direct_class_data: Option<&[u8]>,
+    attributes: Option<Vec<u8>>,
+    attributes_userdata: Option<Vec<u8>>,
+    userdata: &[Vec<u8>],
 ) -> Result<Vec<u8>, CodecError> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
@@ -4413,14 +4485,229 @@ fn framed_object_record(
         crc_chunk(TCODE_CLASS_DATA, payload)?
     };
     let class_end = short_chunk(TCODE_CLASS_END, 0);
-    let class = long_chunk(TCODE_CLASS_WRAPPER, &[uuid, class_data, class_end].concat())?;
+    let mut class_body = [uuid, class_data].concat();
+    for chunk in userdata {
+        class_body.extend(chunk);
+    }
+    class_body.extend(class_end);
+    let class = long_chunk(TCODE_CLASS_WRAPPER, &class_body)?;
     let object_end = short_chunk(TCODE_OBJECT_RECORD_END, 0);
     let mut body = [object_type, class].concat();
     if let Some(attributes) = attributes {
         body.extend(crc_chunk(TCODE_OBJECT_RECORD_ATTRIBUTES, &attributes)?);
     }
+    if let Some(attributes_userdata) = attributes_userdata {
+        body.extend(attributes_userdata);
+    }
     body.extend(object_end);
     zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
+}
+
+/// Neutral facts without a dedicated object-attributes field survive as
+/// attribute user strings in a `ON_UserStringList` userdata chunk. The decode
+/// side reads the same keys back into `object_presentation`.
+pub(crate) fn object_user_strings(ir: &CadIr, identity: &str, name: &str) -> Vec<(String, String)> {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let mut result = Vec::new();
+    let attribute_target = |target: &AttributeTarget| -> bool {
+        let id = match target {
+            AttributeTarget::Body(id) => Some(id.as_str()),
+            AttributeTarget::Face(id) => Some(id.as_str()),
+            AttributeTarget::Edge(id) => Some(id.as_str()),
+            AttributeTarget::Vertex(id) => Some(id.as_str()),
+            AttributeTarget::Surface(id) => Some(id.as_str()),
+            AttributeTarget::Curve(id) => Some(id.as_str()),
+            AttributeTarget::Point(id) => Some(id.as_str()),
+            AttributeTarget::Tessellation(id) => Some(id.as_str()),
+            AttributeTarget::Occurrence(id) => Some(id.as_str()),
+            AttributeTarget::Record { id, .. } => Some(id.as_str()),
+            AttributeTarget::Document
+            | AttributeTarget::Shell(_)
+            | AttributeTarget::Loop(_)
+            | AttributeTarget::Coedge(_)
+            | AttributeTarget::Region(_)
+            | AttributeTarget::Feature(_)
+            | AttributeTarget::Sketch(_)
+            | AttributeTarget::Parameter(_)
+            | AttributeTarget::ProductDefinition(_)
+            | AttributeTarget::Pmi(_)
+            | AttributeTarget::Drawing(_)
+            | AttributeTarget::ViewPresentation(_)
+            | AttributeTarget::SemanticAnnotation(_) => None,
+        };
+        id.is_some_and(|id| id == identity || identity_uuid(id, identity))
+    };
+    if let Some(attribute) = ir.model.attributes.iter().find(|attribute| {
+        attribute_target(&attribute.target)
+            && (attribute.name == "name" || attribute.id.as_str().contains(":object-name#"))
+            && matches!(
+                attribute.values.as_slice(),
+                [Some(AttributeValue::String(_))]
+            )
+    }) {
+        if attribute.name != "name" {
+            result.push((
+                "cadmpeg:object-name-classification".to_owned(),
+                attribute.name.clone(),
+            ));
+        }
+        let Some(AttributeValue::String(value)) = attribute.values.first().and_then(Option::as_ref)
+        else {
+            unreachable!()
+        };
+        if !name.is_empty() && value != name {
+            result.push(("cadmpeg:object-name-value".to_owned(), value.clone()));
+        }
+    }
+    if let Some(body) = ir.model.bodies.iter().find(|body| {
+        (body.name.is_some() || body.color.is_some())
+            && identity_uuid(body.id.as_str(), identity)
+    }) {
+        if let Some(body_name) = body.name.as_deref() {
+            if body_name != name {
+                result.push(("cadmpeg:body-name".to_owned(), body_name.to_owned()));
+            }
+        }
+        if let Some(color) = body.color {
+            result.push((
+                "cadmpeg:body-color".to_owned(),
+                format!(
+                    "{:02x}{:02x}{:02x}{:02x}",
+                    unit_color_channel(color.r()).unwrap_or(0),
+                    unit_color_channel(color.g()).unwrap_or(0),
+                    unit_color_channel(color.b()).unwrap_or(0),
+                    unit_color_channel(1.0 - color.a()).unwrap_or(0),
+                ),
+            ));
+        }
+    }
+    if let Some(view) = ir.model.view_presentations.iter().find(|view| {
+        view.object
+            .as_deref()
+            .is_some_and(|object| object == identity || identity_uuid(object, identity))
+    }) {
+        result.push((
+            "cadmpeg:object-view-order".to_owned(),
+            view.order.to_string(),
+        ));
+        result.push((
+            "cadmpeg:object-view-visible".to_owned(),
+            view.visible
+                .map_or("none".to_owned(), |value| value.to_string()),
+        ));
+    }
+    if let Some(annotation) = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.id.as_str() == identity)
+    {
+        result.push((
+            "cadmpeg:annotation-order".to_owned(),
+            annotation.order.to_string(),
+        ));
+    }
+    result
+}
+
+fn identity_uuid(left: &str, right: &str) -> bool {
+    matched_uuid(left, right) && matched_uuid(right, left)
+}
+
+fn matched_uuid(candidate: &str, other: &str) -> bool {
+    let Some((_, key)) = candidate.split_once('#') else {
+        return false;
+    };
+    let candidate = if key.len() == 36 {
+        Some(&key[..36])
+    } else if key.len() > 36 && key.as_bytes().get(36).is_some_and(|byte| *byte == b'.') {
+        Some(&key[..36])
+    } else {
+        None
+    };
+    candidate.is_some_and(|uuid| other.contains(uuid))
+}
+
+fn anonymous_chunk(
+    major: i32,
+    minor: i32,
+    fields: &[u8],
+    children: &[std::ops::Range<usize>],
+) -> Result<Vec<u8>, CodecError> {
+    let mut body = major.to_le_bytes().to_vec();
+    body.extend(minor.to_le_bytes());
+    body.extend(fields);
+    let children = children
+        .iter()
+        .map(|range| range.start + 8..range.end + 8)
+        .collect::<Vec<_>>();
+    let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let mut direct = Vec::new();
+    for range in &ranges {
+        direct.extend_from_slice(&body[range]);
+    }
+    crc_chunk_with_direct(0x4000_8000, &body, &direct)
+}
+
+fn user_string_chunk(strings: &[(String, String)]) -> Result<Vec<u8>, CodecError> {
+    let count = i32::try_from(strings.len())
+        .map_err(|_| CodecError::malformed("user string count exceeds i32"))?;
+    let mut fields = count.to_le_bytes().to_vec();
+    let mut entry_ranges = Vec::new();
+    for (key, value) in strings {
+        let mut entry_fields = Vec::new();
+        entry_fields.extend(utf16(key)?);
+        entry_fields.extend(utf16(value)?);
+        let range_start = fields.len();
+        fields.extend(anonymous_chunk(1, 0, &entry_fields, &[])?);
+        entry_ranges.push(range_start..fields.len());
+    }
+    let list = anonymous_chunk(1, 0, &fields, &entry_ranges)?;
+    let payload = crc_chunk(0x4000_8000, &list)?;
+    let class = crate::objects::USER_STRING_LIST.to_wire();
+    let nil = [0; 16];
+    let transform: Vec<u8> = (0..16)
+        .flat_map(|index| {
+            let value: f64 = if index % 5 == 0 { 1.0 } else { 0.0 };
+            value.to_le_bytes().to_vec()
+        })
+        .collect();
+    let header_body = [
+        class.to_vec(),
+        class.to_vec(),
+        0_i32.to_le_bytes().to_vec(),
+        transform,
+        nil.to_vec(),
+        vec![0],
+        60_i32.to_le_bytes().to_vec(),
+        0_u32.to_le_bytes().to_vec(),
+    ]
+    .concat();
+    let header = crc_chunk(0x0002_fff9, &header_body)?;
+    let header_len = header.len();
+    let mut wrapper = vec![0x22];
+    wrapper.extend(header);
+    wrapper.extend(payload);
+    let children = [1..1 + header_len, 1 + header_len..wrapper.len()];
+    let ranges = crate::chunks::direct_checksum_ranges(&(0..wrapper.len()), &children)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let mut hasher = crc32fast::Hasher::new();
+    for range in &ranges {
+        hasher.update(&wrapper[range]);
+    }
+    let mut final_body = wrapper;
+    final_body.extend(hasher.finalize().to_le_bytes());
+    long_chunk(0x0002_7ffd, &final_body)
+}
+
+pub(crate) fn attribute_userdata_chunk(
+    strings: &[(String, String)],
+) -> Result<Option<Vec<u8>>, CodecError> {
+    if strings.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(long_chunk(0x0200_0073, &user_string_chunk(strings)?)?))
 }
 
 /// Reuse the document's native UUID identity when present. Foreign identities
@@ -4428,28 +4715,21 @@ fn framed_object_record(
 fn neutral_object_uuid(identity: &str) -> [u8; 16] {
     if identity.starts_with("rhino:object:") {
         if let Some((_, key)) = identity.split_once('#') {
-            if key.len() == 36
-                && [8, 13, 18, 23]
+            let candidate = if key.len() == 36 {
+                Some(key)
+            } else if key.len() > 36 && key.as_bytes().get(36).is_some_and(|b| *b == b'.') {
+                Some(&key[..36])
+            } else {
+                None
+            };
+            if let Some(uuid_text) = candidate {
+                if [8, 13, 18, 23]
                     .iter()
-                    .all(|index| key.as_bytes()[*index] == b'-')
-            {
-                let digits = key.bytes().filter(|byte| *byte != b'-').collect::<Vec<_>>();
-                let mut canonical = [0; 16];
-                let mut valid = true;
-                for (slot, pair) in canonical.iter_mut().zip(digits.chunks_exact(2)) {
-                    let nibble = |byte: u8| {
-                        char::from(byte)
-                            .to_digit(16)
-                            .and_then(|v| u8::try_from(v).ok())
-                    };
-                    if let (Some(high), Some(low)) = (nibble(pair[0]), nibble(pair[1])) {
-                        *slot = (high << 4) | low;
-                    } else {
-                        valid = false;
+                    .all(|index| uuid_text.as_bytes()[*index] == b'-')
+                {
+                    if let Some(uuid) = crate::presentation::parse_uuid_text(uuid_text) {
+                        return uuid.to_wire();
                     }
-                }
-                if valid {
-                    return crate::wire::Uuid::from_canonical(canonical).to_wire();
                 }
             }
         }
