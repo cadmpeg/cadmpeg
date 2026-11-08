@@ -1528,6 +1528,16 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 state_id => Some(i64::from(state_id)),
             }
         });
+        let reverse_normal_operation = if kind == scope::DesignFeatureKind::ReverseNormal {
+            super::reverse_normal::reverse_normal_operation(
+                bytes,
+                start,
+                *reference_count_at,
+                reference_members,
+            )
+        } else {
+            None
+        };
         let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
             exact_surface_stitch_operation(bytes, records, record_index, reference_members)
         } else {
@@ -1749,6 +1759,11 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 if let scope::DesignScopePayloadMut::BaseFlange(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
+            }
+        }
+        if let Some(operation) = reverse_normal_operation {
+            if let scope::DesignScopePayloadMut::ReverseNormal(slot) = scope.payload_mut() {
+                *slot = Some(operation);
             }
         }
         if let Some(operation) = edge_flange_operation {

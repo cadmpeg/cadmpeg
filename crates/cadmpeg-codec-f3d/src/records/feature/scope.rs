@@ -13,7 +13,9 @@ use super::assembly_features::{
     DesignDerivedInstanceConstruction,
 };
 use super::base_feature::DesignBaseFeatureConstruction;
-use super::body_ops::{DesignCopyPasteBodiesOperation, DesignScaleOperation};
+use super::body_ops::{
+    DesignCopyPasteBodiesOperation, DesignReverseNormalOperation, DesignScaleOperation,
+};
 use super::coil::{
     DesignCoilExtent, DesignCoilPlacement, DesignCoilScope, DesignCoilSection,
     DesignCoilSectionPlacement, DesignCoilTransform,
@@ -257,6 +259,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_scale_operation,
     DesignScaleOperation,
     "scale_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_reverse_normal_operation,
+    DesignReverseNormalOperation,
+    "reverse_normal_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_solid_primitive,
@@ -620,6 +627,7 @@ design_feature_kinds! {
         DerivedInstance => "DerivedInstance": Option<DesignDerivedInstanceConstruction>,
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
+        ReverseNormal => "Reverse Normal": Option<DesignReverseNormalOperation>,
     }
     fixed {
         Revolve => "Revolve": Option<DesignRevolveConstruction>,
@@ -905,6 +913,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_scale_operation"
     )]
     scale_operation: Option<DesignScaleOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reverse_normal_operation"
+    )]
+    reverse_normal_operation: Option<DesignReverseNormalOperation>,
     /// Fixed settings carried by a `PathPattern` scope.
     #[serde(
         default,
@@ -1649,6 +1663,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.reverse_normal_operation.is_some() {
+            present.push("reverse_normal_operation");
+        }
         if wire.path_pattern_settings.is_some() {
             present.push("path_pattern_settings");
         }
@@ -1899,6 +1916,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Split => DesignScopePayload::Split,
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
+            DesignFeatureKind::ReverseNormal => {
+                DesignScopePayload::ReverseNormal(wire.reverse_normal_operation.take())
+            }
             DesignFeatureKind::Emboss => {
                 DesignScopePayload::Emboss(wire.emboss_construction.take())
             }
@@ -2015,6 +2035,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.align_envelope.is_some()
             || wire.move_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
@@ -2138,6 +2159,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             align_envelope: None,
             move_operation: None,
             scale_operation: None,
+            reverse_normal_operation: None,
             path_pattern_settings: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
@@ -2240,6 +2262,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             }
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
+            }
+            DesignScopePayload::ReverseNormal(value) => {
+                wire.reverse_normal_operation = value;
             }
             DesignScopePayload::PathPattern(value) => wire.path_pattern_settings = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
@@ -2747,6 +2772,13 @@ impl DesignParameterScope {
     pub(crate) fn scale_operation(&self) -> Option<&DesignScaleOperation> {
         match &self.payload {
             DesignScopePayload::Scale(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn reverse_normal_operation(&self) -> Option<&DesignReverseNormalOperation> {
+        match &self.payload {
+            DesignScopePayload::ReverseNormal(value) => value.as_ref(),
             _ => None,
         }
     }
