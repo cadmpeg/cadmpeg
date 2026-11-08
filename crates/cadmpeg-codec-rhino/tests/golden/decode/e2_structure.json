@@ -336,8 +336,7 @@
           "id": "rhino:model:object-view#0-0",
           "native_ref": "rhino:object:record#000000",
           "object": "rhino:object:point#51515151-5151-5151-5151-515151515151",
-          "order": 1,
-          "visible": true
+          "order": 1
         },
         {
           "id": "rhino:model:view#view-000000",
