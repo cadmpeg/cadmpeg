@@ -65,6 +65,10 @@ pub(crate) enum CatiaLossCode {
     SourceCatalogScanBounded,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
+    /// A sheet face uses a fitted surface carrier.
+    GeometrySheetSurfaceFitted,
+    /// A transferred rolling-ball fit uses adjusted rail points.
+    GeometryRollingBallRailsAdjusted,
     /// Transferred model retains unresolved curve or surface carriers.
     GeometryUnresolvedCarriers,
     /// No B-rep geometry was transferred for this storage variant.
@@ -156,6 +160,8 @@ impl CatiaLossCode {
         Self::SourceAnnotationCollision,
         Self::SourceCatalogScanBounded,
         Self::GeometryCarrierSummary,
+        Self::GeometrySheetSurfaceFitted,
+        Self::GeometryRollingBallRailsAdjusted,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
         Self::GeometryPlaneParametersInvalid,
@@ -209,6 +215,8 @@ impl CatiaLossCode {
             Self::SourceAnnotationCollision => "source.annotation-identity-collision",
             Self::SourceCatalogScanBounded => "source.catalog-scan-bounded",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
+            Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
+            Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
             Self::GeometryPlaneParametersInvalid => "geometry.plane-parameters-invalid",
@@ -290,6 +298,9 @@ impl CatiaLossCode {
             | Self::GeometryVertexToleranceWidened
             | Self::TopologySheetComponentsInferred => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
+            Self::GeometrySheetSurfaceFitted | Self::GeometryRollingBallRailsAdjusted => {
+                LossTaxonomy::GeometryAgreementSampled
+            }
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
@@ -373,6 +384,8 @@ mod tests {
                 "source.annotation-identity-collision",
                 "source.catalog-scan-bounded",
                 "geometry.carrier-summary",
+                "geometry.sheet-surface-fitted",
+                "geometry.rolling-ball-rails-adjusted",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",
                 "geometry.plane-parameters-invalid",

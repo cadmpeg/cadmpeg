@@ -23,13 +23,13 @@ use crate::wire::records::ConsolidatedRecord;
 
 use super::super::rolling_ball_patch::fit_rectangular_patch;
 use super::ruled::Ruled;
-use super::{near, surface_fit};
+use super::{near, surface_fit, SheetSurfaceFit};
 
 pub(super) const SPHERE_BRIDGE_RADIUS_TOLERANCE_MM: f64 = 1.0e-6;
 
 pub(super) enum Carrier<'a> {
     RollingBall(&'a ProceduralSurfaceDefinition, f64),
-    OwnedRollingBall(Box<Cow<'a, ProceduralSurfaceDefinition>>, f64),
+    OwnedRollingBall(Box<Cow<'a, ProceduralSurfaceDefinition>>, f64, f64),
     Cylinder(SpatialCylinder),
     Cone(B2Cone, bool),
     Torus(B2Torus, bool),
@@ -100,14 +100,14 @@ impl Carrier<'_> {
     fn rolling_definition(&self) -> Option<(&ProceduralSurfaceDefinition, f64)> {
         match self {
             Self::RollingBall(definition, end) => Some((definition, *end)),
-            Self::OwnedRollingBall(definition, end) => Some((definition, *end)),
+            Self::OwnedRollingBall(definition, end, _) => Some((definition, *end)),
             _ => None,
         }
     }
 
     pub(super) fn scale(&self) -> [f64; 2] {
         match self {
-            Self::RollingBall(_, radius) | Self::OwnedRollingBall(_, radius) => {
+            Self::RollingBall(_, radius) | Self::OwnedRollingBall(_, radius, _) => {
                 [1.0, radius.recip()]
             }
             Self::Cylinder(cylinder) => [cylinder.angle_scale, 1.0],
@@ -126,6 +126,20 @@ impl Carrier<'_> {
             | Self::OffsetTensor(..)
             | Self::Extrusion(_)
             | Self::Ruled(_) => [1.0, 1.0],
+        }
+    }
+
+    pub(super) fn surface_fit(&self) -> Option<SheetSurfaceFit> {
+        match self {
+            Self::RollingBall(..) => Some(SheetSurfaceFit::RollingBall {
+                max_rail_shift_mm: 0.0,
+            }),
+            Self::OwnedRollingBall(_, _, max_rail_shift_mm) => Some(SheetSurfaceFit::RollingBall {
+                max_rail_shift_mm: *max_rail_shift_mm,
+            }),
+            Self::OffsetTensor(..) => Some(SheetSurfaceFit::Offset),
+            Self::Ruled(..) => Some(SheetSurfaceFit::Ruled),
+            _ => None,
         }
     }
 

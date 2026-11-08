@@ -57,11 +57,19 @@ struct Boundary {
     radius: f64,
 }
 
+#[derive(Clone, Copy)]
+enum SheetSurfaceFit {
+    RollingBall { max_rail_shift_mm: f64 },
+    Offset,
+    Ruled,
+}
+
 struct Patch {
     face: usize,
     body: RecordKey,
     forward: bool,
     sense_inferred: bool,
+    surface_fit: Option<SheetSurfaceFit>,
     surface: SolvedSurfaceGeometry,
     priority: u8,
     sides: Vec<Use>,
@@ -413,6 +421,9 @@ fn fit(
         body: member.body,
         forward: member.forward,
         sense_inferred: false,
+        surface_fit: Some(SheetSurfaceFit::RollingBall {
+            max_rail_shift_mm: 0.0,
+        }),
         surface: SolvedSurfaceGeometry::Nurbs(fitted.surface),
         priority: 0,
         sides,

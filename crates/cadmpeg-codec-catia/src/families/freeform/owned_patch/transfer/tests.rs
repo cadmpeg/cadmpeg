@@ -43,6 +43,7 @@ fn two_face_sheet() -> Vec<Patch> {
         body: (0, 10),
         forward,
         sense_inferred: false,
+        surface_fit: None,
         surface: SolvedSurfaceGeometry::Plane(plane),
         priority: 0,
         sides,
@@ -112,6 +113,52 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
     assert_eq!(shared[1].radial_next, shared[0].id);
     assert_eq!(shared[0].sense, Sense::Forward);
     assert_eq!(shared[1].sense, Sense::Reversed);
+}
+
+#[test]
+fn owned_sheet_reports_a_fitted_offset_surface() {
+    use crate::families::freeform::owned_patch::sheet_carrier::Carrier;
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+
+    let domain = [[0.0, 1.0]; 2];
+    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
+    let support = NurbsSurface::new(
+        axis(),
+        axis(),
+        NurbsPoleGrid::Polynomial {
+            rows: [0.0, 1.0]
+                .map(|u| vec![Point3::new(u, 0.0, -1.0), Point3::new(u, 1.0, -1.0)])
+                .to_vec(),
+        },
+        false,
+    )
+    .expect("planar spline support");
+    let offset = Carrier::OffsetTensor(&support, domain, 1.0);
+    let mut patches = two_face_sheet();
+    patches[0].surface = offset
+        .solved(domain, false)
+        .expect("fit the offset carrier");
+    patches[0].surface_fit = offset.surface_fit();
+
+    let mut ir = CadIr::empty();
+    let mut refusal = LaneRefusals::new();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut refusal,
+            &mut FamilyEntityAdmission::new(ctx),
+        )
+    })
+    .expect("transfer the sheet");
+    assert_eq!(ir.model.faces.len(), 2);
+    let notes = refusal.take_notes();
+    let [fit] = notes.as_slice() else {
+        panic!("one fitting loss for the offset face");
+    };
+    assert_eq!(fit.code.local_code(), "geometry.sheet-surface-fitted");
+    assert!(fit.message.contains("1 offset"));
 }
 
 fn assert_outer_winding(ir: &CadIr, face: &Face) {

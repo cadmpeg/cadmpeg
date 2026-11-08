@@ -512,7 +512,8 @@ impl A5FreeformCurve {
     pub(in crate::families) fn definition_at_radius(
         mut self,
         radius: f64,
-    ) -> Option<ProceduralSurfaceDefinition> {
+    ) -> Option<(ProceduralSurfaceDefinition, f64)> {
+        let mut max_shift_mm = 0.0_f64;
         for sample in &mut self.sites {
             let site = &mut sample.site;
             let center = site.center.get();
@@ -527,13 +528,15 @@ impl A5FreeformCurve {
                     return None;
                 }
                 if (observed - radius).abs() > EPS_ROLLING_BALL_RADIUS {
-                    *rail = FinitePoint3::new(
+                    let adjusted = FinitePoint3::new(
                         center.translated(rail.get().vector_from(center), radius / observed),
                     )?;
+                    max_shift_mm = max_shift_mm.max(rail.distance(adjusted.get()));
+                    *rail = adjusted;
                 }
             }
         }
-        self.definition()
+        Some((self.definition()?, max_shift_mm))
     }
 }
 

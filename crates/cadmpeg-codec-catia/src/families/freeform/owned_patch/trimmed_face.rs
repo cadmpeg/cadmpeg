@@ -190,6 +190,7 @@ where
                                 return Some(Carrier::OwnedRollingBall(
                                     Box::new(Cow::Borrowed(definition)),
                                     chart_end,
+                                    0.0,
                                 ));
                             }
                             let jet = match &native {
@@ -205,10 +206,13 @@ where
                             if !super::near(jet.chart_v_end, chart_end) {
                                 return None;
                             }
-                            if let Some(definition) = jet.clone().definition_at_radius(radius) {
+                            if let Some((definition, max_rail_shift_mm)) =
+                                jet.clone().definition_at_radius(radius)
+                            {
                                 return Some(Carrier::OwnedRollingBall(
                                     Box::new(Cow::Owned(definition)),
                                     chart_end,
+                                    max_rail_shift_mm,
                                 ));
                             }
                         }
@@ -301,9 +305,11 @@ where
                     let jet = a5_owned_rolling_curves(self.bytes, std::slice::from_ref(carrier))
                         .next()?;
                     let v_end = jet.chart_v_end;
+                    let (definition, max_rail_shift_mm) = jet.definition_at_radius(radius)?;
                     return Some(Carrier::OwnedRollingBall(
-                        Box::new(Cow::Owned(jet.definition_at_radius(radius)?)),
+                        Box::new(Cow::Owned(definition)),
                         v_end,
+                        max_rail_shift_mm,
                     ));
                 }
                 let (reference, class, radius) = analytic_bridge(bytes)?;
@@ -1879,6 +1885,7 @@ fn fit_ring(
         body: member.body,
         forward,
         sense_inferred: carrier.roster_sense_inferred(),
+        surface_fit: carrier.surface_fit(),
         surface: solved,
         priority: u8::from(recover) * 8
             + match carrier {

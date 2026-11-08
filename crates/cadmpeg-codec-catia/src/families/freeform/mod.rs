@@ -1603,6 +1603,7 @@ fn append_planar_two_edge_pool(
                 source_kind: "planar",
                 annotation_source: "consolidated_b2_03_27_face",
                 carrier_pos: plane.pos,
+                fitted_surface: false,
             },
             source_index,
             owner_pos: *owner_pos,
@@ -1836,6 +1837,7 @@ fn append_a5_rolling_ball_pools(
                                     source_kind: "rolling-ball",
                                     annotation_source: "consolidated_a5_03_32_face",
                                     carrier_pos: jet.pos,
+                                    fitted_surface: true,
                                 },
                                 source_index,
                                 owner_pos,
@@ -1867,6 +1869,7 @@ struct ClosedFaceOrigin {
     source_kind: &'static str,
     annotation_source: &'static str,
     carrier_pos: usize,
+    fitted_surface: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1898,6 +1901,7 @@ fn attach_closed_two_edge_face(
                 source_kind,
                 annotation_source,
                 carrier_pos,
+                fitted_surface,
             },
         source_index,
         owner_pos,
@@ -2132,6 +2136,9 @@ fn attach_closed_two_edge_face(
         visible: None,
     });
     refusal.push_two_edge_binding_inferred(owner_pos, desired_forward.is_some());
+    if fitted_surface {
+        refusal.push_sheet_surface_fitted(1, 0, 0);
+    }
     Ok(())
 }
 

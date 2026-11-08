@@ -1190,6 +1190,34 @@ fn a5_curve_parser_accepts_owned_array_marker() {
 }
 
 #[test]
+fn rolling_ball_radius_reports_only_actual_rail_movement() {
+    let mut jet = super::a5_freeform_curves(&a5_freeform_curve_stream())
+        .pop()
+        .expect("rolling-ball fixture");
+    jet.sites[1].site = jet.sites[0].site.clone();
+    let (_, unchanged) = jet
+        .clone()
+        .definition_at_radius(1.0)
+        .expect("matching radius");
+    assert_eq!(unchanged, 0.0);
+
+    let radius = 1.000_000_2;
+    let (definition, moved) = jet
+        .clone()
+        .definition_at_radius(radius)
+        .expect("nearby radius");
+    assert_eq!(moved, radius - 1.0);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(stations) = definition
+    else {
+        panic!("rolling-ball definition");
+    };
+    let site = &stations.stations()[0].site;
+    assert_eq!(site.first_limit.distance(site.center.get()), radius);
+    assert_eq!(site.second_limit.distance(site.center.get()), radius);
+    assert!(jet.definition_at_radius(1.001).is_none());
+}
+
+#[test]
 fn a5_curve_parser_rejects_untyped_continuation() {
     let mut bytes = a5_freeform_curve_stream();
     bytes.extend(std::iter::repeat_n(0, 4097));

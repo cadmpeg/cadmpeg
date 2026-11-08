@@ -30,7 +30,7 @@ use crate::families::FamilyEntityAdmission;
 use crate::loss::CatiaLossCode;
 use crate::nurbs::LaneRefusals;
 
-use super::{curve_point, edge_alignment, interval_parameter, Patch, Use, GAP_MM};
+use super::{curve_point, edge_alignment, interval_parameter, Patch, SheetSurfaceFit, Use, GAP_MM};
 
 const EDGE_SAMPLES: u32 = 40;
 
@@ -64,6 +64,8 @@ pub(super) fn append(
     }
     let mut count = 0;
     let mut inferred_senses = 0;
+    let (mut rolling_ball, mut offset, mut ruled) = (0, 0, 0);
+    let (mut adjusted, mut max_shift_mm) = (0, 0.0_f64);
     for ((source, body), mut patches) in by_body {
         patches.sort_by_key(|patch| patch.priority);
         let selected = compatible_patches(&mut patches);
@@ -92,11 +94,28 @@ pub(super) fn append(
             if append_component(ir, annotations, source, body, &patches, admission)? {
                 count += patches.len();
                 inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
+                for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
+                    match fit {
+                        SheetSurfaceFit::RollingBall { max_rail_shift_mm } => {
+                            rolling_ball += 1;
+                            adjusted += usize::from(max_rail_shift_mm > 0.0);
+                            max_shift_mm = max_shift_mm.max(max_rail_shift_mm);
+                        }
+                        SheetSurfaceFit::Offset => offset += 1,
+                        SheetSurfaceFit::Ruled => ruled += 1,
+                    }
+                }
             }
         }
     }
     if inferred_senses != 0 {
         refusal.push_owned_patch_sense_inferred(inferred_senses);
+    }
+    if rolling_ball + offset + ruled != 0 {
+        refusal.push_sheet_surface_fitted(rolling_ball, offset, ruled);
+    }
+    if adjusted != 0 {
+        refusal.push_rolling_ball_rails_adjusted(adjusted, max_shift_mm);
     }
     Ok((count != 0).then(|| {
         CatiaLossCode::TopologyOwnedPatchSubset.note(format!(
