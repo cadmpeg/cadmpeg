@@ -74,10 +74,6 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrencePathUnresolved,
     /// A sketch collection owner does not bind one component definition.
     SketchOwnerUnresolved,
-    /// A sketch point's owner has no placement.
-    SketchPointOwnerUnresolved,
-    /// An input operand's scope has no projected feature.
-    FeatureInputOwnerUnresolved,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -254,10 +250,6 @@ pub(crate) enum F3dLossCode {
     MeshContainerMissing,
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
-    /// The external-reference table was present but not decoded.
-    XrefTableUndecoded,
-    /// A typed occurrence placement failed its frame grammar.
-    XrefPlacementUndecoded,
     /// Legacy placement identities remain in their complete native frames.
     XrefPlacementMetadataNative,
     /// A legacy placement role has no containing reference-table entry.
@@ -457,8 +449,6 @@ impl F3dLossCode {
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
-        Self::SketchPointOwnerUnresolved,
-        Self::FeatureInputOwnerUnresolved,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
@@ -541,8 +531,6 @@ impl F3dLossCode {
         Self::MeshContainerUndecoded,
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
-        Self::XrefTableUndecoded,
-        Self::XrefPlacementUndecoded,
         Self::XrefPlacementMetadataNative,
         Self::XrefPlacementRoleUnbound,
         Self::XrefPlacementCurrentPose,
@@ -653,8 +641,6 @@ impl F3dLossCode {
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
-            Self::SketchPointOwnerUnresolved => "sketch.point-owner-unresolved",
-            Self::FeatureInputOwnerUnresolved => "feature.input-owner-unresolved",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
@@ -744,8 +730,6 @@ impl F3dLossCode {
             Self::MeshContainerUndecoded => "mesh.container-undecoded",
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
-            Self::XrefTableUndecoded => "xref.table-undecoded",
-            Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
             Self::XrefPlacementRoleUnbound => "xref.placement-role-unbound",
             Self::XrefPlacementCurrentPose => "xref.placement-current-pose",
@@ -907,8 +891,6 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
-            | Self::SketchPointOwnerUnresolved
-            | Self::FeatureInputOwnerUnresolved
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
@@ -986,8 +968,6 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
-            | Self::XrefTableUndecoded
-            | Self::XrefPlacementUndecoded
             | Self::XrefPlacementRoleUnbound
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
@@ -1079,14 +1059,12 @@ impl F3dLossCode {
             | Self::XrefContainedPoseNative
             | Self::XrefOwnedPose
             | Self::XrefOwnedPoseDisagrees
-            | Self::XrefOwnedPoseNative
-            | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
+            | Self::XrefOwnedPoseNative => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefPlacementUndecoded
             | Self::XrefPlacementRoleUnbound
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
@@ -1175,8 +1153,6 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
-            | Self::SketchPointOwnerUnresolved
-            | Self::FeatureInputOwnerUnresolved
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -1293,8 +1269,6 @@ mod tests {
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
-                "sketch.point-owner-unresolved",
-                "feature.input-owner-unresolved",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
@@ -1377,8 +1351,6 @@ mod tests {
                 "mesh.container-undecoded",
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
-                "xref.table-undecoded",
-                "xref.placement-undecoded",
                 "xref.placement-metadata-native",
                 "xref.placement-role-unbound",
                 "xref.placement-current-pose",

@@ -25,60 +25,6 @@ fn position(record: &NativeRecord, key: &str) -> Option<FiniteVector<3>> {
     ])
 }
 
-/// Order recorded as an attribute user string on the annotation object when
-/// it is not its projection position (see the writer).
-fn link_strings(value: &serde_json::Value) -> Vec<String> {
-    value
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(serde_json::Value::as_str)
-        .map(str::to_owned)
-        .collect()
-}
-
-fn order_of(ir: &CadIr, record: &NativeRecord, fallback: u32) -> u32 {
-    let Some(link_value) = record.field("links") else {
-        return fallback;
-    };
-    let links = link_strings(&link_value);
-    let records = ir
-        .native
-        .namespace("rhino")
-        .and_then(|namespace| namespace.arenas().get("object_presentation"));
-    let Some(records) = records else {
-        return fallback;
-    };
-    let Some(record) = records.iter().find(|record| {
-        let Some(value) = record.field("links") else {
-            return false;
-        };
-        link_strings(&value)
-            .iter()
-            .any(|link| links.iter().any(|candidate| candidate == link))
-    }) else {
-        return fallback;
-    };
-    for key in ["user_strings", "attribute_user_strings"] {
-        let Some(value) = record.field(key) else {
-            continue;
-        };
-        let Some(items) = value.as_array() else {
-            continue;
-        };
-        for item in items {
-            if item.get("key").and_then(|key| key.as_str()) == Some("cadmpeg:annotation-order") {
-                return item
-                    .get("value")
-                    .and_then(|value| value.as_str())
-                    .and_then(|value| value.parse::<u32>().ok())
-                    .unwrap_or(fallback);
-            }
-        }
-    }
-    fallback
-}
-
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -137,12 +83,8 @@ pub(super) fn project(
                 })
                 .collect();
             ctx.charge_entities(1, "Rhino semantic annotations")?;
-            let order = order_of(
-                ir,
-                record,
-                u32::try_from(ir.model.semantic_annotations.len())
-                    .map_err(CodecError::malformed)?,
-            );
+            let order = u32::try_from(ir.model.semantic_annotations.len())
+                .map_err(CodecError::malformed)?;
             ir.model.semantic_annotations.push(SemanticAnnotation {
                 id: id.clone(),
                 object: native_id.to_owned(),

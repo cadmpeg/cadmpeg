@@ -207,20 +207,29 @@ impl NativeDispositions {
         dropped
     }
 
+    /// Losses for dropped native records: one per arena of the writer's own
+    /// namespace, and one per record of another format's namespace, which the
+    /// writer cannot inspect.
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
-        let mut losses: Vec<_> = self
-            .dropped_records(ir)
-            .into_iter()
-            .flat_map(|(namespace, arenas)| {
-                arenas.into_iter().map(move |(arena, ids)| {
-                    ExportLossCode::NativeRecordsOmitted.note(format!(
+        let mut losses = Vec::new();
+        for (namespace, arenas) in self.dropped_records(ir) {
+            let foreign = format != "cadir" && namespace != format;
+            for (arena, ids) in arenas {
+                if foreign {
+                    losses.extend(ids.into_iter().map(|id| {
+                        ExportLossCode::NativeRecordsOmitted.note(format!(
+                            "the {format} write omits native record {id} from `{namespace}.{arena}`",
+                        ))
+                    }));
+                } else {
+                    losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
                         "the {format} write omits {} native record(s) from `{namespace}.{arena}`: {}",
                         ids.len(),
                         ids.join(", "),
-                    ))
-                })
-            })
-            .collect();
+                    )));
+                }
+            }
+        }
         if format != "cadir" {
             for (namespace, records) in &ir.native.0 {
                 if namespace == format {
@@ -237,14 +246,12 @@ impl NativeDispositions {
                     })
                     .map(crate::native::NativeRecord::id)
                     .collect::<Vec<_>>();
-                if !ids.is_empty() {
-                    ids.sort_unstable();
-                    losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
-                        "the {format} write omits {} foreign unknown record identities from `{namespace}.unknowns`: {}",
-                        ids.len(),
-                        ids.join(", ")
-                    )));
-                }
+                ids.sort_unstable();
+                losses.extend(ids.into_iter().map(|id| {
+                    ExportLossCode::NativeRecordsOmitted.note(format!(
+                        "the {format} write omits foreign unknown record identity {id} from `{namespace}.unknowns`"
+                    ))
+                }));
             }
         }
         losses

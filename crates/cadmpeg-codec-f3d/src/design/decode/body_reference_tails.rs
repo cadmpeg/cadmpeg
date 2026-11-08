@@ -8,7 +8,7 @@ use crate::bytes::{is_guid_relaxed, lp_ascii_filtered_view, lp_utf16_bounded, ta
 use crate::container::ContainerScan;
 use crate::layout::body_reference_persistent_pair as persistent_pair;
 use crate::layout::body_reference_tail_prefix as fixed_prefix;
-use crate::metastream::{primary_record_frames, PrimaryRecordFrame};
+use crate::metastream::{live_primary_record_frames, PrimaryRecordFrame};
 use crate::records::body_reference_tail::{
     BodyTailReference, DesignBodyReferenceTail, DesignBodyReferenceTailWire,
 };
@@ -185,7 +185,7 @@ pub(crate) fn decode(
         let Some(root) = scan.entry_view(&bulk_name) else {
             continue;
         };
-        let frames = primary_record_frames(&meta, root.remaining())?;
+        let frames = live_primary_record_frames(&meta, root.remaining());
         let by_entity: std::collections::HashMap<_, _> = frames
             .into_iter()
             .map(|frame| (frame.entity_id, frame))

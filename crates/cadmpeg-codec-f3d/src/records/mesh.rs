@@ -547,6 +547,9 @@ impl DesignMeshSceneState {
     pub(crate) fn record(&self) -> &DesignMeshFixedRecord<95> {
         &self.record
     }
+    pub(crate) fn bounds(&self) -> Option<&DesignMeshSceneBounds> {
+        self.bounds.as_ref()
+    }
     fn bounds_offsets(&self) -> [u64; 2] {
         let start = self.record.byte_offset()
             + u64_from_index(crate::layout::paramesh_scene_state::FOOTER_MASK);
@@ -1293,7 +1296,7 @@ impl DesignMeshScope {
             frame_length,
         }
     }
-    fn owner_record_index(&self) -> u32 {
+    pub(crate) fn owner_record_index(&self) -> u32 {
         self.owner_record_index.get()
     }
     fn owner_reference_offset(&self) -> u64 {

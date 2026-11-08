@@ -733,7 +733,7 @@ fn foreign_native_content_uses_the_wrappers_typed_arena_boundary() {
     assert_eq!(losses[0].code.local_code(), "native.records-omitted");
     assert_eq!(
         losses[0].message,
-        "the test write omits 1 native record(s) from `foreign.records`: foreign:native:record#0"
+        "the test write omits native record foreign:native:record#0 from `foreign.records`"
     );
     assert!(losses[1].message.contains("foreign.unknowns"));
     assert!(losses[1].message.contains("foreign:native:record#0"));

@@ -79,7 +79,6 @@ fn select_native_forms(target: &CadIr, native: &crate::native::F3dNative) -> Vec
             if kind.as_str() != "Form"
                 || !parameters.is_empty()
                 || feature.suppressed == Some(true)
-                || feature.needs_recompute
                 || feature.product_definition.is_some()
                 || !feature.dependencies.is_empty()
                 || feature.source_text.is_some()
@@ -142,7 +141,6 @@ fn select_component_copies(
                 return None;
             };
             if feature.suppressed == Some(true)
-                || feature.needs_recompute
                 || feature.product_definition.is_some()
                 || !feature.dependencies.is_empty()
                 || !feature.source_properties.is_empty()
@@ -266,7 +264,6 @@ fn select_native_surface_stitches(
                     .as_deref()
                     .is_some_and(|tag| tag != "SurfaceStitch")
                 || feature.suppressed == Some(true)
-                || feature.needs_recompute
                 || feature.product_definition.is_some()
                 || !feature.dependencies.is_empty()
                 || !feature.source_properties.is_empty()
@@ -368,7 +365,7 @@ fn select_native_remove_bodies(
             bodies: BodySelection::Native(selection), mode: BodyRetentionMode::DeleteSelected,
         }) = feature.evaluation.definition() else { return None };
         if feature.source_tag.as_deref().is_some_and(|tag| tag != "RemoveBody")
-            || feature.suppressed == Some(true) || feature.needs_recompute || feature.product_definition.is_some()
+            || feature.suppressed == Some(true) || feature.product_definition.is_some()
             || !feature.dependencies.is_empty() || !feature.source_properties.is_empty()
             || feature.source_text.is_some() || !feature.source_content.is_empty() || !feature.evaluation.outputs().is_empty() { return None; }
         let scope = native.design_parameter_scopes.iter().find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))?;
@@ -433,7 +430,6 @@ fn select_native_base_flanges(
                     .as_deref()
                     .is_some_and(|tag| tag != "BaseFlange")
                 || feature.suppressed == Some(true)
-                || feature.needs_recompute
                 || feature.product_definition.is_some()
                 || !feature.dependencies.is_empty()
                 || feature.source_text.is_some()
@@ -497,7 +493,6 @@ fn select_empty_base_features(
             if !bodies.is_empty()
                 || feature.native_ref.as_deref() != Some(selection.as_str())
                 || feature.suppressed == Some(true)
-                || feature.needs_recompute
                 || feature.product_definition.is_some()
                 || !feature.dependencies.is_empty()
                 || !feature.source_properties.is_empty()
@@ -643,7 +638,7 @@ fn select_extrusions(
         }) = feature.evaluation.definition() else { return None };
         let LinearTermination::Blind { length } = &side.termination else { return None };
         if !matches!(length, Dimension::Parameter(_)) { return None; }
-        if side.draft.is_some() || feature.suppressed == Some(true) || feature.needs_recompute
+        if side.draft.is_some() || feature.suppressed == Some(true)
             || feature.product_definition.is_some()
             || !feature.source_properties.is_empty() || feature.source_text.is_some()
             || !feature.source_content.is_empty() || !feature.evaluation.outputs().is_empty()

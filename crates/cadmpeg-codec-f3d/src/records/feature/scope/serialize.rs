@@ -253,12 +253,6 @@ impl Serialize for DesignParameterScope {
             }
         }
         emit_opt!("work_point_construction", self.work_point_construction());
-        if !self.unclosed_construction_operand_groups.is_empty() {
-            emit!(
-                "unclosed_construction_operand_groups",
-                &self.unclosed_construction_operand_groups
-            );
-        }
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());
         if let Some(sketch) = self.sketch_entity() {

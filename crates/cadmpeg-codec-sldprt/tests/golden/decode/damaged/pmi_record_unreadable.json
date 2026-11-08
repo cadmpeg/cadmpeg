@@ -379,6 +379,7 @@
           "strict_floor": "error"
         },
         "dropped": [
+          "sldprt:metadata:decode-baselines#0",
           "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:basic",
           "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:inspection",
           "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:precision",

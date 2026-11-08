@@ -11,11 +11,13 @@ use cadmpeg_ir::features::{
 
 use super::DesignNative;
 
+/// Link each operand record to the input topology of the feature its scope
+/// projects. An operand whose scope projects no feature has no neutral home
+/// and stays in its native arena.
 pub(super) fn project(
     design: &DesignNative,
     features: &[Feature],
     inputs: &mut Vec<FeatureInputTopology>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let features_by_native: HashMap<_, _> = features
         .iter()
@@ -70,20 +72,11 @@ pub(super) fn project(
         .enumerate()
         .map(|(index, input)| (input.input_of.clone(), index))
         .collect();
-    let mut attach = |id: &str, scope: u32| -> Result<(), CodecError> {
-        let Some(stream) = crate::ids::native_stream(id) else {
-            losses.push(
-                crate::loss::F3dLossCode::FeatureInputOwnerUnresolved
-                    .note(format!("Feature input operand {id} has no native stream.")),
-            );
-            return Ok(());
-        };
-        let Some(feature) = owners.get(&(stream, scope)).copied() else {
-            losses.push(
-                crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.note(format!(
-                    "Feature input operand {id} has no projected feature for scope {scope}."
-                )),
-            );
+    let mut attach = |id: &str, scope: Option<u32>| -> Result<(), CodecError> {
+        let Some(feature) = crate::ids::native_stream(id)
+            .zip(scope)
+            .and_then(|key| owners.get(&key).copied())
+        else {
             return Ok(());
         };
         let index = if let Some(index) = input_by_feature.get(&feature.id).copied() {
@@ -126,7 +119,7 @@ pub(super) fn project(
     macro_rules! direct {
         ($($field:ident),* $(,)?) => {$(
             for record in &design.$field {
-                attach(&record.id, record.scope_record_index)?;
+                attach(&record.id, Some(record.scope_record_index))?;
             }
         )*};
     }
@@ -142,18 +135,14 @@ pub(super) fn project(
         design_loft_legacy_body_carriers
     );
     for identity in &design.design_construction_operand_identities {
-        if let Some(scope) = crate::ids::native_stream(&identity.id)
-            .and_then(|stream| groups.get(&(stream, identity.group_record_index)))
-        {
-            attach(&identity.id, *scope)?;
-        }
+        let scope = crate::ids::native_stream(&identity.id)
+            .and_then(|stream| groups.get(&(stream, identity.group_record_index)));
+        attach(&identity.id, scope.copied())?;
     }
     for member in &design.design_extrude_selection_members {
-        if let Some(scope) = crate::ids::native_stream(&member.id)
-            .and_then(|stream| extrude_groups.get(&(stream, member.group_record_index)))
-        {
-            attach(&member.id, *scope)?;
-        }
+        let scope = crate::ids::native_stream(&member.id)
+            .and_then(|stream| extrude_groups.get(&(stream, member.group_record_index)));
+        attach(&member.id, scope.copied())?;
     }
     Ok(())
 }
@@ -166,7 +155,7 @@ mod tests {
     };
 
     #[test]
-    fn operand_without_projected_feature_reports_its_identity() {
+    fn operand_without_projected_feature_stays_native() {
         let mut design = DesignNative::default();
         design.design_construction_operand_groups.push(
             serde_json::from_value(serde_json::json!({
@@ -183,15 +172,8 @@ mod tests {
             .unwrap(),
         );
         let mut inputs = Vec::new();
-        let mut losses = Vec::new();
-        project(&design, &[], &mut inputs, &mut losses).unwrap();
+        project(&design, &[], &mut inputs).unwrap();
         assert!(inputs.is_empty());
-        assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.kind()
-        );
-        assert!(losses[0].message.contains("construction-group#9"));
     }
 
     #[test]
@@ -252,12 +234,10 @@ mod tests {
             );
         }
         let mut inputs = Vec::new();
-        let mut losses = Vec::new();
         project(
             &design,
             &[feature.clone(), other_feature.clone()],
             &mut inputs,
-            &mut losses,
         )
         .unwrap();
         assert_eq!(inputs.len(), 2);
@@ -284,14 +264,7 @@ mod tests {
         let mut with_history = inputs.clone();
         with_history[0].native_ref = Some("f3d:history:state#4".into());
         let history_id = with_history[0].id.clone();
-        project(
-            &design,
-            &[feature, other_feature],
-            &mut with_history,
-            &mut losses,
-        )
-        .unwrap();
-        assert!(losses.is_empty());
+        project(&design, &[feature, other_feature], &mut with_history).unwrap();
         assert_eq!(with_history.len(), 2);
         assert_eq!(with_history[0].id, history_id);
         assert_eq!(

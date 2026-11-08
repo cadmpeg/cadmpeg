@@ -297,8 +297,15 @@ pub(in crate::writer) fn definition_metadata_losses(
     ir.model
         .product_definitions
         .iter()
-        .filter(|definition| definition_written(ir, &referenced, definition))
         .filter_map(|definition| {
+            if !definition_written(ir, &referenced, definition) {
+                return (!definition.bodies.is_empty()).then(|| {
+                    crate::loss::RhinoLossCode::WriterProductMetadataReduced.note(format!(
+                        "product definition {} has no written occurrence; 3DM model space holds its bodies and the definition record is omitted",
+                        definition.id
+                    ))
+                });
+            }
             let fields = reduced_definition_fields(ir, definition, version);
             (!fields.is_empty()).then(|| {
                 crate::loss::RhinoLossCode::WriterProductMetadataReduced.note(format!(
