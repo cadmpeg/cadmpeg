@@ -14,9 +14,9 @@ use crate::loss::RhinoLossCode;
 
 use super::{
     attributed_object_record, bounded_line_payload, check_frame, check_nurbs_curve, circle_payload,
-    close_point, curve_object_record, nurbs_curve_payload,
-    object_attributes_for_target, point_cloud_payload, WritableEdgeCurve, WriteError, ARC_CLASS,
-    LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
+    close_point, curve_object_record, nurbs_curve_payload, object_attributes_for_target,
+    point_cloud_payload, WritableEdgeCurve, WriteError, ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS,
+    POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(

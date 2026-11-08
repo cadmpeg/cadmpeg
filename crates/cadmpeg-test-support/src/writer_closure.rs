@@ -583,7 +583,9 @@ fn normalize_edit(
         .normalize
         .ok_or("normalization has no comparison rule")?;
     let pointer = if row.path.ends_with("[]") {
-        pointer.rsplit_once('/').map_or(pointer, |(parent, _)| parent)
+        pointer
+            .rsplit_once('/')
+            .map_or(pointer, |(parent, _)| parent)
     } else {
         pointer
     };

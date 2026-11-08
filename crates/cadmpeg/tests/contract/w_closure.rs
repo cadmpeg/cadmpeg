@@ -132,9 +132,12 @@ const EPS_ORIENTATION: f64 = 1.0e-12;
 /// The axis-angle a 3DM camera frame stores for an orientation: a unit axis,
 /// and the z axis with angle 0 for a whole number of turns.
 fn camera_frame_orientation(value: &serde_json::Value) -> serde_json::Value {
-    let components = value
-        .as_array()
-        .map(|items| items.iter().filter_map(serde_json::Value::as_f64).collect::<Vec<_>>());
+    let components = value.as_array().map(|items| {
+        items
+            .iter()
+            .filter_map(serde_json::Value::as_f64)
+            .collect::<Vec<_>>()
+    });
     let Some(&[x, y, z, angle]) = components.as_deref() else {
         return value.clone();
     };
