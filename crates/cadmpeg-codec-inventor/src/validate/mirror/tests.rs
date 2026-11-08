@@ -2,8 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use super::{is_mirror_construction, matches_history, requires_mirror_validation};
+use super::{
+    admits, checked_lengths, is_mirror_construction, matches_history, requires_mirror_validation,
+    Joins,
+};
 use crate::feature::history::{HistoryNodeKind, HistoryPlacement, SUPPRESSED_FLAG};
+use crate::native::RseRecordRecord;
+use crate::test_support::mirror::Fixture;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
 use cadmpeg_ir::features::{
@@ -12,6 +17,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
+use std::collections::HashSet;
 
 fn feature() -> Feature {
     Feature {
@@ -464,5 +470,231 @@ fn validator_checks_the_replacement_form_and_each_neighbouring_refusal() {
                 .matches_projection(&source, &changed.label, &feature, &result, |_| None),
             "{name}"
         );
+    }
+}
+
+fn rse_record(token: &str, ordinal: u32, type_id: &str, payload_len: u64) -> RseRecordRecord {
+    serde_json::from_value(serde_json::json!({
+        "id": format!("record-{ordinal}"),
+        "token": token,
+        "ordinal": ordinal,
+        "selector": 0,
+        "type_index": 0,
+        "type_id": type_id,
+        "payload_offset": 0,
+        "payload_len": payload_len,
+        "payload_sha256": "0".repeat(64),
+        "trailing_payload_len": 0,
+        "trailer_len": 0,
+        "trailer_sha256": "0".repeat(64),
+    }))
+    .expect("record")
+}
+
+/// Version-19 payload lengths of the selection, options and plane-reference
+/// records, with the plane-reference record length as given.
+fn supplied_records(fixture: &Fixture, plane_reference_len: Option<u64>) -> Vec<RseRecordRecord> {
+    let header = u64::try_from(crate::layout::pm_dc_content_header::LEN).expect("header");
+    let token = fixture.properties[0].identity.segment_token.as_str();
+    let type_id = |ordinal: u32| {
+        fixture
+            .properties
+            .iter()
+            .find(|property| property.identity.record_ordinal == ordinal)
+            .expect("property")
+            .identity
+            .type_id
+            .as_str()
+            .to_owned()
+    };
+    let mut records = vec![
+        rse_record(token, 111, &type_id(111), header + 8),
+        rse_record(token, 112, &type_id(112), header + 9),
+    ];
+    if let Some(length) = plane_reference_len {
+        records.push(rse_record(token, 109, &type_id(109), length));
+    }
+    records
+}
+
+#[test]
+fn validator_checks_the_plane_reference_length_against_the_versioned_header() {
+    use crate::test_support::mirror::supplied_form;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (fixture, source) = supplied_form();
+    let (feature, result) = fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, |_| None, |_| {})
+        .expect("mirror")
+        .expect("projection");
+    let header = u64::try_from(crate::layout::pm_dc_content_header::LEN).expect("header");
+    let nodes = HashSet::new();
+    let admitted = |length: Option<u64>| {
+        let records = supplied_records(&fixture, length);
+        fixture
+            .index()
+            .with_record_lengths(checked_lengths(&records, &nodes))
+            .matches_projection(&source, &fixture.label, &feature, &result, |_| None)
+    };
+    assert!(admitted(Some(header + 18)));
+    assert!(!admitted(Some(header + 17)));
+    assert!(!admitted(Some(header + 19)));
+    assert!(!admitted(None));
+}
+
+fn dependency_form() -> (Fixture, crate::feature::PmDcPatternFeature) {
+    (
+        Fixture::new(false).with_supplying_plane(),
+        crate::test_support::mirror::pattern(19, false, &[3], &[]),
+    )
+}
+
+/// Run the native Mirror admission over the projection of `fixture`, after
+/// `change` edits the projected Mirror.
+fn admission(
+    fixture: &Fixture,
+    source: &crate::feature::PmDcPatternFeature,
+    change: impl FnOnce(&mut Feature, &[Feature]),
+) -> Option<bool> {
+    use crate::design::scope::BrepSegmentRole;
+    use crate::feature::history::{build_records, HistoryRecords};
+    use cadmpeg_core::decode::{unique_index, DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let projection = fixture
+        .project_history(&ctx, source.clone())
+        .expect("history");
+    let (inventory, design, _) = fixture.history_inputs(source.clone());
+    let token = source.identity.segment_token.as_str();
+    let segments = design.brep_segments.clone();
+    assert!(segments.iter().any(|s| s.role == BrepSegmentRole::Document));
+    let history = build_records(
+        &ctx,
+        token,
+        &HistoryRecords {
+            features: &inventory.features,
+            patterns: &inventory.pattern_features,
+            labels: &inventory.labels,
+            terminators: &[],
+            sketches: &[],
+            work_planes: &inventory.work_planes,
+            roots: &design.model_roots,
+            segments: &segments,
+        },
+    )
+    .expect("history records");
+    let native = source.id();
+    let mut projected = projection.features.clone();
+    let position = projected
+        .iter()
+        .position(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+        .expect("mirror");
+    let others = projected.clone();
+    change(&mut projected[position], &others);
+    let labels = unique_index(
+        inventory
+            .labels
+            .iter()
+            .filter_map(|l| Some(((token, l.header.owner.record_ordinal()?), l))),
+    );
+    let records = unique_index(
+        inventory
+            .features
+            .iter()
+            .map(|r| (&r.identity, r.id(), r.header.flags))
+            .chain(
+                inventory
+                    .pattern_features
+                    .iter()
+                    .map(|r| (&r.identity, r.id(), r.header.flags)),
+            )
+            .map(|(identity, native, flags)| {
+                (
+                    (identity.segment_token.as_str(), identity.record_ordinal),
+                    (identity, native, flags),
+                )
+            }),
+    );
+    let features = unique_index(projected.iter().map(|f| (&f.id, f)));
+    let results = unique_index(
+        projection
+            .result_topologies
+            .iter()
+            .map(|r| (&r.output_of, r)),
+    );
+    let index = fixture.index();
+    admits(
+        &Joins {
+            index: &index,
+            labels: &labels,
+            records: &records,
+            features: &features,
+            results: &results,
+        },
+        &history,
+        &projected[position],
+        source,
+    )
+}
+
+fn set_dependencies(feature: &mut Feature, ids: Vec<FeatureId>) {
+    feature.dependencies = ids.try_into().expect("distinct dependencies");
+}
+
+#[test]
+fn validator_admits_a_work_plane_dependency_after_the_seeds_and_no_other_order() {
+    for (fixture, source) in [
+        dependency_form(),
+        crate::test_support::mirror::supplied_form(),
+    ] {
+        let seeds = source.participants.references().len();
+        let mut expected = Vec::new();
+        assert_eq!(
+            admission(&fixture, &source, |mirror, _| expected =
+                mirror.dependencies.as_slice().to_vec()),
+            Some(true)
+        );
+        assert_eq!(expected.len(), seeds + 1);
+        let plane = expected[seeds].clone();
+        let flagged = |name: &str, change: &dyn Fn(&mut Feature, &[Feature])| {
+            assert_ne!(admission(&fixture, &source, change), Some(true), "{name}");
+        };
+        flagged("missing", &|mirror, _| {
+            set_dependencies(mirror, expected[..seeds].to_vec());
+        });
+        flagged("another feature as the plane", &|mirror, others| {
+            let mut ids = expected[..seeds].to_vec();
+            ids.push(
+                others
+                    .iter()
+                    .map(|f| f.id.clone())
+                    .find(|id| !ids.contains(id) && *id != plane && *id != mirror.id)
+                    .unwrap_or_else(|| mirror.id.clone()),
+            );
+            set_dependencies(mirror, ids);
+        });
+        flagged("itself as the plane", &|mirror, _| {
+            let mut ids = expected[..seeds].to_vec();
+            ids.push(mirror.id.clone());
+            set_dependencies(mirror, ids);
+        });
+        flagged("extra trailing dependency", &|mirror, _| {
+            let mut ids = expected.clone();
+            ids.push(mirror.id.clone());
+            set_dependencies(mirror, ids);
+        });
+        if seeds > 0 {
+            flagged("ahead of the seeds", &|mirror, _| {
+                let mut ids = vec![plane.clone()];
+                ids.extend(expected[..seeds].iter().cloned());
+                set_dependencies(mirror, ids);
+            });
+        }
     }
 }
