@@ -448,7 +448,6 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ALTERNATE_LINES` | `4` | 4 | Ambiguous line stations admitted to the alternate boundary search. Excess skips the search. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ROLLING_BOUNDARY_EXCURSION` | `0.001` | N | Maximum normalized transverse excursion for a rolling-ball boundary retry. A larger excursion rejects the retry. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_CHART_ENDPOINT_SLACK` | `0.00001` | N | Absolute parameter slack for clamping a station to the chart boundary. |
-| `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_CORNER_RESIDUAL_MM` | `0.001` | N | Maximum distance in mm between fitted and incident corner points. Excess rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_ERROR_MM` | `0.001` | N | Maximum sampled edge fit residual in mm. Larger residuals request subdivision. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_SPANS` | `128` | 4 | Spans in one fitted edge. Excess rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_SPLIT_DEPTH` | `12` | 4 | Subdivision depth in one fitted edge. Excess rejects the fit. |
@@ -543,7 +542,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 328.
+Production `MAX_*` constants: 327.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -551,8 +550,8 @@ Production `MAX_*` constants: 328.
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 165   |
-| N    | Not a decode bound         | 47    |
-|      | Total                      | 328   |
+| N    | Not a decode bound         | 46    |
+|      | Total                      | 327   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -562,7 +561,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 34,
-`cadmpeg-codec-catia` 75, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 74, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

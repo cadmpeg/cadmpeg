@@ -6,7 +6,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord};
@@ -538,229 +538,20 @@ pub(super) fn closed_patch(
     (closed.len() == 1).then(|| closed.remove(0))
 }
 
-const SIX_EDGE_U_DEGREE: usize = 5;
-const SIX_EDGE_V_DEGREE: usize = 5;
-const SIX_EDGE_U_SPANS: usize = 4;
-const SIX_EDGE_V_SPANS: usize = 2;
+const RECTANGULAR_U_DEGREE: usize = 5;
+const RECTANGULAR_V_DEGREE: usize = 5;
+const RECTANGULAR_U_SPANS: usize = 4;
+const RECTANGULAR_V_SPANS: usize = 2;
 const MAX_NATIVE_FIT_STATIONS: usize = 64;
-const SIX_EDGE_V_POLES: usize = 9;
-const SIX_EDGE_HOLDOUT_U: usize = 60;
-const SIX_EDGE_HOLDOUT_V: usize = 30;
-const RAIL_SCAN_STEPS: usize = 100;
-const GOLDEN_SEARCH_STEPS: usize = 40;
-const GOLDEN_RATIO_INV: f64 = 0.618_033_988_749_895;
-const MAX_CORNER_RESIDUAL_MM: f64 = 0.001;
-const RAIL_ENDPOINT_TOLERANCE_MM: f64 = 0.01;
-const EDGE_DELIM_BYTES: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
-const VERTEX_ROW_PREFIX: [u8; 3] = [0x05, 0x08, 0x01];
-const ROSTER_PREFIX_LEN: usize = 61;
-const ROSTER_CURVES_LEN: usize = 6 * 13;
-const ROSTER_VERTICES_LEN: usize = 6 * 7;
-const ROSTER_TOTAL_LEN: usize = ROSTER_PREFIX_LEN + ROSTER_CURVES_LEN + ROSTER_VERTICES_LEN;
-const CURVE_ROW_LEN: usize = 13;
-const VERTEX_ROW_LEN: usize = 7;
-const TABLE_ROW_LEN: usize = 15;
-const TABLE_ROWS_COUNT: usize = 6;
-const TABLE_PAYLOAD_LEN: usize = TABLE_ROWS_COUNT * TABLE_ROW_LEN;
-
-#[derive(Clone, Debug)]
-pub(super) struct SixEdgeDomain {
-    pub(super) u_min: f64,
-    pub(super) u_max: f64,
-    pub(super) u1: f64,
-    pub(super) u4: f64,
-}
-
-pub(super) struct FittedSixEdgePatch {
+const RECTANGULAR_V_POLES: usize = 9;
+const RECTANGULAR_HOLDOUT_U: usize = 60;
+const RECTANGULAR_HOLDOUT_V: usize = 30;
+pub(super) struct FittedRectangularPatch {
     pub(super) surface: NurbsSurface,
     pub(super) max_curve: NurbsCurve,
     pub(super) upper_curve: NurbsCurve,
     pub(super) min_curve: NurbsCurve,
     pub(super) lower_curve: NurbsCurve,
-}
-
-pub(super) fn extract_boundary_corner_tables(data: &[u8]) -> Vec<[[f64; 3]; 6]> {
-    let mut offset = 0;
-    let mut tables = Vec::new();
-    while let Some(pos) = data[offset..]
-        .windows(EDGE_DELIM_BYTES.len())
-        .position(|w| w == EDGE_DELIM_BYTES)
-    {
-        let delim_pos = offset + pos;
-        let after = delim_pos + EDGE_DELIM_BYTES.len();
-        if let Some(slice) = data.get(after..) {
-            if slice.len() >= 3 && slice[0] == 0x01 && slice[1] == 0x06 && slice[2] == 0x06 {
-                let rows_start = after + 3;
-                let table_end = rows_start + TABLE_PAYLOAD_LEN;
-                if let Some(table_slice) = data.get(rows_start..table_end) {
-                    if data.get(table_end..table_end + EDGE_DELIM_BYTES.len())
-                        == Some(&EDGE_DELIM_BYTES)
-                    {
-                        let mut corners = [[0.0; 3]; 6];
-                        let mut valid = true;
-                        for i in 0..6 {
-                            let row = &table_slice[i * TABLE_ROW_LEN..(i + 1) * TABLE_ROW_LEN];
-                            if row[..3] != VERTEX_ROW_PREFIX {
-                                valid = false;
-                                break;
-                            }
-                            let Some(x) = cadmpeg_core::decode::View::f32_le_at(row, 3) else {
-                                valid = false;
-                                break;
-                            };
-                            let Some(y) = cadmpeg_core::decode::View::f32_le_at(row, 7) else {
-                                valid = false;
-                                break;
-                            };
-                            let Some(z) = cadmpeg_core::decode::View::f32_le_at(row, 11) else {
-                                valid = false;
-                                break;
-                            };
-                            corners[i] = [f64::from(x), f64::from(y), f64::from(z)];
-                        }
-                        if valid {
-                            tables.push(corners);
-                            offset = table_end + EDGE_DELIM_BYTES.len();
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-        offset = delim_pos + 1;
-    }
-    tables
-}
-
-#[cfg(test)]
-pub(super) fn extract_boundary_corner_table(data: &[u8]) -> Option<[[f64; 3]; 6]> {
-    let mut tables = extract_boundary_corner_tables(data);
-    (tables.len() == 1).then(|| tables.remove(0))
-}
-
-pub(super) fn six_edge_rosters(data: &[u8]) -> Vec<(u32, [u32; 6])> {
-    let mut rosters = Vec::new();
-    let mut pos = 0;
-    while let Some(slice) = data.get(pos..) {
-        if slice.len() < ROSTER_TOTAL_LEN {
-            break;
-        }
-        if slice[0] == 0xff && slice[1] == 0xb5 {
-            let curves_start = pos + ROSTER_PREFIX_LEN;
-            let mut valid = true;
-            let mut curve_tags = [0u32; 6];
-            for (i, tag_slot) in curve_tags.iter_mut().enumerate() {
-                let cp = curves_start + i * CURVE_ROW_LEN;
-                let Some(row) = data.get(cp..cp + CURVE_ROW_LEN) else {
-                    valid = false;
-                    break;
-                };
-                if row[0] != 0x60 || row[5..8] != [0, 0, 0] {
-                    valid = false;
-                    break;
-                }
-                let Some(tag) = cadmpeg_core::decode::View::u32_le_at(row, 1) else {
-                    valid = false;
-                    break;
-                };
-                *tag_slot = tag;
-            }
-            if valid {
-                let vert_start = curves_start + ROSTER_CURVES_LEN;
-                let mut vertex_tags = [0u32; 6];
-                for (i, tag_slot) in vertex_tags.iter_mut().enumerate() {
-                    let vp = vert_start + i * VERTEX_ROW_LEN;
-                    let Some(row) = data.get(vp..vp + VERTEX_ROW_LEN) else {
-                        valid = false;
-                        break;
-                    };
-                    if row[0] != 0x54 || row[5..7] != [0, 0] {
-                        valid = false;
-                        break;
-                    }
-                    let Some(tag) = cadmpeg_core::decode::View::u32_le_at(row, 1) else {
-                        valid = false;
-                        break;
-                    };
-                    *tag_slot = tag;
-                }
-                if valid {
-                    if let Some(face_tag) = cadmpeg_core::decode::View::u32_le_at(data, pos + 14) {
-                        let mut sorted_verts = vertex_tags;
-                        sorted_verts.sort_unstable();
-                        let mut sorted_curves = curve_tags;
-                        sorted_curves.sort_unstable();
-                        let unique_verts = !sorted_verts.windows(2).any(|pair| pair[0] == pair[1]);
-                        let unique_curves =
-                            !sorted_curves.windows(2).any(|pair| pair[0] == pair[1]);
-                        let non_zero = face_tag != 0
-                            && vertex_tags.iter().all(|tag| *tag != 0)
-                            && curve_tags.iter().all(|tag| *tag != 0 && *tag != face_tag);
-                        if unique_verts && unique_curves && non_zero {
-                            rosters.push((face_tag, curve_tags));
-                            pos += ROSTER_TOTAL_LEN;
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-        pos += 1;
-    }
-    rosters
-}
-
-#[cfg(test)]
-pub(super) fn six_edge_roster(data: &[u8]) -> Option<(u32, [u32; 6])> {
-    let mut rosters = six_edge_rosters(data);
-    (rosters.len() == 1).then(|| rosters.remove(0))
-}
-
-pub(super) fn mfbrp_matches_six_edge_roster(
-    data: &[u8],
-    face_tag: u32,
-    curve_tags: &[u32; 6],
-) -> bool {
-    const TOKEN: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
-    let position = |tag: u32| {
-        let mut pattern = [0u8; 8];
-        pattern[..4].copy_from_slice(&TOKEN);
-        pattern[4..].copy_from_slice(&tag.to_le_bytes());
-        let mut matches = data
-            .windows(pattern.len())
-            .enumerate()
-            .filter_map(|(index, bytes)| (bytes == pattern).then_some(index));
-        let first = matches.next()?;
-        matches.next().is_none().then_some(first)
-    };
-    let Some(face_pos) = position(face_tag) else {
-        return false;
-    };
-    let mut parent = None;
-    let mut previous_member = None;
-    for (index, tag) in curve_tags.iter().enumerate() {
-        let Some(pos) = position(*tag) else {
-            return false;
-        };
-        if face_pos.checked_sub(38 * (index + 1)) != Some(pos) {
-            return false;
-        }
-        let Some(member) = cadmpeg_core::decode::View::u32_le_at(data, pos + 11) else {
-            return false;
-        };
-        let Some(current_parent) = cadmpeg_core::decode::View::u32_le_at(data, pos + 19) else {
-            return false;
-        };
-        if current_parent == 0
-            || parent.is_some_and(|value| value != current_parent)
-            || previous_member.is_some_and(|value: u32| value.checked_sub(1) != Some(member))
-        {
-            return false;
-        }
-        parent = Some(current_parent);
-        previous_member = Some(member);
-    }
-    true
 }
 
 fn bspline_basis(knots: &[f64], degree: usize, mut t: f64, i: usize) -> f64 {
@@ -819,172 +610,14 @@ fn knot_vector(low: f64, high: f64, spans: usize) -> Option<Vec<f64>> {
     Some(knots)
 }
 
-pub(super) fn bind_rolling_ball_six_edge(
-    ir: &CadIr,
-    carrier: &SurfaceGeometry,
-    corners: &[[f64; 3]; 6],
-) -> Option<SixEdgeDomain> {
-    let SurfaceGeometry::Procedural { construction, .. } = carrier else {
-        return None;
-    };
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|p| &p.id == construction)?;
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
-        procedural.definition()
-    else {
-        return None;
-    };
-    let stations = jet.stations();
-    let t_min = stations.first()?.knot.get();
-    let t_max = stations.last()?.knot.get();
-    if !t_min.is_finite() || !t_max.is_finite() || t_min >= t_max {
-        return None;
-    }
-    let eval_at = |u: f64, v: f64| -> Option<[f64; 3]> {
-        let pt = eval::model_surface_point(EvaluationAdmission::Standard, ir, carrier, u, v)
-            .ok()?
-            .get();
-        Some([pt.x, pt.y, pt.z])
-    };
-    let dist = |a: [f64; 3], b: [f64; 3]| -> f64 {
-        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
-    };
-    let project_to_rail = |point: [f64; 3], s: f64| -> Option<(f64, f64)> {
-        let mut best_t = t_min;
-        let mut best_dist = f64::INFINITY;
-        for step in 0..=RAIL_SCAN_STEPS {
-            let t = t_min
-                + (t_max - t_min) * (f64_from_index(step)?) / (f64_from_index(RAIL_SCAN_STEPS)?);
-            let pt = eval_at(t, s)?;
-            let d = dist(point, pt);
-            if d < best_dist {
-                best_dist = d;
-                best_t = t;
-            }
-        }
-        let step_size = (t_max - t_min) / (f64_from_index(RAIL_SCAN_STEPS)?);
-        let mut lower = (best_t - step_size).max(t_min);
-        let mut upper = (best_t + step_size).min(t_max);
-        let mut t1 = upper - GOLDEN_RATIO_INV * (upper - lower);
-        let mut t2 = lower + GOLDEN_RATIO_INV * (upper - lower);
-        let mut f1 = dist(point, eval_at(t1, s)?);
-        let mut f2 = dist(point, eval_at(t2, s)?);
-        for _ in 0..GOLDEN_SEARCH_STEPS {
-            if f1 < f2 {
-                upper = t2;
-                t2 = t1;
-                f2 = f1;
-                t1 = upper - GOLDEN_RATIO_INV * (upper - lower);
-                f1 = dist(point, eval_at(t1, s)?);
-            } else {
-                lower = t1;
-                t1 = t2;
-                f1 = f2;
-                t2 = lower + GOLDEN_RATIO_INV * (upper - lower);
-                f2 = dist(point, eval_at(t2, s)?);
-            }
-        }
-        Some(((lower + upper) * 0.5, f1.min(f2)))
-    };
-
-    let mut rail0_params = Vec::new();
-    let mut rail1_params = Vec::new();
-    for corner in corners {
-        let (t0, d0) = project_to_rail(*corner, 0.0)?;
-        let (t1, d1) = project_to_rail(*corner, 1.0)?;
-        if d0 < d1 {
-            if d0 > MAX_CORNER_RESIDUAL_MM {
-                return None;
-            }
-            rail0_params.push(t0);
-        } else {
-            if d1 > MAX_CORNER_RESIDUAL_MM {
-                return None;
-            }
-            rail1_params.push(t1);
-        }
-    }
-    if rail0_params.len() != 3 || rail1_params.len() != 3 {
-        return None;
-    }
-    rail0_params.sort_by(f64::total_cmp);
-    rail1_params.sort_by(f64::total_cmp);
-    if (rail0_params[0] - rail1_params[0]).abs() > RAIL_ENDPOINT_TOLERANCE_MM
-        || (rail0_params[2] - rail1_params[2]).abs() > RAIL_ENDPOINT_TOLERANCE_MM
-    {
-        return None;
-    }
-    let u_min = (rail0_params[0] + rail1_params[0]) * 0.5;
-    let u_max = (rail0_params[2] + rail1_params[2]) * 0.5;
-    let u1 = rail0_params[1];
-    let u4 = rail1_params[1];
-    if u_min >= u1 || u1 >= u_max || u_min >= u4 || u4 >= u_max {
-        return None;
-    }
-    Some(SixEdgeDomain {
-        u_min,
-        u_max,
-        u1,
-        u4,
-    })
-}
-
-pub(super) fn evaluate_vertex_positions(
-    ir: &CadIr,
-    surface: &NurbsSurface,
-    domain: &SixEdgeDomain,
-) -> Option<[Point3; 6]> {
-    let surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone()));
-    let uv_coords = [
-        (domain.u_max, 0.0),
-        (domain.u_max, 1.0),
-        (domain.u4, 1.0),
-        (domain.u_min, 1.0),
-        (domain.u_min, 0.0),
-        (domain.u1, 0.0),
-    ];
-    let mut positions = [Point3::new(0.0, 0.0, 0.0); 6];
-    for (index, &(u, v)) in uv_coords.iter().enumerate() {
-        let pt =
-            eval::model_surface_point(EvaluationAdmission::Standard, ir, &surface_geometry, u, v)
-                .ok()?
-                .get();
-        positions[index] = Point3::new(pt.x, pt.y, pt.z);
-    }
-    Some(positions)
-}
-
-pub(super) fn fit_six_edge_patch(
-    ir: &CadIr,
-    carrier: &SurfaceGeometry,
-    domain: &SixEdgeDomain,
-) -> Option<FittedSixEdgePatch> {
-    let SurfaceGeometry::Procedural {
-        construction,
-        cache: None,
-    } = carrier
-    else {
-        return None;
-    };
-    let procedure = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|row| &row.id == construction)?;
-    fit_rectangular_patch(procedure.definition(), [domain.u_min, domain.u_max])
-}
-
 pub(super) fn fit_rectangular_patch(
     definition: &ProceduralSurfaceDefinition,
     [u_min, u_max]: [f64; 2],
-) -> Option<FittedSixEdgePatch> {
+) -> Option<FittedRectangularPatch> {
     let ProceduralSurfaceDefinition::RollingBallJet(stations) = definition else {
         return None;
     };
-    let uniform = knot_vector(u_min, u_max, SIX_EDGE_U_SPANS)?;
+    let uniform = knot_vector(u_min, u_max, RECTANGULAR_U_SPANS)?;
     fit_patch_with_knots(definition, [u_min, u_max], uniform).or_else(|| {
         let interior = stations
             .stations()
@@ -1010,22 +643,22 @@ fn fit_patch_with_knots(
     definition: &ProceduralSurfaceDefinition,
     [u_min, u_max]: [f64; 2],
     ku: Vec<f64>,
-) -> Option<FittedSixEdgePatch> {
-    let u_poles = ku.len().checked_sub(SIX_EDGE_U_DEGREE + 1)?;
+) -> Option<FittedRectangularPatch> {
+    let u_poles = ku.len().checked_sub(RECTANGULAR_U_DEGREE + 1)?;
     let eval_at = |u: f64, v: f64| -> Option<[f64; 3]> {
         let pt = eval::rolling_ball_jet_point(definition, u.clamp(u_min, u_max), v)
             .ok()?
             .get();
         Some([pt.x, pt.y, pt.z])
     };
-    let kv = knot_vector(0.0, 1.0, SIX_EDGE_V_SPANS)?;
+    let kv = knot_vector(0.0, 1.0, RECTANGULAR_V_SPANS)?;
     let mut gu = Vec::with_capacity(u_poles);
     for i in 0..u_poles {
         let sum: f64 = ku[i + 1..=i + 5].iter().sum();
         gu.push(sum / 5.0);
     }
-    let mut gv = Vec::with_capacity(SIX_EDGE_V_POLES);
-    for j in 0..SIX_EDGE_V_POLES {
+    let mut gv = Vec::with_capacity(RECTANGULAR_V_POLES);
+    for j in 0..RECTANGULAR_V_POLES {
         let sum: f64 = kv[j + 1..=j + 5].iter().sum();
         gv.push(sum / 5.0);
     }
@@ -1033,20 +666,20 @@ fn fit_patch_with_knots(
     for u in &gu {
         let mut row = Vec::with_capacity(u_poles);
         for j in 0..u_poles {
-            row.push(bspline_basis(&ku, SIX_EDGE_U_DEGREE, *u, j));
+            row.push(bspline_basis(&ku, RECTANGULAR_U_DEGREE, *u, j));
         }
         bu.push(row);
     }
-    let mut bv = Vec::with_capacity(SIX_EDGE_V_POLES);
+    let mut bv = Vec::with_capacity(RECTANGULAR_V_POLES);
     for v in &gv {
-        let mut row = Vec::with_capacity(SIX_EDGE_V_POLES);
-        for j in 0..SIX_EDGE_V_POLES {
-            row.push(bspline_basis(&kv, SIX_EDGE_V_DEGREE, *v, j));
+        let mut row = Vec::with_capacity(RECTANGULAR_V_POLES);
+        for j in 0..RECTANGULAR_V_POLES {
+            row.push(bspline_basis(&kv, RECTANGULAR_V_DEGREE, *v, j));
         }
         bv.push(row);
     }
     let mut samples = (0..u_poles)
-        .map(|_| [[0.0; 3]; SIX_EDGE_V_POLES])
+        .map(|_| [[0.0; 3]; RECTANGULAR_V_POLES])
         .collect::<Vec<_>>();
     for (i, u) in gu.iter().enumerate() {
         for (j, v) in gv.iter().enumerate() {
@@ -1054,9 +687,9 @@ fn fit_patch_with_knots(
         }
     }
     let mut intermediate = (0..u_poles)
-        .map(|_| [[0.0; 3]; SIX_EDGE_V_POLES])
+        .map(|_| [[0.0; 3]; RECTANGULAR_V_POLES])
         .collect::<Vec<_>>();
-    for j in 0..SIX_EDGE_V_POLES {
+    for j in 0..RECTANGULAR_V_POLES {
         for axis in 0..3 {
             let values: Vec<f64> = (0..u_poles).map(|i| samples[i][j][axis]).collect();
             let sol = solve(&bu, &values)?;
@@ -1066,11 +699,11 @@ fn fit_patch_with_knots(
         }
     }
     let mut poles = (0..u_poles)
-        .map(|_| [[0.0; 3]; SIX_EDGE_V_POLES])
+        .map(|_| [[0.0; 3]; RECTANGULAR_V_POLES])
         .collect::<Vec<_>>();
     for i in 0..u_poles {
         for axis in 0..3 {
-            let values: Vec<f64> = (0..SIX_EDGE_V_POLES)
+            let values: Vec<f64> = (0..RECTANGULAR_V_POLES)
                 .map(|j| intermediate[i][j][axis])
                 .collect();
             let sol = solve(&bv, &values)?;
@@ -1079,18 +712,18 @@ fn fit_patch_with_knots(
             }
         }
     }
-    for i in 0..=SIX_EDGE_HOLDOUT_U {
-        let u =
-            u_min + (u_max - u_min) * (f64_from_index(i)?) / (f64_from_index(SIX_EDGE_HOLDOUT_U)?);
+    for i in 0..=RECTANGULAR_HOLDOUT_U {
+        let u = u_min
+            + (u_max - u_min) * (f64_from_index(i)?) / (f64_from_index(RECTANGULAR_HOLDOUT_U)?);
         let mut u_weights = Vec::with_capacity(u_poles);
         for k in 0..u_poles {
-            u_weights.push(bspline_basis(&ku, SIX_EDGE_U_DEGREE, u, k));
+            u_weights.push(bspline_basis(&ku, RECTANGULAR_U_DEGREE, u, k));
         }
-        for j in 0..=SIX_EDGE_HOLDOUT_V {
-            let v = (f64_from_index(j)?) / (f64_from_index(SIX_EDGE_HOLDOUT_V)?);
-            let mut v_weights = Vec::with_capacity(SIX_EDGE_V_POLES);
-            for k in 0..SIX_EDGE_V_POLES {
-                v_weights.push(bspline_basis(&kv, SIX_EDGE_V_DEGREE, v, k));
+        for j in 0..=RECTANGULAR_HOLDOUT_V {
+            let v = (f64_from_index(j)?) / (f64_from_index(RECTANGULAR_HOLDOUT_V)?);
+            let mut v_weights = Vec::with_capacity(RECTANGULAR_V_POLES);
+            for k in 0..RECTANGULAR_V_POLES {
+                v_weights.push(bspline_basis(&kv, RECTANGULAR_V_DEGREE, v, k));
             }
             let actual = eval_at(u, v)?;
             let mut fitted = [0.0; 3];
@@ -1111,7 +744,7 @@ fn fit_patch_with_knots(
             }
         }
     }
-    let max_points = (0..SIX_EDGE_V_POLES)
+    let max_points = (0..RECTANGULAR_V_POLES)
         .map(|j| {
             Point3::new(
                 poles[u_poles - 1][j][0],
@@ -1123,7 +756,7 @@ fn fit_patch_with_knots(
     let upper_points = (0..u_poles)
         .map(|i| Point3::new(poles[i][8][0], poles[i][8][1], poles[i][8][2]))
         .collect();
-    let min_points = (0..SIX_EDGE_V_POLES)
+    let min_points = (0..RECTANGULAR_V_POLES)
         .map(|j| Point3::new(poles[0][j][0], poles[0][j][1], poles[0][j][2]))
         .collect();
     let lower_points = (0..u_poles)
@@ -1131,7 +764,7 @@ fn fit_patch_with_knots(
         .collect();
 
     let max_curve = NurbsCurve::from_lanes(
-        u32::try_from(SIX_EDGE_V_DEGREE).ok()?,
+        u32::try_from(RECTANGULAR_V_DEGREE).ok()?,
         kv.clone(),
         max_points,
         None,
@@ -1139,7 +772,7 @@ fn fit_patch_with_knots(
     )
     .ok()?;
     let upper_curve = NurbsCurve::from_lanes(
-        u32::try_from(SIX_EDGE_U_DEGREE).ok()?,
+        u32::try_from(RECTANGULAR_U_DEGREE).ok()?,
         ku.clone(),
         upper_points,
         None,
@@ -1147,7 +780,7 @@ fn fit_patch_with_knots(
     )
     .ok()?;
     let min_curve = NurbsCurve::from_lanes(
-        u32::try_from(SIX_EDGE_V_DEGREE).ok()?,
+        u32::try_from(RECTANGULAR_V_DEGREE).ok()?,
         kv.clone(),
         min_points,
         None,
@@ -1155,7 +788,7 @@ fn fit_patch_with_knots(
     )
     .ok()?;
     let lower_curve = NurbsCurve::from_lanes(
-        u32::try_from(SIX_EDGE_U_DEGREE).ok()?,
+        u32::try_from(RECTANGULAR_U_DEGREE).ok()?,
         ku.clone(),
         lower_points,
         None,
@@ -1172,15 +805,15 @@ fn fit_patch_with_knots(
         })
         .collect();
     let surface = NurbsSurface::new(
-        NurbsSurfaceAxis::new(u32::try_from(SIX_EDGE_U_DEGREE).ok()?, ku, false),
-        NurbsSurfaceAxis::new(u32::try_from(SIX_EDGE_V_DEGREE).ok()?, kv, false),
+        NurbsSurfaceAxis::new(u32::try_from(RECTANGULAR_U_DEGREE).ok()?, ku, false),
+        NurbsSurfaceAxis::new(u32::try_from(RECTANGULAR_V_DEGREE).ok()?, kv, false),
         NurbsPoleGrid::Polynomial {
             rows: surface_points,
         },
         false,
     )
     .ok()?;
-    Some(FittedSixEdgePatch {
+    Some(FittedRectangularPatch {
         surface,
         max_curve,
         upper_curve,
@@ -1208,117 +841,6 @@ mod tests {
                 .get();
             assert!(at.distance(Point3::new(t, t.sin(), 0.0)) <= MAX_EDGE_ERROR_MM);
         }
-    }
-
-    #[test]
-    fn six_edge_corner_table_extraction_positive_and_negative() {
-        use super::{extract_boundary_corner_table, EDGE_DELIM_BYTES, VERTEX_ROW_PREFIX};
-        let mut buffer = Vec::new();
-        buffer.extend_from_slice(&EDGE_DELIM_BYTES);
-        buffer.extend_from_slice(&[0x01, 0x06, 0x06]);
-        for i in 0_u16..6 {
-            buffer.extend_from_slice(&VERTEX_ROW_PREFIX);
-            let coord = f32::from(i) * 10.0;
-            buffer.extend_from_slice(&coord.to_le_bytes());
-            buffer.extend_from_slice(&coord.to_le_bytes());
-            buffer.extend_from_slice(&coord.to_le_bytes());
-        }
-        buffer.extend_from_slice(&EDGE_DELIM_BYTES);
-
-        let corners = extract_boundary_corner_table(&buffer);
-        assert!(corners.is_some());
-        let c = corners.expect("valid fixture geometry");
-        assert_eq!(c[0], [0.0, 0.0, 0.0]);
-        assert_eq!(c[5], [50.0, 50.0, 50.0]);
-
-        // Negative: wrong delimiter
-        let mut bad = buffer.clone();
-        bad[0] = 0x00;
-        assert!(extract_boundary_corner_table(&bad).is_none());
-
-        // Negative: wrong vertex count
-        let mut bad2 = buffer.clone();
-        bad2[10] = 0x02;
-        assert!(extract_boundary_corner_table(&bad2).is_none());
-
-        let mut duplicate = buffer.clone();
-        duplicate.extend_from_slice(&buffer);
-        assert!(extract_boundary_corner_table(&duplicate).is_none());
-        assert_eq!(super::extract_boundary_corner_tables(&duplicate).len(), 2);
-    }
-
-    #[test]
-    fn six_edge_roster_requires_its_mfbrp_face_group() {
-        use super::{mfbrp_matches_six_edge_roster, six_edge_roster, six_edge_rosters};
-        let tags = [118_u32, 159, 180, 201, 211, 219];
-        let mut surfacic = vec![0_u8; 61];
-        surfacic[0..2].copy_from_slice(&[0xff, 0xb5]);
-        surfacic[14..18].copy_from_slice(&102_u32.to_le_bytes());
-        for tag in tags {
-            let mut row = [0_u8; 13];
-            row[0] = 0x60;
-            row[1..5].copy_from_slice(&tag.to_le_bytes());
-            surfacic.extend_from_slice(&row);
-        }
-        for tag in [121_u32, 141, 160, 181, 202, 212] {
-            let mut row = [0_u8; 7];
-            row[0] = 0x54;
-            row[1..5].copy_from_slice(&tag.to_le_bytes());
-            surfacic.extend_from_slice(&row);
-        }
-        assert_eq!(six_edge_roster(&surfacic), Some((102, tags)));
-        assert_eq!(six_edge_rosters(&surfacic), vec![(102, tags)]);
-
-        let tags2 = [255_u32, 285, 303, 317, 323, 328];
-        let mut second = vec![0_u8; 61];
-        second[0..2].copy_from_slice(&[0xff, 0xb5]);
-        second[14..18].copy_from_slice(&239_u32.to_le_bytes());
-        for tag in tags2 {
-            let mut row = [0_u8; 13];
-            row[0] = 0x60;
-            row[1..5].copy_from_slice(&tag.to_le_bytes());
-            second.extend_from_slice(&row);
-        }
-        for tag in [258_u32, 271, 286, 304, 318, 324] {
-            let mut row = [0_u8; 7];
-            row[0] = 0x54;
-            row[1..5].copy_from_slice(&tag.to_le_bytes());
-            second.extend_from_slice(&row);
-        }
-
-        let mut multi = surfacic.clone();
-        multi.extend_from_slice(&second);
-        let multi_rosters = six_edge_rosters(&multi);
-        assert_eq!(multi_rosters.len(), 2);
-        assert_eq!(multi_rosters[0], (102, tags));
-        assert_eq!(multi_rosters[1], (239, tags2));
-        assert!(six_edge_roster(&multi).is_none());
-
-        let mut mfbrp = Vec::new();
-        for index in (0..6).rev() {
-            let mut row = [0_u8; 38];
-            row[..4].copy_from_slice(&[1, 0, 4, 0]);
-            row[4..8].copy_from_slice(&tags[index].to_le_bytes());
-            row[11..15].copy_from_slice(
-                &(35_u32 - u32::try_from(index).expect("fixture index fits")).to_le_bytes(),
-            );
-            row[19..23].copy_from_slice(&27_u32.to_le_bytes());
-            mfbrp.extend_from_slice(&row);
-        }
-        let mut face = [0_u8; 38];
-        face[..4].copy_from_slice(&[1, 0, 4, 0]);
-        face[4..8].copy_from_slice(&102_u32.to_le_bytes());
-        mfbrp.extend_from_slice(&face);
-        assert!(mfbrp_matches_six_edge_roster(&mfbrp, 102, &tags));
-
-        let mut wrong_parent = mfbrp.clone();
-        wrong_parent[19] = 28;
-        assert!(!mfbrp_matches_six_edge_roster(&wrong_parent, 102, &tags));
-        let mut missing_face = mfbrp.clone();
-        missing_face.truncate(missing_face.len() - 38);
-        assert!(!mfbrp_matches_six_edge_roster(&missing_face, 102, &tags));
-        surfacic[61 + 13 * 6] = 0;
-        assert!(six_edge_roster(&surfacic).is_none());
     }
 
     use super::{endpoint_relation, fit};
