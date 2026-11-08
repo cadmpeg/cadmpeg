@@ -546,17 +546,22 @@ impl<'a> WritableObjectCurve<'a> {
     ) -> Result<(Self, Option<LossNote>), WriteError> {
         let mut conversion = None;
         let geometry = match curve.geometry.solved() {
-            Some(SolvedCurveGeometry::Line(line)) => curve.parameter_range.and_then(|range| {
+            Some(SolvedCurveGeometry::Line(line)) => {
+                let range = curve.parameter_range.map_or([0.0, 1.0], |range| range.endpoints());
                 let origin = line.origin().get();
                 let direction = *line.direction().as_raw();
-                let from = origin.translated(direction, range.lower());
-                let to = origin.translated(direction, range.upper());
-                (from != to).then_some(ObjectCurveGeometry::Line {
-                    from: [from.x, from.y, from.z],
-                    to: [to.x, to.y, to.z],
-                    domain: range.endpoints(),
-                })
-            }),
+                let from = origin.translated(direction, range[0]);
+                let to = origin.translated(direction, range[1]);
+                if from != to {
+                    Some(ObjectCurveGeometry::Line {
+                        from: [from.x, from.y, from.z],
+                        to: [to.x, to.y, to.z],
+                        domain: range,
+                    })
+                } else {
+                    None
+                }
+            }
             Some(SolvedCurveGeometry::Circle(circle)) => {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
                 let domain = curve.parameter_range.map_or(
