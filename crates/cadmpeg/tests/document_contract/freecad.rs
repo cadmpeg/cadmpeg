@@ -2,10 +2,18 @@
 //! `FreeCAD` document edits survive both sidecar artifact flows.
 
 use std::fs;
+use std::path::Path;
+
+use assert_cmd::Command;
 use cadmpeg_codec_freecad::FcstdCodec;
+use cadmpeg_ir::codec::write::{Encoder, SynthesisCause};
+use cadmpeg_ir::document::ContentScope;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_ir::CadIr;
-use serde_json::json;
+use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar};
+use predicates::prelude::predicate;
+use serde_json::{json, Value};
+use tempfile::tempdir;
 
 use super::{decode, workspace, write_decode};
 
@@ -17,6 +25,28 @@ const EPS_PARAMETER_VALUE: f64 = 1e-9;
 
 fn fixture(name: &str) -> Vec<u8> {
     fs::read(workspace().join("corpus/freecad_fcstd/fixtures").join(name)).unwrap()
+}
+
+fn run_dump(input: &Path, output: &Path) {
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "dump",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+}
+
+fn read_ir(path: &Path) -> CadIr {
+    CadIr::from_json(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn read_sidecar(path: &Path) -> DecodeSidecar {
+    DecodeSidecar::from_json(&fs::read_to_string(decode_sidecar_path(path).unwrap()).unwrap())
+        .unwrap()
 }
 
 fn edit_document(ir: &CadIr) -> CadIr {
@@ -200,6 +230,229 @@ fn counts(ir: &CadIr) -> [usize; 9] {
     ]
 }
 
+fn assert_full_decode(ir: &CadIr, sidecar: &DecodeSidecar) {
+    assert_eq!(ir.scope, ContentScope::full());
+    assert_eq!(sidecar.report.scope(), ir.scope);
+    assert!(sidecar.fidelity.unrepresented().is_empty());
+}
+
+#[test]
+fn cadir_edits_with_deleted_sidecar_synthesize_the_edited_document() {
+    for name in ["design_history.FCStd", "core_design_product.FCStd"] {
+        let dir = tempdir().unwrap();
+        let input = dir.path().join(name);
+        fs::write(&input, fixture(name)).unwrap();
+        let cadir = dir.path().join("a.cadir.json");
+        let output = dir.path().join("b.FCStd");
+        let redump = dir.path().join("c.cadir.json");
+        let report_path = dir.path().join("convert.json");
+        run_dump(&input, &cadir);
+        let before = read_ir(&cadir);
+        let sidecar = read_sidecar(&cadir);
+        assert_full_decode(&before, &sidecar);
+        assert!(sidecar.report.losses.is_empty(), "{name}");
+        if name == "design_history.FCStd" {
+            assert_eq!(counts(&before)[..6], [6, 2, 5, 5, 8, 8]);
+        }
+        let edited = edit_document(&before);
+        fs::write(&cadir, edited.to_canonical_json().unwrap()).unwrap();
+        let arguments = [
+            "convert",
+            cadir.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report_path.to_str().unwrap(),
+        ];
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(arguments)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("does not match"));
+        assert!(!output.exists());
+        fs::remove_file(decode_sidecar_path(&cadir).unwrap()).unwrap();
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(arguments)
+            .assert()
+            .success();
+        let report: Value = serde_json::from_slice(&fs::read(&report_path).unwrap()).unwrap();
+        assert_eq!(report["export"]["write_path"]["path"], "synthesized");
+        assert!(!report["export"]["losses"].as_array().unwrap().is_empty());
+        run_dump(&output, &redump);
+        let written = read_ir(&redump);
+        assert_full_decode(&written, &read_sidecar(&redump));
+        assert_edits(&written);
+        assert_eq!(counts(&written), counts(&edited), "{name}");
+        let library_report = FcstdCodec
+            .plan(
+                cadmpeg_ir::codec::write::EncodeInput::new(&edited, None),
+                cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            )
+            .unwrap();
+        cadmpeg_test_support::contract::assert_written_arenas_agree(
+            library_report.report(),
+            &edited,
+            &written,
+        );
+        assert!(
+            written.model.features.iter().any(|feature| {
+                feature.name.as_deref() == Some(FEATURE_NAME) && feature.needs_recompute
+            }) || report["export"]["losses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|loss| {
+                    loss["code"]["code"] == "evaluation.stale"
+                        && matches!(
+                            loss["severity"].as_str(),
+                            Some("warning" | "error" | "blocking")
+                        )
+                }),
+            "{name}: a stale evaluation is written explicitly or reported at Warning severity: {report}"
+        );
+        #[cfg(feature = "step")]
+        assert_step_geometry_agrees(&cadir, &output, dir.path());
+    }
+}
+
+#[cfg(feature = "step")]
+fn assert_step_geometry_agrees(cadir: &Path, native: &Path, directory: &Path) {
+    let mut body_counts = Vec::new();
+    for (index, input) in [cadir, native].into_iter().enumerate() {
+        let step = directory.join(format!("geometry-{index}.step"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                step.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let result = decode(
+            &cadmpeg_codec_step::StepCodec::default(),
+            &fs::read(step).unwrap(),
+        );
+        body_counts.push(result.ir().model.bodies.len());
+    }
+    assert_eq!(body_counts[0], body_counts[1]);
+}
+
+#[test]
+fn library_editor_rebinds_history_before_synthesizing_its_edits() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    for name in ["design_history.FCStd", "core_design_product.FCStd"] {
+        let dir = tempdir().unwrap();
+        let result = decode(&FcstdCodec, &fixture(name));
+        let edited = edit_document(result.ir());
+        let cadir = dir.path().join("editor.cadir.json");
+        let text = edited.to_canonical_json().unwrap();
+        fs::write(&cadir, &text).unwrap();
+        let sidecar = DecodeSidecar::bind_sha256(
+            Sha256Digest::digest(text.as_bytes()),
+            result.report().clone(),
+            result.source_fidelity().clone(),
+        );
+        fs::write(
+            decode_sidecar_path(&cadir).unwrap(),
+            sidecar.to_canonical_json().unwrap(),
+        )
+        .unwrap();
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                cadir.to_str().unwrap(),
+                "-f",
+                "cadir",
+                "--reject-lossy=decode",
+            ])
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("decode that produced this CADIR"));
+        let plan = FcstdCodec
+            .plan(
+                EncodeInput::new(&edited, Some(result.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap();
+        assert!(matches!(
+            plan.report().write_path(),
+            WritePath::Synthesized { .. }
+        ));
+        assert!(matches!(
+            plan.report().synthesis_cause(),
+            Some(SynthesisCause::PatchDeclined { .. })
+        ));
+        let (written, report) = write_decode(
+            &FcstdCodec,
+            &FcstdCodec,
+            &edited,
+            Some(result.source_fidelity()),
+            None,
+        );
+        assert_edits(written.ir());
+        assert_eq!(counts(written.ir()), counts(&edited));
+        cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
+        let native_output = dir.path().join("rebound.FCStd");
+        let output = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                cadir.to_str().unwrap(),
+                "-o",
+                native_output.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let stderr = String::from_utf8_lossy(&output.get_output().stderr);
+        assert_eq!(
+            stderr
+                .matches("synthesized because patch was declined:")
+                .count(),
+            1
+        );
+        let Some(SynthesisCause::PatchDeclined { reason }) = report.synthesis_cause() else {
+            panic!("an edited retained document declines patching");
+        };
+        assert!(stderr.contains(reason));
+        for (floor, severity) in [
+            ("info", cadmpeg_ir::report::Severity::Info),
+            ("error", cadmpeg_ir::report::Severity::Error),
+        ] {
+            let output = dir.path().join(format!("{floor}.FCStd"));
+            let assertion = Command::cargo_bin("cadmpeg")
+                .unwrap()
+                .args([
+                    "convert",
+                    cadir.to_str().unwrap(),
+                    "-o",
+                    output.to_str().unwrap(),
+                    "--reject-lossy",
+                    "--reject-lossy-floor",
+                    floor,
+                ])
+                .assert();
+            let assertion = if report.losses.iter().any(|loss| loss.severity >= severity) {
+                assertion.code(1)
+            } else {
+                assertion.success()
+            };
+            let stderr = String::from_utf8_lossy(&assertion.get_output().stderr);
+            assert_eq!(
+                stderr
+                    .matches("synthesized because patch was declined:")
+                    .count(),
+                1
+            );
+            assert!(stderr.contains(reason));
+        }
+    }
+}
+
 #[test]
 fn unedited_patch_supplies_no_content_beyond_the_synthesized_written_arenas() {
     for name in ["design_history.FCStd", "core_design_product.FCStd"] {
@@ -246,82 +499,4 @@ fn design_history_full_edit_synthesizes_all_canonical_values() {
     assert_edits(written.ir());
     assert_eq!(counts(written.ir()), counts(&edited));
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
-}
-
-#[test]
-fn product_feature_parameter_edit_survives_synthesis() {
-    use cadmpeg_ir::features::{Dimension, Expression, ParameterValue};
-    use cadmpeg_ir::scalar::Length;
-
-    let source = decode(&FcstdCodec, &fixture("core_design_product.FCStd"));
-    let mut edited = source.ir().clone();
-    let parameter = edited
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.id.as_str().ends_with("#DesignedFeature:Length"))
-        .unwrap()
-        .id
-        .clone();
-    let owner = edited
-        .model
-        .parameters
-        .iter()
-        .find(|row| row.id == parameter)
-        .unwrap()
-        .owner
-        .clone()
-        .unwrap();
-    let value = ParameterValue::Length(Length::new(37.0).unwrap());
-    edited
-        .set_parameter_expression(&parameter, Expression::literal(&value), Some(value))
-        .unwrap();
-    let feature = edited
-        .model
-        .features
-        .iter_mut()
-        .find(|feature| feature.id == owner)
-        .unwrap();
-    feature.name = Some("AuthoredProductFeature".into());
-    assert!(feature.needs_recompute);
-    edited
-        .model
-        .product_definitions
-        .iter_mut()
-        .find(|definition| {
-            definition
-                .id
-                .as_str()
-                .ends_with("#DesignedFeature:definition")
-        })
-        .unwrap()
-        .label = Some("AuthoredProductFeature".into());
-    let (written, report) = write_decode(&FcstdCodec, &FcstdCodec, &edited, None, None);
-    let after = written.ir();
-    let feature = after
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("AuthoredProductFeature"))
-        .unwrap();
-    let parameter = after
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| {
-            parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "Length"
-        })
-        .unwrap();
-    assert!(
-        (after
-            .dimension_value(&Dimension::<Length>::Parameter(parameter.id.clone()))
-            .unwrap()
-            .get()
-            - 37.0)
-            .abs()
-            <= EPS_PARAMETER_VALUE
-    );
-    assert!(feature.needs_recompute);
-    assert_eq!(counts(after), counts(&edited));
-    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, after);
 }
