@@ -29055,7 +29055,7 @@ name = "periodic_face_mode"
 offset = 46
 type = "u8"
 source = "derived"
-anchor = "Version 16 requires `periodicFaceMode` zero"
+anchor = "whose version-16 `periodicFaceMode` is zero"
 value = 0
 note = "Follows the three-f64 alignment vector. Zero admits solved frame binding."
 
