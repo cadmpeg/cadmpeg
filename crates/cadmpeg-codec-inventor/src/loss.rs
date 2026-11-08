@@ -61,12 +61,18 @@ pub(crate) enum InventorLossCode {
     /// A construction line stores a carrier that its endpoints do not lie on;
     /// the line stays native.
     SketchConstructionCarrierConflict,
+    /// A line stores two endpoints at one position; the line stays native.
+    SketchDegenerateLineNative,
+    /// Distinct line endpoints are read as one position under an assumption of rounding.
+    SketchLineEndpointsRoundingAssumed,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
     /// A sketch entity retains unresolved curve construction operands.
     SketchCurveNative,
     /// A listed sketch member has unresolved record and curve semantics.
     SketchMemberNative,
+    /// A sketch text member record stores no curve; it stays native.
+    SketchTextMemberNative,
     /// A planar curve member has no resolved curve rule; it stays native.
     SketchMemberCurveNative,
     /// A polygon control relation names two different vertex references; the
@@ -94,10 +100,28 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionNative,
     /// An edge-treatment input edge has several matched owners of identical geometry.
     FeatureEdgeOwnerIdenticalGeometry,
+    /// An input edge rests on the assumption that extra selector generators do not change it.
+    FeatureEdgeSelectorGeneratorsAssumed,
+    /// A Move Face feature retains a face operand that does not join exactly one stored face revision.
+    FeatureMoveFaceSelectionNative,
+    /// A Thread face stores a cone axis ratio that is not a finite number.
+    FeatureFaceJoinThreadRatioNonfinite,
+    /// A Thread face differs from the exact surface form within a tolerance.
+    FeatureFaceJoinThreadToleranceAssumed,
+    /// A selected face rests on the assumption that its matched revision is the input face.
+    FeatureFaceJoinInputRevisionAssumed,
+    /// A selected face rests on a matching attribute that repeats on its owner.
+    FeatureFaceJoinRepeatedAttribute,
+    /// A selected face has a generated-name family that shares no feature with its selector.
+    FeatureFaceJoinUnsharedFamily,
+    /// A selected face has several matched owners of identical surface geometry.
+    FeatureFaceJoinIdenticalOwners,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
     FeatureExtrusionProfileNative,
+    /// A surface extrusion direction rests on the assumed polarity of Boolean slot 3.
+    FeatureSurfaceExtrusionPolarityAssumed,
     /// A planar extrusion target retains its unresolved body-face identity.
     FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
@@ -246,6 +270,14 @@ pub(crate) enum InventorLossCode {
     KernelHeaderToleranceUnresolved,
     /// The compound container uses an admitted noncanonical encoding.
     ContainerNoncanonical,
+    /// The kernel carrier's `delta_state` chain does not frame or close.
+    KernelHistoryUnclosed,
+    /// The kernel carrier's `delta_state` chain passed the local scan cap.
+    KernelHistoryBounded,
+    /// A feature retains a history state from a naming tag whose stored schema differs from the carrier schema.
+    KernelHistoryTagSchemaAssumed,
+    /// Split and Base features have no bound history state.
+    FeatureHistoryStateUnbound,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -270,9 +302,12 @@ impl InventorLossCode {
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
         Self::SketchConstructionCarrierConflict,
+        Self::SketchDegenerateLineNative,
+        Self::SketchLineEndpointsRoundingAssumed,
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
+        Self::SketchTextMemberNative,
         Self::SketchMemberCurveNative,
         Self::SketchPolygonControlVerticesDiffer,
         Self::SketchSplinePointNative,
@@ -285,8 +320,17 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOwnerIdenticalGeometry,
+        Self::FeatureEdgeSelectorGeneratorsAssumed,
+        Self::FeatureMoveFaceSelectionNative,
+        Self::FeatureFaceJoinThreadRatioNonfinite,
+        Self::FeatureFaceJoinThreadToleranceAssumed,
+        Self::FeatureFaceJoinInputRevisionAssumed,
+        Self::FeatureFaceJoinRepeatedAttribute,
+        Self::FeatureFaceJoinUnsharedFamily,
+        Self::FeatureFaceJoinIdenticalOwners,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
+        Self::FeatureSurfaceExtrusionPolarityAssumed,
         Self::FeatureExtrusionTargetFaceNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
@@ -361,6 +405,10 @@ impl InventorLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::KernelHeaderToleranceUnresolved,
         Self::ContainerNoncanonical,
+        Self::KernelHistoryUnclosed,
+        Self::KernelHistoryBounded,
+        Self::KernelHistoryTagSchemaAssumed,
+        Self::FeatureHistoryStateUnbound,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
     ];
@@ -385,9 +433,12 @@ impl InventorLossCode {
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
             Self::SketchConstructionCarrierConflict => "sketch.construction-carrier-conflict",
+            Self::SketchDegenerateLineNative => "sketch.degenerate-line-native",
+            Self::SketchLineEndpointsRoundingAssumed => "sketch.line-endpoints-rounding-assumed",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
+            Self::SketchTextMemberNative => "sketch.text-member-native",
             Self::SketchMemberCurveNative => "sketch.member-curve-native",
             Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
@@ -401,6 +452,9 @@ impl InventorLossCode {
             }
             Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
             Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
+            Self::FeatureSurfaceExtrusionPolarityAssumed => {
+                "feature.surface-extrusion-polarity-assumed"
+            }
             Self::FeatureExtrusionTargetFaceNative => "feature.extrusion-target-face-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureEdgeSelectionEmptyItemsNative => {
@@ -408,6 +462,18 @@ impl InventorLossCode {
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
+            Self::FeatureEdgeSelectorGeneratorsAssumed => {
+                "feature.edge-selector-generators-assumed"
+            }
+            Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
+            Self::FeatureFaceJoinThreadRatioNonfinite => "feature.face-join-thread-ratio-nonfinite",
+            Self::FeatureFaceJoinThreadToleranceAssumed => {
+                "feature.face-join-thread-tolerance-assumed"
+            }
+            Self::FeatureFaceJoinInputRevisionAssumed => "feature.face-join-input-revision-assumed",
+            Self::FeatureFaceJoinRepeatedAttribute => "feature.face-join-repeated-attribute",
+            Self::FeatureFaceJoinUnsharedFamily => "feature.face-join-unshared-family",
+            Self::FeatureFaceJoinIdenticalOwners => "feature.face-join-identical-owners",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -490,6 +556,10 @@ impl InventorLossCode {
             Self::KernelHeaderMetadataUnresolved => "source.kernel-header-metadata-unresolved",
             Self::KernelHeaderToleranceUnresolved => "source.kernel-header-tolerance-unresolved",
             Self::ContainerNoncanonical => "container.noncanonical",
+            Self::KernelHistoryUnclosed => "source.kernel-history-unclosed",
+            Self::KernelHistoryBounded => "source.kernel-history-bounded",
+            Self::KernelHistoryTagSchemaAssumed => "source.kernel-history-tag-schema-assumed",
+            Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
         }
@@ -523,6 +593,7 @@ impl InventorLossCode {
             | Self::RseStreamUnpaired
             | Self::PropertySetStreamMalformed
             | Self::ProteinStreamMalformed
+            | Self::KernelHistoryUnclosed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
             Self::KernelHeaderMetadataUnresolved | Self::ContainerNoncanonical => {
@@ -533,8 +604,17 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOwnerIdenticalGeometry
+            | Self::FeatureEdgeSelectorGeneratorsAssumed
+            | Self::FeatureMoveFaceSelectionNative
+            | Self::FeatureFaceJoinThreadRatioNonfinite
+            | Self::FeatureFaceJoinThreadToleranceAssumed
+            | Self::FeatureFaceJoinInputRevisionAssumed
+            | Self::FeatureFaceJoinRepeatedAttribute
+            | Self::FeatureFaceJoinUnsharedFamily
+            | Self::FeatureFaceJoinIdenticalOwners
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
+            | Self::FeatureSurfaceExtrusionPolarityAssumed
             | Self::FeatureExtrusionTargetFaceNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
@@ -577,9 +657,12 @@ impl InventorLossCode {
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
             | Self::SketchConstructionCarrierConflict
+            | Self::SketchDegenerateLineNative
+            | Self::SketchLineEndpointsRoundingAssumed
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
+            | Self::SketchTextMemberNative
             | Self::SketchMemberCurveNative
             | Self::SketchPolygonControlVerticesDiffer
             | Self::SketchSplinePointNative
@@ -593,6 +676,9 @@ impl InventorLossCode {
             | Self::FeatureCompositeOperandsNative
             | Self::FeatureCoilOperandsNative
             | Self::FeatureTaggingNative
+            | Self::KernelHistoryBounded
+            | Self::KernelHistoryTagSchemaAssumed
+            | Self::FeatureHistoryStateUnbound
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -670,9 +756,12 @@ mod tests {
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
                 "sketch.construction-carrier-conflict",
+                "sketch.degenerate-line-native",
+                "sketch.line-endpoints-rounding-assumed",
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",
+                "sketch.text-member-native",
                 "sketch.member-curve-native",
                 "sketch.polygon-control-vertices-differ",
                 "sketch.spline-point-native",
@@ -685,8 +774,17 @@ mod tests {
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
                 "feature.edge-owner-identical-geometry",
+                "feature.edge-selector-generators-assumed",
+                "feature.move-face-selection-native",
+                "feature.face-join-thread-ratio-nonfinite",
+                "feature.face-join-thread-tolerance-assumed",
+                "feature.face-join-input-revision-assumed",
+                "feature.face-join-repeated-attribute",
+                "feature.face-join-unshared-family",
+                "feature.face-join-identical-owners",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
+                "feature.surface-extrusion-polarity-assumed",
                 "feature.extrusion-target-face-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
@@ -761,6 +859,10 @@ mod tests {
                 "source.kernel-header-metadata-unresolved",
                 "source.kernel-header-tolerance-unresolved",
                 "container.noncanonical",
+                "source.kernel-history-unclosed",
+                "source.kernel-history-bounded",
+                "source.kernel-history-tag-schema-assumed",
+                "feature.history-state-unbound",
                 "drawing.native-only",
                 "drawing.record-malformed",
             ]

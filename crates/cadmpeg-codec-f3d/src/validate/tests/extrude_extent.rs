@@ -305,3 +305,41 @@ fn two_sided_through_all_requires_absent_distance_lanes() {
         DesignFixedExtrudeParameters::default(),
     )));
 }
+
+/// DR-322: start-support byte 2 with a `ProfileOffset` and no face group.
+#[test]
+fn a_new_body_distance_extrude_can_store_a_selected_face_start_without_a_group() {
+    let native = |operation: DesignExtrudeOperation, offset: bool| {
+        let lane = DesignFixedExtrudeScalar {
+            value: crate::test_support::real(0.5),
+            record_index: 17,
+            value_offset: 1_700,
+        };
+        let mut native = fixed_extrude(
+            DesignExtrudeExtent::OneSidedDistance,
+            DesignFixedExtrudeParameters {
+                along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(4.3, 11))),
+                profile_offset: offset.then_some(lane),
+                ..Default::default()
+            },
+        );
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(Some(extrude)) =
+            native.design_parameter_scopes[0].payload_mut()
+        {
+            if let Some(DesignExtrudePrologue::ReferenceAware {
+                start,
+                operation: stored,
+                ..
+            }) = &mut extrude.extrude_prologue
+            {
+                *start = DesignExtrudeStart::FromFace;
+                *stored = operation;
+            }
+        }
+        native
+    };
+    assert!(!conflicts(&native(DesignExtrudeOperation::NewBody, true)));
+    // Other operations still need the start group, and the offset stays required.
+    assert!(conflicts(&native(DesignExtrudeOperation::Join, true)));
+    assert!(conflicts(&native(DesignExtrudeOperation::NewBody, false)));
+}

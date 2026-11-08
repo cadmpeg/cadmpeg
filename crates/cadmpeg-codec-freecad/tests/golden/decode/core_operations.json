@@ -20748,12 +20748,12 @@
             "ruled": true,
             "sections": [
               {
-                "kind": "native",
-                "value": "fcstd:native:object#LoftSectionA"
+                "kind": "feature",
+                "value": "fcstd:design:feature#LoftSectionA"
               },
               {
-                "kind": "native",
-                "value": "fcstd:native:object#LoftSectionB"
+                "kind": "feature",
+                "value": "fcstd:design:feature#LoftSectionB"
               }
             ],
             "solid": true
@@ -20823,8 +20823,13 @@
               "z": 0.0
             },
             "source": {
-              "kind": "native",
-              "value": "fcstd:native:property#Mirror:Source"
+              "kind": "resolved",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#MirrorBase:Shape:MirrorBase.Shape.brp:13%40location1"
+                ],
+                "native": "fcstd:native:property#Mirror:Source"
+              }
             }
           },
           "dependencies": [
@@ -21097,8 +21102,11 @@
               "kind": "frenet"
             },
             "path": {
-              "kind": "native",
-              "value": "fcstd:native:property#Sweep:Spine"
+              "kind": "edges",
+              "value": [
+                "fcstd:model:edge#SweepSpine:Shape:SweepSpine.Shape.brp:3%40location1",
+                "fcstd:model:edge#SweepSpine:Shape:SweepSpine.Shape.brp:5%40location1"
+              ]
             },
             "path_tangent": false,
             "shape": {
@@ -21107,8 +21115,8 @@
               "section": {
                 "kind": "profile",
                 "value": {
-                  "kind": "native",
-                  "value": "fcstd:native:object#SweepSection"
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#SweepSection"
                 }
               }
             },
@@ -21194,8 +21202,8 @@
             "inner_wire_taper": "inverted",
             "op": "new_body",
             "profile": {
-              "kind": "native",
-              "value": "fcstd:native:property#SymmetricExtrusion:Base"
+              "kind": "feature",
+              "value": "fcstd:design:feature#ExtrusionProfile"
             },
             "solid": true,
             "start": {

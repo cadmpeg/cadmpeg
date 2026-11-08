@@ -102,6 +102,65 @@ fn thicken_projects_native_group() {
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
 }
 
+fn thicken_after_state(previous_state: i64) -> DesignParameterScope {
+    let mut scope = scope(DesignFeatureKind::Thicken);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(previous_state);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn thicken_lists_a_whole_body_group_beside_resolved_faces_as_unresolved() {
+    let scope = thicken_after_state(5);
+    let faces_group = group(DesignOperandRole::ROLE_0X12);
+    let mut whole_body = group(DesignOperandRole::ROLE_0X5);
+    whole_body.id = "f3d:test:group#110".into();
+    whole_body.record_index = 110;
+    let groups = [faces_group, whole_body.clone()];
+    let FeatureOperation::Thicken { faces, .. } = projected_operation(
+        super::super::project_thicken(&scope, &[resolved_member_operand()], &groups),
+    ) else {
+        panic!("expected a thicken");
+    };
+    let mut rebound = faces.clone();
+    super::super::list_thicken_whole_bodies(&mut rebound, &scope, &groups);
+    assert_eq!(rebound, faces);
+    let FaceSelection::HistoricalPartial {
+        faces,
+        unresolved,
+        native,
+        ..
+    } = faces
+    else {
+        panic!("expected a partial historical selection, got {faces:?}");
+    };
+    assert_eq!(faces.as_slice().len(), 1);
+    assert_eq!(unresolved.as_slice(), [whole_body.id]);
+    assert_eq!(native, scope.id.as_str());
+}
+
+#[test]
+fn thicken_keeps_resolved_faces_without_a_whole_body_group() {
+    let scope = thicken_after_state(5);
+    let FeatureOperation::Thicken { faces, .. } =
+        projected_operation(super::super::project_thicken(
+            &scope,
+            &[resolved_member_operand()],
+            &[group(DesignOperandRole::ROLE_0X12)],
+        ))
+    else {
+        panic!("expected a thicken");
+    };
+    assert!(
+        matches!(faces, FaceSelection::Historical { .. }),
+        "{faces:?}"
+    );
+}
+
 #[test]
 fn shell_projects_native_face_group() {
     let scope = scope(DesignFeatureKind::Shell);
@@ -283,6 +342,39 @@ fn move_face_projects_a_translation_of_its_group() {
 }
 
 #[test]
+fn move_face_projects_a_transform_stored_as_the_first_reference() {
+    let mut scope = move_face_scope([
+        [1., 0., 0., 0.],
+        [0., 1., 0., -0.25],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![300, 100, 200]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut faces = group(DesignOperandRole::ROLE_0X10);
+    assert!(
+        super::super::project_move_face(&scope, std::slice::from_ref(&faces))
+            .unwrap()
+            .is_none(),
+        "the group is reference one, so ordinal zero is not its place"
+    );
+    faces.scope_reference_ordinal = 1;
+    assert!(matches!(
+        projected_operation(super::super::project_move_face(
+            &scope,
+            std::slice::from_ref(&faces),
+        )),
+        FeatureOperation::MoveFace { .. }
+    ));
+}
+
+#[test]
 fn move_face_stays_native_without_a_translation_or_its_exact_group() {
     let translation = [
         [1., 0., 0., 0.25],
@@ -303,22 +395,89 @@ fn move_face_stays_native_without_a_translation_or_its_exact_group() {
     let mut other_member = faces.clone();
     other_member.record_index = 101;
     assert!(refused(translation, &[other_member]));
-    for transform in [
-        [
-            [1., 0., 0., 0.],
-            [0., 1., 0., 0.],
-            [0., 0., 1., 0.],
-            [0., 0., 0., 1.],
-        ],
-        [
-            [0., 1., 0., 0.25],
-            [-1., 0., 0., 0.],
-            [0., 0., 1., 0.],
-            [0., 0., 0., 1.],
-        ],
+    let identity = [
+        [1., 0., 0., 0.],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ];
+    assert!(refused(identity, std::slice::from_ref(&faces)));
+}
+
+#[test]
+fn move_face_projects_a_rotation_about_the_axis_point_nearest_the_origin() {
+    use cadmpeg_ir::features::FaceMotion;
+    const EPS_ROTATION_FIELD: f64 = 1.0e-9;
+    let (sine, cosine) = 5f64.to_radians().sin_cos();
+    // A rotation about +X through (0, 1.5, 2) cm stores t = p - R p.
+    let (y, z) = (1.5, 2.0);
+    let five_degrees = [
+        [1., 0., 0., 0.],
+        [0., cosine, -sine, y - (cosine * y - sine * z)],
+        [0., sine, cosine, z - (sine * y + cosine * z)],
+        [0., 0., 0., 1.],
+    ];
+    let quarter_turn = [
+        [0., 1., 0., 0.25],
+        [-1., 0., 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ];
+    let faces = group(DesignOperandRole::ROLE_0X10);
+    for (transform, origin, axis, degrees) in [
+        (five_degrees, [0., 15., 20.], [1., 0., 0.], 5.),
+        (quarter_turn, [1.25, -1.25, 0.], [0., 0., -1.], 90.),
     ] {
-        assert!(refused(transform, std::slice::from_ref(&faces)));
+        let FeatureOperation::MoveFace {
+            faces: selected,
+            motion:
+                FaceMotion::Rotate {
+                    axis_origin,
+                    axis_dir,
+                    angle,
+                },
+        } = projected_operation(super::super::project_move_face(
+            &move_face_scope(transform),
+            std::slice::from_ref(&faces),
+        ))
+        else {
+            panic!("expected a face rotation");
+        };
+        assert_eq!(selected, FaceSelection::Native(faces.id.clone()));
+        let point = axis_origin.get();
+        let direction = axis_dir.get();
+        for (actual, expected) in [point.x, point.y, point.z]
+            .into_iter()
+            .zip(origin)
+            .chain(
+                [direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .zip(axis),
+            )
+            .chain([(angle.get(), f64::to_radians(degrees))])
+        {
+            assert!(
+                (actual - expected).abs() <= EPS_ROTATION_FIELD,
+                "{actual} {expected}"
+            );
+        }
     }
+}
+
+#[test]
+fn move_face_stays_native_for_a_screw_motion() {
+    let screw = [
+        [0., 1., 0., 0.25],
+        [-1., 0., 0., 0.],
+        [0., 0., 1., 0.25],
+        [0., 0., 0., 1.],
+    ];
+    assert!(super::super::project_move_face(
+        &move_face_scope(screw),
+        std::slice::from_ref(&group(DesignOperandRole::ROLE_0X10)),
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]

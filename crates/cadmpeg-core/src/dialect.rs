@@ -401,11 +401,9 @@ impl<'de> Deserialize<'de> for DialectLayers {
         let wire = DialectLayersWire::deserialize(deserializer)?;
         let mut layers = Self::of(wire.primary);
         for layer in wire.extra {
-            layers.insert(layer).map_err(|rejected| {
-                <D::Error as serde::de::Error>::custom(format!(
-                    "duplicate dialect layer key: {rejected:?}"
-                ))
-            })?;
+            layers
+                .insert(layer)
+                .map_err(|rejected| <D::Error as serde::de::Error>::custom(rejected.to_string()))?;
         }
         Ok(layers)
     }
@@ -416,12 +414,18 @@ impl<'de> Deserialize<'de> for DialectLayers {
 pub enum DialectLayerError {
     /// The existing layer has the same format and instance.
     Duplicate(DialectMatch),
+    /// An extra layer in the primary format has no instance.
+    MissingInstance(DialectMatch),
 }
 
 impl fmt::Display for DialectLayerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Duplicate(layer) => write!(formatter, "duplicate dialect layer key: {layer:?}"),
+            Self::MissingInstance(layer) => write!(
+                formatter,
+                "extra dialect layer in the primary format needs an instance: {layer:?}"
+            ),
         }
     }
 }
@@ -434,6 +438,9 @@ impl From<DialectLayerError> for CodecError {
             DialectLayerError::Duplicate(layer) => {
                 Self::malformed(format_args!("duplicate dialect layer key: {layer:?}"))
             }
+            DialectLayerError::MissingInstance(layer) => Self::malformed(format_args!(
+                "extra dialect layer in the primary format needs an instance: {layer:?}"
+            )),
         }
     }
 }
@@ -451,7 +458,8 @@ impl DialectLayers {
     /// Inserts a layer keyed by `(format, instance)`.
     ///
     /// The first layer for a key remains authoritative. A duplicate is
-    /// returned unchanged so its producer can report the collision.
+    /// returned unchanged so its producer can report the collision. An extra
+    /// layer in the primary format must carry a nonempty instance.
     pub fn insert(&mut self, layer: DialectMatch) -> Result<(), DialectLayerError> {
         if Self::same_key(&self.primary, &layer)
             || self
@@ -460,6 +468,9 @@ impl DialectLayers {
                 .any(|existing| Self::same_key(existing, &layer))
         {
             return Err(DialectLayerError::Duplicate(layer));
+        }
+        if layer.format() == self.primary.format() && layer.instance().is_none_or(str::is_empty) {
+            return Err(DialectLayerError::MissingInstance(layer));
         }
         self.extra.push(layer);
         Ok(())
@@ -1017,6 +1028,32 @@ mod tests {
             .expect_err("an extra layer on the primary key is a read error");
         assert!(
             error.to_string().contains("duplicate dialect layer key"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn dialect_layers_reject_an_untagged_extra_in_a_tagged_primary_format() {
+        let extra = layer("rhino");
+        let error = DialectLayers::of(layer("rhino").with_instance("root"))
+            .with(extra.clone())
+            .expect_err("an untagged extra in the primary format needs an instance");
+        assert_eq!(error, super::DialectLayerError::MissingInstance(extra));
+    }
+
+    #[test]
+    fn dialect_layers_deserialization_rejects_an_untagged_extra_in_a_tagged_primary_format() {
+        let serialized = serde_json::json!({
+            "primary": layer("rhino").with_instance("root"),
+            "extra": [layer("rhino")],
+        });
+
+        let error = serde_json::from_value::<DialectLayers>(serialized)
+            .expect_err("an untagged extra in the primary format is a read error");
+        assert!(
+            error
+                .to_string()
+                .contains("extra dialect layer in the primary format needs an instance"),
             "{error}"
         );
     }

@@ -584,12 +584,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         };
         let profile_work = ProfileGeometryWork::new();
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                std::slice::from_ref(&member),
-                &sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, std::slice::from_ref(&member), &sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &[],
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -600,10 +595,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
@@ -660,12 +652,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         );
         let profile_entities = [line_entity, second_profile_entity, point_entity];
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                &[member.clone(), point_member],
-                &sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, &[member.clone(), point_member], &sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &profile_entities,
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -676,10 +663,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
@@ -687,12 +671,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         ));
         member.resolved_geometry = None;
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                std::slice::from_ref(&member),
-                &sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, std::slice::from_ref(&member), &sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &[],
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -703,10 +682,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
                 sketch: ref actual_sketch,
                 selections: ref actual_selections,
@@ -718,12 +694,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .edit(|profiles| profiles.truncate(1))
             .unwrap();
         assert!(matches!(
-            resolved_extrude_profile_selection(
-                &sketch_id,
-                &group,
-                std::slice::from_ref(&member),
-                &single_profile_sketch,
-                crate::design::profile_select::ExtrudeProfileResolution {
+            resolved_extrude_profile_selection(&sketch_id, &group, std::slice::from_ref(&member), &single_profile_sketch, crate::design::profile_select::ExtrudeProfileResolution {
                     entities: &[],
                     spatial_sketches: &[],
                     spatial_entities: &[],
@@ -734,10 +705,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
-                .scoped(&[]),
-                None,
-                None,
-            ).unwrap(),
+                .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
             cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,

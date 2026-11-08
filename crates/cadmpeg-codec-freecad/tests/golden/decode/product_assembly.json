@@ -1459,7 +1459,7 @@
           "id": "fcstd:model:occurrence#Assembly:container",
           "name": "fcstd:native:object#Assembly",
           "native_ref": "fcstd:native:object#Assembly",
-          "ordinal": 3,
+          "ordinal": 0,
           "parent": {
             "kind": "root"
           },
@@ -1573,7 +1573,7 @@
           "id": "fcstd:model:occurrence#BracketPrototype:container",
           "name": "fcstd:native:object#BracketPrototype",
           "native_ref": "fcstd:native:object#BracketPrototype",
-          "ordinal": 4,
+          "ordinal": 1,
           "parent": {
             "kind": "root"
           },
@@ -2043,219 +2043,6 @@
           ]
         },
         {
-          "id": "fcstd:model:occurrence#PinArray_i0:instance",
-          "link": {
-            "members": [
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "policy": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
-          "name": "fcstd:native:object#PinArray_i0",
-          "native_ref": "fcstd:native:object#PinArray_i0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "fcstd:model:occurrence#PinArray_i1:instance",
-          "link": {
-            "members": [
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "policy": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
-          "name": "fcstd:native:object#PinArray_i1",
-          "native_ref": "fcstd:native:object#PinArray_i1",
-          "ordinal": 1,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              1.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "fcstd:model:occurrence#PinArray_i2:instance",
-          "link": {
-            "members": [
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "policy": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
-          "name": "fcstd:native:object#PinArray_i2",
-          "native_ref": "fcstd:native:object#PinArray_i2",
-          "ordinal": 2,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              2.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
           "id": "fcstd:model:occurrence#PinOccurrence:instance",
           "link": {
             "members": [
@@ -2335,7 +2122,7 @@
           "id": "fcstd:model:occurrence#PinPrototype:container",
           "name": "fcstd:native:object#PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype",
-          "ordinal": 5,
+          "ordinal": 2,
           "parent": {
             "kind": "root"
           },
@@ -2373,7 +2160,7 @@
           "id": "fcstd:model:occurrence#PrototypeGroup:container",
           "name": "fcstd:native:object#PrototypeGroup",
           "native_ref": "fcstd:native:object#PrototypeGroup",
-          "ordinal": 6,
+          "ordinal": 3,
           "parent": {
             "kind": "root"
           },

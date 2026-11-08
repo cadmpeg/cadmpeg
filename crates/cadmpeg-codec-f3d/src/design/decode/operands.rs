@@ -861,6 +861,7 @@ pub(crate) fn decode_face_operands(
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
+    types: &[crate::records::entity_header::SegmentType],
 ) -> Result<Vec<DesignFaceOperand>, CodecError> {
     let mut header_index = HashMap::new();
     for header in headers {
@@ -908,6 +909,9 @@ pub(crate) fn decode_face_operands(
         let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
             && group.role() == DesignOperandRole::FACES;
+        let is_sweep_profile = design_feature_family(&scope.kind())
+            == Some(DesignFeatureFamily::Sweep)
+            && group.role() == DesignOperandRole::PROFILE;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
             && group.role() == DesignOperandRole::ROLE_0X21;
@@ -969,6 +973,7 @@ pub(crate) fn decode_face_operands(
             && !is_shell_operand
             && !is_loft_profile
             && !is_sweep_guide_surface
+            && !is_sweep_profile
             && !is_revolve_axis
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
@@ -997,12 +1002,25 @@ pub(crate) fn decode_face_operands(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let stream_types = is_sweep_profile
+            .then(|| crate::design::decode::meta::stream_types_by_entity(types, &entry.name));
         for (group_member_index, record_index) in group
             .members()
             .iter()
             .map(|member| &member.value)
             .enumerate()
         {
+            if stream_types.as_ref().is_some_and(|types| {
+                !types
+                    .get(&u64::from(*record_index))
+                    .is_some_and(|(guid, _)| {
+                        guid.eq_ignore_ascii_case(
+                            crate::records::feature::path_features::pipe::RECIPE_GUID,
+                        )
+                    })
+            }) {
+                continue;
+            }
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
             }
@@ -1878,11 +1896,13 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceOffset)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceTrim)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::PathPattern
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::CircularPattern)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::RectangularPattern)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Mirror)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::ReverseNormal
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::MoveFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
@@ -2695,7 +2715,9 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// prefixes the flag block with a further byte. Neither
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
-/// this record's own index.
+/// this record's own index. That paired header is the next indexed header
+/// with this record's index, and the record's fields are read from the bytes
+/// before it.
 pub(super) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -2712,18 +2734,24 @@ pub(super) fn parse_construction_operand_group(
     if bytes.get(start + 11..start + 19) != Some(&[0; 8]) {
         return NotAGroup;
     }
-    let Some(mut cursor) = payload_prologue(bytes, start + 19, bytes.len()) else {
+    // The record ends at its paired header: the next indexed header with its
+    // own index, or the end of the stream.
+    let end = next_indexed_record_offset_with_index(bytes, start + 1, header.record_index)
+        .unwrap_or(bytes.len());
+    let Some(record_bytes) = bytes.get(..end) else {
+        return NotAGroup;
+    };
+    let Some(mut cursor) = payload_prologue(record_bytes, start + 19, end) else {
         return NotAGroup;
     };
     let member_count_at = cursor;
-    let Some(member_count) = View::u32_le_at(bytes, cursor) else {
+    let Some(member_count) = View::u32_le_at(record_bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    // A reference is at least one byte, so a count the remaining bytes cannot
-    // supply is corrupt and must not reach the allocator.
-    if bytes
-        .len()
+    // A reference is at least one byte, so a count the rest of the record
+    // cannot supply is corrupt and must not reach the allocator.
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(member_count) > remaining)
     {
@@ -2731,7 +2759,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let members_at = cursor;
     for _ in 0..member_count {
-        if take_record_reference(bytes, &mut cursor).is_none() {
+        if take_record_reference(record_bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
     }
@@ -2741,12 +2769,12 @@ pub(super) fn parse_construction_operand_group(
         .iter_mut()
         .zip(&mut auxiliary_slots)
     {
-        if bytes.get(cursor) == Some(&0) {
+        if record_bytes.get(cursor) == Some(&0) {
             cursor += 1;
             continue;
         }
         *present = true;
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((record_index, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
 
@@ -2755,12 +2783,11 @@ pub(super) fn parse_construction_operand_group(
             offset,
         });
     }
-    let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
+    let Some(trailing_count) = View::u32_le_at(record_bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    if bytes
-        .len()
+    if end
         .checked_sub(cursor)
         .is_none_or(|remaining| index_from_u32(trailing_count) > remaining)
     {
@@ -2768,7 +2795,7 @@ pub(super) fn parse_construction_operand_group(
     }
     let trailing_at = cursor;
     for _ in 0..trailing_count {
-        if take_record_reference(bytes, &mut cursor).is_none() {
+        if take_record_reference(record_bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
     }
@@ -2781,7 +2808,7 @@ pub(super) fn parse_construction_operand_group(
         })
         && trailing_count == 0;
     if legacy_move_class_328 {
-        if bytes.get(cursor) != Some(&0) {
+        if record_bytes.get(cursor) != Some(&0) {
             return NotAGroup;
         }
         cursor += 1;
@@ -2789,21 +2816,21 @@ pub(super) fn parse_construction_operand_group(
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
     let (Some(0), Some(role)) = (
-        View::u32_le_at(bytes, role_at),
-        View::u64_le_at(bytes, role_at),
+        View::u32_le_at(record_bytes, role_at),
+        View::u64_le_at(record_bytes, role_at),
     ) else {
         return NotAGroup;
     };
     let role = DesignOperandRole::from_raw(role);
     cursor += 8;
-    if bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
+    if record_bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
         return NotAGroup;
     }
     cursor += 10;
     let opaque_index_at = cursor;
     let (Some(opaque_index), Some(opaque_scalar)) = (
-        View::u32_le_at(bytes, cursor),
-        View::f64_le_at(bytes, cursor + 4),
+        View::u32_le_at(record_bytes, cursor),
+        View::f64_le_at(record_bytes, cursor + 4),
     ) else {
         return NotAGroup;
     };
@@ -2821,18 +2848,18 @@ pub(super) fn parse_construction_operand_group(
     for repeats_ordinal in [true, false] {
         let mut tail = cursor;
         if repeats_ordinal {
-            if View::u32_le_at(bytes, tail) != Some(opaque_index.get()) {
+            if View::u32_le_at(record_bytes, tail) != Some(opaque_index.get()) {
                 continue;
             }
             tail += 4;
         }
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+        if take_record_reference(record_bytes, &mut tail).map(|(index, _)| index)
             != header.record_index.checked_add(2)
         {
             continue;
         }
         for flag_bytes in [2usize, 3] {
-            let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
+            let Some(flags) = record_bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
             if flags[flag_bytes - 2] > 1 || flags[flag_bytes - 1] > 1 {
@@ -2841,22 +2868,25 @@ pub(super) fn parse_construction_operand_group(
             let variant = flags[flag_bytes - 2] != 0;
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
                 != header.record_index.checked_add(1)
             {
                 continue;
             }
-            if bytes.get(after) != Some(&0) {
+            if record_bytes.get(after) != Some(&0) {
                 continue;
             }
             after += 1;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
                 != Some(scope.record_index)
             {
                 continue;
             }
+            if after != end {
+                continue;
+            }
             let Some((paired_class_tag, after_tag)) =
-                lp_ascii_filtered_view(bytes, after, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, end, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
@@ -2908,7 +2938,7 @@ pub(super) fn parse_construction_operand_group(
     let mut members = Vec::new();
     let mut cursor = members_at;
     for _ in 0..member_count {
-        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((value, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
         members.push(crate::records::identity::Located { value, offset });
@@ -2917,7 +2947,7 @@ pub(super) fn parse_construction_operand_group(
     let mut trailing_records = Vec::new();
     let mut cursor = trailing_at;
     for _ in 0..trailing_count {
-        let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((value, offset)) = take_record_reference(record_bytes, &mut cursor) else {
             return NotAGroup;
         };
         trailing_records.push(crate::records::identity::Located { value, offset });
@@ -3202,8 +3232,11 @@ fn extended_construction_path_prefix(bytes: &[u8], start: usize) -> Option<bool>
             .get(zero_run..start + extended_path::PREFIX_VALUE)?
             .iter()
             .all(|byte| *byte == 0)
-            && View::u32_le_at(bytes, start + extended_path::PREFIX_VALUE)?
-                == extended_path::PREFIX_VALUE_VALUE
+            && matches!(
+                View::u32_le_at(bytes, start + extended_path::PREFIX_VALUE)?,
+                crate::layout::assembly_locator_prefix_two::WORD_VALUE
+                    | extended_path::PREFIX_VALUE_VALUE
+            )
             && bytes
                 .get(trailing_zero_run..start + extended_path::ENTITY_MARKER)?
                 .iter()
@@ -5400,10 +5433,11 @@ pub(in crate::design) fn parse_sketch_profile(
     }
     if tail_length == 83 {
         // The 83-byte tail omits the marked reference that follows the third
-        // u32 of the 94-byte tail, which is then zero.
+        // u32 of the 94-byte tail, which is then zero. Its second u32 is
+        // zero or one.
         let tail = after_entity_suffix;
         if View::u32_le_at(bytes, tail)? != 1
-            || View::u32_le_at(bytes, tail + 4)? != 1
+            || !matches!(View::u32_le_at(bytes, tail + 4)?, 0 | 1)
             || bytes.get(tail + 8..tail + 16)? != [0; 8]
             || View::u32_le_at(bytes, tail + 16)? != 0x41
             || marked_record_reference(bytes, tail + 46) != header.record_index.checked_add(2)
@@ -6997,7 +7031,7 @@ fn parse_typed_profile_curve_selection_prefix(
             ),
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
-            loop_lists: [Vec::new(), Vec::new()],
+            groups: Vec::new(),
         },
         identity_end,
     ))
@@ -7021,22 +7055,24 @@ fn parse_typed_profile_curve_selection(
     };
     let start = usize::try_from(selection.identity_record_offset)
         .map_err(|_| CodecError::malformed("profile identity offset exceeds address space"))?;
-    let Some(lists) =
-        parse_profile_loop_lists(ctx, bytes, start + typed_identity::FIRST_REGION_COUNT, end)?
+    let Some(groups) =
+        parse_profile_region_groups(ctx, bytes, start + typed_identity::REGION_GROUP_COUNT, end)?
     else {
         return Ok(None);
     };
-    selection.loop_lists = lists;
+    selection.groups = groups;
     Ok(selection.valid_layout().then_some(selection))
 }
 
-fn parse_profile_loop_lists(
+/// Smallest stored region: a loop count, an entry count, one entry and the
+/// exterior flag.
+const MIN_PROFILE_REGION_BYTES: usize = 49;
+
+fn parse_profile_region(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-    end: usize,
+    view: &mut View<'_>,
 ) -> Result<
-    Option<[Vec<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>; 2]>,
+    Option<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>,
     CodecError,
 > {
     use crate::records::topology::entity_selection::{
@@ -7050,65 +7086,95 @@ fn parse_profile_loop_lists(
             }
         };
     }
-    let mut view = field!(View::over_retained(bytes).child(start, end));
-    let mut lists = [Vec::new(), Vec::new()];
-    for (list_index, regions) in lists.iter_mut().enumerate() {
+    let count = field!(view.u32_le());
+    let count = field!(view.counted(u64::from(count), 45)).get();
+    if count == 0 {
+        return Ok(None);
+    }
+    let mut loops = ctx.alloc_filled(
+        count,
+        DesignProfileCurveLoop::default(),
+        "F3D profile loops",
+    )?;
+    for loop_ in &mut loops {
         let count = field!(view.u32_le());
-        let count = field!(view.counted(u64::from(count), 49)).get();
-        if list_index == 0 && count == 0 {
+        let count = field!(view.counted(u64::from(count), 40)).get();
+        if count == 0 {
             return Ok(None);
         }
-        *regions = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
-        for loops in regions {
-            let count = field!(view.u32_le());
-            let count = field!(view.counted(u64::from(count), 45)).get();
-            if count == 0 {
+        loop_.entries = ctx.alloc_filled(
+            count,
+            DesignProfileCurveEntry::default(),
+            "F3D profile curve entries",
+        )?;
+        for entry in &mut loop_.entries {
+            if view.u32_le() != Some(2) {
                 return Ok(None);
             }
-            *loops = ctx.alloc_filled(
-                count,
-                DesignProfileCurveLoop::default(),
-                "F3D profile loops",
-            )?;
-            for loop_ in loops {
-                let count = field!(view.u32_le());
-                let count = field!(view.counted(u64::from(count), 40)).get();
-                if count == 0 {
-                    return Ok(None);
-                }
-                loop_.entries = ctx.alloc_filled(
-                    count,
-                    DesignProfileCurveEntry::default(),
-                    "F3D profile curve entries",
-                )?;
-                for entry in &mut loop_.entries {
-                    if view.u32_le() != Some(2) {
-                        return Ok(None);
-                    }
-                    let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
-                    *entry = DesignProfileCurveEntry {
-                        primary_id: field!(view.u64_le()),
-                        primary_id_offset,
-                        secondary_id: field!(view.u64_le()),
-                        entry_fields: [
-                            field!(view.u32_le()),
-                            field!(view.u32_le()),
-                            field!(view.u32_le()),
-                        ],
-                    };
-                    if view.take(8) != Some(&[0; 8][..]) {
-                        return Ok(None);
-                    }
-                }
-                loop_.outer = match view.u8() {
-                    Some(0) => false,
-                    Some(1) => true,
-                    _ => return Ok(None),
-                };
+            let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
+            *entry = DesignProfileCurveEntry {
+                primary_id: field!(view.u64_le()),
+                primary_id_offset,
+                secondary_id: field!(view.u64_le()),
+                entry_fields: [
+                    field!(view.u32_le()),
+                    field!(view.u32_le()),
+                    field!(view.u32_le()),
+                ],
+            };
+            if view.take(8) != Some(&[0; 8][..]) {
+                return Ok(None);
             }
         }
+        loop_.outer = match view.u8() {
+            Some(0) => false,
+            Some(1) => true,
+            _ => return Ok(None),
+        };
     }
-    Ok((view.remaining() == 0).then_some(lists))
+    Ok(Some(loops))
+}
+
+fn parse_profile_region_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<
+    Option<Vec<crate::records::topology::entity_selection::DesignProfileRegionGroup>>,
+    CodecError,
+> {
+    use crate::records::topology::entity_selection::DesignProfileRegionGroup;
+    macro_rules! field {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    let mut view = field!(View::over_retained(bytes).child(start, end));
+    let count = field!(view.u32_le());
+    // A group is one region and the u32 count of its further regions.
+    let count = field!(view.counted(u64::from(count), MIN_PROFILE_REGION_BYTES + 4)).get();
+    if count == 0 {
+        return Ok(None);
+    }
+    let mut groups = ctx.alloc_filled(
+        count,
+        DesignProfileRegionGroup::default(),
+        "F3D profile region groups",
+    )?;
+    for group in &mut groups {
+        group.region = field!(parse_profile_region(ctx, &mut view)?);
+        let count = field!(view.u32_le());
+        let count = field!(view.counted(u64::from(count), MIN_PROFILE_REGION_BYTES)).get();
+        group.further = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
+        for region in &mut group.further {
+            *region = field!(parse_profile_region(ctx, &mut view)?);
+        }
+    }
+    Ok((view.remaining() == 0).then_some(groups))
 }
 
 pub(crate) fn construction_closing_flag_losses(
