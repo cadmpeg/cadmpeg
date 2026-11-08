@@ -20,6 +20,7 @@ pub(crate) mod test_formula;
 pub(crate) mod test_object_graph;
 pub(crate) mod test_parameter_map;
 pub(crate) mod test_rolling_ball_continuation;
+pub(crate) mod test_sheet;
 pub(crate) mod test_sketch_bindings;
 pub(crate) mod test_topology;
 pub(crate) mod test_zero_entity;
