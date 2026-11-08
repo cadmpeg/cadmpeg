@@ -815,9 +815,9 @@ fn untrimmed_cylindrical_pcurve_recovers_an_antipodal_vertex() {
     )
     .unwrap()
     .expect("one parameter pair reaches both vertices");
-    assert!(ranges.iter().any(|[start, end]| {
-        start.abs() < 1.0e-9 && (end.abs() - 1.0).abs() < 1.0e-9
-    }));
+    assert!(ranges
+        .iter()
+        .any(|[start, end]| { start.abs() < 1.0e-9 && (end.abs() - 1.0).abs() < 1.0e-9 }));
 }
 
 #[test]
