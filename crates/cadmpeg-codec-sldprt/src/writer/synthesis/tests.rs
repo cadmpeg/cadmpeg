@@ -868,16 +868,7 @@ fn design_only_native_pmi_remains_native() {
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    for record in &before.pmi_dimensions {
-        assert_ne!(
-            plan.report().native_dispositions.record_disposition(
-                "sldprt",
-                "pmi_dimensions",
-                &record.id
-            ),
-            cadmpeg_ir::codec::write::NativeDisposition::Dropped
-        );
-    }
+    let dispositions = plan.report().native_dispositions.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
@@ -886,13 +877,52 @@ fn design_only_native_pmi_remains_native() {
     let native = crate::test_support::native::sldprt_native(output.ir());
     assert_eq!(native.pmi_dimensions.len(), before.pmi_dimensions.len());
     for expected in &before.pmi_dimensions {
-        assert!(native.pmi_dimensions.iter().any(|actual| {
-            actual.guid == expected.guid
-                && actual.value == expected.value
-                && actual.cad_text == expected.cad_text
-        }));
+        let actual = native
+            .pmi_dimensions
+            .iter()
+            .find(|actual| {
+                actual.guid == expected.guid
+                    && actual.value == expected.value
+                    && actual.cad_text == expected.cad_text
+            })
+            .expect("the dimension content is written");
+        assert_eq!(
+            dispositions.record_disposition("sldprt", "pmi_dimensions", &expected.id)
+                == cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+            actual.offset != expected.offset,
+            "a source record is dropped exactly when its typed map offset is not written"
+        );
     }
     assert!(!output.ir().scope.model);
+}
+
+#[test]
+fn a_pmi_record_that_supplies_a_history_dimension_is_written() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/pmi_semantic_dimension.sldprt"
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().scope.model && decoded.ir().model.pmi.is_empty());
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    assert_eq!(native.pmi_dimensions.len(), 1);
+    assert_eq!(native.pmi_dimensions[0].cad_text, "D1@Sketch1");
+    assert!(output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "D1"));
 }
 
 #[test]

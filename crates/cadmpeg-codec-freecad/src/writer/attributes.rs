@@ -130,14 +130,12 @@ fn through_schema(
     original: &crate::native::PropertyRecord,
     names: &HashMap<String, String>,
     available: &std::collections::HashSet<String>,
-) -> Result<Option<String>, cadmpeg_core::CodecError> {
+) -> Option<String> {
     let mut property = original.clone();
     property.name.clone_from(&attribute.name);
-    let Some(old) = crate::attributes::values(original) else {
-        return Ok(None);
-    };
+    let old = crate::attributes::values(original)?;
     if old.len() != attribute.values.len() {
-        return Ok(None);
+        return None;
     }
     if old == attribute.values {
         // The neutral values still equal their projection, so the native XML
@@ -147,11 +145,9 @@ fn through_schema(
     }
     if matches!(original.family, crate::native::PropertyFamily::Link) {
         // An edited link regenerates elsewhere, never by scalar rewrite.
-        return Ok(None);
+        return None;
     }
-    let Some(values) = property.values_mut() else {
-        return Ok(None);
-    };
+    let values = property.values_mut()?;
     let mut cursor = 0;
     for value in values {
         let vector = value.attributes.contains_key("valueX");
@@ -165,14 +161,10 @@ fn through_schema(
         if !vector && key.is_none() {
             continue;
         }
-        let Some(replacement) = attribute.values.get(cursor).and_then(Option::as_ref) else {
-            return Ok(None);
-        };
-        let Some(previous) = old[cursor].as_ref() else {
-            return Ok(None);
-        };
+        let replacement = attribute.values.get(cursor).and_then(Option::as_ref)?;
+        let previous = old[cursor].as_ref()?;
         if std::mem::discriminant(previous) != std::mem::discriminant(replacement) {
-            return Ok(None);
+            return None;
         }
         let scalar = match replacement {
             AttributeValue::Integer(value) => Some(value.to_string()),
@@ -180,9 +172,7 @@ fn through_schema(
             AttributeValue::String(value) => Some(value.clone()),
             AttributeValue::Boolean(value) => Some(u8::from(*value).to_string()),
             AttributeValue::Reference(value) => {
-                let Some(name) = names.get(value.as_str()) else {
-                    return Ok(None);
-                };
+                let name = names.get(value.as_str())?;
                 Some(name.clone())
             }
             AttributeValue::Vector(coordinates) if vector && coordinates.len() == 3 => {
@@ -198,7 +188,7 @@ fn through_schema(
             | AttributeValue::SubReference { .. }
             | AttributeValue::ExternalReference { .. }
             | AttributeValue::EmptyReference
-            | AttributeValue::Json(_) => return Ok(None),
+            | AttributeValue::Json(_) => return None,
         };
         if let Some(scalar) = scalar {
             value
@@ -208,7 +198,7 @@ fn through_schema(
         cursor += 1;
     }
     if cursor != attribute.values.len() {
-        return Ok(None);
+        return None;
     }
     xml::native_named(&property, names, available)
 }
@@ -224,10 +214,10 @@ pub(super) fn write(
     document: &mut indexmap::IndexMap<String, String>,
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     write_matching(ir, names, objects, document, losses, properties, |target| {
         !is_product_or_occurrence(target)
-    })
+    });
 }
 
 /// Attributes owned by product definitions and occurrences resolve after
@@ -239,7 +229,7 @@ pub(super) fn write_products(
     document: &mut indexmap::IndexMap<String, String>,
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     write_matching(
         ir,
         names,
@@ -248,7 +238,7 @@ pub(super) fn write_products(
         losses,
         properties,
         is_product_or_occurrence,
-    )
+    );
 }
 
 fn is_product_or_occurrence(target: &AttributeTarget) -> bool {
@@ -269,7 +259,7 @@ fn write_matching(
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
     include: impl Fn(&AttributeTarget) -> bool,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let available = ir
         .native
         .namespace("fcstd")
@@ -336,7 +326,7 @@ fn write_matching(
         } else if holes {
             None
         } else if let Some(original) = original {
-            through_schema(attribute, original, names, &available)?
+            through_schema(attribute, original, names, &available)
         } else {
             property(&attribute.name, &attribute.values, names)
         };
@@ -378,7 +368,6 @@ fn write_matching(
         note_holes(attribute, losses);
         object.set(&attribute.name, property);
     }
-    Ok(())
 }
 
 struct MissingPositions<'a>(&'a [Option<AttributeValue>]);

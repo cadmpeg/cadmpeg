@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::features::Dimension;
@@ -124,6 +125,33 @@ pub(crate) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
     Ok(())
 }
 
+/// Whether a record without a neutral annotation is the source of a history
+/// dimension: its `cadText` names a parameter of a uniquely named feature
+/// whose Keywords record omits that dimension.
+fn supplies_history_dimension(ir: &CadIr, record: &crate::records::PmiDimension) -> bool {
+    let Ok(id) = super::annotation_id(record) else {
+        return false;
+    };
+    if ir.model.pmi.iter().any(|annotation| annotation.id == id) {
+        return false;
+    }
+    let Some((name, owner)) = record.cad_text.split_once('@') else {
+        return false;
+    };
+    let mut owners = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.name.as_deref() == Some(owner));
+    let (Some(owner), None) = (owners.next(), owners.next()) else {
+        return false;
+    };
+    ir.model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name)
+}
+
 fn native_dimension_without_neutral_value<'a>(
     native: Option<&'a SldprtNative>,
     id: &cadmpeg_ir::ids::PmiId,
@@ -201,9 +229,45 @@ pub(crate) fn payload(
     ir: &CadIr,
     native: Option<&SldprtNative>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
+    let records = records(ir, native)?;
+    if records.is_empty() {
+        return Ok(None);
+    }
+    let entries = records
+        .into_values()
+        .map(|record| {
+            let (value, _) = record_payload(&record)?;
+            Ok((record.guid, value))
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    database::encode(&entries).map(Some)
+}
+
+/// The map and display-text offsets the authored database gives each
+/// record, by GUID. A record whose value overflows its cell has none.
+pub(crate) fn authored_offsets(
+    ir: &CadIr,
+    native: Option<&SldprtNative>,
+) -> Result<BTreeMap<String, (u64, u64)>, CodecError> {
+    let mut offsets = BTreeMap::new();
+    for (index, record) in records(ir, native)?.into_values().enumerate() {
+        let (value, text) = record_payload(&record)?;
+        if let Some(map) = database::local_value_offset(index, record.guid.len(), value.len()) {
+            offsets.insert(record.guid, (map, map + u64_from_index(text)));
+        }
+    }
+    Ok(offsets)
+}
+
+fn records(
+    ir: &CadIr,
+    native: Option<&SldprtNative>,
+) -> Result<BTreeMap<String, Record>, CodecError> {
     let mut records = BTreeMap::<String, Record>::new();
-    if !ir.scope.model {
-        for source in native.into_iter().flat_map(|native| &native.pmi_dimensions) {
+    for source in native.into_iter().flat_map(|native| &native.pmi_dimensions) {
+        if ir.scope.model && !supplies_history_dimension(ir, source) {
+            continue;
+        }
             if source.item_count.get() != 1 {
                 return Err(CodecError::InvalidInput(format!(
                     "SLDPRT PMI {} contains untyped additional items",
@@ -224,7 +288,6 @@ pub(crate) fn payload(
                     text: source.display_text().map(str::to_owned),
                 },
             );
-        }
     }
     for annotation in &ir.model.pmi {
         let PmiDefinition::Dimension(dimension) = &annotation.definition else {
@@ -330,17 +393,7 @@ pub(crate) fn payload(
         apply_neutral_metadata(ir, &annotation.id, &mut record);
         records.insert(record.guid.clone(), record);
     }
-    if records.is_empty() {
-        return Ok(None);
-    }
-    let entries = records
-        .into_values()
-        .map(|record| {
-            let value = record_payload(&record)?;
-            Ok((record.guid, value))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    database::encode(&entries).map(Some)
+    Ok(records)
 }
 
 fn apply_neutral_metadata(ir: &CadIr, id: &cadmpeg_ir::ids::PmiId, record: &mut Record) {
@@ -375,7 +428,8 @@ fn apply_neutral_metadata(ir: &CadIr, id: &cadmpeg_ir::ids::PmiId, record: &mut 
         });
 }
 
-fn record_payload(record: &Record) -> Result<Vec<u8>, CodecError> {
+/// The record's `MessagePack` map and the offset of its display text in it.
+fn record_payload(record: &Record) -> Result<(Vec<u8>, usize), CodecError> {
     let mut out = vec![0x87];
     string(&mut out, "annoType")?;
     out.push(1);
@@ -400,14 +454,16 @@ fn record_payload(record: &Record) -> Result<Vec<u8>, CodecError> {
     out.push(0xcb);
     out.extend_from_slice(&record.value.to_be_bytes());
     string(&mut out, "dimText")?;
-    string(&mut out, record.text.as_deref().unwrap_or(""))?;
+    let text = record.text.as_deref().unwrap_or("");
+    string(&mut out, text)?;
+    let text_offset = out.len() - text.len();
     string(&mut out, "dimType")?;
     out.push(0);
     string(&mut out, "iDString")?;
     string(&mut out, &record.guid)?;
     string(&mut out, "reserved")?;
     out.push(0xc0);
-    Ok(out)
+    Ok((out, text_offset))
 }
 
 fn string(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {

@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Constraint;
 use cadmpeg_ir::{
     document::CadIr,
-    features::{Expression, ParameterValue},
+    features::{Expression, FeatureOperation, ParameterValue},
     report::loss::LossNote,
 };
 use std::collections::HashMap;
@@ -86,13 +86,25 @@ pub(in crate::writer) fn parameter_reference(
     names: &HashMap<String, String>,
 ) -> Option<String> {
     let dependency = ir.model.parameters.iter().find(|value| value.id == *id)?;
+    // A constraint path names only the constraint's own dimension, which the
+    // sketch's feature owns; a sheet cell or a feature property that drives
+    // the constraint keeps its own owner and selector.
+    let sketch_owned = |sketch: &cadmpeg_ir::sketches::SketchId| {
+        ir.model.features.iter().any(|feature| {
+            Some(&feature.id) == dependency.owner.as_ref()
+                && matches!(
+                    feature.evaluation.definition().operation(),
+                    FeatureOperation::Sketch { sketch: binding } if binding.id() == Some(sketch)
+                )
+        })
+    };
     let constraint_path = ir.model.sketch_constraints.iter().find_map(|constraint| {
         constraint
             .definition
             .kind()
             .dimension_parameters()
             .ok()
-            .filter(|parameters| parameters.contains(id))
+            .filter(|parameters| parameters.contains(id) && sketch_owned(&constraint.sketch))
             .and_then(|_| names.get(&format!("constraint-path:{}", constraint.id)))
     });
     let symbol = constraint_path
@@ -397,11 +409,11 @@ pub(super) fn write(
             .iter()
             .filter(|constraint| constraint.sketch == sketch.id)
         {
-            let mut ids = constraint
-                .definition
-                .kind()
-                .dimension_parameters()
-                .map_err(CodecError::malformed)?;
+            // A constraint whose dimensions do not resolve binds no
+            // parameter path; its parameters keep their own owners.
+            let Ok(mut ids) = constraint.definition.kind().dimension_parameters() else {
+                continue;
+            };
             if let Constraint::Native {
                 parameter: Some(parameter),
                 ..
@@ -492,7 +504,7 @@ pub(super) fn write(
                 property_name,
                 "App::PropertyAngle",
                 "Float",
-                value.get().to_degrees(),
+                xml::degrees(value.get()),
             ),
             Some(ParameterValue::Real(value)) => {
                 xml::scalar(property_name, "App::PropertyFloat", "Float", value.get())
@@ -544,11 +556,16 @@ pub(super) fn write(
                 .iter()
                 .find(|source| &source.id == id && source.name == property_name)
         }) {
-            let generated = roxmltree::Document::parse(&property).map_err(CodecError::malformed)?;
-            let generated_root = generated.root_element();
-            let generated_value = generated_root.first_element_child();
+            let generated = roxmltree::Document::parse(&property);
+            debug_assert!(generated.is_ok(), "generated parameter XML parses");
+            let generated_root = generated
+                .as_ref()
+                .ok()
+                .map(roxmltree::Document::root_element);
+            let generated_value = generated_root.and_then(|root| root.first_element_child());
             let mut source = source.clone();
-            let compatible = source.type_name == generated_root.attribute("type").unwrap_or("");
+            let compatible = generated_root
+                .is_some_and(|root| source.type_name == root.attribute("type").unwrap_or(""));
             let mut restored = None;
             if let (
                 true,
@@ -564,7 +581,7 @@ pub(super) fn write(
                                 &source,
                                 names,
                                 &std::collections::HashSet::new(),
-                            )?;
+                            );
                         }
                     }
                 }
@@ -613,8 +630,8 @@ pub(super) fn write(
             ));
         }
     }
-    controls::write(ir, objects, names, &mut expressions, losses)?;
-    expressions::write(objects, expressions)?;
+    controls::write(ir, objects, names, &mut expressions, losses);
+    expressions::write(objects, expressions);
     Ok(())
 }
 

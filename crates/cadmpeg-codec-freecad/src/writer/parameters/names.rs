@@ -31,7 +31,7 @@ pub(super) fn prepare(
         .unwrap_or_default();
     let mut controls = BTreeMap::new();
     for feature in &ir.model.features {
-        controls.insert(feature.id.clone(), super::controls::bindings(feature)?);
+        controls.insert(feature.id.clone(), super::controls::bindings(feature));
     }
     let mut assigned = BTreeMap::<String, std::collections::BTreeSet<String>>::new();
     for (index, parameter) in ir.model.parameters.iter().enumerate() {

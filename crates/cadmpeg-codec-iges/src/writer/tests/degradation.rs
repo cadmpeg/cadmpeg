@@ -1574,17 +1574,79 @@ fn directory_disposition_requires_exact_generated_record() {
         dispositions.record_disposition("iges", "cards", "iges:physical:card#1"),
         NativeDisposition::Written
     );
-    assert_eq!(
-        dispositions.record_disposition("iges", "cards", "iges:physical:card#12"),
-        NativeDisposition::Dropped
-    );
-    assert_eq!(
-        dispositions.record_disposition("iges", "entities", "iges:entity:directory#5"),
-        NativeDisposition::Written
-    );
+    let card = dispositions.record_disposition("iges", "cards", "iges:physical:card#12");
     assert_eq!(
         dispositions.record_disposition("iges", "entities", "iges:entity:directory#7"),
         NativeDisposition::Dropped
+    );
+    // A record that names a dropped record cannot reappear, so the exact
+    // directory record #5 is written only while every record it names is.
+    let entities = &ir
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"];
+    let named = serde_json::to_string(
+        &entities
+            .iter()
+            .find(|record| record.id() == "iges:entity:directory#5")
+            .expect("valid test value")
+            .field("links"),
+    )
+    .expect("valid test value");
+    let names_dropped = entities.iter().any(|record| {
+        named.contains(&format!("\"{}\"", record.id()))
+            && dispositions.record_disposition("iges", "entities", record.id())
+                == NativeDisposition::Dropped
+    });
+    assert_eq!(
+        dispositions.record_disposition("iges", "entities", "iges:entity:directory#5"),
+        if names_dropped {
+            NativeDisposition::Dropped
+        } else {
+            NativeDisposition::Written
+        }
+    );
+    // A card's content is its section, so the output holds card#12 while it
+    // holds as many cards of that section as the input holds through card#12.
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("valid test value");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("valid test value");
+    let cards = |document: &cadmpeg_ir::CadIr| {
+        document
+            .native
+            .namespace("iges")
+            .expect("valid test value")
+            .arenas()["cards"]
+            .iter()
+            .map(|card| (card.id().to_owned(), card.field("section")))
+            .collect::<Vec<_>>()
+    };
+    let input = cards(&ir);
+    let section = input
+        .iter()
+        .find(|(id, _)| id == "iges:physical:card#12")
+        .map(|(_, section)| section.clone())
+        .expect("valid test value");
+    let claimed = input
+        .iter()
+        .take_while(|(id, _)| id != "iges:physical:card#12")
+        .filter(|(_, other)| *other == section)
+        .count()
+        + 1;
+    let available = cards(output.ir())
+        .iter()
+        .filter(|(_, other)| *other == section)
+        .count();
+    assert_eq!(
+        card,
+        if claimed <= available {
+            NativeDisposition::Written
+        } else {
+            NativeDisposition::Dropped
+        }
     );
 }
 
