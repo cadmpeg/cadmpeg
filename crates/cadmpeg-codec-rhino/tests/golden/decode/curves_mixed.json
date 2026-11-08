@@ -8,20 +8,20 @@
       "attributes": [],
       "bodies": [
         {
-          "id": "rhino:object:body#record-000000-offset-177",
+          "id": "rhino:object:body#5268696e-6f49-4400-0000-000000000000",
           "kind": "general",
           "native_ref": "rhino:object:record#000000",
           "regions": [
-            "rhino:object:region#record-000000-offset-177"
+            "rhino:object:region#5268696e-6f49-4400-0000-000000000000"
           ],
           "visible": true
         },
         {
-          "id": "rhino:object:body#record-000001-offset-314",
+          "id": "rhino:object:body#5268696e-6f49-4400-0000-000000000001",
           "kind": "general",
           "native_ref": "rhino:object:record#000001",
           "regions": [
-            "rhino:object:region#record-000001-offset-314"
+            "rhino:object:region#5268696e-6f49-4400-0000-000000000001"
           ],
           "visible": true
         }
@@ -56,7 +56,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000002-offset-659",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000002",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -105,7 +105,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000003-offset-840",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000003",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -144,7 +144,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000004-offset-1197",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000004",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -155,7 +155,7 @@
             "kind": "unknown",
             "record": "rhino:object:record#000005"
           },
-          "id": "rhino:object:curve#record-000005-offset-1418",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -188,7 +188,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000005-offset-1418.root.component-0",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-0",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -198,7 +198,7 @@
           "geometry": {
             "kind": "unknown"
           },
-          "id": "rhino:object:curve#record-000005-offset-1418.root.component-1",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-1",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -231,7 +231,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-1.component-0",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -249,7 +249,7 @@
       "pmi": [],
       "points": [
         {
-          "id": "rhino:object:point#record-000000-offset-177",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000000",
           "position": {
             "x": 1.0,
             "y": 2.0,
@@ -261,7 +261,7 @@
           }
         },
         {
-          "id": "rhino:object:point#record-000001-offset-314.0",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000001.0",
           "position": {
             "x": 4.0,
             "y": 5.0,
@@ -273,7 +273,7 @@
           }
         },
         {
-          "id": "rhino:object:point#record-000001-offset-314.1",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000001.1",
           "position": {
             "x": 7.0,
             "y": 8.0,
@@ -289,15 +289,15 @@
       "presentation_layers": [],
       "procedural_curves": [
         {
-          "curve": "rhino:object:curve#record-000005-offset-1418",
+          "curve": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005",
           "definition": {
             "components": [
               {
-                "component": "rhino:object:curve#record-000005-offset-1418.root.component-0",
+                "component": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-0",
                 "parameter": 0.0
               },
               {
-                "component": "rhino:object:curve#record-000005-offset-1418.root.component-1",
+                "component": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-1",
                 "parameter": 2.0
               }
             ],
@@ -308,14 +308,14 @@
               5.0
             ]
           },
-          "id": "rhino:object:procedural-curve#record-000005-offset-1418"
+          "id": "rhino:object:procedural-curve#5268696e-6f49-4400-0000-000000000005"
         },
         {
-          "curve": "rhino:object:curve#record-000005-offset-1418.root.component-1",
+          "curve": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-1",
           "definition": {
             "components": [
               {
-                "component": "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0",
+                "component": "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-1.component-0",
                 "parameter": 10.0
               }
             ],
@@ -325,52 +325,52 @@
               20.0
             ]
           },
-          "id": "rhino:object:procedural-curve#record-000005-offset-1418.root.component-1"
+          "id": "rhino:object:procedural-curve#5268696e-6f49-4400-0000-000000000005.root.component-1"
         }
       ],
       "procedural_surfaces": [],
       "product_definitions": [],
       "regions": [
         {
-          "body": "rhino:object:body#record-000000-offset-177",
-          "id": "rhino:object:region#record-000000-offset-177",
+          "body": "rhino:object:body#5268696e-6f49-4400-0000-000000000000",
+          "id": "rhino:object:region#5268696e-6f49-4400-0000-000000000000",
           "shells": [
-            "rhino:object:shell#record-000000-offset-177"
+            "rhino:object:shell#5268696e-6f49-4400-0000-000000000000"
           ]
         },
         {
-          "body": "rhino:object:body#record-000001-offset-314",
-          "id": "rhino:object:region#record-000001-offset-314",
+          "body": "rhino:object:body#5268696e-6f49-4400-0000-000000000001",
+          "id": "rhino:object:region#5268696e-6f49-4400-0000-000000000001",
           "shells": [
-            "rhino:object:shell#record-000001-offset-314"
+            "rhino:object:shell#5268696e-6f49-4400-0000-000000000001"
           ]
         }
       ],
       "semantic_annotations": [],
       "shells": [
         {
-          "id": "rhino:object:shell#record-000000-offset-177",
+          "id": "rhino:object:shell#5268696e-6f49-4400-0000-000000000000",
           "members": [
             {
-              "id": "rhino:object:vertex#record-000000-offset-177",
+              "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000",
               "kind": "free_vertex"
             }
           ],
-          "region": "rhino:object:region#record-000000-offset-177"
+          "region": "rhino:object:region#5268696e-6f49-4400-0000-000000000000"
         },
         {
-          "id": "rhino:object:shell#record-000001-offset-314",
+          "id": "rhino:object:shell#5268696e-6f49-4400-0000-000000000001",
           "members": [
             {
-              "id": "rhino:object:vertex#record-000001-offset-314.0",
+              "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000001.0",
               "kind": "free_vertex"
             },
             {
-              "id": "rhino:object:vertex#record-000001-offset-314.1",
+              "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000001.1",
               "kind": "free_vertex"
             }
           ],
-          "region": "rhino:object:region#record-000001-offset-314"
+          "region": "rhino:object:region#5268696e-6f49-4400-0000-000000000001"
         }
       ],
       "sketch_constraints": [],
@@ -384,16 +384,16 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "rhino:object:vertex#record-000000-offset-177",
-          "point": "rhino:object:point#record-000000-offset-177"
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000000"
         },
         {
-          "id": "rhino:object:vertex#record-000001-offset-314.0",
-          "point": "rhino:object:point#record-000001-offset-314.0"
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000001.0",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000001.0"
         },
         {
-          "id": "rhino:object:vertex#record-000001-offset-314.1",
-          "point": "rhino:object:point#record-000001-offset-314.1"
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000001.1",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000001.1"
         }
       ],
       "view_presentations": []
@@ -654,7 +654,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -664,7 +664,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000001-offset-314: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000001: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -674,7 +674,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000002-offset-659: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000002: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -684,7 +684,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000003-offset-840: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000003: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -694,7 +694,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000004-offset-1197: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000004: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -704,7 +704,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000005-offset-1418: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000005: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -733,47 +733,47 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "rhino:object:body#record-000000-offset-177": {
+        "rhino:object:body#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000002-offset-659": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000002": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000003-offset-840": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000003": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000004-offset-1197": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000004": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000005-offset-1418": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000005": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000005-offset-1418.root.component-0": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000005-offset-1418.root.component-1": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-1": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000005.root.component-1.component-0": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:region#record-000000-offset-177": {
+        "rhino:object:region#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:shell#record-000000-offset-177": {
+        "rhino:object:shell#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:vertex#record-000000-offset-177": {
+        "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         }
