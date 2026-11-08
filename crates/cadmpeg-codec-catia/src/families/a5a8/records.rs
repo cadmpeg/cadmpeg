@@ -23,6 +23,9 @@ use cadmpeg_ir::units::FiniteVector;
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
+const EPS_OWNED_ROLLING_BALL_RADIUS: f64 = 5.0e-7;
+const EPS_OWNED_ROLLING_BALL_ANGLE: f64 = 5.0e-7;
+const COLLAPSED_RAIL_TOLERANCE_MM: f64 = 0.00005;
 
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
@@ -198,7 +201,7 @@ pub(in crate::families) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
+fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
     use crate::layout::surface_terminal_span_tail as layout;
 
     let tail_len = end.checked_sub(at)?;
@@ -209,7 +212,8 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     };
     let tail = data.get(at..end)?;
     if tail[layout::CONTROLS] != 0x05
-        || tail[layout::CONTROLS + 2] != 0x05
+        || !(tail[layout::CONTROLS + 2] == 0x05
+            || owned && tail_len == 142 && tail[layout::CONTROLS + 2] == 0x01)
         || tail[layout::CONTROLS + 1] % 4 != 1
         || tail[layout::CONTROLS + 3] % 4 != 1
         || !matches!(
@@ -221,7 +225,11 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     }
     let parameters = read_f64_array::<8>(tail, layout::PARAMETERS)?.map(FiniteReal::get);
     if parameters[0] >= parameters[1]
-        || parameters[2] >= parameters[3]
+        || (if owned && tail_len == 142 {
+            parameters[2] == parameters[3]
+        } else {
+            parameters[2] >= parameters[3]
+        })
         || parameters[4] == 0.0
         || parameters[6] == 0.0
     {
@@ -239,14 +247,24 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     let suffix = &tail[continuation_end..];
     let valid_suffix = match (tail_len, &tail[layout::FLAGS..layout::CONTINUATION]) {
         (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
-        (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => matches!(
-            suffix,
-            [0x01, 0x00, 0x01, 0x00, 0x07, 0x07] | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
-        ),
+        (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
+            matches!(
+                suffix,
+                [0x01, 0x00, 0x01 | 0x09, 0x00, 0x07, 0x07] | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
+            ) || owned
+                && matches!(
+                    suffix,
+                    [0x05, 0x00, 0x05 | 0x09, 0x00, 0x07, 0x07]
+                        | [0x09, 0x00, 0x01, 0x00, 0x07, 0x07]
+                )
+        }
         (142, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
             suffix.len() == 7
                 && suffix[0] % 4 == 1
-                && suffix[1..4] == [0x00, 0x09, 0x01]
+                && matches!(
+                    suffix[1..4],
+                    [0x00, 0x01 | 0x05 | 0x09 | 0x0d | 0x11 | 0x15 | 0x19, 0x01]
+                )
                 && suffix[4] % 4 == 1
                 && suffix[5..] == [0x07, 0x07]
         }
@@ -255,16 +273,12 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     valid_suffix.then_some(end)
 }
 
-fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
-    parse_surface_tail(data, at, end).is_some()
-}
-
 fn a8_inline_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     for tail_len in [133, 141, 142] {
         let Some(tail_end) = at.checked_add(tail_len).filter(|tail_end| *tail_end <= end) else {
             continue;
         };
-        if parse_surface_tail(data, at, tail_end).is_some()
+        if parse_surface_tail(data, at, tail_end, false).is_some()
             && closed_a8_child_run(data, tail_end, end)
         {
             return Some(tail_end);
@@ -466,6 +480,7 @@ pub(in crate::families) struct A5FreeformCurve {
     pub(in crate::families) header_token: u32,
     /// Knot-aligned jet samples.
     pub(in crate::families) sites: Vec<A5FreeformJet>,
+    pub(in crate::families) chart_v_end: f64,
 }
 
 impl A5FreeformCurve {
@@ -473,6 +488,52 @@ impl A5FreeformCurve {
 
     fn knots(&self) -> Vec<f64> {
         self.sites.iter().map(|site| site.knot.get()).collect()
+    }
+
+    pub(in crate::families) fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
+        let stations = self
+            .sites
+            .iter()
+            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
+                knot: sample.knot,
+                multiplicity: Self::DEGREE + 1,
+                site: rolling_ball_jet_site(
+                    &sample.site,
+                    sample.first_derivatives,
+                    sample.second_derivatives,
+                ),
+            })
+            .collect();
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations)
+            .ok()
+            .map(ProceduralSurfaceDefinition::RollingBallJet)
+    }
+
+    pub(in crate::families) fn definition_at_radius(
+        mut self,
+        radius: f64,
+    ) -> Option<ProceduralSurfaceDefinition> {
+        for sample in &mut self.sites {
+            let site = &mut sample.site;
+            let center = site.center.get();
+            let tolerance = if site.theta.get() == 0.0 {
+                COLLAPSED_RAIL_TOLERANCE_MM
+            } else {
+                radius * EPS_OWNED_ROLLING_BALL_RADIUS
+            };
+            for rail in [&mut site.limit1, &mut site.limit2] {
+                let observed = rail.distance(center);
+                if observed <= 0.0 || (observed - radius).abs() > tolerance {
+                    return None;
+                }
+                if (observed - radius).abs() > EPS_ROLLING_BALL_RADIUS {
+                    *rail = FinitePoint3::new(
+                        center.translated(rail.get().vector_from(center), radius / observed),
+                    )?;
+                }
+            }
+        }
+        self.definition()
     }
 }
 
@@ -551,6 +612,7 @@ pub(in crate::families) struct GuideCurveSite {
     pub(in crate::families) second_derivative: FiniteVector<6>,
     /// Guide-curve point.
     pub(in crate::families) point: FiniteVector<3>,
+    pub(in crate::families) reference_point: FiniteVector<3>,
 }
 
 /// Width-coded guide-curve and reference-direction jet.
@@ -730,6 +792,21 @@ pub(in crate::families) fn a5_guide_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5GuideCurve> {
+    a5_guides_from_records(data, records, true)
+}
+
+pub(in crate::families) fn a5_ruled_guides_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<A5GuideCurve> {
+    a5_guides_from_records(data, records, false)
+}
+
+fn a5_guides_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    unit: bool,
+) -> Vec<A5GuideCurve> {
     let mut curves = Vec::new();
 
     for record in records
@@ -745,14 +822,14 @@ pub(in crate::families) fn a5_guide_curves_from_records(
             end: end.end,
             header_token: record.header_token(),
         };
-        if let Some(curve) = parse_a5_guide_curve(data, frame) {
+        if let Some(curve) = parse_a5_guide_curve(data, frame, unit) {
             curves.push(curve);
         }
     }
     curves
 }
 
-fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5GuideCurve> {
+fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame, unit: bool) -> Option<A5GuideCurve> {
     let mut at = frame.payload;
     let count = compact_int(data, &mut at).and_then(|value| usize::try_from(value).ok())?;
     let degree = compact_int(data, &mut at)?;
@@ -817,8 +894,9 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
             value[5].get() - value[2].get(),
         ];
         let length = (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
-        if (length - 1.0).abs().partial_cmp(&EPS_GUIDE_DIRECTION_UNIT)
-            != Some(std::cmp::Ordering::Less)
+        if !length.is_finite()
+            || length == 0.0
+            || (unit && (length - 1.0).abs() >= EPS_GUIDE_DIRECTION_UNIT)
         {
             return None;
         }
@@ -827,6 +905,7 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
             first_derivative: first_derivative.into(),
             second_derivative: second_derivative.into(),
             point: [value[0], value[1], value[2]].into(),
+            reference_point: [value[3], value[4], value[5]].into(),
         });
     }
     Some(A5GuideCurve {
@@ -1022,7 +1101,7 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
         else {
             return None;
         };
-        let site = rolling_ball_site(positions)?;
+        let site = rolling_ball_site(positions, false)?;
         sites.push(A8FreeformJet {
             knot,
             multiplicity,
@@ -1049,29 +1128,36 @@ pub(in crate::families) fn a5_freeform_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5FreeformCurve> {
-    let mut curves = Vec::new();
-
-    for record in records
-        .iter()
-        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x32)
-    {
-        let (Some(payload), Some(end)) = (record.payload(), record.range()) else {
-            continue;
-        };
-        let frame = ConsolidatedFrame {
-            pos: record.byte_offset(),
-            payload: payload.start,
-            end: end.end,
-            header_token: record.header_token(),
-        };
-        if let Some(curve) = parse_a5_curve(data, frame) {
-            curves.push(curve);
-        }
-    }
-    curves
+    a5_rolling_curves(data, records, false).collect()
 }
 
-fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCurve> {
+pub(in crate::families) fn a5_owned_rolling_curves<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = A5FreeformCurve> + 'a {
+    a5_rolling_curves(data, records, true)
+}
+
+fn a5_rolling_curves<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+    owned: bool,
+) -> impl Iterator<Item = A5FreeformCurve> + 'a {
+    records
+        .iter()
+        .filter(|record| record.family() == ConsolidatedFamily::A && record.class() == 0x32)
+        .filter_map(move |record| {
+            let frame = ConsolidatedFrame {
+                pos: record.byte_offset(),
+                payload: record.payload()?.start,
+                end: record.range()?.end,
+                header_token: record.header_token(),
+            };
+            parse_a5_curve(data, frame, owned)
+        })
+}
+
+fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<A5FreeformCurve> {
     let ConsolidatedFrame {
         pos,
         payload,
@@ -1080,7 +1166,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     } = frame;
     data.get(frame.payload..frame.end)?;
 
-    let (count, knot_start, block_start, block_bytes) = (|| {
+    let (count, knot_start, block_start, block_bytes, chart_v_end) = (|| {
         if data.get(pos) == Some(&0xa5) {
             let header_byte = u8::try_from(header_token).ok()?;
             a5_int(header_byte)?;
@@ -1093,7 +1179,11 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         }
         match data.get(at..at + 2) {
             Some([0x0c, _]) => at += 1,
-            Some([0x08, marker]) if a5_int(*marker).is_some() => at += 2,
+            Some([0x08, marker])
+                if a5_int(*marker).is_some() || *marker == 0x0f || owned && *marker % 4 == 3 =>
+            {
+                at += 2
+            }
             _ => return None,
         }
         let knot_bytes = count.checked_mul(8)?;
@@ -1113,12 +1203,13 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
             at += 8;
         }
         let tail_start = at.checked_add(block_bytes.checked_mul(3)?)?;
-        a5_rolling_ball_tail(
+        let chart_v_end = a5_rolling_ball_tail(
             data.get(tail_start..end)?,
             count,
             [f64_le(data, knot_start)?.get(), previous_knot?],
+            owned,
         )?;
-        Some((count, knot_start, at, block_bytes))
+        Some((count, knot_start, at, block_bytes, chart_v_end))
     })()?;
     let mut sites = Vec::new();
 
@@ -1132,7 +1223,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         ) else {
             return None;
         };
-        let site = rolling_ball_site(positions)?;
+        let site = rolling_ball_site(positions, owned)?;
         sites.push(A5FreeformJet {
             knot,
             site,
@@ -1144,36 +1235,59 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         pos,
         header_token,
         sites,
+        chart_v_end,
     })
 }
 
 /// Validate the complete consolidated rolling-ball tail before retaining sites.
 /// Scalar jets and the raw control remain in the source record; neither supplies
 /// a source-curve identity or a neutral orientation.
-fn a5_rolling_ball_tail(data: &[u8], count: usize, knot_range: [f64; 2]) -> Option<()> {
+fn a5_rolling_ball_tail(
+    data: &[u8],
+    count: usize,
+    knot_range: [f64; 2],
+    owned: bool,
+) -> Option<f64> {
     use crate::layout::{
         rolling_ball_tail_prefix as prefix, rolling_ball_tail_unmapped_suffix as suffix,
     };
 
     let no_map_length = prefix::LEN + suffix::LEN;
     let repeated_length = no_map_length + 8;
+    let extended_length = repeated_length + 2;
+    let sheet_limits = owned && data.len() == extended_length;
     let current = read_f64_array::<5>(data, prefix::PARAMETERS)?.map(FiniteReal::get);
     let maximal_v = read_f64_array::<2>(data, prefix::MAXIMAL_V)?.map(FiniteReal::get);
     if !matches!(data.get(prefix::CONTROL), Some(0x03 | 0x05))
         || current[0] >= current[1]
         || current[2] >= current[3]
         || current[4] <= 0.0
-        || current[3].to_bits() != current[4].to_bits()
+        || (!sheet_limits && current[3].to_bits() != current[4].to_bits())
         || maximal_v[0] > current[2]
         || maximal_v[1] < current[3]
     {
         return None;
     }
+    let mut trimmed_u = [false; 2];
     let mut at = match data.len() {
-        length if length == no_map_length || length == repeated_length => {
-            if data.get(prefix::LEN + suffix::BRANCH..prefix::LEN + suffix::MAXIMAL_U)
-                != Some(&suffix::BRANCH_VALUE)
-            {
+        length
+            if length == no_map_length
+                || length == repeated_length
+                || length == extended_length =>
+        {
+            let branch = data.get(prefix::LEN + suffix::BRANCH..prefix::LEN + suffix::MAXIMAL_U)?;
+            if length == extended_length {
+                if branch.len() != suffix::BRANCH_VALUE.len()
+                    || branch[0..2] != suffix::BRANCH_VALUE[0..2]
+                    || branch[2] > 1
+                    || branch[3] > 1
+                    || branch[4..6] != suffix::BRANCH_VALUE[4..6]
+                    || data.get(repeated_length..extended_length) != Some(&[0, 0][..])
+                {
+                    return None;
+                }
+                trimmed_u = [sheet_limits && branch[2] == 1, branch[3] == 1];
+            } else if branch != suffix::BRANCH_VALUE {
                 return None;
             }
             prefix::LEN + suffix::MAXIMAL_U
@@ -1197,22 +1311,33 @@ fn a5_rolling_ball_tail(data: &[u8], count: usize, knot_range: [f64; 2]) -> Opti
     let maximal_u = read_f64_array::<2>(data, at)?.map(FiniteReal::get);
     at += 16;
     if maximal_u[0] < knot_range[0]
-        || maximal_u[0] > current[0]
-        || maximal_u[1] < current[1]
+        || (!trimmed_u[0] && maximal_u[0] > current[0])
+        || maximal_u[0] >= maximal_u[1]
+        || (!trimmed_u[1] && maximal_u[1] < current[1])
         || maximal_u[1] > knot_range[1]
     {
         return None;
     }
+    let mut v_end = current[4];
     if data.len() != no_map_length {
-        if f64_le(data, at)?.get().to_bits() != current[4].to_bits() {
+        let terminal_v = f64_le(data, at)?.get();
+        if sheet_limits {
+            v_end = terminal_v;
+            if terminal_v <= 0.0 {
+                return None;
+            }
+        } else if terminal_v.to_bits() != current[4].to_bits() {
             return None;
         }
         at += 8;
     }
-    (at == data.len()).then_some(())
+    if data.len() == extended_length {
+        at += 2;
+    }
+    (at == data.len()).then_some(v_end)
 }
 
-fn rolling_ball_site(values: [FiniteReal; 10]) -> Option<RollingBallSite> {
+fn rolling_ball_site(values: [FiniteReal; 10], owned: bool) -> Option<RollingBallSite> {
     let limit1 = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
     let limit2 = FinitePoint3::from_coordinates(values[3], values[4], values[5]);
     let center = FinitePoint3::from_coordinates(values[6], values[7], values[8]);
@@ -1222,12 +1347,22 @@ fn rolling_ball_site(values: [FiniteReal; 10]) -> Option<RollingBallSite> {
     let chord = distance(limit1.get(), limit2.get());
     let radius_scale = radius.max(other);
     let relative_radius_difference = ((radius / radius_scale) - (other / radius_scale)).abs();
+    let tolerance = if owned {
+        EPS_OWNED_ROLLING_BALL_RADIUS
+    } else {
+        EPS_ROLLING_BALL_RADIUS
+    };
+    let angle_tolerance = if owned {
+        EPS_OWNED_ROLLING_BALL_ANGLE
+    } else {
+        EPS_ROLLING_BALL_ANGLE
+    };
     if !radius.is_finite()
         || radius <= 0.0
         || !other.is_finite()
-        || relative_radius_difference > EPS_ROLLING_BALL_RADIUS
+        || relative_radius_difference > tolerance
         || (theta.get() - 2.0 * ((chord / radius) * 0.5).clamp(-1.0, 1.0).asin()).abs()
-            > EPS_ROLLING_BALL_ANGLE
+            > angle_tolerance
     {
         return None;
     }
@@ -1530,6 +1665,23 @@ pub(in crate::families) fn a5_surfaces_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
+    a5_surfaces_in_scope(data, records, refusal, false)
+}
+
+pub(in crate::families) fn a5_owned_surfaces_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Vec<FreeformSurface>, CodecError> {
+    a5_surfaces_in_scope(data, records, refusal, true)
+}
+
+fn a5_surfaces_in_scope(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    refusal: &mut crate::nurbs::LaneRefusals,
+    owned: bool,
+) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
 
     for record in records
@@ -1545,7 +1697,7 @@ pub(in crate::families) fn a5_surfaces_from_records(
             end: end.end,
             header_token: record.header_token(),
         };
-        if let Some(surface) = a5_surface(data, frame, refusal)? {
+        if let Some(surface) = a5_surface(data, frame, refusal, owned)? {
             surfaces.push(surface);
         }
     }
@@ -1556,6 +1708,7 @@ fn a5_surface(
     data: &[u8],
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
+    owned: bool,
 ) -> Result<Option<FreeformSurface>, CodecError> {
     let ConsolidatedFrame {
         pos, payload, end, ..
@@ -1565,14 +1718,10 @@ fn a5_surface(
         return Ok(None);
     };
     at += 1;
-    let Some(u_distinct_count) = data
-        .get(at)
-        .and_then(|&byte| a5_int(byte))
-        .and_then(|count| usize::try_from(count).ok())
-    else {
+    let Some(u_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at + 1) else {
+    let Some(next) = a5_array_marker(data, at, owned) else {
         return Ok(None);
     };
     at = next;
@@ -1583,14 +1732,10 @@ fn a5_surface(
         return Ok(None);
     };
     at += 1;
-    let Some(v_distinct_count) = data
-        .get(at)
-        .and_then(|&byte| a5_int(byte))
-        .and_then(|count| usize::try_from(count).ok())
-    else {
+    let Some(v_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at + 1) else {
+    let Some(next) = a5_array_marker(data, at, owned) else {
         return Ok(None);
     };
     at = next;
@@ -1646,7 +1791,7 @@ fn a5_surface(
         }
         _ => return Ok(None),
     };
-    if !valid_a5_surface_tail(data, at, end) {
+    if parse_surface_tail(data, at, end, owned).is_none() {
         return Ok(None);
     }
     let control_points = grid_rows(control_points, v_count)?;
@@ -1979,10 +2124,20 @@ fn a5_int(byte: u8) -> Option<u32> {
     (byte % 4 == 1).then(|| u32::from((byte - 1) / 4))
 }
 
-fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
+fn a5_distinct_count(bytes: &[u8], at: &mut usize, owned: bool) -> Option<usize> {
+    if owned {
+        return usize::try_from(compact_int(bytes, at)?).ok();
+    }
+    let count = usize::try_from(a5_int(*bytes.get(*at)?)?).ok()?;
+    *at += 1;
+    Some(count)
+}
+
+fn a5_array_marker(bytes: &[u8], at: usize, owned: bool) -> Option<usize> {
     match bytes.get(at..at + 2) {
         Some([0x0c, ..]) => Some(at + 1),
-        Some([0x08, 0x09]) => Some(at + 2),
+        Some([0x08, 0x05 | 0x09 | 0x0d | 0x11 | 0x15]) => Some(at + 2),
+        Some([0x08, 0x19]) if owned => Some(at + 2),
         _ => None,
     }
 }

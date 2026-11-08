@@ -105,6 +105,8 @@ pub(crate) enum CatiaLossCode {
     TopologyObjectStreamWorkSliceExhausted,
     /// Object-stream and NURBS carriers decoded, but the B5 graph did not close.
     TopologyB5GraphUnclosed,
+    /// Fitted face subsets represent only part of a native body.
+    TopologyOwnedPatchSubset,
     /// A B5 face's carrier sense or loop orientation withheld the topology plan.
     TopologyB5FacesWithheld,
     /// B5 topology runs were read without the isolated geometry they reference.
@@ -168,6 +170,7 @@ impl CatiaLossCode {
         Self::TopologyB5GaugeSubstituted,
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
+        Self::TopologyOwnedPatchSubset,
         Self::TopologyB5FacesWithheld,
         Self::TopologyB5PopulationBounded,
         Self::TopologyZeroEntitySupportsRetained,
@@ -219,6 +222,7 @@ impl CatiaLossCode {
                 "topology.object-stream-work-slice-exhausted"
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
+            Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
             Self::TopologyB5FacesWithheld => "topology.b5-faces-withheld",
             Self::TopologyB5PopulationBounded => "topology.b5-population-bounded",
             Self::TopologyZeroEntitySupportsRetained => "topology.zero-entity-supports-retained",
@@ -292,6 +296,7 @@ impl CatiaLossCode {
             | Self::TopologyB5GaugeSubstituted
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
+            | Self::TopologyOwnedPatchSubset
             | Self::TopologyB5FacesWithheld
             | Self::TopologyB5PopulationBounded
             | Self::TopologyZeroEntityCandidatesBounded
@@ -373,6 +378,7 @@ mod tests {
                 "topology.b5-gauge-substituted",
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
+                "topology.owned-patch-subset",
                 "topology.b5-faces-withheld",
                 "topology.b5-population-bounded",
                 "topology.zero-entity-supports-retained",

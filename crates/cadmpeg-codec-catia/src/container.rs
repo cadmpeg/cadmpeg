@@ -910,6 +910,31 @@ impl ContainerScan<'_> {
             MainDataStream::Standalone(bytes) => Some(bytes),
         }
     }
+
+    pub(crate) fn surfacic_reps_stream(&self) -> Option<&[u8]> {
+        let main_length = match self.main_data_stream.as_ref()? {
+            MainDataStream::BrepPrefix(length) => *length,
+            MainDataStream::Standalone(_) => return None,
+        };
+        self.brep.as_deref()?.get(main_length..)
+    }
+
+    pub(crate) fn outer_container_stream(&self, class_name: &str) -> Option<Vec<u8>> {
+        let outer = self.outer.as_ref()?;
+        let decl = self
+            .outer_container_declarations
+            .iter()
+            .find(|d| d.class_name == class_name)?;
+        let descriptor = outer
+            .descriptors
+            .iter()
+            .find(|desc| desc.name == decl.stream_name)?;
+        Some(reconstruct_logical_stream(
+            &self.data,
+            descriptor,
+            outer.inner,
+        ))
+    }
 }
 
 /// Return the logical record sources that can carry consolidated A/B records.

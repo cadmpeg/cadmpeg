@@ -772,6 +772,20 @@ Parsed by:
 | 0 | 6 | `branch` | `bytes[6]` | little | spec | \| `+0` \| `bytes[6]` \| absent scalar jet: `05 00 00 00 00 00` \| · value `[5, 0, 0, 0, 0, 0]` |
 | 6 | 16 | `maximal_u` | `f64[2]` | little | spec | \| `+6` \| `f64le[2]` \| maximal U limits \| |
 
+## `rolling_ball_tail_extended_suffix`
+
+Spec §6.2 · layout: byte offsets · size: 32 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `branch` | `bytes[6]` | little | spec | \| `+0` \| `bytes[6]` \| branch `05 00 a b 00 00` \| |
+| 6 | 16 | `maximal_u` | `f64[2]` | little | spec | \| `+6` \| `f64le[2]` \| maximal U limits \| |
+| 22 | 8 | `reference` | `f64` | little | spec | \| `+22` \| `f64le` \| reference-scalar copy \| |
+| 30 | 2 | `terminal` | `bytes[2]` | little | spec | \| `+30` \| `bytes[2]` \| zero terminal \| |
+
 ## `consolidated_parameter_point_inline_prefix`
 
 Spec §6.4 · layout: byte offsets · size: 10 B
@@ -1040,6 +1054,18 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| nonzero reference count prefix `80+n` \| |
 
+## `consolidated_wide_face_roster_prefix`
+
+Spec §6.4 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/roster.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| wide count marker `18` \| |
+| 1 | 2 | `face_count` | `u16` | little | spec | \| `+1` \| `u16le` \| nonzero face count \| |
+
 ## `consolidated_plane_implicit_axis_payload`
 
 Spec §6.3 · layout: byte offsets · size: 50 B
@@ -1066,6 +1092,19 @@ Offsets are relative to the payload after the 4+w-byte B-family frame header. He
 | 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
 | 18 | 8 | `direction_component` | `f64` | little | spec | `+18` direction component (`f64le`) |
 | 26 | 32 | `bounds` | `f64[4]` | little | spec | the 58-byte one-component direction payload has bounds at `+26` |
+
+## `consolidated_plane_spatial_origin_payload`
+
+Spec §6.3 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 24 | `origin_xyz` | `f64[3]` | little | spec | `+2` origin XYZ (`3×f64le`) |
+| 26 | 32 | `bounds` | `f64[4]` | little | spec | the 58-byte spatial-origin payload has bounds at `+26` |
 
 ## `consolidated_plane_two_component_payload`
 

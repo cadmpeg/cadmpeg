@@ -1322,6 +1322,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                     native_edge_supports: &[None],
                     limit_curve_bindings: &[None],
                     limit_curves: &[],
+                    shell_plane_evidence: false,
                     refusal: &mut crate::nurbs::LaneRefusals::new(),
                     admission: &mut admission,
                 },

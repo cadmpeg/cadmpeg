@@ -5,6 +5,58 @@ use crate::test_support::test_b2::b2_adjacent_face_counted_owner_stream;
 use crate::wire::records::{consolidated_records, consolidated_records_in_range_sources};
 
 #[test]
+fn compact_face_double_three_counted_owner_survives_native_wire_roundtrip() {
+    let mut bytes = b2_adjacent_face_counted_owner_stream();
+    bytes[10] = 0x03;
+    let records = consolidated_records(&bytes);
+    let packets = crate::test_support::with_service_context(|_ctx| {
+        crate::native::projection::consolidated_owner_packets(&bytes, &records)
+            .expect("valid owner records")
+    });
+    let [packet] = packets.as_slice() else {
+        panic!("one owner packet")
+    };
+    let face = packet.face_node.as_ref().expect("face relation");
+    assert_eq!(face.terminal, [0x03, 0x03]);
+    assert_eq!(face.target.checked_add(1), packet.payload.final_reference());
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("valid owner wire"),
+        *packet
+    );
+}
+
+#[test]
+fn owned_child_face_target_survives_native_projection_and_wire_roundtrip() {
+    let bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x07, 0x0b, 0x03, 0xb2, 0x03, 0x30, 0x02, 0x05, 0x80,
+        0x01, 0xb2, 0x03, 0x37, 0x02, 0x05, 0x81, 0x05, 0xb2, 0x03, 0x62, 0x14, 0x05, 0x8d, 0x03,
+        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x05, 0x86, 0x41, 0x17,
+        0xdc, 0x03, 0x01,
+    ];
+    let records = consolidated_records(&bytes);
+    let packets = crate::test_support::with_service_context(|_ctx| {
+        crate::native::projection::consolidated_owner_packets(&bytes, &records)
+            .expect("valid owner records")
+    });
+    let [packet] = packets.as_slice() else {
+        panic!("one owner packet")
+    };
+    let face = packet.face_node.as_ref().expect("face relation");
+    assert_eq!(face.frame.pos, 0);
+    assert_eq!(face.target, 1);
+    assert_eq!(packet.frame.pos, 23);
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert_eq!(wire["face_node"]["target_encoding"], "owned_child");
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("valid owner wire"),
+        *packet
+    );
+}
+
+#[test]
 fn owner_incidence_preserves_reversed_physical_extents() {
     let stream = b2_adjacent_face_counted_owner_stream();
     let split = 5 + usize::from(stream[3]);
