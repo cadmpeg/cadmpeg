@@ -86,7 +86,7 @@ pub(super) fn native_tolerant_coedge_extension(
                     CodecError::malformed(format_args!("missing use curve {}", use_curve.curve))
                 })?;
             let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));
             };
@@ -112,7 +112,7 @@ pub(super) fn native_tolerant_coedge_extension(
             native_i64(records, 0);
             Ok(())
         }
-        _ => Err(CodecError::InvalidInput(format!(
+        _ => Err(CodecError::NotImplemented(format!(
             "source-less F3D cannot serialize nonempty tolerant-coedge extension for {coedge}"
         ))),
     }
@@ -216,7 +216,7 @@ pub(super) fn encode_design_bulkstream(
             .iter()
             .any(|header| header.member_values().next().is_some())
     {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "source-less F3D Design parameter records are not writable".into(),
         ));
     }
@@ -806,7 +806,7 @@ fn encode_sketch_point(
         ..
     } = point.record_form()
     else {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(CodecError::NotImplemented(format!(
             "source-less sketch point {} requires the version-11 member sequence",
             point.id
         )));
@@ -975,7 +975,7 @@ fn encode_sketch_curve_identity(
             geometry,
         )?,
         None => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less sketch curve {} has no writable geometry",
                 curve.id
             )))
@@ -1089,7 +1089,7 @@ pub(in crate::writer) fn sketch_text_supported(text: &SketchText) -> bool {
 pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
     use crate::records::sketch_geometry::SketchTextLayout;
     if !sketch_text_supported(text) {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(CodecError::NotImplemented(format!(
             "sketch text {} has unsupported F3D metrics or identity",
             text.id,
         )));
@@ -1101,7 +1101,7 @@ pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result
         ..
     } = &text.layout
     else {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(CodecError::NotImplemented(format!(
             "sketch text {} has no supported F3D member layout",
             text.id,
         )));

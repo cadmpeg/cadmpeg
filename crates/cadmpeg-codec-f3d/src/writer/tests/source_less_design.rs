@@ -1675,7 +1675,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect_err("the native serializer requires its current writable class version");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::InvalidInput(_)
+        cadmpeg_core::CodecError::NotImplemented(_)
     ));
     f3d_native_mut(&mut source_less).design_types[2].set_version(11);
     {

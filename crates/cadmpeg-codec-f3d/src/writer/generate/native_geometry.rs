@@ -155,7 +155,7 @@ fn native_procedural_surface_definition(
             use cadmpeg_ir::geometry::DeformableSurfaceData;
             let construction = definition_payload.construction().to_raw();
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "deformable surface requires a native cache-fit tolerance".into(),
                 )
             })?;
@@ -167,7 +167,7 @@ fn native_procedural_surface_definition(
                 .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
             if let Some(form) = &construction.cache.form() {
                 if form.revision.get() != 22_506 {
-                    return Err(CodecError::InvalidInput(
+                    return Err(CodecError::NotImplemented(
                         "unsupported revision-gated deformable surface revision".into(),
                     ));
                 }
@@ -185,7 +185,7 @@ fn native_procedural_surface_definition(
                     trailing_value,
                 } = &construction.data
                 else {
-                    return Err(CodecError::InvalidInput(
+                    return Err(CodecError::NotImplemented(
                         "revision-gated deformable surface requires mode-3 data".into(),
                     ));
                 };
@@ -417,7 +417,7 @@ fn native_procedural_surface_definition(
                     native_i64(bytes, *selector);
                 }
                 DeformableSurfaceData::RevisionMode3 { .. } => {
-                    return Err(CodecError::InvalidInput(
+                    return Err(CodecError::NotImplemented(
                         "revision mode-3 deformable data requires its revision form".into(),
                     ));
                 }
@@ -562,7 +562,7 @@ fn native_procedural_surface_definition(
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::SubSurface(_) => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "sub-surface {} must use its exact cacheless carrier",
                 procedural.id
             )));
@@ -595,7 +595,7 @@ fn native_procedural_surface_definition(
                     })?;
                 let reference = native_spline_field_curve(
                     reference.geometry.solved().ok_or_else(|| {
-                        cadmpeg_core::CodecError::InvalidInput(
+                        cadmpeg_core::CodecError::NotImplemented(
                             "carrier has no solved geometry".into(),
                         )
                     })?,
@@ -614,7 +614,7 @@ fn native_procedural_surface_definition(
                         taper,
                         cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
                     ) {
-                        return Err(CodecError::InvalidInput(
+                        return Err(CodecError::NotImplemented(
                             "revision-gated taper generation requires the orthogonal subtype"
                                 .into(),
                         ));
@@ -800,7 +800,7 @@ fn native_procedural_surface_definition(
                     },
                 )?,
                 _ => {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(CodecError::NotImplemented(format!(
                         "source-less F3D sweep surface {} lacks its native construction graph",
                         procedural.id
                     )))
@@ -836,7 +836,7 @@ fn native_procedural_surface_definition(
             )?;
         }
         ProceduralSurfaceDefinition::VertexBlend(..) => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D vertex blend {} must use its procedural carrier because VBL_SURF has no solved-cache field",
                 procedural.id
             )));
@@ -872,7 +872,7 @@ fn native_procedural_surface_definition(
             for profile in profiles {
                 let profile = native_interval_curve(
                     profile.geometry.solved().ok_or_else(|| {
-                        CodecError::InvalidInput(
+                        CodecError::NotImplemented(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -963,7 +963,7 @@ fn native_procedural_surface_definition(
             for (curve, range) in curves.into_iter().zip(ranges) {
                 let curve = native_interval_curve(
                     curve.geometry.solved().ok_or_else(|| {
-                        CodecError::InvalidInput(
+                        CodecError::NotImplemented(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -1002,7 +1002,7 @@ fn native_procedural_surface_definition(
                 if angular_parameter_interval
                     .is_some_and(|parameter_interval| parameter_interval != angular_interval)
                 {
-                    return Err(CodecError::InvalidInput(
+                    return Err(CodecError::NotImplemented(
                         "F3D rot_spl_sur cannot encode a distinct angular parameter interval"
                             .into(),
                     ));
@@ -1043,7 +1043,7 @@ fn native_procedural_surface_definition(
                     return Ok(true);
                 }
                 let parameter_interval = (parameter_interval).ok_or_else(|| {
-                    CodecError::InvalidInput(
+                    CodecError::NotImplemented(
                         "source-less F3D rot_spl_sur requires a directrix parameter interval"
                             .into(),
                     )
@@ -1061,7 +1061,7 @@ fn native_procedural_surface_definition(
                     })?;
                 let directrix = native_increasing_interval_curve(
                     directrix.geometry.solved().ok_or_else(|| {
-                        CodecError::InvalidInput(
+                        CodecError::NotImplemented(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -1080,7 +1080,7 @@ fn native_procedural_surface_definition(
                     || parameter_interval != native_parameter_interval
                     || angular_interval != native_angular_interval
                 {
-                    return Err(CodecError::InvalidInput(
+                    return Err(CodecError::NotImplemented(
                     "source-less F3D rot_spl_sur intervals must match its profile and solved cache and cannot be transposed".into(),
                 ));
                 }
@@ -1155,12 +1155,12 @@ fn native_procedural_surface_definition(
                     }
                 };
                 let u_sense = (*u_sense).ok_or_else(|| {
-                    CodecError::InvalidInput(
+                    CodecError::NotImplemented(
                         "source-less F3D offset surface requires a U sense".into(),
                     )
                 })?;
                 let v_sense = (*v_sense).ok_or_else(|| {
-                    CodecError::InvalidInput(
+                    CodecError::NotImplemented(
                         "source-less F3D offset surface requires a V sense".into(),
                     )
                 })?;
@@ -1204,7 +1204,7 @@ fn native_procedural_surface_definition(
                     directrix,
                     parameter_interval: parameter_interval
                         .ok_or_else(|| {
-                            CodecError::InvalidInput(
+                            CodecError::NotImplemented(
                                 "source-less F3D extrusion lacks its native interval".into(),
                             )
                         })?
@@ -1212,7 +1212,7 @@ fn native_procedural_surface_definition(
                     direction: direction.get(),
                     native_position: native_position
                         .ok_or_else(|| {
-                            CodecError::InvalidInput(
+                            CodecError::NotImplemented(
                                 "source-less F3D extrusion lacks its native position".into(),
                             )
                         })?
@@ -1252,61 +1252,61 @@ fn native_procedural_surface_definition(
             }
         }
         ProceduralSurfaceDefinition::Helix { .. } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D helix surface {} must use its cacheless native carrier",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::LinearSweep { .. } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::AxisRevolution { .. } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::ParallelOffset(_) => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::DegenerateTorus { .. } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::CurveBounded { .. } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::Subset(_) => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::Replica { .. } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::Unknown { .. } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
@@ -1357,7 +1357,7 @@ fn native_g2_side(
         .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
     let curve = native_spline_field_curve(
         curve.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::InvalidInput("carrier has no solved geometry".into())
+            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
         })?,
         native_pcurve_knot_domain(pcurve)?,
     )?;
@@ -1396,7 +1396,7 @@ fn encode_native_g2_blend(
                         CodecError::Malformed("G2 first exact surface is missing".into())
                     })?;
                 let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
-                    return Err(CodecError::InvalidInput(
+                    return Err(CodecError::NotImplemented(
                         "source-less G2 full branch requires a NURBS exact surface".into(),
                     ));
                 };
@@ -1428,7 +1428,7 @@ fn encode_native_g2_blend(
         .find(|surface| surface.id == construction.second_exact_surface)
         .ok_or_else(|| CodecError::Malformed("G2 second exact surface is missing".into()))?;
     let Some(SolvedSurfaceGeometry::Nurbs(second_exact)) = second_exact.geometry.solved() else {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "source-less G2 second exact surface must be NURBS".into(),
         ));
     };
@@ -1638,7 +1638,7 @@ fn native_loft_curve(
         .ok_or_else(|| CodecError::malformed(format_args!("loft references missing curve {id}")))?;
     native_spline_field_curve(
         curve.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::InvalidInput("carrier has no solved geometry".into())
+            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
         })?,
         parameter_range,
     )
@@ -1670,7 +1670,7 @@ fn native_compound_loft_scale(
             })?;
         let curve = native_spline_field_curve(
             curve.geometry.solved().ok_or_else(|| {
-                cadmpeg_core::CodecError::InvalidInput(
+                cadmpeg_core::CodecError::NotImplemented(
                     "carrier has no solved geometry".into(),
                 )
             })?,
@@ -1719,7 +1719,7 @@ fn encode_native_compound_loft(
     use cadmpeg_ir::geometry::{CompoundLoftDirection, CompoundLoftTail};
 
     let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-        CodecError::InvalidInput(
+        CodecError::NotImplemented(
             "compound-loft surface requires a native cache-fit tolerance".into(),
         )
     })?;
@@ -1837,12 +1837,12 @@ fn encode_native_scaled_compound_loft(
     match &construction.shape {
         ScaledCompoundLoftShape::Full {} => {
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "scaled compound-loft full shape requires a solved NURBS cache".into(),
                 )
             })?;
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "scaled compound-loft full shape requires a native cache-fit tolerance".into(),
                 )
             })?;
@@ -1989,7 +1989,7 @@ fn native_cacheless_procedural_surface_definition(
                 directrix,
                 parameter_interval: parameter_interval
                     .ok_or_else(|| {
-                        CodecError::InvalidInput(
+                        CodecError::NotImplemented(
                             "source-less F3D extrusion lacks its native interval".into(),
                         )
                     })?
@@ -1997,7 +1997,7 @@ fn native_cacheless_procedural_surface_definition(
                 direction: direction.get(),
                 native_position: native_position
                     .ok_or_else(|| {
-                        CodecError::InvalidInput(
+                        CodecError::NotImplemented(
                             "source-less F3D extrusion lacks its native position".into(),
                         )
                     })?
@@ -2288,14 +2288,14 @@ fn native_law_expression(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::LawExpression;
     if depth > 64 {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "native law expression exceeds 64 recursive levels".into(),
         ));
     }
     match expression {
         LawExpression::Null {} => native_string(bytes, NULL_LAW_TOKEN),
         LawExpression::Text { value } => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "law expression text {value:?} has no recursive native law spelling"
             )));
         }
@@ -2349,7 +2349,7 @@ fn native_law_expression(
                 })?;
             let native_curve = native_interval_curve(
                 carrier.geometry.solved().ok_or_else(|| {
-                    CodecError::InvalidInput(
+                    CodecError::NotImplemented(
                         "source-less F3D carrier has no solved geometry".into(),
                     )
                 })?,
@@ -2394,12 +2394,12 @@ fn native_law_expression(
                 "CROSS" | "DOT" | "DCUR" | "O" | "ROTATE" | "TERM" => 2,
                 "VEC" | "DSURF" => 3,
                 "MIN" | "MAX" | "STEP" => {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(CodecError::NotImplemented(format!(
                         "source-less F3D law operator {operator} has unresolved variable arity"
                     )));
                 }
                 _ => {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(CodecError::NotImplemented(format!(
                         "source-less F3D law operator {operator} has no defined byte grammar"
                     )));
                 }
@@ -2453,12 +2453,12 @@ fn native_sweep_law(
             native_vector(bytes, [value.x, value.y, value.z]);
         }
         (RevisionFirst, _) => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "revision sweep first law requires a text expression".into(),
             ));
         }
         (slot, _) => {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "sweep {slot:?} law has no native spelling for this expression variant"
             )));
         }
@@ -2482,7 +2482,7 @@ fn native_law_formula(
         cadmpeg_ir::geometry::LawFormula::Named { name, variables } => (name, variables),
     };
     if name.as_str() == NULL_LAW_TOKEN {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(CodecError::NotImplemented(format!(
             "law formula named {NULL_LAW_TOKEN} reads back as the native null law; \
              the null law is stated by the variant, not by a name"
         )));
@@ -2529,7 +2529,7 @@ fn encode_native_law_surface(
     match &construction.tail {
         cadmpeg_ir::geometry::LawSurfaceTail::Full { .. } => {
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "full law surface requires a cache-fit tolerance".into(),
                 )
             })?;
@@ -2539,7 +2539,7 @@ fn encode_native_law_surface(
             native_nurbs_surface(
                 bytes,
                 solved_cache.ok_or_else(|| {
-                    CodecError::InvalidInput(
+                    CodecError::NotImplemented(
                         "full law surface requires a solved cache".into(),
                     )
                 })?,
@@ -2614,7 +2614,7 @@ fn encode_native_skin_surface(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::SkinSurfaceLayout;
     let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-        CodecError::InvalidInput("skin surface requires a native cache-fit tolerance".into())
+        CodecError::NotImplemented("skin surface requires a native cache-fit tolerance".into())
     })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
@@ -2646,7 +2646,7 @@ fn encode_native_skin_surface(
                     })?;
                 let curve = native_spline_field_curve(
                     curve.geometry.solved().ok_or_else(|| {
-                        cadmpeg_core::CodecError::InvalidInput(
+                        cadmpeg_core::CodecError::NotImplemented(
                             "carrier has no solved geometry".into(),
                         )
                     })?,
@@ -2707,7 +2707,7 @@ fn encode_native_net_surface(
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-        CodecError::InvalidInput("net surface requires a native cache-fit tolerance".into())
+        CodecError::NotImplemented("net surface requires a native cache-fit tolerance".into())
     })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
@@ -2859,7 +2859,7 @@ fn encode_native_sweep_surface(
             trailing_flag,
         } = &construction.layout
         else {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "revision-gated sweep generation requires the explicit formula layout".into(),
             ));
         };
@@ -3228,14 +3228,14 @@ fn encode_native_sweep_surface(
     native_nurbs_surface(
         bytes,
         solved_cache.ok_or_else(|| {
-            CodecError::InvalidInput("sweep surface requires a solved native cache".into())
+            CodecError::NotImplemented("sweep surface requires a solved native cache".into())
         })?,
     )?;
     native_f64(
         bytes,
         cache_fit_tolerance
             .ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "sweep surface requires a native cache-fit tolerance".into(),
                 )
             })?
@@ -3282,7 +3282,7 @@ fn encode_native_loft(
         let cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals } =
             parameters
         else {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "revision-gated loft requires revision-native parameter ranges".into(),
             ));
         };
@@ -3312,7 +3312,7 @@ fn encode_native_loft(
     }
     native_surface_base(bytes, "spline")?;
     let cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges } = parameters else {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "legacy loft requires ordered parameter ranges".into(),
         ));
     };
@@ -3344,7 +3344,7 @@ fn encode_native_loft(
         }
     }
     let solved_cache = solved_cache.ok_or_else(|| {
-        CodecError::InvalidInput("legacy loft requires a solved NURBS cache".into())
+        CodecError::NotImplemented("legacy loft requires a solved NURBS cache".into())
     })?;
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
@@ -3391,7 +3391,7 @@ fn encode_native_extrusion(
         })?;
     let directrix_cache = native_interval_curve(
         directrix.geometry.solved().ok_or_else(|| {
-            CodecError::InvalidInput("source-less F3D carrier has no solved geometry".into())
+            CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
         })?,
         parameter_interval,
     )?;
@@ -3411,7 +3411,7 @@ fn encode_native_extrusion(
         // interval in the optional bool-gated encoding, the sweep direction and
         // model-space position, then the shared surface tail.
         if form.flags.len() != 1 {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "revision-gated cyl_spl_sur requires one directrix sense flag".into(),
             ));
         }
@@ -3485,7 +3485,7 @@ fn native_radius_function_pcurve_block(
     function: &PcurveGeometry,
 ) -> Result<(), CodecError> {
     let PcurveGeometry::Nurbs { nurbs } = function else {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "variable-blend radius function must be a NURBS pcurve".into(),
         ));
     };
@@ -3501,7 +3501,7 @@ fn native_radius_function_pcurve_block(
             nurbs.weights(),
             nurbs.periodic(),
         )
-        .map_err(|error| CodecError::InvalidInput(error.to_string()))?,
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?,
     };
     native_nurbs_pcurve_block(bytes, &native)
 }
@@ -3513,7 +3513,7 @@ fn native_variable_blend_value(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::{VariableBlendTerminal, VariableBlendValuePayload};
     if depth > 32 {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "variable blend-value recursion exceeds 32 levels".into(),
         ));
     }
@@ -3808,7 +3808,7 @@ fn native_revision_cl_scale(
         let curve = native_loft_curve(target, &member.profile.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
         let endpoints = member.profile.endpoints.ok_or_else(|| {
-            CodecError::InvalidInput(
+            CodecError::NotImplemented(
                 "revision compound-loft members require optional endpoints".into(),
             )
         })?;
@@ -4217,7 +4217,7 @@ fn native_rolling_ball_side(
             })?;
         let curve = native_spline_field_curve(
             curve.geometry.solved().ok_or_else(|| {
-                cadmpeg_core::CodecError::InvalidInput(
+                cadmpeg_core::CodecError::NotImplemented(
                     "carrier has no solved geometry".into(),
                 )
             })?,
@@ -4295,7 +4295,7 @@ fn native_rolling_ball_third_side(
     .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
     let curve = native_spline_field_curve(
         curve.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::InvalidInput("carrier has no solved geometry".into())
+            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
         })?,
         native_pcurve_knot_domain(pcurve)?,
     )?;
@@ -4410,7 +4410,7 @@ fn encode_native_rolling_ball(
         solved_cache,
     } = input;
     if *cross_section != cadmpeg_ir::geometry::BlendCrossSection::Circular {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "source-less rb_blend_spl_sur requires a circular cross-section".into(),
         ));
     }
@@ -4420,7 +4420,7 @@ fn encode_native_rolling_ball(
     for (side, support) in supports.iter().enumerate() {
         let Some(support) = support else { continue };
         if support.reversed {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "source-less rb_blend_spl_sur reversed support is not defined".into(),
             ));
         }
@@ -4440,7 +4440,7 @@ fn encode_native_rolling_ball(
         native_embedded_surface(bytes, &carrier.geometry)?;
     }
     let spine = spine.ok_or_else(|| {
-        CodecError::InvalidInput("source-less rb_blend_spl_sur lacks a spine".into())
+        CodecError::NotImplemented("source-less rb_blend_spl_sur lacks a spine".into())
     })?;
     let spine = target
         .model
@@ -4460,7 +4460,7 @@ fn encode_native_rolling_ball(
     ];
     let spine = native_interval_curve(
         spine.geometry.solved().ok_or_else(|| {
-            CodecError::InvalidInput("source-less F3D carrier has no solved geometry".into())
+            CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
         })?,
         spine_range,
     )?;
@@ -4469,7 +4469,7 @@ fn encode_native_rolling_ball(
         BlendRadiusLaw::Constant { signed_radius } => (signed_radius.get(), signed_radius.get()),
         BlendRadiusLaw::Linear { start, end } => (start.get(), end.get()),
         BlendRadiusLaw::Law { .. } => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "source-less rb_blend_spl_sur explicit radius law is not defined".into(),
             ))
         }
@@ -4539,7 +4539,7 @@ fn native_spline_field_curve(
         (SolvedCurveGeometry::Ellipse(_), None) => {
             native_interval_curve(geometry, [0.0, std::f64::consts::TAU])
         }
-        _ => Err(CodecError::InvalidInput(
+        _ => Err(CodecError::NotImplemented(
             "source-less F3D spline field lacks a finite curve domain".into(),
         )),
     }
@@ -4568,7 +4568,7 @@ fn native_interval_curve(
     parameter_range: [f64; 2],
 ) -> Result<NurbsCurve, CodecError> {
     let parameter_range = IncreasingParameterInterval::new(parameter_range).ok_or_else(|| {
-        CodecError::InvalidInput(
+        CodecError::NotImplemented(
             "source-less F3D interval curve requires a finite ordered range".into(),
         )
     })?;
@@ -4604,7 +4604,7 @@ fn native_increasing_interval_curve(
                 None,
                 false,
             )
-            .map_err(|error| CodecError::InvalidInput(error.to_string()))
+            .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
@@ -4635,7 +4635,7 @@ fn native_increasing_interval_curve(
                 parameter_range,
             )
         }
-        _ => Err(CodecError::InvalidInput(
+        _ => Err(CodecError::NotImplemented(
             "source-less F3D interval construction requires a NURBS, line, circle, or ellipse source curve".into(),
         )),
     }
@@ -4681,7 +4681,7 @@ fn native_conic_interval_curve(
     let delta = parameter_range[1] - parameter_range[0];
     let span_count = (delta / std::f64::consts::FRAC_PI_2).ceil();
     let too_large = || {
-        CodecError::InvalidInput(
+        CodecError::NotImplemented(
             "source-less F3D conic interval exceeds the local generated-span bound".into(),
         )
     };
@@ -4743,7 +4743,7 @@ fn native_conic_interval_curve(
         }
     }
     NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false)
-        .map_err(|error| CodecError::InvalidInput(error.to_string()))
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 
 #[cfg(test)]
@@ -4776,7 +4776,7 @@ mod native_interval_curve_tests {
             1.0,
             [0.0, spans * std::f64::consts::FRAC_PI_2],
         );
-        assert!(matches!(result, Err(CodecError::InvalidInput(_))));
+        assert!(matches!(result, Err(CodecError::NotImplemented(_))));
     }
 
     #[test]
@@ -4829,7 +4829,7 @@ mod native_interval_curve_tests {
         let error =
             native_interval_curve(&circle, [1.0, 1.0]).expect_err("a range that states no span");
         assert!(
-            matches!(error, CodecError::InvalidInput(_)),
+            matches!(error, CodecError::NotImplemented(_)),
             "{error}"
         );
         assert!(
@@ -5081,7 +5081,7 @@ pub(crate) fn native_procedural_curve(
         procedural.definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
     ) {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(CodecError::NotImplemented(format!(
             "source-less F3D unknown procedural curve {} cannot be regenerated losslessly",
             procedural.id
         )));
@@ -5173,7 +5173,7 @@ pub(crate) fn native_procedural_curve(
                 ];
                 let source_curve = native_interval_curve(
                     source.geometry.solved().ok_or_else(|| {
-                        CodecError::InvalidInput(
+                        CodecError::NotImplemented(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -5280,7 +5280,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("projection source curve is missing".into()))?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "source-less F3D carrier has no solved geometry".into(),
                 )
             })?,
@@ -5363,7 +5363,7 @@ pub(crate) fn native_procedural_curve(
                 None
             } else {
                 let range = parameters.get(ordinal..ordinal + 2).ok_or_else(|| {
-                    CodecError::InvalidInput(
+                    CodecError::NotImplemented(
                         "compound component has no construction interval".into(),
                     )
                 })?;
@@ -5371,7 +5371,7 @@ pub(crate) fn native_procedural_curve(
             };
             let component = native_spline_field_curve(
                 component.geometry.solved().ok_or_else(|| {
-                    cadmpeg_core::CodecError::InvalidInput(
+                    cadmpeg_core::CodecError::NotImplemented(
                         "carrier has no solved geometry".into(),
                     )
                 })?,
@@ -5519,7 +5519,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
         let base = native_interval_curve(
             base.geometry.solved().ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "source-less F3D carrier has no solved geometry".into(),
                 )
             })?,
@@ -5677,7 +5677,7 @@ pub(crate) fn native_procedural_curve(
         let third = definition_payload.third();
 
         let surface_id = third.surface.as_ref().ok_or_else(|| {
-            CodecError::InvalidInput(
+            CodecError::NotImplemented(
                 "source-less F3D sss_int_cur requires a third support surface".into(),
             )
         })?;
@@ -5692,7 +5692,7 @@ pub(crate) fn native_procedural_curve(
                 ))
             })?;
         let pcurve = third.pcurve.as_ref().ok_or_else(|| {
-            CodecError::InvalidInput(
+            CodecError::NotImplemented(
                 "source-less F3D sss_int_cur requires a third support pcurve".into(),
             )
         })?;
@@ -5743,7 +5743,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("vector offset source curve is missing".into()))?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "source-less F3D carrier has no solved geometry".into(),
                 )
             })?,
@@ -5786,7 +5786,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("subset source curve is missing".into()))?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "source-less F3D carrier has no solved geometry".into(),
                 )
             })?,
@@ -5816,13 +5816,13 @@ pub(crate) fn native_procedural_curve(
             ),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(_)
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(_) => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                     procedural.id
                 )))
             }
             cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "source-less F3D blend-spine curve {} lacks its native blend construction",
                     procedural.id
                 )))
@@ -5844,7 +5844,7 @@ pub(crate) fn native_procedural_curve(
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. }
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "source-less F3D procedural curve {} has no native helix grammar",
                     procedural.id
                 )))
@@ -5909,7 +5909,7 @@ pub(super) fn native_cacheless_procedural_curve(
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
         procedural.definition()
     else {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(CodecError::NotImplemented(format!(
             "source-less F3D cannot serialize cacheless procedural curve {}",
             procedural.id
         )));
@@ -5958,7 +5958,7 @@ fn native_embedded_surface(
     geometry: &SurfaceGeometry,
 ) -> Result<(), CodecError> {
     let Some(geometry) = geometry.solved() else {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "source-less F3D carrier has no solved geometry".into(),
         ));
     };
@@ -6049,18 +6049,18 @@ fn native_embedded_surface(
             native_nurbs_surface(bytes, surface)?;
         }
         SolvedSurfaceGeometry::Unknown { .. } => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "source-less F3D embedded procedural or unknown support surfaces are unsupported"
                     .into(),
             ));
         }
         SolvedSurfaceGeometry::Polygonal(_) => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "source-less F3D embedded polygonal support surfaces are unsupported".into(),
             ));
         }
         SolvedSurfaceGeometry::Transformed(_) => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "source-less F3D embedded transformed support surfaces are unsupported".into(),
             ));
         }
@@ -6118,7 +6118,7 @@ fn native_support_pcurve_for_range(
         _ => return Ok(native.into_owned()),
     };
     let chart = chart.ok_or_else(|| {
-        CodecError::InvalidInput(
+        CodecError::NotImplemented(
             "intcurve support has an invalid cone axial parameter scale".into(),
         )
     })?;
@@ -6146,7 +6146,7 @@ fn native_support_pcurve_for_range(
         poles,
         native.periodic(),
     )
-    .map_err(|error| CodecError::InvalidInput(error.to_string()))
+    .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 
 #[cfg(test)]
@@ -6206,7 +6206,7 @@ mod pcurve_chart_tests {
             } else {
                 let error = result.expect_err("pcurve evaluation overflows a pole coordinate");
                 assert!(
-                    matches!(error, CodecError::InvalidInput(_)),
+                    matches!(error, CodecError::NotImplemented(_)),
                     "{error}"
                 );
                 assert!(error.to_string().contains("control_points"), "{error}");
@@ -6344,7 +6344,7 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
         pcurve_id: &PcurveId,
     ) -> Result<(), CodecError> {
         if selected.is_some_and(|selected| selected != surface) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "F3D pcurve {pcurve_id} is shared by faces with different support surfaces"
             )));
         }
@@ -6376,7 +6376,7 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
         }
     }
     surface_id.ok_or_else(|| {
-        CodecError::InvalidInput(format!(
+        CodecError::NotImplemented(format!(
             "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
         ))
     })
@@ -6392,7 +6392,7 @@ fn native_intcurve_support_context(
         .iter()
         .any(|side| side.pcurve_parameter_range().is_some())
     {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
                 .into(),
         ));
@@ -6466,7 +6466,7 @@ fn native_law_version_context(
         .iter()
         .any(|side| side.pcurve_parameter_range().is_some())
     {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
                 .into(),
         ));
@@ -6614,7 +6614,7 @@ fn native_embedded_surface_with_bounds(
             | SolvedSurfaceGeometry::Polygonal(_)
             | SolvedSurfaceGeometry::Transformed(_),
         ) => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "support bounds require an embeddable analytic or spline support".into(),
             ));
         }
@@ -6645,7 +6645,7 @@ fn native_embedded_cone_with_bounds(
             (origin, *axis, *ref_direction, radius, ratio, half_angle)
         }
         _ => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "cone bounds helper requires an analytic cone support".into(),
             ));
         }
@@ -6709,7 +6709,7 @@ fn native_solved_cache_fit_tolerance(
     cache_fit_tolerance: Option<f64>,
 ) -> Result<(), CodecError> {
     let cache_fit_tolerance = cache_fit_tolerance.ok_or_else(|| {
-        CodecError::InvalidInput(format!("{carrier} requires a native cache-fit tolerance"))
+        CodecError::NotImplemented(format!("{carrier} requires a native cache-fit tolerance"))
     })?;
     native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     Ok(())
@@ -6731,7 +6731,7 @@ fn native_revision_tail_head(
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::InvalidInput(format!(
+                CodecError::NotImplemented(format!(
                     "{carrier} tail form `0` requires a solved cache"
                 ))
             })?;
@@ -6769,7 +6769,7 @@ fn native_variable_blend_revision_tail_head(
         cadmpeg_ir::geometry::VariableBlendCache::Current { fit_tolerance, .. } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "variable blend tail form `0` requires a solved cache".into(),
                 )
             })?;
@@ -6777,7 +6777,7 @@ fn native_variable_blend_revision_tail_head(
             native_f64(bytes, fit_tolerance.get() / LEN_TO_MM);
         }
         cadmpeg_ir::geometry::VariableBlendCache::Stale {} => {
-            return Err(CodecError::InvalidInput(
+            return Err(CodecError::NotImplemented(
                 "variable blend requires a native cache-fit tolerance".into(),
             ));
         }
@@ -6841,7 +6841,7 @@ fn native_cache_first_curve_context(
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::InvalidInput(
+                CodecError::NotImplemented(
                     "cache-first intcurve context form `0` requires a solved cache".into(),
                 )
             })?;
@@ -6879,14 +6879,14 @@ fn native_cache_first_curve_context(
                     native_optional_f64(bytes, *bound);
                 }
             } else if bounds.iter().any(Option::is_some) {
-                return Err(CodecError::InvalidInput(
+                return Err(CodecError::NotImplemented(
                     "cache-first support bounds require a spline or plane support".into(),
                 ));
             }
         } else {
             native_ident(bytes, "null_surface")?;
             if bounds.iter().any(Option::is_some) {
-                return Err(CodecError::InvalidInput(
+                return Err(CodecError::NotImplemented(
                     "cache-first support bounds require a non-null support".into(),
                 ));
             }
@@ -7032,7 +7032,7 @@ pub(super) fn native_ref_pcurve_companion(
     let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset, range)?;
     let lifted = native_geometry
         .lift(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
-        .map_err(|error| CodecError::InvalidInput(error.to_string()))?;
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
     native_curve_base(bytes, "intcurve")?;
     native_nurbs_curve(bytes, &lifted)?;
     native_nurbs_pcurve_payload(bytes, &native_geometry)?;
@@ -7053,7 +7053,7 @@ fn native_pcurve_geometry(
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
             if !range.iter().all(|value| value.is_finite()) || range[0] >= range[1] {
-                return Err(CodecError::InvalidInput(
+                return Err(CodecError::NotImplemented(
                     "source-less F3D line pcurve requires an ordered finite range".into(),
                 ));
             }
@@ -7074,27 +7074,27 @@ fn native_pcurve_geometry(
                 false,
             )
             .map(Cow::Owned)
-            .map_err(|error| CodecError::InvalidInput(error.to_string()))
+            .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }
-        PcurveGeometry::Circle(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Circle(_) => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::Ellipse(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Ellipse(_) => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::Harmonic(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Harmonic(_) => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::Hyperbolic(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Hyperbolic(_) => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::PolarHarmonic(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::PolarHarmonic(_) => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::PolarNurbs { .. } => Err(CodecError::InvalidInput(
+        PcurveGeometry::PolarNurbs { .. } => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::SphericalGreatCircle(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::SphericalGreatCircle(_) => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
         PcurveGeometry::Nurbs { nurbs } => Ok(Cow::Borrowed(nurbs)),
@@ -7103,16 +7103,16 @@ fn native_pcurve_geometry(
             let basis = trimmed_pcurve.basis();
             native_pcurve_geometry(basis, parameter_range.endpoints())
         }
-        PcurveGeometry::Parabola(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Parabola(_) => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
-        PcurveGeometry::Hyperbola(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Hyperbola(_) => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
-        PcurveGeometry::Offset(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Offset(_) => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
-        PcurveGeometry::Transformed(_) => Err(CodecError::InvalidInput(
+        PcurveGeometry::Transformed(_) => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
     }

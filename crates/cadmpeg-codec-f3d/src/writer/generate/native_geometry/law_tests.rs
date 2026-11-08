@@ -95,7 +95,7 @@ fn assert_refused(ir: &CadIr) {
         .expect_err("the exact law serializer cannot encode this grammar");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::InvalidInput(_)
+        cadmpeg_core::CodecError::NotImplemented(_)
     ));
     let plan = F3dCodec
         .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)

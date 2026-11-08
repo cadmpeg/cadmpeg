@@ -3441,7 +3441,7 @@ pub(crate) fn decode_patch_baseline<'a>(
 ) -> Result<AuthoredDecoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     if matches!(scan.kind, container::F3dContainerKind::MultiDocument { .. }) {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "F3Z assembly archives require synthesized generation".into(),
         ));
     }
