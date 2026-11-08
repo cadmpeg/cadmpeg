@@ -3,7 +3,6 @@
 use super::super::super::xml::{self, Object};
 use super::{constraints::Indices, geometry, native};
 use crate::{loss::FreecadLossCode, native::PropertyRecord};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     document::CadIr,
     report::loss::LossNote,
@@ -84,7 +83,7 @@ pub(super) fn write(
     object: &mut Object,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<Indices, CodecError> {
+) -> Indices {
     let mut indices = Indices::new();
     let mut entities = ir
         .model
@@ -147,10 +146,11 @@ pub(super) fn write(
                     1,
                 );
             }
-            indices.insert(
-                entity.id().as_str().to_owned(),
-                (external_index(rows.len())?, 0),
-            );
+            let Some(index) = external_index(rows.len()) else {
+                debug_assert!(false, "an external geometry index fits the signed lane");
+                continue;
+            };
+            indices.insert(entity.id().as_str().to_owned(), (index, 0));
             rows.push(row);
         } else if let Some(live_index) = live_index.filter(|_| {
             matches!(
@@ -158,10 +158,11 @@ pub(super) fn write(
                 Geometry::ExternalReference { .. }
             )
         }) {
-            indices.insert(
-                entity.id().as_str().to_owned(),
-                (external_index(live_index)?, 0),
-            );
+            let Some(index) = external_index(live_index) else {
+                debug_assert!(false, "an external geometry index fits the signed lane");
+                continue;
+            };
+            indices.insert(entity.id().as_str().to_owned(), (index, 0));
         } else {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!("external sketch entity {} has no typed carrier or resolvable dependency and is omitted",entity.id())));
         }
@@ -183,14 +184,13 @@ pub(super) fn write(
     if !rows.is_empty() {
         object.set("ExternalGeo",xml::property("ExternalGeo","Part::PropertyGeometryList",&format!("<GeometryList count=\"{}\"><Geometry id=\"-1\"/><Geometry id=\"-2\"/>{}</GeometryList>",rows.len()+2,rows.join(""))));
     }
-    Ok(indices)
+    indices
 }
 
 // (O-capacity) Reserved sketch indices occupy -1 and -2. External geometry
 // starts at -3; conversion and subtraction must both fit the signed lane.
-fn external_index(ordinal: usize) -> Result<i64, CodecError> {
+fn external_index(ordinal: usize) -> Option<i64> {
     i64::try_from(ordinal)
         .ok()
         .and_then(|ordinal| (-3_i64).checked_sub(ordinal))
-        .ok_or_else(|| CodecError::InvalidInput("FreeCAD external sketch index exceeds i64".into()))
 }

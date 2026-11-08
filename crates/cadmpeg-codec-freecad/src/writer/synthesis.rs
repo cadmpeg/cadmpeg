@@ -194,6 +194,7 @@ pub(super) fn write(
     losses.extend(super::synthesis_graph::admission(ir, ctx)?);
     let current_topology = crate::topology_transfer::current_bindings(ctx, ir)?;
     let root_kinds = brep::RootKinds::new(ctx, ir, &current_topology)?;
+    let reusable_payloads = super::native_geometry::unchanged_payloads(ctx, ir)?;
     let mut native_dispositions = super::dispositions::initial();
     let mut objects = Vec::new();
     let mut names;
@@ -309,6 +310,27 @@ pub(super) fn write(
         })
         .collect();
     names = super::names::prepare(ir, &native_objects, &native_properties, &body_properties);
+    // A payload re-emitted from its typed tables keeps the source's indexed
+    // subelement names, which selections must name.
+    for payload in shape_payloads
+        .iter()
+        .filter(|payload| reusable_payloads.contains(&payload.id))
+    {
+        for (record, kind, _, index) in current_topology.payload_records(&payload.id) {
+            if let (
+                Some(index),
+                crate::brep::TextShapeKind::Face
+                | crate::brep::TextShapeKind::Edge
+                | crate::brep::TextShapeKind::Vertex,
+            ) = (index, kind)
+            {
+                names.insert(
+                    format!("{record}:subelement"),
+                    format!("{}{index}", crate::topology_transfer::indexed_name(kind)),
+                );
+            }
+        }
+    }
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
     // Replays restore the source declaration order: the re-decode derives
     // declaration indices from the emitted sequence, so emitting in arena
@@ -373,6 +395,11 @@ pub(super) fn write(
         object
             .declaration_attributes
             .clone_from(&original.attributes);
+        if let Some(view_type) = &original.view_type {
+            object
+                .declaration_attributes
+                .insert("ViewType".into(), view_type.clone());
+        }
         object.dependencies = original
             .dependencies
             .iter()
@@ -414,10 +441,10 @@ pub(super) fn write(
                 names.insert(feature.id.as_str().to_owned(), name);
                 continue;
             }
-            let name = names
-                .get(feature.id.as_str())
-                .cloned()
-                .ok_or_else(|| CodecError::malformed("feature has no output identity"))?;
+            let Some(name) = names.get(feature.id.as_str()).cloned() else {
+                debug_assert!(false, "feature has no output identity");
+                continue;
+            };
             names.insert(feature.id.as_str().to_owned(), name.clone());
             if let Some(native_ref) = &feature.native_ref {
                 names.insert(native_ref.clone(), name.clone());
@@ -505,7 +532,7 @@ pub(super) fn write(
                     .get(&property.name)
                     .is_some_and(|generated| unchanged_placement(property, generated))
             {
-                if let Some(original) = xml::native_named(property, &names, &available)? {
+                if let Some(original) = xml::native_named(property, &names, &available) {
                     object.set(&property.name, original);
                     continue;
                 }
@@ -537,7 +564,7 @@ pub(super) fn write(
                 );
                 continue;
             }
-            match xml::native_named(property, &names, &available)? {
+            match xml::native_named(property, &names, &available) {
                 Some(property_xml) => object.set(&property.name, property_xml),
                 None => {
                     if property.body.is_none() {
@@ -563,7 +590,7 @@ pub(super) fn write(
                         property.id
                     )),
                 );
-            } else if let Some(property_xml) = xml::native(property, &available)? {
+            } else if let Some(property_xml) = xml::native(property, &available) {
                 document_properties.insert(property.name.clone(), property_xml);
             } else {
                 losses.push(
@@ -610,7 +637,7 @@ pub(super) fn write(
                 (&names, &available),
                 &["X", "Y", "Scale", "Rotation", "Direction"],
                 &mut losses,
-            )?;
+            );
         }
     }
     for (_, annotation) in annotations {
@@ -639,7 +666,7 @@ pub(super) fn write(
             (&names, &available),
             &[],
             &mut losses,
-        )?;
+        );
         if annotation.runtime_type.starts_with("TechDraw::") {
             if let Some(height) = annotation.text_style.height {
                 super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());
@@ -939,7 +966,7 @@ pub(super) fn write(
             ),
         );
     }
-    super::native::operands(ir, &mut objects, &names, &native_properties, &mut losses)?;
+    super::native::operands(ir, &mut objects, &names, &native_properties, &mut losses);
     super::attributes::write(
         ir,
         &names,
@@ -947,7 +974,7 @@ pub(super) fn write(
         &mut document_properties,
         &mut losses,
         &native_properties,
-    )?;
+    );
     // Neutral display names and suppression always win over typed source values.
     // A neutral value that already matches the emitted text keeps the native
     // XML: replacing it would drop the source status and canonical spelling
@@ -984,8 +1011,13 @@ pub(super) fn write(
             }
         }
     }
+    let (polygons3d, polygons_on_triangulations) = namespace
+        .map(crate::brep::polygon_arenas)
+        .transpose()?
+        .unwrap_or_default();
     let mut body_names = HashMap::new();
     let mut emitted_topology = Vec::new();
+    let mut exact_shapes = HashSet::new();
     let mut shape_groups = BTreeMap::<(String, String), Vec<&cadmpeg_ir::topology::Body>>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
         let proposed = names
@@ -1018,12 +1050,38 @@ pub(super) fn write(
             .filter(|_| property_name == "Shape")
             .find(|occurrence| names.get(occurrence.id.as_str()) == Some(&name))
             .and_then(|occurrence| occurrence.transform);
-        let Some(serialized) =
-            brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds, root_override, &mut losses)?
-        else {
+        let reused = reusable_payload(
+            ir,
+            &bodies,
+            (&source_uses, &shape_payloads),
+            &reusable_payloads,
+        );
+        let reemitted = reused.and_then(|payload| {
+            brep::native_with_uses(
+                payload,
+                (&polygons3d, &polygons_on_triangulations),
+                &current_topology,
+                root_override,
+            )
+        });
+        if let (Some(payload), Some(_)) = (reused, &reemitted) {
+            exact_shapes.insert(payload.property.clone());
+        }
+        let serialized = match reemitted {
+            Some(serialized) => Some(serialized),
+            None => brep::serialize_with_uses(
+                ctx,
+                ir,
+                &bodies,
+                &root_kinds,
+                root_override,
+                &mut losses,
+            )?,
+        };
+        let Some(serialized) = serialized else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                    "body {} is omitted because a required carrier has no OCCT text encoding",
+                    "body {} has no face, edge or vertex with an OCCT encoding and is omitted",
                     body.id
                 )));
                 body_names.remove(body.id.as_str());
@@ -1112,14 +1170,14 @@ pub(super) fn write(
         if property_name == "Shape" {
             brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         }
-        let object = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("body owner is absent"))?;
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
+            debug_assert!(false, "body owner is absent");
+            continue;
+        };
         let source_property = if let Some((_, property)) = original_file {
             let mut available = available.clone();
             available.insert(file.clone());
-            xml::native_named(property, &names, &available)?
+            xml::native_named(property, &names, &available)
         } else {
             None
         };
@@ -1159,6 +1217,67 @@ pub(super) fn write(
         // the same placement twice. Keep canonical construction placements and
         // typed native placements; body-only objects use their BRep root.
     }
+    // A payload that projects no body (a bare edge or vertex carrier, such as
+    // a datum axis's) has no neutral group above; unchanged, it re-emits from
+    // its typed tables with its native property.
+    for payload in shape_payloads
+        .iter()
+        .filter(|payload| reusable_payloads.contains(&payload.id))
+    {
+        let Some(key) = payload
+            .id
+            .split_once('#')
+            .map(|(_, key)| format!("#{key}:"))
+        else {
+            continue;
+        };
+        if ir
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.id.as_str().contains(&key))
+        {
+            continue;
+        }
+        let Some(property) = native_properties
+            .iter()
+            .find(|property| property.id == payload.property)
+        else {
+            continue;
+        };
+        let Some(entry) = native_entries
+            .iter()
+            .find(|entry| entry.id() == payload.entry)
+            .map(|entry| entry.name().to_owned())
+        else {
+            continue;
+        };
+        let Some(object) = names
+            .get(&property.owner)
+            .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
+        else {
+            continue;
+        };
+        if object.properties.contains_key(&property.name) || entries.contains_key(&entry) {
+            continue;
+        }
+        let Some(serialized) = brep::native_with_uses(
+            payload,
+            (&polygons3d, &polygons_on_triangulations),
+            &current_topology,
+            None,
+        ) else {
+            continue;
+        };
+        let mut reachable = available.clone();
+        reachable.insert(entry.clone());
+        let Some(value) = xml::native_named(property, &names, &reachable) else {
+            continue;
+        };
+        entries.insert(entry, serialized.bytes);
+        object.set(&property.name, value);
+        exact_shapes.insert(property.id.clone());
+    }
     super::mesh_kernel::write(
         ctx,
         ir,
@@ -1195,6 +1314,22 @@ pub(super) fn write(
             covered.insert(owner.clone());
         }
     }
+    // Carriers of an object whose shapes all re-emit from their typed tables
+    // travel in those tables.
+    for property in native_properties
+        .iter()
+        .filter(|property| exact_shapes.contains(&property.id))
+    {
+        if native_properties
+            .iter()
+            .filter(|other| {
+                other.owner == property.owner && other.type_name == "Part::PropertyPartShape"
+            })
+            .all(|other| exact_shapes.contains(&other.id) || empty_shapes.contains(&other.id))
+        {
+            covered.insert(property.owner.clone());
+        }
+    }
     if let Some(serialized) =
         brep::unowned_with_uses(ctx, ir, &mut losses, &root_kinds, &covered, &covered_points)?
     {
@@ -1218,7 +1353,7 @@ pub(super) fn write(
         objects.push(object);
     }
     if ir.scope.design {
-        design::sketches(ir, &mut objects, &mut names, &mut losses)?;
+        design::sketches(ir, &mut objects, &mut names, &mut losses);
         super::parameters::prepare(ir, &mut objects, &mut names, &mut losses)?;
         design::spreadsheets(ir, &mut objects, &mut names, &mut losses)?;
         super::parameters::write(ir, &mut objects, &names, &mut losses)?;
@@ -1231,7 +1366,7 @@ pub(super) fn write(
         &mut document_properties,
         &mut losses,
         &native_properties,
-    )?;
+    );
     // The object Label is the feature's native home. Where a definition
     // and a feature share an object and their labels differ, the feature
     // name wins and the definition label is a documented loss (#238 §5.5).
@@ -1318,14 +1453,14 @@ pub(super) fn write(
         &topology_join,
         &mut objects,
         &names,
-        &native_properties,
+        (&native_properties, &exact_shapes),
         super::native::MapOutput {
             archive_entries: &mut entries,
             losses: &mut losses,
             outcomes: &mut native_dispositions,
         },
     )?;
-    super::synthesis_graph::close(&mut objects, &mut losses)?;
+    super::synthesis_graph::close(&mut objects, &mut losses);
     // Neutral ownership skips leave holes: a renamed attribute emits under
     // its new name, shifting every later declaration index on re-decode. A
     // placeholder keeps the arity with no content, so survivors pair and
@@ -1375,6 +1510,8 @@ pub(super) fn write(
         document_properties.insert(property.name.clone(), placeholder);
         placeholders.push(property.id.clone());
     }
+    replay_unchanged_placements(&mut objects, &native_properties, &names, &available);
+    replay_dependency_lists(&mut objects, &native_objects, &names);
     // Replayed properties settle into declaration sequence: neutral passes
     // (attributes, operands, parameters, products) append or replace by
     // name, which disturbs the property order the re-decode derives. Native
@@ -1599,7 +1736,7 @@ pub(super) fn write(
                 .filter(|property| property.owner == *original.id())
             {
                 if let Some(generated) = object.properties.get(&property.name) {
-                    if let Some(source) = xml::native_named(property, &names, &available)? {
+                    if let Some(source) = xml::native_named(property, &names, &available) {
                         if unchanged_numeric_property(property, generated)
                             || same_property_value(&source, generated)
                         {
@@ -1644,11 +1781,18 @@ pub(super) fn write(
             1,
         )
     };
-    let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses)?;
+    let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses);
     entries.insert("Document.xml".into(), document.into_bytes());
-    let gui =
-        super::presentation::write(ir, &names, &body_names, &objects, &mut entries, &mut losses)?;
-    let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses)?;
+    let gui = super::presentation::write(
+        ir,
+        &names,
+        &body_names,
+        &objects,
+        &mut entries,
+        &mut losses,
+        crate::gui::requires_alpha_conversion(program_version.as_deref()),
+    )?;
+    let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses);
     super::dispositions::gui(ir, &names, &gui, &mut native_dispositions)?;
     let gui_bytes = if gui.is_empty() {
         None
@@ -1690,6 +1834,23 @@ pub(super) fn write(
                     entries.insert(name.to_owned(), bytes.clone());
                 }
             }
+        }
+    }
+    for object in &objects {
+        let Some(distances) = object.edge_distances else {
+            continue;
+        };
+        let file = object
+            .properties
+            .get("Edges")
+            .and_then(|xml| roxmltree::Document::parse(xml).ok())
+            .and_then(|document| {
+                document
+                    .descendants()
+                    .find_map(|node| node.attribute("file").map(str::to_owned))
+            });
+        if let Some(bytes) = file.and_then(|file| entries.get_mut(&file)) {
+            set_edge_distances(bytes, distances);
         }
     }
     super::dispositions::emitted(
@@ -1751,29 +1912,19 @@ pub(super) fn write(
                 right,
             ))
     });
+    // The archive is assembled in memory: a member name or finish failure
+    // is a writer invariant, never document content.
     for (name, bytes) in entries {
-        match archive.start_file(name, options) {
-            Ok(()) => {}
-            Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
-            Err(error) => {
-                debug_assert!(false, "FCStd ZIP start_file: {error}");
-                return Err(CodecError::InvalidInput(format!(
-                    "FCStd ZIP start_file: {error}"
-                )));
-            }
+        if let Err(error) = archive.start_file(name, options) {
+            debug_assert!(false, "FCStd ZIP start_file: {error}");
+            continue;
         }
         archive.write_all(&bytes)?;
     }
-    let bytes = match archive.finish() {
-        Ok(writer) => writer.into_inner(),
-        Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
-        Err(error) => {
-            debug_assert!(false, "FCStd ZIP finish: {error}");
-            return Err(CodecError::InvalidInput(format!(
-                "FCStd ZIP finish: {error}"
-            )));
-        }
-    };
+    let finished = archive.finish();
+    debug_assert!(finished.is_ok(), "an in-memory FCStd archive finishes");
+    let bytes = finished.map(Cursor::into_inner).unwrap_or_default();
+    super::dispositions::verify_output(ctx, ir, &bytes, &mut native_dispositions)?;
     for curve in &ir.model.curves {
         if let Some(construction) = curve.geometry.procedural_construction().filter(|_| {
             super::geometry::located_curve(ir, curve)
@@ -1841,4 +1992,287 @@ pub(super) fn write(
     body.native_dispositions = native_dispositions;
     body.losses = losses;
     Ok(body)
+}
+
+/// The payload a body group re-emits from its typed tables: every body of
+/// the group comes from one unchanged payload, and every held body of that
+/// payload is in the group.
+fn reusable_payload<'a>(
+    ir: &CadIr,
+    bodies: &[&cadmpeg_ir::topology::Body],
+    (source_uses, payloads): (
+        &[crate::native::source_use::SourceUseSelector],
+        &'a [crate::brep::ShapePayloadRecord],
+    ),
+    unchanged: &HashSet<String>,
+) -> Option<&'a crate::brep::ShapePayloadRecord> {
+    let payload_of = |body: &cadmpeg_ir::topology::Body| {
+        let source = source_uses
+            .iter()
+            .find(|source| Some(source.id.as_str()) == body.native_ref.as_deref())?;
+        payloads.iter().find(|payload| payload.id == source.owner)
+    };
+    let payload = payload_of(bodies.first()?)?;
+    if !unchanged.contains(&payload.id)
+        || !bodies
+            .iter()
+            .all(|body| payload_of(body).is_some_and(|other| other.id == payload.id))
+    {
+        return None;
+    }
+    let key = format!("#{}:", payload.id.split_once('#')?.1);
+    ir.model
+        .bodies
+        .iter()
+        .filter(|body| body.id.as_str().contains(&key))
+        .all(|body| bodies.iter().any(|member| member.id == body.id))
+        .then_some(payload)
+}
+
+/// A `Part::PropertyFilletEdges` side file is a count, then per edge its
+/// number and two distances; every row takes `distances`.
+fn set_edge_distances(bytes: &mut [u8], distances: [f64; 2]) {
+    const ROW: usize = 20;
+    let Some(rows) = bytes.get_mut(4..) else {
+        return;
+    };
+    for row in rows.chunks_exact_mut(ROW) {
+        row[4..12].copy_from_slice(&distances[0].to_le_bytes());
+        row[12..20].copy_from_slice(&distances[1].to_le_bytes());
+    }
+}
+
+/// The seven numbers of a written or native `PropertyPlacement`.
+fn placement_values(values: &[(&str, &str)]) -> Option<[f64; 7]> {
+    let mut result = [0.0; 7];
+    for (slot, key) in result
+        .iter_mut()
+        .zip(["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"])
+    {
+        *slot = values
+            .iter()
+            .find(|(name, _)| *name == key)?
+            .1
+            .parse()
+            .ok()?;
+    }
+    Some(result)
+}
+
+/// Native lanes a regenerated object leaves unchanged replay verbatim,
+/// keeping status and spelling: every native placement lane (`Placement`,
+/// and the `LinkPlacement` an `App::Link` stores beside it) equal to the
+/// written placement, and an empty expression engine the writer omitted.
+fn replay_unchanged_placements(
+    objects: &mut [Object],
+    native_properties: &[PropertyRecord],
+    names: &HashMap<String, String>,
+    available: &HashSet<String>,
+) {
+    for object in objects.iter_mut() {
+        let owned = native_properties
+            .iter()
+            .filter(|property| names.get(&property.owner) == Some(&object.name))
+            .collect::<Vec<_>>();
+        if !object.properties.contains_key("ExpressionEngine") {
+            if let Some(engine) = owned.iter().find(|property| {
+                property.name == "ExpressionEngine"
+                    && !property
+                        .values()
+                        .iter()
+                        .any(|value| value.tag == "Expression")
+            }) {
+                if let Some(value) = xml::native_named(engine, names, available) {
+                    object.set("ExpressionEngine", value);
+                }
+            }
+        }
+        // A scalar lane of the native type and value keeps its native
+        // spelling and status.
+        for native in &owned {
+            let Some(written) = object.properties.get(&native.name) else {
+                continue;
+            };
+            let [value] = native.values() else {
+                continue;
+            };
+            let Some(native_value) = value
+                .attributes
+                .get("value")
+                .filter(|_| value.attributes.len() == 1)
+            else {
+                continue;
+            };
+            if written_scalar(written).is_some_and(|(kind, tag, written_value)| {
+                kind == native.type_name
+                    && tag == value.tag
+                    && (written_value == *native_value
+                        || written_value
+                            .parse::<f64>()
+                            .ok()
+                            .zip(native_value.parse::<f64>().ok())
+                            .is_some_and(|(left, right)| left == right))
+            }) {
+                if let Some(value) = xml::native_named(native, names, available) {
+                    object.set(&native.name, value);
+                }
+            }
+        }
+        // A link lane naming the same targets and subelements keeps its
+        // native spelling, including the persistent shadow names.
+        for native in owned.iter().filter(|property| {
+            property.type_name.starts_with("App::PropertyLink") && !property.links().is_empty()
+        }) {
+            let Some(written) = object.properties.get(&native.name) else {
+                continue;
+            };
+            let listed = native
+                .links()
+                .iter()
+                .map(|link| {
+                    let link = link.as_ref()?;
+                    let target = names.get(link.object()?)?;
+                    Some(if link.subelements().is_empty() {
+                        vec![(target.clone(), String::new())]
+                    } else {
+                        link.subelements()
+                            .iter()
+                            .map(|sub| (target.clone(), sub.clone()))
+                            .collect()
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(|links| links.concat());
+            if listed.is_some() && listed == written_links(written) {
+                if let Some(value) = xml::native_named(native, names, available) {
+                    object.set(&native.name, value);
+                }
+            }
+        }
+        let Some(written) = object.properties.get("Placement").cloned() else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(&written) else {
+            continue;
+        };
+        let Some(written_values) = document
+            .descendants()
+            .find(|node| node.has_tag_name("PropertyPlacement"))
+            .map(|node| {
+                node.attributes()
+                    .map(|attribute| (attribute.name(), attribute.value()))
+                    .collect::<Vec<_>>()
+            })
+            .and_then(|values| placement_values(&values))
+        else {
+            continue;
+        };
+        for native in owned.iter().filter(|property| {
+            property.type_name == "App::PropertyPlacement"
+                && matches!(property.name.as_str(), "Placement" | "LinkPlacement")
+        }) {
+            let native_values = native
+                .values()
+                .iter()
+                .find(|value| value.tag == "PropertyPlacement")
+                .and_then(|value| {
+                    placement_values(
+                        &value
+                            .attributes
+                            .iter()
+                            .map(|(name, value)| (name.as_str(), value.as_str()))
+                            .collect::<Vec<_>>(),
+                    )
+                });
+            if native_values != Some(written_values) {
+                continue;
+            }
+            if let Some(value) = xml::native_named(native, names, available) {
+                object.set(&native.name, value);
+            }
+        }
+    }
+}
+
+/// `FreeCAD` lists a dependency once per link property, so one target can
+/// repeat. A native list that names exactly the targets the writer derived
+/// is written back in its own order and multiplicity.
+fn replay_dependency_lists(
+    objects: &mut [Object],
+    native_objects: &[ObjectRecord],
+    names: &HashMap<String, String>,
+) {
+    for object in objects.iter_mut() {
+        let Some(native) = native_objects
+            .iter()
+            .find(|native| names.get(native.id().as_str()) == Some(&object.name))
+        else {
+            continue;
+        };
+        let Some(listed) = native
+            .dependencies
+            .iter()
+            .map(|id| names.get(id).cloned())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let derived: HashSet<&String> = object.dependencies.iter().collect();
+        if listed.iter().collect::<HashSet<_>>() == derived {
+            object.dependencies = listed;
+        }
+    }
+}
+
+/// The (target, subelement) pairs a written link property names, in order.
+fn written_links(xml: &str) -> Option<Vec<(String, String)>> {
+    let document = roxmltree::Document::parse(xml).ok()?;
+    let mut links = Vec::new();
+    for node in document.descendants().filter(roxmltree::Node::is_element) {
+        match node.tag_name().name() {
+            "LinkSub" => {
+                let target = node.attribute("value")?.to_owned();
+                let subs = node
+                    .children()
+                    .filter(|child| child.has_tag_name("Sub"))
+                    .filter_map(|child| child.attribute("value"))
+                    .collect::<Vec<_>>();
+                if subs.is_empty() {
+                    links.push((target.clone(), String::new()));
+                }
+                links.extend(subs.into_iter().map(|sub| (target.clone(), sub.to_owned())));
+            }
+            "Link" => {
+                if let Some(target) = node.attribute("obj") {
+                    links.push((
+                        target.to_owned(),
+                        node.attribute("sub").unwrap_or_default().to_owned(),
+                    ));
+                } else if let Some(target) = node.attribute("value") {
+                    links.push((target.to_owned(), String::new()));
+                }
+            }
+            _ => {}
+        }
+    }
+    Some(links)
+}
+
+/// The type, value tag and value of a written one-element scalar property.
+fn written_scalar(xml: &str) -> Option<(String, String, String)> {
+    let document = roxmltree::Document::parse(xml).ok()?;
+    let root = document.root_element();
+    let mut children = root.children().filter(roxmltree::Node::is_element);
+    let value = children.next()?;
+    if children.next().is_some()
+        || value.attributes().len() != 1
+        || value.children().any(|node| node.is_element())
+    {
+        return None;
+    }
+    Some((
+        root.attribute("type")?.to_owned(),
+        value.tag_name().name().to_owned(),
+        value.attribute("value")?.to_owned(),
+    ))
 }

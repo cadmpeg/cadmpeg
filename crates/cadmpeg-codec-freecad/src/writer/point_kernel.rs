@@ -345,9 +345,7 @@ pub(super) fn write<'a>(
         side_entries.clear();
         side_entries.push(file.clone());
         let available = HashSet::from([file.clone()]);
-        let property_xml = xml::native_named(&generated, names, &available)
-            .ok()
-            .flatten();
+        let property_xml = xml::native_named(&generated, names, &available);
         let Some(property_xml) = property_xml else {
             object.properties.shift_remove(&property.name);
             exclude(

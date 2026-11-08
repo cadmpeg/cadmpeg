@@ -2,13 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 56220,
-      "payload_sha256": "278be0c26987424260c9a45e6c85889380b5f523fc7c0a1e83649bef1818d776"
+      "payload_len": 56482,
+      "payload_sha256": "48d65ac24bb1eb648716b48c92a9f8b06aaaf9c037dadb3a50183ff33774732f"
     },
     {
       "name": "Box.Shape.brp",
-      "payload_len": 2561,
-      "payload_sha256": "4090c7890ba4cf04faf9a9b7f1e0e990f759a92f8b6e0ff7708cb3d6bba7b419"
+      "payload_len": 2582,
+      "payload_sha256": "26be724ca2c89c6fbd4475f4f694d3db9dddfee1daede1dcede8dcdec9ade845"
     },
     {
       "name": "techdraw-template.svg",
@@ -52,8 +52,8 @@
     },
     {
       "name": "Triangle.Shape.brp",
-      "payload_len": 602,
-      "payload_sha256": "07aa2d042f8c441c04b8b6c737a82392c6f5c74ae2a7719d7717323820a9cc9c"
+      "payload_len": 579,
+      "payload_sha256": "72a0a3705d90f0efe5c00f94467a6844962dd0fa5314c12e7b76613875289ea5"
     }
   ],
   "report": {

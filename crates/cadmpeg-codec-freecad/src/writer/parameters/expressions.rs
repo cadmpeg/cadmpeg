@@ -30,10 +30,7 @@ pub(super) fn native_only(
             .features
             .iter()
             .find(|feature| feature.native_ref.as_ref() == Some(&property.owner));
-        let neutral_controls = feature
-            .map(super::controls::bindings)
-            .transpose()?
-            .unwrap_or_default();
+        let neutral_controls = feature.map(super::controls::bindings).unwrap_or_default();
         // Insert an empty lane too: removal of the last projected expression
         // must not leave a stale source engine active on a Native feature.
         expressions.entry(owner.clone()).or_default();
@@ -82,21 +79,21 @@ pub(super) fn native_only(
     Ok(expressions)
 }
 
-pub(super) fn write(
-    objects: &mut [Object],
-    expressions: BTreeMap<String, Vec<String>>,
-) -> Result<(), CodecError> {
+pub(super) fn write(objects: &mut [Object], expressions: BTreeMap<String, Vec<String>>) {
     for (name, values) in expressions {
         let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
             continue;
         };
         let mut paths = BTreeMap::new();
         for value in &values {
-            let document = roxmltree::Document::parse(value).map_err(CodecError::malformed)?;
-            let path = document
-                .root_element()
-                .attribute("path")
-                .ok_or_else(|| CodecError::malformed("generated expression lacks a path"))?;
+            let Ok(document) = roxmltree::Document::parse(value) else {
+                debug_assert!(false, "generated expression XML parses");
+                continue;
+            };
+            let Some(path) = document.root_element().attribute("path") else {
+                debug_assert!(false, "generated expression lacks a path");
+                continue;
+            };
             paths.insert(path.to_owned(), value.as_str());
         }
         if paths.is_empty() {
@@ -126,5 +123,4 @@ pub(super) fn write(
             );
         }
     }
-    Ok(())
 }
