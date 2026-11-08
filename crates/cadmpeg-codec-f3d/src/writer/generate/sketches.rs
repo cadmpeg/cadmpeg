@@ -771,7 +771,6 @@ fn sketch_feature<'a>(
         return None;
     };
     (feature.suppressed != Some(true)
-        && !feature.needs_recompute
         && feature.dependencies.is_empty()
         && feature.source_properties.is_empty()
         && feature.source_text.is_none()

@@ -310,6 +310,78 @@ pub(super) fn parameter_curve(
     Some(entity)
 }
 
+pub(super) fn withheld_parameter_curve_loss(curve: &cadmpeg_ir::ids::CurveId) -> super::LossNote {
+    super::IgesLossCode::WriterSupportGeometryNotRepresented.note(format!(
+        "1 support geometry record ({curve}) was withheld because its parameter-space carrier has no exported owner"
+    ))
+}
+
+/// Writes each withheld parameter-space curve that no other writer writes as
+/// standalone geometry, and removes its withholding loss once an entity
+/// writes it.
+pub(super) fn append_withheld_parameter_curves(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+    graph: &mut super::SynthesisGraph,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let ownership = super::ownership::SourceOwnership::build(ir);
+    for curve in &ir.model.curves {
+        let withheld = withheld_parameter_curve_loss(&curve.id);
+        if !graph
+            .losses
+            .iter()
+            .any(|loss| loss.message == withheld.message)
+        {
+            continue;
+        }
+        let used = graph.entities.iter().any(|entity| {
+            entity
+                .source_targets
+                .iter()
+                .any(|target| target == curve.id.as_str())
+        });
+        if !used && ownership.writes_standalone(curve.id.as_str()) {
+            let geometry = super::flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                cadmpeg_core::CodecError::InvalidInput(
+                    "IGES curve carrier has no solved geometry".into(),
+                )
+            })?)?;
+            let span = curve
+                .parameter_range
+                .map(|_| super::curve_reference_span(ir, &curve.id, &geometry))
+                .transpose()?;
+            let before = graph.entities.len();
+            match super::append_curve_entity(
+                &mut graph.entities,
+                ir,
+                super::CurveEntityRequest {
+                    version,
+                    curve_id: &curve.id,
+                    geometry: &geometry,
+                    span: span.as_ref(),
+                    sense: cadmpeg_ir::topology::Sense::Forward,
+                    status: EntityStatus::Independent,
+                    reference_offset: 0,
+                },
+            ) {
+                Ok(_) => {}
+                Err(cadmpeg_core::CodecError::InvalidInput(reason)) => {
+                    graph.entities.truncate(before);
+                    graph.losses.push(
+                        super::IgesLossCode::WriterEntityOmitted
+                            .note(format!("IGES curve {} is omitted: {reason}", curve.id)),
+                    );
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        if used || ownership.writes_standalone(curve.id.as_str()) {
+            graph.losses.retain(|loss| loss.message != withheld.message);
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn clear_written_parameter_losses(
     ir: &CadIr,
     entities: &[Entity],
@@ -324,7 +396,7 @@ pub(super) fn clear_written_parameter_losses(
                     .iter()
                     .any(|target| target == curve.id.as_str())
         }) {
-            let missing = format!("1 support geometry record ({}) was withheld because its parameter-space carrier has no exported owner", curve.id);
+            let missing = withheld_parameter_curve_loss(&curve.id).message;
             let duplicate_brep = format!(
                 "free curve record {} duplicates a written parameter curve on the B-rep path",
                 curve.id

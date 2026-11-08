@@ -2,7 +2,6 @@
 //! Neutral product definitions, placed instances, and assembly constraints.
 
 mod joints;
-pub(crate) mod metadata;
 
 use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
@@ -128,10 +127,10 @@ fn definitions(
         .unwrap_or_default();
     native_properties.retain(|property| xml::validate(property, &available).is_ok());
     for definition in &ir.model.product_definitions {
-        let name = names
-            .get(definition.id.as_str())
-            .cloned()
-            .ok_or_else(|| CodecError::malformed("product has no output identity"))?;
+        let Some(name) = names.get(definition.id.as_str()).cloned() else {
+            debug_assert!(false, "product has no output identity");
+            continue;
+        };
         let position = objects.iter().position(|object| object.name == name);
         let mut kind = match definition.kind {
             ProductDefinitionKind::Part => "App::Part",
@@ -165,10 +164,9 @@ fn definitions(
         let object = match position {
             Some(index) => &mut objects[index],
             None => {
+                let index = objects.len();
                 objects.push(Object::new(name.clone(), kind, label));
-                let object = objects
-                    .last_mut()
-                    .ok_or_else(|| CodecError::malformed("product output is absent"))?;
+                let object = &mut objects[index];
                 // A regenerated container keeps the native declaration facts
                 // no neutral record owns, as the synthesis path does for
                 // unrepresented objects. Pending execution is such a fact.
@@ -178,6 +176,11 @@ fn definitions(
                         .find(|native| native.id().as_str() == id)
                 }) {
                     object.declaration_attributes.clone_from(&native.attributes);
+                    if let Some(view_type) = &native.view_type {
+                        object
+                            .declaration_attributes
+                            .insert("ViewType".into(), view_type.clone());
+                    }
                 }
                 object
             }
@@ -246,7 +249,7 @@ fn definitions(
             {
                 continue;
             }
-            if let Some(value) = xml::native_named(property, names, &available)? {
+            if let Some(value) = xml::native_named(property, names, &available) {
                 object.set(&property.name, value);
             } else {
                 losses.push(
@@ -340,18 +343,22 @@ fn placement(
     transform: cadmpeg_ir::transform::Transform,
     owner: &str,
     losses: &mut Vec<LossNote>,
-) -> Result<String, CodecError> {
+) -> String {
     let transform = if transform.is_proper_rigid() {
         transform
     } else {
         losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!("{owner} affine placement is reduced to its translation because FreeCAD Placement is rigid")));
         let rows = transform.affine_rows();
-        cadmpeg_ir::transform::Transform::affine([
+        let translation = cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, rows[0][3]],
             [0.0, 1.0, 0.0, rows[1][3]],
             [0.0, 0.0, 1.0, rows[2][3]],
-        ])
-        .ok_or_else(|| CodecError::malformed("placement translation is non-finite"))?
+        ]);
+        debug_assert!(
+            translation.is_some(),
+            "a finite placement has a finite translation"
+        );
+        translation.unwrap_or(transform)
     };
     super::design::placement(transform)
 }
@@ -420,7 +427,7 @@ fn replay_list_properties(
         if object.properties.contains_key(&property.name) {
             continue;
         }
-        match super::xml::native_named(property, names, &available)? {
+        match super::xml::native_named(property, names, &available) {
             Some(value) => object.set(&property.name, value),
             None => losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
@@ -586,7 +593,35 @@ pub(super) fn write(
     // emitted, so agreement spans the whole prototype use.
     let mut linked_uses: Vec<(String, String, String, cadmpeg_ir::transform::Transform)> =
         Vec::new();
+    // One `App::Link` holds every element occurrence of an array link; its own
+    // placement is the native link placement the elements compose with.
+    let native_nodes = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::ProductNodeRecord>("product_nodes"))
+        .transpose()?
+        .unwrap_or_default();
+    let mut shared_uses = HashMap::<&str, usize>::new();
+    for occurrence in &ir.model.occurrences {
+        if let Some(native) = occurrence.native_ref.as_deref() {
+            *shared_uses.entry(native).or_default() += 1;
+        }
+    }
+    let mut emitted_links = HashMap::<String, String>::new();
+    let native_types = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::ObjectRecord>("objects"))
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|object| (object.id().as_str().to_owned(), object.type_name.clone()))
+        .collect::<HashMap<_, _>>();
     for (_, occurrence) in occurrences {
+        let array = occurrence
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| shared_uses.get(native).copied().unwrap_or(0) > 1);
         // Container occurrences are the placement of their own definition,
         // rather than an additional use of that same container.
         let container = match &occurrence.prototype {
@@ -603,7 +638,38 @@ pub(super) fn write(
                 .cloned(),
             _ => None,
         };
+        // A link that is also another link's prototype is declared as a
+        // definition too; that definition's object is this link.
+        let link_definition = occurrence
+            .native_ref
+            .as_ref()
+            .and_then(|native| {
+                ir.model.product_definitions.iter().find(|definition| {
+                    definition.kind == ProductDefinitionKind::Object
+                        && definition.bodies.is_empty()
+                        && definition.native_ref.as_ref() == Some(native)
+                })
+            })
+            .and_then(|definition| names.get(definition.id.as_str()))
+            .cloned();
+        let peer = occurrence
+            .native_ref
+            .as_ref()
+            .and_then(|native| emitted_links.get(native))
+            .cloned();
         let name = if let Some(name) = container {
+            name
+        } else if let Some(name) = peer {
+            name
+        } else if let Some(name) = link_definition {
+            if let Some(object) = objects.iter_mut().find(|object| object.name == name) {
+                object.kind = occurrence
+                    .native_ref
+                    .as_ref()
+                    .and_then(|native| native_types.get(native))
+                    .filter(|kind| kind.as_str() == "App::LinkElement")
+                    .map_or_else(|| "App::Link".to_owned(), Clone::clone);
+            }
             name
         } else {
             let proposed = names
@@ -619,15 +685,50 @@ pub(super) fn write(
             name
         };
         names.insert(occurrence.id.as_str().to_owned(), name.clone());
+        let first_use = match occurrence.native_ref.as_ref() {
+            Some(native) => emitted_links.insert(native.clone(), name.clone()).is_none(),
+            None => true,
+        };
         let missing_prototype = matches!(
             &occurrence.prototype,
             PrototypeReference::Local { definition } if !names.contains_key(definition.as_str())
         );
-        let object = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("instance output is absent"))?;
-        if object.kind == "App::Link" {
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
+            debug_assert!(false, "instance output is absent");
+            continue;
+        };
+        if array {
+            if first_use {
+                let (prototype, file) =
+                    prototype(&occurrence.prototype, occurrence.id.as_str(), names, losses);
+                object.set(
+                    "LinkedObject",
+                    xml::property(
+                        "LinkedObject",
+                        "App::PropertyXLink",
+                        &xlink(&prototype, &file, &[]),
+                    ),
+                );
+                if let Some(reference) = &occurrence.link {
+                    link_state(object, reference, names, losses);
+                }
+                replay_list_properties(ir, occurrence, object, names, losses)?;
+                if let Some(frame) = native_nodes
+                    .iter()
+                    .find(|node| occurrence.native_ref.as_deref() == Some(node.object.as_str()))
+                    .and_then(crate::native::ProductNodeRecord::local_transform)
+                {
+                    let (rigid, _) =
+                        split_scale(frame.transform()).unwrap_or((frame.transform(), [1.0; 3]));
+                    object.set(
+                        "Placement",
+                        placement(rigid, occurrence.id.as_str(), losses),
+                    );
+                }
+            }
+            continue;
+        }
+        if matches!(object.kind.as_str(), "App::Link" | "App::LinkElement") {
             let (prototype, file) =
                 prototype(&occurrence.prototype, occurrence.id.as_str(), names, losses);
             let subelements = occurrence
@@ -665,7 +766,7 @@ pub(super) fn write(
         // effective transform. An occurrence with no placement omits
         // Placement (#238 §5.5, #213).
         let deferred = occurrence.linked_prototype.is_some()
-            && object.kind == "App::Link"
+            && matches!(object.kind.as_str(), "App::Link" | "App::LinkElement")
             && !missing_prototype;
         if !deferred {
             let transform = if missing_prototype && occurrence.linked_prototype.is_some() {
@@ -681,7 +782,7 @@ pub(super) fn write(
                 let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
                 object.set(
                     "Placement",
-                    placement(rigid, occurrence.id.as_str(), losses)?,
+                    placement(rigid, occurrence.id.as_str(), losses),
                 );
                 if scale != [1.0; 3] {
                     object.set(
@@ -703,7 +804,7 @@ pub(super) fn write(
             }
         }
     }
-    resolve_linked_transforms(ir, objects, &linked_uses, losses)?;
+    resolve_linked_transforms(ir, objects, &linked_uses, losses);
     let mut children: Vec<_> = ir.model.occurrences.iter().collect();
     children.sort_by_key(|occurrence| occurrence.ordinal);
     for occurrence in children {
@@ -715,9 +816,10 @@ pub(super) fn write(
                 )));
                 continue;
             };
-            let child = names
-                .get(occurrence.id.as_str())
-                .ok_or_else(|| CodecError::malformed("instance child has no output identity"))?;
+            let Some(child) = names.get(occurrence.id.as_str()) else {
+                debug_assert!(false, "instance child has no output identity");
+                continue;
+            };
             let members = groups.entry(parent_name.clone()).or_default();
             if !members.contains(child) {
                 members.push(child.clone());
@@ -777,10 +879,10 @@ pub(super) fn write(
             }
             parents.insert(member.clone(), name.clone());
         }
-        let object = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("product group has no output object"))?;
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
+            debug_assert!(false, "product group has no output object");
+            continue;
+        };
         object.set("Group", group(&members));
     }
     joints::write(ir, objects, names, losses)?;
@@ -800,7 +902,7 @@ fn resolve_linked_transforms(
     objects: &mut [Object],
     linked_uses: &[(String, String, String, cadmpeg_ir::transform::Transform)],
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     let mut groups: BTreeMap<&str, Vec<(String, String, cadmpeg_ir::transform::Transform)>> =
         BTreeMap::new();
     for (prototype, link, occurrence, linked) in linked_uses {
@@ -816,7 +918,7 @@ fn resolve_linked_transforms(
             .all(|(_, _, linked)| Some(linked) == uses.first().map(|(_, _, first)| first))
             .then(|| uses.first().map(|(_, _, first)| *first))
             .flatten();
-        let rendered = agreed.and_then(|linked| placement(linked, prototype, losses).ok());
+        let rendered = agreed.map(|linked| placement(linked, prototype, losses));
         let consistent = match (
             &rendered,
             objects.iter().find(|object| object.name == prototype),
@@ -836,20 +938,23 @@ fn resolve_linked_transforms(
                 object.set("Placement", rendered);
             }
             for (link, occurrence, _) in &uses {
-                let current = ir
+                let Some(current) = ir
                     .model
                     .occurrences
                     .iter()
                     .find(|candidate| candidate.id.as_str() == occurrence.as_str())
-                    .ok_or_else(|| CodecError::malformed("linked instance has no occurrence"))?;
-                let object = objects
-                    .iter_mut()
-                    .find(|object| object.name == *link)
-                    .ok_or_else(|| CodecError::malformed("linked instance output is absent"))?;
+                else {
+                    debug_assert!(false, "linked instance has no occurrence");
+                    continue;
+                };
+                let Some(object) = objects.iter_mut().find(|object| object.name == *link) else {
+                    debug_assert!(false, "linked instance output is absent");
+                    continue;
+                };
                 bool_property(object, "LinkTransform", true);
                 if let Some(transform) = current.transform {
                     let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
-                    object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
+                    object.set("Placement", placement(rigid, occurrence.as_str(), losses));
                     if scale != [1.0; 3] {
                         object.set(
                             "ScaleVector",
@@ -875,12 +980,15 @@ fn resolve_linked_transforms(
             "prototype {prototype} linked placements disagree and are folded into occurrence placements where possible"
         )));
         for (link, occurrence, _) in &uses {
-            let current = ir
+            let Some(current) = ir
                 .model
                 .occurrences
                 .iter()
                 .find(|candidate| candidate.id.as_str() == occurrence.as_str())
-                .ok_or_else(|| CodecError::malformed("linked instance has no occurrence"))?;
+            else {
+                debug_assert!(false, "linked instance has no occurrence");
+                continue;
+            };
             let effective = match current.effective_transform() {
                 Ok(effective) => effective,
                 Err(_) => {
@@ -890,10 +998,10 @@ fn resolve_linked_transforms(
                     current.transform
                 }
             };
-            let object = objects
-                .iter_mut()
-                .find(|object| object.name == *link)
-                .ok_or_else(|| CodecError::malformed("linked instance output is absent"))?;
+            let Some(object) = objects.iter_mut().find(|object| object.name == *link) else {
+                debug_assert!(false, "linked instance output is absent");
+                continue;
+            };
             bool_property(object, "LinkTransform", false);
             object.properties.shift_remove("ScaleVector");
             let Some(effective) = effective else {
@@ -901,7 +1009,7 @@ fn resolve_linked_transforms(
                 continue;
             };
             let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
-            object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
+            object.set("Placement", placement(rigid, occurrence.as_str(), losses));
             if scale != [1.0; 3] {
                 object.set(
                     "ScaleVector",
@@ -921,7 +1029,6 @@ fn resolve_linked_transforms(
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

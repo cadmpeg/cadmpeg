@@ -68,7 +68,8 @@ pub(super) fn encode_smbh(
                 native_ident(&mut bytes, "asmheader")?;
                 native_string(&mut bytes, "231.6.3.65535");
                 bytes.push(0x11);
-                encode_source_less_surfaces(&mut bytes, target, native, output)?;
+                let surfaces = record_surfaces(&target.model, output)?;
+                encode_source_less_surfaces(&mut bytes, &surfaces, target, native, output)?;
                 encode_source_less_curves(&mut bytes, target, output)?;
                 encode_points(&mut bytes, &target.model, output)?;
                 native_history_tail(&mut bytes, native, output)?;
@@ -114,7 +115,10 @@ struct NativeRecordPlan<'a> {
 }
 
 impl<'a> NativeRecordPlan<'a> {
-    fn for_model(model: &'a cadmpeg_ir::document::Model) -> Result<Self, CodecError> {
+    fn for_model(
+        model: &'a cadmpeg_ir::document::Model,
+        surface_records: usize,
+    ) -> Result<Self, CodecError> {
         let body_start = 1;
         let region_start = native_record_index(body_start, model.bodies.len())?;
         let shell_start = native_record_index(region_start, model.regions.len())?;
@@ -123,7 +127,7 @@ impl<'a> NativeRecordPlan<'a> {
         let face_start = native_record_index(wire_start, wire_count)?;
         let loop_start = native_record_index(face_start, model.faces.len())?;
         let surface_start = native_record_index(loop_start, model.loops.len())?;
-        let curve_start = native_record_index(surface_start, model.surfaces.len())?;
+        let curve_start = native_record_index(surface_start, surface_records)?;
         let pcurve_start = native_record_index(curve_start, model.curves.len())?;
         let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
         let mut ref_pcurve_count = 0usize;
@@ -599,13 +603,43 @@ fn encode_wire_body_smbh(
     Ok(bytes)
 }
 
+/// Surfaces written as their own BREP records, in arena order. A procedural
+/// construction writes the surfaces it names inline in its own record, so a
+/// surface that only procedural constructions name has no record of its own.
+fn record_surfaces<'a>(
+    model: &'a cadmpeg_ir::document::Model,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Vec<&'a cadmpeg_ir::geometry::Surface>, CodecError> {
+    use cadmpeg_ir::schema::EntitySchema;
+    let mut inline = std::collections::BTreeSet::new();
+    let mut collect = |target: &str| -> Result<(), CodecError> {
+        inline.insert(target.to_owned());
+        Ok(())
+    };
+    for curve in &model.procedural_curves {
+        curve.visit_references(ctx, &mut collect)?;
+    }
+    for surface in &model.procedural_surfaces {
+        surface.visit_references(ctx, &mut collect)?;
+    }
+    for face in &model.faces {
+        inline.remove(face.surface.as_str());
+    }
+    Ok(model
+        .surfaces
+        .iter()
+        .filter(|surface| !inline.contains(surface.id.as_str()))
+        .collect())
+}
+
 fn encode_source_less_surfaces(
     records: &mut Vec<u8>,
+    surfaces: &[&cadmpeg_ir::geometry::Surface],
     target: &CadIr,
     native: &F3dNative,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for surface in &target.model.surfaces {
+    for surface in surfaces {
         output.charge_entities(1, "F3D BREP record")?;
         match surface.geometry.solved() {
             Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
@@ -935,7 +969,8 @@ fn encode_face_topology_smbh(
     }
     validate_source_less_body_kinds(model)?;
 
-    let plan = NativeRecordPlan::for_model(model)?;
+    let surfaces = record_surfaces(model, output)?;
+    let plan = NativeRecordPlan::for_model(model, surfaces.len())?;
     let NativeRecordPlan {
         body: body_start,
         region: region_start,
@@ -1189,8 +1224,7 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("face references missing loop {first_loop}"))
             })?;
-        let surface_position = model
-            .surfaces
+        let surface_position = surfaces
             .iter()
             .position(|surface| surface.id == face.surface)
             .ok_or_else(|| {
@@ -1320,7 +1354,7 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
 
-    encode_source_less_surfaces(&mut records, target, native, output)?;
+    encode_source_less_surfaces(&mut records, &surfaces, target, native, output)?;
 
     encode_source_less_curves(&mut records, target, output)?;
 

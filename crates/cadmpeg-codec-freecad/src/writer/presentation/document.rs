@@ -2,7 +2,7 @@
 //! Neutral GUI document state and typed native-only descendants.
 
 use crate::loss::FreecadLossCode;
-use crate::native::{GuiDocumentRecord, GuiStateRecord};
+use crate::native::GuiDocumentRecord;
 use crate::writer::xml;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -10,26 +10,21 @@ use cadmpeg_ir::presentation::PresentationStateKind;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
-fn state(
-    tag: &str,
-    attributes: &BTreeMap<String, String>,
-    content: &str,
-) -> Result<String, CodecError> {
+/// One GUI state element, or `None` when its tag is no XML element name.
+fn state(tag: &str, attributes: &BTreeMap<String, String>, content: &str) -> Option<String> {
     if tag.is_empty()
         || !tag.chars().all(|character| {
             character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | ':')
         })
     {
-        return Err(CodecError::malformed(
-            "GUI state has invalid XML element name",
-        ));
+        return None;
     }
     let attributes: Vec<_> = attributes
         .iter()
         .map(|(key, value)| (key.as_str(), value.clone()))
         .collect();
     let root = xml::element(tag, &attributes);
-    Ok(if content.is_empty() {
+    Some(if content.is_empty() {
         root
     } else {
         format!(
@@ -39,16 +34,39 @@ fn state(
     })
 }
 
-fn descendants(state: &GuiStateRecord) -> Result<String, CodecError> {
-    xml::gui_state_content(state)
+fn unwritable(tag: &str) -> LossNote {
+    FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+        "GUI state {tag} has no well-formed XML encoding and is omitted"
+    ))
+}
+
+/// The numbers that follow `field` in an Inventor camera string.
+fn camera_field(settings: &str, field: &str, count: usize) -> Option<Vec<f64>> {
+    let mut tokens = settings.split_whitespace();
+    tokens.find(|token| *token == field)?;
+    tokens
+        .take(count)
+        .map(|token| token.parse().ok())
+        .collect::<Option<Vec<f64>>>()
+        .filter(|values| values.len() == count)
 }
 
 fn camera_settings(camera: &cadmpeg_ir::presentation::CameraState) -> String {
-    let settings = camera
+    let stored = camera
         .properties
         .iter()
         .find(|(key, _)| key.as_str() == "settings")
-        .map_or("OrthographicCamera { }", |(_, value)| value.as_str());
+        .map(|(_, value)| value.as_str());
+    // The stored string is the camera's own spelling; it is rebuilt only when
+    // the typed position or orientation moved off it.
+    if let Some(stored) = stored.filter(|stored| {
+        camera_field(stored, "position", 3) == camera.position.map(|value| value.get().to_vec())
+            && camera_field(stored, "orientation", 4)
+                == camera.orientation.map(|value| value.get().to_vec())
+    }) {
+        return stored.to_owned();
+    }
+    let settings = stored.unwrap_or("OrthographicCamera { }");
     let tokens: Vec<_> = settings.split_whitespace().collect();
     let family = if tokens.first() == Some(&"PerspectiveCamera") {
         "PerspectiveCamera"
@@ -133,12 +151,16 @@ pub(super) fn write(
                 );
                 continue;
             }
-            let content = original
-                .filter(|original| original.kind == tag)
-                .map(descendants)
-                .transpose()?
-                .unwrap_or_default();
-            states.push_str(&state(tag, &attributes, &content)?);
+            let content = match original.filter(|original| original.kind == tag) {
+                Some(original) => xml::gui_state_content(original),
+                None => Some(String::new()),
+            };
+            let Some(element) = content.and_then(|content| state(tag, &attributes, &content))
+            else {
+                losses.push(unwritable(tag));
+                continue;
+            };
+            states.push_str(&element);
         }
         if ir.model.presentation_documents.len() > 1 {
             losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(
@@ -157,11 +179,13 @@ pub(super) fn write(
                     );
                     continue;
                 }
-                states.push_str(&state(
-                    &value.kind,
-                    &value.attributes,
-                    &descendants(value)?,
-                )?);
+                let Some(element) = xml::gui_state_content(value)
+                    .and_then(|content| state(&value.kind, &value.attributes, &content))
+                else {
+                    losses.push(unwritable(&value.kind));
+                    continue;
+                };
+                states.push_str(&element);
             }
         }
     }

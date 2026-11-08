@@ -41,7 +41,7 @@ pub(super) fn length(object: &mut Object, field: &str, value: f64) {
 pub(super) fn angle(object: &mut Object, field: &str, value: f64) {
     object.set(
         field,
-        xml::scalar(field, "App::PropertyAngle", "Float", value.to_degrees()),
+        xml::scalar(field, "App::PropertyAngle", "Float", xml::degrees(value)),
     );
 }
 pub(super) fn boolean(object: &mut Object, field: &str, value: bool) {

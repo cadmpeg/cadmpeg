@@ -1185,7 +1185,6 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
     ) {
         match value {
             serde_json::Value::String(text) => {
-                // (debug removed)
                 if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
                     let kind = text
                         .rsplit_once('#')
@@ -1300,13 +1299,19 @@ fn neutralize_stream_names(value: &mut serde_json::Value) {
         for token in [
             "FusionAssetName%5BActive%5D",
             "FusionAssetName[Active]",
-            "FusionDesignSegmentType4",
-            "FusionDesignSegmentType3",
             "FusionACTSegmentType1",
             "generated",
             "Design1",
         ] {
             text = text.replace(token, "S");
+        }
+        // Design segment numbers are writer-chosen identities.
+        while let Some(at) = text.find("FusionDesignSegmentType") {
+            let digits = text[at + "FusionDesignSegmentType".len()..]
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            text.replace_range(at..at + "FusionDesignSegmentType".len() + digits, "S");
         }
         // Neutralize positional BREP IDs that rekey did not catch.
         // Replace any "word#digits" with "word#0".
@@ -1409,6 +1414,7 @@ fn first_diff(a: &serde_json::Value, b: &serde_json::Value, path: &str) -> Strin
 /// An edit has the same meaning through preservation and synthesis.
 #[test]
 fn an_edit_survives_native_writer_fallback() {
+    let mut disagreements = Vec::new();
     let mut measured_count = 0usize;
     let mut skipped = Vec::new();
     for (name, _) in fixtures() {
@@ -1445,26 +1451,28 @@ fn an_edit_survives_native_writer_fallback() {
         let preserved = decode_result(&preserved).unwrap();
         let authored = decode_result(&authored).unwrap();
         // Patch preserves the retained container while synthesis authors a
-        // fresh one. The save date and the generated-versus-retained BREP
-        // carrier basename are container provenance, not document content;
-        // neutralize them so the comparison judges the edit's meaning.
+        // fresh one. The save date, the ASM kernel layer of the BREP carrier
+        // (its width, save format and product version) and the
+        // generated-versus-retained BREP carrier basename are container
+        // provenance, not document content; neutralize them so the comparison
+        // judges the edit's meaning.
         let mut preserved_view = cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]);
         let mut authored_view = cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]);
         for view in [&mut preserved_view, &mut authored_view] {
-            if let Some(save_date) = view.pointer_mut("/source/attributes/save_date") {
-                *save_date = serde_json::Value::Null;
+            for provenance in ["/source/attributes/save_date", "/source/attributes/product_version"] {
+                if let Some(value) = view.pointer_mut(provenance) {
+                    *value = serde_json::Value::Null;
+                }
             }
             if let Some(extras) = view.pointer_mut("/source/identity/dialects/extra") {
                 if let Some(extras) = extras.as_array_mut() {
                     for extra in extras {
-                        if let Some(carrier) = extra.pointer_mut("/declared/carrier") {
-                            if carrier
-                                .as_str()
-                                .is_some_and(|carrier| carrier.as_bytes().ends_with(b".smbh"))
-                            {
-                                *carrier =
-                                    serde_json::Value::String("neutralized-carrier.smbh".into());
-                            }
+                        if extra
+                            .get("dialect")
+                            .and_then(serde_json::Value::as_str)
+                            .is_some_and(|dialect| dialect.starts_with("acis:"))
+                        {
+                            *extra = serde_json::Value::String("neutralized-kernel-layer".into());
                         }
                     }
                 }
@@ -1474,49 +1482,26 @@ fn an_edit_survives_native_writer_fallback() {
         // positional BREP identities its blob order implies. Rekey each
         // side's ephemeral neutral identities in sorted order so the
         // comparison judges structure and references, not numbering.
-        eprintln!("CALLING REKEY");
         rekey_ephemeral_brep_ids(&mut preserved_view);
         rekey_ephemeral_brep_ids(&mut authored_view);
         neutralize_stream_names(&mut preserved_view);
         neutralize_stream_names(&mut authored_view);
-        // Mesh-import features and their tessellations require native
-        // records that synthesis does not yet author (#209 §5.2): drop them
-        // from both sides so the comparison judges the edited geometry.
         for view in [&mut preserved_view, &mut authored_view] {
-            if let Some(model) = view.get_mut("model").and_then(|m| m.as_object_mut()) {
-                if let Some(features) = model.get_mut("features").and_then(|f| f.as_array_mut()) {
-                    features.retain(|f| {
-                        f.get("definition")
-                            .and_then(|d| d.get("definition"))
-                            .and_then(|s| s.as_str())
-                            != Some("mesh_import")
-                    });
-                }
-                if let Some(tess) = model
-                    .get_mut("tessellations")
-                    .and_then(|t| t.as_array_mut())
-                {
-                    tess.clear();
-                }
-                if let Some(subds) = model.get_mut("subds").and_then(|s| s.as_array_mut()) {
-                    subds.clear();
-                }
-            }
             strip_source_object(view);
         }
-        // (debug removed)
-        assert!(
-            preserved_view == authored_view,
-            "{}: {}",
-            name,
-            first_diff(&preserved_view, &authored_view, "")
-        );
+        if preserved_view != authored_view {
+            disagreements.push(format!(
+                "{name}: {}",
+                first_diff(&preserved_view, &authored_view, "")
+            ));
+        }
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
                 .expect("the round trip keeps its measured geometry");
             measured_count += 1;
         }
     }
+    assert!(disagreements.is_empty(), "{disagreements:#?}");
     assert_eq!(skipped, FIXTURES_WITHOUT_POINTS);
     assert!(
         measured_count >= MEASURED_FIXTURE_FLOOR,

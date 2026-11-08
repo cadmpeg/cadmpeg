@@ -7,7 +7,7 @@ mod wire;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
-use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
+use super::accepts_non_manifold_write_loss;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -47,8 +47,6 @@ use crate::test_support::test_surface_fixtures::{
 use crate::writer::same_float;
 use crate::{IgesCodec, IgesVersion};
 
-#[rustfmt::skip]
-fn assert_encode_fails<T>(f: impl FnOnce() -> Result<T, cadmpeg_ir::codec::write::EncodeError>, frag: &str) { let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)); let message = match &result { Ok(Err(e)) => e.to_string(), Err(p) => p.downcast_ref::<String>().cloned().unwrap_or_else(|| p.downcast_ref::<&str>().map(ToString::to_string).unwrap_or_default()), Ok(Ok(_)) => panic!("encode did not fail") }; assert!(message.contains(frag), "{message}"); }
 #[test]
 fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
@@ -1274,7 +1272,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
 }
 
 #[test]
-fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
+fn encode_degrades_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(parametrically_bounded_plane_file()),
@@ -1299,8 +1297,8 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             .unwrap();
     }
 
-    assert_encode_fails(
-        || plan_at(IgesVersion::V5_3, decoded.ir(), None),
+    super::assert_encode_degrades(
+        plan_at(IgesVersion::V5_3, decoded.ir(), None),
         "pcurve chain endpoints disagree with its directed support edge",
     );
 }

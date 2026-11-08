@@ -78,7 +78,7 @@ fn gui_xml_impl(
             .iter()
             .filter(|property| property.owner == provider.id)
         {
-            let Some(value) = xml::native_gui(property)? else {
+            let Some(value) = xml::native_gui(property) else {
                 losses.push(
                     crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
                         "GUI property {} has no independent typed projection",
@@ -183,7 +183,7 @@ mod tests {
             let emitted = properties
                 .iter()
                 .filter(|property| property.owner == provider.id)
-                .filter(|property| crate::writer::xml::native_gui(property).unwrap().is_some())
+                .filter(|property| crate::writer::xml::native_gui(property).is_some())
                 .collect::<Vec<_>>();
             for (index, property) in emitted.iter().enumerate() {
                 assert_eq!(
@@ -219,9 +219,7 @@ mod tests {
             .unwrap()
             .clone();
         duplicate.id = "opaque:native:GUI-field#skipped-duplicate".to_owned();
-        assert!(crate::writer::xml::native_gui(&duplicate)
-            .unwrap()
-            .is_none());
+        assert!(crate::writer::xml::native_gui(&duplicate).is_none());
         let side_entries = duplicate.side_entries.clone();
         let duplicate_id = duplicate.id.clone();
         properties.push(duplicate);
@@ -265,7 +263,7 @@ mod tests {
             let emitted = properties
                 .iter()
                 .filter(|property| property.owner == provider.id)
-                .filter(|property| crate::writer::xml::native_gui(property).unwrap().is_some())
+                .filter(|property| crate::writer::xml::native_gui(property).is_some())
                 .collect::<Vec<_>>();
             for (index, property) in emitted.iter().enumerate() {
                 assert_eq!(

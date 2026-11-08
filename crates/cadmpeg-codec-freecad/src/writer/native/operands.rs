@@ -4,7 +4,6 @@
 use super::super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Dimension, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
@@ -16,7 +15,7 @@ pub(in crate::writer) fn write(
     names: &HashMap<String, String>,
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     let available = ir
         .native
         .namespace("fcstd")
@@ -59,7 +58,7 @@ pub(in crate::writer) fn write(
                             value.get().to_string()
                         }
                         cadmpeg_ir::features::ParameterValue::Angle(value) => {
-                            value.get().to_degrees().to_string()
+                            super::super::xml::degrees(value.get()).to_string()
                         }
                         cadmpeg_ir::features::ParameterValue::Real(value) => {
                             value.get().to_string()
@@ -106,7 +105,7 @@ pub(in crate::writer) fn write(
                 )));
                 continue;
             }
-            if let Some(value) = xml::native_named(&property, names, &available)? {
+            if let Some(value) = xml::native_named(&property, names, &available) {
                 object.set(name.as_str(), value);
             } else {
                 object.properties.shift_remove(name.as_str());
@@ -117,5 +116,4 @@ pub(in crate::writer) fn write(
             }
         }
     }
-    Ok(())
 }
