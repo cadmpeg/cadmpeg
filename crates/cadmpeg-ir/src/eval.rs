@@ -5681,13 +5681,37 @@ const ROLLING_BALL_JET_RADIUS_TOLERANCE: f64 = 1e-8;
 /// The interpolated limiting points then define the circular section whose
 /// fixed radius is taken from the first stored station.
 ///
-/// A definition that is not a quintic jet with triple interior knots, a
+/// A definition that is not a quintic jet with triple or sextuple interior knots, a
 /// parameter that is not finite or lies outside the jet, stations whose
 /// radii disagree, and a section whose first limiting direction vanishes or
-/// whose second is parallel to it have no point. A knot span, interpolated
+/// whose second is parallel to it have no point unless the rails coincide at
+/// zero opening. A knot span, interpolated
 /// channel or section direction that overflows reaches no coordinate; a
 /// point outside the finite range carries the point reached.
 pub fn rolling_ball_jet_point(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    if !(0.0..=1.0).contains(&s) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    rolling_ball_jet_transverse_point(definition, t, s)
+}
+
+/// Measure the gap from an out-of-range transverse station to its nearest
+/// rolling-ball boundary, using the same interpolated section for both points.
+pub fn rolling_ball_jet_boundary_gap(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+) -> Result<f64, EvaluationFailure<Point3>> {
+    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
+    Ok(outside.distance(boundary.get()))
+}
+
+fn rolling_ball_jet_transverse_point(
     definition: &ProceduralSurfaceDefinition,
     t: f64,
     s: f64,
@@ -5704,10 +5728,9 @@ pub fn rolling_ball_jet_point(
             .iter()
             .skip(1)
             .take(stations.len() - 2)
-            .any(|station| station.multiplicity != 3)
+            .any(|station| !matches!(station.multiplicity, 3 | 6))
         || !t.is_finite()
         || !s.is_finite()
-        || !(0.0..=1.0).contains(&s)
     {
         return Err(no_value);
     }
@@ -5807,6 +5830,11 @@ pub fn rolling_ball_jet_point(
     }
     if first_direction_squared <= f64::EPSILON {
         return Err(no_value);
+    }
+    if angle == 0.0
+        && first_limit.distance(second_limit) <= ROLLING_BALL_JET_RADIUS_TOLERANCE * radius
+    {
+        return admit_point(first_limit);
     }
     let second_radius = second_limit.vector_from(center);
     let second_direction = FiniteVector3::new(

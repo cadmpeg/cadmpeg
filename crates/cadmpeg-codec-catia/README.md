@@ -66,6 +66,21 @@ streams transfer face-local constructions. Inner-without-directory layouts
 transfer A8/B2 carriers. Complete scalar formula graphs transfer typed
 parameters. Unresolved native bytes stay attached to the IR as unknown records.
 
+## Sheet surface transfer
+
+A complete rolling-ball jet defines a native procedural surface from its
+stored values and derivatives. Bounded sheet transfer uses fitted B-splines
+for rolling-ball, ruled, offset, and offset-extrusion carriers that require a
+solved surface for STEP export. The decode report records these faces with
+`geometry.sheet-surface-fitted`. The fit checks use sampled points.
+
+For an owned rolling-ball construction, a stored construction radius can
+select a small radial correction of the two rail points at each station.
+When an emitted face uses moved rail points, the report adds
+`geometry.rolling-ball-rails-adjusted` with the largest point movement.
+The sampled fit check compares the spline with the construction used for
+fitting, after any reported rail correction.
+
 ## Reference
 
 - [API documentation][docs]

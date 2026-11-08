@@ -1,4 +1,4 @@
-use super::{records, CatiaConsolidatedClass61Record};
+use super::{records, singleton_face_orientation_bit, CatiaConsolidatedClass61Record};
 use crate::native::CatiaAllocationReferenceEncoding as Encoding;
 
 fn framed(payload: &[u8]) -> Vec<u8> {
@@ -95,6 +95,21 @@ fn optional_zero_and_control_are_separate_from_member_bit() {
         assert_eq!(row.roster_control, 3);
         assert!(row.members[0].orientation_bit);
     }
+}
+
+#[test]
+fn singleton_face_orientation_requires_one_member_and_control_three() {
+    for (packed, expected) in [(0x03, false), (0x13, true)] {
+        let bytes = framed(&[0x81, 0x03, 0x00, packed, 0x03]);
+        let rows = crate::wire::records::consolidated_records(&bytes);
+        assert_eq!(
+            singleton_face_orientation_bit(&bytes, &rows[0]),
+            Some(expected)
+        );
+    }
+    let bytes = framed(&[0x81, 0x03, 0x00, 0x01, 0x03]);
+    let rows = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(singleton_face_orientation_bit(&bytes, &rows[0]), None);
 }
 
 #[test]

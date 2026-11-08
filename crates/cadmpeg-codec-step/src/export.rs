@@ -3783,6 +3783,20 @@ impl<'a> Builder<'a> {
                 edge,
             )?),
         };
+        let active_trim = if range.is_some()
+            && (matches!(aligned, std::borrow::Cow::Owned(_)) || pcurves::ranges_match(range, edge))
+            && edge.tolerance.is_some_and(|edge_tolerance| {
+                [&edge.start, &edge.end].into_iter().any(|id| {
+                    self.vertices
+                        .get(id.as_str())
+                        .and_then(|vertex| vertex.tolerance)
+                        .is_some_and(|tolerance| tolerance > edge_tolerance)
+                })
+            }) {
+            pcurves::bounded_spline_use(aligned.as_ref(), edge)
+        } else {
+            None
+        };
         let shift = self
             .pcurve_period_shifts
             .get(use_.coedge)
@@ -3795,6 +3809,18 @@ impl<'a> Builder<'a> {
         let curve = match self.surface_chart(surface_id) {
             Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &aligned)?,
             None => geometry::pcurve(&mut self.emitter, &aligned)?,
+        };
+        let curve = if let Some([start, end]) = active_trim {
+            self.emitter.emit(
+                "TRIMMED_CURVE",
+                &format!(
+                    "'',{curve},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
+                    self.emitter.real(start),
+                    self.emitter.real(end),
+                ),
+            )
+        } else {
+            curve
         };
         let context = self.pcurve_context();
         let representation = self.emitter.emit(

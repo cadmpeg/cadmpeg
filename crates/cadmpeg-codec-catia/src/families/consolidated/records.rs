@@ -2317,6 +2317,7 @@ mod tests {
                     .expect("unit direction"),
                 u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
                 v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+                origin_z: None,
             },
         };
         let pcurve = |points: [[f64; 2]; 2]| ConsolidatedPcurve {

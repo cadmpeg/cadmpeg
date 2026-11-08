@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! B-family class-25 parameter maps between source-local curve representations.
+//! Class-25 parameter maps between source-local curve representations.
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal};
@@ -51,9 +51,9 @@ pub(crate) enum Class25Accuracy {
     },
 }
 
-// An 8-bit B-family payload length leaves room for at most twelve pairs after
-// the operands, selector, five leading words, count marker, and fit tolerance.
-const MAX_SAMPLE_PAIRS: usize = 12;
+const MAX_SAMPLE_PAIRS: usize = 32;
+const MAX_B_SAMPLE_PAIRS: usize = 12;
+const MAX_A_PAYLOAD_BYTES: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "SamplePairsWire")]
@@ -70,6 +70,13 @@ struct SamplePairsWire {
 }
 
 impl Class25SamplePairs {
+    pub(in crate::families) fn pairs(&self) -> impl Iterator<Item = [f64; 2]> + '_ {
+        self.target[..self.len]
+            .iter()
+            .zip(&self.source[..self.len])
+            .map(|(target, source)| [target.get(), source.get()])
+    }
+
     fn valid(&self) -> bool {
         (2..=MAX_SAMPLE_PAIRS).contains(&self.len)
             && self.target[..self.len].windows(2).all(|p| p[0] < p[1])
@@ -129,7 +136,7 @@ pub(crate) enum Class25SourceRelation {
     },
     Sampled {
         range: IncreasingParameterInterval,
-        samples: Class25SamplePairs,
+        samples: Box<Class25SamplePairs>,
     },
 }
 
@@ -145,7 +152,26 @@ pub(crate) struct Class25ParameterMap {
 }
 
 pub(crate) fn parse(payload: &[u8]) -> Option<Class25ParameterMap> {
-    if payload.first() != Some(&0x82) || payload.len() > usize::from(u8::MAX) {
+    parse_with_limit(payload, usize::from(u8::MAX), MAX_B_SAMPLE_PAIRS)
+}
+
+pub(crate) fn parse_a(payload: &[u8]) -> Option<Class25ParameterMap> {
+    parse_with_limit(payload, MAX_A_PAYLOAD_BYTES, MAX_SAMPLE_PAIRS)
+}
+
+fn contains_sample(range: IncreasingParameterInterval, value: FiniteReal) -> bool {
+    let value = value.get();
+    (range.lower()..=range.upper()).contains(&value)
+        || endpoints_agree(range.lower(), value)
+        || endpoints_agree(range.upper(), value)
+}
+
+fn parse_with_limit(
+    payload: &[u8],
+    max_payload_bytes: usize,
+    max_sample_pairs: usize,
+) -> Option<Class25ParameterMap> {
+    if payload.first() != Some(&0x82) || payload.len() > max_payload_bytes {
         return None;
     }
     let mut at = 1;
@@ -185,7 +211,7 @@ pub(crate) fn parse(payload: &[u8]) -> Option<Class25ParameterMap> {
         21 if lead == 0x0a => {
             let range = IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?])?;
             let len = usize::from(view.u8()?.checked_sub(0x80)?);
-            if !(2..=MAX_SAMPLE_PAIRS).contains(&len) {
+            if !(2..=max_sample_pairs).contains(&len) {
                 return None;
             }
             let mut samples = Class25SamplePairs {
@@ -195,20 +221,23 @@ pub(crate) fn parse(payload: &[u8]) -> Option<Class25ParameterMap> {
             };
             for value in &mut samples.target[..len] {
                 *value = FiniteReal::new(view.f64_le()?)?;
-                if !(target_range.lower()..=target_range.upper()).contains(&value.get()) {
+                if !contains_sample(target_range, *value) {
                     return None;
                 }
             }
             for value in &mut samples.source[..len] {
                 *value = FiniteReal::new(view.f64_le()?)?;
-                if !(range.lower()..=range.upper()).contains(&value.get()) {
+                if !contains_sample(range, *value) {
                     return None;
                 }
             }
             if !samples.valid() {
                 return None;
             }
-            Class25SourceRelation::Sampled { range, samples }
+            Class25SourceRelation::Sampled {
+                range,
+                samples: Box::new(samples),
+            }
         }
         _ => return None,
     };

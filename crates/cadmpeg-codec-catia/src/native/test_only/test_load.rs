@@ -42,10 +42,11 @@ use crate::native::{
     CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedCone, CatiaConsolidatedCylinder,
     CatiaConsolidatedEdgeRun, CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket,
     CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
-    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
-    CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity, CatiaDesignObject,
-    CatiaEntityReferenceIndex, CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun,
-    CatiaNative, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
+    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution,
+    CatiaConsolidatedRollingBallConstruction, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
+    CatiaConsolidatedVertexIdentity, CatiaDesignObject, CatiaEntityReferenceIndex,
+    CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
+    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
     CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
     CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
     CatiaZeroEntityRecord, CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
@@ -635,6 +636,11 @@ impl CatiaNative {
             namespace.arena_as("consolidated_revolutions")?;
         consolidated_revolutions.sort_by_key(|revolution| revolution.byte_offset);
         validate_consolidated_revolutions(&consolidated_revolutions, &consolidated_circles)?;
+        let mut consolidated_rolling_ball_constructions: Vec<
+            CatiaConsolidatedRollingBallConstruction,
+        > = namespace.arena_as("consolidated_rolling_ball_constructions")?;
+        consolidated_rolling_ball_constructions
+            .sort_by_key(|construction| construction.byte_offset);
         let mut consolidated_rolling_ball_continuations: Vec<
             crate::native::rolling_ball_continuation::CatiaRollingBallContinuation,
         > = namespace.arena_as("consolidated_rolling_ball_continuations")?;
@@ -749,6 +755,17 @@ impl CatiaNative {
                 ));
             }
         }
+        let mut consolidated_a_class25_maps: Vec<
+            crate::native::a_class25_map::CatiaConsolidatedAClass25Map,
+        > = namespace.arena_as("consolidated_a_class25_maps")?;
+        consolidated_a_class25_maps.sort_by_key(|map| (map.source_index, map.source_offset));
+        for (index, map) in consolidated_a_class25_maps.iter().enumerate() {
+            if map.id != format!("catia:consolidated:a-class25-map#{index:00}") {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "invalid A-family class-25 map identity".to_owned(),
+                ));
+            }
+        }
         let mut sampled_parameter_maps: Vec<
             crate::native::parameter_map::CatiaSampledParameterMap,
         > = namespace.arena_as("sampled_parameter_maps")?;
@@ -775,6 +792,7 @@ impl CatiaNative {
             consolidated_cylinders,
             consolidated_a5_charts,
             consolidated_domain_relations,
+            consolidated_a_class25_maps,
             consolidated_four_reference_edges,
             consolidated_edge_nodes,
             consolidated_edge_runs,
@@ -786,6 +804,7 @@ impl CatiaNative {
             consolidated_pcurves,
             consolidated_reference_lists,
             consolidated_revolutions,
+            consolidated_rolling_ball_constructions,
             consolidated_rolling_ball_continuations,
             consolidated_spheres,
             consolidated_tori,

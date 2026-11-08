@@ -2,9 +2,9 @@
 //! b2/b3-family synthetic stream and CATPart builders.
 
 #![allow(clippy::unwrap_used)]
-use crate::test_support::test_a5a8::a5_pcurve_stream;
+use crate::test_support::test_a5a8::{a5_pcurve_stream, a5_pcurve_stream_with_jets};
 use crate::test_support::test_bytes::{compact_uint_bytes, le_f64};
-use crate::test_support::test_container::object_main_catpart;
+use crate::test_support::test_container::{object_main_catpart, standard_catpart_from_streams};
 
 pub(crate) fn b2_pcurve_stream() -> Vec<u8> {
     let narrow = a5_pcurve_stream();
@@ -37,6 +37,47 @@ pub(crate) fn b2_plane_carrier_stream() -> Vec<u8> {
         }
     }
     bytes
+}
+
+pub(crate) fn planar_two_edge_sheet(owner_token: u8) -> Vec<u8> {
+    // Class-27 spatial implicit-Y plane.
+    let mut bytes = vec![0xb2, 0x03, 0x27, 0x3a, 0x05, 0xb4, 0xd8];
+    for value in [0.0, 0.0, 0.0, 0.0, 1.0, -1.0, 1.0] {
+        bytes.extend_from_slice(&le_f64(value));
+    }
+    // Two parameter curves with v(t) = ±t(1 − t) and common endpoints.
+    for bend in [1.0, -1.0] {
+        bytes.extend(a5_pcurve_stream_with_jets(
+            0x1234,
+            [[0.0, 1.0], [0.0; 2]],
+            [[1.0; 2], [bend, -bend]],
+            [[0.0; 2], [-2.0 * bend; 2]],
+        ));
+    }
+    // Class-61 singleton with a reversed occurrence, followed by its face.
+    bytes.extend([0xb2, 0x03, 0x61, 0x05, 0x05, 0x81, 0x03, 0x00, 0x03, 0x03]);
+    bytes.extend([0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x03, 0x03, 0x05]);
+    // The owner token encodes the complement for the two edge rows.
+    bytes.extend([
+        0xb2,
+        0x03,
+        0x62,
+        0x05,
+        0x05,
+        0x84,
+        0x03,
+        0x07,
+        0x0b,
+        owner_token,
+    ]);
+    // Vertex references [1, 2] and [4, 3] pair in the same order at sum 5.
+    bytes.extend([
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x01, 0x05, 0x09, 0x01, 0x01, 0x01,
+    ]);
+    bytes.extend([
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x01, 0x11, 0x0d, 0x01, 0x01, 0x01,
+    ]);
+    standard_catpart_from_streams(&bytes, &[])
 }
 
 pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {

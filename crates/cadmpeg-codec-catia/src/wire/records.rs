@@ -105,11 +105,22 @@ pub(crate) fn family_pcurves_from_records(
 ) -> Vec<ConsolidatedPcurve> {
     let mut pcurves = Vec::new();
     for frame in family_frames_from_records(records, family, 0x20) {
-        if let Some(pcurve) = parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end) {
+        if let Some(pcurve) =
+            parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end, false)
+        {
             pcurves.push(pcurve);
         }
     }
     pcurves
+}
+
+pub(crate) fn owned_pcurve_from_record(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+) -> Option<ConsolidatedPcurve> {
+    let frame =
+        family_frames_from_records(std::slice::from_ref(record), record.family(), 0x20).next()?;
+    parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end, true)
 }
 
 impl ConsolidatedPcurve {
@@ -154,9 +165,10 @@ fn parse_consolidated_pcurve(
     pos: usize,
     payload: usize,
     end: usize,
+    owned: bool,
 ) -> Option<ConsolidatedPcurve> {
     let (support_id, count, extrapolation_sites, lanes, range, tail_at) =
-        pcurve_layout(data, payload, end)?;
+        pcurve_layout(data, payload, end, owned)?;
 
     let mut sites = Vec::new();
 
@@ -192,6 +204,7 @@ fn pcurve_layout(
     data: &[u8],
     payload: usize,
     end: usize,
+    owned: bool,
 ) -> Option<(
     u32,
     usize,
@@ -207,6 +220,7 @@ fn pcurve_layout(
     if degree != 5 || count < 2 {
         return None;
     }
+    let mut wide_extrapolation = None;
     let extrapolation_sites = match *data.get(at)? {
         0x0c => {
             at += 1;
@@ -214,11 +228,19 @@ fn pcurve_layout(
         }
         0x08 => {
             let encoded = *data.get(at + 1)?;
-            if encoded % 4 != 1 {
-                return None;
+            match encoded {
+                0x06 if owned => {
+                    let count = data.get(at + 2).copied().filter(|&count| count >= 0x40)?;
+                    wide_extrapolation = Some(count);
+                    at += 3;
+                    u32::from(count)
+                }
+                code if matches!(code % 4, 1 | 3) => {
+                    at += 2;
+                    u32::from((code - 1) / 4)
+                }
+                _ => return None,
             }
-            at += 2;
-            u32::from((encoded - 1) / 4)
         }
         _ => return None,
     };
@@ -231,7 +253,14 @@ fn pcurve_layout(
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
-    at = at.checked_add(1)?;
+    at = if let Some(count) = wide_extrapolation {
+        if data.get(at..at.checked_add(2)?)? != [0x06, count] {
+            return None;
+        }
+        at.checked_add(2)?
+    } else {
+        at.checked_add(1)?
+    };
     if at > end {
         return None;
     }
@@ -259,8 +288,10 @@ fn pcurve_layout(
         IncreasingParameterInterval::new([f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()])?;
     at += 16;
     let lanes = [knot_at, u_at, v_at, du_at, dv_at, ddu_at, ddv_at];
-    if at > end || !matches!(&data[at..end], [0x07] | [0x07, 0x00]) {
-        return None;
+    match data.get(at..end)? {
+        [0x07] | [0x07, 0x00] => {}
+        [0x07, 0x01, terminal, 0x00] if owned && terminal % 2 == 1 => {}
+        _ => return None,
     }
     Some((support_id, count, extrapolation_sites, lanes, range, at))
 }
@@ -275,6 +306,8 @@ pub(crate) enum ConsolidatedFrameWidth {
     Two,
     /// Three-byte header token.
     Three,
+    /// Four-byte header token in a B-family allocation run.
+    Four,
 }
 
 impl From<ConsolidatedFrameWidth> for u8 {
@@ -283,6 +316,7 @@ impl From<ConsolidatedFrameWidth> for u8 {
             ConsolidatedFrameWidth::One => 1,
             ConsolidatedFrameWidth::Two => 2,
             ConsolidatedFrameWidth::Three => 3,
+            ConsolidatedFrameWidth::Four => 4,
         }
     }
 }
@@ -302,7 +336,11 @@ impl TryFrom<u8> for ConsolidatedFrameWidth {
     type Error = String;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Self::from_byte(value).ok_or_else(|| format!("width {value} is not 1..=3"))
+        if value == 4 {
+            Ok(Self::Four)
+        } else {
+            Self::from_byte(value).ok_or_else(|| format!("width {value} is not 1..=4"))
+        }
     }
 }
 
@@ -384,6 +422,7 @@ impl WidthCodedToken {
             ConsolidatedFrameWidth::One => 0xff,
             ConsolidatedFrameWidth::Two => 0xffff,
             ConsolidatedFrameWidth::Three => 0xff_ffff,
+            ConsolidatedFrameWidth::Four => u32::MAX,
         };
         if value > maximum {
             return Err("header token does not fit its declared width");
@@ -920,6 +959,23 @@ pub(crate) fn parse_consolidated_record(
     pos: usize,
     source_end: usize,
 ) -> Option<ConsolidatedRecord> {
+    parse_record(data, pos, source_end, false)
+}
+
+pub(crate) fn parse_consolidated_allocation_record(
+    data: &[u8],
+    pos: usize,
+    source_end: usize,
+) -> Option<ConsolidatedRecord> {
+    parse_record(data, pos, source_end, true)
+}
+
+fn parse_record(
+    data: &[u8],
+    pos: usize,
+    source_end: usize,
+    allocation_run: bool,
+) -> Option<ConsolidatedRecord> {
     let (family, width, token_at, length) = if let Some(width) = data
         .get(pos)
         .and_then(|byte| byte.checked_sub(0xa4))
@@ -934,10 +990,10 @@ pub(crate) fn parse_consolidated_record(
             length,
         )
     } else {
-        let width = data
-            .get(pos)
-            .and_then(|byte| byte.checked_sub(0xb1))
-            .and_then(ConsolidatedFrameWidth::from_byte)?;
+        let width = match *data.get(pos)? {
+            0xb5 if allocation_run => ConsolidatedFrameWidth::Four,
+            marker => ConsolidatedFrameWidth::from_byte(marker.checked_sub(0xb1)?)?,
+        };
         (
             ConsolidatedFamily::B,
             width,
@@ -1138,7 +1194,7 @@ mod tests {
     fn frame_states_admit_only_defined_widths_and_flags() {
         for byte in u8::MIN..=u8::MAX {
             let width = serde_json::from_value::<ConsolidatedFrameWidth>(serde_json::json!(byte));
-            assert_eq!(width.is_ok(), matches!(byte, 1..=3));
+            assert_eq!(width.is_ok(), matches!(byte, 1..=4));
             if let Ok(width) = width {
                 assert_eq!(
                     serde_json::to_value(width).expect("serialize frame width"),
@@ -1304,7 +1360,7 @@ mod tests {
         let record = &records[0];
         let payload = record.payload().expect("payload");
         let (_, count, _, lanes, _, _) =
-            super::pcurve_layout(&bytes, payload.start, payload.end).expect("layout");
+            super::pcurve_layout(&bytes, payload.start, payload.end, false).expect("layout");
         let late = lanes[6] + (count - 1) * 8;
         bytes[late..late + 8].copy_from_slice(&f64::NAN.to_le_bytes());
         assert!(
@@ -1320,6 +1376,59 @@ mod tests {
         assert_eq!(pcurves.len(), 1);
         assert_eq!(pcurves[0].sites.len(), 2);
         assert_eq!(pcurves[0].tail, [0x07]);
+    }
+
+    #[test]
+    fn a5_pcurve_accepts_owned_array_marker_with_same_extrapolation_count() {
+        let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        bytes[14] = 0x0b;
+        let records = consolidated_records(&bytes);
+        let pcurves = super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A);
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].extrapolation_sites, 2);
+    }
+
+    #[test]
+    fn owned_pcurve_wide_extrapolation_requires_a_matching_wide_count() {
+        for (leading, repeated, expected) in [(64, 64, Some(64)), (64, 65, None), (63, 63, None)] {
+            let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+            bytes.splice(32..33, [0x06, repeated]);
+            bytes.splice(14..15, [0x06, leading]);
+            let length = u32::try_from(bytes.len() - 8).expect("small frame");
+            bytes[3..7].copy_from_slice(&length.to_le_bytes());
+
+            let records = consolidated_records(&bytes);
+            let parsed = super::owned_pcurve_from_record(&bytes, &records[0]);
+            assert_eq!(parsed.map(|curve| curve.extrapolation_sites), expected);
+            assert!(
+                super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A)
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn owned_pcurve_retains_odd_trailer_controls() {
+        for control in [0x03, 0x25, 0xf9, 0x06] {
+            let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+            bytes.extend([0x01, control, 0x00]);
+            let length = u32::try_from(bytes.len() - 8).expect("small frame");
+            bytes[3..7].copy_from_slice(&length.to_le_bytes());
+            let records = consolidated_records(&bytes);
+            let parsed = super::owned_pcurve_from_record(&bytes, &records[0]);
+            if control == 0x06 {
+                assert!(parsed.is_none());
+            } else {
+                assert_eq!(
+                    parsed.expect("odd owned control").tail,
+                    [0x07, 0x01, control, 0x00]
+                );
+            }
+            assert!(
+                super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A)
+                    .is_empty()
+            );
+        }
     }
 
     #[test]
