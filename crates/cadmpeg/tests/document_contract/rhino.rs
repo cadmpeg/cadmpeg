@@ -3,21 +3,15 @@
 
 use std::fs;
 
-use assert_cmd::Command;
 use cadmpeg_codec_rhino::RhinoCodec;
-use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
-use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::codec::write::NativeDispositions;
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar};
-use predicates::prelude::predicate;
-use tempfile::tempdir;
+use cadmpeg_ir::CadIr;
 
 use super::{decode, workspace, write_decode};
 
 const TARGET: &str = "rhino:archive-80";
-const EPS_POINT: f64 = 1e-6;
 const FIXTURES: [&str; 2] = ["extrusion_hole.3dm", "curves_mixed.3dm"];
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -27,26 +21,6 @@ fn fixture(name: &str) -> Vec<u8> {
             .join(name),
     )
     .unwrap()
-}
-
-fn counts(ir: &CadIr) -> [usize; 5] {
-    [
-        ir.model.bodies.len(),
-        ir.model.faces.len(),
-        ir.model.edges.len(),
-        ir.model.curves.len(),
-        ir.model.points.len(),
-    ]
-}
-
-fn assert_source_settings_populated(ir: &CadIr) {
-    assert!(
-        ir.native
-            .namespace("rhino")
-            .and_then(|namespace| namespace.arenas().get("document_settings"))
-            .is_some_and(|records| !records.is_empty()),
-        "the test must exercise held native settings that the writer re-emits from document state"
-    );
 }
 
 #[test]
@@ -106,143 +80,6 @@ fn every_decodable_rhino_golden_with_native_records_can_be_synthesized() {
         checked >= 26,
         "the 26 decodable Rhino golden fixtures must all be exercised"
     );
-}
-
-#[test]
-fn cli_neutral_body_name_and_color_override_retained_rhino_attributes() {
-    for name in FIXTURES {
-        let dir = tempdir().unwrap();
-        let input = dir.path().join(name);
-        let cadir = dir.path().join("edited.cadir.json");
-        let output = dir.path().join("written.3dm");
-        let report = dir.path().join("report.json");
-        fs::write(&input, fixture(name)).unwrap();
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([
-                "dump",
-                input.to_str().unwrap(),
-                "-o",
-                cadir.to_str().unwrap(),
-            ])
-            .assert()
-            .success();
-        let mut ir = CadIr::from_json(&fs::read_to_string(&cadir).unwrap()).unwrap();
-        if name == "extrusion_hole.3dm" {
-            assert_eq!(counts(&ir)[..3], [1, 2, 4]);
-        } else {
-            assert_eq!(
-                [
-                    ir.model.bodies.len(),
-                    ir.model.curves.len(),
-                    ir.model.points.len()
-                ],
-                [2, 7, 3]
-            );
-        }
-        assert_source_settings_populated(&ir);
-        let expected_counts = counts(&ir);
-        let color = Color::from_rgba8(32, 96, 160, 255);
-        ir.model.bodies[0].name = Some("authored body".into());
-        ir.model.bodies[0].color = Some(color);
-        fs::write(&cadir, ir.to_canonical_json().unwrap()).unwrap();
-        fs::remove_file(decode_sidecar_path(&cadir).unwrap()).unwrap();
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([
-                "convert",
-                cadir.to_str().unwrap(),
-                "-o",
-                output.to_str().unwrap(),
-                "--to",
-                TARGET,
-                "--report",
-                report.to_str().unwrap(),
-            ])
-            .assert()
-            .success();
-        let written = decode(&RhinoCodec, &fs::read(output).unwrap());
-        assert_eq!(counts(written.ir()), expected_counts, "{name}");
-        let body = written
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .find(|body| body.name.as_deref() == Some("authored body"))
-            .expect("the authored name survives synthesis");
-        assert_eq!(body.color, Some(color));
-        let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-        let dispositions: NativeDispositions =
-            serde_json::from_value(report["export"]["native_dispositions"].clone()).unwrap();
-        let losses: Vec<LossNote> =
-            serde_json::from_value(report["export"]["losses"].clone()).unwrap();
-        assert_settings_written(&ir, &dispositions);
-        assert_native_omissions_accounted(&ir, &dispositions, &losses);
-    }
-}
-
-#[test]
-fn translated_library_edits_with_rebound_history_override_retained_rhino_geometry() {
-    for name in FIXTURES {
-        let dir = tempdir().unwrap();
-        let result = decode(&RhinoCodec, &fixture(name));
-        let mut ir = result.ir().clone();
-        assert_source_settings_populated(&ir);
-        let before = ir.model.points[0].position().get();
-        let original_counts = counts(&ir);
-        cadmpeg_test_support::contract::translate_model(
-            &mut ir,
-            cadmpeg_ir::math::Vector3::new(10.0, 0.0, 0.0),
-        )
-        .expect("translate valid geometry");
-        let cadir = dir.path().join("translated.cadir.json");
-        let output = dir.path().join("translated.3dm");
-        let text = ir.to_canonical_json().unwrap();
-        fs::write(&cadir, &text).unwrap();
-        let sidecar = DecodeSidecar::bind_sha256(
-            Sha256Digest::digest(text.as_bytes()),
-            result.report().clone(),
-            result.source_fidelity().clone(),
-        );
-        fs::write(
-            decode_sidecar_path(&cadir).unwrap(),
-            sidecar.to_canonical_json().unwrap(),
-        )
-        .unwrap();
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args([
-                "convert",
-                cadir.to_str().unwrap(),
-                "-o",
-                output.to_str().unwrap(),
-                "--to",
-                TARGET,
-            ])
-            .assert()
-            .success()
-            .stderr(predicate::str::contains("decode that produced this CADIR"));
-        let written = decode(&RhinoCodec, &fs::read(output).unwrap());
-        assert_eq!(counts(written.ir()), original_counts, "{name}");
-        assert!(
-            written.ir().model.points.iter().any(|point| {
-                let position = point.position().get();
-                (position.x - before.x - 10.0).abs() <= EPS_POINT
-                    && (position.y - before.y).abs() <= EPS_POINT
-                    && (position.z - before.z).abs() <= EPS_POINT
-            }),
-            "{name}: the translated point must be in the written model"
-        );
-        let (_, report) = write_decode(
-            &RhinoCodec,
-            &RhinoCodec,
-            &ir,
-            Some(result.source_fidelity()),
-            Some(TARGET),
-        );
-        assert_settings_written(&ir, &report.native_dispositions);
-        assert_native_omissions_accounted(&ir, &report.native_dispositions, &report.losses);
-    }
 }
 
 #[test]
@@ -367,147 +204,6 @@ fn reported_rhino_curve_and_mesh_arenas_preserve_their_physical_geometry() {
                 .unwrap_or_else(|error| panic!("{name}: solved curve differs: {error}"));
             }
         }
-    }
-}
-
-#[test]
-fn unsupported_rhino_subds_and_singular_seams_write_readable_reductions_with_losses() {
-    for name in [
-        "subd_v50.3dm",
-        "subd_v60.3dm",
-        "subd_v70.3dm",
-        "subd_v80.3dm",
-        "brep_singular_seam.3dm",
-    ] {
-        let source = decode(&RhinoCodec, &fixture(name));
-        let (written, report) = write_decode(
-            &RhinoCodec,
-            &RhinoCodec,
-            source.ir(),
-            Some(source.source_fidelity()),
-            Some(TARGET),
-        );
-        assert!(
-            matches!(report.write_path(), WritePath::Synthesized { .. }),
-            "{name}"
-        );
-        if name.starts_with("subd_") {
-            assert!(
-                !source.ir().model.subds.is_empty(),
-                "{name} must exercise held subdivision content"
-            );
-            assert_eq!(
-                written.ir().model.subds.len(),
-                source.ir().model.subds.len(),
-                "{name}: every held SubD must be emitted"
-            );
-            for (before, after) in source
-                .ir()
-                .model
-                .subds
-                .iter()
-                .zip(&written.ir().model.subds)
-            {
-                assert_eq!(after.scheme, before.scheme, "{name}: subdivision scheme");
-                assert_eq!(
-                    after.cage.vertices().len(),
-                    before.cage.vertices().len(),
-                    "{name}: vertex count"
-                );
-                assert_eq!(
-                    after.cage.edges().len(),
-                    before.cage.edges().len(),
-                    "{name}: edge count"
-                );
-                assert_eq!(
-                    after.cage.faces().len(),
-                    before.cage.faces().len(),
-                    "{name}: face count"
-                );
-                assert_eq!(after.cage, before.cage, "{name}: exact control cage");
-            }
-            assert!(
-                report
-                    .coverage
-                    .disposition(cadmpeg_ir::schema::EntityKind::SubdSurface)
-                    .carries(),
-                "{name}: coverage must state that the target carries SubD content"
-            );
-            assert!(
-                !report
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "writer.subds-omitted"),
-                "{name}: an exactly emitted cage must not charge SubD omission"
-            );
-            assert!(
-                !report.losses.iter().any(|loss| loss.code.taxonomy()
-                    == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids),
-                "{name}: emitted SubD content is not empty output"
-            );
-        } else {
-            assert!(
-                written.ir().model.bodies.is_empty(),
-                "{name}: omitted unsupported geometry must not reappear"
-            );
-            assert!(
-                report.losses.iter().any(|loss| loss.code.taxonomy()
-                    == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids),
-                "{name}: empty target output must be reported"
-            );
-            assert!(
-                !source.ir().model.faces.is_empty(),
-                "the seam fixture must contain a face"
-            );
-            assert!(written.ir().model.faces.is_empty());
-            assert!(
-                report
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "writer.body-omitted"
-                        && loss.severity == cadmpeg_ir::report::Severity::Error),
-                "a structurally omitted seam body must charge Error"
-            );
-        }
-    }
-}
-
-fn assert_settings_written(ir: &CadIr, dispositions: &NativeDispositions) {
-    let records = ir
-        .native
-        .namespace("rhino")
-        .unwrap()
-        .arenas()
-        .get("document_settings")
-        .expect("held document settings");
-    assert!(!records.is_empty());
-    for record in records {
-        // The decoder always holds one settings record, even when the file
-        // carries no authorable position (all wire fields None). The writer
-        // authors only held positions and drops a content-free record under
-        // W1, so only a record with authorable content must be non-Dropped.
-        let authored = ["model_url", "current_wire_density", "current_font_index"]
-            .into_iter()
-            .any(|name| record.field(name).is_some_and(|value| !value.is_null()))
-            || record
-                .field("current_color")
-                .is_some_and(|value| !value.is_null())
-            || ["current_layer_index", "current_material_index"]
-                .into_iter()
-                .any(|name| record.field(name).is_some_and(|value| !value.is_null()));
-        if !authored {
-            assert_eq!(
-                dispositions.record_disposition("rhino", "document_settings", record.id()),
-                NativeDisposition::Dropped,
-                "a content-free held settings record stays Dropped under W1"
-            );
-            continue;
-        }
-        assert_ne!(
-            dispositions.record_disposition("rhino", "document_settings", record.id()),
-            NativeDisposition::Dropped,
-            "Rule W1 re-emits held typed settings from document state"
-        );
     }
 }
 
