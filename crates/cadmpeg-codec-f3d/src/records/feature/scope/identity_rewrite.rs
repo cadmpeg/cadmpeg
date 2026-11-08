@@ -14,7 +14,7 @@ rewrite_native_scalar!(DesignFaceRecipeKind);
 rewrite_native_record!(DesignJointOriginReference, []; {joint_origin_reference});
 rewrite_native_record!(DesignJointOriginTransform, []; {joint_origin_transform, reference});
 rewrite_native_scalar!(DesignNativeFeatureName);
-rewrite_native_record!(DesignParameterScope, []; {id, class_tag, record_index, generation, feature_ordinal, history_state_id, previous_history_state_id, reference_members, occurrence_transfer, payload, unclosed_construction_operand_groups, paired_class_tag}; native scope_fields);
+rewrite_native_record!(DesignParameterScope, []; {id, class_tag, record_index, generation, feature_ordinal, history_state_id, previous_history_state_id, reference_members, occurrence_transfer, payload, paired_class_tag}; native scope_fields);
 rewrite_native_scalar!(super::generation::DesignScopeGeneration);
 rewrite_native_record!(DesignSketchEntityBinding, []; {entity_id});
 rewrite_native_record!(DesignSweepScope, []; {construction, sweep_profile});

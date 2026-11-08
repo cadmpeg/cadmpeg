@@ -312,7 +312,6 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                 "reference_members",
             )
             .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -599,7 +598,6 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
                 payload: crate::records::feature::scope::DesignFeatureKind::CustomFeature
                     .try_into()
                     .unwrap(),
-                unclosed_construction_operand_groups: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "302".to_owned(),
                 )
@@ -809,7 +807,6 @@ fn parameter_expressions_hold_forward_edges_without_copying_feature_dependencies
                 .expect("nonempty family name")
                 .try_into()
                 .unwrap(),
-                unclosed_construction_operand_groups: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),
                 )

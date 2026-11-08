@@ -565,7 +565,7 @@ fn normalize_synthetic_roots(after: &Value, added: &BTreeSet<String>) -> Value {
 
 fn is_named_degradation_disagreement(
     error: &str,
-    _named_degraded: &BTreeSet<String>,
+    format: &str,
     report: &cadmpeg_ir::report::export::ExportReport,
 ) -> bool {
     let Some((_, rest)) = error.split_once("left \"") else {
@@ -581,7 +581,7 @@ fn is_named_degradation_disagreement(
     if !named {
         return false;
     }
-    rest.contains("right \"added:step:")
+    rest.contains(&format!("right \"added:{format}:"))
         || rest.contains("right \"added:cadir:")
         || rest.contains("right <absent>")
         || rest.contains("right null")
@@ -685,7 +685,7 @@ pub fn cross_compare(
         Mode::Cross(CrossProjection::new(BTreeSet::new())),
     );
     if let Err(error) = &agreed {
-        if !is_named_degradation_disagreement(error, &named_degraded, report) {
+        if !is_named_degradation_disagreement(error, format, report) {
             findings.push(format!("the re-decode disagrees: {error}"));
         }
     }
@@ -1018,6 +1018,30 @@ pub fn single_value_paths(documents: &[Value]) -> BTreeMap<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::single_value_paths;
+
+    #[test]
+    fn a_named_remap_onto_the_writers_added_record_is_a_degradation() {
+        let report: cadmpeg_ir::report::export::ExportReport = serde_json::from_value(json!({
+            "identity": {"payload": "native", "target": "rhino:archive-80"},
+            "census": {"basis": "target_records", "counts": {}},
+            "write_path": {"path": "synthesized", "fidelity": {"status": "not_provided"}},
+            "coverage": {"coverage": "complete"},
+            "native_dispositions": {"namespaces": {}},
+            "losses": [{"code": {"scope": "namespaced", "namespace": "rhino",
+                                 "code": "writer.entity-omitted", "kind": "topology_not_transferred"},
+                        "severity": "error",
+                        "message": "region iges:model:region#free is split"}],
+            "notes": []
+        }))
+        .expect("typed export report");
+        let error = "model/shells s: at `.region`: left \"iges:model:region#free\", right \"added:rhino:object:region#1\"";
+        assert!(super::is_named_degradation_disagreement(
+            error, "rhino", &report
+        ));
+        assert!(!super::is_named_degradation_disagreement(
+            error, "step", &report
+        ));
+    }
     use super::{apply_reduced, apply_storage, ReducedProbe};
     use cadmpeg_ir::codec::write::ReducedStorage;
     use serde_json::json;

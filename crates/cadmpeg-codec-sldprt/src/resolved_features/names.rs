@@ -80,8 +80,9 @@ fn payload_name_candidates(
         .filter_map(move |offset| {
             let (start, end) = name_span(payload, offset)?;
             let units = payload.get(start..end)?;
-            let object_id = end
-                .checked_add(8)
+            let object_id = named_object_header_follows(payload, end)
+                .then(|| end.checked_add(8))
+                .flatten()
                 .and_then(|position| View::u32_le_at(payload, position))
                 .and_then(|value| ObjectId::try_from(value).ok());
             if units.is_empty() && object_id.is_none() {
@@ -89,6 +90,23 @@ fn payload_name_candidates(
             }
             Some((offset, object_id, units))
         })
+}
+
+/// Bytes of the named-object header that carry the object identifier.
+const NAMED_OBJECT_HEADER_LEN: usize = 12;
+
+/// A named-object header follows a name string unless a class declaration or
+/// another name record begins inside the header's bytes.
+fn named_object_header_follows(payload: &[u8], end: usize) -> bool {
+    (end..end.saturating_add(NAMED_OBJECT_HEADER_LEN)).all(|start| {
+        let declares_class = payload.get(start..start.saturating_add(CLASS_MARKER.len()))
+            == Some(CLASS_MARKER)
+            && class_name_at(payload, start).is_some();
+        let names_object = View::u16_le_at(payload, start).is_some_and(is_class_token)
+            && payload.get(start.saturating_add(2)..start.saturating_add(NAME_MARKER.len()))
+                == Some(&NAME_MARKER[2..]);
+        !declares_class && !names_object
+    })
 }
 
 pub(crate) fn name_span(payload: &[u8], offset: usize) -> Option<(usize, usize)> {
@@ -168,20 +186,24 @@ pub(super) fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &s
         .windows(CLASS_MARKER.len())
         .enumerate()
         .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
-        .filter_map(|offset| {
-            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if length == 0 {
-                return None;
-            }
-            let bytes = payload.get(offset + 6..offset + 6 + length)?;
-            if !bytes
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            {
-                return None;
-            }
-            Some((offset, std::str::from_utf8(bytes).ok()?))
-        })
+        .filter_map(|offset| Some((offset, class_name_at(payload, offset)?)))
+}
+
+/// The class name a declaration at `offset` names.
+fn class_name_at(payload: &[u8], offset: usize) -> Option<&str> {
+    let length = usize::from(View::u16_le_at(payload, offset.checked_add(4)?)?);
+    if length == 0 {
+        return None;
+    }
+    let start = offset.checked_add(6)?;
+    let bytes = payload.get(start..start.checked_add(length)?)?;
+    if !bytes
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return None;
+    }
+    std::str::from_utf8(bytes).ok()
 }
 
 /// Lane-scoped repeated-class token carried by every feature-name record.

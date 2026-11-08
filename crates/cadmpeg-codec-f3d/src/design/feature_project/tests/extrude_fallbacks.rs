@@ -61,7 +61,6 @@ fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
                 "reference_members",
             )
             .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: "261".to_owned().try_into().unwrap(),
             paired_byte_offset: 300,
         }
