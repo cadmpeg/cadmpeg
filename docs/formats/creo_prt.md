@@ -6839,6 +6839,8 @@ fields `ref_type` and `ref_id`. `ref_id` and `ref_type` equal the `AE_Id` and
 follows. Each link stores the attachment fields of a tolerance placement,
 and `next_attach_ptr` stores the next link. An annotation dimension stores two
 links. Attachment type `25` selects a surface and type `1` selects an edge.
+A type-`25` `attach_id` names a `VisibGeom` surface or an `ActDatums`
+surface; one surface identifier space spans both sections.
 
 The `set_datum_tag_xar` named prototype stores a datum label in
 `p_datum_tag_name` and a zero-based `gtol_datum_def_xar` slot in `dtm_def_id`.

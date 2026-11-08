@@ -323,7 +323,7 @@ pub(super) fn transfer(
     }
     if surface_targets != 0 {
         losses.push(CreoLossCode::PmiDimensionTargetInferred.note(format!(
-            "{surface_targets} dimension(s) use the faces of their referenced surfaces as targets."
+            "{surface_targets} dimension(s) use the faces of their referenced surfaces, or the visible faces on a referenced datum cylinder, as targets."
         )));
     }
     if edge_targets != 0 {

@@ -281,7 +281,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             kind => panic!("unexpected targeted dimension {kind:?}"),
         }
     }
-    assert_eq!(targeted, 5);
+    assert_eq!(targeted, 10);
 }
 
 /// Assert the two opposed slot walls of the STEP twin's position targets:

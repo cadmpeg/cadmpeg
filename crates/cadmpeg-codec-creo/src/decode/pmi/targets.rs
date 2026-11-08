@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::analytic::CylinderSurface;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{EdgeId, FaceId, SurfaceId};
 use cadmpeg_ir::pmi::PmiTarget;
 
@@ -18,6 +20,9 @@ use super::{elements::Element, Tolerance};
 
 const DISPLAY_VALUE_MATCH_TOLERANCE: f64 = 1.0e-9;
 const SURFACE_ATTACHMENT: u32 = 0x25;
+const CARRIER_COINCIDENCE_TOLERANCE_MM: f64 = 1.0e-6;
+const AXIS_PARALLEL_TOLERANCE: f64 = 1.0e-9;
+const VISIBLE_SURFACE_PREFIX: &str = "creo:visibgeom:surface#";
 const EDGE_ATTACHMENT: u32 = 1;
 const DIMENSION_PLACEMENT: u32 = 1;
 const SURFACE_PLACEMENT: u32 = 2;
@@ -196,18 +201,62 @@ fn resolve_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<Dimension
     }
 }
 
+/// The bounded faces of surface `id`. A visible surface supplies its own
+/// faces. A datum cylinder supplies the visible faces whose cylinder carrier
+/// has its axis line and radius.
 fn surface_faces(ir: &CadIr, id: u32) -> Option<Vec<FaceId>> {
-    let surface =
+    let visible =
         crate::identity::compose_checked::<SurfaceId>(&crate::identity::VISIBGEOM_SURFACE, id)
             .ok()?;
-    let faces: Vec<_> = ir
-        .model
-        .faces
-        .iter()
-        .filter(|face| face.surface == surface)
-        .map(|face| face.id.clone())
-        .collect();
+    let datum =
+        crate::identity::compose_checked::<SurfaceId>(&crate::identity::ACTDATUM_SURFACE, id)
+            .ok()?;
+    let faces_on = |predicate: &dyn Fn(&SurfaceId) -> bool| -> Vec<FaceId> {
+        ir.model
+            .faces
+            .iter()
+            .filter(|face| predicate(&face.surface))
+            .map(|face| face.id.clone())
+            .collect()
+    };
+    let faces = faces_on(&|surface| *surface == visible);
+    if !faces.is_empty() {
+        return Some(faces);
+    }
+    let datum_cylinder = cylinder(ir, &datum)?;
+    let faces = faces_on(&|surface| {
+        surface.as_str().starts_with(VISIBLE_SURFACE_PREFIX)
+            && cylinder(ir, surface).is_some_and(|carrier| same_cylinder(carrier, datum_cylinder))
+    });
     (!faces.is_empty()).then_some(faces)
+}
+
+fn cylinder<'a>(ir: &'a CadIr, id: &SurfaceId) -> Option<&'a CylinderSurface> {
+    match &ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| &surface.id == id)?
+        .geometry
+    {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some(cylinder),
+        _ => None,
+    }
+}
+
+/// Whether two cylinders share their axis line and radius.
+fn same_cylinder(first: &CylinderSurface, second: &CylinderSurface) -> bool {
+    let axis = <[f64; 3]>::from(*first.frame().axis().as_raw());
+    let other_axis = <[f64; 3]>::from(*second.frame().axis().as_raw());
+    let origin = <[f64; 3]>::from(first.origin().get());
+    let other_origin = <[f64; 3]>::from(second.origin().get());
+    let dot = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f64>();
+    let delta = [0, 1, 2].map(|index| other_origin[index] - origin[index]);
+    let along = dot(delta, axis);
+    let offset = [0, 1, 2].map(|index| delta[index] - axis[index] * along);
+    (first.radius().get() - second.radius().get()).abs() <= CARRIER_COINCIDENCE_TOLERANCE_MM
+        && (dot(axis, other_axis).abs() - 1.0).abs() <= AXIS_PARALLEL_TOLERANCE
+        && dot(offset, offset).sqrt() <= CARRIER_COINCIDENCE_TOLERANCE_MM
 }
 
 fn edge_faces(ir: &CadIr, id: u32) -> Option<BTreeSet<FaceId>> {
