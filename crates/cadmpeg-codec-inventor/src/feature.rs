@@ -2093,6 +2093,7 @@ impl FeatureFamily {
                     FeatureOperation::SplitBody { .. }
                         | FeatureOperation::SplitFace { .. }
                         | FeatureOperation::TrimBodies { .. }
+                        | FeatureOperation::TrimBodiesAtPlane { .. }
                 )
             )
         )
@@ -2129,7 +2130,8 @@ impl FeatureFamily {
             FeatureDefinition::Operation(
                 FeatureOperation::SplitBody { .. }
                 | FeatureOperation::SplitFace { .. }
-                | FeatureOperation::TrimBodies { .. },
+                | FeatureOperation::TrimBodies { .. }
+                | FeatureOperation::TrimBodiesAtPlane { .. },
             ) => Some(Self::Split),
             _ => None,
         }
