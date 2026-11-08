@@ -198,6 +198,12 @@ pub(in crate::writer) fn write(
         }
         "pattern" => {
             links(object, "Originals", &value["seeds"], names)?;
+            // The neutral pattern direction is the resolved final
+            // direction; the writer must not replay the source Reversed
+            // flag or the decoder would flip it a second time. It writes
+            // clear flags so the retained values cannot reapply.
+            boolean(object, "Reversed", false);
+            boolean(object, "Reversed2", false);
             pattern(
                 &value["pattern"],
                 object,
