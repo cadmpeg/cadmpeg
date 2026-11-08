@@ -3340,14 +3340,13 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if transform.is_some_and(|transform| !transform.is_proper_rigid())
-                && !mapped_occurrence_placements.contains_key(&occurrence.id)
-            {
+            let non_rigid = transform.is_some_and(|transform| !transform.is_proper_rigid())
+                && !mapped_occurrence_placements.contains_key(&occurrence.id);
+            if non_rigid {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
                 );
-                continue;
             }
             let (child_definition, child_representation) = if let Some(child_product) =
                 occurrence_products.get(&occurrence.id)
