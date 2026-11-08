@@ -96,6 +96,7 @@ pub(crate) struct ParameterScopeSources<'a> {
 pub(crate) struct DecodedParameterScopes {
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) work_plane_inferred_axes: HashMap<String, (u64, [u8; 2])>,
 }
 
 /// Decode every canonical sketch or construction-operation scope, including
@@ -115,6 +116,7 @@ pub(crate) fn decode_parameter_scopes(
     } = sources;
     let mut out = Vec::new();
     let mut losses = Vec::new();
+    let mut work_plane_inferred_axes = HashMap::new();
     for entry in scan
         .entries
         .iter()
@@ -248,7 +250,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::WorkPlane {
-                if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
+                if let Some((frame, inferred_axes)) =
+                    exact_work_plane_frame(bytes, &records, &scope)
+                {
+                    if inferred_axes != [0, 0] {
+                        work_plane_inferred_axes
+                            .insert(scope.id.clone(), (frame.transform_offset, inferred_axes));
+                    }
                     if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignWorkPlaneTransform {
                             work_plane_transform: frame.transform,
@@ -661,6 +669,7 @@ pub(crate) fn decode_parameter_scopes(
     Ok(DecodedParameterScopes {
         scopes: out,
         losses,
+        work_plane_inferred_axes,
     })
 }
 
@@ -1528,6 +1537,16 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 state_id => Some(i64::from(state_id)),
             }
         });
+        let reverse_normal_operation = if kind == scope::DesignFeatureKind::ReverseNormal {
+            super::reverse_normal::reverse_normal_operation(
+                bytes,
+                start,
+                *reference_count_at,
+                reference_members,
+            )
+        } else {
+            None
+        };
         let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
             exact_surface_stitch_operation(bytes, records, record_index, reference_members)
         } else {
@@ -1749,6 +1768,11 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 if let scope::DesignScopePayloadMut::BaseFlange(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
+            }
+        }
+        if let Some(operation) = reverse_normal_operation {
+            if let scope::DesignScopePayloadMut::ReverseNormal(slot) = scope.payload_mut() {
+                *slot = Some(operation);
             }
         }
         if let Some(operation) = edge_flange_operation {
