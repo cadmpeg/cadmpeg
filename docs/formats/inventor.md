@@ -375,6 +375,26 @@ A line whose two endpoint references resolve to one position stores no segment, 
 
 Types `013cbb1fd2114d68a0009e9a3c3aa076`, `7f341025ae4a79961d9047869d5f4e48`, and `0ead987ab9495ceefc186787a2a20643` are text member records of a planar sketch. The first stores a text; the second binds a text to a sketch point; the third groups the box points and lines of a text. None stores a curve. The points and lines that they name are ordinary planar entity records, and the box lines carry bit `0x80000`. A sketch that lists a text member record is not open because of it: the record stays native, the named entities project as sketch entities, and no text outline enters a profile. The reader reports the records with the loss `sketch.text-member-native`.
 
+Types `08db93dcc149f26ff229ecb1804d9784` and `5f33ec8f6c4fb6be9fcc71963ad1b9df` are the box frame and the box group of a planar sketch. They occur with a group record of type `0ead987ab9495ceefc186787a2a20643`. In segment major version 19, a box frame stores these fields after the 22-byte content header:
+
+```text
+sketch_reference u32     non-null
+width f64                positive
+height f64               positive
+corner_x f64
+corner_y f64
+value u32
+value_mask u16           compact 4-by-4 placement matrix,
+zero_mask u16            with the encoding of the sketch transform
+explicit f64[]           one value for each cell with both mask bits clear
+tail_value u32
+tail_flags u16
+tail_scale f64
+tail_state u8
+```
+
+The sketch reference selects the owning sketch. The corner is the position of the box corner point. The width and height are the lengths of the box lines. A box group stores `value:u32` and seven references after the content header. The references select the corner point, the four box lines, the box frame, and the corner point again. The box lines carry bit `0x80000`. Neither record stores a curve. A sketch that lists a box frame or a box group is not open because of it: the record stays native, the named entities project as sketch entities, and no box outline enters a profile. A record that does not match its layout to the last byte stays an unresolved sketch member. The reader reports the admitted records with the loss `sketch.box-member-native`.
+
 The planar entity types are:
 
 - `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional association tail.

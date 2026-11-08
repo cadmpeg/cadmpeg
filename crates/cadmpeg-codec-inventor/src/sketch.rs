@@ -28,6 +28,7 @@ use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+pub(crate) mod box_member;
 pub(crate) mod curve;
 pub(crate) mod point_tail;
 pub(crate) mod text;
@@ -291,7 +292,7 @@ pub(crate) struct SketchInventory {
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) directions: Vec<PmDcDirection>,
     pub(crate) constraints: Vec<PmDcSketchConstraint>,
-    /// Text member records. They store no curve and close their sketch.
+    /// Text and box member records. They store no curve and close their sketch.
     pub(crate) text_members: Vec<text::TextMember>,
     pub(crate) issues: Vec<RecordIssue>,
 }
@@ -816,6 +817,20 @@ pub(crate) fn inventory(
                     segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                 });
+                continue;
+            }
+            if box_member::is_box_member_type(record.type_id) {
+                match box_member::admit(record.type_id, record.payload, version) {
+                    Ok(()) => {
+                        ctx.charge_entities(1, "admit Inventor PmDc sketch box member")?;
+                        inventory.text_members.push(text::TextMember {
+                            segment_token: segment.pair.token.key().clone(),
+                            record_ordinal: record.ordinal,
+                        });
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => {}
+                }
                 continue;
             }
             let Some(tag) = SketchRecordTag::from_type_id(record.type_id) else {
@@ -5467,6 +5482,7 @@ mod tests {
     }
 
     mod axis_distance;
+    mod box_member;
     mod carrier_conflict;
     mod construction_flags;
     mod degenerate_line;

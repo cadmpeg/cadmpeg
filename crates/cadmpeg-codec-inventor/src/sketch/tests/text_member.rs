@@ -104,6 +104,7 @@ fn text_members_report_a_pinned_loss_and_other_members_keep_theirs() {
     let unresolved = HashSet::from([("generated", 0), ("generated", 1), ("generated", 2)]);
     let losses = member_loss_counts(
         &unresolved,
+        &HashSet::new(),
         [TEXT, TEXT, CURVE_MEMBER]
             .into_iter()
             .enumerate()
