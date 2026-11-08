@@ -766,6 +766,61 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
 }
 
 #[test]
+fn untrimmed_cylindrical_pcurve_recovers_an_antipodal_vertex() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        crate::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+        )
+        .unwrap(),
+    ));
+    let surface_id = SurfaceId::mint("test:model:surface#cylinder".to_owned()).unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface.clone(),
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::build(&ir);
+    let pass = crate::eval::admission::ModelEvaluationPass::new();
+    let context = SurfacePcurveContext {
+        model: super::PassEvaluator {
+            index: &index,
+            pass: &pass,
+        },
+        surface_id: &surface_id,
+        geometry: &surface,
+    };
+    let pcurve = Pcurve {
+        id: "test:model:pcurve#semicircle".try_into().unwrap(),
+        geometry: PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 2.0),
+                Point2::new(-std::f64::consts::PI, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    };
+    let ranges = edge_pcurve_parameter_ranges(
+        &cadmpeg_test_support::service_decode_context(),
+        &context,
+        None,
+        [Point3::new(3.0, 0.0, 2.0), Point3::new(-3.0, 0.0, 2.0)],
+        &pcurve,
+        &pcurve,
+        1.0e-9,
+    )
+    .unwrap()
+    .expect("one parameter pair reaches both vertices");
+    assert!(ranges.iter().any(|[start, end]| {
+        start.abs() < 1.0e-9 && (end.abs() - 1.0).abs() < 1.0e-9
+    }));
+}
+
+#[test]
 fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // At v=0 the quadratic surface has a zero derivative. The ordinary
     // seed at t=0 therefore cannot start Newton recovery; the finite
