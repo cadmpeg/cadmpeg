@@ -595,6 +595,7 @@ fn selected_face(owner: i64, item: u32, surface: Surface) -> SelectedFace {
         repeated_attribute: false,
         unshared_family: false,
         identical_owners: false,
+        form: SelectorForm::Naming,
         surface,
     }
 }
@@ -653,6 +654,40 @@ fn every_joined_face_operand_replaces_the_native_collection_in_one_input_state()
     );
     assert!(check(&inventory, &feature, &states));
     assert!(native_losses(std::slice::from_ref(&feature)).is_empty());
+}
+
+#[test]
+fn a_direct_face_selector_joins_no_face_selecting_feature() {
+    let ctx = context();
+    // Move Face keeps no joined face and no partial state for a direct selector.
+    for direct in [[true, true], [true, false], [false, true]] {
+        let (mut inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+        for (selector, direct) in [41, 43].into_iter().zip(direct) {
+            inventory
+                .edge_inputs
+                .faces
+                .get_mut(&(TOKEN.to_owned(), selector))
+                .expect("selected")
+                .form = if direct {
+                SelectorForm::Direct
+            } else {
+                SelectorForm::Naming
+            };
+        }
+        let states =
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        let joined = states.first().map_or(0, |state| state.faces.len());
+        assert_eq!(joined, 2 - direct.iter().filter(|direct| **direct).count());
+    }
+    // A Thicken face list that names a direct selector does not join.
+    let (mut inventory, mut feature) = thicken_fixture(&ctx);
+    for face in inventory.edge_inputs.faces.values_mut() {
+        face.form = SelectorForm::Direct;
+    }
+    let before = feature.clone();
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert!(states.is_empty());
+    assert_eq!(feature, before);
 }
 
 #[test]

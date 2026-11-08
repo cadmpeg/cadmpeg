@@ -59,6 +59,15 @@ pub(super) struct FaceSelector {
     body: PmDcReference,
     item: PmDcReference,
     context: PmDcReference,
+    /// The selector has the direct form, which only a chamfer support face uses.
+    direct: bool,
+}
+
+/// The record form of a face selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::feature) enum SelectorForm {
+    Naming,
+    Direct,
 }
 
 /// A face revision that a selector selects.
@@ -80,6 +89,9 @@ pub(in crate::feature) struct SelectedFace {
     /// The pair has several matched owners with identical surface geometry
     /// and sense, and `owner` is the one with the lowest entity index.
     pub(super) identical_owners: bool,
+    /// The selector form. A face selection of Move Face, Shell, Thread, and
+    /// Thicken does not join the direct form.
+    pub(super) form: SelectorForm,
     /// Surface class of the owner.
     pub(super) surface: Surface,
 }
@@ -177,6 +189,7 @@ pub(super) fn parse(
         body,
         item,
         context,
+        direct: false,
     }))
 }
 
@@ -237,6 +250,7 @@ pub(super) fn parse_direct(
         body,
         item,
         context,
+        direct: true,
     }))
 }
 
@@ -467,6 +481,11 @@ pub(super) fn selected(
                 repeated_attribute,
                 unshared_family,
                 identical_owners,
+                form: if selector.direct {
+                    SelectorForm::Direct
+                } else {
+                    SelectorForm::Naming
+                },
                 surface: classify_surface(first, &by_index),
             },
         ));
@@ -743,7 +762,7 @@ pub(crate) fn project(
                 .edge_inputs
                 .faces
                 .get(&(token.to_owned(), selector))
-                .filter(|face| face.item == item);
+                .filter(|face| face.item == item && face.form == SelectorForm::Naming);
             match selected {
                 Some(face) => {
                     conflict |= !owners.insert(face.owner);
