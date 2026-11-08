@@ -1307,6 +1307,22 @@ pub(super) fn write(
             covered.insert(owner.clone());
         }
     }
+    // Carriers of an object whose shapes all re-emit from their typed tables
+    // travel in those tables.
+    for property in native_properties
+        .iter()
+        .filter(|property| exact_shapes.contains(&property.id))
+    {
+        if native_properties
+            .iter()
+            .filter(|other| {
+                other.owner == property.owner && other.type_name == "Part::PropertyPartShape"
+            })
+            .all(|other| exact_shapes.contains(&other.id) || empty_shapes.contains(&other.id))
+        {
+            covered.insert(property.owner.clone());
+        }
+    }
     if let Some(serialized) =
         brep::unowned_with_uses(ctx, ir, &mut losses, &root_kinds, &covered, &covered_points)?
     {
@@ -2076,6 +2092,37 @@ fn replay_unchanged_placements(
                 }
             }
         }
+        // A scalar lane of the native type and value keeps its native
+        // spelling and status.
+        for native in &owned {
+            let Some(written) = object.properties.get(&native.name) else {
+                continue;
+            };
+            let [value] = native.values() else {
+                continue;
+            };
+            let Some(native_value) = value
+                .attributes
+                .get("value")
+                .filter(|_| value.attributes.len() == 1)
+            else {
+                continue;
+            };
+            if written_scalar(written).is_some_and(|(kind, tag, written_value)| {
+                kind == native.type_name
+                    && tag == value.tag
+                    && (written_value == *native_value
+                        || written_value
+                            .parse::<f64>()
+                            .ok()
+                            .zip(native_value.parse::<f64>().ok())
+                            .is_some_and(|(left, right)| left == right))
+            }) {
+                if let Some(value) = xml::native_named(native, names, available)? {
+                    object.set(&native.name, value);
+                }
+            }
+        }
         // A link lane naming the same targets and subelements keeps its
         // native spelling, including the persistent shadow names.
         for native in owned.iter().filter(|property| {
@@ -2215,4 +2262,23 @@ fn written_links(xml: &str) -> Option<Vec<(String, String)>> {
         }
     }
     Some(links)
+}
+
+/// The type, value tag and value of a written one-element scalar property.
+fn written_scalar(xml: &str) -> Option<(String, String, String)> {
+    let document = roxmltree::Document::parse(xml).ok()?;
+    let root = document.root_element();
+    let mut children = root.children().filter(roxmltree::Node::is_element);
+    let value = children.next()?;
+    if children.next().is_some()
+        || value.attributes().len() != 1
+        || value.children().any(|node| node.is_element())
+    {
+        return None;
+    }
+    Some((
+        root.attribute("type")?.to_owned(),
+        value.tag_name().name().to_owned(),
+        value.attribute("value")?.to_owned(),
+    ))
 }
