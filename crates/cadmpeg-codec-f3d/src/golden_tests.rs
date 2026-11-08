@@ -1313,7 +1313,7 @@ fn neutralize_stream_names(value: &mut serde_json::Value) {
         if let Some(hash) = text.rfind('#') {
             let prefix = &text[..hash];
             let rest = &text[hash + 1..];
-            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
             if !digits.is_empty()
                 && rest[digits.len()..].is_empty()
                 && prefix
