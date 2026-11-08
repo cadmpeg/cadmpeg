@@ -118,8 +118,10 @@ pub(in crate::writer) fn text(
         for node in uv.into_iter().flatten() {
             writeln!(out, "{}", point2(*node)).ok()?;
         }
+        // Triangles hold zero-based node positions; the grammar is one-based.
         for triangle in triangulation.triangles() {
-            writeln!(out, "{} {} {}", triangle[0], triangle[1], triangle[2]).ok()?;
+            let [first, second, third] = triangle.map(|node| node.checked_add(1));
+            writeln!(out, "{} {} {}", first?, second?, third?).ok()?;
         }
         for normal in normals.into_iter().flatten() {
             writeln!(out, "{}", vector3(*normal)).ok()?;

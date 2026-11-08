@@ -590,7 +590,35 @@ pub(super) fn write(
     // emitted, so agreement spans the whole prototype use.
     let mut linked_uses: Vec<(String, String, String, cadmpeg_ir::transform::Transform)> =
         Vec::new();
+    // One `App::Link` holds every element occurrence of an array link; its own
+    // placement is the native link placement the elements compose with.
+    let native_nodes = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::ProductNodeRecord>("product_nodes"))
+        .transpose()?
+        .unwrap_or_default();
+    let mut shared_uses = HashMap::<&str, usize>::new();
+    for occurrence in &ir.model.occurrences {
+        if let Some(native) = occurrence.native_ref.as_deref() {
+            *shared_uses.entry(native).or_default() += 1;
+        }
+    }
+    let mut emitted_links = HashMap::<String, String>::new();
+    let native_types = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::ObjectRecord>("objects"))
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|object| (object.id().as_str().to_owned(), object.type_name.clone()))
+        .collect::<HashMap<_, _>>();
     for (_, occurrence) in occurrences {
+        let array = occurrence
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| shared_uses.get(native).copied().unwrap_or(0) > 1);
         // Container occurrences are the placement of their own definition,
         // rather than an additional use of that same container.
         let container = match &occurrence.prototype {
@@ -607,7 +635,38 @@ pub(super) fn write(
                 .cloned(),
             _ => None,
         };
+        // A link that is also another link's prototype is declared as a
+        // definition too; that definition's object is this link.
+        let link_definition = occurrence
+            .native_ref
+            .as_ref()
+            .and_then(|native| {
+                ir.model.product_definitions.iter().find(|definition| {
+                    definition.kind == ProductDefinitionKind::Object
+                        && definition.bodies.is_empty()
+                        && definition.native_ref.as_ref() == Some(native)
+                })
+            })
+            .and_then(|definition| names.get(definition.id.as_str()))
+            .cloned();
+        let peer = occurrence
+            .native_ref
+            .as_ref()
+            .and_then(|native| emitted_links.get(native))
+            .cloned();
         let name = if let Some(name) = container {
+            name
+        } else if let Some(name) = peer {
+            name
+        } else if let Some(name) = link_definition {
+            if let Some(object) = objects.iter_mut().find(|object| object.name == name) {
+                object.kind = occurrence
+                    .native_ref
+                    .as_ref()
+                    .and_then(|native| native_types.get(native))
+                    .filter(|kind| kind.as_str() == "App::LinkElement")
+                    .map_or_else(|| "App::Link".to_owned(), Clone::clone);
+            }
             name
         } else {
             let proposed = names
@@ -623,6 +682,12 @@ pub(super) fn write(
             name
         };
         names.insert(occurrence.id.as_str().to_owned(), name.clone());
+        let first_use = match occurrence.native_ref.as_ref() {
+            Some(native) => emitted_links
+                .insert(native.clone(), name.clone())
+                .is_none(),
+            None => true,
+        };
         let missing_prototype = matches!(
             &occurrence.prototype,
             PrototypeReference::Local { definition } if !names.contains_key(definition.as_str())
@@ -631,7 +696,38 @@ pub(super) fn write(
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("instance output is absent"))?;
-        if object.kind == "App::Link" {
+        if array {
+            if first_use {
+                let (prototype, file) =
+                    prototype(&occurrence.prototype, occurrence.id.as_str(), names, losses);
+                object.set(
+                    "LinkedObject",
+                    xml::property(
+                        "LinkedObject",
+                        "App::PropertyXLink",
+                        &xlink(&prototype, &file, &[]),
+                    ),
+                );
+                if let Some(reference) = &occurrence.link {
+                    link_state(object, reference, names, losses);
+                }
+                replay_list_properties(ir, occurrence, object, names, losses)?;
+                if let Some(frame) = native_nodes
+                    .iter()
+                    .find(|node| occurrence.native_ref.as_deref() == Some(node.object.as_str()))
+                    .and_then(crate::native::ProductNodeRecord::local_transform)
+                {
+                    let (rigid, _) =
+                        split_scale(frame.transform()).unwrap_or((frame.transform(), [1.0; 3]));
+                    object.set(
+                        "Placement",
+                        placement(rigid, occurrence.id.as_str(), losses)?,
+                    );
+                }
+            }
+            continue;
+        }
+        if matches!(object.kind.as_str(), "App::Link" | "App::LinkElement") {
             let (prototype, file) =
                 prototype(&occurrence.prototype, occurrence.id.as_str(), names, losses);
             let subelements = occurrence
@@ -669,7 +765,7 @@ pub(super) fn write(
         // effective transform. An occurrence with no placement omits
         // Placement (#238 §5.5, #213).
         let deferred = occurrence.linked_prototype.is_some()
-            && object.kind == "App::Link"
+            && matches!(object.kind.as_str(), "App::Link" | "App::LinkElement")
             && !missing_prototype;
         if !deferred {
             let transform = if missing_prototype && occurrence.linked_prototype.is_some() {
