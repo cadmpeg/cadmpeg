@@ -6364,9 +6364,7 @@ fn emit_standard_topology(
         curve_indices.insert(id, index);
     }
     let edge_endpoints = |row: usize| {
-        edge_vertices[row].map(|vertex| {
-            ir.model.points[point_assignment[vertex]].position().get()
-        })
+        edge_vertices[row].map(|vertex| ir.model.points[point_assignment[vertex]].position().get())
     };
     let cylindrical_arc_ranges = edge_geometry::cylindrical_arcs::ranges(
         ir,
