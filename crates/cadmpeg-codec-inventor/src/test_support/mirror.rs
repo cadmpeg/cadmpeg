@@ -700,6 +700,32 @@ impl Fixture {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         source: PmDcPatternFeature,
     ) -> Result<crate::feature::FeatureProjection, cadmpeg_core::CodecError> {
+        let (inventory, design, sketch) = self.history_inputs(source);
+        crate::feature::project(
+            ctx,
+            &inventory,
+            &design,
+            &sketch,
+            &[],
+            &crate::feature::ProjectedSketches {
+                sketches: &[],
+                entities: &[],
+                profile_bodies: &[],
+                result_model: None,
+            },
+        )
+    }
+
+    /// The records that history projection reads for a Mirror in this
+    /// fixture.
+    pub(crate) fn history_inputs(
+        &self,
+        source: PmDcPatternFeature,
+    ) -> (
+        crate::feature::FeatureInventory,
+        crate::design::DesignInventory,
+        crate::sketch::SketchInventory,
+    ) {
         use crate::design::scope::{BrepSegmentName, BrepSegmentRole, PmDcModelRootPayload};
 
         let seeds = source
@@ -782,19 +808,7 @@ impl Fixture {
             text_members: Vec::new(),
             issues: Vec::new(),
         };
-        crate::feature::project(
-            ctx,
-            &inventory,
-            &design,
-            &sketch,
-            &[],
-            &crate::feature::ProjectedSketches {
-                sketches: &[],
-                entities: &[],
-                profile_bodies: &[],
-                result_model: None,
-            },
-        )
+        (inventory, design, sketch)
     }
 }
 
@@ -894,6 +908,13 @@ pub(crate) fn replacement_form() -> (Fixture, PmDcPatternFeature) {
         105,
     );
     (fixture, source)
+}
+
+/// A replacement form whose slot-12 plane is supplied by a work plane that
+/// precedes the Mirror in the browser.
+pub(crate) fn supplied_form() -> (Fixture, PmDcPatternFeature) {
+    let (fixture, source) = replacement_form();
+    (fixture.with_supplying_plane(), source)
 }
 
 pub(crate) fn replacement_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeature)> {
