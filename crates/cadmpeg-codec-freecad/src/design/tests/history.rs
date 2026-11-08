@@ -582,10 +582,11 @@ fn transfers_stored_and_external_part_feature_families() {
         .filter(|record| record.type_name == "Part::Part2DObjectPython")
         .all(|record| !record.neutral()));
     crate::test_support::assert_design_fragment_scope(&result);
+    // #209 §1.1: full decode reports requested scope classes as delivered.
     assert_eq!(
-        result.report().losses.len(),
-        1,
-        "stored, imported and vendor-native features report only the scope loss"
+        crate::test_support::non_placement_losses(result.report()).len(),
+        0,
+        "stored, imported and vendor-native features report no scope loss"
     );
     assert!(result.source_fidelity().unrepresented().is_empty());
     let objects = result
