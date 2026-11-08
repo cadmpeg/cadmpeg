@@ -112,7 +112,10 @@ fn current_occurrence_membership_does_not_replace_directed_dependencies() {
         .find(|object| object.name == "RenamedPart")
         .expect("product");
     assert_eq!(part.dependencies, ["RenamedTarget"]);
-    assert_eq!(part.properties["Group"], link_list("Group", &["Member".into()]));
+    assert_eq!(
+        part.properties["Group"],
+        link_list("Group", &["Member".into()])
+    );
 }
 
 #[test]

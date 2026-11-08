@@ -631,7 +631,7 @@ pub(super) fn write(
         {
             super::drawings::parameters(
                 object,
-                &drawing.object,
+                (&drawing.object, drawing.id.as_str()),
                 &drawing.parameters,
                 &native_properties,
                 (&names, &available),
@@ -660,7 +660,7 @@ pub(super) fn write(
         let object = &mut objects[index];
         super::drawings::parameters(
             object,
-            &annotation.object,
+            (&annotation.object, annotation.id.as_str()),
             &annotation.parameters,
             &native_properties,
             (&names, &available),
@@ -874,7 +874,7 @@ pub(super) fn write(
             super::drawings::scalar(object, "X", "App::PropertyDistance", x);
             super::drawings::scalar(object, "Y", "App::PropertyDistance", y);
             if z != 0.0 {
-                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                losses.push(FreecadLossCode::AnnotationPositionPlanar.note(format!(
                     "annotation {} has a page position with a nonzero third coordinate",
                     annotation.id
                 )));
@@ -1367,36 +1367,72 @@ pub(super) fn write(
         &mut losses,
         &native_properties,
     );
-    // The object Label is the feature's native home. Where a definition
-    // and a feature share an object and their labels differ, the feature
-    // name wins and the definition label is a documented loss (#238 §5.5).
-    // A label that already matches keeps its native XML with its status.
-    for feature in &ir.model.features {
-        if let Some(label) = &feature.name {
-            if let Some(object) = names
-                .get(feature.id.as_str())
-                .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
-            {
-                if let Some(definition) = ir
-                    .model
-                    .product_definitions
-                    .iter()
-                    .find(|definition| names.get(definition.id.as_str()) == Some(&object.name))
-                    .filter(|definition| definition.label.as_deref() != Some(label.as_str()))
-                {
-                    losses.push(FreecadLossCode::ProductLabelNotTransferred.note(format!(
-                        "definition {} label differs from the feature label sharing object {}",
-                        definition.id, object.name,
-                    )));
-                }
-                let current = object
-                    .properties
-                    .get("Label")
-                    .and_then(|xml| xml::property_string_value(xml));
-                if current.as_deref() != Some(label.as_str()) {
-                    object.set_text("Label", label);
+    // Features, definitions and sketches sharing an object share its one
+    // Label (#238 §5.5). A value that differs from the stored Label is the
+    // current one; otherwise the feature name wins. Every other differing
+    // value is a documented loss. A label that already matches keeps its
+    // native XML with its status.
+    for object in &mut objects {
+        let mut candidates: Vec<(&str, &str, &str)> = Vec::new();
+        for feature in &ir.model.features {
+            if let Some(label) = feature.name.as_deref() {
+                if names.get(feature.id.as_str()) == Some(&object.name) {
+                    candidates.push(("feature", feature.id.as_str(), label));
                 }
             }
+        }
+        for definition in &ir.model.product_definitions {
+            if let Some(label) = definition.label.as_deref() {
+                if names.get(definition.id.as_str()) == Some(&object.name) {
+                    candidates.push(("definition", definition.id.as_str(), label));
+                }
+            }
+        }
+        for sketch in &ir.model.sketches {
+            if let Some(label) = sketch.name.as_deref() {
+                if names.get(sketch.id.as_str()) == Some(&object.name) {
+                    candidates.push(("sketch", sketch.id.as_str(), label));
+                }
+            }
+        }
+        if !candidates.iter().any(|(kind, _, _)| *kind == "feature") {
+            continue;
+        }
+        let stored = native_properties
+            .iter()
+            .find(|property| {
+                property.name == "Label" && names.get(&property.owner) == Some(&object.name)
+            })
+            .and_then(crate::attributes::semantic_text);
+        let Some(&(_, _, label)) = candidates
+            .iter()
+            .find(|(_, _, value)| stored.as_deref().is_some_and(|stored| stored != *value))
+            .or_else(|| candidates.first())
+        else {
+            continue;
+        };
+        for (kind, id, value) in &candidates {
+            if *value == label {
+                continue;
+            }
+            losses.push(if *kind == "definition" {
+                FreecadLossCode::ProductLabelNotTransferred.note(format!(
+                    "definition {id} label differs from the label sharing object {}",
+                    object.name,
+                ))
+            } else {
+                FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "{kind} {id} name is replaced by the label sharing object {}",
+                    object.name,
+                ))
+            });
+        }
+        let current = object
+            .properties
+            .get("Label")
+            .and_then(|xml| xml::property_string_value(xml));
+        if current.as_deref() != Some(label) {
+            object.set_text("Label", label);
         }
     }
     for original in &native_objects {
