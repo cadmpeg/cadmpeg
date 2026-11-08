@@ -62,6 +62,21 @@ fn fixture() -> (FeatureInventory, Feature) {
             },
         ));
     }
+    // The result-body collection of slot 11 holds one surface body.
+    slots.push((11, 90));
+    properties.push(test_property(
+        90,
+        PmDcFeaturePropertyKind::References {
+            family: crate::feature::PmDcFeatureReferenceFamily::ObjectCollection,
+            items: crate::feature::tests::reference_list(&[92]),
+        },
+    ));
+    properties.push(test_property(
+        91,
+        PmDcFeaturePropertyKind::SurfaceBody {
+            body: crate::feature::tests::reference(0),
+        },
+    ));
     let source = test_feature(
         original.identity.record_ordinal,
         original.properties.references().len(),
@@ -113,7 +128,8 @@ fn fixture() -> (FeatureInventory, Feature) {
             generators: 1,
             repeated_attribute: false,
             unshared_family: false,
-            identical_owners: true,
+            identical_owners: false,
+            form: face_selection::SelectorForm::Direct,
             item: 6,
             surface: Surface::Plane,
         },
@@ -215,7 +231,7 @@ fn the_support_face_may_be_either_face_of_the_edge() {
 #[test]
 fn every_missing_proof_of_the_support_side_keeps_the_native_group() {
     type Edit = fn(&mut FeatureInventory, &mut Feature);
-    let edits: [(&str, Edit); 14] = [
+    let edits: [(&str, Edit); 16] = [
         ("both faces of the edge own the selector", |inventory, _| {
             let key = (token(inventory), FACE_SOURCE);
             inventory
@@ -279,6 +295,30 @@ fn every_missing_proof_of_the_support_side_keeps_the_native_group() {
                 .expect("selected")
                 .generators = 3;
         }),
+        (
+            "face selector repeats its matching attribute",
+            |inventory, _| {
+                let key = (token(inventory), FACE_SOURCE);
+                inventory
+                    .edge_inputs
+                    .faces
+                    .get_mut(&key)
+                    .expect("selected")
+                    .repeated_attribute = true;
+            },
+        ),
+        (
+            "face selector has an unshared generated-name family",
+            |inventory, _| {
+                let key = (token(inventory), FACE_SOURCE);
+                inventory
+                    .edge_inputs
+                    .faces
+                    .get_mut(&key)
+                    .expect("selected")
+                    .unshared_family = true;
+            },
+        ),
         ("edge selector is not joined", |inventory, _| {
             inventory.edge_inputs.historical.clear();
         }),
@@ -450,4 +490,72 @@ fn the_validator_accepts_the_projection_and_rejects_each_departure() {
     assert!(!valid(&projected, source, &expected, &[]));
     // A native group needs no state.
     assert!(valid(&feature, source, &expected, &[]));
+}
+
+/// Projects the fixture through the whole feature projection, with the
+/// lengths of slots 2 and 3 as parameters.
+fn whole_projection(inventory: FeatureInventory) -> crate::feature::FeatureProjection {
+    use crate::feature::tests::{neutral_parameter, raw_parameter};
+    let raw = vec![raw_parameter(49), raw_parameter(50)];
+    let neutral = [
+        neutral_parameter(
+            &raw[0],
+            cadmpeg_ir::features::ParameterValue::Length(Length::new(SLOT_FIRST).expect("length")),
+        ),
+        neutral_parameter(
+            &raw[1],
+            cadmpeg_ir::features::ParameterValue::Length(Length::new(SLOT_SECOND).expect("length")),
+        ),
+    ];
+    crate::feature::fillet::tests::project_inventory_fixture(inventory, raw, &neutral)
+}
+
+fn chamfer_group(projection: &crate::feature::FeatureProjection) -> &ChamferGroup {
+    assert_eq!(projection.features.len(), 1);
+    group(&projection.features[0])
+}
+
+#[test]
+fn the_whole_projection_charges_no_orientation_note_for_a_joined_chamfer() {
+    let (inventory, _) = fixture();
+    let projection = whole_projection(inventory);
+    assert!(matches!(
+        chamfer_group(&projection).spec,
+        ChamferSpec::TwoDistances { .. }
+    ));
+    assert_eq!(projection.input_topologies.len(), 1);
+    assert!(projection.edge_treatment_losses.is_empty());
+    assert_eq!(projection.unresolved_features, 0);
+}
+
+#[test]
+fn the_whole_projection_charges_the_orientation_note_for_a_chamfer_that_stays_native() {
+    for support in [false, true] {
+        let (mut inventory, _) = fixture();
+        if support {
+            let key = (token(&inventory), FACE_SOURCE);
+            inventory
+                .edge_inputs
+                .faces
+                .get_mut(&key)
+                .expect("selected")
+                .repeated_attribute = true;
+        } else {
+            inventory.edge_inputs.historical.clear();
+        }
+        let projection = whole_projection(inventory);
+        assert_eq!(
+            chamfer_group(&projection).spec,
+            ChamferSpec::Unresolved {
+                form: Some(ChamferForm::TwoDistances)
+            }
+        );
+        assert!(projection.input_topologies.is_empty());
+        let [loss] = projection.edge_treatment_losses.as_slice() else {
+            panic!("one orientation note")
+        };
+        assert_eq!(loss.code.local_code(), "feature.chamfer-operands-native");
+        assert!(loss.message.contains("support-side ownership"));
+        assert_eq!(projection.unresolved_features, 1);
+    }
 }

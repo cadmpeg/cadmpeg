@@ -2472,15 +2472,6 @@ pub(crate) fn project(
         };
         match value {
             Some((projected_feature, result)) => {
-                if let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
-                    projected_feature.evaluation.definition()
-                {
-                    edge_treatment_losses.extend(
-                        groups
-                            .iter()
-                            .filter_map(|group| chamfer::orientation_loss(group.spec)),
-                    );
-                }
                 neutral += 1;
                 projected.push(HistoryItem {
                     record: feature.identity.record_ordinal,
@@ -2753,6 +2744,18 @@ pub(crate) fn project(
         |token, reference| resolve_property(token, reference.index(), &index),
         |source, slot| length_parameter(source, slot, &index),
     )?);
+    // The orientation notes follow the final specs, after the joins above.
+    for feature in &features {
+        if let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+            feature.evaluation.definition()
+        {
+            edge_treatment_losses.extend(
+                groups
+                    .iter()
+                    .filter_map(|group| chamfer::orientation_loss(group.spec)),
+            );
+        }
+    }
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {

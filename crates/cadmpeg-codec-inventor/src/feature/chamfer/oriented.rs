@@ -37,7 +37,9 @@ struct Joined {
 
 /// Joins the one edge and the one support face of the chamfer. The face
 /// revision that carries the first distance is the only matched owner of the
-/// support selector that uses the edge revision.
+/// support selector that uses the edge revision. A selector with a repeated
+/// matching attribute or an unshared generated-name family stays native,
+/// because no note states those readings for a chamfer.
 fn join<'a>(
     inventory: &FeatureInventory,
     source: &PmDcFeature,
@@ -82,7 +84,12 @@ fn join<'a>(
         .edge_inputs
         .faces
         .get(&(token.to_owned(), face_source))
-        .filter(|face| face.item == face_item && face.generators <= SUPPORT_GENERATOR_LIMIT)?;
+        .filter(|face| {
+            face.item == face_item
+                && face.generators <= SUPPORT_GENERATOR_LIMIT
+                && !face.repeated_attribute
+                && !face.unshared_family
+        })?;
     let mut uses_edge = face
         .owners
         .iter()
