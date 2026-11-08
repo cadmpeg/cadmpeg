@@ -2197,29 +2197,26 @@ fn validate_features(
                         .copied()
                 },
             );
-            // A historical face selection keeps its native selection list; the
-            // face join is checked by `face_selection::valid`.
+            // A historical face selection names its native selection list; the
+            // face join is checked by `face_selection::valid`. A Thicken in the
+            // face-offset form is a Move Face operation.
             let expected = expected.ok().map(|mut expected| {
-                if let (
-                    cadmpeg_ir::features::FeatureOperation::Thicken {
-                        faces: expected_faces,
-                        ..
-                    },
-                    cadmpeg_ir::features::FeatureOperation::Thicken {
-                        faces:
-                            cadmpeg_ir::features::FaceSelection::Historical { native: stored, .. },
-                        ..
-                    },
-                ) = (&mut expected, actual)
+                use cadmpeg_ir::features::{FaceSelection, FeatureOperation};
+                let faces_of = |operation: &FeatureOperation| match operation {
+                    FeatureOperation::Thicken { faces, .. }
+                    | FeatureOperation::MoveFace { faces, .. } => Some(faces.clone()),
+                    _ => None,
+                };
+                if let (Some(FaceSelection::Native(native)), Some(joined)) =
+                    (faces_of(&expected), faces_of(actual))
                 {
-                    if matches!(&*expected_faces,
-                        cadmpeg_ir::features::FaceSelection::Native(native)
-                            if native.as_str() == stored.as_str())
+                    if matches!(&joined, FaceSelection::Historical { native: stored, .. }
+                        if native.as_str() == stored.as_str())
                     {
-                        if let cadmpeg_ir::features::FeatureOperation::Thicken { faces, .. } =
-                            actual
+                        if let FeatureOperation::Thicken { faces, .. }
+                        | FeatureOperation::MoveFace { faces, .. } = &mut expected
                         {
-                            *expected_faces = faces.clone();
+                            *faces = joined;
                         }
                     }
                 }
