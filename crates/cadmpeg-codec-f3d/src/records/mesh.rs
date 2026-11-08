@@ -1148,7 +1148,11 @@ pub(crate) struct DesignMeshBody {
 #[derive(Serialize, Deserialize)]
 struct DesignMeshBodyWire {
     scope_record_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scope_body_ordinal"
+    )]
     scope_body_ordinal: Option<u32>,
     body_words: DesignMeshBodyWords,
     body_words_offset: u64,
@@ -1156,15 +1160,31 @@ struct DesignMeshBodyWire {
     split_streams: Vec<DesignMeshSplitStream>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     history_streams: Vec<DesignMeshHistoryStream>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_group_metadata"
+    )]
     face_group_metadata: Option<DesignMeshFaceGroups>,
     /// Mesh-body record carrying placement and graph references.
     body_record: DesignMeshRecordIdentity,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_name"
+    )]
     body_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_native_frame"
+    )]
     body_native_frame: Option<NativeBytes>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_variable_layout"
+    )]
     body_variable_layout: Option<VariableMeshBodyLayout>,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
     entry_name_record: DesignMeshRecordIdentity,
@@ -1172,7 +1192,11 @@ struct DesignMeshBodyWire {
     guid_record: DesignMeshRecordIdentity,
     /// One-to-one `ParaMesh` wrapper around `body_record`.
     wrapper_record: DesignMeshRecordIdentity,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_wrapper_opaque_tail"
+    )]
     wrapper_opaque_tail: Option<NativeBytes>,
     /// Fixed Scene-state record owned by this mesh body.
     scene_state_record: DesignMeshRecordIdentity,
@@ -1217,7 +1241,11 @@ struct DesignMeshBodyWire {
     entry_name_offset: u64,
     /// Container identity stored by both Design and `.paramesh` payloads.
     fusion_uuid: DesignGuidText,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_guid_opaque_bytes"
+    )]
     guid_opaque_bytes: Option<NativeBytes<[u8; 11]>>,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
@@ -1232,7 +1260,11 @@ struct DesignMeshBodyWire {
     /// Equal row-major container-to-model-centimetre affine transform.
     transform: MeshAffineTransform,
     /// Byte offsets of the two equal serialized transform blocks.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_offsets"
+    )]
     transform_offsets: Option<[u64; 2]>,
     /// Byte offset of the body-to-feature-scope reference.
     scope_reference_offset: u64,
@@ -1264,6 +1296,35 @@ struct DesignMeshBodyWire {
     )]
     tessellation_id: Option<String>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_scope_body_ordinal, u32, "scope_body_ordinal");
+cadmpeg_core::named_optional_field!(
+    deserialize_face_group_metadata,
+    DesignMeshFaceGroups,
+    "face_group_metadata"
+);
+cadmpeg_core::named_optional_field!(deserialize_body_name, String, "body_name");
+cadmpeg_core::named_optional_field!(
+    deserialize_body_native_frame,
+    NativeBytes,
+    "body_native_frame"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_body_variable_layout,
+    VariableMeshBodyLayout,
+    "body_variable_layout"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_wrapper_opaque_tail,
+    NativeBytes,
+    "wrapper_opaque_tail"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_guid_opaque_bytes,
+    NativeBytes<[u8; 11]>,
+    "guid_opaque_bytes"
+);
+cadmpeg_core::named_optional_field!(deserialize_transform_offsets, [u64; 2], "transform_offsets");
 
 impl From<DesignMeshBody> for DesignMeshBodyWire {
     fn from(value: DesignMeshBody) -> Self {
@@ -2101,14 +2162,15 @@ impl DesignMeshFeature {
         ]
     }
     fn scope_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
-        self.bodies.iter().map(|body| {
+        self.bodies.iter().filter_map(|body| {
             let owner = self
                 .scopes()
-                .find(|scope| scope.record().record_index() == body.scope_record_index)
-                .expect("validated mesh scope");
-            owner.record().byte_offset()
-                + owner.prefix_len()
-                + 11 * u64::from(body.scope_body_ordinal.expect("validated scope ordinal"))
+                .find(|scope| scope.record().record_index() == body.scope_record_index)?;
+            Some(
+                owner.record().byte_offset()
+                    + owner.prefix_len()
+                    + 11 * u64::from(body.scope_body_ordinal?),
+            )
         })
     }
     fn collection_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
@@ -2134,10 +2196,13 @@ struct MeshScopeWire {
     #[serde(
         rename = "scope_flagged_word",
         default,
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scope_flagged_word"
     )]
     flagged_word: Option<u32>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_scope_flagged_word, u32, "scope_flagged_word");
 
 impl TryFrom<MeshScopeWire> for DesignMeshScope {
     type Error = String;
@@ -2183,7 +2248,11 @@ struct DesignMeshFeatureWire {
     collection_record: DesignMeshRecordIdentity,
     /// Paired same-index base record inside the collection.
     collection_base_record: DesignMeshRecordIdentity,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_flagged_data"
+    )]
     collection_flagged_data: Option<DesignMeshFlaggedCollection>,
     /// Typed `ParaMesh` texture-table record owned by the collection.
     texture_table_record: DesignMeshRecordIdentity,
@@ -2202,9 +2271,17 @@ struct DesignMeshFeatureWire {
     collection_owner_reference_offset: u64,
     /// Byte offset of the owner's reciprocal collection reference.
     collection_owner_backlink_offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_owner_name_count"
+    )]
     collection_owner_name_count: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_owner_native_frame"
+    )]
     collection_owner_native_frame: Option<NativeBytes>,
     /// Byte offset of the texture flags-map count.
     texture_flags_count_offset: u64,
@@ -2217,6 +2294,22 @@ struct DesignMeshFeatureWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     operation_bodies: Vec<DesignMeshOperationBody>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_flagged_data,
+    DesignMeshFlaggedCollection,
+    "collection_flagged_data"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_owner_name_count,
+    u32,
+    "collection_owner_name_count"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_owner_native_frame,
+    NativeBytes,
+    "collection_owner_native_frame"
+);
 
 impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
     type Error = String;
