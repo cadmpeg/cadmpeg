@@ -165,3 +165,37 @@ pub(super) fn reduced_state_order(document: Option<&PresentationDocument>) -> Op
         ))
     })
 }
+
+/// Distance within which a written camera orientation equals the axis-angle
+/// its stored frame decodes to.
+const EPS_CAMERA_ORIENTATION: f64 = 1.0e-9;
+
+/// A loss when the camera orientation is not the axis-angle form of the
+/// rotation 3DM stores: a unit axis, and the z axis for no rotation.
+pub(super) fn reduced_orientation(document: Option<&PresentationDocument>) -> Option<LossNote> {
+    let document = document?;
+    let cameras = document
+        .states()
+        .iter()
+        .filter_map(|state| match &state.kind {
+            PresentationStateKind::Camera(camera) => Some(camera),
+            PresentationStateKind::Native(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let [camera] = cameras.as_slice() else {
+        return None;
+    };
+    let written = camera.orientation?.get();
+    let (_, [x, y, z]) = pose(Some(document)).ok()??;
+    let stored = crate::neutral_projection::views::frame_orientation(x, y, z)?.get();
+    let normalized = written
+        .iter()
+        .zip(stored)
+        .any(|(written, stored)| (written - stored).abs() > EPS_CAMERA_ORIENTATION);
+    normalized.then(|| {
+        crate::loss::RhinoLossCode::WriterCameraOrientationNormalized.note(format!(
+            "camera {} orientation is stored as its camera frame",
+            document.id
+        ))
+    })
+}

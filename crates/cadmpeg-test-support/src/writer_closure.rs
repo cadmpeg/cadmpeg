@@ -567,6 +567,8 @@ pub fn edit_findings(
     findings
 }
 
+/// Applies a normalization row to the edited value. A row whose path ends in
+/// `[]` normalizes a vector as a whole, so it receives the containing array.
 fn normalize_edit(
     expected: &mut Value,
     pointer: &str,
@@ -580,6 +582,11 @@ fn normalize_edit(
     let normalize = row
         .normalize
         .ok_or("normalization has no comparison rule")?;
+    let pointer = if row.path.ends_with("[]") {
+        pointer.rsplit_once('/').map_or(pointer, |(parent, _)| parent)
+    } else {
+        pointer
+    };
     let value = expected
         .pointer_mut(pointer)
         .ok_or("normalized value is absent")?;

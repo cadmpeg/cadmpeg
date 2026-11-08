@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 mod annotations;
 mod document;
 mod materials;
-mod views;
+pub(crate) mod views;
 
 fn layer_id(ordinal: usize) -> LayerId {
     LayerId::from(cadmpeg_ir::ids::Identity::compose(

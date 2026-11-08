@@ -370,6 +370,9 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> 
         if let Some(loss) = viewport::reduced_state_order(camera) {
             result.losses.push(loss);
         }
+        if let Some(loss) = viewport::reduced_orientation(camera) {
+            result.losses.push(loss);
+        }
         if view.is_none() && camera.is_none() && !native_only_supported(&fields) {
             let reason = if object(&fields, "viewport")
                 .and_then(|viewport| viewport.get("source_uuid"))

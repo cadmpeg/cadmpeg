@@ -60,6 +60,16 @@ fn orientation(viewport: &CameraProjection) -> Option<NonzeroVector<4>> {
     {
         return None;
     }
+    frame_orientation(camera_x, camera_y, camera_z)
+}
+
+/// The axis-angle orientation of an orthonormal camera frame: a unit axis and
+/// an angle, with the z axis for the identity rotation.
+pub(crate) fn frame_orientation(
+    camera_x: [f64; 3],
+    camera_y: [f64; 3],
+    camera_z: [f64; 3],
+) -> Option<NonzeroVector<4>> {
     let matrix = [
         [camera_x[0], camera_y[0], camera_z[0]],
         [camera_x[1], camera_y[1], camera_z[1]],

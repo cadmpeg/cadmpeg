@@ -126,6 +126,29 @@ fn run(output: Format, formats: &[&str], fidelity: bool) -> Vec<String> {
     findings
 }
 
+/// Distance within which an axis is unit or an angle is a whole turn.
+const EPS_ORIENTATION: f64 = 1.0e-12;
+
+/// The axis-angle a 3DM camera frame stores for an orientation: a unit axis,
+/// and the z axis with angle 0 for a whole number of turns.
+fn camera_frame_orientation(value: &serde_json::Value) -> serde_json::Value {
+    let components = value
+        .as_array()
+        .map(|items| items.iter().filter_map(serde_json::Value::as_f64).collect::<Vec<_>>());
+    let Some(&[x, y, z, angle]) = components.as_deref() else {
+        return value.clone();
+    };
+    let turns = angle.rem_euclid(std::f64::consts::TAU);
+    if turns < EPS_ORIENTATION || std::f64::consts::TAU - turns < EPS_ORIENTATION {
+        return serde_json::json!([0.0, 0.0, 1.0, 0.0]);
+    }
+    let length = x.hypot(y).hypot(z);
+    if (length - 1.0).abs() < EPS_ORIENTATION {
+        return value.clone();
+    }
+    serde_json::json!([x / length, y / length, z / length, angle])
+}
+
 /// §5.1(c) over the fixtures of one writer's format, in path order.
 fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Vec<String> {
     let encoder = cadmpeg_registry::build_encoder(output);
@@ -141,13 +164,22 @@ fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Ve
             normalize: Some(|_| serde_json::json!(2)),
         }]
     } else if output == Format::Rhino {
-        vec![ReducedProbe {
-            path: "model.presentation_documents[].states[].order",
-            storage: ReducedStorage::Normalized {
-                loss: "rhino/writer.presentation-state-order-reduced",
+        vec![
+            ReducedProbe {
+                path: "model.presentation_documents[].states[].order",
+                storage: ReducedStorage::Normalized {
+                    loss: "rhino/writer.presentation-state-order-reduced",
+                },
+                normalize: Some(|_| serde_json::json!(0)),
             },
-            normalize: Some(|_| serde_json::json!(0)),
-        }]
+            ReducedProbe {
+                path: "model.presentation_documents[].states[].kind.value.orientation[]",
+                storage: ReducedStorage::Normalized {
+                    loss: "rhino/writer.camera-orientation-normalized",
+                },
+                normalize: Some(camera_frame_orientation),
+            },
+        ]
     } else {
         Vec::new()
     };
