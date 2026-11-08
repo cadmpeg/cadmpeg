@@ -445,7 +445,7 @@ travel.
 
 **Question.** Which radius set does a role-`0x0000001000000000` face group use when a Fillet scope has more than one radius set?
 
-**Known.** `f3d.md` §3.1 "A Fillet selection set can store its face selections" defines the face group and its radius when the scope has one edge group, one face group, and one constant radius. With one radius per group, `f3d.md` §3.1 "Within a scope of the Fillet family" pairs groups and radii in scope-reference order, and that pairing gives the face group the radius at its position. Groups and parameters store no assignment cross-reference. A scope with several role-`0x0000000800000000` edge groups, one or more role-`0x0000001000000000` face groups, and one radius and tangency weight per edge group pairs the edge groups with the radii in scope order; a face group then has no pairing, because the groups outnumber the radii.
+**Known.** `f3d.md` §3.1 "A Fillet selection set can store its face selections" defines the face group and its radius when the scope has one edge group, one face group, and one constant radius. With one radius per group, the rule in DR-321 Known pairs groups and radii in scope-reference order, and that pairing gives the face group the radius at its position. Groups and parameters store no assignment cross-reference. A scope with several role-`0x0000000800000000` edge groups, one or more role-`0x0000001000000000` face groups, and one radius and tangency weight per edge group pairs the edge groups with the radii in scope order; a face group then has no pairing, because the groups outnumber the radii.
 
 **Need.** The scope-order pairing must be confirmed or replaced for face groups before a Fillet with several selection sets and face selections transfers its radii as authored.
 
@@ -1702,6 +1702,44 @@ when the operation transition carries no candidate for the group members?
 **Known.** `f3d.md` §3.1 gives the table's rows and columns. A feature suppressed in the current model with no resolved column gets a suppressed state in the active configuration. When the active row also has a suppression column with no resolved feature, that column could name the same feature with another state. The decoder keeps the inferred state and reports `configuration.suppression-inferred`.
 
 **Need.** Saves of one design with a suppression column on a feature kind that has no neutral feature, in each active row, with the column target and the feature state recorded.
+
+**Conflict.** None.
+
+**Note.** None.
+
+
+### DR-320. Repeated sketch ordinals in one collection
+
+**Question.** What does a sketch Geometry-member ordinal denote when two sketches of one ordinal collection store the same value?
+
+**Known.** `f3d.md` §3.1 gives the ordinal at Geometry-member offset 30 and the collection reference at offset 37. The counted run of the collection lists both sketches, and each sketch names the collection in return. Entity suffix order and collection reference order do not follow ordinal order, and the sequence skips values. Both sketches of a repeated pair are complete sketches with their own entity header, placement, and Sketch scope. The decoder retains the ordinal and uses it for no neutral field. The structural check admits a repeated ordinal.
+
+**Need.** Controlled saves that create, delete, copy, and reorder sketches in one component, each recording the ordinal of every sketch in the collection.
+
+**Conflict.** None.
+
+**Note.** None.
+
+
+### DR-321. Fillet scope without a stored radius
+
+**Question.** Where does a `Fillet` scope store its radius when it has no parameter owner and no fixed scalar lane?
+
+**Known.** The scopes that store radii use these forms. Within a scope of the Fillet family, construction-operand groups in scope-reference order pair one-to-one with `Radius` parameters in increasing owner-local order. `TangencyWeight` parameters, when present, pair with the same groups in increasing owner-local order. The group, owner, and parameter records store no radius or tangency-weight assignment cross-reference. The two orderings define both pairings. Each radius therefore applies to the ordered edge operands carried by its paired group. When the scope also holds role-`0x0000001000000000` face groups, the role-`0x0000000800000000` edge groups pair one-to-one with the radii in that order, and a face group in such a scope takes no pairing. `f3d.md` §3.1 gives the fixed `Fillet` scalar lanes in the scope reference table. A `Fillet` scope exists whose reference table holds one role-`0x0000001000000000` construction-operand group and the eight members of that group, with no other reference. The members are compact persistent-identity frames retained in the edge-identity arena. The scope has no indexed parameter owner, no fixed scalar lane, and no radius, chord length, or tangency weight record. The frame of the scope is 22 bytes shorter than the frame of a `Fillet` scope with owners and nine references. Its opaque scalar stored after the feature name is independent of the radii of the `Fillet` scopes that have owners.
+
+**Need.** The same selection saved as a `Fillet` with a known radius, and as a suppressed `Fillet` after the radius is deleted or the feature is suppressed, each with the scope frame, the reference table, and the timeline suppression state recorded.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-322. Selected-face Extrude start without a start group
+
+**Question.** What does start-support byte `2` mean for an `Extrude` scope that stores no start-face group?
+
+**Known.** `f3d.md` §3.1 gives start-support byte `2` as a selected-face start that stores a `ProfileOffset` and a profile-from-entity reference. A selected-face start adds one role-`0x0000001100000000` start group; a role-`0x0000000500000000` group is a start-face group only when the start support is selected face. A new-body `Extrude` scope exists with start-support byte `2`, one-sided distance extent, and a `ProfileOffset` owner, whose reference table holds three fixed scalar lanes, one further record, the profile group, and its profile. It stores no start group of any role. Its reference slots and frame length are those of an offset-profile-plane new-body scope with the same reference count. Selected-face start scopes of other operations store the start group.
+
+**Need.** Saves of a new-body `Extrude` that start from a selected face, from an offset plane, and from a selected face that is later deleted, each with the start-support byte and the scope reference table recorded.
 
 **Conflict.** None.
 
