@@ -722,7 +722,7 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("duplicate procedural construction must be rejected"),

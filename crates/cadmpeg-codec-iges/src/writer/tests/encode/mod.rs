@@ -1306,7 +1306,7 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("disagreeing pcurve endpoints were accepted"),

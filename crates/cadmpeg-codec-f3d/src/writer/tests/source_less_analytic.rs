@@ -1225,7 +1225,7 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("open face cannot be emitted as a solid body"),

@@ -639,7 +639,7 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("none-shape scaled compound loft with tolerance must fail"),
@@ -1258,7 +1258,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("invalid law arity must be rejected"),
