@@ -778,7 +778,8 @@ pub(crate) fn transfer_neutral(
                 .collect(),
         );
     }
-    let mut children: HashMap<String, Vec<(usize, u32, usize)>> = HashMap::new();
+    // Members outside their parent's Group sort after it, by ordinal.
+    let mut children: HashMap<String, Vec<(Option<usize>, u32, usize)>> = HashMap::new();
     for (index, occurrence) in occurrences.iter().enumerate() {
         let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
             continue;
@@ -786,15 +787,16 @@ pub(crate) fn transfer_neutral(
         let position = groups
             .get(parent.as_str())
             .zip(occurrence.native_ref.as_deref())
-            .and_then(|(group, native)| group.get(native).copied())
-            .unwrap_or(usize::MAX);
+            .and_then(|(group, native)| group.get(native).copied());
         children
             .entry(parent.as_str().to_owned())
             .or_default()
             .push((position, occurrence.ordinal, index));
     }
     for mut members in children.into_values() {
-        members.sort_unstable();
+        members.sort_unstable_by_key(|&(position, ordinal, index)| {
+            (position.is_none(), position, ordinal, index)
+        });
         for (rank, (_, _, index)) in members.into_iter().enumerate() {
             occurrences[index].ordinal = u32::try_from(rank)
                 .map_err(|_| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
