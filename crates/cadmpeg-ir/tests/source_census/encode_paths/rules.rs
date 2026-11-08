@@ -83,7 +83,6 @@ pub(super) fn import(tree: &syn::UseTree, prefix: &[String], aliases: &mut Alias
                     "ResourceLimit",
                     "UnsupportedDialect",
                     "UnsupportedTarget",
-                    "UnsupportedContent",
                     "NotImplemented",
                     "Io",
                 ],
@@ -94,12 +93,7 @@ pub(super) fn import(tree: &syn::UseTree, prefix: &[String], aliases: &mut Alias
                     "ResourceLimit",
                     "Io",
                 ],
-                Some("TargetRefusalKind") => &[
-                    "ExplicitUnavailable",
-                    "InheritedUnavailable",
-                    "DefaultUnavailable",
-                    "UnrecordedSource",
-                ],
+                Some("TargetRefusalKind") => &["UnknownExplicit", "NoDefault"],
                 _ => &[],
             };
             for name in names {
@@ -123,7 +117,7 @@ pub(super) fn check(parts: &[String], span: proc_macro2::Span, construction: boo
     }
     if matches!(
         name,
-        "NotImplemented" | "UnsupportedContent" | "Malformed" | "malformed" | "Truncated"
+        "NotImplemented" | "Malformed" | "malformed" | "Truncated"
     ) {
         rules.insert("forbidden encode-path error spelling");
     }

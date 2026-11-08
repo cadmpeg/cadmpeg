@@ -133,7 +133,10 @@ pub(super) fn ellipse_over_range(
 ) -> Result<NurbsCurve, WriteError> {
     let [lo, hi] = FiniteReal::raw_array(range);
     let span = hi - lo;
-    if span.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) || !span.is_finite() || span > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
+    if span.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+        || !span.is_finite()
+        || span > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS
+    {
         return Err(omit(format!(
             "edge {id} ellipse carrier is not a writable arc"
         )));
@@ -338,7 +341,10 @@ pub(super) fn clamp_curve(
         .checked_add(1)
         .ok_or_else(|| fail("degree overflows its end multiplicity"))?;
     let [lo, hi] = FiniteReal::raw_array(range);
-    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) || !lo.is_finite() || !hi.is_finite() {
+    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater)
+        || !lo.is_finite()
+        || !hi.is_finite()
+    {
         return Err(fail("used interval is not a finite increasing range"));
     }
     let knots = curve.knots().as_slice().to_vec();

@@ -218,17 +218,15 @@ pub(crate) fn project(
                 }
             }
         }
-        let non_body_targets = targets
-            .iter()
-            .filter(|target| {
-                matches!(
-                    target,
-                    PresentationItem::Point { .. }
-                        | PresentationItem::Curve { .. }
-                        | PresentationItem::Surface { .. }
-                        | PresentationItem::Tessellation { .. }
-                )
-            });
+        let non_body_targets = targets.iter().filter(|target| {
+            matches!(
+                target,
+                PresentationItem::Point { .. }
+                    | PresentationItem::Curve { .. }
+                    | PresentationItem::Surface { .. }
+                    | PresentationItem::Tessellation { .. }
+            )
+        });
         if non_body_targets.clone().next().is_some() {
             if let Some(attributes) = object.attributes.parsed() {
                 for (ordinal, item) in non_body_targets.clone().enumerate() {

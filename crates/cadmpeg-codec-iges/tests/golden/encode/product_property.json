@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     116       1       0       0       0       0       0       000000000D      1\n     116       0       0       1       0                    COMP       0D      2\n     406       2       0       0       0       0       0       000010000D      3\n     406       0       0       1       7                               0D      4\n     406       3       0       0       0       0       0       000010000D      5\n     406       0       0       1      15                               0D      6\n116,0,0,0,0,0,2,3,5;                                                   1P      1\n406,1,2HR1;                                                            3P      2\n406,1,7HBRACKET;                                                       5P      3\nS0000001G0000003D0000006P0000003                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     116       1       0       0       0       0       0       000000000D      1\n     116       0       0       1       0                    COMP       0D      2\n     406       2       0       0       0       0       0       000010000D      3\n     406       0       0       1       7                  REFDES       0D      4\n     406       3       0       0       0       0       0       000010000D      5\n     406       0       0       1      15                    NAME       0D      6\n116,0,0,0,0,0,2,3,5;                                                   1P      1\n406,1,2HR1;                                                            3P      2\n406,1,7HBRACKET;                                                       5P      3\nS0000001G0000003D0000006P0000003                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -95,26 +95,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 2 native record(s) from `iges.entities`: iges:entity:directory#3, iges:entity:directory#5",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
@@ -175,9 +155,11 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped",
+              "disposition": "regenerated",
               "records": {
-                "iges:presentation:display-attributes#D1": "regenerated"
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated"
               }
             },
             "drawings": {
@@ -186,7 +168,9 @@
             "entities": {
               "disposition": "dropped",
               "records": {
-                "iges:entity:directory#1": "written"
+                "iges:entity:directory#1": "written",
+                "iges:entity:directory#3": "written",
+                "iges:entity:directory#5": "written"
               }
             },
             "external_references": {

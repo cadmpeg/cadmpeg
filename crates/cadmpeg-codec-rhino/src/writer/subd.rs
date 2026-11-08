@@ -52,9 +52,7 @@ pub(super) fn write(
     let mut count = 0;
     for surface in &ir.model.subds {
         if version.value() < 60 {
-            match write_proxy(
-                ctx, ir, version, session, output, materials, surface,
-            ) {
+            match write_proxy(ctx, ir, version, session, output, materials, surface) {
                 Ok(()) => count += 1,
                 Err(WriteError::Omit(reason)) => losses.push(
                     RhinoLossCode::WriterSubdOmitted

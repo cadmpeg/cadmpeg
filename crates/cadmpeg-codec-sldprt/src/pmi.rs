@@ -262,12 +262,12 @@ pub(crate) fn patch_payload(
         let annotation = ir.model.pmi.iter().find(|annotation| annotation.id == id);
         let (value, precision, basic, inspection, reference_only, text) = if ir.scope.model {
             let Some(annotation) = annotation else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "SLDPRT PMI deletion of {id} requires synthesis"
                 )));
             };
             let PmiDefinition::Dimension(dimension) = &annotation.definition else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "SLDPRT PMI occurrence {id} changed semantic family"
                 )));
             };
@@ -278,7 +278,7 @@ pub(crate) fn patch_payload(
                     PmiQuantity::Angle | PmiQuantity::Ratio => value.value.get(),
                 })
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    CodecError::NotImplemented(format!(
                         "SLDPRT PMI occurrence {id} has no evaluated nominal"
                     ))
                 })?;
@@ -343,7 +343,7 @@ pub(crate) fn patch_payload(
             }
             (None, None) => {}
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "SLDPRT PMI occurrence {id} requires a different text layout"
                 )))
             }
