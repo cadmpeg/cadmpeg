@@ -190,6 +190,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The current lookup selects the catalog entry at the stored fixed-width ordinal. The one-based interpretation selects the preceding entry and gives scalar-compatible roles for these controls. A partial change also alters the number of selectors in a definition and changes downstream value-chain admission.
 
+### DI-31. Non-semantic feature control frame content
+
+**Question.** Which fields of a `CATTPSNonSemanticGDT` annotation and its drafting object graph give the tolerance characteristic, the magnitude with its unit, and the datum references?
+
+**Known.** In FTC-07 the general-note frame `profile .06 | A | B | C` has one `CATTPSNonSemanticGDT` entity and no `CATTPSToleranceWithDRF`, `CATTPSToleranceWithoutDRF`, or `TolBloc` production; the 20 typed tolerances and their 6 secondary values account for every other STEP tolerance. No source field stores the magnitude as binary64 `1.524` or `0.06`, or as binary32 `0.06`; the binary32 `1.524` occurrences lie outside every entity record. The drafting catalog stores the frame as consecutive entries `DftGDT`, `ToleranceType`, `BoxNumber`, `UpperText`, `StringList`, and four RTF cells whose text is `.06`, `A`, `B`, and `C`. No decoded field references the four cell entries. The `StringList` object record has an empty payload, and the records for entities 95–97 have no decoded head. The only unit text is the general note `UNITS: INCHES`.
+
+**Need.** A typed characteristic, a numeric magnitude with a typed unit, and an owner relation from the annotation to its cells transfer the frame as a semantic tolerance. Without them the frame stays native, and the part transfers 26 of the 27 STEP tolerances.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-02. Rolling-ball scalar-jet semantics and tail control
