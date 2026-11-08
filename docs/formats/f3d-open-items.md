@@ -357,7 +357,7 @@ travel.
 
 **Question.** What do the mesh-GUID bytes at offsets 21 through 31, the mesh-body prefix words, and the remaining mesh-operation member fields store?
 
-**Known.** The mesh-GUID record carries eleven bytes. A mesh body carries one prefix word; a flagged mesh body carries two. The operation member references a mesh body. The decoder retains the words and the operation source records and reports `mesh.guid-bytes-uninterpreted`, `mesh.body-words-native`, and `mesh.operation-records-native`.
+**Known.** The mesh-GUID record carries eleven bytes. A mesh body carries one prefix word; a flagged mesh body carries two. The operation member references a mesh body. The operation scope frame can also store marked same-segment references to the mesh-GUID records of input meshes, at frame positions that vary. The decoder takes every reference in the scope frame that names a mesh-GUID record with a reciprocal entry name as an input. The decoder retains the words and the operation source records and reports `mesh.guid-bytes-uninterpreted`, `mesh.body-words-native`, and `mesh.operation-records-native`.
 
 **Need.** A design saved after individual body insert, move, and scale operations establishes the meanings of these fields. A controlled mesh operation establishes the remaining member fields.
 
