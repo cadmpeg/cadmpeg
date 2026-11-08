@@ -2042,6 +2042,15 @@ fn set_edge_distances(bytes: &mut [u8], distances: [f64; 2]) {
     }
 }
 
+/// A `Bool` value in either spelling `FreeCAD` reads.
+fn boolean(text: &str) -> Option<bool> {
+    match text {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    }
+}
+
 /// The seven numbers of a written or native `PropertyPlacement`.
 fn placement_values(values: &[(&str, &str)]) -> Option<[f64; 7]> {
     let mut result = [0.0; 7];
@@ -2111,7 +2120,10 @@ fn replay_unchanged_placements(
                             .parse::<f64>()
                             .ok()
                             .zip(native_value.parse::<f64>().ok())
-                            .is_some_and(|(left, right)| left == right))
+                            .is_some_and(|(left, right)| left == right)
+                        || (tag == "Bool"
+                            && boolean(&written_value)
+                                .is_some_and(|left| boolean(native_value) == Some(left))))
             }) {
                 if let Some(value) = xml::native_named(native, names, available) {
                     object.set(&native.name, value);

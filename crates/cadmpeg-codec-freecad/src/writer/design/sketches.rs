@@ -30,6 +30,16 @@ pub(crate) fn write(
             })
             .unwrap_or_else(|| format!("Sketch{}", objects.len()));
         let index = if let Some(index) = objects.iter().position(|object| object.name == name) {
+            // The sketch and its feature share one object and one Label.
+            if let Some(sketch_name) = sketch.name.as_deref().filter(|sketch_name| {
+                objects[index].properties.get("Label") != Some(&xml::string("Label", sketch_name))
+            }) {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "sketch {} name {sketch_name:?} is replaced by the Label of the feature \
+                     that shares its object",
+                    sketch.id
+                )));
+            }
             index
         } else {
             objects.push(Object::new(
