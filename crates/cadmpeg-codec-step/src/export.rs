@@ -418,6 +418,10 @@ pub(crate) struct Builder<'a> {
     /// (a shared edge is reached once per coedge) and aggregated into a single
     /// counted loss note.
     curveless_edges: BTreeSet<String>,
+    /// Pcurves of written coedges that no written surface curve associates.
+    unassociated_pcurves: BTreeSet<String>,
+    /// Edges written as bare topology whose parameter range has no carrier.
+    ranged_bare_edges: BTreeSet<String>,
     /// Face-context edges written with a 3D line synthesized from endpoint vertices.
 
     /// Degenerate carriers of point edges that need no curve record: those
@@ -909,6 +913,8 @@ impl<'a> Builder<'a> {
             sampled_curves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
+            unassociated_pcurves: BTreeSet::new(),
+            ranged_bare_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
             point_loop_points: BTreeSet::new(),
             collapsed_curveless_coedges: BTreeSet::new(),
@@ -1630,11 +1636,30 @@ impl<'a> Builder<'a> {
             .filter(|binding| self.written_appearance_bindings.contains(&binding.id))
             .map(|binding| binding.appearance.as_str())
             .collect();
+        // Curve and point styles hold no transparency.
+        let alpha_held: BTreeSet<&str> = ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| {
+                self.written_appearance_bindings.contains(&binding.id)
+                    && !matches!(
+                        binding.target,
+                        AppearanceTarget::Curve(_)
+                            | AppearanceTarget::Edge(_)
+                            | AppearanceTarget::Point(_)
+                            | AppearanceTarget::Vertex(_)
+                    )
+            })
+            .map(|binding| binding.appearance.as_str())
+            .collect();
         for appearance in &ir.model.appearances {
             let Some(color) = appearance.base_color else {
                 continue;
             };
-            if written_appearances.contains(appearance.id.as_str()) {
+            if written_appearances.contains(appearance.id.as_str())
+                && (color.a() == 1.0 || alpha_held.contains(appearance.id.as_str()))
+            {
                 continue;
             }
             let name = appearance.name.as_deref().unwrap_or("");
@@ -2682,7 +2707,29 @@ impl<'a> Builder<'a> {
             {
                 continue;
             }
-            let [Some(value)] = attribute.values.as_slice() else {
+            let mut values = Vec::new();
+            for value in &attribute.values {
+                let held = match value {
+                    Some(AttributeValue::String(value)) => {
+                        Some(("DESCRIPTIVE_REPRESENTATION_ITEM", string(value)))
+                    }
+                    Some(AttributeValue::Integer(value)) => Some((
+                        "VALUE_REPRESENTATION_ITEM",
+                        format!("COUNT_MEASURE({value})"),
+                    )),
+                    Some(AttributeValue::Float(value)) => Some((
+                        "VALUE_REPRESENTATION_ITEM",
+                        format!("NUMERIC_MEASURE({})", self.emitter.real(value.get())),
+                    )),
+                    Some(AttributeValue::Boolean(value)) => Some((
+                        "BOOLEAN_REPRESENTATION_ITEM",
+                        if *value { ".T." } else { ".F." }.to_owned(),
+                    )),
+                    _ => None,
+                };
+                values.extend(held);
+            }
+            if values.is_empty() || values.len() != attribute.values.len() {
                 self.loss(
                     StepLossCode::DocumentAttributeValueDegraded,
                     format!(
@@ -2691,37 +2738,22 @@ impl<'a> Builder<'a> {
                     ),
                 );
                 continue;
-            };
-            let (kind, value) = match value {
-                AttributeValue::String(value) => ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value)),
-                AttributeValue::Integer(value) => (
-                    "VALUE_REPRESENTATION_ITEM",
-                    format!("COUNT_MEASURE({value})"),
-                ),
-                AttributeValue::Float(value) => (
-                    "VALUE_REPRESENTATION_ITEM",
-                    format!("NUMERIC_MEASURE({})", self.emitter.real(value.get())),
-                ),
-                AttributeValue::Boolean(value) => (
-                    "BOOLEAN_REPRESENTATION_ITEM",
-                    if *value { ".T." } else { ".F." }.to_owned(),
-                ),
-                _ => {
-                    self.loss(
-                        StepLossCode::DocumentAttributeValueDegraded,
-                        format!(
-                            "document attribute '{}' value cannot be held in the CAx-IF representation form",
-                            attribute.name
-                        ),
-                    );
-                    continue;
-                }
-            };
+            }
             let name = string(&attribute.name);
             let property = self
                 .emitter
                 .emit("PROPERTY_DEFINITION", &format!("{name},'',{owner}"));
-            let item = self.emitter.emit(kind, &format!("{name},{value}"));
+            // Several values are the ordered row the attribute name labels.
+            let item = if let [(kind, value)] = values.as_slice() {
+                self.emitter.emit(kind, &format!("{name},{value}"))
+            } else {
+                let items: Vec<_> = values
+                    .iter()
+                    .map(|(kind, value)| self.emitter.emit(kind, &format!("'',{value}")))
+                    .collect();
+                self.emitter
+                    .emit("ROW_REPRESENTATION_ITEM", &format!("{name},{}", refs(&items)))
+            };
             let representation = self
                 .emitter
                 .emit("REPRESENTATION", &format!("'',({item}),{context}"));
@@ -3784,11 +3816,63 @@ impl<'a> Builder<'a> {
     fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
         let ir = self.ir;
+        // A wireframe model is one body, with a region per connected edge
+        // set, so the regions of a wire body share one model.
+        let mut wire_regions = HashMap::<&str, Vec<&cadmpeg_ir::topology::Region>>::new();
+        for region in &ir.model.regions {
+            if self
+                .bodies
+                .get(region.body.as_str())
+                .is_some_and(|body| body.kind == BodyKind::Wire)
+            {
+                wire_regions
+                    .entry(region.body.as_str())
+                    .or_default()
+                    .push(region);
+            }
+        }
+        // A shell-based surface model is one body, with a region per shell,
+        // so the shells of a sheet body's regions share one model.
+        let mut sheet_regions_left = HashMap::<&str, usize>::new();
+        for region in &ir.model.regions {
+            if self
+                .bodies
+                .get(region.body.as_str())
+                .is_some_and(|body| body.kind == BodyKind::Sheet)
+            {
+                *sheet_regions_left.entry(region.body.as_str()).or_default() += 1;
+            }
+        }
+        for body in &ir.model.bodies {
+            if body.kind == BodyKind::Solid && body.regions.len() > 1 {
+                let regions = body
+                    .regions
+                    .iter()
+                    .map(|region| format!("'{region}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.loss(
+                    StepLossCode::SolidRegionsSplit,
+                    format!("solid body '{}' was written as one manifold solid for each of its regions: {regions}", body.id),
+                );
+            }
+        }
+        let mut sheet_shells = BTreeMap::<&str, Vec<Ref>>::new();
         for region in &ir.model.regions {
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
                 .map_or(BodyKind::General, |body| body.kind);
+            if let Some(left) = sheet_regions_left.get_mut(region.body.as_str()) {
+                *left -= 1;
+            }
+            let body_regions = match wire_regions.get(region.body.as_str()) {
+                Some(regions) if regions.first().is_some_and(|first| first.id != region.id) => {
+                    continue;
+                }
+                Some(regions) => regions.clone(),
+                None => vec![region],
+            };
             let has_surface_topology = region.shells.iter().any(|shell_id| {
                 self.shells
                     .get(shell_id.as_str())
@@ -3803,7 +3887,7 @@ impl<'a> Builder<'a> {
             if body_kind == BodyKind::Wire
                 || (body_kind == BodyKind::General && !has_surface_topology)
             {
-                let wire_written = if let Some(item) = self.emit_wire_region(region) {
+                let wire_written = if let Some(item) = self.emit_wire_regions(&body_regions) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
@@ -3822,12 +3906,15 @@ impl<'a> Builder<'a> {
                         .or_insert(item);
                     true
                 } else {
-                    self.empty_wire_regions
-                        .insert(region.id.as_str().to_owned());
+                    for region in &body_regions {
+                        self.empty_wire_regions
+                            .insert(region.id.as_str().to_owned());
+                    }
                     self.dropped_region_bodies
                         .insert(region.body.as_str().to_owned());
                     false
                 };
+                for &region in &body_regions {
                 if wire_written {
                     let shells = region
                         .shells
@@ -3857,6 +3944,7 @@ impl<'a> Builder<'a> {
                     }
                 }
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
+                }
                 continue;
             }
             // A sheet whose faces have no bounds is a set of whole surfaces,
@@ -3928,6 +4016,19 @@ impl<'a> Builder<'a> {
                     format!("body {} region {} was written as a surface model because faces of its solid shells were omitted", region.body, region.id),
                 );
             }
+            if body_kind == BodyKind::Sheet {
+                let pending = sheet_shells.entry(region.body.as_str()).or_default();
+                pending.append(&mut shell_refs);
+                if sheet_regions_left
+                    .get(region.body.as_str())
+                    .is_some_and(|left| *left > 0)
+                {
+                    self.emit_region_fallback_geometry(region, context, false, &mut items);
+                    continue;
+                }
+                shell_refs = std::mem::take(pending);
+            }
+            let first_shell = shell_refs.first().copied().unwrap_or(first_shell);
             let item = if !solid {
                 self.emitter.emit(
                     "SHELL_BASED_SURFACE_MODEL",
@@ -3970,7 +4071,7 @@ impl<'a> Builder<'a> {
                 .or_insert(if solid { item } else { first_shell });
             let mut wire_written = false;
             if mixed_wire {
-                if let Some(item) = self.emit_wire_region(region) {
+                if let Some(item) = self.emit_wire_regions(&[region]) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
@@ -4010,6 +4111,34 @@ impl<'a> Builder<'a> {
                 }
             }
             self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
+        }
+        for (body, shell_refs) in sheet_shells {
+            let (Some(&first_shell), Some(body)) =
+                (shell_refs.first(), self.bodies.get(body).copied())
+            else {
+                continue;
+            };
+            let body = &body.id;
+            let item = self.emitter.emit(
+                "SHELL_BASED_SURFACE_MODEL",
+                &format!("'',{}", refs(&shell_refs)),
+            );
+            let shape_item = self.place_body_item(body, item, context);
+            items.push(shape_item);
+            self.body_shape_refs
+                .entry(body.as_str().to_owned())
+                .or_insert(shape_item);
+            self.body_item_refs
+                .entry(body.as_str().to_owned())
+                .or_default()
+                .push(shape_item);
+            self.body_step_item_refs
+                .entry(body.as_str().to_owned())
+                .or_default()
+                .push(item);
+            self.body_step_refs
+                .entry(body.as_str().to_owned())
+                .or_insert(first_shell);
         }
         items
     }
@@ -4493,14 +4622,16 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_wire_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
+    fn emit_wire_regions(&mut self, regions: &[&cadmpeg_ir::topology::Region]) -> Option<Ref> {
         let mut shells = Vec::new();
-        for shell_id in &region.shells {
-            if let Some(shell) = self.shells.get(shell_id.as_str()).copied().cloned() {
-                shells.push(shell);
-            } else {
-                self.missing_wire_shells
-                    .insert((region.id.as_str().to_owned(), shell_id.as_str().to_owned()));
+        for region in regions {
+            for shell_id in &region.shells {
+                if let Some(shell) = self.shells.get(shell_id.as_str()).copied().cloned() {
+                    shells.push(shell);
+                } else {
+                    self.missing_wire_shells
+                        .insert((region.id.as_str().to_owned(), shell_id.as_str().to_owned()));
+                }
             }
         }
         let mut connected_sets = Vec::new();
@@ -4527,10 +4658,13 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            for component in wire::connected_components(&edges) {
+            // The connected edge set is the shell: a reader takes each set
+            // as one shell, whichever edges the shell holds.
+            if !edges.is_empty() {
+                let edges: Vec<_> = edges.iter().map(|(reference, _)| *reference).collect();
                 connected_sets.push(
                     self.emitter
-                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&component))),
+                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&edges))),
                 );
             }
         }
@@ -4682,6 +4816,7 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|coedge| self.emitted_coedges.contains(coedge.id.as_str()))
             .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
+            .filter(|pcurve| !self.unassociated_pcurves.contains(*pcurve))
             .chain(
                 self.ir
                     .model
@@ -6058,6 +6193,9 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
+            if edge.param_range().is_some() {
+                self.ranged_bare_edges.insert(edge_id.to_owned());
+            }
             return Some(self.emitter.emit("EDGE", &format!("'',{v1},{v2}")));
         };
         let mut emitted: Vec<(PcurveUse<'a>, Ref)> = Vec::new();
@@ -6125,6 +6263,8 @@ impl<'a> Builder<'a> {
                 }
                 pcurve_refs.push(pcurve);
             } else {
+                self.unassociated_pcurves
+                    .insert(use_.use_.pcurve.as_str().to_owned());
                 self.loss(
                     StepLossCode::PcurveAssociationLimit,
                     format!("edge '{edge_id}' cannot associate pcurve '{}' on coedge '{}' with surface '{}' because STEP surface curves admit at most one associated geometry per coedge (#209 §5.2)", use_.use_.pcurve, use_.coedge, use_.surface),
@@ -8265,6 +8405,21 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
+        if !self.ranged_bare_edges.is_empty() {
+            let edges = self
+                .ranged_bare_edges
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                StepLossCode::EdgeRangeOmitted,
+                format!(
+                    "{} edge(s) with no 3D curve were written as bare EDGE topology without their parameter range: {edges}",
+                    self.ranged_bare_edges.len()
+                ),
+            );
+        }
         for edge in &self.ir.model.edges {
             if edge.curve().is_none() && !self.edge_refs.contains_key(edge.id.as_str()) {
                 let id = edge.id.as_str();

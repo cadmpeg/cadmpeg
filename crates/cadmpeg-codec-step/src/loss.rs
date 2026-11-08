@@ -195,6 +195,9 @@ pub(crate) enum StepLossCode {
     SurfaceShellWireTopologyOmitted,
     /// A mixed surface and wire region was split into separate STEP items.
     MixedRegionSplit,
+    /// A solid body with several regions was written as a manifold solid per
+    /// region.
+    SolidRegionsSplit,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
     /// Tessellation feature-edge classification is not represented.
@@ -395,6 +398,8 @@ pub(crate) enum StepLossCode {
     LoopEdgeMissingForOrder,
     /// An edge was omitted because it has no 3D curve.
     EdgeNo3dCurve,
+    /// Edges with no 3D curve were written without their parameter range.
+    EdgeRangeOmitted,
     /// An edge was omitted because its curve is not writable.
     EdgeCurveNotWritable,
     /// An edge was omitted because its curve is unsupported.
@@ -520,6 +525,7 @@ impl StepLossCode {
         Self::BodyWithoutProductRepresentation,
         Self::SurfaceShellWireTopologyOmitted,
         Self::MixedRegionSplit,
+        Self::SolidRegionsSplit,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
         Self::TessellationCornerNormals,
@@ -617,6 +623,7 @@ impl StepLossCode {
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
         Self::EdgeNo3dCurve,
+        Self::EdgeRangeOmitted,
         Self::EdgeCurveNotWritable,
         Self::EdgeCurveUnsupported,
         Self::LoopNoContinuousOrdering,
@@ -734,6 +741,7 @@ impl StepLossCode {
             Self::BodyWithoutProductRepresentation => "product.body-without-representation",
             Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
             Self::MixedRegionSplit => "topology.mixed-region-split",
+            Self::SolidRegionsSplit => "topology.solid-regions-split",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::WireShellNoWritableEdges => "topology.wire-shell-no-writable-edges",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
@@ -841,6 +849,7 @@ impl StepLossCode {
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
             Self::EdgeNo3dCurve => "topology.edge-no-3d-curve",
+            Self::EdgeRangeOmitted => "topology.edge-range-omitted",
             Self::EdgeCurveNotWritable => "topology.edge-curve-not-writable",
             Self::EdgeCurveUnsupported => "topology.edge-curve-unsupported",
             Self::LoopNoContinuousOrdering => "topology.loop-no-continuous-ordering",
@@ -1026,6 +1035,7 @@ impl StepLossCode {
             | Self::BodyWithoutProductRepresentation
             | Self::SurfaceShellWireTopologyOmitted
             | Self::MixedRegionSplit
+            | Self::SolidRegionsSplit
             | Self::TessellationBodyLinkUnwritable
             | Self::TopologyUnreachableFromRegion
             | Self::RegionNoShellList
@@ -1059,6 +1069,7 @@ impl StepLossCode {
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
             | Self::EdgeNo3dCurve
+            | Self::EdgeRangeOmitted
             | Self::EdgeCurveNotWritable
             | Self::EdgeCurveUnsupported
             | Self::LoopNoContinuousOrdering
@@ -1253,6 +1264,7 @@ mod tests {
                 "product.body-without-representation",
                 "topology.surface-shell-wire-omitted",
                 "topology.mixed-region-split",
+                "topology.solid-regions-split",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
                 "tessellation.corner-normals",
@@ -1350,6 +1362,7 @@ mod tests {
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",
                 "topology.edge-no-3d-curve",
+                "topology.edge-range-omitted",
                 "topology.edge-curve-not-writable",
                 "topology.edge-curve-unsupported",
                 "topology.loop-no-continuous-ordering",
