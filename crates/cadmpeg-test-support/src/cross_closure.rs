@@ -1235,12 +1235,8 @@ mod tests {
         keyed
             .paths
             .insert("model.procedural_surfaces[].record_bounds".into());
-        let keyed = super::project_document(
-            &before,
-            &keyed,
-            &std::collections::BTreeMap::new(),
-            "step",
-        );
+        let keyed =
+            super::project_document(&before, &keyed, &std::collections::BTreeMap::new(), "step");
         assert_eq!(
             keyed["model"]["procedural_surfaces"][0]["record_bounds"],
             json!([0.0, 2.0, null, null])
@@ -1595,9 +1591,7 @@ mod tests {
     fn a_declared_unheld_class_need_not_reappear() {
         use crate::carried::{Carried, UnheldClass};
 
-        let cone = |id: &str, ratio: f64, half_angle: f64| {
-            json!({"id": id, "geometry": {"kind": "cone", "ratio": ratio, "half_angle": half_angle}})
-        };
+        let cone = |id: &str, ratio: f64, half_angle: f64| json!({"id": id, "geometry": {"kind": "cone", "ratio": ratio, "half_angle": half_angle}});
         let before = json!({"model": {
             "surfaces": [
                 cone("elliptical", 0.4, 0.5),
@@ -1683,9 +1677,12 @@ mod tests {
         let required = super::required_ids_with_source(&projected, &before, &carried, "step");
         assert!(required.contains("surface"));
         let mut unheld = before.clone();
-        unheld["model"]["surfaces"].as_array_mut().unwrap().push(json!(
-            {"id": "cone", "geometry": {"kind": "cone", "ratio": 0.5, "half_angle": 0.5}}
-        ));
+        unheld["model"]["surfaces"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(
+                {"id": "cone", "geometry": {"kind": "cone", "ratio": 0.5, "half_angle": 0.5}}
+            ));
         unheld["model"]["surfaces"][0]["geometry"]["construction"] = json!("cone");
         let mut projected_unheld = projected.clone();
         projected_unheld["model"]["surfaces"]

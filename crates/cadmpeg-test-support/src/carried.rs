@@ -117,10 +117,7 @@ impl UnheldClass {
     pub fn contains(self, arena: &str, record: &Value, document: &Value) -> bool {
         match self {
             Self::EllipticalCone => {
-                arena == "surfaces"
-                    && record
-                        .get("geometry")
-                        .is_some_and(contains_elliptical_cone)
+                arena == "surfaces" && record.get("geometry").is_some_and(contains_elliptical_cone)
             }
             Self::TranslucentLineBinding => {
                 arena == "appearance_bindings"
@@ -146,7 +143,9 @@ impl UnheldClass {
             Self::DistinctProductNames => {
                 let name = |key| record.get(key).and_then(Value::as_str);
                 arena == "product_definitions"
-                    && name("source_name").zip(name("label")).is_some_and(|(source, label)| source != label)
+                    && name("source_name")
+                        .zip(name("label"))
+                        .is_some_and(|(source, label)| source != label)
             }
             Self::MultiRegionSolid => {
                 arena == "bodies"

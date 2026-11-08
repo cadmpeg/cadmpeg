@@ -179,10 +179,16 @@ fn first_ambiguous_match(
 ) -> Option<(usize, usize)> {
     let mut sizes = BTreeMap::<(&str, &str), (usize, usize)>::new();
     for (record, colour) in before.records.iter().zip(left) {
-        sizes.entry((record.arena.as_str(), colour.as_str())).or_default().0 += 1;
+        sizes
+            .entry((record.arena.as_str(), colour.as_str()))
+            .or_default()
+            .0 += 1;
     }
     for (record, colour) in after.records.iter().zip(right) {
-        sizes.entry((record.arena.as_str(), colour.as_str())).or_default().1 += 1;
+        sizes
+            .entry((record.arena.as_str(), colour.as_str()))
+            .or_default()
+            .1 += 1;
     }
     before
         .records
@@ -317,7 +323,8 @@ pub(super) fn pair(
                 // A nulled reference agrees with any value, so a record that
                 // states every reference outranks one that does not.
                 let mut exact = claimants.iter().filter(|left| !nulled[**left]);
-                if let (true, Some(left), None) = (claimants.len() > 1, exact.next(), exact.next()) {
+                if let (true, Some(left), None) = (claimants.len() > 1, exact.next(), exact.next())
+                {
                     contested.get_or_insert((*left, right));
                 }
                 if let [left] = claimants.as_slice() {

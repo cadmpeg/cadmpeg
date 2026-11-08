@@ -18,7 +18,10 @@ pub(super) struct Record {
 /// their arena.
 fn ordinal_scope(arena: &str, fields: &serde_json::Map<String, Value>) -> Option<String> {
     match arena {
-        "model/parameters" => fields.get("owner").and_then(Value::as_str).map(str::to_owned),
+        "model/parameters" => fields
+            .get("owner")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         "model/occurrences" => fields.get("parent").map(Value::to_string),
         _ => None,
     }
