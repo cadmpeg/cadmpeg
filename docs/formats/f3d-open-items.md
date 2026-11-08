@@ -20,6 +20,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-319. WorkAxis point-and-direction construction rules
+
+**Question.** What do the position, direction, construction rules, and input roles encode for the other `refType` values of a WorkAxis point-and-direction carrier?
+
+**Known.** `f3d.md` §3.1 "A `WorkAxis` scope can reference a point-and-direction carrier" describes the carrier and the two-point rule.
+
+**Need.** Controlled designs that vary one axis construction rule and its inputs at a time.
+
+**Conflict.** None.
+
+**Note.** The decoder takes position and direction as the solved axis for other values and reports `feature.work-axis-rule-unassigned`; the construction inputs remain native.
+
 ### DR-284. Compact sketch-profile tail flags
 
 **Question.** What do the two compact sketch-profile tail flags encode, and how do they affect profile selection?
@@ -103,6 +115,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `f3d.md` §3.1 assigns `PatchFlip` to the per-boundary u32 at `R + 26` and defines `PatchScale` as the continuity weight. Raw side ordinals `0` and `2` remain distinct. The version-7 scope's whole-surface normal Flip is independent of this ordinal.
 
 **Need.** One supported edge with two distinct incident faces must be authored with each continuity-direction Boolean while continuity, edge order, and weight remain fixed. The saved ordinals and the API's first co-edge face must identify the side mapping.
+
+### DR-317. `SurfacePatch` interior groups
+
+**Question.** What geometric condition does each interior group of a `SurfacePatch` scope impose on the patch? What do role-`0x0000002100000000` groups of the scope that the interior list does not name select?
+
+**Known.** `f3d.md` §3.1 "A `SurfacePatch` scope in the interior-group form" gives the interior list, the group role, and the member runs. The role-`0x0000000400000000` boundary groups form the complete closed boundary without the interior groups. Interior members are edge recipes, sketch-curve entity selections, and point entity selections, and a group can mix curve and point members. An interior group has no settings record. A scope reference table can also hold role-`0x0000002100000000` groups with the same frame and member grammar that the interior list does not name. The decoder projects each interior group as one `FilledSurface.interior_constraints` path, in interior-reference order, and reports `feature.surface-patch-interior-constraint-assumed`. It treats unnamed groups as inactive and reports `feature.surface-patch-unnamed-groups-assumed-inactive`.
+
+**Need.** A controlled design must add one interior curve and then one interior point to a fixed boundary, save each state, and compare the patch face geometry with each interior selection. A second design must remove an interior selection and save again, to show whether an unnamed group is a retained former selection.
+
+**Conflict.** The bytes identify selections but do not establish their geometric condition.
+
+**Note.** The decoder charges a loss for the projected interpretation.
+
+### DR-318. `SurfacePatch` selection-prefix words
+
+**Question.** What do the u32 `1` at selection-prefix offset 4 and the zero bytes before the interior count and before the tool-body reference encode?
+
+**Known.** `f3d.md` §3.1 "A `SurfacePatch` scope of type version 5, 6, or 7" gives the positions. Versions 6 and 7 have four more zero bytes in each of the two zero runs than version 5. The decoder reads the interior and tool-body references only when the u32 is `1` and each zero run is zero.
+
+**Need.** Designs that vary the patch type, the boundary selection mode, and the interior selection kind must show which option writes a nonzero value in each position.
+
+**Conflict.** The field values do not identify their meanings.
+
+**Note.** The decoder validates these values before it reads the references.
 
 ### DR-19. Construction-group fields
 
@@ -1648,7 +1684,7 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`. When no such selection exists and the Extrude is a Cut, it also takes the removed atomic regions of every non-construction Sketch curve, provided at least one taken region uses a curve outside the stored loops. A region that a plane gains refuses the reading. A region that one plane holds on both sides while another removes it refuses the reading. A region that planes hold on both sides and none removes stays unselected, and so does a region that no face on such a plane holds before or after the transition. This selection also reports `feature.profile-cut-regions-assumed`.
+**Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, alone or as regions of an outer loop with hole loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`. When no such selection exists and the Extrude is a Cut, it also takes the removed atomic regions of every non-construction Sketch curve, provided at least one taken region uses a curve outside the stored loops. A region that a plane gains refuses the reading. A region that one plane holds on both sides while another removes it refuses the reading. A region that planes hold on both sides and none removes stays unselected, and so does a region that no face on such a plane holds before or after the transition. This selection also reports `feature.profile-cut-regions-assumed`.
 
 ### DR-305. Inferred-axis bytes of a WorkPlane placement
 
@@ -1719,6 +1755,30 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder projects the scope from its ordered reference table and keeps these lanes in the native scope bytes.
+
+### DR-311. Extension method of a SurfaceExtend scope
+
+**Question.** Which field of a `SurfaceExtend` scope stores the extension method, and which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?
+
+**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. The candidate fields are the boolean of a compact flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`.
+
+**Need.** Three saves that extend the same edge by the same distance, one with each extension method, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation.
+
+**Conflict.** None.
+
+**Note.** The decoder projects each `SurfaceExtend` scope with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. It retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
+
+### DR-312. Negative SurfaceExtend distance
+
+**Question.** What operation does a negative `SurfaceExtend` extension distance select?
+
+**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive.
+
+**Need.** Two saves that extend the same edge by a positive distance and by its negation, with the resulting body geometry of each.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the signed distance in the native operation, keeps the scope native, and reports `feature.surface-extend-distance-nonpositive`.
 
 ### DR-323. Suppression columns that name no feature
 

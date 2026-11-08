@@ -19,34 +19,18 @@ pub(crate) struct DesignSurfaceStitchOperation {
     pub(crate) settings_record_index: u32,
 }
 
-/// Geometric continuation law encoded by a `SurfaceExtend` operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum DesignSurfaceExtendMethod {
-    /// Continue the source surface parameterization.
-    Natural,
-    /// Create faces tangent to the source faces.
-    Tangent,
-    /// Create faces perpendicular to the source faces.
-    Perpendicular,
-}
-
 /// Fixed construction records named by a `SurfaceExtend` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfaceExtendOperation {
-    /// Extension distance in source centimetres.
+    /// Signed extension distance in source centimetres.
     pub(crate) distance: FiniteReal,
     /// Byte offset of `distance`.
     pub(crate) distance_offset: u64,
     /// Indexed scalar record carrying `distance`.
     pub(crate) distance_record_index: u32,
-    /// Geometric continuation law.
-    pub(crate) method: DesignSurfaceExtendMethod,
-    /// Byte offset of the method enum.
-    pub(crate) method_offset: u64,
     /// Indexed boundary-carrier record.
     pub(crate) boundary_record_index: u32,
-    /// Additional indexed reference carried by the boundary tail.
+    /// Compact flag record named by the boundary group's trailing reference.
     pub(crate) boundary_reference_record_index: u32,
     /// Byte offset of `boundary_reference_record_index`'s marked reference.
     pub(crate) boundary_reference_offset: u64,
@@ -401,6 +385,15 @@ pub(crate) enum DesignSurfacePatchNormalState {
 pub(crate) struct DesignSurfacePatchScope {
     pub(crate) boundaries: Vec<DesignSurfacePatchBoundary>,
     pub(crate) normal: Option<DesignSurfacePatchNormalState>,
+    pub(crate) selection: Option<DesignSurfacePatchSelection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignSurfacePatchSelection {
+    pub(crate) settings: Vec<u32>,
+    pub(crate) interior_groups: Vec<u32>,
+    pub(crate) tool_body: u32,
 }
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.

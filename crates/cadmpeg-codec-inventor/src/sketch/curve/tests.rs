@@ -156,6 +156,7 @@ fn untyped_and_absent_sketch_members_have_pinned_losses() {
     let unresolved = HashSet::from([("generated", 1), ("generated", 2), ("generated", 3)]);
     let losses = member_loss_counts(
         &unresolved,
+        &HashSet::new(),
         [
             ("generated", 1, [7; 16]),
             ("generated", 2, [7; 16]),
@@ -180,7 +181,12 @@ fn untyped_and_absent_sketch_members_have_pinned_losses() {
         .contains("byte grammar and curve operands"));
     assert!(losses[1].message.contains("Retained 1"));
     assert!(losses[1].message.contains("source record is absent"));
-    assert!(member_loss_counts(&HashSet::new(), [("generated", 1, [7; 16])]).is_empty());
+    assert!(member_loss_counts(
+        &HashSet::new(),
+        &HashSet::new(),
+        [("generated", 1, [7; 16])]
+    )
+    .is_empty());
 }
 
 #[test]
@@ -270,6 +276,7 @@ fn unknown_member_classes_keep_their_type_counts_and_pinned_loss() {
     ];
     let losses = member_loss_counts(
         &unresolved,
+        &HashSet::new(),
         types.into_iter().enumerate().map(|(ordinal, id)| {
             (
                 "generated",

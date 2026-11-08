@@ -5,6 +5,25 @@
 
 mod parameter_points;
 
+#[test]
+fn two_edge_complement_identifies_endpoint_order() {
+    use super::two_edge_complement_relation;
+
+    assert_eq!(
+        two_edge_complement_relation(50, [7, 32], [43, 18]),
+        Some(true)
+    );
+    assert_eq!(
+        two_edge_complement_relation(26, [5, 18], [8, 21]),
+        Some(false)
+    );
+    assert_eq!(
+        two_edge_complement_relation(32, [8, 24], [8, 24]),
+        Some(false)
+    );
+    assert_eq!(two_edge_complement_relation(10, [1, 2], [3, 4]), None);
+}
+
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -87,7 +106,7 @@ fn b2_plane_carrier_parser_preserves_each_selector_layout() {
         (&carriers[2], B2PlaneCarrierLayout::ImplicitX, [-2.0, 5.0]),
     ] {
         assert!(matches!(&carrier.payload, B2PlaneCarrierPayload::Plane {
-            layout: actual, point, direction, u_range, v_range,
+            layout: actual, point, direction, u_range, v_range, ..
         } if *actual == layout && *point == [10.0,20.0]
             && direction.get() == [1.0,0.0,0.0]
             && u_range.endpoints() == u_bounds && v_range.endpoints() == [-2.0,3.0]));
@@ -1384,6 +1403,7 @@ fn b2_spatial_circle_stream() -> Vec<u8> {
 mod carrier_records;
 mod indexed_wrappers;
 mod owner_incidence;
+mod rolling_ball_constructions;
 mod spatial_and_consolidated;
 
 mod plane_carriers;
