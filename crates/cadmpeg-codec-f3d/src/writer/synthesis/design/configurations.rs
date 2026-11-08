@@ -263,7 +263,7 @@ pub(super) fn regenerate(
                 payload,
             )?);
     }
-    let mut used_rule_names = std::collections::BTreeSet::new();
+    let mut used_rule_names = std::collections::BTreeSet::default();
     let reserved_rule_names = previous
         .iter()
         .filter(|entry| entry.kind() == DesignConfigurationKind::Rule)

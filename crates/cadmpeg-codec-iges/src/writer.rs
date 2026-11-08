@@ -6281,7 +6281,7 @@ fn append_surface_entities(
     entities.extend(additions);
     let wrapped = domain_bounded_wrap(ctx, ir, surface, version, surface_index, entities)?;
     if wrapped.is_some() {
-        entities[surface_index].status = EntityStatus::PhysicallyDependent;
+        entities[surface_index].status = ownership::wrapped_surface_status(surface, status);
     }
     {
         let color = carrier_display_color(

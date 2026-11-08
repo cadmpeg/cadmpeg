@@ -11,6 +11,48 @@ use cadmpeg_ir::CadIr;
 use crate::export::write_step;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+#[test]
+fn document_attributes_write_as_named_root_properties() {
+    let mut ir = unit_cube().expect("cube");
+    for (name, value) in [
+        ("Remark", AttributeValue::String("sample".into())),
+        ("Count", AttributeValue::Integer(7)),
+        ("Enabled", AttributeValue::Boolean(true)),
+    ] {
+        ir.model.attributes.push(SourceAttribute {
+            id: format!("test:model:attribute#{name}").try_into().unwrap(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: name.into(),
+            values: vec![Some(value)],
+        });
+    }
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let written = std::str::from_utf8(&output).unwrap();
+    assert!(written.contains("DESCRIPTIVE_REPRESENTATION_ITEM('Remark','sample')"));
+    assert!(written.contains("VALUE_REPRESENTATION_ITEM('Count',COUNT_MEASURE(7))"));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    for expected in &ir.model.attributes {
+        assert!(decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .any(|actual| actual.target == AttributeTarget::Document
+                && actual.name == expected.name
+                && actual.values == expected.values));
+    }
+}
+
 fn unnamed_definition(
     id: &str,
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
@@ -801,9 +843,8 @@ fn writer_folds_document_attributes_into_file_name() {
         report
             .losses
             .iter()
-            .filter(|loss| loss.code == crate::loss::StepLossCode::SourceAttributeNotWritten.kind())
-            .any(|loss| loss.message.contains("test:model:attribute#comment")),
-        "unmapped document attribute keeps its loss: {report:?}"
+            .all(|loss| !loss.message.contains("test:model:attribute#comment")),
+        "document property is written: {report:?}"
     );
     assert!(
         report
@@ -838,10 +879,11 @@ fn writer_folds_document_attributes_into_file_name() {
     assert_eq!(held("CreatedBy"), ["anne"]);
     assert_eq!(held("LastModifiedBy"), ["beth"]);
     assert_eq!(held("Company"), ["acme"]);
+    assert_eq!(held("Comment"), ["kept as a loss"]);
 }
 
 #[test]
-fn document_author_losses_name_values_not_projected_back() {
+fn document_author_values_not_in_header_are_written_as_properties() {
     let mut ir = unit_cube().expect("unit cube");
     ir.model.attributes.extend([
         document_attribute("test:model:attribute#first", "author", "anne"),
@@ -863,13 +905,22 @@ fn document_author_losses_name_values_not_projected_back() {
         .collect();
     assert!(losses
         .iter()
-        .any(|loss| loss.message.contains("test:model:attribute#second")));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.message.contains("test:model:attribute#third")));
-    assert!(losses
-        .iter()
-        .all(|loss| !loss.message.contains("test:model:attribute#first")));
+        .all(|loss| !loss.message.contains("test:model:attribute#first")
+            && !loss.message.contains("test:model:attribute#second")
+            && !loss.message.contains("test:model:attribute#third")));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    for expected in &ir.model.attributes {
+        assert!(decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .any(|actual| actual.target == AttributeTarget::Document
+                && actual.name == expected.name
+                && actual.values == expected.values));
+    }
 }
 
 #[test]

@@ -241,7 +241,7 @@ fn dimension_drawing_and_annotation_round_trip_together() {
 
 #[test]
 fn primitive_feature_and_shape_round_trip_together() {
-    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Box" name="Box" id="42"/></Objects><ObjectData Count="1"><Object name="Box"><Properties Count="5"><Property name="Label" type="App::PropertyString"><String value="Box"/></Property><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="4"/></Property><Property name="Height" type="App::PropertyLength"><Float value="5"/></Property><Property name="Shape" type="Part::PropertyPartShape" status="128"><Part file="Box.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Box" name="Box" id="42"/></Objects><ObjectData Count="1"><Object name="Box"><Properties Count="5"><Property name="Label" type="App::PropertyString" status="64"><String value="Box"/></Property><Property name="Length" type="App::PropertyLength" status="128"><Float value="3.0"/></Property><Property name="Width" type="App::PropertyLength"><Float value="4"/></Property><Property name="Height" type="App::PropertyLength"><Float value="5"/></Property><Property name="Shape" type="Part::PropertyPartShape" status="128"><Part file="Box.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 1\nFa 0 0.001 1 0 1001000 *\n+1 0 *";
     let source = crate::test_support::test_archive::archive_entries(&[
         ("Document.xml", xml),
@@ -299,6 +299,7 @@ fn primitive_feature_and_shape_round_trip_together() {
         });
     assert!(findings.is_empty(), "{findings:#?}");
     let mut edited = input.ir().clone();
+    edited.model.features[0].name = Some("Edited Box".into());
     let height = edited
         .model
         .parameters
@@ -329,6 +330,11 @@ fn primitive_feature_and_shape_round_trip_together() {
         .unwrap();
     assert!(height.dynamic.is_none());
     assert_eq!(height.values()[0].attributes["value"], "7");
+    let label = properties
+        .iter()
+        .find(|property| property.name == "Label")
+        .unwrap();
+    assert_eq!(label.values()[0].attributes["value"], "Edited Box");
 }
 
 #[test]
@@ -424,4 +430,63 @@ fn datum_placement_keeps_native_property_metadata() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(placement(output.ir()).values()[0].attributes["Px"], "9");
+}
+
+#[test]
+fn gui_provider_and_property_source_order_survives() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object name="Z" type="App::Feature"/><Object name="A" type="App::Feature"/></Objects><ObjectData Count="2"><Object name="Z"><Properties Count="0"/></Object><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<GuiDocument SchemaVersion="1"><ViewProviderData Count="2"><ViewProvider name="Z"><Properties Count="3"><Property name="LineWidth" type="App::PropertyFloatConstraint" status="128"><Float value="2.0"/></Property><Property name="Zeta" type="App::PropertyString"><String value="z"/></Property><Property name="Alpha" type="App::PropertyString"><String value="a"/></Property></Properties></ViewProvider><ViewProvider name="A"><Properties Count="1"><Property name="Note" type="App::PropertyString"><String value="a"/></Property></Properties></ViewProvider></ViewProviderData></GuiDocument>"#;
+    let bytes = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", document),
+        ("GuiDocument.xml", gui),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for arena in ["gui_view_providers", "gui_properties"] {
+        let records = |ir: &cadmpeg_ir::CadIr| {
+            ir.native
+                .namespace("fcstd")
+                .unwrap()
+                .arenas()
+                .get(arena)
+                .unwrap()
+                .iter()
+                .map(|record| serde_json::to_value(record).unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(records(input.ir()), records(output.ir()), "{arena}");
+    }
+    let mut edited = input.ir().clone();
+    let view = edited
+        .model
+        .view_presentations
+        .iter_mut()
+        .find(|view| view.line_width.is_some())
+        .unwrap();
+    view.line_width = cadmpeg_ir::scalar::NonNegativeReal::new(5.0);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .view_presentations
+        .iter()
+        .find(|view| view.line_width.is_some())
+        .unwrap();
+    assert!((view.line_width.unwrap().get() - 5.0).abs() < 1e-12);
 }

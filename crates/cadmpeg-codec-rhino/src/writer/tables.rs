@@ -290,9 +290,15 @@ fn layer_display_color(
         if !inherited {
             continue;
         }
-        let Some(color) =
-            materials::bound_appearance(ir, identity).and_then(|appearance| appearance.base_color)
-        else {
+        let Some(appearance) = materials::bound_appearance(ir, identity) else {
+            continue;
+        };
+        if appearance.native_ref.as_deref().is_some_and(|id| {
+            records(ir, "materials").iter().any(|record| record.id() == id)
+        }) {
+            continue;
+        }
+        let Some(color) = appearance.base_color else {
             continue;
         };
         if selected.is_some_and(|other| other != color) {

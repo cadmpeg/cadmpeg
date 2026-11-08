@@ -84,24 +84,28 @@ fn entry(out: &mut Vec<u8>, primary_id: u64) {
 /// Sketch scope 77, record 102, and identity record 103 with one outer loop
 /// of three curves and one inner loop of one curve.
 fn chain(inner_loop: bool) -> Vec<u8> {
+    chain_fixture(100, inner_loop, true)
+}
+
+fn chain_fixture(base: u32, inner_loop: bool, valid: bool) -> Vec<u8> {
     let mut bytes = Vec::new();
-    header(&mut bytes, b"264", 100);
+    header(&mut bytes, b"264", base);
     bytes.extend_from_slice(&[0; 10]);
-    typed_reference(&mut bytes, 103);
+    typed_reference(&mut bytes, base + 3);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     lp_utf16(&mut bytes, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     lp_utf16(&mut bytes, "75");
     bytes.extend_from_slice(&[0; 8]);
-    header(&mut bytes, b"262", 100);
-    header(&mut bytes, b"277", 101);
+    header(&mut bytes, b"262", base);
+    header(&mut bytes, b"277", base + 1);
     bytes.extend_from_slice(&[0; 14]);
-    bytes.extend_from_slice(&[1, 1, 1, 0, 0, 0]);
+    bytes.extend_from_slice(&[u8::from(valid), 1, 1, 0, 0, 0]);
     typed_reference(&mut bytes, 77);
-    header(&mut bytes, b"273", 102);
+    header(&mut bytes, b"273", base + 2);
     bytes.extend_from_slice(&[0; 22]);
-    header(&mut bytes, b"297", 103);
+    header(&mut bytes, b"297", base + 3);
     bytes.extend_from_slice(&[0; 10]);
-    typed_reference(&mut bytes, 100);
+    typed_reference(&mut bytes, base);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -118,7 +122,7 @@ fn chain(inner_loop: bool) -> Vec<u8> {
     } else {
         bytes.extend_from_slice(&0u32.to_le_bytes());
     }
-    header(&mut bytes, b"275", 103);
+    header(&mut bytes, b"275", base + 3);
     bytes.extend_from_slice(&[0; 8]);
     bytes
 }
@@ -179,6 +183,62 @@ fn typed_profile_selection_reads_owner_scope_and_curve_loops() {
     assert_eq!(outer.loop_lists[0].len(), 1);
     assert!(outer.loop_lists[1].is_empty());
     assert_eq!(u64_from_index(0), outer.byte_offset);
+}
+
+#[test]
+fn damaged_typed_profile_is_given_up_and_sibling_decodes() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut bytes = chain_fixture(100, false, false);
+    let second = bytes.len();
+    bytes.extend_from_slice(&chain_fixture(200, false, true));
+    let headers: Vec<_> = [(100, 0), (200, second)]
+        .into_iter()
+        .map(|(index, start)| DesignRecordHeader {
+            id: crate::ids::native_scoped_id(stream, "record", index),
+            record_index: index,
+            class_tag: "264".to_owned().try_into().unwrap(),
+            byte_offset: Some(u64_from_index(start)),
+        })
+        .collect();
+    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        "id": crate::ids::native_scoped_id(stream, "operand-group", 90),
+        "scope_record_index": 80, "scope_reference_ordinal": 0,
+        "record_index": 90, "class_tag": "289", "members": [100, 200],
+        "role": DesignOperandRole::PROFILE.raw(), "paired_class_tag": "259",
+        "frame": {"opaque_index": 1, "opaque_scalar": 0.0, "variant": false}
+    }))
+    .unwrap();
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[100, 101, 102, 103, 200, 201, 202, 203],
+        &[100, 103, 200, 203],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
+            let selections = crate::design::decode::operands::decode_profile_curve_selections(
+                ctx,
+                &mut parts,
+                scan,
+                &[group],
+                &headers,
+            )
+            .unwrap();
+            assert_eq!(selections.len(), 1);
+            assert_eq!(selections[0].sketch_scope_record_index, 77);
+            let (_, native, _, losses) = parts.into_parts();
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.local_code(), "record.unreadable");
+        });
+    });
 }
 
 #[test]

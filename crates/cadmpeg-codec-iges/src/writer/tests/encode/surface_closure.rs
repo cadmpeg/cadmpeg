@@ -38,6 +38,11 @@ fn nurbs_curve_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn nurbs_surface_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("nurbs_surface"));
+}
+
+#[test]
 fn null_entity_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("null_entity"));
 }
@@ -90,6 +95,11 @@ fn edited_color_replaces_held_percentages() {
 #[test]
 fn scalar_properties_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("scalar_property_forms"));
+}
+
+#[test]
+fn definition_levels_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("definition_levels"));
 }
 
 #[test]

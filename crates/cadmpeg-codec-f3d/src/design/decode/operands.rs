@@ -2142,7 +2142,7 @@ pub(crate) fn bind_sketch_profiles(
             let source = scan
                 .entry_view(&entry.name)
                 .ok_or_else(|| CodecError::malformed("missing sketch profile stream"))?;
-            let Some(profile) = decode_sketch_profile_part(
+            let Some(mut profile) = decode_sketch_profile_part(
                 (ctx, parts),
                 source,
                 stream,
@@ -2154,6 +2154,22 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
+            if let Some(paired) = profile
+                .paired_byte_offset()
+                .and_then(|offset| usize::try_from(offset).ok())
+            {
+                if let Some(region) = decode_sketch_region_part(
+                    ctx,
+                    parts,
+                    source,
+                    stream,
+                    records,
+                    profile.record_index,
+                    paired,
+                )? {
+                    profile.region_selection = Some(region);
+                }
+            }
             profiles.push(profile);
         }
         if profiles.len() > 1 {
@@ -6164,6 +6180,71 @@ pub(in crate::design) fn parse_sketch_profile(
     .ok()
 }
 
+fn decode_sketch_region_part(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    records: &[crate::metastream::PrimaryRecordFrame],
+    profile_index: u32,
+    paired_at: usize,
+) -> Result<Option<DesignSketchProfileRegionSelection>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let Some(selection_index) = profile_index.checked_add(3) else {
+        return Err(CodecError::malformed(
+            "sketch region record index overflows",
+        ));
+    };
+    let Some(frame) = records
+        .iter()
+        .find(|frame| frame.entity_id == u64::from(selection_index))
+    else {
+        return Ok(None);
+    };
+    let Some(marker) = frame
+        .start
+        .checked_add(region_selection::PROFILE_REFERENCE_MARKER)
+    else {
+        return Err(CodecError::malformed("sketch region offset overflows"));
+    };
+    if marked_record_reference(source.window(), marker) != Some(profile_index) {
+        return Ok(None);
+    }
+    let begin = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("sketch region start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("sketch region end overflows"))?;
+    let extent = source
+        .child(begin, end)
+        .ok_or_else(|| CodecError::malformed("sketch region exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+        stream,
+        ":design-record-header#",
+        u64_from_index(frame.start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(None);
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        parse_sketch_profile_region_selection(source.window(), records, profile_index, paired_at)
+            .ok_or_else(|| CodecError::malformed("invalid sketch region selection"))
+    })
+}
+
 fn parse_sketch_profile_region_selection(
     bytes: &[u8],
     records: &[crate::metastream::PrimaryRecordFrame],
@@ -7558,11 +7639,14 @@ const TYPED_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 1, 0, 0, 0];
 /// Sketch scope, and an identity record listing curve loops.
 pub(crate) fn decode_profile_curve_selections(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>, CodecError>
 {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+
     let headers = indexed_operand_headers(headers);
     let mut records_by_stream = HashMap::new();
     let mut out = Vec::new();
@@ -7574,7 +7658,10 @@ pub(crate) fn decode_profile_curve_selections(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("missing profile selection stream"))?;
+        let bytes = source.window();
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -7612,8 +7699,46 @@ pub(crate) fn decode_profile_curve_selections(
             else {
                 continue;
             };
-            let Some(mut selection) =
+            let Some(frame) = records
+                .iter()
+                .find(|frame| frame.start <= start && start < frame.end)
+            else {
+                continue;
+            };
+            let begin = source
+                .start()
+                .checked_add(frame.start)
+                .ok_or_else(|| CodecError::malformed("profile selection start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("profile selection end overflows"))?;
+            let extent = source
+                .child(begin, end)
+                .ok_or_else(|| CodecError::malformed("profile selection exceeds its stream"))?;
+            let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+                stream,
+                ":design-record-header#",
+                u64_from_index(frame.start),
+            ))
+            .map_err(CodecError::malformed)?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design])
+                .record_id(id);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+            if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+                continue;
+            }
+            let Some(mut selection) = ctx.decode_part(parts, extent, spec, |_| {
                 parse_typed_profile_curve_selection(ctx, bytes, records, group, ordinal, header)?
+                    .ok_or_else(|| CodecError::malformed("invalid typed profile selection"))
+            })?
             else {
                 continue;
             };

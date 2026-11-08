@@ -50,6 +50,110 @@ fn unchanged_placement(property: &PropertyRecord, generated: &str) -> bool {
         })
 }
 
+fn unchanged_numeric_property(property: &PropertyRecord, generated: &str) -> bool {
+    if !matches!(
+        property.family,
+        crate::native::PropertyFamily::Scalar
+            | crate::native::PropertyFamily::Quantity
+            | crate::native::PropertyFamily::Vector
+            | crate::native::PropertyFamily::Matrix
+    ) {
+        return false;
+    }
+    let [value] = property.values() else {
+        return false;
+    };
+    if value.text.is_some()
+        || value.attributes.is_empty()
+        || !property.side_entries().is_empty()
+        || !property.links().is_empty()
+    {
+        return false;
+    }
+    let Ok(document) = roxmltree::Document::parse(generated) else {
+        return false;
+    };
+    let root = document.root_element();
+    if root.attribute("type") != Some(property.type_name.as_str()) {
+        return false;
+    }
+    let mut children = root.children().filter(roxmltree::Node::is_element);
+    let Some(node) = children.next() else {
+        return false;
+    };
+    if children.next().is_some()
+        || node
+            .children()
+            .any(|child| child.is_element() || child.is_text())
+        || node.tag_name().name() != value.tag
+        || node.attributes().len() != value.attributes.len()
+    {
+        return false;
+    }
+    value.attributes.iter().all(|(key, source)| {
+        node.attribute(key.as_str()).is_some_and(|output| {
+            source == output || ((property.family != crate::native::PropertyFamily::Scalar || property.type_name.contains("Float")) && matches!((source.parse::<f64>(), output.parse::<f64>()), (Ok(a), Ok(b)) if a.is_finite() && a == b))
+        })
+    })
+}
+
+fn same_property_value(source: &str, generated: &str) -> bool {
+    fn same_node(a: roxmltree::Node<'_, '_>, b: roxmltree::Node<'_, '_>) -> bool {
+        if a.node_type() != b.node_type() {
+            return false;
+        }
+        if a.is_text() {
+            return a.text() == b.text();
+        }
+        if !a.is_element() {
+            return false;
+        }
+        if a.tag_name() != b.tag_name()
+            || a.attributes().len() != b.attributes().len()
+            || !a
+                .attributes()
+                .all(|attribute| b.attribute(attribute.name()) == Some(attribute.value()))
+        {
+            return false;
+        }
+        a.children()
+            .filter(|node| node.is_element() || node.is_text())
+            .count()
+            == b.children()
+                .filter(|node| node.is_element() || node.is_text())
+                .count()
+    }
+    let (Ok(source), Ok(generated)) = (
+        roxmltree::Document::parse(source),
+        roxmltree::Document::parse(generated),
+    ) else {
+        return false;
+    };
+    let source = source.root_element();
+    let generated = generated.root_element();
+    if source.tag_name() != generated.tag_name()
+        || source.attribute("type") != generated.attribute("type")
+        || source.attribute("name") != generated.attribute("name")
+    {
+        return false;
+    }
+    let mut source = source
+        .descendants()
+        .skip(1)
+        .filter(|node| node.is_element() || node.is_text());
+    let mut generated = generated
+        .descendants()
+        .skip(1)
+        .filter(|node| node.is_element() || node.is_text());
+    loop {
+        match (source.next(), generated.next()) {
+            (None, None) => return true,
+            (Some(a), Some(b)) if same_node(a, b) => {}
+            _ => return false,
+        }
+    }
+}
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -1451,6 +1555,20 @@ pub(super) fn write(
                 }
             }
             object.dependencies = dependencies;
+            for property in native_properties
+                .iter()
+                .filter(|property| property.owner == *original.id())
+            {
+                if let Some(generated) = object.properties.get(&property.name) {
+                    if let Some(source) = xml::native_named(property, &names, &available)? {
+                        if unchanged_numeric_property(property, generated)
+                            || same_property_value(&source, generated)
+                        {
+                            object.set(&property.name, source);
+                        }
+                    }
+                }
+            }
         }
     }
     // The document header preserves the source's producing application and
