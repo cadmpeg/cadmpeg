@@ -40,16 +40,6 @@
         {
           "base_color": {
             "a": 0.0,
-            "b": 0.1568627506494522,
-            "g": 0.3137255012989044,
-            "r": 0.7058823704719543
-          },
-          "id": "rhino:model:display-color#layer-0",
-          "native_ref": "rhino:object:record#000002"
-        },
-        {
-          "base_color": {
-            "a": 0.0,
             "b": 0.7058823704719543,
             "g": 0.3137255012989044,
             "r": 0.1568627506494522
@@ -68,12 +58,6 @@
           "id": "rhino:model:material#000000",
           "name": "Copper",
           "native_ref": "rhino:presentation:material#81818181-8181-8181-8181-818181818181",
-          "properties": {
-            "index_of_refraction": 1.25,
-            "reflectivity": 0.125,
-            "shine": 2.5,
-            "transparency": 0.25
-          },
           "schema": "Rhino material"
         },
         {
@@ -87,12 +71,6 @@
           "id": "rhino:model:material#000001",
           "name": "Blue",
           "native_ref": "rhino:presentation:material#82828282-8282-8282-8282-828282828282",
-          "properties": {
-            "index_of_refraction": 1.25,
-            "reflectivity": 0.125,
-            "shine": 2.5,
-            "transparency": 0.25
-          },
           "schema": "Rhino material"
         }
       ],
@@ -364,13 +342,7 @@
         {
           "id": "rhino:model:view#view-000000",
           "native_ref": "rhino:document:view#named-0000",
-          "order": 0,
-          "properties": {
-            "name": "Witness view",
-            "show_construction_axes": "true",
-            "show_construction_grid": "true",
-            "show_world_axes": "true"
-          }
+          "order": 0
         }
       ]
     },

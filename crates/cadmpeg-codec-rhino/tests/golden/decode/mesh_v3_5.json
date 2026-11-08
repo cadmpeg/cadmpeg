@@ -67,7 +67,7 @@
               "kind": 1380450307
             }
           ],
-          "id": "rhino:object:tessellation#record-000000-offset-177",
+          "id": "rhino:object:tessellation#5268696e-6f49-4400-0000-000000000000",
           "mesh": {
             "kind": "shaded_list",
             "triangles": [
@@ -262,7 +262,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "1 quadrilateral face(s) were triangulated for mesh rhino:object:tessellation#record-000000-offset-177",
+        "message": "1 quadrilateral face(s) were triangulated for mesh rhino:object:tessellation#5268696e-6f49-4400-0000-000000000000",
         "severity": "warning"
       },
       {
@@ -293,7 +293,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: ON_Mesh dropped 3 bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: ON_Mesh dropped 3 bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp",
         "severity": "warning"
       },
       {
@@ -303,7 +303,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -332,7 +332,7 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "rhino:object:tessellation#record-000000-offset-177": {
+        "rhino:object:tessellation#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         }
