@@ -1505,13 +1505,12 @@ fn an_edit_survives_native_writer_fallback() {
             strip_source_object(view);
         }
         // (debug removed)
-        if preserved_view != authored_view {
-            panic!(
-                "{}: {}",
-                name,
-                first_diff(&preserved_view, &authored_view, "")
-            );
-        }
+        assert!(
+            preserved_view == authored_view,
+            "{}: {}",
+            name,
+            first_diff(&preserved_view, &authored_view, "")
+        );
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
                 .expect("the round trip keeps its measured geometry");
