@@ -165,12 +165,8 @@ fn general_and_wire_bodies_preserve_wire_geometry_style_and_placement() {
         assert_curve_style(&decoded, curve, &ir, ir.model.bodies[0].name.as_deref());
         assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
         assert_eq!(curve_position(curve, 4.0), Point3::new(14.0, 20.0, 30.0));
-        if kind == BodyKind::Wire {
-            assert_eq!(decoded.model.bodies[0].kind, BodyKind::Wire);
-            assert!(!losses
-                .iter()
-                .any(|loss| loss.code == RhinoLossCode::WriterEntityOmitted.kind()));
-        } else {
+        assert_eq!(decoded.model.bodies[0].kind, BodyKind::Wire);
+        if kind == BodyKind::General {
             assert_grouping_loss(&losses);
         }
     }
@@ -219,18 +215,16 @@ fn wire_brep_retains_edge_endpoints_and_shell_ownership() {
     for point in source_positions {
         assert!(output_positions.contains(&point));
     }
-    let [body] = decoded.model.bodies.as_slice() else {
-        panic!("one wire body");
-    };
-    let [region] = decoded.model.regions.as_slice() else {
-        panic!("one region");
-    };
-    let [shell] = decoded.model.shells.as_slice() else {
-        panic!("one shell");
+    let ([body], [region], [shell]) = (
+        decoded.model.bodies.as_slice(),
+        decoded.model.regions.as_slice(),
+        decoded.model.shells.as_slice(),
+    ) else {
+        panic!("one wire body, region and shell");
     };
     assert_eq!(body.kind, BodyKind::Wire);
-    assert_eq!(body.regions, [region.id.clone()]);
-    assert_eq!(region.shells, [shell.id.clone()]);
+    assert_eq!(body.regions, std::slice::from_ref(&region.id));
+    assert_eq!(region.shells, std::slice::from_ref(&shell.id));
     assert_eq!(shell.wire_edges(), [decoded.model.edges[0].id.clone()]);
     assert!(!losses
         .iter()
