@@ -377,7 +377,6 @@ fn agree_once_pruned(
         }
     }
 }
-}
 
 /// The records of `before` that `after` does not pair, with no pruning.
 fn pairing_gaps(
