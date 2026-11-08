@@ -110,6 +110,18 @@ fn scalar_leaves_are_edited_and_projected_keys_are_not() {
 }
 
 #[test]
+fn record_order_is_an_ordinal_and_is_not_edited() {
+    let view = json!({"id": "v", "order": 1, "visible": true, "states": [{"order": 0}]});
+    assert_eq!(
+        scalar_edits(&view, "view_presentations"),
+        [
+            ("/states/0/order".to_owned(), json!(1)),
+            ("/visible".to_owned(), json!(false)),
+        ]
+    );
+}
+
+#[test]
 fn structural_names_must_not_name_the_application() {
     let document = json!({
         "source": {"application": "cadmpeg"},
