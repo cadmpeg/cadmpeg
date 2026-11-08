@@ -1499,10 +1499,11 @@ impl CodecBackend for FcstdCodec {
             )
         };
         let model = required.model
-            && (ir
-                .model
-                .populated_arena(cadmpeg_ir::ArenaClass::Model)
-                .is_some()
+            && (ctx.depth() == DecodeDepth::Full
+                || ir
+                    .model
+                    .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                    .is_some()
                 || model_carriers
                 || failed_classes.contains(&cadmpeg_ir::ArenaClass::Model));
         let design = required.design;

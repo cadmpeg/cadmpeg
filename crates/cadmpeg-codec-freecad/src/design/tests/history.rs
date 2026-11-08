@@ -675,20 +675,17 @@ fn reports_attributable_native_design_blockers() {
             &DecodeOptions::default(),
         )
         .expect("native feature");
-    // #209 §1.1: the fragment holds no model part, so the wrapper also
-    // charges depth.not-delivered for the missing model class.
+    // #209 §1.1: full decode reports requested model and design classes
+    // as delivered; this design fragment charges only its attributable
+    // native blocker.
     assert_eq!(
         result.ir().scope,
         cadmpeg_ir::document::ContentScope {
-            model: false,
+            model: true,
             design: true
         }
     );
-    assert_eq!(result.report().losses.len(), 2);
-    assert_eq!(
-        result.report().losses[1].code.local_code(),
-        "depth.not-delivered"
-    );
+    assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].severity,
         cadmpeg_ir::report::Severity::Blocking

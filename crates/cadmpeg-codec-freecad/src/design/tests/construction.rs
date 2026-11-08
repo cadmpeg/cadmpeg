@@ -200,13 +200,8 @@ fn retains_native_for_malformed_post_process_controls() {
             ("NonFiniteFuzzy", "FuzzyTolerance"),
         ],
     );
-    // #209 §1.1: the fragment holds no model part; the wrapper appends
-    // depth.not-delivered after the codec losses.
-    assert_eq!(non_placement_losses(result.report()).len(), 9);
-    assert_eq!(
-        non_placement_losses(result.report())[8].code.local_code(),
-        "depth.not-delivered"
-    );
+    // #209 §1.1: full decode reports requested classes as delivered.
+    assert_eq!(non_placement_losses(result.report()).len(), 8);
     assert_eq!(
         non_placement_losses(result.report())
             .iter()
