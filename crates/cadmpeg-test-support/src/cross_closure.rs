@@ -331,12 +331,18 @@ fn required_ids_with_source(
             for row in rows.as_array().into_iter().flatten() {
                 if let Some(id) = row.get("id").and_then(Value::as_str) {
                     identities.insert(id.to_owned());
-                    let supported = arena != "edges"
+                    let supported = (arena != "edges"
                         || carried.edge_carriers.as_ref().is_none_or(|variants| {
                             source_rows
                                 .get(id)
                                 .and_then(super::carried::EdgeCarrierVariant::from_record)
                                 .is_some_and(|variant| variants.contains(&variant))
+                        }))
+                        && !source_rows.get(id).is_some_and(|record| {
+                            carried
+                                .unheld
+                                .iter()
+                                .any(|class| class.contains(arena, record))
                         });
                     if supported {
                         let variants = source_rows.get(id).map_or_else(BTreeSet::new, |record| {
@@ -1581,6 +1587,31 @@ mod tests {
         let required = super::required_ids_with_source(&projected, &before, &carried, "step");
         assert!(!required.contains("endpoints"));
         assert!(required.contains("curve"));
+    }
+
+    #[test]
+    fn a_declared_unheld_class_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+
+        let cone = |id: &str, ratio: f64, half_angle: f64| {
+            json!({"id": id, "geometry": {"kind": "cone", "ratio": ratio, "half_angle": half_angle}})
+        };
+        let before = json!({"model": {
+            "surfaces": [
+                cone("elliptical", 0.4, 0.5),
+                cone("circular", 1.0, 0.5),
+                cone("elliptical-cylinder", 0.4, 0.0)
+            ],
+            "faces": [{"id": "dependent", "surface": "elliptical"}]
+        }});
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::EllipticalCone]);
+        let required = super::required_ids(&before, &carried, "step");
+        assert!(!required.contains("elliptical"));
+        assert!(!required.contains("dependent"));
+        assert!(required.contains("circular"));
+        assert!(required.contains("elliptical-cylinder"));
+        assert!(super::required_ids(&before, &Carried::all(), "step").contains("elliptical"));
     }
 
     #[test]

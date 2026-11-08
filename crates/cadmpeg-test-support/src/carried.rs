@@ -85,6 +85,51 @@ pub struct Carried {
     pub paths: BTreeSet<String>,
     /// Supported edge carrier variants, when the writer declares them.
     pub edge_carriers: Option<BTreeSet<EdgeCarrierVariant>>,
+    /// Record classes the writer declares its format cannot hold.
+    pub unheld: BTreeSet<UnheldClass>,
+}
+
+/// A record class inside a carried variant that the target format cannot
+/// hold, so a record of the class need not reappear (#209 §5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum UnheldClass {
+    /// A surface on a cone with an elliptical section and a non-zero half
+    /// angle.
+    EllipticalCone,
+}
+
+impl UnheldClass {
+    /// Whether a serialized record of `arena` belongs to the class.
+    #[must_use]
+    pub fn contains(self, arena: &str, record: &Value) -> bool {
+        match self {
+            Self::EllipticalCone => {
+                arena == "surfaces"
+                    && record
+                        .get("geometry")
+                        .is_some_and(contains_elliptical_cone)
+            }
+        }
+    }
+}
+
+fn contains_elliptical_cone(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => {
+            let elliptical = fields.get("kind").and_then(Value::as_str) == Some("cone")
+                && fields
+                    .get("ratio")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|ratio| ratio != 1.0)
+                && fields
+                    .get("half_angle")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|angle| angle != 0.0);
+            elliptical || fields.values().any(contains_elliptical_cone)
+        }
+        Value::Array(items) => items.iter().any(contains_elliptical_cone),
+        _ => false,
+    }
 }
 
 /// The variants of the edge carrier's untagged wire representation.
@@ -128,13 +173,17 @@ impl Carried {
             variants: BTreeSet::from(["*".to_owned()]),
             paths: BTreeSet::from(["*".to_owned()]),
             edge_carriers: None,
+            unheld: BTreeSet::new(),
         }
     }
 
     /// Whether the wildcard stands in for every arena, variant or path.
     #[must_use]
     pub fn is_all(&self) -> bool {
-        self.arenas.contains("*") && self.variants.contains("*") && self.edge_carriers.is_none()
+        self.arenas.contains("*")
+            && self.variants.contains("*")
+            && self.edge_carriers.is_none()
+            && self.unheld.is_empty()
     }
 
     /// Whether an arena counts as carried: the wildcard carries all.

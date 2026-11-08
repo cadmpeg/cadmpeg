@@ -302,6 +302,9 @@ fn step_observe() -> StepObserved {
         EdgeCarrierVariant::Curve,
         EdgeCarrierVariant::Bounded,
     ]));
+    carried.unheld = std::collections::BTreeSet::from([
+        cadmpeg_test_support::carried::UnheldClass::EllipticalCone,
+    ]);
     StepObserved {
         carried,
         fixed_paths,
