@@ -4050,8 +4050,16 @@ fn analytic_revolution(
         }
     };
     let bounds = patch_bounds(point_at, [u0, u1], [v0, v1]);
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.surface.as_str() == id)
+        .map(|face| face.id.as_str())
+        .collect::<Vec<_>>();
     let loss = crate::loss::RhinoLossCode::WriterCarrierResolved.note(format!(
-        "surface {id} analytic {kind} carrier was rewritten as a native revolution surface over the used parameter range",
+        "surface {id} analytic {kind} carrier was rewritten as a native revolution surface over the used parameter range; its face(s) {} carry the revolution surface",
+        faces.join(", "),
     ));
     let v_domain = match analytic {
         SolvedSurfaceGeometry::Torus(_) => [0.0, std::f64::consts::TAU],
