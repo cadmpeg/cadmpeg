@@ -452,6 +452,7 @@ pub(super) fn admit(
         &candidate.payload,
         Some(&[]),
         Some(attributes),
+        None,
         &candidate.userdata,
     )?;
     let Some(decoded) = decode_record(session, ir, version, &record)? else {

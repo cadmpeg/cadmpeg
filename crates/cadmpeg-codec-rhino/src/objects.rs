@@ -197,6 +197,9 @@ pub(crate) struct ObjectAttributes {
     obsolete_scale: FiniteReal,
     /// Raw visibility.
     pub(crate) visible: bool,
+    /// Whether the stream states visibility explicitly rather than defaulting
+    /// to visible.
+    pub(crate) visible_explicit: bool,
     /// Color source selector.
     pub(crate) color_source: ColorSource,
     /// Raw linetype source selector.
@@ -312,6 +315,8 @@ pub(crate) struct SourceIdentity {
     pub(crate) effective_color: Option<[u8; 4]>,
     /// Effective visibility after layer combination.
     pub(crate) effective_visible: bool,
+    /// Whether the object's own visibility was stated explicitly.
+    pub(crate) visible_explicit: bool,
     /// Raw object mode.
     pub(crate) object_mode: u8,
     /// Object frame transform.
@@ -1066,6 +1071,7 @@ pub(crate) fn parse_attributes(
             obsolete_thickness,
             obsolete_scale,
             visible,
+            visible_explicit: false,
             color_source,
             linetype_source,
             material_source,
@@ -1140,6 +1146,7 @@ pub(crate) fn parse_attributes(
         obsolete_thickness: FiniteReal::ZERO,
         obsolete_scale: FiniteReal::ONE,
         visible: true,
+        visible_explicit: false,
         color_source: ColorSource::Layer,
         linetype_source: 0,
         material_source: 0,
@@ -1242,6 +1249,7 @@ pub(crate) fn parse_attributes(
             AttributeItem::WireDensity => attributes.wire_density = reader.i32()?,
             AttributeItem::Visible => {
                 attributes.visible = reader.bool_with_writer_version(writer_version)?;
+                attributes.visible_explicit = true;
             }
             AttributeItem::ObjectMode => attributes.object_mode = reader.u8()?,
             AttributeItem::ColorSource => {
@@ -1690,6 +1698,7 @@ fn resolve_identity(
         layer,
         effective_color: color,
         effective_visible: visible,
+        visible_explicit: attributes.is_some_and(|value| value.visible_explicit),
         object_mode,
         object_frame: attributes.and_then(|value| value.object_frame),
         source: SourceRange {
