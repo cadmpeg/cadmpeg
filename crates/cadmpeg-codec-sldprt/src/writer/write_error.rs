@@ -42,7 +42,7 @@ impl From<CodecError> for WriteError {
         match error {
             CodecError::Io(error) => Self::Io(error),
             // Writer-internal content the target cannot express declines to
-            // synthesis (#239 §5.0; former UnsupportedContent).
+            // synthesis (#239 §5.0; declined content).
             CodecError::InvalidInput(reason) => Self::Decline(reason),
             error => Self::Fatal(error),
         }
