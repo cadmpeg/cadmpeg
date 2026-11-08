@@ -1169,7 +1169,11 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
 
 #[test]
 fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
-    let scope = |form_constant: u32, operation: u32, second_reference: u32, flagged: bool| {
+    let scope_with_flags = |form_constant: u32,
+                            operation: u32,
+                            second_reference: u32,
+                            flagged: bool,
+                            flag_bytes: [u8; 2]| {
         let reference_members: [u32; 10] =
             [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010];
         let kind = "CoilPrimitive";
@@ -1186,10 +1190,10 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
         bytes[26..30].copy_from_slice(&operation.to_le_bytes());
         bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
         let second_at = if flagged {
-            bytes[45..47].copy_from_slice(&[0, 1]);
+            bytes[45..47].copy_from_slice(&flag_bytes);
             47
         } else {
-            bytes[56..58].copy_from_slice(&[1, 0]);
+            bytes[56..58].copy_from_slice(&flag_bytes);
             45
         };
         for (offset, target) in [(34usize, 1003u32), (second_at, second_reference)] {
@@ -1226,6 +1230,24 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
         .unwrap()
         .expect("ten-reference Coil scope")
     };
+    let scope = |form_constant: u32, operation: u32, second_reference: u32, flagged: bool| {
+        let flag_bytes = if flagged { [0, 1] } else { [1, 0] };
+        scope_with_flags(
+            form_constant,
+            operation,
+            second_reference,
+            flagged,
+            flag_bytes,
+        )
+    };
+    assert_eq!(
+        scope_with_flags(1, 2, 1007, false, [0, 0]).coil_operation(),
+        None
+    );
+    assert_eq!(
+        scope_with_flags(1, 2, 1007, true, [0, 0]).coil_operation(),
+        None
+    );
 
     let join = scope(1, 1, 1009, false);
     assert_eq!(join.coil_operation(), Some(DesignExtrudeOperation::Join));
