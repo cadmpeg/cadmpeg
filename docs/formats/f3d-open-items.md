@@ -94,7 +94,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `f3d.md` §3.1 "A `Sketch` scope joined" gives the member order, the version gates, the identity-marked matrix, and the unmarked version-4 matrix. The independent `extraOffset` reference reaches a scalar owner linked to an `ExtraOffset` length parameter. `refType` is a u32 whose value does not change the member sequence. The scalar-role table defines the ordered `values` names and direct-reference shapes. Owner-scope references remain independent of the direct geometry slots, and the solved matrix does not select the construction rule. Code `15` has a `RotateAngle` scalar and two face-selection lineages; those operands do not distinguish the exact plane-construction subtype.
 
-**Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored. A controlled nonzero `ExtraOffset` must establish its direction and effect for each supported construction. Nonzero axis-state bytes, version-15 and earlier direction controls, and version-16 periodic-face modes require a solved-frame orientation rule. An offset-plane definition also requires the scope operand role that selects its reference plane or planar face; a solved matrix and an `AlongDistance` parameter do not assign that role.
+**Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored. A controlled nonzero `ExtraOffset` must establish its direction and effect for each supported construction. Nonzero `isZFlip` and `axisFlipped` bytes, `bUseUDirection` values above one, and version-16 periodic-face modes require a solved-frame orientation rule. An offset-plane definition also requires the scope operand role that selects its reference plane or planar face; a solved matrix and an `AlongDistance` parameter do not assign that role.
 
 ### DR-14. `SurfacePatch` boundary-side ordinal mapping
 
@@ -1624,6 +1624,18 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`.
+
+### DR-305. Inferred-axis bytes of a WorkPlane placement
+
+**Question.** What do the `isInferredXAxis` and `isInferredZAxis` bytes of a placement construction state, and does a nonzero value change the plane that the stored matrix of a `WorkPlane` placement gives?
+
+**Known.** `f3d.md` §3.1 "A `Sketch` scope joined" gives the member positions and the solved plane of a `WorkPlane` placement whose two bytes are zero. Each byte holds a value from 0 through 255, and the two bytes vary independently. The class-pair `WorkPlane` placement frames of §3.1 hold the two bytes at offsets 45 and 46, or at offsets 62 and 63 in the direct forms. The opaque little-endian u16 of a frame stores both bytes, the class-290/262 frame stores 1 and 1, and the class-364/264 321-byte frames store 0 and 1, or `0xcc` and `0xcd`. The decoder takes the stored matrix or identity marker of a registered `WorkPlane` placement, and the matrix of a class-pair frame, as the solved frame for every value of the two bytes. It reports `work-plane.inferred-axis-assumed` when either byte is nonzero. A named-cylinder frame requires both bytes to be zero.
+
+**Need.** Saves of one `WorkPlane` that change one construction input at a time, each recording both bytes and the plane position that the application reports.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ### DR-286. Sketch folder flag byte, tail zero run, and closing reference
 
