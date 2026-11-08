@@ -354,9 +354,8 @@ pub(super) fn write(
                 occurrence.native_ref.as_deref() == Some(original.id().as_str())
             }));
         if represented
-            || (ir.scope.design
-                && crate::design::is_design_object(&original.type_name)
-                && neutral_feature.is_none())
+            || (crate::design::is_design_object(&original.type_name)
+                && (neutral_feature.is_none() || !ir.scope.design))
         {
             continue;
         }
