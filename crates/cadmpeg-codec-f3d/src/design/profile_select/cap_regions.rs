@@ -547,8 +547,50 @@ pub(super) fn removed_profile_selection(
     previous_state_id: i64,
     current: Option<&ResolvedProfileSelection>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
-    let Some(current @ ResolvedProfileSelection::Loops(indices)) = current else {
-        return Ok(None);
+    removed_regions(
+        sketch,
+        resolution,
+        state_id,
+        previous_state_id,
+        current,
+        false,
+    )
+}
+
+/// The regions the transition cut out of the changed planes, whatever curves
+/// bound them, when they are not the regions `current` covers. Regions no
+/// changed plane holds on either side are not evidence. `None` when a region
+/// gains material, when one is both removed and kept, or when no region is
+/// removed.
+pub(super) fn removed_regions_beyond_profile(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::ScopedExtrudeProfileResolution<'_>,
+    state_id: i64,
+    previous_state_id: i64,
+    current: Option<&ResolvedProfileSelection>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    removed_regions(
+        sketch,
+        resolution,
+        state_id,
+        previous_state_id,
+        current,
+        true,
+    )
+}
+
+fn removed_regions(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::ScopedExtrudeProfileResolution<'_>,
+    state_id: i64,
+    previous_state_id: i64,
+    current: Option<&ResolvedProfileSelection>,
+    beyond_profile: bool,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    let indices: &[u32] = match current {
+        Some(ResolvedProfileSelection::Loops(indices)) => indices,
+        _ if beyond_profile => &[],
+        _ => return Ok(None),
     };
     let mut curves = HashSet::new();
     for index in indices {
@@ -596,11 +638,12 @@ pub(super) fn removed_profile_selection(
     let mut selected = Vec::new();
     let mut used = HashSet::new();
     for (index, region) in sampled.iter().enumerate() {
-        if !region
-            .region
-            .boundary
-            .iter()
-            .all(|use_| curves.contains(&use_.entity))
+        if !beyond_profile
+            && !region
+                .region
+                .boundary
+                .iter()
+                .all(|use_| curves.contains(&use_.entity))
         {
             continue;
         }
@@ -617,6 +660,9 @@ pub(super) fn removed_profile_selection(
             }
         }
         if removed == kept {
+            if beyond_profile && !removed {
+                continue;
+            }
             return Ok(None);
         }
         if removed {
@@ -624,18 +670,24 @@ pub(super) fn removed_profile_selection(
             used.extend(region.region.boundary.iter().map(|use_| &use_.entity));
         }
     }
-    if selected.is_empty() || used != curves {
+    if selected.is_empty() || (!beyond_profile && used != curves) {
         return Ok(None);
     }
     let points: Vec<Point2> = sampled.iter().map(|region| region.point).collect();
-    if covered_regions(sketch, entities, current, &points, tolerance, work, ctx)?
-        .is_some_and(|covered| covered == selected)
-    {
-        return Ok(None);
+    if let Some(current) = current {
+        if covered_regions(sketch, entities, current, &points, tolerance, work, ctx)?
+            .is_some_and(|covered| covered == selected)
+        {
+            return Ok(None);
+        }
     }
     let selection = trimmed_selection(&sampled, &selected);
     if selection.is_some() {
-        work.note_cut_regions_assumed();
+        if beyond_profile {
+            work.note_cut_regions_beyond_profile();
+        } else {
+            work.note_cut_regions_assumed();
+        }
     }
     Ok(selection)
 }

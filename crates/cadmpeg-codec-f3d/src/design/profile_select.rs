@@ -1475,6 +1475,14 @@ pub(super) fn resolved_extrude_profile_selection(
             resolved_profiles.as_ref(),
         )? {
             resolved_profiles = Some(proven);
+        } else if let Some(proven) = cap_regions::removed_regions_beyond_profile(
+            sketch,
+            resolution,
+            state_id,
+            previous_state_id,
+            resolved_profiles.as_ref(),
+        )? {
+            resolved_profiles = Some(proven);
         }
     }
     if resolved_profiles.is_none() && exact_member_run {
