@@ -536,3 +536,30 @@ fn a_removed_stub_does_not_unpair_a_different_retained_reference() {
         BTreeSet::from(["removed".to_owned()])
     );
 }
+
+#[test]
+fn a_removed_record_and_its_cross_replacement_both_leave_their_lists() {
+    let before = json!({"model": {
+        "shells": [{"id": "shell#1", "faces": ["face#1", "face#2"]}],
+        "faces": [{"id": "face#1", "kind": "kept"}, {"id": "face#2", "kind": "degraded"}]
+    }, "native": {}});
+    let after = json!({"model": {
+        "shells": [{"id": "shell#a", "faces": ["face#a", "face#b"]}],
+        "faces": [{"id": "face#a", "kind": "kept"}, {"id": "face#b", "kind": "replacement"}]
+    }, "native": {}});
+    let removed = Allowances::removed(BTreeSet::from(["face#2".to_owned()]));
+    assert!(agree(
+        &before,
+        &after,
+        &removed,
+        Mode::Cross(CrossProjection::default())
+    )
+    .is_ok());
+    assert!(agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default())
+    )
+    .is_err());
+}
