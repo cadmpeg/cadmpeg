@@ -2000,6 +2000,11 @@ impl<'a> Builder<'a> {
             if let Some(reference) = self.emit_drawing(drawing, context, &drawing_refs) {
                 drawing_refs.insert(drawing.id.as_str().to_owned(), reference);
                 self.written_drawings.insert(drawing.id.as_str().to_owned());
+            } else {
+                self.loss(
+                    StepLossCode::DrawingPresentationRecordsOmitted,
+                    format!("drawing {} could not be written", drawing.id),
+                );
             }
         }
         for (slot, drawing, target) in pending {
@@ -2230,10 +2235,8 @@ impl<'a> Builder<'a> {
                 ));
             }
         }
-        let supported = drawing
-            .parameters
-            .get("source_type")
-            .is_some_and(|source| source == "DRAUGHTING_MODEL");
+        let source_type = drawing.parameters.get("source_type").map(String::as_str);
+        let supported = source_type.is_none() || source_type == Some("DRAUGHTING_MODEL");
         if !supported {
             let kind = drawing
                 .parameters
@@ -2249,7 +2252,7 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
-        let name = drawing.parameters.get("name").map_or("", String::as_str);
+        let name = drawing.parameters.get("name").map_or_else(|| drawing.id.as_str(), String::as_str);
         let mut items = Vec::new();
         let mut omitted = Vec::new();
         if let Some(selections) = drawing
