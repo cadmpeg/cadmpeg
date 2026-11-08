@@ -571,8 +571,24 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
 /// baked record charges `WriterCarrierResolved` naming it: a trim and a
 /// Brep face each hold one carrier per record, not the wrapper.
 pub(super) fn resolve_wrappers(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
+    let faces = &scoped.model.faces;
     for surface in &mut scoped.model.surfaces {
+        let charged = losses.len();
         resolve_surface(surface, losses);
+        if losses.len() > charged {
+            let carried = faces
+                .iter()
+                .filter(|face| face.surface == surface.id)
+                .map(|face| face.id.as_str())
+                .collect::<Vec<_>>();
+            if !carried.is_empty() {
+                losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "surface {} resolved carrier is held by face(s) {}",
+                    surface.id,
+                    carried.join(", ")
+                )));
+            }
+        }
     }
     for pcurve in &mut scoped.model.pcurves {
         resolve_pcurve(pcurve, losses);
