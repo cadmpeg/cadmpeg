@@ -197,6 +197,18 @@ impl<'ir> SourceOwnership<'ir> {
     }
 }
 
+pub(super) fn wrapped_surface_status(surface: &Surface, status: EntityStatus) -> EntityStatus {
+    if surface
+        .source_object
+        .as_ref()
+        .is_some_and(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+    {
+        status
+    } else {
+        EntityStatus::PhysicallyDependent
+    }
+}
+
 /// `status` with physical dependence added.
 const fn physically_dependent(status: EntityStatus) -> EntityStatus {
     match status {

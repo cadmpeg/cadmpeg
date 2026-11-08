@@ -117,6 +117,16 @@
   "losses": [
     {
       "code": {
+        "code": "writer.scope-expanded",
+        "kind": "metadata_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced"
+      },
+      "message": "the 3DM archive represents an empty model where the input model scope is absent",
+      "severity": "warning"
+    },
+    {
+      "code": {
         "code": "export.no-exportable-solids",
         "kind": "no_exportable_solids",
         "namespace": "rhino",
@@ -136,16 +146,6 @@
       },
       "message": "source dialect rhino:archive-2 was displaced by target dialect rhino:archive-50; the source dialect identity is not preserved",
       "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
-      "severity": "info"
     }
   ],
   "native_dispositions": {
@@ -174,7 +174,10 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped"
+            "disposition": "dropped",
+            "records": {
+              "rhino:document:settings#current": "written"
+            }
           },
           "embedded_images": {
             "disposition": "dropped"

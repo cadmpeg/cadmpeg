@@ -949,7 +949,10 @@ fn region_member(bytes: &mut Vec<u8>, curve_primary_id: u32, incidence: [u32; 3]
 }
 
 fn region_selection_frame() -> (Vec<u8>, usize, usize, usize) {
-    let profile_record_index = 100;
+    region_selection_frame_for(100)
+}
+
+fn region_selection_frame_for(profile_record_index: u32) -> (Vec<u8>, usize, usize, usize) {
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"266", profile_record_index);
     indexed_header(&mut bytes, *b"263", profile_record_index + 1);
@@ -973,6 +976,50 @@ fn region_selection_frame() -> (Vec<u8>, usize, usize, usize) {
     bytes.extend_from_slice(&[0; 5]);
     indexed_header(&mut bytes, *b"261", profile_record_index + 3);
     (bytes, selection_at, second_region_marker, terminator)
+}
+
+#[test]
+fn damaged_sketch_region_is_given_up_and_sibling_decodes() {
+    let (mut bytes, _, marker, _) = region_selection_frame_for(100);
+    bytes[marker] = 2;
+    let second = bytes.len();
+    bytes.extend_from_slice(&region_selection_frame_for(200).0);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let first = crate::design::decode::operands::decode_sketch_region_part(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &records,
+        100,
+        0,
+    )
+    .unwrap();
+    let sibling = crate::design::decode::operands::decode_sketch_region_part(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &records,
+        200,
+        second,
+    )
+    .unwrap();
+    assert!(first.is_none());
+    assert_eq!(sibling.unwrap().record_index, 203);
+    let (_, native, _, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
 }
 
 #[test]

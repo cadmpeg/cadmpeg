@@ -1524,6 +1524,7 @@ fn extend_related_design_records(
     design.design_profile_curve_selections =
         crate::design::decode::operands::decode_profile_curve_selections(
             ctx,
+            &mut *design_parts,
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,

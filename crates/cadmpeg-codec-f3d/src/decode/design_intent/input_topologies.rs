@@ -72,6 +72,9 @@ pub(super) fn project(
         .collect();
     let mut attach = |id: &str, scope: u32| -> Result<(), CodecError> {
         let Some(stream) = crate::ids::native_stream(id) else {
+            losses.push(crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.note(format!(
+                "Feature input operand {id} has no native stream."
+            )));
             return Ok(());
         };
         let Some(feature) = owners.get(&(stream, scope)).copied() else {

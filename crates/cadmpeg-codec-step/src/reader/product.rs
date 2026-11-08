@@ -558,7 +558,8 @@ pub(super) fn decode(
             },
             parent: OccurrenceParent::Root {},
             ordinal: root_ordinal,
-            transform: Some(Transform::identity()),
+            transform: (!occurrence_definitions.contains_key(&definition))
+                .then(Transform::identity),
             linked_prototype: None,
 
             name: None,

@@ -1518,7 +1518,7 @@ fn encode_face_topology_smbh(
         &mut records,
         model,
         topology,
-        limits,
+        &limits,
         &super::reindex::Starts {
             region: region_start,
             shell: shell_start,

@@ -12,8 +12,8 @@
     },
     {
       "name": "GuiDocument.xml",
-      "payload_len": 2877,
-      "payload_sha256": "b59139aae808a2bd17a0bc01f520c22d1cdf0f4b3ae115ec94c36842e7d78dc7"
+      "payload_len": 4534,
+      "payload_sha256": "07093623222ffac474cee599fa565c3e40e17af4fd961fb5d2f1d5007af98a61"
     },
     {
       "name": "thumbnails/Thumbnail.png",
@@ -1203,7 +1203,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 16 native record(s) from `fcstd.gui_properties`: fcstd:native:gui-property#ColoredModel:AngularDeflection, fcstd:native:gui-property#ColoredModel:BoundingBox, fcstd:native:gui-property#ColoredModel:Deviation, fcstd:native:gui-property#ColoredModel:DrawStyle, fcstd:native:gui-property#ColoredModel:Lighting, fcstd:native:gui-property#ColoredModel:LineColor, fcstd:native:gui-property#ColoredModel:OnTopWhenSelected, fcstd:native:gui-property#ColoredModel:PointColor, fcstd:native:gui-property#ColoredModel:Selectable, fcstd:native:gui-property#ColoredModel:ShapeAppearance, fcstd:native:gui-property#ColoredModel:ShowInTree, fcstd:native:gui-property#ColoredModel:ShowPlacement, fcstd:native:gui-property#ColoredModel:Transparency, fcstd:native:gui-property#CorpusMetadata:OnTopWhenSelected, fcstd:native:gui-property#CorpusMetadata:Proxy, fcstd:native:gui-property#CorpusMetadata:ShowInTree",
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.gui_properties`: fcstd:native:gui-property#ColoredModel:ShapeAppearance, fcstd:native:gui-property#ColoredModel:Transparency, fcstd:native:gui-property#CorpusMetadata:Proxy",
         "severity": "info"
       },
       {
@@ -1282,18 +1282,31 @@
             "gui_properties": {
               "disposition": "dropped",
               "records": {
+                "fcstd:native:gui-property#ColoredModel:AngularDeflection": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:BoundingBox": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:Deviation": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:DrawStyle": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:Lighting": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:LineColor": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:LineColorArray": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:LineMaterial": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:LineWidth": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:OnTopWhenSelected": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:PointColor": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:PointColorArray": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:PointMaterial": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:PointSize": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:Selectable": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:ShowInTree": "regenerated",
+                "fcstd:native:gui-property#ColoredModel:ShowPlacement": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:TransformOrigin": "regenerated",
                 "fcstd:native:gui-property#ColoredModel:Visibility": "regenerated",
                 "fcstd:native:gui-property#CorpusMetadata:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#CorpusMetadata:OnTopWhenSelected": "regenerated",
                 "fcstd:native:gui-property#CorpusMetadata:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#CorpusMetadata:ShowInTree": "regenerated",
                 "fcstd:native:gui-property#CorpusMetadata:Visibility": "regenerated"
               }
             },
