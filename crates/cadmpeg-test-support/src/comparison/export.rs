@@ -49,11 +49,23 @@ impl Allowances {
                 }
             }
         }
+        let scope_expanded = export_report
+            .get("losses")
+            .and_then(Value::as_array)
+            .is_some_and(|losses| {
+                losses.iter().any(|loss| {
+                    let code = loss.get("code");
+                    code.and_then(|c| c.get("code")).and_then(Value::as_str)
+                        == Some("writer.scope-expanded")
+                        || code.and_then(Value::as_str) == Some("rhino/writer.scope-expanded")
+                })
+            });
         Ok(Self {
             removed,
             removed_fields: stub_fields(before, &stubs),
             absent_fields: BTreeSet::new(),
             regenerated,
+            scope_expanded,
         })
     }
 }
