@@ -3545,6 +3545,59 @@ struct FaceSelectionState<'a> {
     previous: usize,
 }
 
+/// The state pairs of every history that holds an unbound fillet scope's
+/// state pair, when more than one does. A scope bound to a history has its
+/// state from `face_selection_state` instead.
+fn unbound_face_selection_candidates<'a>(
+    feature: &cadmpeg_ir::features::Feature,
+    scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    scope_histories: &HashMap<String, String>,
+    histories: &[AsmHistory],
+) -> Vec<FaceSelectionState<'a>> {
+    let Some(native_ref) = feature.native_ref.as_deref() else {
+        return Vec::new();
+    };
+    let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+    let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) else {
+        return Vec::new();
+    };
+    if scope_histories.contains_key(&scope.id) {
+        return Vec::new();
+    }
+    let (Some(state_id), Some(previous_state_id)) = (
+        scope.history_state_id(),
+        effective_scope_previous_history_state_id(scope, histories),
+    ) else {
+        return Vec::new();
+    };
+    let candidates = histories
+        .iter()
+        .filter_map(|history| history_state_pair(history, state_id, previous_state_id, false))
+        .filter(|(_, state, _)| {
+            state
+                .transition
+                .as_ref()
+                .is_some_and(|transition| transition.previous_state_id == Some(previous_state_id))
+        })
+        .filter_map(|(history, state, previous)| {
+            let (history_index, state_index) = history_state_indexes(histories, history, state)?;
+            let (_, previous_index) = history_state_indexes(histories, history, previous)?;
+            Some(FaceSelectionState {
+                scope,
+                previous_state_id,
+                history: history_index,
+                state: state_index,
+                previous: previous_index,
+            })
+        })
+        .collect::<Vec<_>>();
+    if candidates.len() > 1 {
+        candidates
+    } else {
+        Vec::new()
+    }
+}
+
 fn face_selection_state<'a>(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &'a [crate::records::feature::scope::DesignParameterScope],
