@@ -395,3 +395,39 @@ the occurrence.
 not assign to it. The answer either requires an occurrence association before
 the placement transfers, or represents the inferred association explicitly so
 that it cannot be mistaken for a STEP-declared occurrence placement.
+
+### PS-17. Product-definition reuse with instance-specific children
+
+**Question.** How can STEP retain distinct child structures under occurrences
+that share one CADIR product definition, including repeated identity roots?
+
+**Known.** ISO 10303-44 defines each `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one
+constituent occurrence. The relationship identifies parent and child product
+definitions. The exporter selects a synthetic model product for distinct local
+root definitions with at least one representable root. A repeated root
+definition suppresses this path when a direct child has a local prototype,
+an emitted product definition, a rigid placement, and unit scale. Invalid
+child rows do not suppress the path. The existing non-identity root placement
+path remains active. A single local root product definition with one identity
+root and one scaled root uses the direct-product path; the writer records the
+scaled placement loss and writes no relationship for the identity root.
+The exporter groups child representation placements by parent product
+definition. It writes a `NEXT_ASSEMBLY_USAGE_OCCURRENCE` when the child and
+parent have emitted product definitions and the child has a rigid, unit-scale
+placement. The reader groups those relationships by parent product definition
+and expands each group for every occurrence of that definition.
+
+**Need.** A repeated product definition with instance-specific children needs
+one shared child structure or separate product-definition variants. A variant
+writer must preserve body ownership and report the identity split that the
+reader creates. A controlled exchange with repeated uses and differing child
+subtrees must distinguish that approach from a scoped transfer loss.
+
+**Conflict.** CADIR attaches each child to an occurrence ID. STEP attaches each
+child relationship to a product-definition ID. The reader applies the shared
+product-definition child list to every occurrence of that definition.
+
+**Note.** The synthetic-root regression covers distinct local root definitions
+with no repeated root definition that owns nested occurrences. The repeated
+definition cases remain open for identity-root names, nested-child counts, and
+instance-specific child structures.

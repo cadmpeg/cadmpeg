@@ -55,7 +55,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let (decoded, _) = exact_work_plane_frame(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -117,7 +117,7 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let (decoded, _) = exact_work_plane_frame(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -169,7 +169,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let (decoded, _) = exact_work_plane_frame(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,

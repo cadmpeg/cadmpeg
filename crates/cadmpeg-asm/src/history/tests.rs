@@ -159,6 +159,7 @@ fn state(
     changes: &[EntityChange],
 ) -> DeltaStateView<'static> {
     DeltaStateView {
+        state_id: node_index,
         node_index,
         previous_ref,
         next_ref,
@@ -601,4 +602,216 @@ fn archive_refuses_a_repeated_revision_id() {
     let mut states = archived_states(&bytes, &extents, ["loop", "coedge"]);
     states[0].records[1].revision_id = Some(2);
     assert!(archive(&states, &bytes).unwrap().is_none());
+}
+
+fn put(out: &mut Vec<u8>, width: RefWidth, tag: u8, value: i64) {
+    out.push(tag);
+    match width {
+        RefWidth::Four => out.extend_from_slice(&i32::try_from(value).unwrap().to_le_bytes()),
+        RefWidth::Eight => out.extend_from_slice(&value.to_le_bytes()),
+    }
+}
+
+/// A `delta_state` record with the given header integers and one board.
+fn delta_state(width: RefWidth, header: [i64; 8], changes: &[(i64, i64)]) -> Vec<u8> {
+    let mut out = vec![0x0d, 0x0b];
+    out.extend_from_slice(b"delta_state");
+    for (index, value) in header.into_iter().enumerate() {
+        put(&mut out, width, if index < 3 { 0x04 } else { 0x0c }, value);
+    }
+    out.push(0x0b);
+    put(&mut out, width, 0x04, 1);
+    put(&mut out, width, 0x0c, header[5]);
+    put(&mut out, width, 0x04, 1);
+    for &(old, new) in changes {
+        put(&mut out, width, 0x04, 1);
+        put(&mut out, width, 0x0c, old);
+        put(&mut out, width, 0x0c, new);
+    }
+    put(&mut out, width, 0x04, 0);
+    put(&mut out, width, 0x04, 0);
+    out.push(0x11);
+    out
+}
+
+const BOTH_WIDTHS: [RefWidth; 2] = [RefWidth::Four, RefWidth::Eight];
+
+#[test]
+fn delta_state_offsets_lists_every_marker_in_stream_order() {
+    let mut bytes = b"head".to_vec();
+    bytes.push(0x11);
+    let first = bytes.len() - 1;
+    bytes.extend_from_slice(&[0x0d, 0x0b]);
+    bytes.extend_from_slice(b"delta_state");
+    bytes.extend_from_slice(b"delta_state");
+    bytes.push(0x11);
+    let second = bytes.len() - 1;
+    bytes.extend_from_slice(&[0x0d, 0x0b]);
+    bytes.extend_from_slice(b"delta_state");
+    assert_eq!(delta_state_offsets(&bytes), [first, second]);
+    assert!(delta_state_offsets(b"delta_state").is_empty());
+}
+
+#[test]
+fn delta_state_header_reads_its_eight_integers_in_both_widths() {
+    for width in BOTH_WIDTHS {
+        let mut bytes = vec![0x11];
+        bytes.extend(delta_state(width, [7, 1, 0, -1, 4, 3, -1, 9], &[]));
+        let DeltaStateHeaderRead::Framed(header) = read_delta_state_header(&bytes, 0, width) else {
+            panic!("header did not frame at {width:?}");
+        };
+        assert_eq!(
+            (
+                header.state_id,
+                header.version_flag,
+                header.state_flag,
+                header.previous,
+                header.next,
+                header.node_index,
+                header.partner,
+                header.owner_ref
+            ),
+            (7, 1, 0, -1, 4, 3, -1, 9)
+        );
+        assert_eq!(header.offset, 0);
+        assert_eq!(bytes[header.body_start - 1], 0x0b);
+    }
+}
+
+#[test]
+fn delta_state_header_distinguishes_a_missing_body_from_a_bad_integer() {
+    for width in BOTH_WIDTHS {
+        let good = {
+            let mut bytes = vec![0x11];
+            bytes.extend(delta_state(width, [7, 1, 0, -1, 4, 3, -1, 9], &[]));
+            bytes
+        };
+        let body_marker = 1 + 13 + 3 * (1 + width.bytes()) + 5 * (1 + width.bytes());
+        let mut unframed = good.clone();
+        unframed[body_marker] = 0x11;
+        assert_eq!(
+            read_delta_state_header(&unframed, 0, width),
+            DeltaStateHeaderRead::Unframed
+        );
+        let mut mistagged = good.clone();
+        mistagged[1 + 13] = 0x0c;
+        assert_eq!(
+            read_delta_state_header(&mistagged, 0, width),
+            DeltaStateHeaderRead::Invalid
+        );
+        assert_eq!(
+            read_delta_state_header(&good[..good.len() / 2], 0, width),
+            DeltaStateHeaderRead::Invalid
+        );
+    }
+}
+
+#[test]
+fn snapshot_revision_ids_need_a_run_that_matches_the_record_count() {
+    let changes = [
+        EntityChange::Update { old: 6, new: 1 },
+        EntityChange::Insert { new: 2 },
+        EntityChange::Update { old: 5, new: 3 },
+        EntityChange::Delete { old: 7 },
+    ];
+    assert_eq!(snapshot_revision_ids(changes.into_iter(), 3), Some(5..8));
+    assert_eq!(snapshot_revision_ids(changes.into_iter(), 2), None);
+    let gap = [
+        EntityChange::Update { old: 5, new: 1 },
+        EntityChange::Update { old: 7, new: 2 },
+    ];
+    assert_eq!(snapshot_revision_ids(gap.into_iter(), 2), None);
+    assert_eq!(
+        snapshot_revision_ids([EntityChange::Insert { new: 1 }].into_iter(), 0),
+        None
+    );
+}
+
+fn frame_chain(bytes: &[u8], width: RefWidth) -> Result<ChainFraming, CodecError> {
+    crate::test_support::with_service_context(bytes, |ctx| frame_history_chain(ctx, bytes, width))?
+}
+
+#[test]
+fn chain_framing_reads_states_changes_records_and_revision_ids() {
+    for width in BOTH_WIDTHS {
+        let mut bytes = Vec::new();
+        bytes.extend(record_bytes("face"));
+        bytes.extend(delta_state(width, [11, 1, 0, -1, 1, 0, -1, -1], &[(-1, 3)]));
+        let archived_at = bytes.len();
+        bytes.extend(delta_state(
+            width,
+            [12, 1, 0, 0, -1, 1, -1, -1],
+            &[(4, 1), (-1, 2)],
+        ));
+        let record = record_bytes("body");
+        let record_at = bytes.len();
+        bytes.extend(&record);
+        let ChainFraming::Framed(chain) = frame_chain(&bytes, width).unwrap() else {
+            panic!("chain did not frame at {width:?}");
+        };
+        assert_eq!(chain.states.len(), 2);
+        assert_eq!(chain.states[0].header.state_id, 11);
+        assert_eq!(chain.states[0].changes, [EntityChange::Insert { new: 3 }]);
+        assert!(chain.states[0].records.is_empty());
+        assert_eq!(
+            chain.states[1].changes,
+            [
+                EntityChange::Update { old: 4, new: 1 },
+                EntityChange::Insert { new: 2 }
+            ]
+        );
+        assert_eq!(
+            chain.states[1].records,
+            [ChainRecord {
+                revision_id: Some(4),
+                offset: record_at,
+                len: record.len(),
+                name: "body".to_owned()
+            }]
+        );
+        let views = chain.views(&bytes);
+        assert_eq!(views[1].state_id, 12);
+        assert_eq!(views[1].previous_ref, Some(0));
+        assert_eq!(views[1].next_ref, None);
+        assert_eq!(views[0].next_ref, Some(1));
+        assert_eq!(views[1].records[0].raw_bytes, &record[..]);
+        assert!(archived_at < record_at);
+    }
+}
+
+#[test]
+fn chain_framing_reports_absent_and_unframed_histories() {
+    for width in BOTH_WIDTHS {
+        let mut bytes = record_bytes("face");
+        assert!(matches!(
+            frame_chain(&bytes, width).unwrap(),
+            ChainFraming::Absent
+        ));
+        let state = delta_state(width, [11, 1, 0, -1, -1, 0, -1, -1], &[]);
+        let mut truncated = bytes.clone();
+        truncated.extend(&state[..state.len() - 4]);
+        assert!(matches!(
+            frame_chain(&truncated, width).unwrap(),
+            ChainFraming::Unframed
+        ));
+        let mut bad_integer = bytes.clone();
+        bad_integer.extend(&state);
+        bad_integer[bytes.len() + 13] = 0x7f;
+        assert!(matches!(
+            frame_chain(&bad_integer, width).unwrap(),
+            ChainFraming::Unframed
+        ));
+        bytes.extend(&state);
+        assert!(matches!(
+            frame_chain(&bytes, width).unwrap(),
+            ChainFraming::Framed(_)
+        ));
+    }
+}
+
+#[test]
+fn old_ref_names_the_old_entity_of_update_and_delete_only() {
+    assert_eq!(EntityChange::Insert { new: 7 }.old_ref(), None);
+    assert_eq!(EntityChange::Delete { old: 8 }.old_ref(), Some(8));
+    assert_eq!(EntityChange::Update { old: 9, new: 7 }.old_ref(), Some(9));
 }

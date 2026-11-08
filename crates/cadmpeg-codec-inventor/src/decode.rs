@@ -729,6 +729,27 @@ fn decode_container<'a>(
                 .namespace_mut("inventor")
                 .set_arena(ctx, "body_wrapper_links", &links)?;
         }
+        if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
+            let history = crate::feature::history_states::project(
+                ctx,
+                carrier,
+                &crate::feature::history_states::Inputs {
+                    features: &feature_inventory.features,
+                    model_features: &ir.model.features,
+                    kernel_links: &feature_inventory.kernel_entity_links,
+                    wrapper_links: &links,
+                    properties: &feature_inventory.properties,
+                },
+            )?;
+            if !history.records.is_empty() {
+                ir.native.namespace_mut("inventor").set_arena(
+                    ctx,
+                    "feature_history_states",
+                    &history.records,
+                )?;
+            }
+            losses.extend(crate::feature::history_states::losses(&history));
+        }
         losses.extend(crate::feature::body_selection::native_losses(
             &ir.model, &joined,
         ));
@@ -935,6 +956,13 @@ fn decode_container<'a>(
             &feature_inventory,
             &ir.model.features,
         ));
+        losses.extend(crate::feature::face_selection::native_losses(
+            &ir.model.features,
+        ));
+        losses.extend(crate::feature::face_selection::assumption_losses(
+            &ir.model.features,
+            &feature_inventory,
+        ));
         losses.extend(crate::feature::sheet_metal::retained_control_losses(
             ir.model.features.iter(),
         ));
@@ -1057,6 +1085,9 @@ fn decode_container<'a>(
         ));
         losses.extend(crate::sketch::degenerate_line_loss(
             unresolved.sketch_degenerate_lines,
+        ));
+        losses.extend(crate::sketch::rounded_line_loss(
+            unresolved.sketch_rounded_lines,
         ));
         losses.extend(crate::sketch::point_tail::paired_association_loss(
             &sketch_inventory,
@@ -1494,6 +1525,7 @@ struct UnresolvedDesign {
     sketch_axis_distances: usize,
     sketch_carrier_conflicts: usize,
     sketch_degenerate_lines: usize,
+    sketch_rounded_lines: usize,
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1580,6 +1612,7 @@ fn project_design(
         sketch_axis_distances: sketches.native_axis_distances,
         sketch_carrier_conflicts: sketches.native_carrier_conflicts,
         sketch_degenerate_lines: sketches.native_degenerate_lines,
+        sketch_rounded_lines: sketches.native_rounded_lines,
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
         edge_treatment_losses: features.edge_treatment_losses,

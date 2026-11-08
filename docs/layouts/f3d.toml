@@ -7082,6 +7082,44 @@ source = "spec"
 anchor = "a null marked reference `00` at offset 32"
 
 [[record]]
+name = "compact_sweep_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "A compact Sweep scope stores ten zero bytes at offsets 11 through 20"
+size = 26
+note = "Offsets are relative to the primary indexed scope header. The scope body follows the prologue."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A compact Sweep scope stores ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "stores ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the u32 operation enum at offset 21"
+
+[[record.field]]
+name = "marker"
+offset = 25
+type = "u8"
+value = 1
+source = "spec"
+anchor = "and byte `1` at offset 25"
+
+[[record]]
 name = "legacy_loft_body_carrier"
 kind = "byte"
 section = "3.1"
@@ -9860,6 +9898,57 @@ anchor = "LP-UTF16 blob-part entry name"
 offset = 25
 size = 107
 note = "The LP-UTF16 entry name, marked surface reference, and two-byte zero tail occupy this variable-length region; the complete serializer frame remains 132 bytes."
+
+[[record]]
+name = "compact_selection_envelope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The prefix through `member_count` is 36 bytes."
+size = 36
+note = "Offsets are relative to the group's primary indexed header. The ordered member references start at offset 36."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A compact counted selection envelope starts with an indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes, a marked owning-scope reference"
+
+[[record.field]]
+name = "owner_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "a marked owning-scope reference"
+value = 1
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 22
+type = "u64"
+source = "spec"
+anchor = "a marked owning-scope reference"
+
+[[record.field]]
+name = "owner_zero_tail"
+offset = 30
+type = "bytes[2]"
+source = "spec"
+anchor = "`u8 1 + u64 record index + u16 0`"
+
+[[record.field]]
+name = "member_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "`u32 member_count`"
 
 [[record]]
 name = "form_class_328_scope"
@@ -28924,7 +29013,7 @@ name = "periodic_face_mode"
 offset = 46
 type = "u8"
 source = "derived"
-anchor = "Version 16 requires `periodicFaceMode` zero"
+anchor = "whose version-16 `periodicFaceMode` is zero"
 value = 0
 note = "Follows the three-f64 alignment vector. Zero admits solved frame binding."
 
@@ -30538,6 +30627,126 @@ offset = 454
 size = 42
 note = "Common scope-tail lanes after the preceding-history identity."
 
+[[record]]
+name = "reverse_normal_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/reverse_normal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact Reverse Normal prefix"
+size = 115
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact Reverse Normal prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact Reverse Normal prefix"
+
+[[record.field]]
+name = "group_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The compact Reverse Normal prefix"
+value = 1
+
+[[record.field]]
+name = "group_reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact Reverse Normal prefix"
+
+[[record.field]]
+name = "null_guid"
+offset = 36
+type = "bytes[76]"
+source = "spec"
+anchor = "The compact Reverse Normal prefix"
+
+[[record.field]]
+name = "zero_tail"
+offset = 112
+type = "bytes[3]"
+source = "spec"
+anchor = "The compact Reverse Normal prefix"
+
+[[record]]
+name = "shifted_reverse_normal_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/reverse_normal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The shifted Reverse Normal prefix"
+size = 119
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The shifted Reverse Normal prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The shifted Reverse Normal prefix"
+
+[[record.field]]
+name = "shift_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The shifted Reverse Normal prefix"
+value = 1
+
+[[record.field]]
+name = "zero_run_after_marker"
+offset = 21
+type = "bytes[4]"
+source = "spec"
+anchor = "The shifted Reverse Normal prefix"
+
+[[record.field]]
+name = "group_count"
+offset = 25
+type = "u32"
+source = "derived"
+note = "Compact-prefix offset plus the four-byte forward shift that the specification states."
+anchor = "The shifted Reverse Normal prefix"
+value = 1
+
+[[record.field]]
+name = "group_reference"
+offset = 29
+type = "bytes[11]"
+source = "derived"
+note = "Compact-prefix offset plus the four-byte forward shift that the specification states."
+anchor = "The shifted Reverse Normal prefix"
+
+[[record.field]]
+name = "null_guid"
+offset = 40
+type = "bytes[76]"
+source = "derived"
+note = "Compact-prefix offset plus the four-byte forward shift that the specification states."
+anchor = "The shifted Reverse Normal prefix"
+
+[[record.field]]
+name = "zero_tail"
+offset = 116
+type = "bytes[3]"
+source = "derived"
+note = "Compact-prefix offset plus the four-byte forward shift that the specification states."
+anchor = "The shifted Reverse Normal prefix"
 [[record]]
 name = "path_pattern_settings"
 kind = "byte"

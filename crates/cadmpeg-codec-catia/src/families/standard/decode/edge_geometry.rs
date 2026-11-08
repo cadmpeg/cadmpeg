@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 pub(super) mod arc_bounds;
+pub(super) mod cylindrical_arcs;
 
 use super::{
     annotate, cgm_source, circle_parameter_range_from_surface_branch, face_surface, ordered_range,

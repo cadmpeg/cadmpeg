@@ -92,11 +92,14 @@ fn derived(mirror: bool) -> (SyntheticRecords, BaseEnvelopeRecords) {
 fn derived_at_version(mirror: bool, version: u8) -> (SyntheticRecords, BaseEnvelopeRecords) {
     let (mut design, mut base) = derived(mirror);
     base.design_version = version;
-    if version == 23 {
+    if version >= 23 {
+        let stamps = if version >= 25 { 2 } else { 1 };
         for ordinal in [2, 3, 8, 12, 17] {
-            design[ordinal]
-                .1
-                .splice(header::LEN..header::LEN, (-1_i32).to_le_bytes());
+            for _ in 0..stamps {
+                design[ordinal]
+                    .1
+                    .splice(header::LEN..header::LEN, (-1_i32).to_le_bytes());
+            }
         }
         push_u32(
             &mut design[9].1,
@@ -124,7 +127,14 @@ fn decoded(
 
 #[test]
 fn derived_identity_and_reflection_retain_exact_native_source_and_stored_result() {
-    for (version, mirror) in [(19, false), (19, true), (23, false), (23, true)] {
+    for (version, mirror) in [
+        (19, false),
+        (19, true),
+        (23, false),
+        (23, true),
+        (25, false),
+        (25, true),
+    ] {
         let (design, base) = derived_at_version(mirror, version);
         let (ir, report, fidelity) = decoded(&design, &base).into_parts();
         assert!(!report.losses.iter().any(|loss| loss.code
@@ -244,7 +254,14 @@ fn derived_refuses_each_changed_operand_and_pins_native_source_loss() {
 
 #[test]
 fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers() {
-    for (version, mirror) in [(19, false), (19, true), (23, false), (23, true)] {
+    for (version, mirror) in [
+        (19, false),
+        (19, true),
+        (23, false),
+        (23, true),
+        (25, false),
+        (25, true),
+    ] {
         let (design, base) = derived_at_version(mirror, version);
         let ir = decoded(&design, &base).into_parts().0;
         let arena = DecodeArena::new();
@@ -312,7 +329,10 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
                         record["trailing_payload_len"] = 55.into();
                     }
                     9 => record["save_version_major"] = 18.into(),
-                    10 => record["header"]["stamps"] = serde_json::json!([0, 0]),
+                    10 => {
+                        record["header"]["stamps"] =
+                            serde_json::json!(vec![0; 2 + usize::from(version >= 25)]);
+                    }
                     11 => record["header"]["stamps"] = serde_json::json!([0]),
                     12 => record["header"]["stamps"] = serde_json::json!([-2]),
                     _ => record["header"]["flags_extension"] = 0.into(),
@@ -334,10 +354,10 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
 
 #[test]
 fn derived_keeps_translated_source_placement_without_changing_stored_result_geometry() {
-    for version in [19, 23] {
+    for version in [19, 23, 25] {
         let (mut design, base) = derived_at_version(false, version);
         let mut transform = content(112);
-        if version == 23 {
+        for _ in 0..usize::from(version >= 23) + usize::from(version >= 25) {
             push_u32(&mut transform, u32::MAX);
         }
         push_u16(&mut transform, 0x8421);
@@ -570,6 +590,35 @@ fn derived_version_23_refuses_suffix_polarity_missing_suffix_and_extra_stamps() 
         assert!(
             !findings.iter().any(|f| f.severity >= Severity::Error),
             "mutation {change}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn derived_version_25_refuses_one_or_three_source_stamps() {
+    for change in 0..2 {
+        let (mut design, base) = derived_at_version(false, 25);
+        let stamp = crate::layout::pm_dc_derived_source_stamp::LEN;
+        if change == 0 {
+            design[8].1.drain(header::LEN..header::LEN + stamp);
+        } else {
+            design[8]
+                .1
+                .splice(header::LEN..header::LEN, (-1_i32).to_le_bytes());
+        }
+        let (ir, _, _) = decoded(&design, &base).into_parts();
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|f| f.native_ref.as_deref() == Some("inventor:pmdc:feature#dc-1"))
+            .expect("derived feature");
+        assert!(
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
+            ),
+            "mutation {change}"
         );
     }
 }

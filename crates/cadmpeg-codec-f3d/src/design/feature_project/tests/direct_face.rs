@@ -343,6 +343,39 @@ fn move_face_projects_a_translation_of_its_group() {
 }
 
 #[test]
+fn move_face_projects_a_transform_stored_as_the_first_reference() {
+    let mut scope = move_face_scope([
+        [1., 0., 0., 0.],
+        [0., 1., 0., -0.25],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![300, 100, 200]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut faces = group(DesignOperandRole::ROLE_0X10);
+    assert!(
+        super::super::project_move_face(&scope, std::slice::from_ref(&faces))
+            .unwrap()
+            .is_none(),
+        "the group is reference one, so ordinal zero is not its place"
+    );
+    faces.scope_reference_ordinal = 1;
+    assert!(matches!(
+        projected_operation(super::super::project_move_face(
+            &scope,
+            std::slice::from_ref(&faces),
+        )),
+        FeatureOperation::MoveFace { .. }
+    ));
+}
+
+#[test]
 fn move_face_stays_native_without_a_translation_or_its_exact_group() {
     let translation = [
         [1., 0., 0., 0.25],

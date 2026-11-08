@@ -1411,10 +1411,55 @@ impl<'a> Builder<'a> {
             .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
             .filter_map(|occurrence| occurrence_products.get(&occurrence.id))
             .collect::<BTreeSet<_>>();
+        let root_product_count = root_products.len();
         let root_product = match root_products.len() {
             1 => root_products.pop_first(),
             _ => None,
         };
+        let emitted_product_definitions = products
+            .iter()
+            .map(|product| product.id.clone())
+            .collect::<HashSet<_>>();
+        let mut root_definition_counts = BTreeMap::<ProductDefinitionId, usize>::new();
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        {
+            if let Some(definition) = occurrence_products
+                .get(&occurrence.id)
+                .filter(|definition| emitted_product_definitions.contains(*definition))
+            {
+                *root_definition_counts
+                    .entry(definition.clone())
+                    .or_default() += 1;
+            }
+        }
+        let repeated_root_occurrence_ids = occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter_map(|occurrence| {
+                let definition = occurrence_products.get(&occurrence.id)?;
+                (root_definition_counts
+                    .get(definition)
+                    .copied()
+                    .unwrap_or_default()
+                    > 1)
+                .then(|| occurrence.id.clone())
+            })
+            .collect::<HashSet<_>>();
+        let repeated_root_definition_has_children = occurrences.iter().any(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                OccurrenceParent::Occurrence { occurrence: parent }
+                    if repeated_root_occurrence_ids.contains(parent)
+            ) && occurrence_products
+                .get(&occurrence.id)
+                .is_some_and(|definition| emitted_product_definitions.contains(definition))
+                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| transform.is_proper_rigid())
+        });
         // A rigid root placement of a local product needs a parent product to carry it.
         let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
             matches!(occurrence.parent, OccurrenceParent::Root {})
@@ -1424,12 +1469,21 @@ impl<'a> Builder<'a> {
                     .effective_transform()
                     .is_ok_and(|transform| transform.is_proper_rigid())
         };
-        let assembly_root = occurrences.iter().any(|occurrence| {
-            placed_root(occurrence)
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| !is_identity(&transform.rows()))
-        });
+        let mut has_placed_root = false;
+        let mut has_non_identity_placed_root = false;
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| placed_root(occurrence))
+        {
+            has_placed_root = true;
+            has_non_identity_placed_root |= occurrence
+                .effective_transform()
+                .is_ok_and(|transform| !is_identity(&transform.rows()));
+        }
+        let assembly_root = has_non_identity_placed_root
+            || (has_placed_root
+                && root_product_count > 1
+                && !repeated_root_definition_has_children);
         let product_names = distinct_names(
             &products
                 .iter()

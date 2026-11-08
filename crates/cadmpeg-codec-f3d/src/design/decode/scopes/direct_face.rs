@@ -170,11 +170,9 @@ fn move_face_transform_marker(
         _ => return None,
     };
     // A byte one precedes the marked transform reference. A u32 one follows it,
-    // then the marked reference to the selected-face group, the first reference.
-    let first_reference = scope.reference_members().values().next()?;
+    // then the marked reference to the selected-face group.
     (bytes.get(start + transform_marker - 1) == Some(&1)
-        && View::u32_le_at(bytes, start + transform_marker + 11) == Some(1)
-        && marked_record_reference(bytes, start + transform_marker + 15) == Some(*first_reference))
+        && View::u32_le_at(bytes, start + transform_marker + 11) == Some(1))
     .then_some(transform_marker)
 }
 
@@ -188,11 +186,18 @@ pub(super) fn exact_move_face_operation(
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let transform_marker = move_face_transform_marker(bytes, scope, start)?;
-    let transform_record_index = scope.reference_members().values().next_back()?;
-    if marked_record_reference(bytes, start + transform_marker) != Some(*transform_record_index) {
+    let transform = marked_record_reference(bytes, start + transform_marker)?;
+    let group = marked_record_reference(bytes, start + transform_marker + 15)?;
+    // The transform is the last reference after the group and its members, or
+    // the first reference before them.
+    let mut references = scope.reference_members().values().copied();
+    let first = references.next()?;
+    let second = references.next()?;
+    let last = references.next_back()?;
+    if !(first == group && last == transform || first == transform && second == group) {
         return None;
     }
-    move_face_transform(bytes, records, *transform_record_index)
+    move_face_transform(bytes, records, transform)
 }
 
 fn is_move_face(scope: &DesignParameterScope) -> bool {

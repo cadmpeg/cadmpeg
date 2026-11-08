@@ -104,6 +104,21 @@ fn authored_assembly_keeps_prototypes_occurrences_and_joints() {
         .unwrap();
     assert_eq!(array.element_transforms().len(), 3);
     assert_eq!(array.element_scales().len(), 3);
+    assert_eq!(
+        model
+            .occurrences
+            .iter()
+            .filter(|item| item.native_ref.as_deref() == Some("fcstd:native:object#PinArray"))
+            .count(),
+        3
+    );
+    for index in 0..3 {
+        let element = format!("fcstd:native:object#PinArray_i{index}");
+        assert!(!model
+            .occurrences
+            .iter()
+            .any(|item| item.native_ref.as_deref() == Some(element.as_str())));
+    }
     for (index, (x, y, scale)) in [(0.0, 0.0, 1.0), (1.0, 10.0, 1.25), (2.0, 20.0, 1.5)]
         .into_iter()
         .enumerate()

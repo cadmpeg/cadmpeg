@@ -19,14 +19,14 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::report::loss::LossNote;
 
 const WALL_SLOT_LEN: usize = 11;
-const CORNERED_ZERO_RUN: usize = 12;
-const MARKED_ZERO_RUN: usize = 8;
-const COUNTED_ZERO_RUN: usize = 4;
-const TABLE_ZERO_RUN: usize = 3;
 const MARKED_REFERENCE_LEN: usize = 11;
 const U32_LEN: usize = 4;
 const THICKEN_FORM: u32 = 4;
 const GUID_ZERO_RUN: usize = 8;
+const TABLE_ZERO_RUN: usize = 3;
+const CORNERED_ZERO_RUN: usize = 12;
+const MARKED_ZERO_RUN: usize = 8;
+const COUNTED_ZERO_RUN: usize = 4;
 
 pub(super) fn exact_thicken_operation(
     bytes: &[u8],
