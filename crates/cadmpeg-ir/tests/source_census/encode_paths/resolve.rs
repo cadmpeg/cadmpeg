@@ -102,7 +102,6 @@ const ERROR_FAMILIES: &[(&str, &[&str])] = &[
             "ResourceLimit",
             "UnsupportedDialect",
             "UnsupportedTarget",
-            "UnsupportedContent",
             "NotImplemented",
             "Io",
         ],
@@ -117,15 +116,7 @@ const ERROR_FAMILIES: &[(&str, &[&str])] = &[
             "Io",
         ],
     ),
-    (
-        "TargetRefusalKind",
-        &[
-            "ExplicitUnavailable",
-            "InheritedUnavailable",
-            "DefaultUnavailable",
-            "UnrecordedSource",
-        ],
-    ),
+    ("TargetRefusalKind", &["UnknownExplicit", "NoDefault"]),
 ];
 
 /// How one call path resolved.

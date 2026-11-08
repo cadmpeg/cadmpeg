@@ -79,7 +79,7 @@ fn square_path(periodic: bool, last: Point3) -> CurveGeometry {
 
 fn refusal(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> String {
     match edge_span(ir, edge, geometry) {
-        Err(CodecError::UnsupportedContent(message)) => message,
+        Err(CodecError::InvalidInput(message)) => message,
         _ => panic!("expected an unsupported-content refusal"),
     }
 }

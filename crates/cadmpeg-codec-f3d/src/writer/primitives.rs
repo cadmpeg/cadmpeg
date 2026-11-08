@@ -37,7 +37,7 @@ pub(super) fn validate_configuration_projection(
         &mut features,
     )?;
     if target.model.configurations != projected {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "neutral F3D configurations must equal the projection of native configuration tables"
                 .into(),
         ));
@@ -56,7 +56,7 @@ pub(crate) fn validate_assembly_projection(
             .is_empty()
             .then_some(())
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(
+                CodecError::InvalidInput(
                     "source-less F3D generation does not support assembly joints".into(),
                 )
             });
@@ -79,7 +79,7 @@ pub(crate) fn validate_assembly_projection(
         ),
     );
     if target.model.assembly_joints != projected.joints {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "editing F3D assembly joints is not supported".into(),
         ));
     }

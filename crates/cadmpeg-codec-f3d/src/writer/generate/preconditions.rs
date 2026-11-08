@@ -70,7 +70,7 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 SolvedSurfaceGeometry::Nurbs(_) | SolvedSurfaceGeometry::Unknown { .. }
             )
         }) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
                 procedural.id, surface.id
             )));
@@ -106,7 +106,7 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 )))
             }
             Some(_) => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                 "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
                 procedural.id, curve.id
             )))
@@ -126,7 +126,7 @@ pub(super) fn validate_source_less_topology_tolerances(
         .iter()
         .find(|face| face.tolerance.is_some())
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "source-less F3D cannot serialize face {} tolerance losslessly",
             face.id
         )));
@@ -156,7 +156,7 @@ pub(super) fn validate_source_less_topology_tolerances(
         .iter()
         .find(|coedge| coedge.use_curve.is_some() && !tolerant.contains(coedge.id.as_str()))
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "source-less F3D coedge {} use curve lacks a cache-local tolerant extension",
             coedge.id
         )));
@@ -166,7 +166,7 @@ pub(super) fn validate_source_less_topology_tolerances(
 
 pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecError> {
     if let Some(tessellation) = target.model.tessellations.first() {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "source-less F3D cannot serialize neutral tessellation {} losslessly",
             tessellation.id
         )));
@@ -177,7 +177,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
         .iter()
         .find(|surface| surface.source_object.is_some())
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "source-less F3D cannot serialize source-object association on surface {} losslessly",
             surface.id
         )));
@@ -188,7 +188,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
         .iter()
         .find(|curve| curve.source_object.is_some())
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "source-less F3D cannot serialize source-object association on curve {} losslessly",
             curve.id
         )));
@@ -203,13 +203,13 @@ fn source_less_design_record_type<'a>(
     record_kind: &str,
 ) -> Result<&'a SegmentType, CodecError> {
     let type_ordinal = class_tag.dynamic_ordinal().ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "F3D {record_kind} class tag {} is below the dynamic type range",
             class_tag.as_str()
         ))
     })?;
     let design_type = native.design_types.get(type_ordinal).ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "F3D {record_kind} class tag {} is outside the Design type table",
             class_tag.as_str()
         ))
@@ -219,7 +219,7 @@ fn source_less_design_record_type<'a>(
         .values()
         .any(|registered| *registered == u64::from(record_index))
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "F3D {record_kind} {record_index} is not registered by class tag {}",
             class_tag.as_str()
         )));
@@ -304,7 +304,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             point_type,
             crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE,
         ) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D sketch point {} requires the current point record type",
                 point.id
             )));
@@ -318,7 +318,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
                 }
             )
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D sketch point {} requires the version-11 member sequence",
                 point.id
             )));
@@ -333,7 +333,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             )));
         }
         let owner_reference = point.owner_reference.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "F3D sketch point {} has no direct sketch owner",
                 point.id
             ))
@@ -421,20 +421,20 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
                 crate::design::decode::sketch::CURRENT_SKETCH_NURBS_TYPE
             }
             None => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "source-less F3D sketch curve {} has no writable geometry",
                     curve.id
                 )))
             }
         };
         if !design_type_matches(curve_type, expected_type) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D sketch curve {} requires its current geometry record type",
                 curve.id
             )));
         }
         let owner_reference = curve.owner_reference.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "F3D sketch curve {} has no direct sketch owner",
                 curve.id
             ))
@@ -479,7 +479,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             .eq_ignore_ascii_case("E0618268-3A06-450E-9E94-7CF4C2E66802")
             || text_type.version != text.class_version
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch text {} requires its textex type registration",
                 text.id
             )));
@@ -707,7 +707,7 @@ pub(in crate::writer) fn validate_source_less_history_graph(
         .iter()
         .find(|history| history.binding_budget_exceeded)
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "source-less F3D cannot serialize ASM history {} whose bulletin boards and records were not retained",
             history.id
         )));
@@ -798,7 +798,7 @@ pub(super) fn validate_source_less_design_links(
             ))
         })?;
         if !linked_coedges.insert(id.clone()) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D generation supports one sketch-curve link per coedge: {id}"
             )));
         }
@@ -970,7 +970,7 @@ pub(super) fn validate_source_less_design_links(
                     curve.geometry,
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
                 ) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
                         parameters.id()
                     )));
@@ -989,7 +989,7 @@ pub(super) fn validate_source_less_design_links(
                 target: Some(_),
                 ..
             } => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "source-less F3D cannot relocate tolerant-coedge extension {}",
                     parameters.id()
                 )));

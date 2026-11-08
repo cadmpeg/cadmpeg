@@ -37,7 +37,7 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 fn source_position(value: Option<u64>, id: &str, field: &str) -> Result<u64, CodecError> {
     value.ok_or_else(|| {
-        CodecError::UnsupportedContent(format!(
+        CodecError::InvalidInput(format!(
             "F3D patch requires an actual source {field} for {id}"
         ))
     })
@@ -121,7 +121,7 @@ pub(super) fn validate_creation_timestamp_edits(
         .copied()
         .ne(target.iter().map(|timestamp| timestamp.id.as_str()))
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D timestamp regeneration requires the unchanged timestamp-id set".into(),
         ));
     }
@@ -130,7 +130,7 @@ pub(super) fn validate_creation_timestamp_edits(
         let mut normalized = timestamp.clone();
         normalized.unix_microseconds = before.unix_microseconds;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D timestamp edit changes structural fields: {}",
                 timestamp.id
             )));
@@ -167,7 +167,7 @@ pub(super) fn validate_edge_continuity_edits(
         .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D edge-continuity regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -178,7 +178,7 @@ pub(super) fn validate_edge_continuity_edits(
         normalized.sense = before.sense;
         normalized.continuity.clone_from(&before.continuity);
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D edge-continuity edit changes structural fields: {id}"
             )));
         }
@@ -218,7 +218,7 @@ pub(super) fn validate_edge_ownership_edits(
         .map(|ownership| (ownership.id(), ownership))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D edge-ownership regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -228,7 +228,7 @@ pub(super) fn validate_edge_ownership_edits(
         let mut normalized = after.clone();
         normalized.owner_coedge_index = before.owner_coedge_index;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D edge-ownership edit changes structural fields: {id}"
             )));
         }
@@ -288,7 +288,7 @@ pub(super) fn validate_vertex_ownership_edits(
         .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D vertex-ownership regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -299,7 +299,7 @@ pub(super) fn validate_vertex_ownership_edits(
         normalized.owner.clone_from(&before.owner);
         normalized.endpoint_index = before.endpoint_index;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D vertex-ownership edit changes structural fields: {id}"
             )));
         }
@@ -363,7 +363,7 @@ pub(super) fn validate_vertex_ownership_edits(
                     .rsplit_once('#')
                     .and_then(|(_, index)| index.parse::<i64>().ok())
                     .ok_or_else(|| {
-                        CodecError::UnsupportedContent(format!(
+                        CodecError::InvalidInput(format!(
                             "F3D owning edge row {} has no native record index",
                             owner.as_str()
                         ))
@@ -371,7 +371,7 @@ pub(super) fn validate_vertex_ownership_edits(
                 (edge_record, endpoint)
             }
             None => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D vertex ownership {id} drops its owning edge"
                 )));
             }
@@ -399,7 +399,7 @@ pub(super) fn validate_face_sidedness_edits(
         .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D face-sidedness regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -409,7 +409,7 @@ pub(super) fn validate_face_sidedness_edits(
         let mut normalized = after.clone();
         normalized.containment = before.containment;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D face-sidedness edit changes structural fields: {id}"
             )));
         }
@@ -421,7 +421,7 @@ pub(super) fn validate_face_sidedness_edits(
                 edits.insert(index_from_u32(after.record_index), containment);
             }
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D face sidedness {id} cannot change record width"
                 )));
             }
@@ -448,7 +448,7 @@ pub(super) fn validate_tolerant_vertex_edits(
         .map(|vertex| (vertex.id.as_str(), vertex))
         .collect::<BTreeMap<_, _>>();
     if baseline_vertices.keys().ne(target_vertices.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D tolerant-vertex regeneration requires the unchanged vertex-id set".into(),
         ));
     }
@@ -488,7 +488,7 @@ pub(super) fn validate_tolerant_vertex_edits(
         let mut normalized = after.clone();
         normalized.tolerance = before.tolerance;
         if &normalized != *before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D vertex edit changes fields other than tolerance: {id}"
             )));
         }
@@ -500,7 +500,7 @@ pub(super) fn validate_tolerant_vertex_edits(
             && (before.tolerance.is_none() || after.tolerance.is_none())
             && !tolerant_vertices.contains(id)
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D vertex tolerance {id} cannot change record width"
             )));
         }
@@ -514,7 +514,7 @@ pub(super) fn validate_tolerant_vertex_edits(
         .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D tolerant-vertex regeneration requires the unchanged tail-id set".into(),
         ));
     }
@@ -524,14 +524,14 @@ pub(super) fn validate_tolerant_vertex_edits(
         let mut normalized = after.clone();
         normalized.leading_tolerances = before.leading_tolerances;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
             )));
         }
         if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Absent {})
             != matches!(after.evaluated_slot, EvaluatedToleranceSlot::Absent {})
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-vertex tail edit changes record width: {id}"
             )));
         }
@@ -618,7 +618,7 @@ pub(super) fn validate_tolerant_edge_edits(
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<BTreeMap<_, _>>();
     if baseline_edges.keys().ne(target_edges.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D tolerant-edge regeneration requires the unchanged edge-id set".into(),
         ));
     }
@@ -627,7 +627,7 @@ pub(super) fn validate_tolerant_edge_edits(
         if after.tolerance != before.tolerance
             && (before.tolerance.is_none() || after.tolerance.is_none())
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D edge tolerance {id} cannot change record width"
             )));
         }
@@ -647,7 +647,7 @@ pub(super) fn validate_tolerant_edge_edits(
         .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D tolerant-edge regeneration requires the unchanged tail-id set".into(),
         ));
     }
@@ -655,7 +655,7 @@ pub(super) fn validate_tolerant_edge_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[&id];
         if after != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-edge tail edit changes retained fields: {id}"
             )));
         }
@@ -711,14 +711,14 @@ pub(super) fn validate_tolerant_coedge_edits(
         .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<BTreeMap<_, _>>();
     if baseline_coedges.keys().ne(target_coedges.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D tolerant-coedge regeneration requires the unchanged coedge-id set".into(),
         ));
     }
     for (id, before) in &baseline_coedges {
         let after = target_coedges[id];
         if after.use_curve != before.use_curve {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D coedge use-curve edit changes embedded record structure: {id}"
             )));
         }
@@ -738,7 +738,7 @@ pub(super) fn validate_tolerant_coedge_edits(
         .map(|parameters| (parameters.id(), parameters))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D tolerant-coedge regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -748,7 +748,7 @@ pub(super) fn validate_tolerant_coedge_edits(
         let mut normalized = after.clone();
         normalized.parameter_range = before.parameter_range;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-coedge edit changes structural fields: {id}"
             )));
         }
@@ -780,7 +780,7 @@ pub(super) fn validate_wire_topology_edits(
         .map(|wire| (wire.id(), wire))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D wire regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -790,7 +790,7 @@ pub(super) fn validate_wire_topology_edits(
         let mut normalized = after.clone();
         normalized.side = before.side;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D wire edit changes structural fields: {id}"
             )));
         }
@@ -923,7 +923,7 @@ pub(super) fn validate_material_assignment_appearances(
         .map(|appearance| (appearance.id.as_str(), appearance))
         .collect::<BTreeMap<_, _>>();
     if baseline_appearances.keys().ne(target_appearances.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D material regeneration requires the unchanged appearance-id set".into(),
         ));
     }
@@ -943,22 +943,22 @@ pub(super) fn validate_material_assignment_appearances(
         normalized.base_color = before.base_color;
         normalized.properties.clone_from(&before.properties);
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D appearance edit changes fields outside physical token or Protein values: {id}"
             )));
         }
         if before.properties.keys().ne(after.properties.keys()) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Protein property regeneration requires the unchanged property set: {id}"
             )));
         }
         let mut edit = crate::materials::ProteinAppearanceEdit::default();
         if after.base_color != before.base_color {
             let color = after.base_color.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!("cannot remove F3D appearance color: {id}"))
+                CodecError::InvalidInput(format!("cannot remove F3D appearance color: {id}"))
             })?;
             if before.base_color.is_none() || color.a() != 1.0 {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
             }
@@ -975,7 +975,7 @@ pub(super) fn validate_material_assignment_appearances(
                 _ => false,
             };
             if !valid {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D Protein property {id}.{name} is outside its writable range"
                 )));
             }
@@ -984,7 +984,7 @@ pub(super) fn validate_material_assignment_appearances(
         }
         if edit.color.is_some() || !edit.properties.is_empty() {
             let guid = after.visual_guid.clone().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!("F3D appearance {id} has no visual token"))
+                CodecError::InvalidInput(format!("F3D appearance {id} has no visual token"))
             })?;
             appearance_edits.insert(guid, edit);
         }
@@ -1007,7 +1007,7 @@ pub(super) fn validate_material_assignment_appearances(
             }
         }
         if !synchronized {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D appearance {id} changed without a synchronized material assignment"
             )));
         }
@@ -1032,7 +1032,7 @@ pub(super) fn validate_material_assignment_appearances(
         if after_token != before_token
             && selected.is_none_or(|appearance| appearance.physical_token.as_deref() != after_token)
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D material assignment {} changed without its appearance physical token",
                 before.id
             )));
@@ -1063,7 +1063,7 @@ pub(super) fn validate_material_assignment_edits(
         .map(|assignment| (assignment.id.as_str(), assignment))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D material-assignment regeneration requires the unchanged assignment-id set".into(),
         ));
     }
@@ -1071,7 +1071,7 @@ pub(super) fn validate_material_assignment_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         if after.entity_id != before.entity_id {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D material-assignment identity edit requires synchronized body-presentation, browser-node, B-rep, and scene graphs: {id}"
             )));
         }
@@ -1080,7 +1080,7 @@ pub(super) fn validate_material_assignment_edits(
             || after.physical_token.is_some() != before.physical_token.is_some()
             || after.visual_preset.is_some() != before.visual_preset.is_some()
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D material-assignment edit changes fields outside writable strings: {id}"
             )));
         }
@@ -1143,7 +1143,7 @@ pub(super) fn validate_material_assignment_edits(
 
 fn validate_utf16_replacement(id: &str, before: &str, after: &str) -> Result<(), CodecError> {
     if before.encode_utf16().count() != after.encode_utf16().count() {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "F3D native string {id} must retain its UTF-16 length"
         )));
     }
@@ -1158,7 +1158,7 @@ fn validate_optional_utf16_replacement(
     match (before, after) {
         (Some(before), Some(after)) => validate_utf16_replacement(id, before, after),
         (None, None) => Ok(()),
-        _ => Err(CodecError::UnsupportedContent(format!(
+        _ => Err(CodecError::InvalidInput(format!(
             "cannot add or remove F3D native string carrier: {id}"
         ))),
     }
@@ -1186,7 +1186,7 @@ pub(super) fn validate_lost_edge_edits(
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D lost-edge regeneration requires the unchanged reference-id set".into(),
         ));
     }
@@ -1196,7 +1196,7 @@ pub(super) fn validate_lost_edge_edits(
         if after.next_class_tag != before.next_class_tag
             || after.next_record_index != before.next_record_index
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D lost-edge edit changes fields outside its fixed payload: {id}"
             )));
         }
@@ -1230,7 +1230,7 @@ pub(super) fn validate_act_appearance_bindings(
         .map(|native| &native.act_entities[..])
         .unwrap_or_default();
     if baseline.model.appearance_bindings.len() != target.model.appearance_bindings.len() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D ACT regeneration requires the unchanged appearance-binding count".into(),
         ));
     }
@@ -1261,7 +1261,7 @@ pub(super) fn validate_act_appearance_bindings(
             .get(&(before.target.clone(), before.appearance.clone()))
             .copied()
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D appearance binding target or appearance changed: {}",
                     before.id
                 ))
@@ -1273,7 +1273,7 @@ pub(super) fn validate_act_appearance_bindings(
             .clone_from(&before.source_entity_id);
         normalized.channels.clone_from(&before.channels);
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D appearance binding edit changes fields outside its derived identity, source, or channels: {}",
                 before.id
             )));
@@ -1307,7 +1307,7 @@ pub(super) fn validate_act_appearance_bindings(
                 })
         });
         if before_entity.is_none() || after_entity.is_none() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D appearance binding {} must remain synchronized with one ACT entity",
                 before.id
             )));
@@ -1357,7 +1357,7 @@ pub(super) fn validate_act_appearance_bindings(
         });
         let assignment_synchronized = assignment_entities.contains(after.entity_id());
         if before.entity_id() != after.entity_id() && derived_binding && !assignment_synchronized {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
                 before.id()
             )));
@@ -1384,7 +1384,7 @@ pub(super) fn validate_act_appearance_bindings(
             && derived_binding
             && !synchronized
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT entity {} changed without a synchronized appearance binding",
                 before.id()
             )));
@@ -1423,7 +1423,7 @@ pub(super) fn validate_act_entity_edits(
         .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D ACT entity regeneration requires the unchanged entity-id set".into(),
         ));
     }
@@ -1442,7 +1442,7 @@ pub(super) fn validate_act_entity_edits(
             }
         }
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT entity edit changes fields other than entity_id or channel GUIDs: {id}"
             )));
         }
@@ -1450,7 +1450,7 @@ pub(super) fn validate_act_entity_edits(
             continue;
         }
         if after.entity_id().encode_utf16().count() != before.entity_id().encode_utf16().count() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));
         }
@@ -1484,7 +1484,7 @@ pub(super) fn validate_act_guid_edits(
         .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D ACT GUID regeneration requires the unchanged GUID-id set".into(),
         ));
     }
@@ -1494,7 +1494,7 @@ pub(super) fn validate_act_guid_edits(
         let mut normalized: ActGuid = after.clone();
         normalized.guid.clone_from(&before.guid);
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT GUID edit changes fields other than guid: {id}"
             )));
         }
@@ -1510,7 +1510,7 @@ pub(super) fn validate_act_guid_edits(
         let stream = native_stream(id, ":act-guid#")?;
         edits.entry(stream).or_default().push(ByteEdit {
             offset: before.guid_offset().ok_or_else(|| {
-                CodecError::UnsupportedContent("ACT GUID source location is unavailable".into())
+                CodecError::InvalidInput("ACT GUID source location is unavailable".into())
             })?,
             value: encoded,
         });
@@ -1538,7 +1538,7 @@ pub(super) fn validate_act_registry_channel_edits(
         .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D ACT channel-registry regeneration requires the unchanged entry-id set".into(),
         ));
     }
@@ -1548,7 +1548,7 @@ pub(super) fn validate_act_registry_channel_edits(
         let mut normalized: ActRegistryChannel = after.clone();
         normalized.guid.clone_from(&before.guid);
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT channel-registry edit changes fields other than guid: {id}"
             )));
         }
@@ -1566,7 +1566,7 @@ pub(super) fn validate_act_registry_channel_edits(
             .or_default()
             .push(ByteEdit {
                 offset: before.guid_offset().ok_or_else(|| {
-                    CodecError::UnsupportedContent("ACT GUID source location is unavailable".into())
+                    CodecError::InvalidInput("ACT GUID source location is unavailable".into())
                 })?,
                 value: encoded,
             });
@@ -1596,7 +1596,7 @@ pub(super) fn validate_act_link_edits(
         .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D ACT component-link regeneration requires the unchanged link-id set".into(),
         ));
     }
@@ -1611,9 +1611,9 @@ pub(super) fn validate_act_link_edits(
                 after.layout().entity_id().into(),
                 after.layout().display_name().into(),
             )
-            .map_err(CodecError::UnsupportedContent)?;
+            .map_err(CodecError::InvalidInput)?;
         if !edited.content_eq(after) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT component-link edit changes fields outside supported graph links and fixed-length strings: {id}"
             )));
         }
@@ -1625,7 +1625,7 @@ pub(super) fn validate_act_link_edits(
             || after.layout().display_name().encode_utf16().count()
                 != before.layout().display_name().encode_utf16().count()
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D ACT component-link strings must retain their UTF-16 lengths: {id}"
             )));
         }
@@ -1664,7 +1664,7 @@ pub(super) fn validate_design_type_edits(
         .map(|design_type| (design_type.id().as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D design-type regeneration requires the unchanged type-id set".into(),
         ));
     }
@@ -1675,7 +1675,7 @@ pub(super) fn validate_design_type_edits(
             || before.class_tag != after.class_tag
             || before.entities.len() != after.entities.len()
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D design-type patch changes its class, module, or entity cardinality: {id}"
             )));
         }
@@ -1715,12 +1715,12 @@ pub(super) fn validate_design_type_edits(
         if base_guid_text(&before.base_type_guid) != base_guid_text(&after.base_type_guid) {
             let (before_text, offset) =
                 located_base_guid(&before.base_type_guid).ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    CodecError::InvalidInput(format!(
                         "F3D base type GUID has no source field: {id}"
                     ))
                 })?;
             let after_text = base_guid_text(&after.base_type_guid).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!("cannot remove F3D base type GUID: {id}"))
+                CodecError::InvalidInput(format!("cannot remove F3D base type GUID: {id}"))
             })?;
             validate_fixed_design_string(id, before_text, after_text)?;
             strings.push((offset, after_text.as_bytes().to_vec()));
@@ -1747,7 +1747,7 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
     {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "F3D object string {id} must retain its encoded length and alphabet"
         )));
     }
@@ -1772,7 +1772,7 @@ pub(super) fn validate_configuration_edits(
         .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "retained F3D configuration editing requires the unchanged entry-name set".into(),
         ));
     }
@@ -1780,7 +1780,7 @@ pub(super) fn validate_configuration_edits(
     for (name, before) in baseline {
         let after = target[name];
         if before.id() != after.id() || before.kind() != after.kind() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
@@ -1821,7 +1821,7 @@ pub(super) fn validate_entity_header_edits(
         .map(|header| (header.id.as_str(), header))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D entity-header regeneration requires the unchanged header-id set".into(),
         ));
     }
@@ -1839,7 +1839,7 @@ pub(super) fn validate_entity_header_edits(
             }
         }
         if !normalized.content_eq(before) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D entity-header patch changes fields outside record references: {id}"
             )));
         }
@@ -1857,7 +1857,7 @@ pub(super) fn validate_entity_header_edits(
                     "owning record-reference offset",
                 )?,
                 value: after.record_reference.ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    CodecError::InvalidInput(format!(
                         "cannot remove F3D entity-header record reference: {id}"
                     ))
                 })?,
@@ -1912,7 +1912,7 @@ pub(super) fn validate_body_member_edits(
         .map(|member| (member.id().as_str(), member))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D body-membership regeneration requires the unchanged member-id set".into(),
         ));
     }
@@ -1956,7 +1956,7 @@ pub(super) fn validate_body_visibility_edits(
         .map(|body| (&body.id, body))
         .collect::<BTreeMap<_, _>>();
     if baseline_bodies.keys().ne(target_bodies.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D body-visibility regeneration requires the unchanged body-id set".into(),
         ));
     }
@@ -1971,7 +1971,7 @@ pub(super) fn validate_body_visibility_edits(
             continue;
         }
         let visible = after.visible.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!("cannot remove F3D body visibility: {id}"))
+            CodecError::InvalidInput(format!("cannot remove F3D body visibility: {id}"))
         })?;
         let record = metadata
             .iter()
@@ -1982,7 +1982,7 @@ pub(super) fn validate_body_visibility_edits(
                     .is_some_and(|native_ref| native_ref == item.body.as_str())
             })
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D body visibility {id} has no joined Design browser node"
                 ))
             })?;
@@ -2017,7 +2017,7 @@ pub(super) fn validate_transform_hint_edits(
         .map(|hints| (hints.id(), hints))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D transform-hint regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -2029,7 +2029,7 @@ pub(super) fn validate_transform_hint_edits(
         normalized.reflection = before.reflection;
         normalized.shear = before.shear;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D transform-hint edit changes structural fields: {id}"
             )));
         }
@@ -2071,7 +2071,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
         .map(|key| (key.id(), key))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D body-key regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -2081,7 +2081,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
         let mut normalized = after.clone();
         normalized.asm_body_key = before.asm_body_key;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D body-key edit changes structural fields: {id}"
             )));
         }
@@ -2126,7 +2126,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
             }
             if !joined.is_empty() {
                 let design_key = after.asm_body_key.ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    CodecError::InvalidInput(format!(
                         "cannot remove joined F3D ASM body key: {id}"
                     ))
                 })?;
@@ -2176,7 +2176,7 @@ pub(super) fn validate_construction_recipe_edits(
         .map(|recipe| (recipe.id.as_str(), recipe))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D construction-recipe regeneration requires the unchanged recipe-id set".into(),
         ));
     }
@@ -2202,7 +2202,7 @@ pub(super) fn validate_construction_recipe_edits(
                 old
             });
         if !normalized.content_eq(after) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D construction-recipe patch changes fields other than record index or design identity: {id}"
             )));
         }
@@ -2215,10 +2215,10 @@ pub(super) fn validate_construction_recipe_edits(
             None
         } else {
             let old = before.record_index.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!("cannot add F3D recipe record index: {id}"))
+                CodecError::InvalidInput(format!("cannot add F3D recipe record index: {id}"))
             })?;
             let new = after.record_index.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "cannot remove F3D recipe record index: {id}"
                 ))
             })?;
@@ -2233,12 +2233,12 @@ pub(super) fn validate_construction_recipe_edits(
             None
         } else {
             let old = before.design.as_ref().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "cannot add F3D recipe design identity: {id}"
                 ))
             })?;
             let new = after.design.as_ref().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "cannot remove F3D recipe design identity: {id}"
                 ))
             })?;
@@ -2249,7 +2249,7 @@ pub(super) fn validate_construction_recipe_edits(
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric())
             {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "ASCII F3D recipe design identity must retain its encoded length: {id}"
                 )));
             }
@@ -2298,7 +2298,7 @@ pub(super) fn validate_persistent_reference_edits(
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D persistent-reference regeneration requires the unchanged reference-id set".into(),
         ));
     }
@@ -2306,7 +2306,7 @@ pub(super) fn validate_persistent_reference_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         if after.kind != before.kind {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D persistent-reference edit changes fields other than value: {id}"
             )));
         }
@@ -2330,7 +2330,7 @@ pub(super) fn validate_persistent_reference_edits(
                     "persistent-reference field offset",
                 )?,
                 identity_offset: before.value_offset.ok_or_else(|| {
-                    CodecError::UnsupportedContent(format!(
+                    CodecError::InvalidInput(format!(
                         "F3D patch requires an actual persistent-reference value offset: {id}"
                     ))
                 })?,
@@ -2379,7 +2379,7 @@ pub(super) fn validate_history_state_edits(
         .copied()
         .ne(target.iter().map(|history| history.id.as_str()))
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D history regeneration requires the unchanged history-id set".into(),
         ));
     }
@@ -2387,7 +2387,7 @@ pub(super) fn validate_history_state_edits(
     for history in target {
         let before = baseline_by_id[history.id.as_str()];
         if before.states().len() != history.states().len() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D history edit changes the state count: {}",
                 history.id
             )));
@@ -2409,7 +2409,7 @@ pub(super) fn validate_history_state_edits(
             state.partner_ref = before_state.partner_ref;
             state.owner_ref = before_state.owner_ref;
             if state.bulletin_boards.len() != before_state.bulletin_boards.len() {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D history edit changes the bulletin-board count: {}",
                     history.id
                 )));
@@ -2423,7 +2423,7 @@ pub(super) fn validate_history_state_edits(
                 board.owner_ref = before_board.owner_ref;
                 board.number = before_board.number;
                 if board.changes.len() != before_board.changes.len() {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "F3D history edit changes the entity-change count: {}",
                         board.id
                     )));
@@ -2435,7 +2435,7 @@ pub(super) fn validate_history_state_edits(
             }
         }
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D history edit changes fields outside the fixed delta-state header: {}",
                 history.id
             )));
@@ -2453,7 +2453,7 @@ pub(super) fn validate_history_state_edits(
             && history.states().first().map(|state| state.state_id)
                 != before.states().first().map(|state| state.state_id)
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D head-state identity change requires a regenerated history envelope: {}",
                 history.id
             )));
@@ -2473,7 +2473,7 @@ pub(super) fn validate_history_state_edits(
         }
         if history.preamble.is_some() && history.preamble != before.preamble {
             let (Some(preamble), Some(_)) = (history.preamble, before.preamble) else {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "cannot add or remove the F3D history preamble: {}",
                     history.id
                 )));
@@ -2550,7 +2550,7 @@ pub(super) fn validate_sketch_point_edits(
         .copied()
         .ne(target.iter().map(|point| point.id.as_str()))
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D sketch-point regeneration requires the unchanged point-id set".into(),
         ));
     }
@@ -2572,7 +2572,7 @@ pub(super) fn validate_sketch_point_edits(
             .try_set_coordinates(before.coordinates())
             .map_err(CodecError::Malformed)?;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch-point edit changes fields other than coordinates: {}",
                 point.id
             )));
@@ -2591,7 +2591,7 @@ pub(super) fn validate_sketch_point_edits(
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: source_position(before.byte_offset, &point.id, "sketch point byte offset")?,
             coordinate_offset: before.coordinate_offset.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D patch requires an actual source sketch point coordinate offset for {}",
                     point.id
                 ))
@@ -2624,7 +2624,7 @@ pub(super) fn validate_sketch_curve_edits(
         .copied()
         .ne(target.iter().map(|curve| curve.id.as_str()))
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D sketch-curve regeneration requires the unchanged curve-id set".into(),
         ));
     }
@@ -2636,7 +2636,7 @@ pub(super) fn validate_sketch_curve_edits(
         normalized.byte_offset = before.byte_offset;
         normalized.geometry_offset = before.geometry_offset;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch-curve edit changes fields other than geometry: {}",
                 curve.id
             )));
@@ -2645,13 +2645,13 @@ pub(super) fn validate_sketch_curve_edits(
             continue;
         }
         let geometry = curve.geometry.clone().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "cannot remove sketch-curve geometry: {}",
                 curve.id
             ))
         })?;
         if !same_sketch_layout(before.geometry.as_ref(), &geometry) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch-curve edit requires valid geometry with the original native layout: {}",
                 curve.id
             )));
@@ -2666,13 +2666,13 @@ pub(super) fn validate_sketch_curve_edits(
             })?;
         edits.entry(stream).or_default().push(SketchCurveEdit {
             offset: before.byte_offset.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D sketch curve {} has no actual source position",
                     before.id
                 ))
             })?,
             geometry_offset: before.geometry_offset.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D sketch curve {} has no actual source geometry position",
                     before.id
                 ))
@@ -2731,7 +2731,7 @@ pub(super) fn encode_sketch_relation_state(
         crate::design::decode::sketch::SketchRelationMaskWidth::U32 => u32::try_from(state)
             .map(|state| state.to_le_bytes().to_vec())
             .map_err(|_| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D sketch relation {relation_id} stores a u32 mask that cannot carry the requested 64-bit state"
                 ))
             }),
@@ -2760,7 +2760,7 @@ pub(super) fn validate_sketch_relation_edits(
         .copied()
         .ne(target.iter().map(|relation| relation.id.as_str()))
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D sketch-relation regeneration requires the unchanged relation-id set".into(),
         ));
     }
@@ -2774,7 +2774,7 @@ pub(super) fn validate_sketch_relation_edits(
             || before.return_members().len() != relation.return_members().len()
             || before.auxiliary_references().len() != relation.auxiliary_references().len()
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch relation patch requires unchanged reference cardinalities: {}",
                 relation.id
             )));
@@ -2792,7 +2792,7 @@ pub(super) fn validate_sketch_relation_edits(
             .try_into()
             .map_err(
                 |error: crate::records::sketch_relations::SketchRelationPayloadError| {
-                    CodecError::UnsupportedContent(error.to_string())
+                    CodecError::InvalidInput(error.to_string())
                 },
             )?;
         let returns = before
@@ -2808,14 +2808,14 @@ pub(super) fn validate_sketch_relation_edits(
             .try_into()
             .map_err(
                 |error: crate::records::sketch_relations::SketchRelationPayloadError| {
-                    CodecError::UnsupportedContent(error.to_string())
+                    CodecError::InvalidInput(error.to_string())
                 },
             )?;
         let auxiliary = before
             .auxiliary_references()
             .located_rows()
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D sketch relation has no source auxiliary-reference positions: {}",
                     relation.id
                 ))
@@ -2839,9 +2839,9 @@ pub(super) fn validate_sketch_relation_edits(
                 draft.definition = relation.definition.clone();
                 draft.return_members = returns;
             })
-            .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
+            .map_err(|error| CodecError::InvalidInput(error.to_string()))?;
         if !admitted.content_eq(relation) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch relation patch changes fields outside supported references and constraint state: {}",
                 relation.id
             )));
@@ -2876,7 +2876,7 @@ pub(super) fn validate_sketch_relation_edits(
             .auxiliary_references()
             .located_rows()
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(
+                CodecError::InvalidInput(
                     "F3D patch lacks source auxiliary-reference positions".into(),
                 )
             })?
@@ -2920,7 +2920,7 @@ pub(super) fn validate_sketch_relation_edits(
         )?;
         if relation.definition.state() != before.definition.state() {
             let raw = before.raw_bytes().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "F3D patch lacks the actual source sketch-relation frame: {}",
                     relation.id
                 ))
@@ -2950,7 +2950,7 @@ fn collect_sketch_reference_edits(
     edits: &mut Vec<ByteEdit>,
 ) -> Result<(), CodecError> {
     if before.len() != after.len() {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::InvalidInput(format!(
             "F3D sketch relation must retain reference cardinality: {}",
             baseline.id
         )));
@@ -2993,7 +2993,7 @@ pub(super) fn validate_body_transform_edits(
         .map(|body| (body.id.as_str(), body))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D body-transform regeneration requires the unchanged body-id set".into(),
         ));
     }
@@ -3005,7 +3005,7 @@ pub(super) fn validate_body_transform_edits(
         normalized.color = before.color;
         normalized.visible = before.visible;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
@@ -3013,10 +3013,10 @@ pub(super) fn validate_body_transform_edits(
             continue;
         }
         let transform = after.transform.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!("cannot remove F3D body transform: {id}"))
+            CodecError::InvalidInput(format!("cannot remove F3D body transform: {id}"))
         })?;
         if before.transform.is_none() {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D body transform {id} must replace an existing finite affine transform"
             )));
         }
@@ -3038,7 +3038,7 @@ pub(super) fn validate_body_color_edits(
         .map(|body| (body.id.as_str(), body))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D body-color regeneration requires the unchanged body-id set".into(),
         ));
     }
@@ -3050,7 +3050,7 @@ pub(super) fn validate_body_color_edits(
         normalized.transform = before.transform;
         normalized.visible = before.visible;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
@@ -3058,10 +3058,10 @@ pub(super) fn validate_body_color_edits(
             continue;
         }
         let color = after.color.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!("cannot remove F3D body color: {id}"))
+            CodecError::InvalidInput(format!("cannot remove F3D body color: {id}"))
         })?;
         if before.color.is_none() || color.a() != 1.0 {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D body color {id} must replace an existing opaque finite RGB color"
             )));
         }
@@ -3083,7 +3083,7 @@ pub(super) fn validate_edge_range_edits(
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D edge-range regeneration requires the unchanged edge-id set".into(),
         ));
     }
@@ -3100,7 +3100,7 @@ pub(super) fn validate_edge_range_edits(
         .map_err(CodecError::malformed)?;
         normalized.tolerance = before.tolerance;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D edge edit changes fields other than parameter range: {id}"
             )));
         }
@@ -3108,7 +3108,7 @@ pub(super) fn validate_edge_range_edits(
             continue;
         }
         let range = after.param_range().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!("cannot remove F3D edge range: {id}"))
+            CodecError::InvalidInput(format!("cannot remove F3D edge range: {id}"))
         })?;
         if before.param_range().is_none() || range[0] == range[1] {
             return Err(CodecError::malformed(format_args!(
@@ -3152,7 +3152,7 @@ pub(super) fn validate_face_sense_edits(
         .map(|face| (face.id.as_str(), face))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D face-sense regeneration requires the unchanged face-id set".into(),
         ));
     }
@@ -3163,7 +3163,7 @@ pub(super) fn validate_face_sense_edits(
         normalized.sense = before.sense;
         normalized.color = before.color;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D face edit changes fields other than sense: {id}"
             )));
         }
@@ -3189,7 +3189,7 @@ pub(super) fn validate_face_color_edits(
         .map(|face| (face.id.as_str(), face))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D face-color regeneration requires the unchanged face-id set".into(),
         ));
     }
@@ -3200,7 +3200,7 @@ pub(super) fn validate_face_color_edits(
         normalized.color = before.color;
         normalized.sense = before.sense;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D face edit changes fields other than sense or color: {id}"
             )));
         }
@@ -3208,10 +3208,10 @@ pub(super) fn validate_face_color_edits(
             continue;
         }
         let color = after.color.ok_or_else(|| {
-            CodecError::UnsupportedContent(format!("cannot remove F3D face color: {id}"))
+            CodecError::InvalidInput(format!("cannot remove F3D face color: {id}"))
         })?;
         if before.color.is_none() || color.a() != 1.0 {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D face color {id} must replace an existing opaque finite RGB color"
             )));
         }
@@ -3233,7 +3233,7 @@ pub(super) fn validate_coedge_sense_edits(
         .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D coedge-sense regeneration requires the unchanged coedge-id set".into(),
         ));
     }
@@ -3243,7 +3243,7 @@ pub(super) fn validate_coedge_sense_edits(
         let mut normalized = after.clone();
         normalized.sense = before.sense;
         if &normalized != before {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D coedge edit changes fields other than sense: {id}"
             )));
         }
@@ -3267,7 +3267,7 @@ pub(super) fn validate_curve_edits(
         .map(|curve| (curve.id.as_str(), curve.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D curve regeneration requires the unchanged curve-id set".into(),
         ));
     }
@@ -3281,7 +3281,7 @@ pub(super) fn validate_curve_edits(
         // A curve-kind change is refused here, once, so the arms below decide
         // the edit on their own bodies and carry no policy in their order.
         if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 if matches!(after, Some(SolvedCurveGeometry::Nurbs(_))) {
                     format!("F3D regeneration cannot change curve {id} into a NURBS carrier")
                 } else {
@@ -3317,7 +3317,7 @@ pub(super) fn validate_curve_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":directrix") || id.ends_with(":spine"))))
                 {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D curve {id} is not a patchable NURBS carrier"
                     )));
                 }
@@ -3327,23 +3327,23 @@ pub(super) fn validate_curve_edits(
                     )));
                 }
                 if !unchanged_unique_knot_count(before.knots(), after.knots()) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D curve {id} changes the NURBS knot layout"
                     )));
                 }
                 if before.weights().is_some() != after.weights().is_some() {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D curve {id} changes the NURBS rational form"
                     )));
                 }
                 if before.pole_count() != after.pole_count() {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D curve {id} changes the NURBS control-point count"
                     )));
                 }
             }
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D regeneration does not support edits to curve {id}"
                 )));
             }
@@ -3367,7 +3367,7 @@ pub(super) fn validate_pcurve_edits(
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D pcurve regeneration requires the unchanged pcurve-id set".into(),
         ));
     }
@@ -3392,7 +3392,7 @@ pub(super) fn validate_pcurve_edits(
             PcurveGeometry::Nurbs { nurbs: after_nurbs },
         ) = (&before.geometry, &after.geometry)
         else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D regeneration does not support this pcurve edit: {id}"
             )));
         };
@@ -3413,7 +3413,7 @@ pub(super) fn validate_pcurve_edits(
             && before.parameter_range() == after.parameter_range()
             && before.fit_tolerance().is_some() == after.fit_tolerance().is_some();
         if !valid || !contract_valid {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
             )));
         }
@@ -3478,7 +3478,7 @@ pub(super) fn validate_surface_edits(
         .map(|surface| (surface.id.as_str(), surface.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D surface regeneration requires the unchanged surface-id set".into(),
         ));
     }
@@ -3491,7 +3491,7 @@ pub(super) fn validate_surface_edits(
         // A surface-kind change is refused here, once, so the arms below decide
         // the edit on their own bodies and carry no policy in their order.
         if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::InvalidInput(
                 if matches!(after, Some(SolvedSurfaceGeometry::Nurbs(_))) {
                     format!("F3D regeneration cannot change surface {id} into a NURBS carrier")
                 } else {
@@ -3552,7 +3552,7 @@ pub(super) fn validate_surface_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
                 {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D surface {id} is not a patchable NURBS carrier"
                     )));
                 }
@@ -3562,7 +3562,7 @@ pub(super) fn validate_surface_edits(
                     )));
                 }
                 if !unchanged_unique_knot_count(before.u_knots(), after.u_knots()) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D surface {id} changes the NURBS u knot layout"
                     )));
                 }
@@ -3572,28 +3572,28 @@ pub(super) fn validate_surface_edits(
                     )));
                 }
                 if !unchanged_unique_knot_count(before.v_knots(), after.v_knots()) {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D surface {id} changes the NURBS v knot layout"
                     )));
                 }
                 if before.u_count() != after.u_count() {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D surface {id} changes the NURBS u control-point count"
                     )));
                 }
                 if before.v_count() != after.v_count() {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D surface {id} changes the NURBS v control-point count"
                     )));
                 }
                 if before.weights().is_some() != after.weights().is_some() {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::InvalidInput(format!(
                         "edited F3D surface {id} changes the NURBS rational form"
                     )));
                 }
             }
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D regeneration does not support edits to surface {id}"
                 )));
             }
@@ -3620,7 +3620,7 @@ pub(super) fn validate_procedural_surface_edits(
         .map(|surface| (surface.id.as_str(), surface))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D procedural-surface regeneration requires the unchanged construction-id set".into(),
         ));
     }
@@ -3687,7 +3687,7 @@ pub(super) fn validate_procedural_surface_edits(
                     BlendRadiusLaw::Constant { signed_radius } => [signed_radius.get(); 2],
                     BlendRadiusLaw::Linear { start, end } => [start.get(), end.get()],
                     BlendRadiusLaw::Law { .. } => {
-                        return Err(CodecError::UnsupportedContent(format!(
+                        return Err(CodecError::InvalidInput(format!(
                             "F3D explicit blend-law regeneration is unsupported: {id}"
                         )));
                     }
@@ -3701,7 +3701,7 @@ pub(super) fn validate_procedural_surface_edits(
                     .then_some(ProceduralSurfaceEdit::BlendRadii(values))
             }
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D procedural-surface edit changes non-writable construction fields: {id}"
                 )));
             }
@@ -3736,7 +3736,7 @@ pub(super) fn validate_procedural_surface_fit_edits(
             continue;
         }
         let tolerance = after.cache_fit_tolerance().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "cannot remove F3D procedural-surface fit tolerance: {id}"
             ))
         })?;
@@ -3763,7 +3763,7 @@ pub(super) fn validate_procedural_curve_edits(
         .map(|curve| (curve.id.as_str(), curve))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::InvalidInput(
             "F3D procedural-curve regeneration requires the unchanged construction-id set".into(),
         ));
     }
@@ -3970,7 +3970,7 @@ pub(super) fn validate_procedural_curve_edits(
             }
             (before, after) if before == after => None,
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D procedural-curve edit changes a non-writable definition: {id}"
                 )));
             }
@@ -3987,12 +3987,12 @@ pub(super) fn validate_procedural_curve_edits(
             // No writable construction carries the tolerance of an unknown
             // curve. Decline so the edit reduces to the solved carrier in
             // synthesis instead of patching a tolerance the writer cannot own.
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D procedural-curve fit tolerance on an unknown construction requires synthesis: {id}"
             )));
         } else {
             let tolerance = after.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                CodecError::InvalidInput(format!(
                     "cannot remove F3D procedural-curve fit tolerance: {id}"
                 ))
             })?;
@@ -4145,7 +4145,7 @@ mod tests {
                 baseline: Some(&baseline),
                 target: Some(&target)
             }),
-            Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+            Err(cadmpeg_core::CodecError::InvalidInput(_))
         ));
     }
     #[test]
@@ -4185,7 +4185,7 @@ mod tests {
                 baseline: Some(&baseline),
                 target: Some(&target)
             }),
-            Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+            Err(cadmpeg_core::CodecError::InvalidInput(_))
         ));
     }
 

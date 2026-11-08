@@ -93,7 +93,6 @@ fn aliases_self_constructors_and_imported_constructor_values_cannot_hide_sites()
 fn forbidden_spellings_io_manufacture_and_old_target_variants_are_syntax_not_text() {
     for expression in [
         "CodecError::NotImplemented(\"bad\".into())",
-        "CodecError::UnsupportedContent(\"bad\".into())",
         "CodecError::Malformed(\"bad\".into())",
         "CodecError::malformed(\"bad\")",
         "CodecError::Truncated { location, operation }",
@@ -104,10 +103,8 @@ fn forbidden_spellings_io_manufacture_and_old_target_variants_are_syntax_not_tex
         "std::io::Error::from(kind)",
         "std::io::ErrorKind::Other",
         "EncodeError::Io(error)",
-        "TargetRefusalKind::ExplicitUnavailable",
-        "TargetRefusalKind::InheritedUnavailable",
-        "TargetRefusalKind::DefaultUnavailable",
-        "TargetRefusalKind::UnrecordedSource",
+        "TargetRefusalKind::UnknownExplicit",
+        "TargetRefusalKind::NoDefault",
     ] {
         assert!(
             !findings(&format!(

@@ -248,7 +248,7 @@ pub(super) fn regenerate(
                     break candidate;
                 }
                 suffix = suffix.checked_add(1).ok_or_else(|| {
-                    CodecError::UnsupportedContent(
+                    CodecError::InvalidInput(
                         "F3D configuration table name space exhausted".into(),
                     )
                 })?;
@@ -291,7 +291,7 @@ pub(super) fn regenerate(
                     crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
                 );
                 next_rule_index = next_rule_index.checked_add(1).ok_or_else(|| {
-                    CodecError::UnsupportedContent(
+                    CodecError::InvalidInput(
                         "F3D configuration rule name space exhausted".into(),
                     )
                 })?;
