@@ -393,6 +393,8 @@ pub(crate) enum StepLossCode {
     LoopEdgeMissingForOrder,
     /// An edge was omitted because it has no 3D curve.
     EdgeNo3dCurve,
+    /// A face-context edge with no 3D curve was written with a line synthesized from its vertices.
+    EdgeCurveSynthesizedFromVertices,
     /// An edge was omitted because its curve is not writable.
     EdgeCurveNotWritable,
     /// An edge was omitted because its curve is unsupported.
@@ -614,6 +616,7 @@ impl StepLossCode {
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
         Self::EdgeNo3dCurve,
+        Self::EdgeCurveSynthesizedFromVertices,
         Self::EdgeCurveNotWritable,
         Self::EdgeCurveUnsupported,
         Self::LoopNoContinuousOrdering,
@@ -837,6 +840,7 @@ impl StepLossCode {
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
             Self::EdgeNo3dCurve => "topology.edge-no-3d-curve",
+            Self::EdgeCurveSynthesizedFromVertices => "topology.edge-curve-synthesized",
             Self::EdgeCurveNotWritable => "topology.edge-curve-not-writable",
             Self::EdgeCurveUnsupported => "topology.edge-curve-unsupported",
             Self::LoopNoContinuousOrdering => "topology.loop-no-continuous-ordering",
@@ -1054,6 +1058,7 @@ impl StepLossCode {
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
             | Self::EdgeNo3dCurve
+            | Self::EdgeCurveSynthesizedFromVertices
             | Self::EdgeCurveNotWritable
             | Self::EdgeCurveUnsupported
             | Self::LoopNoContinuousOrdering
