@@ -209,8 +209,8 @@ fn cylindrical_arc_recovery_reverses_the_edge_and_its_occurrence() {
 }
 
 #[test]
-fn cylindrical_arc_recovery_rejects_a_tilted_generator() {
-    let ir = emit_strip(0.1, [true, false]);
+fn cylindrical_arc_recovery_rejects_crossed_generators() {
+    let ir = emit_strip(PI, [true, false]);
     assert!(ir.model.edges[2].param_range().is_some());
     assert!(ir.model.edges[0].param_range().is_none());
 }
