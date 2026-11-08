@@ -23,7 +23,11 @@ fn mirror_new_body_uses_the_source_collection_and_generated_result() {
     else {
         panic!("mirror shape")
     };
-    assert_eq!(*selected, BodySelection::Native(fixture.properties[2].id()));
+    assert_eq!(
+        *selected,
+        BodySelection::local(vec![fixture.properties[3].id()], fixture.properties[2].id())
+            .expect("local selection")
+    );
     assert_eq!(
         result.bodies()[0].as_str(),
         fixture.properties.last().expect("output").id()
@@ -208,7 +212,11 @@ fn replacement_boolean_bytes_select_the_historical_body_and_offset_plane() {
     else {
         panic!("mirror shape")
     };
-    assert_eq!(*selected, BodySelection::Native(fixture.properties[2].id()));
+    assert_eq!(
+        *selected,
+        BodySelection::local(vec![fixture.properties[3].id()], fixture.properties[2].id())
+            .expect("local selection")
+    );
     assert_eq!(
         plane_origin.get(),
         cadmpeg_ir::math::Point3::new(20.0, 0.0, 0.0)
@@ -225,4 +233,63 @@ fn replacement_boolean_bytes_select_the_historical_body_and_offset_plane() {
         ))
     );
     assert_eq!(result.bodies()[0].as_str(), fixture.properties[3].id());
+}
+
+#[test]
+fn mirror_source_resolves_to_the_current_body_of_its_wrapper() {
+    let (fixture, source) = new_body_form();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (feature, result) = fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, |_| None, |_| {})
+        .expect("new body")
+        .expect("projection");
+    let body = cadmpeg_ir::ids::BodyId::mint("inventor:brep:entity#1").expect("body id");
+    let joined = std::collections::HashMap::from([(fixture.properties[3].id(), body.clone())]);
+    let mut definition = feature.evaluation.definition().clone();
+    crate::feature::body_selection::definition(&mut definition, &joined, None);
+    let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+        source: selected, ..
+    }) = &definition
+    else {
+        panic!("mirror shape")
+    };
+    let BodySelection::Resolved { bodies, native } = selected else {
+        panic!("resolved source")
+    };
+    assert_eq!(&bodies[..], &[body]);
+    assert_eq!(native, &fixture.properties[2].id());
+    let mut resolved = feature.clone();
+    resolved.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
+    let index = fixture.index().with_bodies(&joined);
+    assert!(index.matches_projection(&source, &fixture.label, &resolved, &result, |_| None));
+    // A wrapper without a current body leaves the source unresolved, and an
+    // unresolved projection does not match a resolved feature.
+    let empty = std::collections::HashMap::new();
+    let index = fixture.index().with_bodies(&empty);
+    assert!(!index.matches_projection(&source, &fixture.label, &resolved, &result, |_| None));
+}
+
+#[test]
+fn mirror_source_collection_member_must_be_a_surface_body() {
+    let (mut fixture, source) = new_body_form();
+    let original = fixture.properties[3].identity.clone();
+    let mut payload = (*fixture.properties[3]).clone();
+    payload.kind = crate::feature::PmDcFeaturePropertyKind::Boolean {
+        name: String::new(),
+        name_value: 0,
+        value: false,
+    };
+    fixture.properties[3] = Located::new(
+        payload,
+        original.type_id,
+        original.segment_token,
+        original.record_ordinal,
+    );
+    assert!(fixture
+        .index()
+        .resolve(&source, &fixture.label, |_| None)
+        .is_none());
 }

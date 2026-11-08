@@ -47,6 +47,18 @@ pub(super) fn validate_mirrors(
             ))
         })
         .collect::<HashSet<_>>();
+    let bodies = crate::feature::body_selection::body_map(
+        &data.pm_dc_feature_properties,
+        &data.pm_dc_kernel_entity_links,
+        &data.body_wrapper_links,
+        &data.active_carrier,
+        &data.body_native_keys,
+        &ir.model,
+        &crate::feature::body_selection::Scope {
+            metadata: &data.metadata,
+            roots: &data.pm_dc_model_roots,
+        },
+    );
     let generic_type = crate::pmdc::type_id_string(crate::feature::FEATURE_TYPE);
     let index = crate::feature::mirror::MirrorIndex::new(
         &data.pm_dc_feature_properties,
@@ -54,6 +66,7 @@ pub(super) fn validate_mirrors(
         &data.pm_dc_work_planes,
     )
     .with_generated_nodes(&data.pm_dc_features, &data.pm_dc_feature_labels)
+    .with_bodies(&bodies)
     .with_record_lengths(
         data.records
             .iter()
