@@ -113,7 +113,6 @@ pub(crate) fn located_scope_from_fixture(
         reference_count_offset,
         reference_members,
         payload: scope.payload().clone(),
-        unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups.clone(),
         paired_class_tag: scope.paired_class_tag.clone(),
         paired_byte_offset,
     })

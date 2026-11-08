@@ -27,7 +27,6 @@ fn scope() -> crate::records::feature::scope::DesignParameterScope {
             )
             .unwrap(),
             payload: DesignFeatureKind::CPattern.try_into().unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: "258".to_owned().try_into().unwrap(),
             paired_byte_offset: 329,
         }

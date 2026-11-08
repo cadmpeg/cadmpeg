@@ -3,7 +3,7 @@
 
 use crate::container::ContainerScan;
 use crate::layout::placement_indexed_prefix as long;
-use crate::metastream::primary_record_frames;
+use crate::metastream::live_primary_record_frames;
 use crate::records::identity::Located;
 use crate::records::placement_construction::{
     DesignPlacementConstruction, PlacementConstructionWire,
@@ -176,7 +176,7 @@ pub(crate) fn decode(
         let Some(root) = scan.entry_view(&bulk_name) else {
             continue;
         };
-        let frames = primary_record_frames(&meta, root.remaining())?;
+        let frames = live_primary_record_frames(&meta, root.remaining());
         let by_entity: std::collections::HashMap<_, _> = frames
             .into_iter()
             .map(|frame| (frame.entity_id, frame))

@@ -123,7 +123,7 @@ fn malformed_redirections_are_reported_by_complete_and_container_routes() {
             .report()
             .losses
             .iter()
-            .find(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+            .find(|loss| redirections_given_up(loss))
             .expect("malformed Redirections loss");
         assert!(loss.message.contains("RedirectionsStream.dat"), "{loss:?}");
         assert!(loss.message.contains("properties"), "{loss:?}");
@@ -162,7 +162,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
                 &DecodeOptions { depth, ..DecodeOptions::default() },
             ).expect("property refusal preserves the source document"));
             let losses = decoded.report().losses.iter()
-                .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+                .filter(|loss| redirections_given_up(loss))
                 .collect::<Vec<_>>();
             assert_eq!(losses.len(), usize::from(!valid), "{label}, container_only={container_only}: {losses:?}");
             for loss in losses {
@@ -212,7 +212,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             neutron_data: "data".into(),
             transform: Some(transform.try_into().unwrap()),
         }],
-        placement_failures: Vec::new(),
+        unreadable_placements: Vec::new(),
         placement_overrides: Vec::new(),
         placement_metadata_missing: false,
         ..Default::default()
@@ -327,11 +327,7 @@ fn reflected_matrix_is_reported_by_complete_document_admission() {
     let native = f3d_native(decoded.ir());
     assert_eq!(native.xref_references.len(), 1);
     assert!(native.xref_references[0].transform.is_none());
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind()));
+    assert!(decoded.report().losses.iter().any(placement_given_up));
 }
 
 #[test]
@@ -698,6 +694,7 @@ fn local_occurrence_paths_belong_to_the_local_component_decoder() {
     let records = [super::IndexedRecord {
         offset: 0,
         end: root.len(),
+        record_end: root.len(),
     }];
     let (placements, failures) =
         super::occurrence_placements_with_failures(&root, &records, None, None).unwrap();
@@ -790,7 +787,7 @@ fn malformed_repeated_frames_keep_losses_beside_valid_placements() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind())
+            .filter(|loss| placement_given_up(loss))
             .collect();
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("11"));
@@ -1025,9 +1022,7 @@ fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
             expected
         );
         let losses = &decoded.report().losses;
-        assert!(!losses
-            .iter()
-            .any(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind()));
+        assert!(!losses.iter().any(placement_given_up));
         assert_eq!(
             losses
                 .iter()
@@ -1062,9 +1057,7 @@ fn attributed_legacy_placement_without_a_container_role_reports_its_loss() {
         .collect::<Vec<_>>();
     assert_eq!(unbound.len(), 1);
     assert!(unbound[0].message.contains(other_role));
-    assert!(!losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind()));
+    assert!(!losses.iter().any(placement_given_up));
     assert!(!losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::XrefPlacementMetadataNative.kind()));
@@ -1157,7 +1150,7 @@ fn refused_attributed_legacy_placements_keep_a_placement_loss() {
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind())
+                .filter(|loss| placement_given_up(loss))
                 .count(),
             1
         );
@@ -1341,7 +1334,7 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code != F3dLossCode::XrefPlacementUndecoded.kind()));
+        .all(|loss| !placement_given_up(loss)));
 }
 
 #[test]
@@ -1404,7 +1397,7 @@ fn paired_design_metastream_selects_the_legacy_typed_placement_form() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code != F3dLossCode::XrefPlacementUndecoded.kind()));
+        .all(|loss| !placement_given_up(loss)));
 }
 
 #[test]
@@ -1459,10 +1452,12 @@ fn malformed_typed_role_placement_reports_a_loss() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind())
+        .find(|loss| placement_given_up(loss))
         .expect("typed placement loss");
+    assert!(loss.message.contains("f3d.bulk_record"));
     assert!(loss.message.contains("part.f3d"));
     assert!(loss.message.contains(role));
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
 }
 
 #[test]
@@ -1967,4 +1962,12 @@ fn pathless_occurrence_placements_bind_the_target_role_and_close() {
         );
         assert!(super::occurrence_placement(&wrong, None).unwrap().is_none());
     }
+}
+
+fn placement_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    loss.code.local_code() == "record.unreadable" && loss.message.contains("occurrence placement")
+}
+
+fn redirections_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    loss.code.local_code() == "record.unreadable" && loss.message.contains("zip.entry")
 }
