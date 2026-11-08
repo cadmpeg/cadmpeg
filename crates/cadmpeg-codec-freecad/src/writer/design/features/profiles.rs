@@ -161,10 +161,13 @@ pub(super) fn revolve(
         "PartDesign::Revolution"
     }
     .into();
+    let extent = &construction["extent"];
+    if object.kind == "Part::Revolution" {
+        return part_revolution(construction, extent, object, names);
+    }
     link(object, "Profile", &construction["profile"], names)?;
     vector(object, "Base", &construction["axis"]["origin"])?;
     vector(object, "Axis", &construction["axis"]["direction"])?;
-    let extent = &construction["extent"];
     boolean(object, "Symmetric", tag(extent) == "symmetric");
     boolean(
         object,
@@ -181,6 +184,39 @@ pub(super) fn revolve(
     }
     Ok(())
 }
+/// `Part::Revolution` links its profile through `Source` and stores one angle
+/// in degrees, mirrored about the profile when `Symmetric` is set.
+fn part_revolution(
+    construction: &Value,
+    extent: &Value,
+    object: &mut Object,
+    names: &HashMap<String, String>,
+) -> Result<(), FeatureError> {
+    let termination = &extent["termination"];
+    if !matches!(tag(extent), "symmetric" | "one_sided") || tag(termination) != "angle" {
+        return unsupported("Part revolution stores one angular extent");
+    }
+    link(object, "Source", &construction["profile"], names)?;
+    vector(object, "Base", &construction["axis"]["origin"])?;
+    vector(object, "Axis", &construction["axis"]["direction"])?;
+    object.set(
+        "Angle",
+        xml::scalar(
+            "Angle",
+            "App::PropertyFloatConstraint",
+            "Float",
+            number(&termination["angle"], "revolution angle")?.to_degrees(),
+        ),
+    );
+    boolean(object, "Symmetric", tag(extent) == "symmetric");
+    boolean(
+        object,
+        "Solid",
+        construction["solid"].as_bool().unwrap_or(true),
+    );
+    Ok(())
+}
+
 pub(super) fn angular_side(
     term: &Value,
     object: &mut Object,
