@@ -167,7 +167,7 @@ fn write<'budget>(
     match outcome {
         Ok(outcome) => Ok((staged, outcome)),
         Err(WriteError::Omit(message)) => Err(cadmpeg_ir::codec::write::transitional_from_codec(
-            CodecError::UnsupportedContent(message),
+            CodecError::InvalidInput(message),
         )),
         Err(WriteError::Fail(error)) => {
             Err(cadmpeg_ir::codec::write::transitional_from_codec(error))
