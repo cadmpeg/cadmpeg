@@ -253,6 +253,14 @@ pub(crate) fn native_named(
 
 /// Serialize a GUI property's actual typed fields without a source-XML adapter.
 pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Option<String> {
+    native_gui_with(property, &std::collections::HashSet::new())
+}
+
+/// [`native_gui`] for a property whose side entries the writer emits.
+pub(crate) fn native_gui_with(
+    property: &GuiPropertyRecord,
+    available: &std::collections::HashSet<String>,
+) -> Option<String> {
     native_values(
         &PersistedProperty {
             name: &property.name,
@@ -264,7 +272,7 @@ pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Option<String> {
             dynamic: None,
         },
         &std::collections::HashMap::new(),
-        &std::collections::HashSet::new(),
+        available,
     )
 }
 

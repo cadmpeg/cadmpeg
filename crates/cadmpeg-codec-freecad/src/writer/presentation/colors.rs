@@ -51,6 +51,25 @@ fn object_color(provider: &mut Provider, color: Color, transparency_byte: bool) 
     );
 }
 
+/// `ShapeMaterial` attributes the neutral appearance owns.
+const NEUTRAL_MATERIAL_LANES: [&str; 3] = ["diffuseColor", "transparency", "shininess"];
+
+/// Set a numeric attribute, in the source spelling when the source holds an
+/// equal value.
+fn set_number(
+    attributes: &mut BTreeMap<String, String>,
+    source: &BTreeMap<String, String>,
+    key: &str,
+    number: f64,
+) {
+    let spelled = source
+        .get(key)
+        .filter(|text| text.parse::<f64>().ok() == Some(number))
+        .cloned()
+        .unwrap_or_else(|| number.to_string());
+    attributes.insert(key.into(), spelled);
+}
+
 fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
@@ -73,23 +92,23 @@ fn material(
         let mut property = original.clone();
         for value in &mut property.values {
             if value.tag == "PropertyMaterial" {
+                let source = value.attributes.clone();
+                for name in NEUTRAL_MATERIAL_LANES {
+                    value.attributes.remove(name);
+                }
                 if let Some(color) = appearance.base_color {
-                    value.attributes.insert(
-                        "diffuseColor".into(),
-                        packed(color, transparency_byte).to_string(),
+                    set_number(
+                        &mut value.attributes,
+                        &source,
+                        "diffuseColor",
+                        f64::from(packed(color, transparency_byte)),
                     );
-                } else {
-                    value.attributes.remove("diffuseColor");
                 }
                 if let Some(number) = shininess {
-                    value
-                        .attributes
-                        .insert("shininess".into(), number.to_string());
+                    set_number(&mut value.attributes, &source, "shininess", number);
                 }
                 if let Some(number) = transparency {
-                    value
-                        .attributes
-                        .insert("transparency".into(), number.to_string());
+                    set_number(&mut value.attributes, &source, "transparency", number);
                 }
             }
         }
@@ -204,15 +223,16 @@ pub(super) fn write(
         ] {
             provider.properties.remove(name);
         }
-        if let Some(material) = provider.native.get_mut("ShapeMaterial") {
+        if let Some(material) = provider.native.get("ShapeMaterial") {
+            let mut material = material.clone();
             for value in &mut material.values {
                 if value.tag == "PropertyMaterial" {
-                    for name in ["diffuseColor", "transparency", "shininess"] {
+                    for name in NEUTRAL_MATERIAL_LANES {
                         value.attributes.remove(name);
                     }
                 }
             }
-            if let Some(value) = xml::native_gui(material) {
+            if let Some(value) = xml::native_gui(&material) {
                 provider.properties.insert("ShapeMaterial".into(), value);
             }
         }
@@ -582,6 +602,41 @@ pub(super) fn write(
                     continue;
                 }
             }
+            (Some(owner), Some(schema)) => {
+                // An entry of the provider's own color list with no element
+                // to bind returns to its list position.
+                let entry = [
+                    ("DiffuseColor", "Face"),
+                    ("LineColorArray", "Edge"),
+                    ("PointColorArray", "Vertex"),
+                ]
+                .into_iter()
+                .find(|(property, _)| schema.strip_prefix("FCStd ") == Some(*property))
+                .and_then(|(property, prefix)| {
+                    let index = appearance
+                        .name
+                        .as_deref()?
+                        .strip_prefix(owner.as_str())?
+                        .strip_prefix(' ')?
+                        .strip_suffix(" appearance")?
+                        .strip_prefix(prefix)?
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|index| *index > 0)?;
+                    Some((property, index, appearance.base_color?))
+                });
+                if let Some((property, index, color)) = entry {
+                    arrays
+                        .entry((owner.clone(), property))
+                        .or_default()
+                        .insert(index, packed(color, transparency_byte));
+                    array_sources
+                        .entry((owner, property))
+                        .or_default()
+                        .insert(appearance.id.as_str());
+                    continue;
+                }
+            }
             _ => {}
         }
         losses.push(
@@ -604,6 +659,7 @@ pub(super) fn write(
             .filter(|(id, _)| id.ends_with(":subelement"))
             .filter(|(id, _)| names.get(id.trim_end_matches(":subelement")) == Some(&owner))
             .filter_map(|(_, value)| value.strip_prefix(prefix)?.parse::<usize>().ok())
+            .chain(overrides.keys().copied())
             .max()
             .unwrap_or(0);
         // One appearance bound to every element is FreeCAD's one-entry
@@ -636,20 +692,30 @@ pub(super) fn write(
         for color in colors {
             bytes.extend_from_slice(&color.to_le_bytes());
         }
-        let filename = format!("{owner}.{property}");
-        entries.insert(filename.clone(), bytes);
         let Some(provider) = providers.get_mut(&owner) else {
             debug_assert!(false, "topology color provider is absent");
             continue;
         };
-        provider.properties.insert(
-            property.into(),
-            xml::property(
+        // A list the source stored keeps its entry name and status.
+        let native = provider.native.get(property).and_then(|native| {
+            let [entry] = native.side_entries.as_slice() else {
+                return None;
+            };
+            let value =
+                xml::native_gui_with(native, &HashSet::from([entry.clone()]))?;
+            Some((entry.clone(), value))
+        });
+        let (filename, value) = native.unwrap_or_else(|| {
+            let filename = format!("{owner}.{property}");
+            let value = xml::property(
                 property,
                 "App::PropertyColorList",
-                &xml::element("ColorList", &[("file", filename)]),
-            ),
-        );
+                &xml::element("ColorList", &[("file", filename.clone())]),
+            );
+            (filename, value)
+        });
+        entries.insert(filename, bytes);
+        provider.properties.insert(property.into(), value);
     }
     for (owner, slots) in material_lists {
         let Some(provider) = providers.get_mut(&owner) else {
