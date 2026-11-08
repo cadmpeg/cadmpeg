@@ -72,15 +72,18 @@ pub(super) fn project(
         .collect();
     let mut attach = |id: &str, scope: u32| -> Result<(), CodecError> {
         let Some(stream) = crate::ids::native_stream(id) else {
-            losses.push(crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.note(format!(
-                "Feature input operand {id} has no native stream."
-            )));
+            losses.push(
+                crate::loss::F3dLossCode::FeatureInputOwnerUnresolved
+                    .note(format!("Feature input operand {id} has no native stream.")),
+            );
             return Ok(());
         };
         let Some(feature) = owners.get(&(stream, scope)).copied() else {
-            losses.push(crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.note(format!(
-                "Feature input operand {id} has no projected feature for scope {scope}."
-            )));
+            losses.push(
+                crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.note(format!(
+                    "Feature input operand {id} has no projected feature for scope {scope}."
+                )),
+            );
             return Ok(());
         };
         let index = if let Some(index) = input_by_feature.get(&feature.id).copied() {
@@ -281,7 +284,13 @@ mod tests {
         let mut with_history = inputs.clone();
         with_history[0].native_ref = Some("f3d:history:state#4".into());
         let history_id = with_history[0].id.clone();
-        project(&design, &[feature, other_feature], &mut with_history, &mut losses).unwrap();
+        project(
+            &design,
+            &[feature, other_feature],
+            &mut with_history,
+            &mut losses,
+        )
+        .unwrap();
         assert!(losses.is_empty());
         assert_eq!(with_history.len(), 2);
         assert_eq!(with_history[0].id, history_id);

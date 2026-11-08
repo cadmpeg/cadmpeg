@@ -7,7 +7,6 @@ use std::sync::OnceLock;
 
 mod constructor_scan;
 mod decoder_literals;
-mod encode_paths;
 mod reader_routes;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader

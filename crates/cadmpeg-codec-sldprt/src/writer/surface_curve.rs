@@ -200,9 +200,7 @@ pub(super) fn write(
     next: &mut u32,
 ) -> Result<(), WriteError> {
     let (surface, nurbs, _) = supported(ir, curve).ok_or_else(|| {
-        WriteError::Decline(
-            "surface-curve construction has no supported native form".into(),
-        )
+        WriteError::Decline("surface-curve construction has no supported native form".into())
     })?;
     let surface_attr = surfaces
         .get(surface)

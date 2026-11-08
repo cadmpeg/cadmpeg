@@ -120,7 +120,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -280,7 +280,8 @@ impl CodecBackend for F3dCodec {
 
 impl EncoderBackend for F3dCodec {
     const REUSES_SOURCE: bool = true;
-    const REDUCED_FIELDS: &'static [cadmpeg_ir::codec::write::ReducedField] = writer::target::REDUCED_FIELDS;
+    const REDUCED_FIELDS: &'static [cadmpeg_ir::codec::write::ReducedField] =
+        writer::target::REDUCED_FIELDS;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Patches the retained source, so the history and design records it rewrites
     /// must be present.
@@ -293,7 +294,15 @@ impl EncoderBackend for F3dCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(transitional_from_codec)
+        writer::target::plan(input, &target).map_err(|error| match error {
+            cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
+            cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
+            cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
+            error => {
+                debug_assert!(false, "unmapped F3D encode error: {error}");
+                panic!("unmapped F3D encode error: {error}");
+            }
+        })
     }
 }
 

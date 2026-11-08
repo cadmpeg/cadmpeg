@@ -99,7 +99,12 @@ pub(super) fn regenerate(
             record_index,
             source_ordinal: parameter.ordinal,
             source: DesignParameterSource::authored(
-                if parameter.driving { "User Parameter" } else { "Dimension" }.into(),
+                if parameter.driving {
+                    "User Parameter"
+                } else {
+                    "Dimension"
+                }
+                .into(),
                 None,
                 Some(DesignParameterDiscriminator::Code0),
             )

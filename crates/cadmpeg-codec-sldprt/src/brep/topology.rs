@@ -4108,7 +4108,16 @@ mod tests {
         assert_eq!(decoded.ir().model.faces.len(), 1);
         assert_eq!(decoded.ir().model.loops.len(), 1);
         assert_eq!(decoded.ir().model.coedges.len(), 3);
-        let body = crate::writer::brep_body(&cadmpeg_core::decode::DecodeContext::for_encode(&cadmpeg_core::decode::DecodeArena::new(), &cadmpeg_core::decode::DecodePolicy::desktop()), decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            &cadmpeg_core::decode::DecodeContext::for_encode(
+                &cadmpeg_core::decode::DecodeArena::new(),
+                &cadmpeg_core::decode::DecodePolicy::desktop(),
+            ),
+            decoded.ir(),
+            0.001,
+            false,
+        )
+        .unwrap();
         let original = scan(&body);
         assert_eq!(original.edge_uses.len(), 3);
         let edge = original

@@ -160,7 +160,9 @@ pub(crate) fn decode_recipes(
                         }
                         let start = source.start().checked_add(frame.start)?;
                         let end = source.start().checked_add(end)?;
-                        parse_parameter_companion_frame(ParameterFrame::new(source.child(start, end)?))
+                        parse_parameter_companion_frame(ParameterFrame::new(
+                            source.child(start, end)?,
+                        ))
                     })
                     .any(|companion| u64::from(companion.record_index) == frame.entity_id)
             })
