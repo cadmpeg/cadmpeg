@@ -1034,7 +1034,7 @@ pub(super) fn validate_source_less_design_links(
                     .as_deref()
                     .and_then(|id| $valid.get(id).copied())
                     .ok_or_else(|| {
-                        CodecError::InvalidInput(format!(
+                        CodecError::NotImplemented(format!(
                             "F3D {} metadata {} targets missing entity",
                             $label, $item.$($id)+
                         ))
