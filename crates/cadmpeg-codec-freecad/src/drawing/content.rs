@@ -59,30 +59,45 @@ pub(crate) fn enrich(
             let carrier = super::sole_named_property("drawing", &owned, "PageResult")?
                 .or(super::sole_named_property("drawing", &owned, "Template")?);
             if let Some(property) = carrier {
-                let sheet = if let [name] = property.side_entries() {
+                let mut sheet_value = None;
+                let mut had_damaged = false;
+                if let [name] = property.side_entries() {
                     if let Some(bytes) = data.get(name.as_str()) {
-                        match std::str::from_utf8(bytes.window()) {
-                            Ok(text) => {
-                                let xml = ctx.parse_xml(text, "drawing sheet SVG");
-                                match xml {
-                                    Ok(xml) => sheet(xml.root_element(), fields),
-                                    Err(CodecError::ResourceLimit(limit)) => {
-                                        return Err(CodecError::ResourceLimit(limit))
-                                    }
-                                    Err(_) => None,
-                                }
-                            }
-                            Err(_) => None,
+                        let mut damaged_elements = Vec::new();
+                        let parsed = cadmpeg_core::decode::parse_xml_recovering(
+                            ctx.decode_context(),
+                            *bytes,
+                            "drawing sheet SVG",
+                            "scan drawing sheet SVG",
+                            "parse drawing sheet SVG",
+                            &|detail| CodecError::malformed(detail),
+                            |_extent, tag, _ancestors, _scan| {
+                                damaged_elements.push(String::from_utf8_lossy(tag).into_owned());
+                                Ok(())
+                            },
+                        );
+                        had_damaged = !damaged_elements.is_empty();
+                        for tag in &damaged_elements {
+                            losses.push(FreecadLossCode::DrawingSheetNotTransferred.note(format!(
+                                "{}: malformed SVG element <{tag}> given up",
+                                property.id
+                            )));
                         }
-                    } else {
-                        None
+                        match parsed {
+                            Ok((_view, xml)) => {
+                                sheet_value = sheet(xml.root_element(), fields.clone())
+                                    .or_else(|| sheet(xml.root_element(), Vec::new()));
+                            }
+                            Err(CodecError::ResourceLimit(limit)) => {
+                                return Err(CodecError::ResourceLimit(limit))
+                            }
+                            Err(_) => {}
+                        }
                     }
-                } else {
-                    None
-                };
-                if sheet.as_ref().is_some_and(DrawingSheet::is_valid) {
-                    drawing.sheet = sheet;
-                } else {
+                }
+                if sheet_value.as_ref().is_some_and(DrawingSheet::is_valid) {
+                    drawing.sheet = sheet_value;
+                } else if !had_damaged {
                     losses.push(
                         FreecadLossCode::DrawingSheetNotTransferred.note(property.id.clone()),
                     );

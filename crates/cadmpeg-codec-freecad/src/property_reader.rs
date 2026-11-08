@@ -49,6 +49,10 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
         }
     }
 
+    pub(crate) fn decode_context(&self) -> &'ctx DecodeContext<'arena> {
+        self.context
+    }
+
     #[cfg(test)]
     pub(crate) fn fixtures(
         context: &'ctx DecodeContext<'arena>,

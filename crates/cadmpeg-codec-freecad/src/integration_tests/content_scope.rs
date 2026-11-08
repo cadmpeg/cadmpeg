@@ -348,20 +348,23 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
     assert!(full.ir().model.parameters.is_empty());
     assert!(geometry.ir().model.parameters.is_empty());
     assert_eq!(geometry.ir().model.attributes, full.ir().model.attributes);
-    // #209 §1.1: the application-only fragment delivers no class at
-    // either depth; each side reports its own missing classes.
+    // #209 §1.1: Geometry requests model only; Full reports requested
+    // design scope as delivered even when the fragment holds no design
+    // content, so only the missing model class is charged.
     assert_eq!(geometry.report().losses.len(), 1);
     assert_eq!(
         geometry.report().losses[0].code.local_code(),
         "depth.not-delivered"
     );
     assert!(geometry.report().losses[0].message.contains("model"));
+    assert!(!geometry.report().losses[0].message.contains("design"));
     assert_eq!(full.report().losses.len(), 1);
     assert_eq!(
         full.report().losses[0].code.local_code(),
         "depth.not-delivered"
     );
-    assert!(full.report().losses[0].message.contains("model, design"));
+    assert!(full.report().losses[0].message.contains("model"));
+    assert!(!full.report().losses[0].message.contains("design"));
     // The Application object has no neutral home, so its properties stay
     // native-only: no attribute names them.
     assert!(full.ir().model.attributes.is_empty());
