@@ -1534,7 +1534,10 @@ fn construction_curve_suffix(model: &cadmpeg_ir::document::Model, construction: 
     if curves.is_empty() {
         String::new()
     } else {
-        format!("; its construction curve(s) {} are omitted", curves.join(", "))
+        format!(
+            "; its construction curve(s) {} are omitted",
+            curves.join(", ")
+        )
     }
 }
 
