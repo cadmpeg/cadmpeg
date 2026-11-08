@@ -330,12 +330,20 @@ pub(super) fn write(
     let mut material_lists = BTreeMap::<String, BTreeMap<usize, &Appearance>>::new();
     let mut bound = HashSet::new();
     for binding in &ir.model.appearance_bindings {
-        let appearance = ir
+        let Some(appearance) = ir
             .model
             .appearances
             .iter()
             .find(|appearance| appearance.id == binding.appearance)
-            .ok_or_else(|| CodecError::malformed("appearance binding references absent asset"))?;
+        else {
+            losses.push(
+                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                    "appearance binding {} names an absent appearance and is omitted",
+                    binding.id
+                )),
+            );
+            continue;
+        };
         let Some(name) = target_name(ir, &binding.target, names, body_names) else {
             losses.push(
                 FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
@@ -624,8 +632,10 @@ pub(super) fn write(
                 })
                 .collect()
         };
-        let stored = u32::try_from(colors.len())
-            .map_err(|_| CodecError::malformed("GUI topology color count exceeds u32"))?;
+        let Ok(stored) = u32::try_from(colors.len()) else {
+            debug_assert!(false, "one color per topology element fits the count lane");
+            continue;
+        };
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&stored.to_le_bytes());
         for color in colors {
@@ -633,9 +643,12 @@ pub(super) fn write(
         }
         let filename = format!("{owner}.{property}");
         entries.insert(filename.clone(), bytes);
-        let provider = providers
+        let Some(provider) = providers
             .get_mut(&owner)
-            .ok_or_else(|| CodecError::malformed("topology color provider is absent"))?;
+        else {
+            debug_assert!(false, "topology color provider is absent");
+            continue;
+        };
         provider.properties.insert(
             property.into(),
             xml::property(

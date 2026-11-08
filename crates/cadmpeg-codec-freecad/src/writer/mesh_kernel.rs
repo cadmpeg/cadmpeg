@@ -186,10 +186,14 @@ fn encode(
     for uses in edges.values() {
         if let [(first, first_slot), (second, second_slot)] = uses.as_slice() {
             if first != second {
-                neighbours[*first][*first_slot] =
-                    u32::try_from(*second).map_err(CodecError::malformed)?;
-                neighbours[*second][*second_slot] =
-                    u32::try_from(*first).map_err(CodecError::malformed)?;
+                let (Ok(first_index), Ok(second_index)) =
+                    (u32::try_from(*first), u32::try_from(*second))
+                else {
+                    debug_assert!(false, "facet indices fit the facet count lane");
+                    continue;
+                };
+                neighbours[*first][*first_slot] = second_index;
+                neighbours[*second][*second_slot] = first_index;
             }
         }
     }
@@ -298,9 +302,11 @@ pub(super) fn write(
                 if !entry_names.contains(&file) && !entries.contains_key(&file) {
                     break;
                 }
-                ordinal = ordinal
-                    .checked_add(1)
-                    .ok_or_else(|| CodecError::malformed("mesh entry name space exhausted"))?;
+                let Some(next) = ordinal.checked_add(1) else {
+                    debug_assert!(false, "a free mesh entry name exists");
+                    break;
+                };
+                ordinal = next;
             }
         }
         let mut generated = property.clone();

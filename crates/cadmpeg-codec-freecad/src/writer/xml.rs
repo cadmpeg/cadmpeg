@@ -42,7 +42,10 @@ pub(super) fn report_reductions(
     if !value.contains(REPLACEMENT) {
         return Ok(false);
     }
-    let document = roxmltree::Document::parse(value).map_err(CodecError::malformed)?;
+    let Ok(document) = roxmltree::Document::parse(value) else {
+        debug_assert!(false, "the generated document parses");
+        return Ok(true);
+    };
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         // Restrict counting to this element's opening tag and direct text;
         // descendant properties produce their own precise diagnostic.
@@ -158,40 +161,55 @@ pub(crate) fn native(
     )
 }
 
+/// Why a native property record is not written back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unwritable {
+    /// The record's XML does not read back as a property.
+    Unreadable,
+    /// The re-read value or link graph differs from the record.
+    Disagrees,
+}
+
+impl std::fmt::Display for Unwritable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Unreadable => "its typed value does not read back",
+            Self::Disagrees => "its typed value or link graph disagrees",
+        })
+    }
+}
+
 pub(crate) fn validate(
     property_record: &PropertyRecord,
     available: &std::collections::HashSet<String>,
-) -> Result<(), CodecError> {
+) -> Result<(), Unwritable> {
     if !matches!(property_record.body, Some(PropertyBody::Persisted { .. })) {
         return Ok(());
     }
-    let Some(xml) = native(property_record, available)? else {
+    let Some(xml) = native(property_record, available).map_err(|_| Unwritable::Unreadable)? else {
         return Ok(());
     };
-    let parsed = roxmltree::Document::parse(&xml).map_err(CodecError::malformed)?;
+    let parsed = roxmltree::Document::parse(&xml).map_err(|_| Unwritable::Unreadable)?;
     let mut links =
-        crate::persistence::parse_link_targets(parsed.root_element(), &property_record.type_name)?;
+        crate::persistence::parse_link_targets(parsed.root_element(), &property_record.type_name)
+            .map_err(|_| Unwritable::Unreadable)?;
     for (actual, expected) in links.iter_mut().zip(property_record.links()) {
         if let (Some(actual), Some(expected)) = (actual, expected) {
             if actual.document().is_none() {
                 if let Some(object) = actual.object() {
                     let native = crate::native::native_id("object", object);
                     if expected.object() == Some(native.as_str()) {
-                        actual.set_object(
-                            cadmpeg_core::text::NonBlankString::new(native).ok_or_else(|| {
-                                CodecError::malformed("native object identity is blank")
-                            })?,
-                        );
+                        let Some(native) = cadmpeg_core::text::NonBlankString::new(native) else {
+                            return Err(Unwritable::Disagrees);
+                        };
+                        actual.set_object(native);
                     }
                 }
             }
         }
     }
     if links != property_record.links() {
-        return Err(CodecError::malformed(format_args!(
-            "property {} typed value or link graph disagrees",
-            property_record.id
-        )));
+        return Err(Unwritable::Disagrees);
     }
     Ok(())
 }
@@ -223,7 +241,6 @@ pub(crate) fn native_named(
     };
     native_values(
         &PersistedProperty {
-            id: &property_record.id,
             name: &property_record.name,
             type_name: &property_record.type_name,
             family: property_record.family,
@@ -241,7 +258,6 @@ pub(crate) fn native_named(
 pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Result<Option<String>, CodecError> {
     native_values(
         &PersistedProperty {
-            id: &property.id,
             name: &property.name,
             type_name: &property.type_name,
             family: PropertyFamily::Unknown,
@@ -257,7 +273,6 @@ pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Result<Option<String>,
 
 /// The semantic fields consumed by both application and GUI property writers.
 struct PersistedProperty<'a> {
-    id: &'a str,
     name: &'a str,
     type_name: &'a str,
     family: PropertyFamily,
@@ -306,7 +321,11 @@ fn native_values(
     {
         return Ok(None);
     }
-    let content = value_content(property.id, values, names)?;
+    // A record whose typed value tree is not well formed has no writable
+    // payload.
+    let Some(content) = value_content(values, names) else {
+        return Ok(None);
+    };
     Ok(Some(property_header(
         property.name,
         property.type_name,
@@ -366,11 +385,12 @@ fn property_header(
     result
 }
 
+/// The XML of a typed value tree, or `None` when the tree is not well
+/// formed.
 fn value_content(
-    id: &str,
     values: &[ValueRecord],
     names: &std::collections::HashMap<String, String>,
-) -> Result<String, CodecError> {
+) -> Option<String> {
     let mut children = BTreeMap::<Option<usize>, Vec<usize>>::new();
     for (index, value) in values.iter().enumerate() {
         if value.order != index
@@ -378,9 +398,7 @@ fn value_content(
             || !valid_name(&value.tag)
             || value.attributes.keys().any(|name| !valid_name(name))
         {
-            return Err(CodecError::malformed(format_args!(
-                "property {id} has an invalid typed value tree"
-            )));
+            return None;
         }
         children.entry(value.parent).or_default().push(index);
     }
@@ -407,14 +425,11 @@ fn value_content(
         if let Some(json) = &value.decoded_json {
             use base64::Engine;
             if value.tag != "Python" {
-                return Err(CodecError::malformed(
-                    "decoded JSON value must use a Python value element",
-                ));
+                return None;
             }
             attributes.insert(
                 "value".into(),
-                base64::engine::general_purpose::STANDARD
-                    .encode(serde_json::to_vec(&json.value).map_err(CodecError::malformed)?),
+                base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&json.value).ok()?),
             );
             attributes.insert("encoded".into(), "yes".into());
             attributes.insert("json".into(), "yes".into());
@@ -443,22 +458,22 @@ fn value_content(
             stack.extend(children.iter().rev().map(|index| (*index, false)));
         }
     }
-    Ok(content)
+    Some(content)
 }
 
 /// Native GUI state descendants have their own semantic owner, not a property wrapper.
-pub(crate) fn gui_state_content(
-    state: &crate::native::GuiStateRecord,
-) -> Result<String, CodecError> {
+/// The content of a GUI state, or `None` when its typed value tree is not
+/// well formed.
+pub(crate) fn gui_state_content(state: &crate::native::GuiStateRecord) -> Option<String> {
     if state.values.iter().any(|value| {
         value
             .attributes
             .iter()
             .any(|(key, name)| matches!(key.as_str(), "file" | "File") && !name.is_empty())
     }) {
-        return Ok(String::new());
+        return Some(String::new());
     }
-    value_content(&state.id, &state.values, &std::collections::HashMap::new())
+    value_content(&state.values, &std::collections::HashMap::new())
 }
 
 #[derive(Debug, Clone)]

@@ -409,11 +409,11 @@ pub(super) fn write(
             .iter()
             .filter(|constraint| constraint.sketch == sketch.id)
         {
-            let mut ids = constraint
-                .definition
-                .kind()
-                .dimension_parameters()
-                .map_err(CodecError::malformed)?;
+            // A constraint whose dimensions do not resolve binds no
+            // parameter path; its parameters keep their own owners.
+            let Ok(mut ids) = constraint.definition.kind().dimension_parameters() else {
+                continue;
+            };
             if let Constraint::Native {
                 parameter: Some(parameter),
                 ..
@@ -556,11 +556,14 @@ pub(super) fn write(
                 .iter()
                 .find(|source| &source.id == id && source.name == property_name)
         }) {
-            let generated = roxmltree::Document::parse(&property).map_err(CodecError::malformed)?;
-            let generated_root = generated.root_element();
-            let generated_value = generated_root.first_element_child();
+            let generated = roxmltree::Document::parse(&property);
+            debug_assert!(generated.is_ok(), "generated parameter XML parses");
+            let generated_root = generated.as_ref().ok().map(roxmltree::Document::root_element);
+            let generated_value =
+                generated_root.and_then(|root| root.first_element_child());
             let mut source = source.clone();
-            let compatible = source.type_name == generated_root.attribute("type").unwrap_or("");
+            let compatible = generated_root
+                .is_some_and(|root| source.type_name == root.attribute("type").unwrap_or(""));
             let mut restored = None;
             if let (
                 true,

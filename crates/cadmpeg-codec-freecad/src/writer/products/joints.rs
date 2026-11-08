@@ -261,10 +261,13 @@ pub(super) fn write(
             ));
         }
         names.insert(joint.id.as_str().to_owned(), name.clone());
-        let object = objects
+        let Some(object) = objects
             .iter_mut()
             .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("joint output is absent"))?;
+        else {
+            debug_assert!(false, "joint output is absent");
+            continue;
+        };
         for key in [
             "JointType",
             "ObjectToGround",
