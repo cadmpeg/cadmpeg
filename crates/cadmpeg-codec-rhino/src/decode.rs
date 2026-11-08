@@ -4852,7 +4852,8 @@ fn revolved_circle(
     circle: &cadmpeg_ir::geometry::analytic::CircleCurve,
 ) -> Option<SolvedSurfaceGeometry> {
     use cadmpeg_ir::math::Vector3;
-    let dot = |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     let reference = *circle.frame().reference().as_raw();
     let rise = circle.frame().axis().as_raw().cross(reference);
     if dot(reference, axis).abs() > EPS_REVOLVED_PROFILE
@@ -4929,7 +4930,8 @@ fn revolved_linear_profile(
     velocity: cadmpeg_ir::math::Vector3,
 ) -> Option<SolvedSurfaceGeometry> {
     use cadmpeg_ir::math::Vector3;
-    let dot = |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     let reject = |vector: Vector3| {
         let along = dot(vector, axis);
         Vector3::new(
@@ -4956,7 +4958,11 @@ fn revolved_linear_profile(
     if length <= 0.0 {
         return None;
     }
-    let reference = Vector3::new(direction.x / length, direction.y / length, direction.z / length);
+    let reference = Vector3::new(
+        direction.x / length,
+        direction.y / length,
+        direction.z / length,
+    );
     if slope_size <= EPS_REVOLVED_PROFILE {
         return cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             center, axis, reference, radius,
