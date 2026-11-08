@@ -199,7 +199,9 @@ fn construction_curves(model: &cadmpeg_ir::document::Model, construction: &str) 
         match value {
             serde_json::Value::String(text) => out.push(text.clone()),
             serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
-            serde_json::Value::Object(fields) => fields.values().for_each(|item| strings(item, out)),
+            serde_json::Value::Object(fields) => {
+                fields.values().for_each(|item| strings(item, out))
+            }
             _ => {}
         }
     }
@@ -555,7 +557,10 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
                     let children = if omitted.is_empty() {
                         String::new()
                     } else {
-                        format!("; its construction curve(s) {} are omitted", omitted.join(", "))
+                        format!(
+                            "; its construction curve(s) {} are omitted",
+                            omitted.join(", ")
+                        )
                     };
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
                         "surface {} procedural construction {construction} was reduced to a held solved carrier{children}",

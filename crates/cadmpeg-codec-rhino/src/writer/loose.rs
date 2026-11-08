@@ -157,8 +157,10 @@ pub(super) fn write(
             };
             for binding in &document.model.appearance_bindings {
                 let target = binding.target.typed_record_target(&document.model);
-                let carried_material =
-                    points.len() == 1 && materials.appearance_index(binding.appearance.as_str()).is_some();
+                let carried_material = points.len() == 1
+                    && materials
+                        .appearance_index(binding.appearance.as_str())
+                        .is_some();
                 if !carried_material
                     && point_targets.iter().flatten().any(|(_, selected)| {
                         matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
