@@ -5663,6 +5663,100 @@ pub(crate) mod surface_patch_v7_normal_flip_prefix {
     pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0004;
 }
 
+/// Byte offsets for the `surface_patch_v5_selection_frame` record.
+///
+/// Spec §3.1. Record length 43 B.
+///
+/// ```text
+/// Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
+/// ```
+pub(crate) mod surface_patch_v5_selection_frame {
+    /// Offset of `selection_prefix` (`bytes[12]`). Spec §3.1.
+    pub(crate) const SELECTION_PREFIX: usize = 31;
+}
+
+/// Byte offsets for the `surface_patch_selection_prefix` record.
+///
+/// Spec §3.1. Record length 12 B.
+///
+/// ```text
+/// Offsets are relative to P + Q. The settings references follow at offset 12.
+/// ```
+pub(crate) mod surface_patch_selection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 12;
+    /// Offset of `leading_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LEADING_WORD: usize = 0;
+    /// Stated value of `leading_word` (`u32`). Spec §3.1.
+    pub(crate) const LEADING_WORD_VALUE: u32 = 0x0000_0004;
+    /// Offset of `selection_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SELECTION_WORD: usize = 4;
+    /// Stated value of `selection_word` (`u32`). Spec §3.1.
+    pub(crate) const SELECTION_WORD_VALUE: u32 = 0x0000_0001;
+    /// Offset of `settings_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SETTINGS_COUNT: usize = 8;
+}
+
+/// Byte offsets for the `surface_patch_v5_interior_list_prefix` record.
+///
+/// Spec §3.1. Record length 12 B.
+///
+/// ```text
+/// Offsets are relative to the end of the last settings reference. The interior references follow at offset 12.
+/// ```
+pub(crate) mod surface_patch_v5_interior_list_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 12;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `interior_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const INTERIOR_COUNT: usize = 8;
+}
+
+/// Byte offsets for the `surface_patch_v6_interior_list_prefix` record.
+///
+/// Spec §3.1. Record length 16 B.
+///
+/// ```text
+/// Type versions 6 and 7. Offsets are relative to the end of the last settings reference. The interior references follow at offset 16.
+/// ```
+pub(crate) mod surface_patch_v6_interior_list_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 16;
+    /// Offset of `zero_run` (`bytes[12]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `interior_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const INTERIOR_COUNT: usize = 12;
+}
+
+/// Byte offsets for the `surface_patch_v5_tool_reference_prefix` record.
+///
+/// Spec §3.1. Record length 4 B.
+///
+/// ```text
+/// Offsets are relative to the end of the last interior reference. The tool-body reference follows at offset 4.
+/// ```
+pub(crate) mod surface_patch_v5_tool_reference_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 4;
+    /// Offset of `zero_run` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+}
+
+/// Byte offsets for the `surface_patch_v6_tool_reference_prefix` record.
+///
+/// Spec §3.1. Record length 8 B.
+///
+/// ```text
+/// Type versions 6 and 7. Offsets are relative to the end of the last interior reference. The tool-body reference follows at offset 8.
+/// ```
+pub(crate) mod surface_patch_v6_tool_reference_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+}
+
 /// Byte offsets for the `hem_common_controls` record.
 ///
 /// Spec §3.1. Record length 41 B.
