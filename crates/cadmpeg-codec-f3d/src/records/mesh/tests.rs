@@ -593,7 +593,7 @@ fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
         let placement =
             crate::records::mesh::DesignMeshPlacement::new(identity(length), transform, false)
                 .unwrap();
-        assert_eq!(placement.transform_offsets(), [142, 271]);
+        assert_eq!(placement.transform_offsets(), Some([142, 271]));
         assert_eq!(placement.scope_reference_offset(), 608);
         assert_eq!(placement.wrapper_reference_offset(), 619);
         assert_eq!(placement.owner_reference_offset(), 630);
@@ -608,7 +608,7 @@ fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
         let placement =
             crate::records::mesh::DesignMeshPlacement::new(identity(length), transform, true)
                 .unwrap();
-        assert_eq!(placement.transform_offsets(), [146, 275]);
+        assert_eq!(placement.transform_offsets(), Some([146, 275]));
         assert_eq!(placement.scope_reference_offset(), 612);
         assert_eq!(placement.wrapper_reference_offset(), 623);
         assert_eq!(placement.owner_reference_offset(), 634);
@@ -905,6 +905,7 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
         identity(104, 100, 200),
         identity(104, 270, 30),
         109,
+        None,
     )
     .expect("scope");
     assert_eq!(scope.base_record(), identity(104, 270, 30));
@@ -915,20 +916,26 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
         identity(104, 269, 30),
         identity(104, 270, 31),
     ] {
-        assert!(
-            crate::records::mesh::DesignMeshScope::new(identity(104, 100, 200), base, 109).is_err()
-        );
+        assert!(crate::records::mesh::DesignMeshScope::new(
+            identity(104, 100, 200),
+            base,
+            109,
+            None
+        )
+        .is_err());
     }
     assert!(crate::records::mesh::DesignMeshScope::new(
         identity(104, 100, 200),
         identity(104, 270, 30),
-        0
+        0,
+        None
     )
     .is_err());
     assert!(crate::records::mesh::DesignMeshScope::new(
         identity(104, 100, 54),
         identity(104, 124, 30),
-        109
+        109,
+        None
     )
     .is_err());
 }

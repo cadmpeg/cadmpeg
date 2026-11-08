@@ -3792,6 +3792,31 @@ fn project_mesh_bodies(
         .extend(crate::design::decode::mesh::mesh_word_losses(
             &native.design_mesh_features,
         ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_wrapper_tail_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_body_identity_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_owner_frame_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_body_frame_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_scope_prefix_losses(
+            &native.design_mesh_features,
+        ));
     let mut texture_assets = Vec::new();
     for texture in native
         .design_mesh_features

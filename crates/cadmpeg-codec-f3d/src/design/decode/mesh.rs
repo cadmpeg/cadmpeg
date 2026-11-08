@@ -25,6 +25,7 @@ use crate::layout::paramesh_collection_owner_v21 as collection_owner_v21;
 use crate::layout::paramesh_entry_name_prefix as entry_name_prefix;
 use crate::layout::paramesh_feature_scope_base as feature_scope_base;
 use crate::layout::paramesh_feature_scope_prefix as feature_scope;
+use crate::layout::paramesh_flagged_feature_scope_prefix as flagged_scope;
 use crate::layout::paramesh_flagged_mesh_body_join_prefix as flagged_body;
 use crate::layout::paramesh_flagged_mesh_collection_prefix as flagged_collection;
 use crate::layout::paramesh_guid_join_prefix as guid_join;
@@ -45,6 +46,7 @@ use crate::records::mesh::{
     DesignMeshOperationInput, DesignMeshPlacement, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshSceneNode, DesignMeshSceneState, DesignMeshScope, DesignMeshSourceRecord,
     DesignMeshTextureResource, DesignMeshTextureTable, MeshAffineTransform, MeshBodyLayout,
+    VariableMeshBodyLayout, MESH_COLLECTION_ENTRY_NAME,
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
@@ -66,6 +68,7 @@ const MESH_GUID_TYPE_VERSION: u32 = 1;
 const MESH_BODY_TYPE_GUID: &str = "EA90DA22-556C-4C61-89BB-20C2681B7A9D";
 const MESH_BODY_BASE_TYPE_GUID: &str = "CB844AB6-240D-4FC9-9C9F-3679DC896D6F";
 const MESH_BODY_TYPE_VERSION: u32 = 7;
+const MESH_BODY_PRESENTATION_PREFIX_BYTES: usize = 15;
 const MESH_COLLECTION_TYPE_GUID: &str = "443807AD-8025-41A3-8A50-5157579C3D78";
 const MESH_COLLECTION_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_COLLECTION_TYPE_VERSION: u32 = 0;
@@ -97,7 +100,7 @@ const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5
 const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
-const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 5] = [15, 17, 23, 21, 22];
+const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 7] = [15, 17, 23, 21, 22, 19, 20];
 const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
@@ -107,6 +110,9 @@ const MESH_OPERATION_GROUP_TYPE_GUID: &str = "22975A91-16AD-4CC9-A5E4-B4F8B4C278
 const MESH_OPERATION_GROUP_BASE_TYPE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
 const MESH_OPERATION_MEMBER_TYPE_GUID: &str = "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2";
 const MESH_OPERATION_MEMBER_BASE_TYPE_GUID: &str = "6144EA59-3ACA-4172-9F14-A6531E94D69B";
+const MESH_BODY_OWNER_ALTERNATE_TYPE_GUID: &str = "3A8E00DC-E342-4C03-8521-846BD9F7513E";
+const MESH_BODY_OWNER_ALTERNATE_BASE_TYPE_GUID: &str = "A193F53F-86D7-4F45-A01C-51F5ECEEFC0E";
+const MESH_BODY_OWNER_ALTERNATE_TYPE_VERSION: u32 = 3;
 
 /// Row-major 4x4 f64 matrix byte length.
 #[cfg(test)]
@@ -270,7 +276,8 @@ struct MeshTextureTableRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshWrapperRecord {
-    identity: DesignMeshFixedRecord<{ u64_from_index(body_wrapper::LEN) }>,
+    identity: DesignMeshRecordIdentity,
+    opaque_tail: Option<cadmpeg_ir::native::bytes::NativeBytes>,
     body_record_index: u32,
 }
 
@@ -616,7 +623,11 @@ fn parse_mesh_body_record(
 ) -> Result<MeshBodyRecord, CodecError> {
     validate_mesh_registration(
         frame,
-        MESH_BODY_TYPE_VERSION,
+        if frame.design_type.version == 6 {
+            6
+        } else {
+            MESH_BODY_TYPE_VERSION
+        },
         MESH_BODY_BASE_TYPE_GUID,
         PARAMESH_MODULE,
         "mesh-body",
@@ -624,7 +635,9 @@ fn parse_mesh_body_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-body")?;
     let parsed = (|| {
+        let version_six = frame.design_type.version == 6;
         let flagged = record.get(flagged_body::FLAG) == Some(&flagged_body::FLAG_VALUE);
+        (record.get(flagged_body::FLAG).copied()? <= 1).then_some(())?;
         let zero_run = if flagged {
             flagged_body::ZERO_RUN_9..flagged_body::FLAG
         } else {
@@ -635,18 +648,22 @@ fn parse_mesh_body_record(
             .iter()
             .all(|byte| *byte == 0)
             .then_some(())?;
-        let layout = MeshBodyLayout::of(flagged);
+        let layout = MeshBodyLayout::of(flagged && !version_six);
         let transform = mesh_body_transform(record, layout)?;
-        let placement = DesignMeshPlacement::new(identity, transform, flagged).ok()?;
-        let words = if flagged {
-            DesignMeshBodyWords::Flagged {
-                flagged_word: View::u32_le_at(record, flagged_body::FLAGGED_WORD)?,
-                body_word: View::u32_le_at(record, flagged_body::BODY_WORD)?,
-            }
+        let words = mesh_body_words(record, flagged)?;
+        let placement =
+            DesignMeshPlacement::new(identity, transform, flagged && !version_six).ok()?;
+        let placement = if version_six {
+            let (name, end) = lp_utf16_bounded(record, layout.len, 0..=record.len())?;
+            (end <= record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?).then_some(())?;
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(record.len()).ok()?;
+            storage.extend_from_slice(record);
+            placement
+                .with_native_frame(name, cadmpeg_ir::native::bytes::NativeBytes::new(storage))
+                .ok()?
         } else {
-            DesignMeshBodyWords::Plain {
-                body_word: View::u32_le_at(record, mesh_body::BODY_WORD)?,
-            }
+            placement
         };
         let scope_record_index = exact_local_record_index(record, layout.feature_scope_reference)?;
         let wrapper_record_index = exact_local_record_index(record, layout.wrapper_reference)?;
@@ -664,6 +681,147 @@ fn parse_mesh_body_record(
             wrapper_record_index,
             owner_record_index,
             scene_node_record_index,
+            collection_record_index,
+        })
+    })();
+    match parsed {
+        Some(body) => Ok(body),
+        None => parse_variable_mesh_body_record(bytes, frame),
+    }
+}
+
+fn parse_mesh_body_owner(
+    bytes: &[u8],
+    frame: TypedPrimaryFrame<'_>,
+) -> Result<DesignMeshRecordIdentity, CodecError> {
+    let (version, base) = if frame
+        .design_type
+        .type_guid
+        .as_str()
+        .eq_ignore_ascii_case(MESH_BODY_OWNER_ALTERNATE_TYPE_GUID)
+    {
+        (
+            MESH_BODY_OWNER_ALTERNATE_TYPE_VERSION,
+            MESH_BODY_OWNER_ALTERNATE_BASE_TYPE_GUID,
+        )
+    } else {
+        (MESH_BODY_OWNER_TYPE_VERSION, MESH_BODY_OWNER_BASE_TYPE_GUID)
+    };
+    parse_typed_identity(bytes, frame, version, base, "Body", "mesh-body-owner")
+}
+
+fn mesh_body_words(record: &[u8], flagged: bool) -> Option<DesignMeshBodyWords> {
+    Some(if flagged {
+        DesignMeshBodyWords::Flagged {
+            flagged_word: View::u32_le_at(record, flagged_body::FLAGGED_WORD)?,
+            body_word: View::u32_le_at(record, flagged_body::BODY_WORD)?,
+        }
+    } else {
+        DesignMeshBodyWords::Plain {
+            body_word: View::u32_le_at(record, mesh_body::BODY_WORD)?,
+        }
+    })
+}
+
+fn parse_variable_mesh_body_record(
+    bytes: &[u8],
+    frame: TypedPrimaryFrame<'_>,
+) -> Result<MeshBodyRecord, CodecError> {
+    let record = &bytes[frame.start..frame.end];
+    let identity = record_identity(record, frame, "mesh-body")?;
+    let parsed = (|| {
+        let byte_at = |position| {
+            let mut view = View::over_retained(record);
+            view.seek(position)?;
+            view.u8()
+        };
+        let flagged = byte_at(flagged_body::FLAG) == Some(flagged_body::FLAG_VALUE);
+        let zero_run = if flagged {
+            flagged_body::ZERO_RUN_9..flagged_body::FLAG
+        } else {
+            mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10
+        };
+        let mut view = View::over_retained(record);
+        view.seek(zero_run.start)?;
+        view.take(zero_run.len())?
+            .iter()
+            .all(|byte| *byte == 0)
+            .then_some(())?;
+        let shifted = flagged && frame.design_type.version != 6;
+        let first = if shifted {
+            flagged_body::FIRST_PRESENCE
+        } else {
+            mesh_body::FIRST_PRESENCE
+        };
+        let mut at = first;
+        let mut presence = [0_u64; 2];
+        let mut transforms = [None; 2];
+        for ordinal in 0..2 {
+            presence[ordinal] = u64_from_index(at);
+            let marker = byte_at(at)?;
+            at = at.checked_add(1)?;
+            transforms[ordinal] = Some(match marker {
+                0 => {
+                    let transform = MeshAffineTransform::parse(record, at)?;
+                    at = at.checked_add(16 * 8)?;
+                    transform
+                }
+                1 => MeshAffineTransform::identity(),
+                _ => return None,
+            });
+        }
+        let transform = transforms[0]?;
+        (transforms[1]? == transform).then_some(())?;
+        let guid_at = at.checked_add(MESH_BODY_PRESENTATION_PREFIX_BYTES)?;
+        let (first_guid, after_first) = lp_utf16_bounded(record, guid_at, 36..=36)?;
+        crate::bytes::is_guid_hyphenated(&first_guid).then_some(())?;
+        let (library, after_library) = lp_utf16_bounded(record, after_first, 36..=36)?;
+        (library.eq_ignore_ascii_case(crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID)
+            && View::u32_le_at(record, after_library) == Some(0))
+        .then_some(())?;
+        let (_, after_preset) =
+            lp_utf16_bounded(record, after_library.checked_add(4)?, 0..=record.len())?;
+        let mut reference_at = after_preset;
+        if byte_at(reference_at) == Some(0) {
+            reference_at = reference_at.checked_add(1)?;
+        }
+        let mut offsets = [0_u64; 5];
+        let mut ids = [0_u32; 5];
+        for ordinal in 0..5 {
+            if ordinal == 4 && byte_at(reference_at) == Some(0) {
+                reference_at = reference_at.checked_add(1)?;
+            }
+            ids[ordinal] = exact_local_record_index(record, reference_at)?;
+            offsets[ordinal] = u64_from_index(reference_at);
+            reference_at = reference_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
+        }
+        let (name, end) = lp_utf16_bounded(record, reference_at, 0..=record.len())?;
+        (end <= record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?).then_some(())?;
+        let collection_at = record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?;
+        let collection_record_index = exact_local_record_index(record, collection_at)?;
+        let mut storage = Vec::new();
+        storage.try_reserve_exact(record.len()).ok()?;
+        storage.extend_from_slice(record);
+        let placement = DesignMeshPlacement::new_variable(
+            identity,
+            transform,
+            shifted,
+            name,
+            cadmpeg_ir::native::bytes::NativeBytes::new(storage),
+            VariableMeshBodyLayout {
+                presence_offsets: presence,
+                reference_offsets: offsets,
+            },
+        )
+        .ok()?;
+        Some(MeshBodyRecord {
+            placement,
+            words: mesh_body_words(record, flagged)?,
+            scope_record_index: ids[0],
+            wrapper_record_index: ids[1],
+            owner_record_index: ids[2],
+            guid_record_index: ids[3],
+            scene_node_record_index: ids[4],
             collection_record_index,
         })
     })();
@@ -943,15 +1101,24 @@ fn parse_mesh_wrapper_record(
         "mesh-wrapper",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-wrapper")?)
-        .map_err(|_| malformed_frame("mesh-wrapper", frame.entity_id))?;
+    let identity = record_identity(record, frame, "mesh-wrapper")?;
     let parsed = (|| {
         (record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE) == Some(&[0; 10]))
             .then_some(())?;
         let body_record_index = exact_local_record_index(record, body_wrapper::BODY_REFERENCE)?;
         (record.get(body_wrapper::ZERO_TAIL_8..body_wrapper::LEN) == Some(&[0; 8])).then_some(())?;
+        let tail = record.get(body_wrapper::LEN..)?;
+        let opaque_tail = if tail.is_empty() {
+            None
+        } else {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(tail.len()).ok()?;
+            storage.extend_from_slice(tail);
+            Some(cadmpeg_ir::native::bytes::NativeBytes::new(storage))
+        };
         Some(MeshWrapperRecord {
             identity,
+            opaque_tail,
             body_record_index,
         })
     })();
@@ -1137,11 +1304,21 @@ fn parse_mesh_scope_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-feature-scope")?;
-    let counted_bodies = counted_local_record_indices(record, feature_scope::BODY_COUNT);
     let parsed = (|| {
-        (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
-            .then_some(())?;
-        let (body_records, body_list_end) = counted_bodies?;
+        let flagged = record.get(flagged_scope::FLAG) == Some(&flagged_scope::FLAG_VALUE);
+        let (count_at, flagged_word) = if flagged {
+            (record.get(flagged_scope::ZERO_RUN_9..flagged_scope::FLAG) == Some(&[0; 9]))
+                .then_some(())?;
+            (
+                flagged_scope::BODY_COUNT,
+                Some(View::u32_le_at(record, flagged_scope::FLAGGED_WORD)?),
+            )
+        } else {
+            (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
+                .then_some(())?;
+            (feature_scope::BODY_COUNT, None)
+        };
+        let (body_records, body_list_end) = counted_local_record_indices(record, count_at)?;
         let scope = match parse_parameter_scope_with_type_guid(
             bytes,
             records,
@@ -1186,13 +1363,36 @@ fn parse_mesh_scope_record(
         let owner_at = paired_relative.checked_add(feature_scope_base::SCOPE_OWNER_REFERENCE)?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         Some(Ok(MeshScopeRecord {
-            scope: DesignMeshScope::new(identity, base_record, owner_record_index).ok()?,
+            scope: DesignMeshScope::new(identity, base_record, owner_record_index, flagged_word)
+                .ok()?,
             body_records,
         }))
     })();
     parsed
         .transpose()?
         .ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
+}
+
+fn named_collection_owner_reference(record: &[u8]) -> Option<(usize, u32)> {
+    let mut found = None;
+    for at in 0..record.len() {
+        if View::u32_le_at(record, at) != Some(17) {
+            continue;
+        }
+        let Some((name, reference_at)) = lp_utf16_bounded(record, at, 17..=17) else {
+            continue;
+        };
+        if name != MESH_COLLECTION_ENTRY_NAME {
+            continue;
+        }
+        let Some(target) = exact_local_record_index(record, reference_at) else {
+            continue;
+        };
+        if found.replace((reference_at, target)).is_some() {
+            return None;
+        }
+    }
+    found
 }
 
 fn parse_mesh_collection_owner_record(
@@ -1214,6 +1414,27 @@ fn parse_mesh_collection_owner_record(
         "mesh-collection-owner",
     )?;
     let record = &bytes[frame.start..frame.end];
+    if matches!(frame.design_type.version, 19 | 20) {
+        let Some((backlink_at, collection_record_index)) = named_collection_owner_reference(record)
+        else {
+            return Ok(None);
+        };
+        let mut storage = Vec::new();
+        storage
+            .try_reserve_exact(record.len())
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        storage.extend_from_slice(record);
+        return Ok(Some(MeshCollectionOwnerRecord {
+            owner: DesignMeshCollectionOwner::new_named(
+                identity,
+                source_offset(frame.start, backlink_at)
+                    .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+                cadmpeg_ir::native::bytes::NativeBytes::new(storage),
+            )
+            .map_err(|_| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+            collection_record_index,
+        }));
+    }
     let Some((backlink_at, name_count)) = (match frame.design_type.version {
         15 => record.len().checked_sub(11).map(|at| (at, None)),
         17 if record.len() >= collection_owner_v17::LEN => {
@@ -1683,10 +1904,15 @@ where
         |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
-    let body_owner_frames = typed_frame_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
+    let mut body_owner_candidates =
+        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?;
+    body_owner_candidates.extend(typed_primary_frames(
+        bytes,
+        meta,
+        MESH_BODY_OWNER_ALTERNATE_TYPE_GUID,
         "mesh-body-owner",
-    )?;
+    )?);
+    let body_owner_frames = typed_frame_map(body_owner_candidates, "mesh-body-owner")?;
 
     let operation_context = MeshOperationContext {
         bytes,
@@ -1867,14 +2093,7 @@ where
                 .get(&body.owner_record_index)
                 .copied()
                 .ok_or_else(|| stream_error("each mesh body references a typed Body owner"))?;
-            let body_owner = parse_typed_identity(
-                bytes,
-                body_owner_frame,
-                MESH_BODY_OWNER_TYPE_VERSION,
-                MESH_BODY_OWNER_BASE_TYPE_GUID,
-                "Body",
-                "mesh-body-owner",
-            )?;
+            let body_owner = parse_mesh_body_owner(bytes, body_owner_frame)?;
             feature_bodies.push(DesignMeshBody {
                 scope_record_index: body.scope_record_index,
                 scope_body_ordinal: Some(scope_ordinals[body_record_index]),
@@ -1886,6 +2105,7 @@ where
                 entry: entry_name.entry,
                 guid: guid.guid,
                 wrapper_record: wrapper.identity,
+                wrapper_opaque_tail: wrapper.opaque_tail,
                 scene_state,
                 scene_node: scene_node.node,
                 scene_auxiliary_record: scene_auxiliary,
@@ -1955,14 +2175,7 @@ where
                 .get(&body.owner_record_index)
                 .copied()
                 .ok_or_else(|| stream_error("each operation body has an owner"))?;
-            let owner = parse_typed_identity(
-                bytes,
-                owner_frame,
-                MESH_BODY_OWNER_TYPE_VERSION,
-                MESH_BODY_OWNER_BASE_TYPE_GUID,
-                "Body",
-                "mesh-body-owner",
-            )?;
+            let owner = parse_mesh_body_owner(bytes, owner_frame)?;
             operation_bodies.push(DesignMeshOperationBody {
                 scope: relation.scope,
                 group: relation.group,
@@ -1982,6 +2195,7 @@ where
                     entry: entry.entry,
                     guid: guid.guid,
                     wrapper_record: wrapper.identity,
+                    wrapper_opaque_tail: wrapper.opaque_tail,
                     scene_state: state,
                     scene_node: node.node,
                     scene_auxiliary_record: auxiliary,
@@ -2074,6 +2288,86 @@ fn mesh_image_asset(
         asset.name.clone(),
         crate::ids::neutral_asset_id(&asset.name),
     ))
+}
+
+pub(crate) fn mesh_wrapper_tail_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::bodies)
+        .filter_map(|body| {
+            body.wrapper_opaque_tail.as_ref()?;
+            Some(
+                crate::loss::F3dLossCode::MeshWrapperBytesUninterpreted.note(format!(
+                    "mesh-wrapper record {} retains its uninterpreted tail",
+                    body.wrapper_record.record_index(),
+                )),
+            )
+        })
+}
+
+pub(crate) fn mesh_body_identity_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::bodies)
+        .filter(|body| body.placement.identity_assumed())
+        .map(|body| {
+            crate::loss::F3dLossCode::MeshBodyIdentityAssumed.note(format!(
+                "mesh-body record {} reads a compact matrix as identity",
+                body.placement.record().record_index(),
+            ))
+        })
+}
+
+pub(crate) fn mesh_owner_frame_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features.iter().filter_map(|feature| {
+        feature.collection_owner.native_frame()?;
+        Some(
+            crate::loss::F3dLossCode::MeshOwnerBytesUninterpreted.note(format!(
+                "mesh collection owner {} retains its frame with uninterpreted bytes",
+                feature.collection_owner.record().record_index(),
+            )),
+        )
+    })
+}
+
+pub(crate) fn mesh_body_frame_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::bodies)
+        .filter_map(|body| {
+            body.placement.native_frame()?;
+            Some(
+                crate::loss::F3dLossCode::MeshBodyBytesUninterpreted.note(format!(
+                    "mesh-body record {} retains its frame with uninterpreted bytes",
+                    body.placement.record().record_index(),
+                )),
+            )
+        })
+}
+
+pub(crate) fn mesh_scope_prefix_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::scopes)
+        .filter_map(|scope| {
+            let word = scope.flagged_word()?;
+            Some(
+                crate::loss::F3dLossCode::MeshScopePrefixUninterpreted.note(format!(
+                    "mesh feature scope {} stores prefix word {word}; the native record retains it",
+                    scope.record().record_index(),
+                )),
+            )
+        })
 }
 
 pub(crate) fn mesh_guid_byte_losses(
@@ -2310,6 +2604,7 @@ mod tests {
     use cadmpeg_core::decode::u64_from_index;
 
     mod collection;
+    mod owner;
     mod placement;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
@@ -3306,6 +3601,229 @@ mod tests {
     }
 
     #[test]
+    fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
+        for compact in [false, true] {
+            let mut graph = synthetic_mesh_graph(false);
+            let frame = sole_typed_frame(&graph, MESH_BODY_TYPE_GUID);
+            let start = frame.start;
+            let old_end = frame.end;
+            let old = &graph.bytes[start..old_end];
+            let mut body = old[..mesh_body::FIRST_PRESENCE].to_vec();
+            body[20] = 1;
+            body.splice(21..21, [0; 4]);
+            for offset in [mesh_body::FIRST_TRANSFORM, mesh_body::SECOND_TRANSFORM] {
+                if compact {
+                    body.push(1);
+                } else {
+                    body.push(0);
+                    body.extend_from_slice(&old[offset..offset + MATRIX_BYTES]);
+                }
+            }
+            body.extend_from_slice(&1.0_f32.to_le_bytes());
+            body.extend_from_slice(&[1, 1]);
+            body.extend_from_slice(&[0; 9]);
+            lp_utf16(&mut body, "11111111-2222-4333-8444-555555555555");
+            lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+            body.extend_from_slice(&[0; 4]);
+            lp_utf16(&mut body, "PrismMaterial-018");
+            if !compact {
+                body.push(0);
+            }
+            body.extend_from_slice(
+                &old[mesh_body::FEATURE_SCOPE_REFERENCE
+                    ..mesh_body::CONTAINER_GUID_REFERENCE + SAME_SEGMENT_REFERENCE_BYTES],
+            );
+            if compact {
+                body.push(0);
+            }
+            body.extend_from_slice(&old[mesh_body::SCENE_NODE_REFERENCE..mesh_body::LEN]);
+            lp_utf16(&mut body, "Axle");
+            body.extend_from_slice(&[0; 4]);
+            body.extend_from_slice(&1.0_f32.to_le_bytes());
+            body.extend_from_slice(&[1, 1]);
+            body.extend_from_slice(&[0; 9]);
+            lp_utf16(&mut body, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE");
+            lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+            body.extend_from_slice(&[0; 4]);
+            lp_utf16(&mut body, "PrismMaterial-018_physmat_aspects:Prism-256");
+            body.extend_from_slice(&old[old.len() - SAME_SEGMENT_REFERENCE_BYTES..]);
+            let expected = body.clone();
+            let delta =
+                i64::try_from(body.len()).unwrap() - i64::try_from(old_end - start).unwrap();
+            graph.bytes.splice(start..old_end, body);
+            for record in &mut graph.meta.records {
+                if record.bulk_offset > u64_from_index(start) {
+                    record.bulk_offset = record.bulk_offset.checked_add_signed(delta).unwrap();
+                }
+            }
+            let features = parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_texture_asset,
+            )
+            .expect("variable mesh body");
+            let [feature] = features.as_slice() else {
+                panic!("one feature")
+            };
+            let wire = serde_json::to_value(feature).unwrap();
+            let row = &wire["bodies"][0];
+            assert_eq!(row["body_name"], "Axle");
+            if compact {
+                assert!(row.get("transform_offsets").is_none());
+                assert_eq!(
+                    row["body_variable_layout"]["presence_offsets"],
+                    serde_json::json!([45, 46])
+                );
+                assert_eq!(row["scope_reference_offset"], start + 256);
+                assert_eq!(row["scene_node_reference_offset"], start + 301);
+            } else {
+                assert_eq!(
+                    row["transform_offsets"],
+                    serde_json::json!([start + 46, start + 175])
+                );
+                assert_eq!(
+                    row["body_variable_layout"]["presence_offsets"],
+                    serde_json::json!([45, 174])
+                );
+                assert_eq!(row["scope_reference_offset"], start + 513);
+                assert_eq!(row["scene_node_reference_offset"], start + 557);
+            }
+            let decoded: crate::records::mesh::DesignMeshFeature =
+                serde_json::from_value(wire).unwrap();
+            assert_eq!(
+                decoded.bodies()[0]
+                    .placement
+                    .native_frame()
+                    .unwrap()
+                    .as_ref(),
+                expected.as_slice()
+            );
+            assert_eq!(decoded, *feature);
+            assert_eq!(
+                super::mesh_body_identity_losses(&features).count(),
+                usize::from(compact)
+            );
+        }
+    }
+
+    #[test]
+    fn version_six_mesh_body_keeps_name_and_frame() {
+        let mut graph = synthetic_mesh_graph(false);
+        graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|ty| {
+                ty.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(MESH_BODY_TYPE_GUID)
+            })
+            .unwrap()
+            .version = 6;
+        let frame = sole_typed_frame(&graph, MESH_BODY_TYPE_GUID);
+        let start = frame.start;
+        let old_end = frame.end;
+        let old = &graph.bytes[start..old_end];
+        let mut body = old[..mesh_body::SECOND_TRANSFORM + MATRIX_BYTES].to_vec();
+        body[20] = 1;
+        body.extend_from_slice(&1.0_f32.to_le_bytes());
+        body.extend_from_slice(&[1, 1]);
+        body.extend_from_slice(&[0; 9]);
+        lp_utf16(&mut body, "11111111-2222-4333-8444-555555555555");
+        lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+        body.extend_from_slice(&[0; 4]);
+        lp_utf16(&mut body, "PrismMaterial-018");
+        assert_eq!(body.len(), mesh_body::FEATURE_SCOPE_REFERENCE);
+        body.extend_from_slice(&old[mesh_body::FEATURE_SCOPE_REFERENCE..mesh_body::LEN]);
+        lp_utf16(&mut body, "Axle");
+        body.extend_from_slice(&[0; 4]);
+        body.extend_from_slice(&1.0_f32.to_le_bytes());
+        body.extend_from_slice(&[1, 1]);
+        body.extend_from_slice(&[0; 9]);
+        lp_utf16(&mut body, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE");
+        lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+        body.extend_from_slice(&[0; 4]);
+        lp_utf16(&mut body, "PrismMaterial-018_physmat_aspects:Prism-256");
+        body.extend_from_slice(&old[old.len() - SAME_SEGMENT_REFERENCE_BYTES..]);
+        let end = start + body.len();
+        let extra = u64_from_index(body.len() - (old_end - start));
+        graph.bytes.splice(start..old_end, body);
+        for record in &mut graph.meta.records {
+            if record.bulk_offset > u64_from_index(start) {
+                record.bulk_offset += extra;
+            }
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("version-six body");
+        let [feature] = features.as_slice() else {
+            panic!("one feature")
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["bodies"][0]["body_name"], "Axle");
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(
+            decoded.bodies()[0]
+                .placement
+                .native_frame()
+                .unwrap()
+                .as_ref(),
+            &graph.bytes[start..end]
+        );
+        assert_eq!(decoded, *feature);
+        let losses: Vec<_> = super::mesh_body_frame_losses(&features).collect();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "mesh.body-bytes-uninterpreted");
+    }
+
+    #[test]
+    fn flagged_scope_reads_prefix_and_shifted_body_references() {
+        let mut graph = synthetic_mesh_graph(false);
+        let start = sole_typed_frame(&graph, MESH_FEATURE_SCOPE_TYPE_GUID).start;
+        graph.bytes[start + 20] = 1;
+        graph
+            .bytes
+            .splice(start + 21..start + 21, 37_u32.to_le_bytes());
+        for record in &mut graph.meta.records {
+            if record.bulk_offset > u64_from_index(start) {
+                record.bulk_offset += 4;
+            }
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("flagged scope");
+        let [feature] = features.as_slice() else {
+            panic!("one feature")
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["scopes"][0]["scope_flagged_word"], 37);
+        assert_eq!(wire["scopes"][0]["scope_body_count_offset"], start + 25);
+        assert_eq!(
+            wire["scope_body_reference_offsets"],
+            serde_json::json!([start + 29])
+        );
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
+        let losses: Vec<_> = super::mesh_scope_prefix_losses(&features).collect();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "mesh.scope-prefix-uninterpreted"
+        );
+    }
+
+    #[test]
     fn flagged_mesh_body_moves_its_join_fields_by_four_bytes() {
         let (graph, start) = flagged_mesh_graph_with_flagged_body();
         let features = parse_mesh_design_records(
@@ -3734,6 +4252,40 @@ mod tests {
     }
 
     #[test]
+    fn mesh_wrapper_keeps_its_extended_tail() {
+        let mut graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_WRAPPER_TYPE_GUID);
+        let end = frame.end;
+        graph.bytes.splice(end..end, [9, 8, 7]);
+        for record in &mut graph.meta.records {
+            if record.bulk_offset >= u64_from_index(end) {
+                record.bulk_offset += 3;
+            }
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("extended wrapper");
+        let [feature] = features.as_slice() else {
+            panic!("one feature")
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["bodies"][0]["wrapper_opaque_tail"], "090807");
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
+        let losses: Vec<_> = super::mesh_wrapper_tail_losses(&features).collect();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "mesh.wrapper-bytes-uninterpreted"
+        );
+    }
+
+    #[test]
     fn mesh_wrapper_rejects_a_truncated_exact_frame() {
         let graph = synthetic_mesh_graph(false);
         let bytes = mesh_wrapper_record(262, 108, 104);
@@ -3899,183 +4451,6 @@ mod tests {
             ),
             Err(CodecError::Malformed(_))
         ));
-    }
-
-    #[test]
-    fn mesh_collection_owner_accepts_legacy_version_fifteen() {
-        const EXPECTED_COLLECTION: u32 = 100;
-        let mut graph = synthetic_mesh_graph(false);
-        graph
-            .meta
-            .types
-            .iter_mut()
-            .find(|design_type| {
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
-            })
-            .expect("collection-owner type")
-            .version = MESH_COLLECTION_OWNER_TYPE_VERSIONS[0];
-        let design_type = graph
-            .meta
-            .types
-            .iter()
-            .find(|design_type| {
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
-            })
-            .expect("collection-owner type");
-        let mut bytes = Vec::new();
-        push_indexed_header(&mut bytes, 270, 110);
-        bytes.resize(859, 0);
-        push_reference(&mut bytes, EXPECTED_COLLECTION);
-        let frame = TypedPrimaryFrame {
-            entity_id: 110,
-            start: 0,
-            end: bytes.len(),
-            design_type,
-        };
-
-        let owner = parse_mesh_collection_owner_record(&bytes, frame)
-            .expect("valid legacy owner frame")
-            .expect("legacy collection owner");
-        assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
-        assert_eq!(owner.owner.backlink_offset(), 859);
-    }
-
-    #[test]
-    fn mesh_collection_owner_accepts_version_seventeen_frame() {
-        const EXPECTED_COLLECTION: u32 = 100;
-        let mut graph = synthetic_mesh_graph(false);
-        let design_type = graph
-            .meta
-            .types
-            .iter_mut()
-            .find(|design_type| {
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
-            })
-            .expect("collection-owner type");
-        design_type.version = MESH_COLLECTION_OWNER_TYPE_VERSIONS[1];
-        let mut bytes = Vec::new();
-        push_indexed_header(&mut bytes, 270, 110);
-        bytes.resize(collection_owner_v17::COLLECTION_BACKLINK, 0);
-        push_reference(&mut bytes, EXPECTED_COLLECTION);
-        bytes.extend_from_slice(&[0; 64]);
-        let frame = TypedPrimaryFrame {
-            entity_id: 110,
-            start: 0,
-            end: bytes.len(),
-            design_type,
-        };
-
-        let owner = parse_mesh_collection_owner_record(&bytes, frame)
-            .expect("valid version-17 owner frame")
-            .expect("version-17 collection owner");
-        assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
-        assert_eq!(
-            owner.owner.backlink_offset(),
-            u64_from_index(collection_owner_v17::COLLECTION_BACKLINK)
-        );
-    }
-
-    fn owner_frame_bytes(name: Option<&str>, backlink_at: usize) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        push_indexed_header(&mut bytes, 270, 110);
-        bytes.resize(collection_owner_v21::NAME_COUNT, 0);
-        if let Some(name) = name {
-            let units: Vec<u16> = name.encode_utf16().collect();
-            bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
-            for unit in units {
-                bytes.extend_from_slice(&unit.to_le_bytes());
-            }
-        }
-        bytes.resize(backlink_at, 0);
-        push_reference(&mut bytes, 100);
-        bytes.extend_from_slice(&[0; 32]);
-        bytes
-    }
-
-    #[test]
-    fn mesh_collection_owner_versions_twenty_one_and_twenty_two_locate_their_backlinks() {
-        let mut graph = synthetic_mesh_graph(false);
-        for (version, name, backlink_at, name_count) in [
-            (21, Some("1_3"), 272, Some(3)),
-            (21, Some(""), 266, Some(0)),
-            (22, None, 262, None),
-        ] {
-            let design_type = graph
-                .meta
-                .types
-                .iter_mut()
-                .find(|design_type| {
-                    design_type
-                        .type_guid
-                        .as_str()
-                        .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
-                })
-                .expect("collection-owner type");
-            design_type.version = version;
-            let bytes = owner_frame_bytes(name, backlink_at);
-            let frame = TypedPrimaryFrame {
-                entity_id: 110,
-                start: 0,
-                end: bytes.len(),
-                design_type,
-            };
-            let owner = parse_mesh_collection_owner_record(&bytes, frame)
-                .expect("valid owner frame")
-                .expect("collection owner");
-            assert_eq!(owner.collection_record_index, 100);
-            assert_eq!(owner.owner.backlink_offset(), u64_from_index(backlink_at));
-            assert_eq!(owner.owner.name_count(), name_count);
-        }
-    }
-
-    #[test]
-    fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
-        let mut graph = synthetic_mesh_graph(false);
-        graph
-            .meta
-            .types
-            .iter_mut()
-            .find(|design_type| {
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
-            })
-            .expect("collection-owner type")
-            .version = 21;
-        let start = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID).start;
-        let name = [3, 0, 0, 0, b'1', 0, b'_', 0, b'3', 0];
-        graph.bytes.splice(start + 25..start + 25, name);
-        for record in &mut graph.meta.records {
-            if record.bulk_offset > u64::try_from(start).unwrap() {
-                record.bulk_offset += 10;
-            }
-        }
-        let features = parse_mesh_design_records(
-            &graph.bytes,
-            &graph.meta,
-            "Synthetic/BulkStream.dat",
-            &mut no_texture_asset,
-        )
-        .expect("mesh graph with a version-21 owner");
-        let [feature] = features.as_slice() else {
-            panic!("one mesh feature");
-        };
-        let wire = serde_json::to_value(feature).unwrap();
-        assert_eq!(wire["collection_owner_name_count"], 3);
-        assert_eq!(wire["collection_owner_backlink_offset"], start + 272);
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
-        assert_eq!(decoded, *feature);
     }
 
     #[test]

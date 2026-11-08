@@ -1070,6 +1070,7 @@ Offsets are relative to the mesh-body primary indexed header. Presentation field
 | 20 | 1 | `flag` | `u8` | little | spec | A mesh body can instead store byte `01` at offset 20 · value `1` |
 | 21 | 4 | `flagged_word` | `u32` | little | spec | and a u32 at offset 21. |
 | 25 | 4 | `body_word` | `u32` | little | spec | another u32 at offset 25 |
+| 45 | 1 | `first_presence` | `u8` | little | spec | offset 45 in the shifted form |
 | 46 | 128 | `first_transform` | `f64[16]` | little | spec | the matrices start at offsets 46 and 175 |
 | 175 | 128 | `second_transform` | `f64[16]` | little | spec | the matrices start at offsets 46 and 175 |
 | 512 | 11 | `feature_scope_reference` | `bytes[11]` | little | spec | the five references start at offsets 512, 523, 534, 545, and 557 |
@@ -1080,7 +1081,7 @@ Offsets are relative to the mesh-body primary indexed header. Presentation field
 
 Unstated regions:
 
-- `29..46` (17 B): The remaining mesh-body prologue is outside this fixed join table.
+- `29..45` (16 B): The remaining mesh-body prologue is outside this fixed join table.
 - `174..175` (1 B): One structural byte separates the two transform blocks.
 - `303..512` (209 B): Presentation fields occupy the span before the feature-scope reference.
 - `556..557` (1 B): One structural byte separates the GUID and Scene-node references.
@@ -1096,6 +1097,7 @@ Offsets are relative to the mesh-body primary indexed header. Presentation field
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes. |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes. |
 | 21 | 4 | `body_word` | `u32` | little | spec | It stores a u32 at offset 21. |
+| 41 | 1 | `first_presence` | `u8` | little | spec | offset 41 in the unshifted form |
 | 42 | 128 | `first_transform` | `f64[16]` | little | spec | two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171 |
 | 171 | 128 | `second_transform` | `f64[16]` | little | spec | two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171 |
 | 508 | 11 | `feature_scope_reference` | `bytes[11]` | little | spec | Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning feature scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node. |
@@ -1106,7 +1108,7 @@ Offsets are relative to the mesh-body primary indexed header. Presentation field
 
 Unstated regions:
 
-- `25..42` (17 B): The remaining mesh-body prologue is outside this fixed join table.
+- `25..41` (16 B): The remaining mesh-body prologue is outside this fixed join table.
 - `170..171` (1 B): One structural byte separates the two transform blocks.
 - `299..508` (209 B): Presentation fields occupy the span before the feature-scope reference.
 - `552..553` (1 B): One structural byte separates the GUID and Scene-node references.
@@ -1207,9 +1209,24 @@ Offsets are relative to the `Base Mesh Feature` indexed header. The ordered body
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its unflagged indexed header is followed by ten zero bytes |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | followed by ten zero bytes, a u32 body count at offset 21 |
 | 21 | 4 | `body_count` | `u32` | little | spec | a u32 body count at offset 21 |
+
+## `paramesh_flagged_feature_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | A flagged scope stores byte `01` at offset 20 |
+| 20 | 1 | `flag` | `u8` | little | spec | A flagged scope stores byte `01` at offset 20 · value `1` |
+| 21 | 4 | `flagged_word` | `u32` | little | spec | a u32 at offset 21; its body count is at offset 25 |
+| 25 | 4 | `body_count` | `u32` | little | spec | its body count is at offset 25 and its body references start at offset 29 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
 
 ## `paramesh_feature_scope_base`
 

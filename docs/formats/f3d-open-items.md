@@ -341,7 +341,7 @@ travel.
 
 ### DR-292. Mesh Design record words
 
-**Question.** What do the mesh-GUID bytes at offsets 21 through 31 the mesh-body prefix words, and the remaining mesh-operation member fields store?
+**Question.** What do the mesh-GUID bytes at offsets 21 through 31, the mesh-body prefix words, and the remaining mesh-operation member fields store?
 
 **Known.** The mesh-GUID record carries eleven bytes. A mesh body carries one prefix word; a flagged mesh body carries two. The operation member references a mesh body. The decoder retains the words and the operation source records and reports `mesh.guid-bytes-uninterpreted`, `mesh.body-words-native`, and `mesh.operation-records-native`.
 
@@ -1551,3 +1551,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule. When an Extrude selection resolves to whole stored profile loops, the decoder also compares the faces its transition changed on planes parallel to the Sketch. It selects each atomic region bounded only by the loops' curves whose interior point a face on such a plane held before the transition and no face holds after it, and reports `feature.profile-cut-regions-assumed`.
+
+### DR-326. Flagged mesh scope prefix
+
+**Question.** What does the u32 in the flagged mesh feature scope prefix mean?
+
+**Known.** The flagged scope stores a u32 before its body count. The decoder retains the u32.
+
+**Need.** Controlled saves that vary the flagged prefix and establish the u32 meaning.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `mesh.scope-prefix-uninterpreted`.
+
+### DR-327. Mesh body and collection-owner payload fields
+
+**Question.** What do the compact matrix flags and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?
+
+**Known.** A version-6 body stores placement matrices, graph references, a display name, and additional bytes. A matrix presence byte `01` has no matrix payload. Fifteen bytes separate the second presence byte and its payload from the first presentation envelope. The decoder uses an identity matrix for this form. The collection owner stores a named collection reference and other fields. A mesh wrapper can continue after its fixed prefix. The decoder retains these bytes.
+
+**Need.** Controlled saves that vary one body or collection-owner property at a time and identify the remaining fields.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `mesh.body-bytes-uninterpreted`, `mesh.body-identity-assumed`, `mesh.wrapper-bytes-uninterpreted`, and `mesh.owner-bytes-uninterpreted`.

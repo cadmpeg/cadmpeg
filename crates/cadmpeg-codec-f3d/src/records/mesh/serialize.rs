@@ -79,9 +79,17 @@ impl Serialize for BodyRef<'_> {
             #[serde(skip_serializing_if = "Option::is_none")]
             face_group_metadata: Option<&'a super::DesignMeshFaceGroups>,
             body_record: RecordRef<'a>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            body_name: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            body_native_frame: Option<NativeBytes<&'a [u8]>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            body_variable_layout: Option<&'a super::VariableMeshBodyLayout>,
             entry_name_record: RecordRef<'a>,
             guid_record: RecordRef<'a>,
             wrapper_record: RecordRef<'a>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            wrapper_opaque_tail: Option<NativeBytes<&'a [u8]>>,
             scene_state_record: RecordRef<'a>,
             #[serde(skip_serializing_if = "Option::is_none")]
             scene_state_bounds: Option<DesignMeshSceneBoundsWire>,
@@ -103,7 +111,8 @@ impl Serialize for BodyRef<'_> {
             container_mesh_uuid: Option<&'a DesignMeshUuid>,
             fusion_uuid_offset: u64,
             transform: MeshAffineTransform,
-            transform_offsets: [u64; 2],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform_offsets: Option<[u64; 2]>,
             scope_reference_offset: u64,
             wrapper_reference_offset: u64,
             owner_reference_offset: u64,
@@ -134,9 +143,13 @@ impl Serialize for BodyRef<'_> {
             history_streams: &body.history_streams,
             face_group_metadata: body.face_group_metadata.as_ref(),
             body_record: RecordRef::from_identity(&body.placement.record),
+            body_name: body.placement.body_name.as_deref(),
+            body_native_frame: body.placement.native_frame.as_ref().map(NativeBytes::from),
+            body_variable_layout: body.placement.variable_layout.as_ref(),
             entry_name_record: RecordRef::from_identity(&body.entry.record),
             guid_record: RecordRef::from_identity(&body.guid.record),
-            wrapper_record: RecordRef::from_fixed(&body.wrapper_record),
+            wrapper_record: RecordRef::from_identity(&body.wrapper_record),
+            wrapper_opaque_tail: body.wrapper_opaque_tail.as_ref().map(NativeBytes::from),
             scene_state_record: RecordRef::from_fixed(&body.scene_state.record),
             scene_state_bounds: body
                 .scene_state
@@ -271,14 +284,16 @@ impl Serialize for ScopeRows<'_> {
             owner_reference_offset: u64,
             #[serde(rename = "scope_body_count_offset")]
             body_count_offset: u64,
+            #[serde(rename = "scope_flagged_word", skip_serializing_if = "Option::is_none")]
+            flagged_word: Option<u32>,
         }
         serializer.collect_seq(self.0.iter().map(|scope| Wire {
             record: RecordRef::from_identity(scope.record()),
             base_record: RecordRef::scope_base(scope),
             owner_record_index: scope.owner_record_index(),
             owner_reference_offset: scope.owner_reference_offset(),
-            body_count_offset: scope.record().byte_offset()
-                + u64_from_index(crate::layout::paramesh_feature_scope_prefix::BODY_COUNT),
+            body_count_offset: scope.body_count_offset(),
+            flagged_word: scope.flagged_word(),
         }))
     }
 }
@@ -312,6 +327,8 @@ impl Serialize for DesignMeshFeature {
             collection_owner_backlink_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
             collection_owner_name_count: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            collection_owner_native_frame: Option<NativeBytes<&'a [u8]>>,
             texture_flags_count_offset: u64,
             texture_filename_count_offset: u64,
             bodies: SliceColumn<'a, DesignMeshBody, BodyRef<'a>>,
@@ -345,6 +362,10 @@ impl Serialize for DesignMeshFeature {
             collection_owner_reference_offset: self.collection.owner_reference_offset(),
             collection_owner_backlink_offset: self.collection_owner.backlink_offset(),
             collection_owner_name_count: self.collection_owner.name_count(),
+            collection_owner_native_frame: self
+                .collection_owner
+                .native_frame()
+                .map(NativeBytes::from),
             texture_flags_count_offset: self.texture_table.flags_count_offset(),
             texture_filename_count_offset: self.texture_table.filename_count_offset(),
             bodies: SliceColumn::new(&self.bodies, BodyRef),
