@@ -91,7 +91,7 @@
       "presentation_layers": "reported",
       "procedural_curves": "reported",
       "procedural_surfaces": "reported",
-      "product_definitions": "reported",
+      "product_definitions": "written",
       "regions": "reported",
       "rigid_bodies": "omitted",
       "semantic_annotations": "reported",
@@ -146,26 +146,6 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
-      "severity": "info"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.product_definitions`: rhino:product:definition#61616161-6161-6161-6161-616161616161",
-      "severity": "info"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
       "message": "the rhino write omits 1 native record(s) from `rhino.product_occurrences`: rhino:product:occurrence#record-000000",
       "severity": "info"
     }
@@ -196,7 +176,10 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped"
+            "disposition": "dropped",
+            "records": {
+              "rhino:document:settings#current": "written"
+            }
           },
           "embedded_images": {
             "disposition": "dropped"
@@ -238,7 +221,10 @@
             "disposition": "dropped"
           },
           "product_definitions": {
-            "disposition": "dropped"
+            "disposition": "dropped",
+            "records": {
+              "rhino:product:definition#61616161-6161-6161-6161-616161616161": "regenerated"
+            }
           },
           "product_occurrences": {
             "disposition": "dropped"

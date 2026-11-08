@@ -72,6 +72,19 @@ pub(super) fn write_canonical_json<A: Admission, W: std::io::Write, T: Serialize
     outcome.map_err(CanonicalJsonError::Serialize)
 }
 
+pub(crate) fn check_cadir_finite(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    document: &crate::CadIr,
+) -> Result<(), CanonicalJsonError> {
+    write_canonical_json(ctx, std::io::sink(), document)
+}
+
+pub(crate) fn check_cadir_finite_for_encode(
+    document: &crate::CadIr,
+) -> Result<(), CanonicalJsonError> {
+    write_canonical_json(StandardAdmission, std::io::sink(), document)
+}
+
 /// Writes the existing CADIR wire shape, admitting each emitted arena record.
 pub(crate) fn write_cadir_json<W: std::io::Write>(
     session: &cadmpeg_core::encode::EncodeSession,

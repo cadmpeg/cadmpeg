@@ -64,23 +64,23 @@
       "assembly_joints": "omitted",
       "assets": "reported",
       "attributes": "reported",
-      "bodies": "reported",
-      "coedges": "reported",
+      "bodies": "written",
+      "coedges": "written",
       "colliders": "omitted",
       "configurations": "dropped",
       "curves": "reported",
       "declared_measures": "omitted",
       "drawings": "omitted",
-      "edges": "reported",
-      "faces": "reported",
+      "edges": "written",
+      "faces": "written",
       "feature_input_topologies": "omitted",
       "feature_result_topologies": "omitted",
       "features": "dropped",
-      "loops": "reported",
+      "loops": "written",
       "mass_properties": "omitted",
       "occurrences": "reported",
       "parameters": "dropped",
-      "pcurves": "reported",
+      "pcurves": "written",
       "physical_materials": "omitted",
       "physics_scenes": "omitted",
       "pmi": "omitted",
@@ -90,10 +90,10 @@
       "procedural_curves": "reported",
       "procedural_surfaces": "reported",
       "product_definitions": "reported",
-      "regions": "reported",
+      "regions": "written",
       "rigid_bodies": "omitted",
       "semantic_annotations": "reported",
-      "shells": "reported",
+      "shells": "written",
       "sketch_constraints": "dropped",
       "sketch_entities": "dropped",
       "sketches": "dropped",
@@ -105,7 +105,7 @@
       "subds": "dropped",
       "surfaces": "reported",
       "tessellations": "reported",
-      "vertices": "reported",
+      "vertices": "written",
       "view_presentations": "reported"
     },
     "coverage": "declared"
@@ -117,24 +117,13 @@
   "losses": [
     {
       "code": {
-        "code": "writer.body-omitted",
-        "kind": "topology_not_transferred",
+        "code": "writer.plane-domain-restricted",
+        "kind": "geometry_not_transferred",
         "namespace": "rhino",
         "scope": "namespaced",
         "strict_floor": "warning"
       },
-      "message": "body rhino:object:body#record-000000-offset-177 omitted: Brep writing requires one shell with distinct explicit carriers and polygonal loops; 22 member record(s): rhino:object:body#record-000000-offset-177, rhino:object:coedge#record-000000-offset-177.slot-0, rhino:object:coedge#record-000000-offset-177.slot-1, rhino:object:coedge#record-000000-offset-177.slot-2, rhino:object:coedge#record-000000-offset-177.slot-3, rhino:object:curve#record-000000-offset-177.c3-0, rhino:object:edge#record-000000-offset-177.singular-0, rhino:object:edge#record-000000-offset-177.singular-2, rhino:object:edge#record-000000-offset-177.slot-0, rhino:object:face#record-000000-offset-177.slot-0, rhino:object:loop#record-000000-offset-177.slot-0, rhino:object:pcurve#record-000000-offset-177.trim-0, rhino:object:pcurve#record-000000-offset-177.trim-1, rhino:object:pcurve#record-000000-offset-177.trim-2, rhino:object:pcurve#record-000000-offset-177.trim-3, rhino:object:point#record-000000-offset-177.vertex-0, rhino:object:point#record-000000-offset-177.vertex-1, rhino:object:region#record-000000-offset-177.slot-1, rhino:object:shell#record-000000-offset-177.component-0, rhino:object:surface#record-000000-offset-177.slot-0, rhino:object:vertex#record-000000-offset-177.slot-0, rhino:object:vertex#record-000000-offset-177.slot-1",
-      "severity": "error"
-    },
-    {
-      "code": {
-        "code": "export.no-exportable-solids",
-        "kind": "no_exportable_solids",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "the document holds no exportable geometry",
+      "message": "plane surface rhino:object:surface#5268696e-6f49-4400-0000-000000000000.slot-0 is written with a finite 3DM parameter domain",
       "severity": "warning"
     },
     {
@@ -147,16 +136,6 @@
       },
       "message": "source dialect rhino:archive-50 was displaced by target dialect rhino:archive-80; the source dialect identity is not preserved",
       "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
-      "severity": "info"
     }
   ],
   "native_dispositions": {
@@ -185,7 +164,10 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped"
+            "disposition": "dropped",
+            "records": {
+              "rhino:document:settings#current": "written"
+            }
           },
           "embedded_images": {
             "disposition": "dropped"
