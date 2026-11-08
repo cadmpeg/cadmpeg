@@ -192,6 +192,33 @@ fn drop_dangling_owner<T>(
 /// Drop appearance bindings whose target record is absent, naming each.
 /// A binding that names no record has no carrier to style; the writer
 /// would otherwise drop it silently when no object claims it.
+/// The curves a procedural surface construction references; the solved
+/// carrier that replaces the construction holds none of them.
+fn construction_curves(model: &cadmpeg_ir::document::Model, construction: &str) -> Vec<String> {
+    fn strings(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(text) => out.push(text.clone()),
+            serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+            serde_json::Value::Object(fields) => {
+                fields.values().for_each(|item| strings(item, out))
+            }
+            _ => {}
+        }
+    }
+    let mut referenced = Vec::new();
+    if let Some(definition) = model
+        .procedural_surfaces
+        .iter()
+        .find(|row| row.id.as_str() == construction)
+        .and_then(|row| serde_json::to_value(row.definition()).ok())
+    {
+        strings(&definition, &mut referenced);
+    }
+    referenced.retain(|id| model.curves.iter().any(|curve| curve.id.as_str() == id));
+    referenced.dedup();
+    referenced
+}
+
 fn drop_dangling_bindings(model: &mut cadmpeg_ir::document::Model, losses: &mut Vec<LossNote>) {
     let mut dropped: Vec<(String, &'static str)> = model
         .appearance_bindings
@@ -523,8 +550,20 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
             if let Some(construction) = surface.geometry.procedural_construction() {
                 let construction = construction.as_str().to_owned();
                 if surface.geometry.solved().is_some() {
+                    let omitted = construction_curves(model, &construction)
+                        .into_iter()
+                        .filter(|id| !curves.contains(id.as_str()))
+                        .collect::<Vec<_>>();
+                    let children = if omitted.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            "; its construction curve(s) {} are omitted",
+                            omitted.join(", ")
+                        )
+                    };
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                        "surface {} procedural construction {construction} was reduced to a held solved carrier",
+                        "surface {} procedural construction {construction} was reduced to a held solved carrier{children}",
                         surface.id
                     )));
                 } else {

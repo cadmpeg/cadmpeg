@@ -1334,7 +1334,7 @@ fn historical_bulletin_slots_are_omitted_when_their_revisions_have_no_typed_writ
         report
             .native_dispositions
             .disposition("f3d", "asm_histories"),
-        cadmpeg_ir::codec::write::NativeDisposition::Written
+        cadmpeg_ir::codec::write::NativeDisposition::Regenerated
     );
     assert!(report
         .losses

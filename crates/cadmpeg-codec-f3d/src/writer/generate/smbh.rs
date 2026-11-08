@@ -37,7 +37,7 @@ use super::{
         native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
         native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, NativePcurveForm,
     },
-    preconditions::{validate_source_less_body_kinds, validate_source_less_wire_ownership},
+    preconditions::validate_source_less_wire_ownership,
     records::{native_tolerant_coedge_extension, tolerant_coedge_range},
 };
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
@@ -967,7 +967,6 @@ fn encode_face_topology_smbh(
             "source-less F3D generation requires owned face topology".into(),
         ));
     }
-    validate_source_less_body_kinds(model)?;
 
     let surfaces = record_surfaces(model, output)?;
     let plan = NativeRecordPlan::for_model(model, surfaces.len())?;

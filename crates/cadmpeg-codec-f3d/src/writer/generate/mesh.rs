@@ -580,9 +580,6 @@ fn encode_import(
     let mut fusion_uuids = Vec::new();
     let mut placements = Vec::new();
     for (tessellation, body) in import.tessellations.iter().zip(&native_bodies) {
-        let placement = body.map_or(MILLIMETRE_PLACEMENT, |body| {
-            body.placement.transform().cells()
-        });
         let fusion_uuid = body.map_or_else(
             || derived_guid(&format!("fusion:{}", tessellation.id), true),
             |body| body.guid.value().to_owned(),
@@ -602,7 +599,10 @@ fn encode_import(
             },
             |body| body.entry.name().to_owned(),
         );
-        let Some(vertices) = container_vertices(tessellation, placement) else {
+        let Some((placement, vertices)) = placed_vertices(
+            tessellation,
+            body.map(|body| body.placement.transform().cells()),
+        ) else {
             losses.push(F3dLossCode::WriterTessellationOmitted.note(format!(
                 "tessellation {} has a vertex outside the f32 container range; feature {} is omitted",
                 tessellation.id, import.feature
@@ -840,6 +840,46 @@ fn linear(cells: [f64; 16]) -> [[f64; 3]; 3] {
         [cells[4], cells[5], cells[6]],
         [cells[8], cells[9], cells[10]],
     ]
+}
+
+/// The placement and container coordinates of a tessellation. Container
+/// coordinates are f32, so the writer keeps the placement under which every
+/// model vertex reads back exactly: the source placement when it has one,
+/// otherwise the millimetre placement, and the first that forms when neither
+/// is exact.
+fn placed_vertices(
+    tessellation: &Tessellation,
+    source: Option<[f64; 16]>,
+) -> Option<([f64; 16], Vec<[f32; 3]>)> {
+    let candidates: Vec<_> = source
+        .into_iter()
+        .chain(std::iter::once(MILLIMETRE_PLACEMENT))
+        .filter_map(|placement| {
+            container_vertices(tessellation, placement).map(|vertices| (placement, vertices))
+        })
+        .collect();
+    let exact = candidates
+        .iter()
+        .position(|(placement, vertices)| reads_back(tessellation, *placement, vertices));
+    candidates.into_iter().nth(exact.unwrap_or(0))
+}
+
+/// Whether the decoder's placement of each container vertex (spec §3.1:
+/// placement into centimetres, then millimetres) equals the model vertex.
+fn reads_back(tessellation: &Tessellation, placement: [f64; 16], vertices: &[[f32; 3]]) -> bool {
+    tessellation
+        .vertices()
+        .iter()
+        .zip(vertices)
+        .all(|(model, container)| {
+            let model = model.get();
+            let [x, y, z] = container.map(f64::from);
+            let row = |at: usize| {
+                (placement[at] * x + placement[at + 1] * y + placement[at + 2] * z + placement[at + 3])
+                    * cadmpeg_asm::nurbs::reader::LEN_TO_MM
+            };
+            row(0) == model.x && row(4) == model.y && row(8) == model.z
+        })
 }
 
 /// Container coordinates whose placement reproduces each model vertex.
