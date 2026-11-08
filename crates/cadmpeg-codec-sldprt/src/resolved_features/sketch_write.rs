@@ -21,19 +21,26 @@ fn sketch_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
     cadmpeg_ir::identity_namespace!("generated", "sldprt", "sketch")
 }
 
-pub(super) fn sketch_brep(
-    source: &cadmpeg_ir::CadIr,
-    sketch: &Sketch,
-) -> Result<cadmpeg_ir::CadIr, WriteError> {
-    let (origin, normal, u_axis) = sketch
+/// The resolved sketch frame with its admitted axes scaled to unit length.
+fn unit_placement(sketch: &Sketch) -> Result<(Point3, Vector3, Vector3), WriteError> {
+    sketch
         .resolved_placement()
-        .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+        .and_then(|(origin, normal, u_axis)| {
+            Some((origin.get(), normal.unit_nonzero()?, u_axis.unit_nonzero()?))
+        })
         .ok_or_else(|| {
             WriteError::Decline(format!(
                 "source-less SLDPRT sketch {} requires resolved model-space placement",
                 sketch.id.as_str()
             ))
-        })?;
+        })
+}
+
+pub(super) fn sketch_brep(
+    source: &cadmpeg_ir::CadIr,
+    sketch: &Sketch,
+) -> Result<cadmpeg_ir::CadIr, WriteError> {
+    let (origin, normal, u_axis) = unit_placement(sketch)?;
     let mut ir = cadmpeg_ir::CadIr::empty();
     // The sketch identity is escaped into one key here, once, and every
     // generated id below is that key with a `:`-separated part appended.
@@ -401,15 +408,7 @@ fn generated_sketch_curve(
     sketch: &Sketch,
     v_axis: Vector3,
 ) -> Result<GeneratedSketchCurve, WriteError> {
-    let (origin, normal, u_axis) = sketch
-        .resolved_placement()
-        .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
-        .ok_or_else(|| {
-            WriteError::Decline(format!(
-                "source-less SLDPRT sketch {} requires resolved model-space placement",
-                sketch.id.as_str()
-            ))
-        })?;
+    let (origin, normal, u_axis) = unit_placement(sketch)?;
     let lift = |point| lift_point(point, origin, u_axis, v_axis);
     let vector = |u: f64, v: f64| {
         Vector3::new(
