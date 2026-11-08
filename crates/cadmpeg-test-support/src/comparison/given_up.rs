@@ -123,6 +123,7 @@ impl Allowances {
             removed_fields: BTreeSet::new(),
             absent_fields: absent,
             regenerated: BTreeSet::new(),
+            scope_expanded: false,
         })
     }
 }

@@ -32,6 +32,9 @@ pub struct Allowances {
     /// native state is stale, so content differences are allowed and identity
     /// maps by id without cascading dependent removal.
     regenerated: BTreeSet<String>,
+    /// The export declared scope expansion (e.g. damaged input written as a
+    /// valid model archive); scope differences are allowed.
+    scope_expanded: bool,
 }
 
 impl Allowances {
@@ -50,6 +53,7 @@ impl Allowances {
             removed_fields: BTreeSet::new(),
             absent_fields: BTreeSet::new(),
             regenerated: BTreeSet::new(),
+            scope_expanded: false,
         }
     }
 
@@ -206,6 +210,18 @@ pub fn agree(
                     recovered_parent.remove(*key);
                 }
             }
+            if allowances.scope_expanded {
+                if let (Some(o), Some(r)) = (
+                    original.get_mut("scope").and_then(Value::as_object_mut),
+                    recovered.get("scope"),
+                ) {
+                    if o.get("model") == Some(&Value::Bool(false))
+                        && r.get("model") == Some(&Value::Bool(true))
+                    {
+                        o.insert("model".to_owned(), Value::Bool(true));
+                    }
+                }
+            }
             cadmpeg_ir::compare::values_agree(&original, &recovered)?;
             agree_pruned(before, after, allowances, false)
         }
@@ -236,8 +252,20 @@ fn agree_pruned(
     cross: bool,
 ) -> Result<(), String> {
     verify_absent_fields(after, &allowances.absent_fields)?;
-    let before = without_fields(before, &allowances.absent_fields);
+    let mut before = without_fields(before, &allowances.absent_fields);
     let after = without_fields(after, &allowances.absent_fields);
+    if allowances.scope_expanded {
+        if let (Some(b), Some(a)) = (
+            before.get_mut("scope").and_then(Value::as_object_mut),
+            after.get("scope"),
+        ) {
+            if b.get("model") == Some(&Value::Bool(false))
+                && a.get("model") == Some(&Value::Bool(true))
+            {
+                b.insert("model".to_owned(), Value::Bool(true));
+            }
+        }
+    }
     let mut result = Err(String::new());
     for fields in [&BTreeSet::new(), &allowances.removed_fields] {
         result = agree_once_pruned(
