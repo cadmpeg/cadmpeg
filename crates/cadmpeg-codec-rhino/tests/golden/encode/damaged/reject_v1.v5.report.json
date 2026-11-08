@@ -116,6 +116,16 @@
   "losses": [
     {
       "code": {
+        "code": "writer.scope-expanded",
+        "kind": "metadata_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced"
+      },
+      "message": "the 3DM archive represents an empty model where the input model scope is absent",
+      "severity": "warning"
+    },
+    {
+      "code": {
         "code": "export.no-exportable-solids",
         "kind": "no_exportable_solids",
         "namespace": "rhino",
