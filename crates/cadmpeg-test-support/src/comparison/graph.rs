@@ -45,7 +45,7 @@ pub(crate) fn normalize_feature_self_reference(value: &mut serde_json::Map<Strin
                 .and_then(|value| value.get_mut("native"))
             {
                 if native.as_str() == native_ref.as_deref() && native_ref.is_some() {
-                    *native = Value::Null;
+                    *native = serde_json::json!({"self_reference": true});
                 }
             }
         }

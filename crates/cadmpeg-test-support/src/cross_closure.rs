@@ -252,6 +252,7 @@ fn retain_kept(
             let full = format!("{prefix}[]");
             let observed = items.iter().any(Value::is_null)
                 && (keep_all
+                    || carried.paths.contains(prefix.trim_end_matches("[]"))
                     || carried.paths.iter().any(|path| {
                         path == &full
                             || path.strip_prefix(&full).is_some_and(|suffix| {
@@ -272,7 +273,12 @@ fn retain_kept(
         }
         Value::Null => keep_all.then_some(Value::Null),
         scalar => {
-            if !keep_all && !carried.paths.contains(prefix) {
+            // `P_X` holds key paths with array indices collapsed (§5.2), so an
+            // array element is kept under the key path that holds its array.
+            if !keep_all
+                && !carried.paths.contains(prefix)
+                && !carried.paths.contains(prefix.trim_end_matches("[]"))
+            {
                 return None;
             }
             if fixed.get(prefix).is_some_and(|expected| expected != scalar) {
@@ -1215,6 +1221,20 @@ mod tests {
         );
         assert_eq!(
             observed["model"]["procedural_surfaces"][0]["record_bounds"],
+            json!([0.0, 2.0, null, null])
+        );
+        let mut keyed = crate::carried::Carried::default();
+        keyed
+            .paths
+            .insert("model.procedural_surfaces[].record_bounds".into());
+        let keyed = super::project_document(
+            &before,
+            &keyed,
+            &std::collections::BTreeMap::new(),
+            "step",
+        );
+        assert_eq!(
+            keyed["model"]["procedural_surfaces"][0]["record_bounds"],
             json!([0.0, 2.0, null, null])
         );
         let unobserved = super::project_document(
