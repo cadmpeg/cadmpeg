@@ -4189,7 +4189,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     let components = face_components(expand.ctx(), resolved)?;
     let grouping = region_shell_groups(expand.ctx(), raw, resolved, &components)?;
     let free_vertex_indices = brep_free_vertex_indices(expand.ctx(), resolved)?;
-    if !free_vertex_indices.is_empty() && grouping.shells.len() != 1 {
+    let has_wire_edges = resolved.edges.iter().any(|edge| edge.trims.is_empty());
+    let shell_count = grouping.shells.len().max(usize::from(has_wire_edges));
+    if !free_vertex_indices.is_empty() && shell_count != 1 {
         return Ok(finish_brep_fallback(
             staged,
             "Brep free vertices have no unique shell membership",
@@ -4388,6 +4390,44 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         }
     }
     let mut regions: Vec<Region> = Vec::new();
+    let mut wire_edge_ids = resolved
+        .edges
+        .iter()
+        .zip(&edge_ids)
+        .filter(|(edge, _)| edge.trims.is_empty())
+        .map(|(_, id)| id.clone())
+        .collect::<Vec<_>>();
+    let wire_body = grouping.shells.is_empty() && !wire_edge_ids.is_empty();
+    if wire_body {
+        let region_id = cadmpeg_ir::ids::RegionId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+            key.clone()
+                .then(cadmpeg_ir::identity_key!(".slot-"))
+                .then(0_usize),
+        );
+        let shell_id = cadmpeg_ir::ids::ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+            key.clone()
+                .then(cadmpeg_ir::identity_key!(".component-"))
+                .then(0_usize),
+        );
+        staged.draft.model_mut().shells.push(
+            Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                Vec::new(),
+                std::mem::take(&mut wire_edge_ids),
+                std::mem::take(&mut free_vertex_ids),
+            )
+            .map_err(|message| crate::curves::GeometryError::unpositioned(message.to_string()))?,
+        );
+        regions.push(Region {
+            native_ref: None,
+            id: region_id,
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+    }
 
     for (component, shell) in grouping.shells.iter().enumerate() {
         let region_label = shell.region;
@@ -4416,7 +4456,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 shell_id.clone(),
                 region_id.clone(),
                 shell_faces,
-                Vec::new(),
+                if component == 0 {
+                    std::mem::take(&mut wire_edge_ids)
+                } else {
+                    Vec::new()
+                },
                 if component == 0 {
                     std::mem::take(&mut free_vertex_ids)
                 } else {
@@ -4450,6 +4494,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         native_ref: None,
         id: body_id.clone(),
         kind: match body_kind {
+            _ if wire_body => BodyKind::Wire,
             crate::brep::BrepBodyKind::Solid => BodyKind::Solid,
             crate::brep::BrepBodyKind::Sheet => BodyKind::Sheet,
         },
