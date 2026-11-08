@@ -2505,6 +2505,7 @@ impl<'a> DecodeContext<'a> {
                 let crate::curves::PointCloud {
                     points,
                     scaled,
+                    colors,
                     warnings,
                 } = cloud;
                 self.report
@@ -2512,7 +2513,8 @@ impl<'a> DecodeContext<'a> {
                     .append_prefixed(warnings, format_args!("{}", identity.source_id));
                 let Some(entity_count) = points
                     .len()
-                    .checked_mul(2)
+                    .checked_add(colors.len())
+                    .and_then(|count| count.checked_mul(2))
                     .and_then(|count| count.checked_add(3))
                 else {
                     self.scan_warning(
@@ -2562,6 +2564,40 @@ impl<'a> DecodeContext<'a> {
                         position,
                         Some(association.identity.clone()),
                     ));
+                    if let Some(bytes) = colors.get(index) {
+                        let model = self.session.append_model_mut()?;
+                        let appearance = cadmpeg_ir::ids::AppearanceId::mint(format!(
+                            "rhino:model:point-color#{key}-{index}"
+                        ))
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                        model.appearances.push(cadmpeg_ir::appearance::Appearance {
+                            native_ref: None,
+                            id: appearance.clone(),
+                            name: None,
+                            asset_guid: None,
+                            library_id: None,
+                            visual_guid: None,
+                            physical_token: None,
+                            schema: None,
+                            category: None,
+                            base_color: Some(crate::wire::packed_color(*bytes)),
+                            properties: std::collections::BTreeMap::new(),
+                            textures: Vec::new(),
+                        });
+                        model.appearance_bindings.push(cadmpeg_ir::appearance::AppearanceBinding {
+                            native_ref: None,
+                            id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!(
+                                "rhino:model:point-color-binding#{key}-{index}"
+                            ))
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                            target: cadmpeg_ir::appearance::AppearanceTarget::Point(point_id.clone()),
+                            appearance,
+                            source_entity_id: None,
+                            object_type: None,
+                            visible: None,
+                            channels: std::collections::BTreeMap::new(),
+                        });
+                    }
                     self.session.append_model_mut()?.vertices.push(Vertex {
                         native_ref: None,
                         id: vertex_id.clone(),
