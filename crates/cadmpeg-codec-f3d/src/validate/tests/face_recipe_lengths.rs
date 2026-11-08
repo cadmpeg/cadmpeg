@@ -141,12 +141,13 @@ fn operand_record_type(guid: &str) -> crate::records::entity_header::SegmentType
     .unwrap()
 }
 
+/// The fixture IR of one face operand, record 100, and the operand id.
 /// With `group_role`, the operand is the sole member of a group of that role at
 /// scope reference zero. Without it, the operand is direct scope reference two.
 /// With `next_reference_at`, the operand is scope reference one and the header
 /// of scope reference two, record 2, starts at that offset. With
 /// `group_ordinal` one, the group is scope reference one.
-fn operand_findings(
+fn operand_ir(
     scope_kind: crate::records::feature::scope::DesignFeatureKind,
     kind: crate::records::recipes::ConstructionRecipeKind,
     operand_length: u64,
@@ -154,30 +155,7 @@ fn operand_findings(
     group_role: Option<crate::records::topology::extrude_selection::DesignOperandRole>,
     next_reference_at: Option<u64>,
     group_ordinal: u32,
-) -> Vec<cadmpeg_ir::report::check::Finding> {
-    typed_operand_findings(
-        scope_kind,
-        kind,
-        operand_length,
-        recipe_byte_offset,
-        group_role,
-        next_reference_at,
-        group_ordinal,
-        None,
-    )
-}
-
-/// `operand_findings` with the operand record registered under `member_type`.
-fn typed_operand_findings(
-    scope_kind: crate::records::feature::scope::DesignFeatureKind,
-    kind: crate::records::recipes::ConstructionRecipeKind,
-    operand_length: u64,
-    recipe_byte_offset: u64,
-    group_role: Option<crate::records::topology::extrude_selection::DesignOperandRole>,
-    next_reference_at: Option<u64>,
-    group_ordinal: u32,
-    member_type: Option<&str>,
-) -> Vec<cadmpeg_ir::report::check::Finding> {
+) -> (cadmpeg_ir::CadIr, String) {
     use crate::records::{
         decal::DesignRecordHeader,
         feature::scope::DesignParameterScope,
@@ -281,14 +259,20 @@ fn typed_operand_findings(
             record_index: None,
         }];
         native.design_face_operands = vec![operand];
-        native.design_types = member_type.map(operand_record_type).into_iter().collect();
         native.design_construction_operand_groups = group_role
             .map(|role| face_operand_group(role, group_ordinal))
             .into_iter()
             .collect();
     }
+    (ir, operand_id)
+}
+
+/// The invalid-frame findings of the operand `operand_id` in `ir`.
+fn frame_findings(
+    (ir, operand_id): &(cadmpeg_ir::CadIr, String),
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+        crate::validate::validate_native(ctx, ir).expect("validate the native namespace")
     })
     .into_iter()
     .filter(|finding| {
@@ -296,6 +280,27 @@ fn typed_operand_findings(
             && finding.entity.as_deref() == Some(operand_id.as_str())
     })
     .collect::<Vec<_>>()
+}
+
+/// The invalid-frame findings of the `operand_ir` fixture.
+fn operand_findings(
+    scope_kind: crate::records::feature::scope::DesignFeatureKind,
+    kind: crate::records::recipes::ConstructionRecipeKind,
+    operand_length: u64,
+    recipe_byte_offset: u64,
+    group_role: Option<crate::records::topology::extrude_selection::DesignOperandRole>,
+    next_reference_at: Option<u64>,
+    group_ordinal: u32,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
+    frame_findings(&operand_ir(
+        scope_kind,
+        kind,
+        operand_length,
+        recipe_byte_offset,
+        group_role,
+        next_reference_at,
+        group_ordinal,
+    ))
 }
 
 /// A direct `Hole` face operand selects its support face through a face or a
@@ -459,8 +464,8 @@ fn sweep_profile_face_operand_requires_a_topology_recipe_member() {
     use crate::records::recipes::ConstructionRecipeKind;
     use crate::records::topology::extrude_selection::DesignOperandRole;
 
-    let findings = |member_type| {
-        typed_operand_findings(
+    let findings = |member_type: Option<&str>| {
+        let mut fixture = operand_ir(
             DesignFeatureKind::Sweep,
             ConstructionRecipeKind::BoundedFace,
             24,
@@ -468,8 +473,10 @@ fn sweep_profile_face_operand_requires_a_topology_recipe_member() {
             Some(DesignOperandRole::PROFILE),
             None,
             0,
-            member_type,
-        )
+        );
+        f3d_native_mut(&mut fixture.0).design_types =
+            member_type.map(operand_record_type).into_iter().collect();
+        frame_findings(&fixture)
     };
     let admitted = findings(Some(
         crate::records::feature::path_features::pipe::RECIPE_GUID,
