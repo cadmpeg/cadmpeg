@@ -66,6 +66,11 @@ pub(crate) struct Operands<'a> {
     pub(crate) spec: ChamferSpec,
     pub(crate) flip_direction: bool,
     pub(crate) direct: bool,
+    /// The slot-2 and slot-3 distances of a two-distance chamfer, in slot order.
+    pub(crate) distances: Option<[PositiveLength; 2]>,
+    /// The face selector `source_index` of a support collection that holds one
+    /// face item with one index reference.
+    pub(crate) support: Option<u32>,
 }
 
 pub(crate) fn operands<'a>(
@@ -94,6 +99,8 @@ pub(crate) fn operands<'a>(
     let distance = length(2)
         .and_then(|value| PositiveLength::new(value.get()))
         .ok_or(NativeReason::Distance)?;
+    let mut distances = None;
+    let mut support = None;
     let spec = if form == 0 {
         ChamferSpec::Distance { distance }
     } else {
@@ -113,6 +120,18 @@ pub(crate) fn operands<'a>(
         {
             return Err(NativeReason::Support);
         }
+        support = match items.references() {
+            [only] => match property(*only).map(|p| &p.kind) {
+                Some(PmDcFeaturePropertyKind::FaceItem { index_references }) => {
+                    match index_references.values() {
+                        [source] => Some(*source),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            _ => None,
+        };
         if form == 1 {
             angle(10)
                 .and_then(|value| InteriorAngle::try_from(value).ok())
@@ -124,6 +143,7 @@ pub(crate) fn operands<'a>(
             let second = length(3)
                 .and_then(|value| PositiveLength::new(value.get()))
                 .ok_or(NativeReason::SecondDistance)?;
+            distances = Some([distance, second]);
             if distance == second {
                 ChamferSpec::TwoDistances {
                     first: distance,
@@ -151,6 +171,8 @@ pub(crate) fn operands<'a>(
         spec,
         flip_direction: *flip_direction,
         direct: form == 0,
+        distances,
+        support,
     })
 }
 
@@ -163,8 +185,21 @@ pub(crate) fn matches(
     let [actual] = groups else {
         return false;
     };
+    if flip_direction != expected.flip_direction {
+        return false;
+    }
+    if let (Some([first, second]), ChamferSpec::TwoDistances { .. }) =
+        (expected.distances, actual.spec)
+    {
+        if first != second {
+            return actual.spec == ChamferSpec::TwoDistances { first, second }
+                && super::edge_selection::historical::joins(
+                    &actual.edges,
+                    expected.edges.id().as_str(),
+                );
+        }
+    }
     actual.spec == expected.spec
-        && flip_direction == expected.flip_direction
         && super::edge_selection::matches_selection(
             &actual.edges,
             &if expected.direct {
@@ -195,6 +230,8 @@ pub(crate) fn explicit_selection_controls<'a>(
     };
     [[true, false], [true, true]].contains(&[first, last])
 }
+
+pub(crate) mod oriented;
 
 #[cfg(test)]
 pub(crate) mod tests;

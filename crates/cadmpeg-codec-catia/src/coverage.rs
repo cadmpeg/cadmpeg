@@ -641,6 +641,14 @@ pub(crate) const DECODED_B2_SPATIAL_CIRCLE_COUNT: CoverageKey =
     CoverageKey::new("decoded_b2_spatial_circle_count");
 pub(crate) const DECODED_OBJECT_STREAM_RUN_COUNT: CoverageKey =
     CoverageKey::new("decoded_object_stream_run_count");
+pub(crate) const CLOSED_SURFACE_ROSTER_COUNT: CoverageKey =
+    CoverageKey::new("closed_surface_roster_count");
+pub(crate) const CLOSED_SURFACE_ROSTER_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("closed_surface_roster_record_count");
+pub(crate) const SUPPORTED_SURFACE_ROSTER_COUNT: CoverageKey =
+    CoverageKey::new("supported_surface_roster_count");
+pub(crate) const SUPPORTED_SURFACE_ROSTER_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("supported_surface_roster_record_count");
 pub(crate) const DECODED_STANDARD_LIMIT_CURVE_COUNT: CoverageKey =
     CoverageKey::new("decoded_standard_limit_curve_count");
 pub(crate) const EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT: CoverageKey =

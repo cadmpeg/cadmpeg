@@ -558,7 +558,8 @@ pub(super) fn removed_profile_selection(
 }
 
 /// The regions a Cut removed from the changed planes, whatever curves bound
-/// them, in place of a stored profile `current` read as loops. At least one
+/// them, in place of a stored profile `current` read as whole profile loops,
+/// with or without holes. At least one
 /// taken region must use a curve outside those loops, and the taken regions
 /// must not be the regions `current` covers. Regions no changed plane holds on
 /// either side are not evidence and stay unselected. `None` when a region
@@ -581,6 +582,26 @@ pub(super) fn removed_regions_beyond_profile(
     )
 }
 
+/// The profile loops a stored profile reading names: its loops, or the outer
+/// and hole loops of regions made of whole profile loops. `None` for a
+/// reading with any other region.
+fn stored_profile_loops(current: &ResolvedProfileSelection) -> Option<Vec<u32>> {
+    match current {
+        ResolvedProfileSelection::Loops(indices) => Some(indices.clone()),
+        ResolvedProfileSelection::Regions(regions) => {
+            let mut indices = Vec::new();
+            for region in regions {
+                let cadmpeg_ir::features::SketchProfileRegion::Loops { loops } = region else {
+                    return None;
+                };
+                indices.push(loops.outer());
+                indices.extend(loops.holes().iter().copied());
+            }
+            Some(indices)
+        }
+    }
+}
+
 fn removed_regions(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: super::ScopedExtrudeProfileResolution<'_>,
@@ -589,11 +610,14 @@ fn removed_regions(
     current: Option<&ResolvedProfileSelection>,
     beyond_profile: bool,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
-    let Some(current @ ResolvedProfileSelection::Loops(indices)) = current else {
+    let Some(current) = current else {
+        return Ok(None);
+    };
+    let Some(indices) = stored_profile_loops(current) else {
         return Ok(None);
     };
     let mut curves = HashSet::new();
-    for index in indices {
+    for index in &indices {
         let Some(profile) = usize::try_from(*index)
             .ok()
             .and_then(|index| sketch.profiles.as_slice().get(index))
