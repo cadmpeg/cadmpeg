@@ -345,11 +345,13 @@ pub fn structural_name_findings(document: &Value, members: &[String]) -> Vec<Str
     findings
 }
 
-/// Record keys §5.1(c) does not edit: ordinals, identity, and the paths §5.2
-/// projects out before pairing.
-const EDIT_SKIPPED: [&str; 14] = [
+/// Record keys §5.1(c) does not edit: ordinals (`ordinal`, and the source
+/// `order` among sibling records), identity, and the paths §5.2 projects out
+/// before pairing.
+const EDIT_SKIPPED: [&str; 15] = [
     "id",
     "ordinal",
+    "order",
     "native_ref",
     "source_object",
     "source_entity_id",
