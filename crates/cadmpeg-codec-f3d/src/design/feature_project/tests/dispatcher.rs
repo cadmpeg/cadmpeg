@@ -1230,6 +1230,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
                 std::slice::from_ref(&scope),
                 &mut features,
                 &cages,
+                &mut Vec::new(),
             )
         })
     })
@@ -1373,6 +1374,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
                     std::slice::from_ref(&scope),
                     &mut features,
                     &cages,
+                    &mut Vec::new(),
                 )
             })
         })
