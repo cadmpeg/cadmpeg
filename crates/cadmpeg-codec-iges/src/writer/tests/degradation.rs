@@ -1575,9 +1575,10 @@ fn directory_disposition_requires_exact_generated_record() {
         NativeDisposition::Written
     );
     let card = dispositions.record_disposition("iges", "cards", "iges:physical:card#12");
+    // The edited record is regenerated from neutral, not written exactly.
     assert_eq!(
         dispositions.record_disposition("iges", "entities", "iges:entity:directory#7"),
-        NativeDisposition::Dropped
+        NativeDisposition::Regenerated
     );
     // A record that names a dropped record cannot reappear, so the exact
     // directory record #5 is written only while every record it names is.

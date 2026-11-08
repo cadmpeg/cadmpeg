@@ -342,7 +342,10 @@ pub(super) fn attach_unowned_dependents(entities: &mut Vec<Entity>) -> Result<()
     if !dependents.is_empty() {
         let mut parameters = vec![dependents.len().to_string()];
         parameters.extend(dependents);
-        entities.push(entity(402, 7, parameters));
+        let mut group = entity(402, 7, parameters);
+        // A group has no geometry to display.
+        group.status = EntityStatus::Blanked;
+        entities.push(group);
     }
     Ok(())
 }
