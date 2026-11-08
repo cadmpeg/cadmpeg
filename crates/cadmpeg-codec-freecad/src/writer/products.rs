@@ -2,7 +2,6 @@
 //! Neutral product definitions, placed instances, and assembly constraints.
 
 mod joints;
-pub(crate) mod metadata;
 
 use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;

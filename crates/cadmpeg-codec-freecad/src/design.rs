@@ -165,7 +165,7 @@ pub(crate) fn transfer(
     for body in &ir.model.bodies {
         body_ids.push(body.id.clone());
     }
-    let (feature_ordinals, cycle_affected) = feature_ordinals(
+    let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         objects,
         &properties_by_owner,
         &parent_by_member,
@@ -524,9 +524,15 @@ pub(crate) fn transfer(
         &ir.model.sketch_constraints,
         properties,
     )?);
-    crate::parameter_names::apply(ir, properties)?;
     losses.extend(crate::control_links::apply(ir, properties)?);
-    let _cycle_owners = order_parameters_by_dependencies(&mut ir.model.parameters);
+    let cycle_owners = order_parameters_by_dependencies(&mut ir.model.parameters);
+    cycle_affected.extend(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| cycle_owners.contains(&feature.id))
+            .filter_map(|feature| feature.native_ref.clone()),
+    );
     dense_parameter_ordinals(&mut ir.model.parameters)?;
     dependencies::structural(ctx, ir, properties)?;
     Ok((cycle_affected, losses))
@@ -1385,9 +1391,6 @@ fn append_custom_parameters(
     owner: Option<&FeatureId>,
 ) -> Result<(), CodecError> {
     for property in properties {
-        if crate::property_policy::is_projection_metadata(property) {
-            continue;
-        }
         if matches!(
             property.name.as_str(),
             "Label" | "Label2" | "Visibility" | "Suppressed"
@@ -6391,8 +6394,7 @@ fn native_parameters(
         if matches!(
             property.name.as_str(),
             "Label" | "Label2" | "Suppressed" | "Visibility" | "Placement" | "ExpressionEngine"
-        ) || crate::property_policy::is_projection_metadata(property)
-            || !crate::property_policy::has_neutral_form(&property.name)
+        ) || !crate::property_policy::has_neutral_form(&property.name)
         {
             continue;
         }

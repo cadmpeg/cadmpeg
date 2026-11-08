@@ -37,7 +37,6 @@ mod loss;
 mod mutation;
 mod native;
 mod numeric_list;
-mod parameter_names;
 mod persistence;
 mod placement;
 mod product;
@@ -1153,7 +1152,6 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
-            topology_transfer::apply_body_names(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             if ctx.depth() == DecodeDepth::Full {
                 let (cycle_affected, design_losses) = design::transfer(
                     &property_reader,
@@ -1240,7 +1238,6 @@ impl CodecBackend for FcstdCodec {
                     feature.suppressed = None;
                 }
             }
-            writer::ordinals::apply(&graph.properties, &mut ir)?;
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
@@ -1311,7 +1308,6 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &shape_payloads,
             );
-            writer::body_styles::apply(&mut ir, &shape_payloads, &graph.properties)?;
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

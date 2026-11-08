@@ -76,8 +76,7 @@ pub(super) fn property_held(
     if !ir.scope.design {
         return true;
     }
-    let custom =
-        property.dynamic.is_some() && !crate::property_policy::is_projection_metadata(property);
+    let custom = property.dynamic.is_some();
     let variable = objects
         .iter()
         .any(|object| object.id().as_str() == property.owner && object.type_name == "App::VarSet");
@@ -146,6 +145,6 @@ mod tests {
         assert!(!property_held(ir, &property, &[]));
         property.dynamic.as_mut().unwrap().group = "CADIR".into();
         property.name = "CadmpegFeatureOrdinal".into();
-        assert!(property_held(ir, &property, &[]));
+        assert!(!property_held(ir, &property, &[]));
     }
 }
