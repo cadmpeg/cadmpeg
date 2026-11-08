@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     212       1       0       0       0       0       0       000010100D      1\n     212       0       0       1       0                    NOTE       0D      2\n     214       2       0       0       0       0       0       000010100D      3\n     214       0       0       1       1                 LEADER1       0D      4\n     214       3       0       0       0       0       0       000010100D      5\n     214       0       0       1       1                 LEADER2       0D      6\n     106       4       0       0       0       0       0       000010100D      7\n     106       0       0       1      40                 WITNESS       0D      8\n     110       5       0       0       0       0       0       000010100D      9\n     110       0       0       1       0                  CURVE1       0D     10\n     100       6       0       0       0       0      23       000010100D     11\n     100       0       0       2       0                  CURVE2       0D     12\n     202       8       0       0       0       0       0       000000100D     13\n     202       0       0       1       0                 ANGULAR       0D     14\n     204       9       0       0       0       0       0       000000100D     15\n     204       0       0       1       0                CURVEDIM       0D     16\n     206      10       0       0       0       0       0       000000100D     17\n     206       0       0       1       0                DIAMETER       0D     18\n     208      11       0       0       0       0       0       000000100D     19\n     208       0       0       1       0                FLAGNOTE       0D     20\n     210      12       0       0       0       0       0       000000100D     21\n     210       0       0       1       0                   LABEL       0D     22\n     124      13       0       0       0       0       0       000000000D     23\n     124       0       0       2       0                               0D     24\n212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;                      1P      1\n214,1,2,1,0,0,0,2,0;                                                   3P      2\n214,1,2,1,0,1,0,3,0;                                                   5P      3\n106,1,3,0,0,0,1,0,1,1;                                                 7P      4\n110,0,0,0,1.0000000000000000D0,0,0;                                    9P      5\n100,0,0,0,1.0000000000000000D0,0,6.1232339957367660D-17,              11P      6\n1.0000000000000000D0;                                                 11P      7\n202,1,7,0,0,0,2,3,5;                                                  13P      8\n204,1,9,11,3,5,7,0;                                                   15P      9\n206,1,3,0,0,0;                                                        17P     10\n208,0,0,0,0,1,2,3,5;                                                  19P     11\n210,1,1,3;                                                            21P     12\n124,1.0000000000000000D0,0,0,0,0,1.0000000000000000D0,0,0,0,0,        23P     13\n1.0000000000000000D0,0;                                               23P     14\nS0000001G0000003D0000024P0000014                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     212       1       0       0       0       0       0       000010100D      1\n     212       0       0       1       0                    NOTE       0D      2\n     214       2       0       0       0       0       0       000010100D      3\n     214       0       0       1       1                 LEADER1       0D      4\n     214       3       0       0       0       0       0       000010100D      5\n     214       0       0       1       1                 LEADER2       0D      6\n     106       4       0       0       0       0       0       000010100D      7\n     106       0       0       1      40                 WITNESS       0D      8\n     110       5       0       0       0       0       0       000010100D      9\n     110       0       0       1       0                  CURVE1       0D     10\n     100       6       0       0       0       0       0       000010100D     11\n     100       0       0       1       0                  CURVE2       0D     12\n     202       7       0       0       0       0       0       000000100D     13\n     202       0       0       1       0                 ANGULAR       0D     14\n     204       8       0       0       0       0       0       000000100D     15\n     204       0       0       1       0                CURVEDIM       0D     16\n     206       9       0       0       0       0       0       000000100D     17\n     206       0       0       1       0                DIAMETER       0D     18\n     208      10       0       0       0       0       0       000000100D     19\n     208       0       0       1       0                FLAGNOTE       0D     20\n     210      11       0       0       0       0       0       000000100D     21\n     210       0       0       1       0                   LABEL       0D     22\n212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;                      1P      1\n214,1,2,1,0,0,0,2,0;                                                   3P      2\n214,1,2,1,0,1,0,3,0;                                                   5P      3\n106,1,3,0,0,0,1,0,1,1;                                                 7P      4\n110,0,0,0,1,0,0;                                                       9P      5\n100,0,0,0,1,0,0,1;                                                    11P      6\n202,1,7,0,0,0,2,3,5;                                                  13P      7\n204,1,9,11,3,5,7,0;                                                   15P      8\n206,1,3,0,0,0;                                                        17P      9\n208,0,0,0,0,1,2,3,5;                                                  19P     10\n210,1,1,3;                                                            21P     11\nS0000001G0000003D0000022P0000011                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -7,7 +7,6 @@
         "100_circular_arc": 1,
         "106_copious_data": 1,
         "110_line": 1,
-        "124_transformation": 1,
         "unknown_entity": 8
       }
     },
@@ -177,17 +176,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 5 native record(s) from `iges.cards`: iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#37, iges:physical:card#4",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 2 native record(s) from `iges.entities`: iges:entity:directory#11, iges:entity:directory#9",
+        "message": "the iges write omits 3 native record(s) from `iges.cards`: iges:physical:card#26, iges:physical:card#37, iges:physical:card#4",
         "severity": "info"
       },
       {
@@ -254,6 +243,8 @@
                 "iges:physical:card#23": "written",
                 "iges:physical:card#24": "written",
                 "iges:physical:card#25": "written",
+                "iges:physical:card#27": "written",
+                "iges:physical:card#28": "written",
                 "iges:physical:card#29": "written",
                 "iges:physical:card#3": "written",
                 "iges:physical:card#30": "written",
@@ -314,6 +305,7 @@
               "disposition": "dropped",
               "records": {
                 "iges:entity:directory#1": "written",
+                "iges:entity:directory#11": "written",
                 "iges:entity:directory#13": "written",
                 "iges:entity:directory#15": "written",
                 "iges:entity:directory#17": "written",
@@ -321,7 +313,8 @@
                 "iges:entity:directory#21": "written",
                 "iges:entity:directory#3": "written",
                 "iges:entity:directory#5": "written",
-                "iges:entity:directory#7": "written"
+                "iges:entity:directory#7": "written",
+                "iges:entity:directory#9": "written"
               }
             },
             "external_references": {
