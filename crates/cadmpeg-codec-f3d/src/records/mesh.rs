@@ -854,6 +854,12 @@ impl MeshBodyLayout {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct VariableMeshBodyLayout {
+    pub(crate) presence_offsets: [u64; 2],
+    pub(crate) reference_offsets: [u64; 5],
+}
+
 /// Mesh-body placement and the complete prefix plus terminal collection reference.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignMeshPlacement {
@@ -862,6 +868,7 @@ pub(crate) struct DesignMeshPlacement {
     flagged: bool,
     body_name: Option<String>,
     native_frame: Option<NativeBytes>,
+    variable_layout: Option<VariableMeshBodyLayout>,
 }
 
 impl DesignMeshPlacement {
@@ -879,6 +886,7 @@ impl DesignMeshPlacement {
             flagged,
             body_name: None,
             native_frame: None,
+            variable_layout: None,
         })
     }
     pub(crate) fn with_native_frame(
@@ -904,6 +912,119 @@ impl DesignMeshPlacement {
         self.native_frame = Some(native_frame);
         Ok(self)
     }
+    pub(crate) fn new_variable(
+        record: DesignMeshRecordIdentity,
+        transform: MeshAffineTransform,
+        flagged: bool,
+        body_name: String,
+        native_frame: NativeBytes,
+        layout: VariableMeshBodyLayout,
+    ) -> Result<Self, String> {
+        if u64::try_from(native_frame.len()).ok() != Some(record.frame_length()) {
+            return Err("native mesh-body frame must match its record extent".into());
+        }
+        let first_presence = if flagged {
+            crate::layout::paramesh_flagged_mesh_body_join_prefix::FIRST_PRESENCE
+        } else {
+            crate::layout::paramesh_mesh_body_join_prefix::FIRST_PRESENCE
+        };
+        if layout.presence_offsets[0] != u64_from_index(first_presence) {
+            return Err("first matrix presence offset does not match its prefix".into());
+        }
+        let mut next = first_presence;
+        for offset in layout.presence_offsets {
+            if usize::try_from(offset).ok() != Some(next) {
+                return Err("matrix presence bytes must be contiguous with their payloads".into());
+            }
+            let mut view = cadmpeg_core::decode::View::over_retained(native_frame.as_ref());
+            view.seek(next)
+                .ok_or("matrix presence offset is outside the frame")?;
+            match view.u8() {
+                Some(0) => {
+                    let mut cells = [0.0; 16];
+                    for (index, cell) in cells.iter_mut().enumerate() {
+                        *cell = cadmpeg_core::decode::View::f64_le_at(
+                            native_frame.as_ref(),
+                            next + 1 + index * 8,
+                        )
+                        .ok_or("matrix payload is truncated")?;
+                    }
+                    if MeshAffineTransform::new(cells)? != transform {
+                        return Err("stored matrices must match the transform".into());
+                    }
+                    next += 1 + 16 * 8;
+                }
+                Some(1) => {
+                    if MeshAffineTransform::identity() != transform {
+                        return Err("compact matrix must use the identity reading".into());
+                    }
+                    next += 1;
+                }
+                _ => return Err("matrix presence byte is invalid".into()),
+            }
+        }
+        for (index, offset) in layout.reference_offsets.iter().enumerate() {
+            let at = usize::try_from(*offset).map_err(|_| "body reference offset exceeds usize")?;
+            if index > 0 {
+                let previous = layout.reference_offsets[index - 1];
+                let previous_end = previous
+                    .checked_add(11)
+                    .ok_or("body reference offset overflows")?;
+                let gap = offset
+                    .checked_sub(previous_end)
+                    .ok_or("body references overlap")?;
+                if (index < 4 && gap != 0) || (index == 4 && gap > 1) {
+                    return Err("body reference gaps are invalid".into());
+                }
+            }
+            let mut cursor = at;
+            let target = crate::bytes::take_reference(native_frame.as_ref(), &mut cursor)
+                .and_then(|value| value.local().map(|target| target.0))
+                .ok_or("body reference must be local")?;
+            if target == 0 || at.checked_add(11) != Some(cursor) {
+                return Err("body reference must be complete".into());
+            }
+        }
+        let name_at = usize::try_from(layout.reference_offsets[4])
+            .ok()
+            .and_then(|offset| offset.checked_add(11))
+            .ok_or("body name offset is invalid")?;
+        let (stored_name, end) =
+            crate::bytes::lp_utf16_bounded(native_frame.as_ref(), name_at, 0..=native_frame.len())
+                .ok_or("native mesh-body frame must contain a body name")?;
+        if stored_name != body_name
+            || end
+                > native_frame
+                    .len()
+                    .checked_sub(11)
+                    .ok_or("body frame is truncated")?
+        {
+            return Err("body_name must match the native mesh-body frame".into());
+        }
+        Ok(Self {
+            record,
+            transform,
+            flagged,
+            body_name: Some(body_name),
+            native_frame: Some(native_frame),
+            variable_layout: Some(layout),
+        })
+    }
+    pub(crate) fn identity_assumed(&self) -> bool {
+        self.variable_layout
+            .as_ref()
+            .zip(self.native_frame.as_ref())
+            .is_some_and(|(layout, frame)| {
+                layout.presence_offsets.iter().any(|offset| {
+                    let mut view = cadmpeg_core::decode::View::over_retained(frame.as_ref());
+                    usize::try_from(*offset)
+                        .ok()
+                        .and_then(|at| view.seek(at))
+                        .and_then(|()| view.u8())
+                        == Some(1)
+                })
+            })
+    }
     pub(crate) fn native_frame(&self) -> Option<&NativeBytes> {
         self.native_frame.as_ref()
     }
@@ -916,26 +1037,41 @@ impl DesignMeshPlacement {
     fn offset(&self, field: impl Fn(MeshBodyLayout) -> usize) -> u64 {
         self.record.byte_offset() + u64_from_index(field(MeshBodyLayout::of(self.flagged)))
     }
-    fn transform_offsets(&self) -> [u64; 2] {
-        [
+    fn transform_offsets(&self) -> Option<[u64; 2]> {
+        if let (Some(layout), Some(frame)) = (&self.variable_layout, &self.native_frame) {
+            let offsets = layout.presence_offsets;
+            if offsets.iter().any(|offset| {
+                usize::try_from(*offset).ok().and_then(|at| frame.get(at)) != Some(&0)
+            }) {
+                return None;
+            }
+            return Some(offsets.map(|offset| self.record.byte_offset() + offset + 1));
+        }
+        Some([
             self.offset(|layout| layout.first_transform),
             self.offset(|layout| layout.second_transform),
-        ]
+        ])
+    }
+    fn reference_offset(&self, index: usize, field: impl Fn(MeshBodyLayout) -> usize) -> u64 {
+        self.variable_layout.as_ref().map_or_else(
+            || self.offset(field),
+            |layout| self.record.byte_offset() + layout.reference_offsets[index],
+        )
     }
     fn scope_reference_offset(&self) -> u64 {
-        self.offset(|layout| layout.feature_scope_reference)
+        self.reference_offset(0, |layout| layout.feature_scope_reference)
     }
     fn wrapper_reference_offset(&self) -> u64 {
-        self.offset(|layout| layout.wrapper_reference)
+        self.reference_offset(1, |layout| layout.wrapper_reference)
     }
     fn owner_reference_offset(&self) -> u64 {
-        self.offset(|layout| layout.body_owner_reference)
+        self.reference_offset(2, |layout| layout.body_owner_reference)
     }
     fn guid_reference_offset(&self) -> u64 {
-        self.offset(|layout| layout.container_guid_reference)
+        self.reference_offset(3, |layout| layout.container_guid_reference)
     }
     fn scene_node_reference_offset(&self) -> u64 {
-        self.offset(|layout| layout.scene_node_reference)
+        self.reference_offset(4, |layout| layout.scene_node_reference)
     }
     fn collection_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
@@ -952,7 +1088,8 @@ pub(crate) struct DesignMeshBody {
     /// GUID record joining the body to the container's `fusion_uuid`.
     pub(crate) guid: DesignMeshGuid,
     /// One-to-one `ParaMesh` wrapper around the mesh-body record.
-    pub(crate) wrapper_record: DesignMeshFixedRecord<40>,
+    pub(crate) wrapper_record: DesignMeshRecordIdentity,
+    pub(crate) wrapper_opaque_tail: Option<NativeBytes>,
     /// Fixed Scene-state record and optional bounds.
     pub(crate) scene_state: DesignMeshSceneState,
     /// Compact or placed Scene node with its optional bounds.
@@ -977,12 +1114,16 @@ struct DesignMeshBodyWire {
     body_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     body_native_frame: Option<NativeBytes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    body_variable_layout: Option<VariableMeshBodyLayout>,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
     entry_name_record: DesignMeshRecordIdentity,
     /// GUID record joining the body to the container's `fusion_uuid`.
     guid_record: DesignMeshRecordIdentity,
     /// One-to-one `ParaMesh` wrapper around `body_record`.
     wrapper_record: DesignMeshRecordIdentity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wrapper_opaque_tail: Option<NativeBytes>,
     /// Fixed Scene-state record owned by this mesh body.
     scene_state_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
@@ -1041,7 +1182,8 @@ struct DesignMeshBodyWire {
     /// Equal row-major container-to-model-centimetre affine transform.
     transform: MeshAffineTransform,
     /// Byte offsets of the two equal serialized transform blocks.
-    transform_offsets: [u64; 2],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transform_offsets: Option<[u64; 2]>,
     /// Byte offset of the body-to-feature-scope reference.
     scope_reference_offset: u64,
     /// Byte offset of the body-to-wrapper reference.
@@ -1096,9 +1238,11 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             body_record: value.placement.record,
             body_name: value.placement.body_name,
             body_native_frame: value.placement.native_frame,
+            body_variable_layout: value.placement.variable_layout,
             entry_name_record: value.entry.record,
             guid_record: value.guid.record,
-            wrapper_record: value.wrapper_record.into(),
+            wrapper_record: value.wrapper_record,
+            wrapper_opaque_tail: value.wrapper_opaque_tail,
             scene_state_record,
             scene_state_bounds,
             scene_node_record,
@@ -1137,7 +1281,18 @@ impl DesignMeshBody {
             + u64_from_index(crate::layout::paramesh_body_wrapper::BODY_REFERENCE)
     }
     fn from_wire(value: DesignMeshBodyWire) -> Result<Self, String> {
-        let wrapper_record = DesignMeshFixedRecord::try_from(value.wrapper_record)?;
+        let wrapper_record = value.wrapper_record;
+        let tail_length = wrapper_record
+            .frame_length()
+            .checked_sub(u64_from_index(crate::layout::paramesh_body_wrapper::LEN))
+            .ok_or("wrapper_record must contain its prefix")?;
+        let tail_matches = match &value.wrapper_opaque_tail {
+            Some(tail) => tail_length > 0 && u64::try_from(tail.len()).ok() == Some(tail_length),
+            None => tail_length == 0,
+        };
+        if !tail_matches {
+            return Err("wrapper_opaque_tail must match the wrapper record extent".into());
+        }
         if wrapper_record.byte_offset()
             + u64_from_index(crate::layout::paramesh_body_wrapper::BODY_REFERENCE)
             != value.wrapper_body_reference_offset
@@ -1182,14 +1337,44 @@ impl DesignMeshBody {
                     .into(),
             );
         }
-        let flagged = value.transform_offsets[0]
-            == value.body_record.byte_offset()
-                + u64_from_index(MeshBodyLayout::of(true).first_transform);
-        let placement = DesignMeshPlacement::new(value.body_record, value.transform, flagged)?;
-        let placement = match (value.body_name, value.body_native_frame) {
-            (Some(name), Some(frame)) => placement.with_native_frame(name, frame)?,
-            (None, None) => placement,
-            _ => return Err("body_name and body_native_frame must appear together".into()),
+        let flagged = value.body_variable_layout.as_ref().map_or_else(
+            || {
+                value.transform_offsets.is_some_and(|offsets| {
+                    offsets[0]
+                        == value.body_record.byte_offset()
+                            + u64_from_index(MeshBodyLayout::of(true).first_transform)
+                })
+            },
+            |layout| {
+                layout.presence_offsets[0]
+                    == u64_from_index(
+                        crate::layout::paramesh_flagged_mesh_body_join_prefix::FIRST_PRESENCE,
+                    )
+            },
+        );
+        let placement = match (
+            value.body_name,
+            value.body_native_frame,
+            value.body_variable_layout,
+        ) {
+            (Some(name), Some(frame), Some(layout)) => DesignMeshPlacement::new_variable(
+                value.body_record,
+                value.transform,
+                flagged,
+                name,
+                frame,
+                layout,
+            )?,
+            (Some(name), Some(frame), None) => {
+                DesignMeshPlacement::new(value.body_record, value.transform, flagged)?
+                    .with_native_frame(name, frame)?
+            }
+            (None, None, None) => {
+                DesignMeshPlacement::new(value.body_record, value.transform, flagged)?
+            }
+            _ => {
+                return Err("body name, native frame, and variable layout are inconsistent".into())
+            }
         };
         if placement.transform_offsets() != value.transform_offsets {
             return Err("transform_offsets must match body_record layout".into());
@@ -1217,6 +1402,7 @@ impl DesignMeshBody {
             entry,
             guid,
             wrapper_record,
+            wrapper_opaque_tail: value.wrapper_opaque_tail,
             scene_state,
             scene_node,
             scene_auxiliary_record: value.scene_auxiliary_record,
@@ -1238,6 +1424,13 @@ pub(crate) struct MeshAffineTransform {
 }
 
 impl MeshAffineTransform {
+    pub(crate) fn identity() -> Self {
+        Self {
+            affine: Transform::identity(),
+            bottom: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+
     /// Check finite coefficients, an affine last row, and a nonzero finite determinant.
     pub(crate) fn new(cells: [f64; 16]) -> Result<Self, String> {
         let rows: [[f64; 4]; 4] = std::array::from_fn(|row| {

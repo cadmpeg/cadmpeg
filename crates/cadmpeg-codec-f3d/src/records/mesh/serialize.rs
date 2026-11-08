@@ -72,9 +72,13 @@ impl Serialize for BodyRef<'_> {
             body_name: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             body_native_frame: Option<NativeBytes<&'a [u8]>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            body_variable_layout: Option<&'a super::VariableMeshBodyLayout>,
             entry_name_record: RecordRef<'a>,
             guid_record: RecordRef<'a>,
             wrapper_record: RecordRef<'a>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            wrapper_opaque_tail: Option<NativeBytes<&'a [u8]>>,
             scene_state_record: RecordRef<'a>,
             #[serde(skip_serializing_if = "Option::is_none")]
             scene_state_bounds: Option<DesignMeshSceneBoundsWire>,
@@ -96,7 +100,8 @@ impl Serialize for BodyRef<'_> {
             container_mesh_uuid: Option<&'a DesignMeshUuid>,
             fusion_uuid_offset: u64,
             transform: MeshAffineTransform,
-            transform_offsets: [u64; 2],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform_offsets: Option<[u64; 2]>,
             scope_reference_offset: u64,
             wrapper_reference_offset: u64,
             owner_reference_offset: u64,
@@ -121,9 +126,11 @@ impl Serialize for BodyRef<'_> {
             body_record: RecordRef::from_identity(&body.placement.record),
             body_name: body.placement.body_name.as_deref(),
             body_native_frame: body.placement.native_frame.as_ref().map(NativeBytes::from),
+            body_variable_layout: body.placement.variable_layout.as_ref(),
             entry_name_record: RecordRef::from_identity(&body.entry.record),
             guid_record: RecordRef::from_identity(&body.guid.record),
-            wrapper_record: RecordRef::from_fixed(&body.wrapper_record),
+            wrapper_record: RecordRef::from_identity(&body.wrapper_record),
+            wrapper_opaque_tail: body.wrapper_opaque_tail.as_ref().map(NativeBytes::from),
             scene_state_record: RecordRef::from_fixed(&body.scene_state.record),
             scene_state_bounds: body
                 .scene_state

@@ -364,6 +364,8 @@ pub(crate) enum F3dLossCode {
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
     MeshBodyBytesUninterpreted,
+    MeshBodyIdentityAssumed,
+    MeshWrapperBytesUninterpreted,
     MeshOwnerBytesUninterpreted,
     MeshScopePrefixUninterpreted,
     /// The external-reference table was present but not decoded.
@@ -688,6 +690,8 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
         Self::MeshBodyBytesUninterpreted,
+        Self::MeshBodyIdentityAssumed,
+        Self::MeshWrapperBytesUninterpreted,
         Self::MeshOwnerBytesUninterpreted,
         Self::MeshScopePrefixUninterpreted,
         Self::XrefTableUndecoded,
@@ -958,6 +962,8 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
             Self::MeshBodyBytesUninterpreted => "mesh.body-bytes-uninterpreted",
+            Self::MeshBodyIdentityAssumed => "mesh.body-identity-assumed",
+            Self::MeshWrapperBytesUninterpreted => "mesh.wrapper-bytes-uninterpreted",
             Self::MeshOwnerBytesUninterpreted => "mesh.owner-bytes-uninterpreted",
             Self::MeshScopePrefixUninterpreted => "mesh.scope-prefix-uninterpreted",
             Self::XrefTableUndecoded => "xref.table-undecoded",
@@ -1066,6 +1072,7 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel
             | Self::MeshGuidBytesUninterpreted
             | Self::MeshBodyBytesUninterpreted
+            | Self::MeshWrapperBytesUninterpreted
             | Self::MeshOwnerBytesUninterpreted
             | Self::MeshScopePrefixUninterpreted
             | Self::SketchRegionBodyOmitted
@@ -1250,6 +1257,7 @@ impl F3dLossCode {
             | Self::XrefOwnerUnresolved
             | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
+            | Self::MeshBodyIdentityAssumed
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
@@ -1327,6 +1335,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
             | Self::MeshBodyBytesUninterpreted
+            | Self::MeshWrapperBytesUninterpreted
             | Self::MeshOwnerBytesUninterpreted
             | Self::MeshScopePrefixUninterpreted
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
@@ -1486,6 +1495,7 @@ impl F3dLossCode {
                 LossTaxonomy::AssetNotTransferred
             }
             Self::MeshContainerUndecoded
+            | Self::MeshBodyIdentityAssumed
             | Self::DialectLayerCollision
             | Self::LocalOccurrenceYieldedToRegistered
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
@@ -1729,6 +1739,8 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
                 "mesh.body-bytes-uninterpreted",
+                "mesh.body-identity-assumed",
+                "mesh.wrapper-bytes-uninterpreted",
                 "mesh.owner-bytes-uninterpreted",
                 "mesh.scope-prefix-uninterpreted",
                 "xref.table-undecoded",
