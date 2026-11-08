@@ -5806,19 +5806,7 @@ impl<'a> Builder<'a> {
                     continue;
                 }
             } else {
-                if has_extent
-                    && (self.collapsed_curveless_coedges.contains(coedge_key)
-                        || edge.start == edge.end)
-                {
-                    if !self.collapsed_curveless_coedges.contains(coedge_key) {
-                        self.topology_relation_loss(
-                            format!("loop:{loop_id}:collapsed-curveless-edge:{edge_key}"),
-                            StepLossCode::LoopCollapsedEdgeOmitted,
-                            format!(
-                                "loop {loop_id} omitted collapsed curveless coedge {coedge_key}, edge {edge_key}"
-                            ),
-                        );
-                    }
+                if has_extent && self.collapsed_curveless_coedges.contains(coedge_key) {
                     continue;
                 }
                 if !coedge.pcurves.is_empty() {
