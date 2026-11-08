@@ -1774,6 +1774,7 @@ pub(super) fn write(
             )));
         }
     };
+    super::dispositions::verify_output(ctx, ir, &bytes, &mut native_dispositions)?;
     for curve in &ir.model.curves {
         if let Some(construction) = curve.geometry.procedural_construction().filter(|_| {
             super::geometry::located_curve(ir, curve)
