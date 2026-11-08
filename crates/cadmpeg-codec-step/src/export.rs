@@ -2295,6 +2295,15 @@ impl<'a> Builder<'a> {
         {
             return None;
         }
+        if items.is_empty() && omitted.is_empty() {
+            self.loss(
+                StepLossCode::DrawingPresentationRecordsOmitted,
+                format!(
+                    "drawing {} was written as an empty draughting model because its items are not representable in STEP",
+                    drawing.id
+                ),
+            );
+        }
         self.mark_drawing_context(drawing);
         let model = self.emitter.emit(
             "DRAUGHTING_MODEL",
