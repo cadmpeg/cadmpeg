@@ -285,7 +285,7 @@ fn legacy_material_minor(fields: Option<&Map<String, Value>>) -> Option<i32> {
         && (reflection_glossiness.is_none()
             || refraction_glossiness.is_none()
             || fresnel_ior.is_none())
-        && (alpha.is_none() || alpha.is_some_and(Value::is_null))
+        && alpha.is_none_or(Value::is_null)
     {
         return Some(3);
     }
