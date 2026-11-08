@@ -137,9 +137,6 @@ fn encode_view(
     if let Some(viewport_fields) = object(fields, "viewport") {
         children.push(viewport::encode(viewport_fields, camera)?);
     }
-    if let Some(userdata) = viewport::orientation_userdata(camera)? {
-        children.push(userdata);
-    }
     if let Some(window_fields) = object(fields, "window_position") {
         children.push(window(window_fields)?);
     }

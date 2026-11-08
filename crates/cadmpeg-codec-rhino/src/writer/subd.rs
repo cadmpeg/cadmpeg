@@ -111,11 +111,7 @@ pub(super) fn write(
                 payload.as_bytes(),
                 Some(&[1]),
                 Some(attributes),
-                super::attribute_userdata_chunk(&super::object_user_strings(
-                    ir,
-                    surface.id.as_str(),
-                    display.name.unwrap_or_default(),
-                ))?,
+                super::object_userdata(ir, &[surface.id.as_str()], display.name)?,
                 &[],
             )?,
             "retain Rhino archive bytes",
