@@ -1673,10 +1673,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).design_types[2].set_version(10);
     let error = crate::writer::generate::write_new(&source_less, &mut Vec::new())
         .expect_err("the native serializer requires its current writable class version");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     f3d_native_mut(&mut source_less).design_types[2].set_version(11);
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];

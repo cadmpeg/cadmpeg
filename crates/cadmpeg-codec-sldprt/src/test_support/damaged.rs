@@ -12,10 +12,7 @@ const PMI_SECTION: &str = "Contents/PMISemanticDataDB";
 
 /// Undo the nibble swap the container stores section names with.
 fn unswap_name(stored: &[u8]) -> Option<String> {
-    let unswapped: Vec<u8> = stored
-        .iter()
-        .map(|byte| byte.rotate_right(4))
-        .collect();
+    let unswapped: Vec<u8> = stored.iter().map(|byte| byte.rotate_right(4)).collect();
     String::from_utf8(unswapped).ok()
 }
 
@@ -109,7 +106,8 @@ fn patch_central_crc(source: &mut [u8], frame: &LocalFrame, crc: u32) {
                 source[start + central::LOCAL_OFFSET..start + central::LOCAL_OFFSET + 4]
                     .try_into()
                     .expect("central offset"),
-            )).expect("central offset fits usize");
+            ))
+            .expect("central offset fits usize");
             let local = relative + outer_hdr::LEN + 4;
             if local == frame.offset {
                 let mirror = start + central::VERSION_NEEDED;

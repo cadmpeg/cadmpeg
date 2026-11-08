@@ -41,7 +41,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -137,7 +137,15 @@ impl EncoderBackend for UsdCodec {
         let ctx = DecodeContext::for_encode(&arena, &policy);
         let (mut body, members) = writer::plan(input, &target, packaged, &ctx)?;
         if binary {
-            body.bytes = crate_layer(&ctx, &body.bytes).map_err(transitional_from_codec)?;
+            body.bytes = crate_layer(&ctx, &body.bytes).map_err(|error| match error {
+                cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
+                cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
+                cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
+                error => {
+                    debug_assert!(false, "unmapped USD encode error: {error}");
+                    panic!("unmapped USD encode error: {error}");
+                }
+            })?;
             body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
         }
         if packaged {

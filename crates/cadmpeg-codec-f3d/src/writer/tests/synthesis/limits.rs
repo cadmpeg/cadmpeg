@@ -46,15 +46,19 @@ fn source_less_empty_brep_charges_its_two_records() {
     let mut input = EncodeInput::new(&ir, None);
     input.limits.max_entities = 1;
     let error = F3dCodec.plan(input, TargetRequest::Inherit).unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
-        && (limit.limit, limit.used, limit.additional) == (1, 1, 1)));
+        && (limit.limit, limit.used, limit.additional) == (1, 1, 1))
+    );
     let mut input = EncodeInput::new(&ir, None);
     input.limits.max_entities = 2;
     let plan = F3dCodec.plan(input, TargetRequest::Inherit).unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
-    F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
 }
 
 #[test]
@@ -83,15 +87,25 @@ fn source_less_points_are_written_as_brep_carriers() {
         .unwrap()
         .into_owned();
     let mut smbh = Vec::new();
-    archive.by_name(&name).unwrap().read_to_end(&mut smbh).unwrap();
+    archive
+        .by_name(&name)
+        .unwrap()
+        .read_to_end(&mut smbh)
+        .unwrap();
     let start = cadmpeg_asm::asm_header::record_stream_start(&smbh).unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-    let records = cadmpeg_asm::sab::frame(&ctx, &smbh, start, smbh.len(), RefWidth::Eight, None)
+    let records =
+        cadmpeg_asm::sab::frame(&ctx, &smbh, start, smbh.len(), RefWidth::Eight, None).unwrap();
+    let point = records
+        .iter()
+        .find(|record| record.head() == "point")
         .unwrap();
-    let point = records.iter().find(|record| record.head() == "point").unwrap();
-    assert!(point.tokens.iter().any(|token| matches!(token, Token::Position([x, y, z])
+    assert!(point
+        .tokens
+        .iter()
+        .any(|token| matches!(token, Token::Position([x, y, z])
         if (x - 1.0).abs() < 1e-12 && (y - 2.0).abs() < 1e-12 && (z - 3.0).abs() < 1e-12)));
 }
 
@@ -189,19 +203,34 @@ fn source_less_brep_budget_matches_framed_records() {
     let source = crate::test_support::zip_test::f3d_with_smbh(
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
     );
-    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
     let mut bytes = Vec::new();
-    F3dCodec.plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-        .unwrap().write_to(&mut bytes).unwrap();
+    F3dCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    let name = archive.file_names().map(|name| name.unwrap()).find(|name| name.ends_with(".smbh")).unwrap().into_owned();
+    let name = archive
+        .file_names()
+        .map(|name| name.unwrap())
+        .find(|name| name.ends_with(".smbh"))
+        .unwrap()
+        .into_owned();
     let mut smbh = Vec::new();
-    archive.by_name(&name).unwrap().read_to_end(&mut smbh).unwrap();
+    archive
+        .by_name(&name)
+        .unwrap()
+        .read_to_end(&mut smbh)
+        .unwrap();
     let start = cadmpeg_asm::asm_header::record_stream_start(&smbh).unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-    let records = cadmpeg_asm::sab::frame(&ctx, &smbh, start, smbh.len(), RefWidth::Eight, None).unwrap();
+    let records =
+        cadmpeg_asm::sab::frame(&ctx, &smbh, start, smbh.len(), RefWidth::Eight, None).unwrap();
     let count = u64::try_from(records.len()).unwrap() + 1;
     let mut input = EncodeInput::new(decoded.ir(), None);
     input.limits.max_entities = count - 1;
@@ -217,7 +246,9 @@ fn source_less_brep_budget_matches_framed_records() {
 fn source_less_parameter_charges_its_collection_and_record() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.parameters.push(parameter(
-        "width", 0, ParameterValue::Length(cadmpeg_ir::scalar::Length::new(42.0).unwrap()),
+        "width",
+        0,
+        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(42.0).unwrap()),
     ));
     let mut limited = EncodeInput::new(&ir, None);
     limited.limits.max_entities = 3;
@@ -232,15 +263,22 @@ fn source_less_parameter_charges_its_collection_and_record() {
 #[test]
 fn source_less_appearance_charges_both_protein_records() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.appearances.push(cadmpeg_ir::appearance::Appearance {
-        id: "authored:model:appearance#1".try_into().unwrap(),
-        native_ref: None, name: Some("Prism-001".into()),
-        asset_guid: Some("11111111-2222-3333-4444-555555555555".into()),
-        library_id: None, visual_guid: None, physical_token: None,
-        schema: Some("GenericSchema".into()), category: None,
-        base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).unwrap()),
-        properties: std::collections::BTreeMap::default(), textures: Vec::new(),
-    });
+    ir.model
+        .appearances
+        .push(cadmpeg_ir::appearance::Appearance {
+            id: "authored:model:appearance#1".try_into().unwrap(),
+            native_ref: None,
+            name: Some("Prism-001".into()),
+            asset_guid: Some("11111111-2222-3333-4444-555555555555".into()),
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some("GenericSchema".into()),
+            category: None,
+            base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).unwrap()),
+            properties: std::collections::BTreeMap::default(),
+            textures: Vec::new(),
+        });
     let mut limited = EncodeInput::new(&ir, None);
     limited.limits.max_entities = 3;
     assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),

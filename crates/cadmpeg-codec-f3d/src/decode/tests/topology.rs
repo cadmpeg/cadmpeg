@@ -753,18 +753,15 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
     // its wire rows fresh native indices.
     {
         let context = cadmpeg_test_support::service_decode_context();
-        let offset = source_less
-            .native
-            .namespace("f3d")
-            .map_or(0, |namespace| {
-                crate::native::F3dNative::load(namespace)
-                    .expect("decoded wire native")
-                    .wire_topologies
-                    .iter()
-                    .map(|wire| wire.record_index)
-                    .max()
-                    .map_or(1, |max| max + 1)
-            });
+        let offset = source_less.native.namespace("f3d").map_or(0, |namespace| {
+            crate::native::F3dNative::load(namespace)
+                .expect("decoded wire native")
+                .wire_topologies
+                .iter()
+                .map(|wire| wire.record_index)
+                .max()
+                .map_or(1, |max| max + 1)
+        });
         let mut companion = crate::native::F3dNative::load(
             second.native.namespace("f3d").expect("renamed wire native"),
         )

@@ -34,7 +34,10 @@ fn check_name_class_rename(prefix: &[u8]) {
     payload.extend_from_slice(&102_u32.to_le_bytes());
     payload.extend_from_slice(&[0; 4]);
     let lane = crate::resolved_features::write_prepare::generated_native_lane(
-        &[], "sldprt:feature-input:resolved-features#0", None, payload,
+        &[],
+        "sldprt:feature-input:resolved-features#0",
+        None,
+        payload,
     )
     .unwrap();
     let rename = crate::history::write::features::FeatureInputRename {

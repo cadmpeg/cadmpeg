@@ -402,7 +402,10 @@ fn decode_result(
     retention.apply(&mut source_fidelity)?;
     // Layout oracles describe the delivered neutral state, including an
     // explicit Container request and derived configuration snapshots.
-    let complete = !body.losses.iter().any(|loss| loss.code.local_code() == "record.unreadable");
+    let complete = !body
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable");
     stamp_local_digests(ctx, &mut ir, complete)?;
     Ok(Decoded {
         ir,
