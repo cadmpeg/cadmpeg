@@ -861,6 +861,7 @@ pub(crate) fn decode_face_operands(
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
+    types: &[crate::records::entity_header::SegmentType],
 ) -> Result<Vec<DesignFaceOperand>, CodecError> {
     let mut header_index = HashMap::new();
     for header in headers {
@@ -908,6 +909,9 @@ pub(crate) fn decode_face_operands(
         let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
             && group.role() == DesignOperandRole::FACES;
+        let is_sweep_profile = design_feature_family(&scope.kind())
+            == Some(DesignFeatureFamily::Sweep)
+            && group.role() == DesignOperandRole::PROFILE;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
             && group.role() == DesignOperandRole::ROLE_0X21;
@@ -969,6 +973,7 @@ pub(crate) fn decode_face_operands(
             && !is_shell_operand
             && !is_loft_profile
             && !is_sweep_guide_surface
+            && !is_sweep_profile
             && !is_revolve_axis
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
@@ -997,12 +1002,25 @@ pub(crate) fn decode_face_operands(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let stream_types = is_sweep_profile
+            .then(|| crate::design::decode::meta::stream_types_by_entity(types, &entry.name));
         for (group_member_index, record_index) in group
             .members()
             .iter()
             .map(|member| &member.value)
             .enumerate()
         {
+            if stream_types.as_ref().is_some_and(|types| {
+                !types
+                    .get(&u64::from(*record_index))
+                    .is_some_and(|(guid, _)| {
+                        guid.eq_ignore_ascii_case(
+                            crate::records::feature::path_features::pipe::RECIPE_GUID,
+                        )
+                    })
+            }) {
+                continue;
+            }
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
             }
