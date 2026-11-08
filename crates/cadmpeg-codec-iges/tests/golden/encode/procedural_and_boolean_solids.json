@@ -1,12 +1,11 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     110       1       0       0       0       0       0       000010000D      1\n     110       0       0       1       0                PROFILE1       0D      2\n     100       2       0       0       0       0      19       000010000D      3\n     100       0       0       2       0                PROFILE2       0D      4\n     162       4       0       0       0       0       0       000000000D      5\n     162       0       0       1       0                 REVOPEN       0D      6\n     162       5       0       0       0       0       0       000000000D      7\n     162       0       0       1       1                REVCLOSE       0D      8\n     164       6       0       0       0       0       0       000000000D      9\n     164       0       0       1       0                 EXTRUDE       0D     10\n     158       7       0       0       0       0       0       000000000D     11\n     158       0       0       1       0                 SPHERE1       0D     12\n     158       8       0       0       0       0       0       000000000D     13\n     158       0       0       1       0                 SPHERE2       0D     14\n     180       9       0       0       0       0       0       000000000D     15\n     180       0       0       1       0                   UNION       0D     16\n     182      10       0       0       0       0       0       000000000D     17\n     182       0       0       1       0                  SELECT       0D     18\n     124      11       0       0       0       0       0       000000000D     19\n     124       0       0       2       0                               0D     20\n110,1.0000000000000000D0,0,0,2.0000000000000000D0,0,0;                 1P      1\n100,0,0,0,1.0000000000000000D0,0,1.0000000000000000D0,                 3P      2\n-2.4492935982947064D-16;                                               3P      3\n162,1,0.5,0,0,0,0,1,0;                                                 5P      4\n162,3,1,0,0,0,0,1,0;                                                   7P      5\n164,3,5,0,0,1;                                                         9P      6\n158,2.0000000000000000D0,0,0,0;                                       11P      7\n158,1.0000000000000000D0,3.0000000000000000D0,0,0;                    13P      8\n180,3,-11,-13,1;                                                      15P      9\n182,15,1,0,0;                                                         17P     10\n124,1.0000000000000000D0,0,0,0,0,1.0000000000000000D0,0,0,0,0,        19P     11\n1.0000000000000000D0,0;                                               19P     12\nS0000001G0000003D0000020P0000012                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     110       1       0       0       0       0       0       000010000D      1\n     110       0       0       1       0                PROFILE1       0D      2\n     100       2       0       0       0       0       0       000010000D      3\n     100       0       0       1       0                PROFILE2       0D      4\n     162       3       0       0       0       0       0       000000000D      5\n     162       0       0       1       0                 REVOPEN       0D      6\n     162       4       0       0       0       0       0       000000000D      7\n     162       0       0       1       1                REVCLOSE       0D      8\n     164       5       0       0       0       0       0       000000000D      9\n     164       0       0       1       0                 EXTRUDE       0D     10\n     158       6       0       0       0       0       0       000000000D     11\n     158       0       0       1       0                 SPHERE1       0D     12\n     158       7       0       0       0       0       0       000000000D     13\n     158       0       0       1       0                 SPHERE2       0D     14\n     180       8       0       0       0       0       0       000000000D     15\n     180       0       0       1       0                   UNION       0D     16\n     182       9       0       0       0       0       0       000000000D     17\n     182       0       0       1       0                  SELECT       0D     18\n110,1,0,0,2,0,0;                                                       1P      1\n100,0,0,0,1,0,1,0;                                                     3P      2\n162,1,0.5,0,0,0,0,1,0;                                                 5P      3\n162,3,1,0,0,0,0,1,0;                                                   7P      4\n164,3,5,0,0,1;                                                         9P      5\n158,2,0,0,0;                                                          11P      6\n158,1,3,0,0;                                                          13P      7\n180,3,-11,-13,1;                                                      15P      8\n182,15,1,0,0;                                                         17P      9\nS0000001G0000003D0000018P0000009                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
       "counts": {
         "100_circular_arc": 1,
         "110_line": 1,
-        "124_transformation": 1,
         "unknown_entity": 7
       }
     },
@@ -106,7 +105,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 5 native record(s) from `iges.cards`: iges:physical:card#22, iges:physical:card#23, iges:physical:card#24, iges:physical:card#31, iges:physical:card#4",
+        "message": "the iges write omits 3 native record(s) from `iges.cards`: iges:physical:card#22, iges:physical:card#31, iges:physical:card#4",
         "severity": "info"
       },
       {
@@ -116,7 +115,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 5 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#17, iges:entity:directory#3",
+        "message": "the iges write omits 1 native record(s) from `iges.entities`: iges:entity:directory#17",
         "severity": "info"
       },
       {
@@ -172,6 +171,8 @@
                 "iges:physical:card#2": "written",
                 "iges:physical:card#20": "written",
                 "iges:physical:card#21": "written",
+                "iges:physical:card#23": "written",
+                "iges:physical:card#24": "written",
                 "iges:physical:card#25": "written",
                 "iges:physical:card#26": "written",
                 "iges:physical:card#27": "written",
@@ -224,7 +225,11 @@
             "entities": {
               "disposition": "dropped",
               "records": {
+                "iges:entity:directory#1": "written",
+                "iges:entity:directory#11": "written",
+                "iges:entity:directory#13": "written",
                 "iges:entity:directory#15": "written",
+                "iges:entity:directory#3": "written",
                 "iges:entity:directory#5": "written",
                 "iges:entity:directory#7": "written",
                 "iges:entity:directory#9": "written"

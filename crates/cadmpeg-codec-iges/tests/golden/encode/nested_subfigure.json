@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     110       1       0       0       0       0       0       000010000D      1\n     110       0       0       1       0                  MEMBER       0D      2\n     308       2       0       0       0       0       0       000000200D      3\n     308       0       0       1       0                   CHILD       0D      4\n     408       3       0       0       0       0       0       000000000D      5\n     408       0       0       1       0                CHILDINS       0D      6\n     308       4       0       0       0       0       0       000000200D      7\n     308       0       0       1       0                  PARENT       0D      8\n     408       5       0       0       0       0       0       000000000D      9\n     408       0       0       1       0                PARENTIN       0D     10\n110,0,0,0,1.0000000000000000D0,0,0;                                    1P      1\n308,0,5HCHILD,1,1;                                                     3P      2\n408,3,1,2,3,0.5;                                                       5P      3\n308,1,6HPARENT,1,5;                                                    7P      4\n408,7,10,20,30,2;                                                      9P      5\nS0000001G0000003D0000010P0000005                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     110       1       0       0       0       0       0       000010000D      1\n     110       0       0       1       0                  MEMBER       0D      2\n     308       2       0       0       0       0       0       000000200D      3\n     308       0       0       1       0                   CHILD       0D      4\n     408       3       0       0       0       0       0       000000000D      5\n     408       0       0       1       0                CHILDINS       0D      6\n     308       4       0       0       0       0       0       000000200D      7\n     308       0       0       1       0                  PARENT       0D      8\n     408       5       0       0       0       0       0       000000000D      9\n     408       0       0       1       0                PARENTIN       0D     10\n110,0,0,0,1,0,0;                                                       1P      1\n308,0,5HCHILD,1,1;                                                     3P      2\n408,3,1,2,3,0.5;                                                       5P      3\n308,1,6HPARENT,1,5;                                                    7P      4\n408,7,10,20,30,2;                                                      9P      5\nS0000001G0000003D0000010P0000005                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -85,16 +85,6 @@
           "scope": "namespaced"
         },
         "message": "the iges write omits 3 native record(s) from `iges.cards`: iges:physical:card#14, iges:physical:card#19, iges:physical:card#4",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 1 native record(s) from `iges.entities`: iges:entity:directory#1",
         "severity": "info"
       },
       {
@@ -195,6 +185,7 @@
             "entities": {
               "disposition": "dropped",
               "records": {
+                "iges:entity:directory#1": "written",
                 "iges:entity:directory#3": "written",
                 "iges:entity:directory#5": "written",
                 "iges:entity:directory#7": "written",
