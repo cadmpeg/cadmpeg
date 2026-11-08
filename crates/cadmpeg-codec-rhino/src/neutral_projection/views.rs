@@ -156,11 +156,8 @@ pub(super) fn project(
         });
         if let Some(viewport) = source.camera {
             let camera =
-                FiniteVector::new(viewport.location.map(cadmpeg_ir::scalar::FiniteReal::get)).zip(
-                    source
-                        .camera_orientation_override
-                        .map_or_else(|| orientation(&viewport), |value| NonzeroVector::new(value)),
-                );
+                FiniteVector::new(viewport.location.map(cadmpeg_ir::scalar::FiniteReal::get))
+                    .zip(orientation(&viewport));
             if let Some((position, orientation)) = camera {
                 let camera_id = id("camera", ordinal)?;
                 let mut document = PresentationDocument::new(camera_id.clone());
