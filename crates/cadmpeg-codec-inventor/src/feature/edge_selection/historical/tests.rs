@@ -101,7 +101,12 @@ fn secondary_names_are_distinct_nonzero_feature_sources_that_leave_the_join_unch
 #[test]
 fn selector_forms_check_array_counts_secondary_names_and_suffix() {
     for version in [19, 23, 29] {
-        for generators in [&[31][..], &[31, 37][..]] {
+        for generators in [
+            &[31][..],
+            &[31, 37][..],
+            &[31, 37, 41][..],
+            &[31, 37, 41, 43][..],
+        ] {
             let bytes = selector_bytes(generators, &[], version);
             let selector = parse(View::over_retained(&bytes), version)
                 .expect("framed")
@@ -124,7 +129,9 @@ fn selector_forms_check_array_counts_secondary_names_and_suffix() {
             (&[][..], &[][..]),
             (&[31, 31], &[]),
             (&[0], &[]),
-            (&[31, 37, 41], &[]),
+            (&[31, 37, 41], &[41]),
+            (&[31, 37, 41, 31], &[]),
+            (&[31, 37, 41, 43, 47], &[]),
             (&[31], &[0]),
             (&[31], &[31]),
             (&[31, 37], &[37]),
@@ -270,7 +277,7 @@ fn each_generator_form_joins_one_stored_edge_with_signed_geometry() {
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
     for schema in [38, 40, 42, 44] {
-        for generators in [&[31][..], &[31, 37][..]] {
+        for generators in [&[31][..], &[31, 37][..], &[31, 37, 41, 43][..]] {
             let bytes = selector_bytes(generators, &[], 29);
             let selector = parse(View::over_retained(&bytes), 29)
                 .expect("framed")
@@ -522,6 +529,7 @@ pub(crate) fn fixture(
         ),
         SelectedEdge {
             owners: 1,
+            generators: 1,
             owner: 1,
             item,
             geometry: sample,
@@ -783,6 +791,38 @@ fn ambiguous_owner_loss_counts_features_that_use_such_an_edge() {
 }
 
 #[test]
+fn a_selector_with_more_than_two_generators_states_the_assumption() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
+            .expect("context");
+    for generators in [1, 2, 3, 4] {
+        let (mut inventory, mut feature) = fixture(&ctx, false);
+        let token = inventory.features[0]
+            .identity
+            .segment_token
+            .as_str()
+            .to_owned();
+        inventory
+            .edge_inputs
+            .historical
+            .get_mut(&(token, 9))
+            .expect("revision")
+            .generators = generators;
+        assert!(generator_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("projection");
+        let losses = generator_losses(&inventory, std::slice::from_ref(&feature));
+        assert_eq!(losses.len(), usize::from(generators > 2));
+        if let Some(loss) = losses.first() {
+            assert_eq!(
+                loss.code.local_code(),
+                "feature.edge-selector-generators-assumed"
+            );
+        }
+    }
+}
+
+#[test]
 fn selector_list_counts_are_bounded_before_allocation() {
     let mut bytes = selector_bytes(&[31, 37], &[], 29);
     let marker = [8, 0, 0, 0x30];
@@ -840,6 +880,7 @@ fn every_member_of_a_historical_group_must_join_a_distinct_revision() {
                 .expect("first revision");
             let second = SelectedEdge {
                 owners: if change == 2 { 2 } else { 1 },
+                generators: 1,
                 owner: if change == 2 { 1 } else { 2 },
                 item: first.item,
                 geometry: first.geometry.clone(),
