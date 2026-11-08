@@ -6129,14 +6129,18 @@ impl<'a> Builder<'a> {
                 self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
-        // Part 42 permits at most two associated geometries; a seam requires
-        // exactly two pcurves on the same surface.
+        // Part 42 permits at most two associated geometries; a geometric seam
+        // requires exactly two pcurves on the same surface for different
+        // coedges. Multiple pcurves on the same coedge stay with a surface
+        // curve (#209 §5.2).
         let seam_pair = emitted.iter().enumerate().find_map(|(first, (use_, _))| {
             emitted
                 .iter()
                 .enumerate()
                 .skip(first + 1)
-                .find(|(_, (other, _))| other.surface == use_.surface)
+                .find(|(_, (other, _))| {
+                    other.surface == use_.surface && other.coedge != use_.coedge
+                })
                 .map(|(second, _)| (first, second))
         });
         let selected = seam_pair.map_or_else(
