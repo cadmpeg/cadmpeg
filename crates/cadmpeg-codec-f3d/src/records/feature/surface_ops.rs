@@ -385,6 +385,15 @@ pub(crate) enum DesignSurfacePatchNormalState {
 pub(crate) struct DesignSurfacePatchScope {
     pub(crate) boundaries: Vec<DesignSurfacePatchBoundary>,
     pub(crate) normal: Option<DesignSurfacePatchNormalState>,
+    pub(crate) selection: Option<DesignSurfacePatchSelection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignSurfacePatchSelection {
+    pub(crate) settings: Vec<u32>,
+    pub(crate) interior_groups: Vec<u32>,
+    pub(crate) tool_body: u32,
 }
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.
