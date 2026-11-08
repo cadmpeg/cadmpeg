@@ -732,6 +732,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             scopes: &design.design_parameter_scopes,
             groups: &design.design_construction_operand_groups,
             histories: &mut design.asm_histories,
+            scope_histories: &scope_histories,
         },
     ));
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
@@ -787,6 +788,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             entity_operands: &design.design_entity_selection_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
             histories: &mut design.asm_histories,
+            scope_histories: &scope_histories,
         },
     );
     losses.extend(crate::history::thread_face::bind(

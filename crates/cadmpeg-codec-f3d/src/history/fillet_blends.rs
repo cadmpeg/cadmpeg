@@ -625,6 +625,7 @@ pub(crate) struct FilletBlendInputs<'a> {
     pub(crate) groups:
         &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
     pub(crate) histories: &'a mut [AsmHistory],
+    pub(crate) scope_histories: &'a std::collections::HashMap<String, String>,
 }
 
 /// Bind the edges of each `Fillet` feature from the blend faces of its
@@ -637,6 +638,7 @@ pub(crate) fn bind_fillet_blend_edges(
         scopes,
         groups,
         histories,
+        scope_histories,
     } = input;
     let states = features
         .iter()
@@ -645,7 +647,7 @@ pub(crate) fn bind_fillet_blend_edges(
                 feature.evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
             )
-            .then(|| super::face_selection_state(feature, scopes, histories))
+            .then(|| super::face_selection_state(feature, scopes, scope_histories, histories))
             .flatten()
         })
         .collect::<Vec<_>>();

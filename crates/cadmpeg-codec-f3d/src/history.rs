@@ -3251,6 +3251,7 @@ pub(crate) struct FeatureFaceSelectionInputs<'a> {
     pub(crate) body_recipe_operands:
         &'a [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     pub(crate) histories: &'a mut [AsmHistory],
+    pub(crate) scope_histories: &'a HashMap<String, String>,
 }
 
 pub(crate) fn bind_feature_face_selections(
@@ -3265,10 +3266,11 @@ pub(crate) fn bind_feature_face_selections(
         entity_operands,
         body_recipe_operands,
         histories,
+        scope_histories,
     } = input;
     let selection_states = features
         .iter()
-        .map(|feature| face_selection_state(feature, scopes, histories))
+        .map(|feature| face_selection_state(feature, scopes, scope_histories, histories))
         .collect::<Vec<_>>();
     let gates = features
         .iter()
@@ -3546,6 +3548,7 @@ struct FaceSelectionState<'a> {
 fn face_selection_state<'a>(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    scope_histories: &HashMap<String, String>,
     histories: &[AsmHistory],
 ) -> Option<FaceSelectionState<'a>> {
     let native_ref = feature.native_ref.as_deref()?;
@@ -3556,8 +3559,19 @@ fn face_selection_state<'a>(
     }
     let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
-    let (history, state, previous) =
-        unique_history_state_pair(histories, state_id, previous_state_id)?;
+    // A scope bound to a history reads that history; other scopes need a
+    // state pair that only one history holds.
+    let (history, state, previous) = if scope_histories.contains_key(&scope.id) {
+        bound_history_state_pair(
+            &scope.id,
+            state_id,
+            previous_state_id,
+            scope_histories,
+            histories,
+        )
+    } else {
+        unique_history_state_pair(histories, state_id, previous_state_id)
+    }?;
     let spans_transitions = matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(

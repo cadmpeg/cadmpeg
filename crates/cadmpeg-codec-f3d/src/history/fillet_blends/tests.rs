@@ -1910,6 +1910,7 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
             scopes: &[scope(42)],
             groups: &[group(42, &[7])],
             histories: &mut [history()],
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
