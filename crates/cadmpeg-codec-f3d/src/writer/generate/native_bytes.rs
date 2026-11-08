@@ -217,7 +217,7 @@ pub(super) fn native_history_tail(
         .flat_map(|state| &state.records)
         .any(|record| !record.raw_bytes.is_empty())
     {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "F3D historical payloads have no typed serializer".into(),
         ));
     }
@@ -228,7 +228,7 @@ pub(super) fn native_history_tail(
         return Ok(());
     }
     if histories.len() != 1 {
-        return Err(CodecError::InvalidInput(
+        return Err(CodecError::NotImplemented(
             "source-less F3D generation supports one ASM history stream".into(),
         ));
     }

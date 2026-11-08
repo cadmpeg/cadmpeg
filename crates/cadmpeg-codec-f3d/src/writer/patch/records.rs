@@ -124,7 +124,7 @@ pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
             let offset = guid.offset.ok_or_else(|| {
-                CodecError::InvalidInput("ACT channel source location is unavailable".into())
+                CodecError::NotImplemented("ACT channel source location is unavailable".into())
             })?;
             patch_bytes_at(bytes, offset, &encoded, "ACT channel GUID")?;
         }
@@ -141,7 +141,7 @@ pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[ByteEdit]) -> Result<()
 
 fn source_position(value: Option<u64>, field: &str) -> Result<u64, CodecError> {
     value.ok_or_else(|| {
-        CodecError::InvalidInput(format!("F3D patch requires an actual source {field}"))
+        CodecError::NotImplemented(format!("F3D patch requires an actual source {field}"))
     })
 }
 
@@ -669,7 +669,7 @@ pub(crate) fn patch_sketch_curves(
                 let normal = normal.as_raw();
                 let scalar_count = line_scalar_count(bytes, start)?;
                 if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
-                    return Err(CodecError::InvalidInput(
+                    return Err(CodecError::NotImplemented(
                         "F3D compact planar-line edits require the implicit +Z normal".into(),
                     ));
                 }
@@ -862,7 +862,7 @@ mod tests {
         let error = patch_material_assignments(&mut [0u8; 128], std::slice::from_ref(&unlocated))
             .expect_err("a token without a source position declines the patch");
         assert!(
-            matches!(&error, cadmpeg_core::CodecError::InvalidInput(message)
+            matches!(&error, cadmpeg_core::CodecError::NotImplemented(message)
                 if message.contains("material-assignment string offset")),
             "{error}"
         );
