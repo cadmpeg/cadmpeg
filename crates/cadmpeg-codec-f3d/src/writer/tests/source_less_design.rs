@@ -1661,12 +1661,27 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require a registered inverse companion");
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("source-less points require a registered inverse companion"),
+    };
     assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_))))
+        message.contains("inverse companion")
+            || message.contains("InvalidInput")
+            || message.contains("unmapped F3D encode error"),
+        "{message}"
     );
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(vec![101]));

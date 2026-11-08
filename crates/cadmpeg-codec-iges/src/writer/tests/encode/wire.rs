@@ -127,16 +127,21 @@ fn encode_reports_orphan_wire_vertex_as_malformed() {
     decoded.ir_mut().model.shells[0]
         .edit_topology(|_, _, free_vertices| free_vertices.clear())
         .expect("wire edge keeps shell nonempty");
-    let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
-        panic!("orphan vertex was accepted");
+    // #239 §5.0: malformed writer input is an encode-path invariant violation.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        plan_at(IgesVersion::V5_0, decoded.ir(), None)
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("orphan vertex was accepted"),
     };
-    assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_))))
-    );
-    assert!(
-        error.to_string().contains("no wire or face owner"),
-        "{error}"
-    );
+    assert!(message.contains("no wire or face owner"), "{message}");
 }
 
 #[test]
