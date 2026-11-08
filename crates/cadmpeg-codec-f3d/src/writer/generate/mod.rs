@@ -314,7 +314,7 @@ pub(super) fn write_with_limits(
                         && !base.contains(['/', '\\'])
                         && base
                             .rsplit_once('.')
-                            .is_some_and(|(_, extension)| extension == "tsm")
+                            .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("tsm"))
                 })
             })
             .unwrap_or(&fallback);
@@ -1027,7 +1027,7 @@ fn source_brep_name(native: &crate::native::F3dNative, requires_body_map: bool) 
     if (!requires_body_map || first.starts_with("BREP."))
         && first
             .rsplit_once('.')
-            .is_some_and(|(_, extension)| extension == "smbh")
+            .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("smbh"))
         && !first.contains(['/', '\\'])
         && first != "."
         && first != ".."
