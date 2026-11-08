@@ -142,6 +142,13 @@ pub(super) fn validate_mirrors(
         roots: &data.pm_dc_model_roots,
         segments: &segments,
     };
+    let joins = Joins {
+        index: &index,
+        labels: &labels,
+        records: &records,
+        features: &features,
+        results: &results,
+    };
     for feature in &ir.model.features {
         let source = feature
             .native_ref
@@ -159,48 +166,12 @@ pub(super) fn validate_mirrors(
                 entry.insert(build_records(ctx, token, &history_records)?);
             }
         }
-        let admitted = (|| {
-            let source = source?;
-            let token = source.identity.segment_token.as_str();
-            let history = histories.get(token)?;
-            let placement = history.placement(source.identity.record_ordinal)?;
-            let plane_dependency =
-                crate::feature::mirror::supplying_feature(&index, history, source);
-            if !matches_history(feature, placement, source.header.flags)
-                || feature.dependencies.len()
-                    != source.participants.references().len()
-                        + usize::from(plane_dependency.is_some())
-            {
-                return None;
-            }
-            let label = labels
-                .get(&(token, source.identity.record_ordinal))?
-                .as_ref()?;
-            let result = results.get(&feature.id)?.as_ref()?;
-            let mut dependencies = feature.dependencies.iter();
-            let matched = index.matches_projection(source, label, feature, result, |ordinal| {
-                let (identity, native, flags) = records.get(&(token, ordinal))?.as_ref()?;
-                let id = crate::feature::mirror::seed_feature_id(
-                    history,
-                    source.identity.record_ordinal,
-                    identity,
-                )?;
-                let seed = features.get(&id)?.as_ref()?;
-                let before = history.placement(ordinal)?;
-                if !matches_history(seed, before, *flags)
-                    || dependencies.next() != Some(&id)
-                    || seed.native_ref.as_deref() != Some(native.as_str())
-                {
-                    return None;
-                }
-                Some(id)
-            });
-            Some(
-                matched
-                    && dependencies.next() == plane_dependency.as_ref()
-                    && dependencies.next().is_none(),
-            )
-        })() == Some(true);
+        let admitted = source
+            .and_then(|source| {
+                let history = histories.get(source.identity.segment_token.as_str())?;
+                admits(&joins, history, feature, source)
+            })
+            == Some(true);
         if !admitted {
             findings.push(finding(
                 Check::NativeLinks,
@@ -211,6 +182,81 @@ pub(super) fn validate_mirrors(
         }
     }
     Ok(outputs)
+}
+
+type RecordTable<'a, V> = HashMap<(&'a str, u32), Option<V>>;
+
+/// Native tables that a Mirror is joined against.
+struct Joins<'a> {
+    index: &'a crate::feature::mirror::MirrorIndex<'a>,
+    labels: &'a RecordTable<'a, &'a crate::feature::PmDcFeatureLabel>,
+    records: &'a RecordTable<
+        'a,
+        (
+            &'a crate::record_identity::RecordIdentity,
+            String,
+            u32,
+        ),
+    >,
+    features: &'a HashMap<&'a cadmpeg_ir::features::FeatureId, Option<&'a Feature>>,
+    results: &'a HashMap<
+        &'a cadmpeg_ir::features::FeatureId,
+        Option<&'a cadmpeg_ir::features::FeatureResultTopology>,
+    >,
+}
+
+/// Whether `feature` is the projection of the Mirror `source`: same placement,
+/// seeds and result, with the seed dependencies first in order and the
+/// supplying work plane, when there is one, last.
+fn admits(
+    joins: &Joins<'_>,
+    history: &crate::feature::history::History,
+    feature: &Feature,
+    source: &crate::feature::PmDcPatternFeature,
+) -> Option<bool> {
+    let Joins {
+        index,
+        labels,
+        records,
+        features,
+        results,
+    } = joins;
+    let token = source.identity.segment_token.as_str();
+    let placement = history.placement(source.identity.record_ordinal)?;
+    let plane_dependency = crate::feature::mirror::supplying_feature(index, history, source);
+    if !matches_history(feature, placement, source.header.flags)
+        || feature.dependencies.len()
+            != source.participants.references().len() + usize::from(plane_dependency.is_some())
+    {
+        return None;
+    }
+    let label = labels
+        .get(&(token, source.identity.record_ordinal))?
+        .as_ref()?;
+    let result = results.get(&feature.id)?.as_ref()?;
+    let mut dependencies = feature.dependencies.iter();
+    let matched = index.matches_projection(source, label, feature, result, |ordinal| {
+        let (identity, native, flags) = records.get(&(token, ordinal))?.as_ref()?;
+        let id = crate::feature::mirror::seed_feature_id(
+            history,
+            source.identity.record_ordinal,
+            identity,
+        )?;
+        let seed = features.get(&id)?.as_ref()?;
+        let before = history.placement(ordinal)?;
+        if !matches_history(seed, before, *flags)
+            || dependencies.next() != Some(&id)
+            || seed.native_ref.as_deref() != Some(native.as_str())
+        {
+            return None;
+        }
+        Some(id)
+    });
+    Some(
+        matched
+            && dependencies.next() == plane_dependency.as_ref()
+            && dependencies.next().is_none(),
+    )
 }
 
 fn requires_mirror_validation(
