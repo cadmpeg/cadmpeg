@@ -5202,11 +5202,15 @@ impl<'a> Builder<'a> {
             .map(|f| f.as_str().to_owned())
             .collect();
         let mut face_refs = Vec::new();
+        let mut retained_face_ids = Vec::new();
+        let mut omitted_face_ids = Vec::new();
         let prior_losses = self.topology_relation_losses.len();
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
+                retained_face_ids.push(fid.clone());
             } else {
+                omitted_face_ids.push(fid.clone());
                 let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
                     Some(cadmpeg_ir::topology::FaceLoops::Classified { .. }) => {
                         StepLossCode::ShellOmittedOuterFace
@@ -5221,6 +5225,15 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
+        }
+        if !retained_face_ids.is_empty() && !omitted_face_ids.is_empty() {
+            self.loss(
+                StepLossCode::ShellOmittedUnclassifiedFace,
+                format!(
+                    "shell {shell_id} retained face(s) after omissions: {}",
+                    retained_face_ids.join(", ")
+                ),
+            );
         }
         if face_refs.is_empty() {
             return None;
