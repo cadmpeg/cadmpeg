@@ -1728,6 +1728,7 @@ fn extend_related_design_records(
         &design.design_construction_operand_groups,
         &design.design_record_headers,
         &prereqs.construction_recipes,
+        &prereqs.design_types,
     )?;
     crate::design::decode::operands::bind_face_operand_candidates(
         &mut design.design_face_operands,
