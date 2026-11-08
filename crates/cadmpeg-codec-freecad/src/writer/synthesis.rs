@@ -484,7 +484,14 @@ pub(super) fn write(
         if !super::native::property_held(ir, property, &native_objects) {
             continue;
         }
-        if property.type_name == "Part::PropertyPartShape" && !empty_shapes.contains(&property.id) {
+        // Body shapes are produced from neutral bodies; a declaration-only
+        // shape property with no payload is still a declaration slot that
+        // belongs to the source sequence, so replaying it verbatim holds
+        // application parity rather than introducing a hole.
+        if property.type_name == "Part::PropertyPartShape"
+            && property.name != "PreviewShape"
+            && !empty_shapes.contains(&property.id)
+        {
             continue;
         }
         let destination = names
