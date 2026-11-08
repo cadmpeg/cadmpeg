@@ -933,7 +933,7 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_stitch_operation"
     )]
     surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
-    /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
+    /// Exact distance and boundary records carried by a `SurfaceExtend` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

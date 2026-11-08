@@ -7,9 +7,7 @@ use crate::records::feature::{
     fixed_parameters::DesignFixedChamferDistance,
     mirror::DesignMirrorConstruction,
     patterns::{DesignCircularPatternAxis, DesignCircularPatternConstruction},
-    surface_ops::{
-        DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetSupport,
-    },
+    surface_ops::{DesignSurfaceExtendOperation, DesignSurfaceOffsetSupport},
 };
 use crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate;
 use cadmpeg_ir::scalar::{PositiveAngle, PositiveReal};
@@ -103,8 +101,6 @@ fn surface_extend_operation_refuses_a_nonpositive_tolerance() {
             distance: crate::test_support::real(1.0),
             distance_offset: 10,
             distance_record_index: 3,
-            method: DesignSurfaceExtendMethod::Tangent,
-            method_offset: 20,
             boundary_record_index: 4,
             boundary_reference_record_index: 5,
             boundary_reference_offset: 24,
