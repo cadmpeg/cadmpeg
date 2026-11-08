@@ -332,10 +332,7 @@ pub(super) fn write(
         side_entries.clear();
         side_entries.push(file.clone());
         let available = HashSet::from([file.clone()]);
-        let Some(content) = xml::native_named(&generated, names, &available)
-            .ok()
-            .flatten()
-        else {
+        let Some(content) = xml::native_named(&generated, names, &available) else {
             object.properties.shift_remove(&property.name);
             losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!("tessellation {} cannot retain its mesh-kernel association because its property cannot be emitted", mesh.id)));
             continue;

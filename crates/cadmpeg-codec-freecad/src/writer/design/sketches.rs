@@ -3,7 +3,6 @@
 
 use super::super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -19,7 +18,7 @@ pub(crate) fn write(
     objects: &mut Vec<Object>,
     names: &mut HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     for sketch in &ir.model.sketches {
         let feature_name = ir.model.features.iter().find(|feature| matches!(feature.evaluation.definition().operation(), cadmpeg_ir::features::FeatureOperation::Sketch { sketch: binding } if binding.id() == Some(&sketch.id))).and_then(|feature| names.get(feature.id.as_str())).cloned();
         let name = feature_name
@@ -62,7 +61,7 @@ pub(crate) fn write(
                 ])
             });
         if let Some(transform) = transform {
-            object.set("Placement", super::placement(transform)?);
+            object.set("Placement", super::placement(transform));
         } else {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                 "sketch {} has no resolved placement; local geometry is written at the origin",
@@ -70,7 +69,7 @@ pub(crate) fn write(
             )));
         }
         let mut rows = Vec::new();
-        let mut indices = external::write(ir, sketch, object, names, losses)?;
+        let mut indices = external::write(ir, sketch, object, names, losses);
         let mut entities = ir
             .model
             .sketch_entities
@@ -158,11 +157,10 @@ pub(crate) fn write(
             ),
         );
     }
-    Ok(())
 }
 
 /// Arenas hold records in identity order, so `Sketch:10` precedes
-/// `Sketch:2`. Geometry and constraint indices are positional in FreeCAD:
+/// `Sketch:2`. Geometry and constraint indices are positional in `FreeCAD`:
 /// a trailing decimal index orders numerically, ties by the full identity.
 fn source_order(id: &str) -> (&str, Option<u64>, &str) {
     let prefix = id.trim_end_matches(|c: char| c.is_ascii_digit());

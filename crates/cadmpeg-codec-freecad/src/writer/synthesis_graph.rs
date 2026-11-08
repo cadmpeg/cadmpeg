@@ -74,10 +74,7 @@ pub(super) fn admission(
     Ok(losses)
 }
 
-pub(super) fn close(
-    objects: &mut Vec<Object>,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+pub(super) fn close(objects: &mut Vec<Object>, losses: &mut Vec<LossNote>) {
     let live: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for object in objects {
         let before = object.dependencies.len();
@@ -120,7 +117,6 @@ pub(super) fn close(
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -140,7 +136,7 @@ mod tests {
             Object::new("Second".into(), "App::Feature", "Second"),
         ];
         let mut losses = Vec::new();
-        close(&mut objects, &mut losses).unwrap();
+        close(&mut objects, &mut losses);
         let xml = roxmltree::Document::parse(&objects[0].properties["Links"]).unwrap();
         let list = xml
             .descendants()

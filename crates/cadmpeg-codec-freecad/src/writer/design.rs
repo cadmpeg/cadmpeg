@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 /// Placement quaternion comes from the neutral matrix, never source XML.
 /// General affine placements cannot be stored by `App::PropertyPlacement`.
-pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
+pub(super) fn placement(transform: Transform) -> String {
     let rows = transform.affine_rows();
     let matrix = [
         [rows[0][0], rows[0][1], rows[0][2]],
@@ -54,7 +54,7 @@ pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
     } else {
         [0.0, 0.0, 0.0, 1.0]
     };
-    Ok(xml::property(
+    xml::property(
         "Placement",
         "App::PropertyPlacement",
         &xml::element(
@@ -69,7 +69,7 @@ pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
                 ("Q3", quaternion[3].to_string()),
             ],
         ),
-    ))
+    )
 }
 
 /// Render a spreadsheet cell's content: a string literal carries its

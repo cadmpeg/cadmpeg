@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral color/visibility overrides and regenerated topology color lists.
 
-use super::{native_property, Provider};
+use super::Provider;
 use crate::loss::FreecadLossCode;
 use crate::writer::xml;
 use cadmpeg_core::CodecError;
@@ -13,7 +13,7 @@ use cadmpeg_ir::topology::Color;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// `transparency_byte` stores the low byte as transparency, as the
-/// `ProgramVersion` the writer emits makes FreeCAD read it.
+/// `ProgramVersion` the writer emits makes `FreeCAD` read it.
 fn packed(color: Color, transparency_byte: bool) -> u32 {
     let byte = |value: f32| -> u32 {
         let stored = (f64::from(value) * 255.0).round();
@@ -56,9 +56,9 @@ fn material(
     appearance: &cadmpeg_ir::appearance::Appearance,
     whole_object: bool,
     transparency_byte: bool,
-) -> Result<(), CodecError> {
+) {
     if !whole_object {
-        return Ok(());
+        return;
     }
     let scalar = |name: &str| {
         appearance
@@ -93,7 +93,7 @@ fn material(
                 }
             }
         }
-        if let Some(value) = native_property(&property)? {
+        if let Some(value) = xml::native_gui(&property) {
             provider.properties.insert("ShapeMaterial".into(), value);
         }
     } else if let Some(color) = appearance.base_color.filter(|_| whole_object) {
@@ -137,7 +137,6 @@ fn material(
             ),
         );
     }
-    Ok(())
 }
 
 fn selection(target: &AppearanceTarget) -> Option<(&str, &'static str)> {
@@ -213,7 +212,7 @@ pub(super) fn write(
                     }
                 }
             }
-            if let Some(value) = native_property(material)? {
+            if let Some(value) = xml::native_gui(material) {
                 provider.properties.insert("ShapeMaterial".into(), value);
             }
         }
@@ -431,7 +430,7 @@ pub(super) fn write(
             appearance,
             selection(&binding.target).is_none() && material_slot.is_none(),
             transparency_byte,
-        )?;
+        );
         if selection(&binding.target).is_none()
             && material_slot.is_none()
             && !provider.properties.contains_key("ShapeMaterial")
@@ -564,7 +563,7 @@ pub(super) fn write(
             }
             (Some(owner), Some("FCStd ViewProvider ShapeMaterial")) => {
                 if let Some(provider) = providers.get_mut(&owner) {
-                    material(provider, appearance, true, transparency_byte)?;
+                    material(provider, appearance, true, transparency_byte);
                     // A body-less provider's own color has no neutral home;
                     // the decoder reads the material diffuse as a separate
                     // lane only beside it.
@@ -574,12 +573,7 @@ pub(super) fn write(
                         .any(|key| key.as_str() == "diffuse_packed")
                     {
                         for name in ["ShapeColor", "Transparency"] {
-                            if let Some(value) = provider
-                                .native
-                                .get(name)
-                                .map(native_property)
-                                .transpose()?
-                                .flatten()
+                            if let Some(value) = provider.native.get(name).and_then(xml::native_gui)
                             {
                                 provider.properties.insert(name.into(), value);
                             }
@@ -677,11 +671,12 @@ pub(super) fn write(
                     .collect()
             }
         };
+        let Some(list) = material_list(&materials, transparency_byte) else {
+            debug_assert!(false, "material counts and strings fit their lanes");
+            continue;
+        };
         let filename = format!("{owner}.ShapeAppearance");
-        entries.insert(
-            filename.clone(),
-            material_list(&materials, transparency_byte),
-        );
+        entries.insert(filename.clone(), list);
         provider.properties.remove("ShapeMaterial");
         provider.properties.insert(
             "ShapeAppearance".into(),
@@ -698,7 +693,7 @@ pub(super) fn write(
     Ok(())
 }
 
-/// The `ShapeAppearance` material lane of an appearance a FreeCAD 1.0
+/// The `ShapeAppearance` material lane of an appearance a `FreeCAD` 1.0
 /// material list produced.
 const SHAPE_APPEARANCE_SCHEMA: &str = "FCStd ShapeAppearance";
 /// The slot of a material that applies to the whole object.
@@ -707,7 +702,7 @@ const WHOLE_OBJECT_SLOT: usize = 0;
 /// A version-3 `App::PropertyMaterialList` side file: the packed colors and
 /// scalars of every material, then each material's image, image path and
 /// UUID strings.
-fn material_list(materials: &[&Appearance], transparency_byte: bool) -> Vec<u8> {
+fn material_list(materials: &[&Appearance], transparency_byte: bool) -> Option<Vec<u8>> {
     let scalar = |appearance: &Appearance, name: &str| {
         appearance
             .properties
@@ -722,7 +717,7 @@ fn material_list(materials: &[&Appearance], transparency_byte: bool) -> Vec<u8> 
         crate::gui::convert_packed_alpha(stored, transparency_byte)
     };
     let mut bytes = Vec::new();
-    let count = u32::try_from(materials.len()).unwrap_or(u32::MAX);
+    let count = u32::try_from(materials.len()).ok()?;
     bytes.extend_from_slice(&count.to_le_bytes());
     for appearance in materials {
         let diffuse = appearance
@@ -748,17 +743,17 @@ fn material_list(materials: &[&Appearance], transparency_byte: bool) -> Vec<u8> 
     }
     for appearance in materials {
         for text in ["", "", appearance.asset_guid.as_deref().unwrap_or("")] {
-            let length = u32::try_from(text.len()).unwrap_or(u32::MAX);
+            let length = u32::try_from(text.len()).ok()?;
             bytes.extend_from_slice(&length.to_le_bytes());
             bytes.extend_from_slice(text.as_bytes());
         }
     }
-    bytes
+    Some(bytes)
 }
 
-/// FreeCAD's default shape diffuse color, opaque light grey.
+/// `FreeCAD`'s default shape diffuse color, opaque light grey.
 const DEFAULT_DIFFUSE: u32 = 0xcccc_ccff;
-/// FreeCAD's default material shininess.
+/// `FreeCAD`'s default material shininess.
 const DEFAULT_SHININESS: f64 = 0.9;
 
 #[cfg(test)]
@@ -778,7 +773,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        material(&mut provider, &appearance, true, false).unwrap();
+        material(&mut provider, &appearance, true, false);
         let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
         let value = document
             .descendants()

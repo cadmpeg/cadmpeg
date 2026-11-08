@@ -532,7 +532,7 @@ pub(super) fn write(
                     .get(&property.name)
                     .is_some_and(|generated| unchanged_placement(property, generated))
             {
-                if let Some(original) = xml::native_named(property, &names, &available)? {
+                if let Some(original) = xml::native_named(property, &names, &available) {
                     object.set(&property.name, original);
                     continue;
                 }
@@ -564,7 +564,7 @@ pub(super) fn write(
                 );
                 continue;
             }
-            match xml::native_named(property, &names, &available)? {
+            match xml::native_named(property, &names, &available) {
                 Some(property_xml) => object.set(&property.name, property_xml),
                 None => {
                     if property.body.is_none() {
@@ -590,7 +590,7 @@ pub(super) fn write(
                         property.id
                     )),
                 );
-            } else if let Some(property_xml) = xml::native(property, &available)? {
+            } else if let Some(property_xml) = xml::native(property, &available) {
                 document_properties.insert(property.name.clone(), property_xml);
             } else {
                 losses.push(
@@ -637,7 +637,7 @@ pub(super) fn write(
                 (&names, &available),
                 &["X", "Y", "Scale", "Rotation", "Direction"],
                 &mut losses,
-            )?;
+            );
         }
     }
     for (_, annotation) in annotations {
@@ -666,7 +666,7 @@ pub(super) fn write(
             (&names, &available),
             &[],
             &mut losses,
-        )?;
+        );
         if annotation.runtime_type.starts_with("TechDraw::") {
             if let Some(height) = annotation.text_style.height {
                 super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());
@@ -966,7 +966,7 @@ pub(super) fn write(
             ),
         );
     }
-    super::native::operands(ir, &mut objects, &names, &native_properties, &mut losses)?;
+    super::native::operands(ir, &mut objects, &names, &native_properties, &mut losses);
     super::attributes::write(
         ir,
         &names,
@@ -974,7 +974,7 @@ pub(super) fn write(
         &mut document_properties,
         &mut losses,
         &native_properties,
-    )?;
+    );
     // Neutral display names and suppression always win over typed source values.
     // A neutral value that already matches the emitted text keeps the native
     // XML: replacing it would drop the source status and canonical spelling
@@ -1177,7 +1177,7 @@ pub(super) fn write(
         let source_property = if let Some((_, property)) = original_file {
             let mut available = available.clone();
             available.insert(file.clone());
-            xml::native_named(property, &names, &available)?
+            xml::native_named(property, &names, &available)
         } else {
             None
         };
@@ -1271,7 +1271,7 @@ pub(super) fn write(
         };
         let mut reachable = available.clone();
         reachable.insert(entry.clone());
-        let Some(value) = xml::native_named(property, &names, &reachable)? else {
+        let Some(value) = xml::native_named(property, &names, &reachable) else {
             continue;
         };
         entries.insert(entry, serialized.bytes);
@@ -1353,7 +1353,7 @@ pub(super) fn write(
         objects.push(object);
     }
     if ir.scope.design {
-        design::sketches(ir, &mut objects, &mut names, &mut losses)?;
+        design::sketches(ir, &mut objects, &mut names, &mut losses);
         super::parameters::prepare(ir, &mut objects, &mut names, &mut losses)?;
         design::spreadsheets(ir, &mut objects, &mut names, &mut losses)?;
         super::parameters::write(ir, &mut objects, &names, &mut losses)?;
@@ -1366,7 +1366,7 @@ pub(super) fn write(
         &mut document_properties,
         &mut losses,
         &native_properties,
-    )?;
+    );
     // The object Label is the feature's native home. Where a definition
     // and a feature share an object and their labels differ, the feature
     // name wins and the definition label is a documented loss (#238 §5.5).
@@ -1460,7 +1460,7 @@ pub(super) fn write(
             outcomes: &mut native_dispositions,
         },
     )?;
-    super::synthesis_graph::close(&mut objects, &mut losses)?;
+    super::synthesis_graph::close(&mut objects, &mut losses);
     // Neutral ownership skips leave holes: a renamed attribute emits under
     // its new name, shifting every later declaration index on re-decode. A
     // placeholder keeps the arity with no content, so survivors pair and
@@ -1510,7 +1510,7 @@ pub(super) fn write(
         document_properties.insert(property.name.clone(), placeholder);
         placeholders.push(property.id.clone());
     }
-    replay_unchanged_placements(&mut objects, &native_properties, &names, &available)?;
+    replay_unchanged_placements(&mut objects, &native_properties, &names, &available);
     replay_dependency_lists(&mut objects, &native_objects, &names);
     // Replayed properties settle into declaration sequence: neutral passes
     // (attributes, operands, parameters, products) append or replace by
@@ -1736,7 +1736,7 @@ pub(super) fn write(
                 .filter(|property| property.owner == *original.id())
             {
                 if let Some(generated) = object.properties.get(&property.name) {
-                    if let Some(source) = xml::native_named(property, &names, &available)? {
+                    if let Some(source) = xml::native_named(property, &names, &available) {
                         if unchanged_numeric_property(property, generated)
                             || same_property_value(&source, generated)
                         {
@@ -1781,7 +1781,7 @@ pub(super) fn write(
             1,
         )
     };
-    let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses)?;
+    let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses);
     entries.insert("Document.xml".into(), document.into_bytes());
     let gui = super::presentation::write(
         ir,
@@ -1792,7 +1792,7 @@ pub(super) fn write(
         &mut losses,
         crate::gui::requires_alpha_conversion(program_version.as_deref()),
     )?;
-    let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses)?;
+    let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses);
     super::dispositions::gui(ir, &names, &gui, &mut native_dispositions)?;
     let gui_bytes = if gui.is_empty() {
         None
@@ -2068,7 +2068,7 @@ fn replay_unchanged_placements(
     native_properties: &[PropertyRecord],
     names: &HashMap<String, String>,
     available: &HashSet<String>,
-) -> Result<(), CodecError> {
+) {
     for object in objects.iter_mut() {
         let owned = native_properties
             .iter()
@@ -2082,7 +2082,7 @@ fn replay_unchanged_placements(
                         .iter()
                         .any(|value| value.tag == "Expression")
             }) {
-                if let Some(value) = xml::native_named(engine, names, available)? {
+                if let Some(value) = xml::native_named(engine, names, available) {
                     object.set("ExpressionEngine", value);
                 }
             }
@@ -2113,7 +2113,7 @@ fn replay_unchanged_placements(
                             .zip(native_value.parse::<f64>().ok())
                             .is_some_and(|(left, right)| left == right))
             }) {
-                if let Some(value) = xml::native_named(native, names, available)? {
+                if let Some(value) = xml::native_named(native, names, available) {
                     object.set(&native.name, value);
                 }
             }
@@ -2144,7 +2144,7 @@ fn replay_unchanged_placements(
                 .collect::<Option<Vec<_>>>()
                 .map(|links| links.concat());
             if listed.is_some() && listed == written_links(written) {
-                if let Some(value) = xml::native_named(native, names, available)? {
+                if let Some(value) = xml::native_named(native, names, available) {
                     object.set(&native.name, value);
                 }
             }
@@ -2187,15 +2187,14 @@ fn replay_unchanged_placements(
             if native_values != Some(written_values) {
                 continue;
             }
-            if let Some(value) = xml::native_named(native, names, available)? {
+            if let Some(value) = xml::native_named(native, names, available) {
                 object.set(&native.name, value);
             }
         }
     }
-    Ok(())
 }
 
-/// FreeCAD lists a dependency once per link property, so one target can
+/// `FreeCAD` lists a dependency once per link property, so one target can
 /// repeat. A native list that names exactly the targets the writer derived
 /// is written back in its own order and multiplicity.
 fn replay_dependency_lists(

@@ -64,8 +64,6 @@ fn retained_xml(
         .into_iter()
         .find(|property| property.owner == owner && property.name == name)?;
     xml::native_named(&property, names, &std::collections::HashSet::new())
-        .ok()
-        .flatten()
 }
 
 /// Read a retained axis-reversal flag from the native property arena.
@@ -213,7 +211,7 @@ pub(in crate::writer) fn write(
                 let transform: cadmpeg_ir::transform::Transform =
                     serde_json::from_value(value["placement"].clone())
                         .map_err(|error| FeatureError::Unsupported(error.to_string()))?;
-                object.set("Placement", super::placement(transform)?);
+                object.set("Placement", super::placement(transform));
             }
             if value["op"] == "join" {
                 object.kind = object.kind.replace("Part::", "PartDesign::Additive");

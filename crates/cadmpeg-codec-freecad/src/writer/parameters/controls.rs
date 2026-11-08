@@ -3,7 +3,6 @@
 
 use super::super::xml::{self, Object};
 use crate::control_links::Measurement;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{report::loss::LossNote, CadIr};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -14,7 +13,7 @@ pub(super) fn write(
     names: &HashMap<String, String>,
     expressions: &mut BTreeMap<String, Vec<String>>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     let parameters = ir
         .model
         .parameters
@@ -28,7 +27,7 @@ pub(super) fn write(
         let Some(object) = objects.iter_mut().find(|object| object.name == *name) else {
             continue;
         };
-        let controls = bindings(feature)?;
+        let controls = bindings(feature);
         for (control, bindings) in controls {
             let Some((id, measurement)) = bindings.first() else {
                 continue;
@@ -91,7 +90,6 @@ pub(super) fn write(
                 ));
         }
     }
-    Ok(())
 }
 
 fn collect(
@@ -155,10 +153,10 @@ fn collect(
 
 pub(super) fn bindings(
     feature: &cadmpeg_ir::features::Feature,
-) -> Result<BTreeMap<String, Vec<(String, Measurement)>>, CodecError> {
+) -> BTreeMap<String, Vec<(String, Measurement)>> {
     let Ok(mut definition) = serde_json::to_value(feature.definition()) else {
         debug_assert!(false, "a feature definition serializes");
-        return Ok(BTreeMap::new());
+        return BTreeMap::new();
     };
     let mut controls = BTreeMap::new();
     if definition["definition"] == "post_process" {
@@ -181,5 +179,5 @@ pub(super) fn bindings(
         false,
         &mut controls,
     );
-    Ok(controls)
+    controls
 }

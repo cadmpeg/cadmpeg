@@ -3,7 +3,6 @@
 use super::super::super::xml::{self, Object};
 use super::{constraints::Indices, geometry, native};
 use crate::{loss::FreecadLossCode, native::PropertyRecord};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     document::CadIr,
     report::loss::LossNote,
@@ -84,7 +83,7 @@ pub(super) fn write(
     object: &mut Object,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<Indices, CodecError> {
+) -> Indices {
     let mut indices = Indices::new();
     let mut entities = ir
         .model
@@ -185,7 +184,7 @@ pub(super) fn write(
     if !rows.is_empty() {
         object.set("ExternalGeo",xml::property("ExternalGeo","Part::PropertyGeometryList",&format!("<GeometryList count=\"{}\"><Geometry id=\"-1\"/><Geometry id=\"-2\"/>{}</GeometryList>",rows.len()+2,rows.join(""))));
     }
-    Ok(indices)
+    indices
 }
 
 // (O-capacity) Reserved sketch indices occupy -1 and -2. External geometry

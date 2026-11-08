@@ -37,9 +37,7 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
         }],
         side_entries: Vec::new(),
     };
-    let rendered = native_property(&record)
-        .expect("typed property")
-        .expect("inline");
+    let rendered = crate::writer::xml::native_gui(&record).expect("inline");
     let document = roxmltree::Document::parse(&rendered).expect("XML");
     assert_eq!(
         document
@@ -290,7 +288,7 @@ fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
     for property in [record("Visibility", "0"), record("DeletedSetting", "1")] {
         provider.properties.insert(
             property.name.clone(),
-            native_property(&property).expect("typed").expect("inline"),
+            xml::native_gui(&property).expect("inline"),
         );
         provider.native.insert(property.name.clone(), property);
     }

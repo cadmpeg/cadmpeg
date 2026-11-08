@@ -44,7 +44,7 @@ pub(crate) fn write(
             .iter()
             .filter(|property| property.owner == extension.id)
         {
-            if let Some(value) = xml::native_named(property, names, &available)? {
+            if let Some(value) = xml::native_named(property, names, &available) {
                 content.push(value);
                 super::super::dispositions::record(
                     outcomes,
