@@ -160,6 +160,19 @@ pub(super) fn project_surface_patch(
         )?);
     }
     if !interior_constraints.is_empty() {
+        let references = scope.reference_members().values();
+        if !references
+            .clone()
+            .zip(references.skip(1))
+            .all(|(left, right)| left < right)
+        {
+            losses.push(
+                crate::loss::F3dLossCode::SurfacePatchUnorderedReferenceRunsAssumed.note(format!(
+                    "SurfacePatch {} has an ordered reference table outside record-index order; its group runs are assumed to keep their consecutive members.",
+                    scope.id
+                )),
+            );
+        }
         losses.push(
             crate::loss::F3dLossCode::SurfacePatchInteriorConstraintAssumed.note(format!(
                 "SurfacePatch {} projects its {} interior groups as interior constraints that the patch passes through.",

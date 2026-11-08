@@ -77,6 +77,11 @@ fn interior_scope(references: Vec<u32>, interior_groups: Vec<u32>) -> DesignPara
         DesignFeatureKind::SurfacePatch,
         50,
     );
+    let settings_ordinal = references
+        .iter()
+        .position(|record| *record == 107)
+        .and_then(|ordinal| u32::try_from(ordinal).ok())
+        .unwrap();
     scope
         .try_edit(|draft| {
             draft.reference_members = ReferenceRun::unlocated(references);
@@ -88,27 +93,35 @@ fn interior_scope(references: Vec<u32>, interior_groups: Vec<u32>) -> DesignPara
         .unwrap();
     if let DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
         patch.boundaries = vec![DesignSurfacePatchBoundary {
-            scope_reference_ordinal: 6,
-            record_index: 300,
+            scope_reference_ordinal: settings_ordinal,
+            record_index: 107,
             is_seed_selection: true,
             continuity: DesignPatchContinuity::Tangent,
             flip: 2,
             scale: crate::test_support::real(-1.0),
-            model_reference: 100,
+            model_reference: 105,
         }];
         patch.selection = Some(DesignSurfacePatchSelection {
-            settings: vec![300],
+            settings: vec![107],
             interior_groups,
-            tool_body: 102,
+            tool_body: 104,
         });
     }
     scope
 }
 
-fn interior_groups() -> Vec<DesignConstructionOperandGroup> {
+fn interior_groups(
+    interior_ordinal: u32,
+    boundary_ordinal: u32,
+) -> Vec<DesignConstructionOperandGroup> {
     vec![
-        group(101, 0, &[201, 202], DesignOperandRole::ROLE_0X21),
-        group(100, 4, &[200], DesignOperandRole::BODIES_A),
+        group(
+            101,
+            interior_ordinal,
+            &[102, 103],
+            DesignOperandRole::ROLE_0X21,
+        ),
+        group(105, boundary_ordinal, &[106], DesignOperandRole::BODIES_A),
     ]
 }
 
@@ -134,8 +147,8 @@ fn project(
 
 #[test]
 fn interior_group_form_projects_boundary_continuity_and_interior_constraints() {
-    let scope = interior_scope(vec![101, 201, 202, 102, 100, 200, 300], vec![101]);
-    let groups = interior_groups();
+    let scope = interior_scope(vec![101, 102, 103, 104, 105, 106, 107], vec![101]);
+    let groups = interior_groups(0, 4);
     let (projected, losses) = project(&scope, &groups);
     let Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: SurfaceBoundary::Path(PathRef::Native(boundary)),
@@ -170,9 +183,9 @@ fn interior_group_form_projects_boundary_continuity_and_interior_constraints() {
 
 #[test]
 fn interior_group_form_treats_unnamed_groups_as_inactive_with_a_loss() {
-    let scope = interior_scope(vec![101, 201, 202, 102, 100, 200, 300, 103, 203], vec![101]);
-    let mut groups = interior_groups();
-    groups.push(group(103, 7, &[203], DesignOperandRole::ROLE_0X21));
+    let scope = interior_scope(vec![101, 102, 103, 104, 105, 106, 107, 108, 109], vec![101]);
+    let mut groups = interior_groups(0, 4);
+    groups.push(group(108, 7, &[109], DesignOperandRole::ROLE_0X21));
     let (projected, losses) = project(&scope, &groups);
     let Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         interior_constraints,
@@ -194,17 +207,45 @@ fn interior_group_form_treats_unnamed_groups_as_inactive_with_a_loss() {
 
 #[test]
 fn interior_group_form_requires_the_prefix_to_name_each_run() {
-    let groups = interior_groups();
+    let groups = interior_groups(0, 4);
     for (references, interior) in [
-        (vec![101, 201, 202, 102, 100, 200, 300], vec![100]),
-        (vec![101, 201, 202, 102, 100, 200, 300], vec![101, 101]),
-        (vec![101, 202, 201, 102, 100, 200, 300], vec![101]),
-        (vec![101, 201, 202, 100, 200, 300, 102], vec![101]),
-        (vec![101, 201, 202, 102, 100, 200, 300, 102], vec![101]),
+        (vec![101, 102, 103, 104, 105, 106, 107], vec![105]),
+        (vec![101, 102, 103, 104, 105, 106, 107], vec![101, 101]),
+        (vec![101, 103, 102, 104, 105, 106, 107], vec![101]),
+        (vec![101, 102, 103, 105, 106, 107, 104], vec![101]),
+        (vec![101, 102, 103, 104, 105, 106, 107, 104], vec![101]),
     ] {
         let scope = interior_scope(references.clone(), interior.clone());
         let (projected, losses) = project(&scope, &groups);
         assert_eq!(projected, None, "{references:?} {interior:?}");
         assert!(losses.is_empty());
     }
+}
+
+#[test]
+fn interior_group_form_keeps_an_unordered_reference_table_with_a_loss() {
+    let scope = interior_scope(vec![105, 106, 107, 101, 102, 103, 104], vec![101]);
+    let groups = interior_groups(3, 0);
+    let (projected, losses) = project(&scope, &groups);
+    let Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+        boundary: SurfaceBoundary::Path(PathRef::Native(boundary)),
+        interior_constraints,
+        ..
+    })) = projected
+    else {
+        panic!("unordered interior-group SurfacePatch projects a filled surface");
+    };
+    assert_eq!(boundary, groups[1].id);
+    assert_eq!(
+        interior_constraints,
+        vec![PathRef::Native(groups[0].id.clone())]
+    );
+    let codes: Vec<_> = losses.iter().map(|loss| loss.code.clone()).collect();
+    assert_eq!(
+        codes,
+        vec![
+            crate::loss::F3dLossCode::SurfacePatchUnorderedReferenceRunsAssumed.kind(),
+            crate::loss::F3dLossCode::SurfacePatchInteriorConstraintAssumed.kind(),
+        ]
+    );
 }
