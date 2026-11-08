@@ -62,6 +62,7 @@ enum SheetSurfaceFit {
     RollingBall { max_rail_shift_mm: f64 },
     Offset,
     Ruled,
+    Extrusion,
 }
 
 struct Patch {

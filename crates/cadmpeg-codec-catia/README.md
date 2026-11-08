@@ -70,8 +70,8 @@ parameters. Unresolved native bytes stay attached to the IR as unknown records.
 
 A complete rolling-ball jet defines a native procedural surface from its
 stored values and derivatives. Bounded sheet transfer uses fitted B-splines
-for rolling-ball, ruled, and offset carriers that require a solved surface for
-STEP export. The decode report records these faces with
+for rolling-ball, ruled, offset, and offset-extrusion carriers that require a
+solved surface for STEP export. The decode report records these faces with
 `geometry.sheet-surface-fitted`. The fit checks use sampled points.
 
 For an owned rolling-ball construction, a stored construction radius can

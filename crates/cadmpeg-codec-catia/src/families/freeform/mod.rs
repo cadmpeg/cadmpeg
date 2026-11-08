@@ -1527,12 +1527,11 @@ fn append_planar_two_edge_pool(
     else {
         return Ok(());
     };
-    let boundary_curves = closed
+    let [Some(first), Some(second)] = closed
         .edges
-        .iter()
+        .each_ref()
         .map(|edge| rolling_ball_patch::fit_edge(ir, &geometry, edge, None))
-        .collect::<Option<Vec<_>>>();
-    let Some(boundary_curves) = boundary_curves else {
+    else {
         return Ok(());
     };
     let owners = records
@@ -1555,50 +1554,13 @@ fn append_planar_two_edge_pool(
     else {
         return Ok(());
     };
-    let surface_id = SurfaceId::mint(format!("catia:planar:surface#{}", plane.pos))
-        .map_err(cadmpeg_core::CodecError::malformed)?;
-    annotate(
-        annotations,
-        &surface_id,
-        "consolidated_b2_03_27_face",
-        u64_from_index(plane.pos),
-        "plane_carrier",
-        Exactness::Derived,
-    )?;
-    admission.charge()?;
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: geometry.clone(),
-        source_object: None,
-    });
-    let mut curve_ids = Vec::new();
-    for (edge, curve) in closed.edges.iter().zip(boundary_curves) {
-        let id = CurveId::mint(format!("catia:planar:boundary#{}:{}", plane.pos, edge.pos))
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        annotate(
-            annotations,
-            &id,
-            "consolidated_b2_03_27_boundary",
-            u64_from_index(edge.pos),
-            "closed_pcurve_lift",
-            Exactness::Derived,
-        )?;
-        admission.charge()?;
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            parameter_range: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            source_object: None,
-        });
-        curve_ids.push(id);
-    }
     attach_closed_two_edge_face(
         ir,
         annotations,
         TwoEdgeFace {
             closed: &closed,
-            surface_id: &surface_id,
-            curves: &curve_ids,
+            geometry,
+            boundary_curves: [first, second],
             origin: ClosedFaceOrigin {
                 source_kind: "planar",
                 annotation_source: "consolidated_b2_03_27_face",
@@ -1778,61 +1740,18 @@ fn append_a5_rolling_ball_pools(
                 if let Some(patch) =
                     rolling_ball_patch::fit(ir, carrier, closed.u_range, closed.v_range)
                 {
-                    let boundary_curves = closed
-                        .edges
-                        .iter()
-                        .map(|edge| {
-                            rolling_ball_patch::fit_edge(ir, carrier, edge, Some([0.0, 1.0]))
-                        })
-                        .collect::<Option<Vec<_>>>();
-                    let id = SurfaceId::mint(format!("catia:rolling-ball:patch#{}", jet.pos))
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
-                    annotate(
-                        annotations,
-                        &id,
-                        "consolidated_a5_03_32_patch",
-                        u64_from_index(jet.pos),
-                        "closed_pcurve_fit",
-                        Exactness::Derived,
-                    )?;
-                    admission.charge()?;
-                    ir.model.surfaces.push(Surface {
-                        id: id.clone(),
-                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(patch)),
-                        source_object: None,
-                    });
-                    if let Some(boundary_curves) = boundary_curves {
-                        let mut curve_ids = Vec::new();
-                        for (edge, curve) in closed.edges.iter().zip(boundary_curves) {
-                            let id = CurveId::mint(format!(
-                                "catia:rolling-ball:boundary#{}:{}",
-                                jet.pos, edge.pos
-                            ))
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
-                            annotate(
-                                annotations,
-                                &id,
-                                "consolidated_a5_03_32_boundary",
-                                u64_from_index(edge.pos),
-                                "closed_pcurve_lift",
-                                Exactness::Derived,
-                            )?;
-                            admission.charge()?;
-                            ir.model.curves.push(Curve {
-                                parameter_range: None,
-                                id: id.clone(),
-                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                                source_object: None,
-                            });
-                            curve_ids.push(id);
-                        }
+                    if let [Some(first), Some(second)] = closed.edges.each_ref().map(|edge| {
+                        rolling_ball_patch::fit_edge(ir, carrier, edge, Some([0.0, 1.0]))
+                    }) {
                         attach_closed_two_edge_face(
                             ir,
                             annotations,
                             TwoEdgeFace {
                                 closed: &closed,
-                                surface_id: &id,
-                                curves: &curve_ids,
+                                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                                    patch,
+                                )),
+                                boundary_curves: [first, second],
                                 origin: ClosedFaceOrigin {
                                     source_kind: "rolling-ball",
                                     annotation_source: "consolidated_a5_03_32_face",
@@ -1872,11 +1791,10 @@ struct ClosedFaceOrigin {
     fitted_surface: bool,
 }
 
-#[derive(Clone, Copy)]
 struct TwoEdgeFace<'a> {
     closed: &'a rolling_ball_patch::ClosedPatch,
-    surface_id: &'a SurfaceId,
-    curves: &'a [CurveId],
+    geometry: SurfaceGeometry,
+    boundary_curves: [NurbsCurve; 2],
     origin: ClosedFaceOrigin,
     source_index: usize,
     owner_pos: usize,
@@ -1894,8 +1812,8 @@ fn attach_closed_two_edge_face(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let TwoEdgeFace {
         closed,
-        surface_id,
-        curves,
+        geometry,
+        boundary_curves,
         origin:
             ClosedFaceOrigin {
                 source_kind,
@@ -1927,10 +1845,13 @@ fn attach_closed_two_edge_face(
         crate::families::b2::records::b2_edge_nodes_from_records(data, &source_records)
             .filter(|node| node.pos > owner_pos && next_owner.is_none_or(|next| node.pos < next))
             .collect::<Vec<_>>();
-    if curves.len() != 2 || boundary_nodes.len() != 2 {
+    if boundary_nodes.len() != 2 {
         return Ok(());
     }
     let Some((positions, same_order)) = closed.shared_vertices() else {
+        return Ok(());
+    };
+    let [Some(first_point), Some(second_point)] = positions.map(FinitePoint3::new) else {
         return Ok(());
     };
     let Some(owner) = source_records
@@ -1983,6 +1904,79 @@ fn attach_closed_two_edge_face(
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
         .map_err(cadmpeg_core::CodecError::malformed)?;
+    let ring_coedges = if reverse_loop {
+        coedge_ids.iter().rev().cloned().collect()
+    } else {
+        coedge_ids.clone()
+    };
+    let Ok(ring) = LoopRing::new(ring_coedges, Vec::new()) else {
+        return Ok(());
+    };
+    let [first_id, second_id] = closed.edges.each_ref().map(|edge| {
+        CurveId::mint(mint("boundary", &edge.pos.to_string()))
+            .map_err(cadmpeg_core::CodecError::malformed)
+    });
+    let curve_ids = [first_id?, second_id?];
+    let [Ok(first_carrier), Ok(second_carrier)] = [0, 1].map(|index| {
+        cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(curve_ids[index].clone()),
+            Some(closed.edges[index].range),
+        )
+    }) else {
+        return Ok(());
+    };
+    let (surface_kind, surface_source, surface_tag, boundary_source) = if fitted_surface {
+        (
+            "patch",
+            "consolidated_a5_03_32_patch",
+            "closed_pcurve_fit",
+            "consolidated_a5_03_32_boundary",
+        )
+    } else {
+        (
+            "surface",
+            annotation_source,
+            "plane_carrier",
+            "consolidated_b2_03_27_boundary",
+        )
+    };
+    let surface_id = SurfaceId::mint(format!("catia:{source_kind}:{surface_kind}#{carrier_pos}"))
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    annotate(
+        annotations,
+        &surface_id,
+        surface_source,
+        u64_from_index(carrier_pos),
+        surface_tag,
+        Exactness::Derived,
+    )?;
+    admission.charge()?;
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry,
+        source_object: None,
+    });
+    for ((id, curve), edge) in curve_ids
+        .into_iter()
+        .zip(boundary_curves)
+        .zip(&closed.edges)
+    {
+        annotate(
+            annotations,
+            &id,
+            boundary_source,
+            u64_from_index(edge.pos),
+            "closed_pcurve_lift",
+            Exactness::Derived,
+        )?;
+        admission.charge()?;
+        ir.model.curves.push(Curve {
+            id,
+            parameter_range: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            source_object: None,
+        });
+    }
     for id in [
         body_id.as_str(),
         region_id.as_str(),
@@ -2000,10 +1994,7 @@ fn attach_closed_two_edge_face(
         )?;
     }
     annotations.field_exactness(&face_id, "sense", Exactness::Inferred)?;
-    for (index, position) in positions.into_iter().enumerate() {
-        let Some(position) = FinitePoint3::new(position) else {
-            return Ok(());
-        };
+    for (index, position) in [first_point, second_point].into_iter().enumerate() {
         for id in [point_ids[index].as_str(), vertex_ids[index].as_str()] {
             annotate(
                 annotations,
@@ -2025,13 +2016,7 @@ fn attach_closed_two_edge_face(
             tolerance: None,
         });
     }
-    for index in 0..2 {
-        let range = closed.edges[index].range;
-        let Ok(carrier) =
-            cadmpeg_ir::topology::EdgeCarrier::new(Some(curves[index].clone()), Some(range))
-        else {
-            return Ok(());
-        };
+    for (index, carrier) in [first_carrier, second_carrier].into_iter().enumerate() {
         let end_vertices = if index == 0 || same_order {
             [vertex_ids[0].clone(), vertex_ids[1].clone()]
         } else {
@@ -2084,14 +2069,6 @@ fn attach_closed_two_edge_face(
             use_curve: None,
         });
     }
-    let ring_coedges = if reverse_loop {
-        coedge_ids.into_iter().rev().collect()
-    } else {
-        coedge_ids.clone()
-    };
-    let Ok(ring) = LoopRing::new(ring_coedges, Vec::new()) else {
-        return Ok(());
-    };
     admission.charge()?;
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
@@ -2102,7 +2079,7 @@ fn attach_closed_two_edge_face(
     ir.model.faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
-        surface: surface_id.clone(),
+        surface: surface_id,
         sense: if face_is_forward {
             Sense::Forward
         } else {
@@ -2137,7 +2114,7 @@ fn attach_closed_two_edge_face(
     });
     refusal.push_two_edge_binding_inferred(owner_pos, desired_forward.is_some());
     if fitted_surface {
-        refusal.push_sheet_surface_fitted(1, 0, 0);
+        refusal.push_sheet_surface_fitted(1, 0, 0, 0);
     }
     Ok(())
 }

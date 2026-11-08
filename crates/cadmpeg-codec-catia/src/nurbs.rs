@@ -117,9 +117,10 @@ impl LaneRefusals {
         rolling_ball: usize,
         offset: usize,
         ruled: usize,
+        extrusion: usize,
     ) {
         self.notes.push(crate::loss::CatiaLossCode::GeometrySheetSurfaceFitted.note(format!(
-            "Transferred fitted B-spline surfaces for {rolling_ball} rolling-ball, {offset} offset, and {ruled} ruled sheet faces. The fits use sampled geometric checks."
+            "Transferred fitted B-spline surfaces for {rolling_ball} rolling-ball, {offset} offset, {ruled} ruled, and {extrusion} extrusion sheet faces. The fits use sampled geometric checks."
         )));
     }
 

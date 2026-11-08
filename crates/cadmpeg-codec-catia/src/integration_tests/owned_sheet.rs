@@ -78,17 +78,9 @@ fn planar_two_edge_sheet_reports_inferred_binding_and_face_sense() {
 #[test]
 fn planar_two_edge_sheet_requires_matching_owner_complement() {
     let decoded = decode(planar_two_edge_sheet(0x1f));
-    let fitted_boundaries = decoded
-        .ir()
-        .model
-        .curves
-        .iter()
-        .filter(|curve| curve.id.as_str().starts_with("catia:planar:boundary#"))
-        .count();
-    assert_eq!(
-        fitted_boundaries, 2,
-        "the owner gate runs after both curve fits"
-    );
+    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.ir().model.edges.is_empty());
     assert!(decoded.ir().model.faces.is_empty());
     assert!(decoded
         .report()

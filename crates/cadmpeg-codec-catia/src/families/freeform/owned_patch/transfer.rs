@@ -64,7 +64,7 @@ pub(super) fn append(
     }
     let mut count = 0;
     let mut inferred_senses = 0;
-    let (mut rolling_ball, mut offset, mut ruled) = (0, 0, 0);
+    let (mut rolling_ball, mut offset, mut ruled, mut extrusion) = (0, 0, 0, 0);
     let (mut adjusted, mut max_shift_mm) = (0, 0.0_f64);
     for ((source, body), mut patches) in by_body {
         patches.sort_by_key(|patch| patch.priority);
@@ -103,6 +103,7 @@ pub(super) fn append(
                         }
                         SheetSurfaceFit::Offset => offset += 1,
                         SheetSurfaceFit::Ruled => ruled += 1,
+                        SheetSurfaceFit::Extrusion => extrusion += 1,
                     }
                 }
             }
@@ -111,8 +112,8 @@ pub(super) fn append(
     if inferred_senses != 0 {
         refusal.push_owned_patch_sense_inferred(inferred_senses);
     }
-    if rolling_ball + offset + ruled != 0 {
-        refusal.push_sheet_surface_fitted(rolling_ball, offset, ruled);
+    if rolling_ball + offset + ruled + extrusion != 0 {
+        refusal.push_sheet_surface_fitted(rolling_ball, offset, ruled, extrusion);
     }
     if adjusted != 0 {
         refusal.push_rolling_ball_rails_adjusted(adjusted, max_shift_mm);

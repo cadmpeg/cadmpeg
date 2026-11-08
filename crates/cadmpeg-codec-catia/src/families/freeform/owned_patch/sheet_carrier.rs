@@ -14,6 +14,7 @@ use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
+use crate::families::a5a8::records::A5FreeformCurve;
 use crate::families::b2::records::{
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_torus_geometry,
     cylinder_range_origin, B2Cone, B2Sphere, B2Torus,
@@ -29,7 +30,11 @@ pub(super) const SPHERE_BRIDGE_RADIUS_TOLERANCE_MM: f64 = 1.0e-6;
 
 pub(super) enum Carrier<'a> {
     RollingBall(&'a ProceduralSurfaceDefinition, f64),
-    OwnedRollingBall(Box<Cow<'a, ProceduralSurfaceDefinition>>, f64, f64),
+    OwnedRollingBall {
+        definition: Box<Cow<'a, ProceduralSurfaceDefinition>>,
+        chart_end: f64,
+        max_rail_shift_mm: f64,
+    },
     Cylinder(SpatialCylinder),
     Cone(B2Cone, bool),
     Torus(B2Torus, bool),
@@ -43,9 +48,22 @@ pub(super) enum Carrier<'a> {
 }
 
 impl Carrier<'_> {
+    pub(super) fn rolling_ball_at_radius(
+        jet: A5FreeformCurve,
+        radius: f64,
+        chart_end: f64,
+    ) -> Option<Self> {
+        let (definition, max_rail_shift_mm) = jet.definition_at_radius(radius)?;
+        Some(Self::OwnedRollingBall {
+            definition: Box::new(Cow::Owned(definition)),
+            chart_end,
+            max_rail_shift_mm,
+        })
+    }
+
     pub(super) fn bounds(&self) -> Option<[[f64; 2]; 2]> {
         match self {
-            Self::RollingBall(..) | Self::OwnedRollingBall(..) => {
+            Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (ProceduralSurfaceDefinition::RollingBallJet(jet), radius) =
                     self.rolling_definition()?
                 else {
@@ -100,15 +118,19 @@ impl Carrier<'_> {
     fn rolling_definition(&self) -> Option<(&ProceduralSurfaceDefinition, f64)> {
         match self {
             Self::RollingBall(definition, end) => Some((definition, *end)),
-            Self::OwnedRollingBall(definition, end, _) => Some((definition, *end)),
+            Self::OwnedRollingBall {
+                definition,
+                chart_end,
+                ..
+            } => Some((definition, *chart_end)),
             _ => None,
         }
     }
 
     pub(super) fn scale(&self) -> [f64; 2] {
         match self {
-            Self::RollingBall(_, radius) | Self::OwnedRollingBall(_, radius, _) => {
-                [1.0, radius.recip()]
+            Self::RollingBall(_, chart_end) | Self::OwnedRollingBall { chart_end, .. } => {
+                [1.0, chart_end.recip()]
             }
             Self::Cylinder(cylinder) => [cylinder.angle_scale, 1.0],
             Self::Cone(cone, _) => [
@@ -134,17 +156,20 @@ impl Carrier<'_> {
             Self::RollingBall(..) => Some(SheetSurfaceFit::RollingBall {
                 max_rail_shift_mm: 0.0,
             }),
-            Self::OwnedRollingBall(_, _, max_rail_shift_mm) => Some(SheetSurfaceFit::RollingBall {
+            Self::OwnedRollingBall {
+                max_rail_shift_mm, ..
+            } => Some(SheetSurfaceFit::RollingBall {
                 max_rail_shift_mm: *max_rail_shift_mm,
             }),
             Self::OffsetTensor(..) => Some(SheetSurfaceFit::Offset),
             Self::Ruled(..) => Some(SheetSurfaceFit::Ruled),
+            Self::Extrusion(..) => Some(SheetSurfaceFit::Extrusion),
             _ => None,
         }
     }
 
     pub(super) fn roster_sense_inferred(&self) -> bool {
-        !matches!(self, Self::RollingBall(..) | Self::OwnedRollingBall(..))
+        !matches!(self, Self::RollingBall(..) | Self::OwnedRollingBall { .. })
     }
 
     pub(super) fn reversed(&self) -> bool {
@@ -164,7 +189,7 @@ impl Carrier<'_> {
     pub(super) fn evaluate(&self, [u, v]: [f64; 2]) -> Option<Point3> {
         let admission = EvaluationAdmission::Standard;
         match self {
-            Self::RollingBall(..) | Self::OwnedRollingBall(..) => {
+            Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (definition, _) = self.rolling_definition()?;
                 eval::rolling_ball_jet_point(definition, u, v)
                     .ok()
@@ -203,7 +228,7 @@ impl Carrier<'_> {
         refine: bool,
     ) -> Option<SolvedSurfaceGeometry> {
         match self {
-            Self::RollingBall(..) | Self::OwnedRollingBall(..) => {
+            Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (definition, _) = self.rolling_definition()?;
                 let adaptive = || {
                     surface_fit::rolling(

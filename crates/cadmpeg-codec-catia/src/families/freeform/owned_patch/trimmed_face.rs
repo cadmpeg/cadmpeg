@@ -187,11 +187,11 @@ where
                             if let Some(definition) =
                                 cached.and_then(|&i| rolling_ball(ir, i, radius))
                             {
-                                return Some(Carrier::OwnedRollingBall(
-                                    Box::new(Cow::Borrowed(definition)),
+                                return Some(Carrier::OwnedRollingBall {
+                                    definition: Box::new(Cow::Borrowed(definition)),
                                     chart_end,
-                                    0.0,
-                                ));
+                                    max_rail_shift_mm: 0.0,
+                                });
                             }
                             let jet = match &native {
                                 Some(jet) => jet,
@@ -206,14 +206,10 @@ where
                             if !super::near(jet.chart_v_end, chart_end) {
                                 return None;
                             }
-                            if let Some((definition, max_rail_shift_mm)) =
-                                jet.clone().definition_at_radius(radius)
+                            if let Some(carrier) =
+                                Carrier::rolling_ball_at_radius(jet.clone(), radius, chart_end)
                             {
-                                return Some(Carrier::OwnedRollingBall(
-                                    Box::new(Cow::Owned(definition)),
-                                    chart_end,
-                                    max_rail_shift_mm,
-                                ));
+                                return Some(carrier);
                             }
                         }
                         None
@@ -305,12 +301,7 @@ where
                     let jet = a5_owned_rolling_curves(self.bytes, std::slice::from_ref(carrier))
                         .next()?;
                     let v_end = jet.chart_v_end;
-                    let (definition, max_rail_shift_mm) = jet.definition_at_radius(radius)?;
-                    return Some(Carrier::OwnedRollingBall(
-                        Box::new(Cow::Owned(definition)),
-                        v_end,
-                        max_rail_shift_mm,
-                    ));
+                    return Carrier::rolling_ball_at_radius(jet, radius, v_end);
                 }
                 let (reference, class, radius) = analytic_bridge(bytes)?;
                 let carrier = self.records.get((self.resolve)(support, reference)?)?;
@@ -1030,7 +1021,7 @@ impl DecodedFace<'_> {
     pub(super) fn recover_rolling_boundary(&self, ir: &CadIr) -> Option<Patch> {
         if !matches!(
             self.carrier,
-            Carrier::RollingBall(..) | Carrier::OwnedRollingBall(..)
+            Carrier::RollingBall(..) | Carrier::OwnedRollingBall { .. }
         ) || !self.inner.is_empty()
         {
             return None;
@@ -1110,7 +1101,7 @@ fn clamp_chart(carrier: &Carrier<'_>, [u, v]: [f64; 2]) -> Option<[f64; 2]> {
     };
     let v_slack = if matches!(
         carrier,
-        Carrier::RollingBall(..) | Carrier::OwnedRollingBall(..)
+        Carrier::RollingBall(..) | Carrier::OwnedRollingBall { .. }
     ) {
         ROLLING_TRANSVERSE_CHART_SLACK
     } else {
@@ -1889,7 +1880,7 @@ fn fit_ring(
         surface: solved,
         priority: u8::from(recover) * 8
             + match carrier {
-                Carrier::OwnedRollingBall(..) | Carrier::OffsetTensor(..) => 4,
+                Carrier::OwnedRollingBall { .. } | Carrier::OffsetTensor(..) => 4,
                 Carrier::CachedTensor(..) => 3,
                 Carrier::Tensor(..) | Carrier::Extrusion(_) => 2,
                 Carrier::Ruled(..) => 2,
