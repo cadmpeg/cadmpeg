@@ -227,7 +227,12 @@ pub(crate) fn project_curve_leaf(
         let origin = FinitePoint3::new(from.translated(*direction.as_raw(), -range.lower()))?;
         let reproduces = |parameter: f64, stored: Point3| {
             let point = origin.get().translated(*direction.as_raw(), parameter);
-            let scale = stored.x.abs().max(stored.y.abs()).max(stored.z.abs()).max(1.0);
+            let scale = stored
+                .x
+                .abs()
+                .max(stored.y.abs())
+                .max(stored.z.abs())
+                .max(1.0);
             [point.x - stored.x, point.y - stored.y, point.z - stored.z]
                 .into_iter()
                 .all(|delta| delta.abs() <= EPS_LINE_RECONSTRUCTION * scale)
@@ -244,7 +249,11 @@ pub(crate) fn project_curve_leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
             parameter_range,
         ),
-        None if matches!(geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
+        None if matches!(
+            geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+        ) =>
+        {
             (geometry, parameter_range)
         }
         None => (geometry, None),
