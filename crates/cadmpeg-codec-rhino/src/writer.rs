@@ -1068,8 +1068,10 @@ fn prepare_write<'a, 'budget>(
                     .filter(|_| written_native.is_none())
                 {
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                        "surface {} procedural construction {} was reduced to a held solved carrier",
-                        surface.id, construction
+                        "surface {} procedural construction {} was reduced to a held solved carrier{}",
+                        surface.id,
+                        construction,
+                        construction_curve_suffix(model, construction.as_str())
                     )));
                 }
             }
@@ -1081,7 +1083,8 @@ fn prepare_write<'a, 'budget>(
                         .geometry
                         .procedural_construction()
                         .map(|construction| format!(
-                            "; procedural construction {construction} omitted"
+                            "; procedural construction {construction} omitted{}",
+                            construction_curve_suffix(model, construction.as_str())
                         ))
                         .unwrap_or_default()
                 )));
@@ -1522,6 +1525,17 @@ fn prepare_write<'a, 'budget>(
         topology_points,
         materials,
     })
+}
+
+/// The construction curves a dropped procedural surface construction leaves
+/// unwritten, as a loss message suffix.
+fn construction_curve_suffix(model: &cadmpeg_ir::document::Model, construction: &str) -> String {
+    let curves = scopes::construction_curves(model, construction);
+    if curves.is_empty() {
+        String::new()
+    } else {
+        format!("; its construction curve(s) {} are omitted", curves.join(", "))
+    }
 }
 
 /// Layers that lose a member because the write omits the member's record.
