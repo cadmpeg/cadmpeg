@@ -1190,7 +1190,13 @@ fn prepare_write<'a, 'budget>(
         }
         let local = baked.clone();
         match placement::bake(&mut baked) {
-            Ok(()) => {}
+            Ok(()) => {
+                if placement.is_proper_rigid()
+                    && placement != cadmpeg_ir::transform::Transform::identity()
+                {
+                    losses.push(baked_placement_loss(&baked));
+                }
+            }
             Err(WriteError::Omit(reason)) => {
                 baked = local;
                 let body = &mut baked.model.bodies[0];
@@ -1514,6 +1520,32 @@ fn prepare_write<'a, 'budget>(
         topology_points,
         materials,
     })
+}
+
+/// The records a baked placement writes in world coordinates: they re-decode
+/// as records without the body's local frame.
+fn baked_placement_loss(baked: &CadIr) -> LossNote {
+    let model = &baked.model;
+    let ids = model
+        .points
+        .iter()
+        .map(|row| row.id.as_str())
+        .chain(model.curves.iter().map(|row| row.id.as_str()))
+        .chain(model.surfaces.iter().map(|row| row.id.as_str()))
+        .chain(model.vertices.iter().map(|row| row.id.as_str()))
+        .chain(model.edges.iter().map(|row| row.id.as_str()))
+        .chain(model.coedges.iter().map(|row| row.id.as_str()))
+        .chain(model.loops.iter().map(|row| row.id.as_str()))
+        .chain(model.faces.iter().map(|row| row.id.as_str()))
+        .chain(model.shells.iter().map(|row| row.id.as_str()))
+        .chain(model.regions.iter().map(|row| row.id.as_str()))
+        .collect::<Vec<_>>();
+    RhinoLossCode::WriterBodyPlacementBaked.note(format!(
+        "body {} placement is baked into its geometry; {} record(s) are written in world coordinates: {}",
+        model.bodies[0].id,
+        ids.len(),
+        ids.join(", ")
+    ))
 }
 
 fn native_dispositions(
