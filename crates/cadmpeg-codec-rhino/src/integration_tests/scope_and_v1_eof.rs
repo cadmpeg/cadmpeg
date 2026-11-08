@@ -69,7 +69,7 @@ fn an_empty_reached_object_table_locates_no_model_parts() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, delivered(depth, ContentScope::empty()));
+        assert_scope(&result, delivered(depth, ContentScope::container()));
         assert!(result.ir().model.points.is_empty());
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
@@ -87,7 +87,7 @@ fn an_empty_history_table_holds_no_design_part() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, delivered(depth, ContentScope::empty()));
+        assert_scope(&result, delivered(depth, ContentScope::container()));
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
     }
@@ -101,7 +101,7 @@ fn a_failed_bounded_history_record_does_not_erase_the_reached_design_part() {
         let result = decode(&bytes, depth);
         // Empty object table locates no model parts; a failed bounded history
         // record still locates the design part (#209 §1.1).
-        assert_scope(&result, delivered(depth, ContentScope::design()));
+        assert_scope(&result, delivered(depth, ContentScope { model: false, design: true }));
         assert!(result.ir().model.features.is_empty());
         assert!(result.report().losses.iter().any(
             |loss| loss.message.contains("history record") && loss.message.contains("degraded")
