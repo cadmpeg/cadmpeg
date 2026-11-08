@@ -352,6 +352,22 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Note.** Existing native retention passes full model checking for 5,214 copied control frames and 19,277 copied owner frames. Both existing typed boundary cycles match independently reconstructed source endpoints. Unassigned meanings remain open; no cross-source geometry binding follows from these structural results.
 
+### SN-38. Trimmed-face box extent
+
+**Question.** Which construction produces the stored trimmed-face AABB of a curved face, and what bounds its distance from the exact face extent?
+
+**Known.** `catia.md` §5.8 "The same arc test applies" selects an arc by the smaller excess over the face boxes when neither arc fits the `2e-3` mm allowance. Plane faces and faces whose extrema lie on boundary vertices reproduce the exact extent within that allowance. On half-cylinder faces of radius `11.1125` mm the box reaches `11.1091` mm from the axis. On 32 edges of one part the selected arc exceeds the boxes by `3.4e-3` to `7.3e-3` mm, and the complementary arc exceeds them by more than the radius. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
+
+**Need.** A derived bound replaces the excess-ratio rule with a containment test, and removes the loss that the ratio rule records.
+
+### SN-39. Boundary gauge without planar evidence
+
+**Question.** Which source relation fixes the absolute gauge of a boundary parity component that contains no evaluable plane-face boundary?
+
+**Known.** `catia.md` §5.4.2 "The face orientation fixes the absolute gauge" anchors a component from the boundaries of its plane faces. Trim-mesh boundary cycles of one face share the mesh orientation. Incidence-cycle reconstruction starts each cycle at its lowest edge in stored direction and carries no orientation; tying all boundaries of one such face to one reversal makes the parity system inconsistent. A component without an anchor keeps the gauge of the parity solve's first boundary.
+
+**Need.** Components bounded only by curved faces, or by plane faces with unresolved edge intervals, have no absolute loop direction; region and volume measurement on spheres and tori depend on it.
+
 ## 4. Object stream
 
 ### OS-02. Class-`0x5f` terminal controls

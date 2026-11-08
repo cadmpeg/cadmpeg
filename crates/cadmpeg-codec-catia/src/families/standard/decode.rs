@@ -15,6 +15,7 @@ type NativeEndpointEvidenceOutput = Result<Option<Vec<Option<[usize; 2]>>>, &'st
 
 mod counted_owner;
 mod edge_geometry;
+mod loop_gauge;
 mod surface_membership;
 use edge_geometry::{
     attach_standard_circles, attach_standard_lines, build_standard_edge_curve,
@@ -2108,7 +2109,7 @@ fn try_decode_standard_population(
         curved_surfaces.push(surface);
     }
     let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
-    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    let plane_normals = standard_plane_normals_from_face_frames(brep, &records, &face_frame_vectors);
     let plane_rows = crate::families::standard::records::plane_params(brep, &records, &plane_normals);
     let mut planes = HashMap::new();
     for plane in plane_rows {
@@ -6399,6 +6400,14 @@ fn emit_standard_topology(
         Vec::new(),
         "catia_standard_edge_coedge_rows",
     )?;
+    let gauge = loop_gauge::planar_loop_gauge(
+        ctx,
+        ir,
+        topology,
+        &edge_reversed,
+        &curve_indices,
+        surface_indices,
+    )?;
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let face_loops = standard_face_loops(
             ir,
@@ -6415,8 +6424,10 @@ fn emit_standard_topology(
                 format_args!("{face_index}:{loop_index}"),
                 LoopId::mint,
             )?;
+            let edge_uses =
+                loop_gauge::gauged_coedges(boundary.coedges(), gauge[face_index][loop_index]);
             let mut vertices = Vec::new();
-            for edge_use in boundary.coedges() {
+            for edge_use in &edge_uses {
                 let point = point_assignment[edge_use.end_vertex];
                 let vertex = standard_id("v", format_args!("{point}"), VertexId::mint)?;
                 vertices.push(vertex);
@@ -6442,7 +6453,7 @@ fn emit_standard_topology(
             let ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses)
                 .map_err(CodecError::malformed)?;
             let coedge_ids = ring.coedges();
-            for (coedge_index, edge_use) in boundary.coedges().iter().enumerate() {
+            for (coedge_index, edge_use) in edge_uses.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
                 let start = ir.model.points[point_assignment[logical_vertices[0]]]
@@ -7453,10 +7464,11 @@ fn same_cone_generator_pair(
     line_distance.is_finite() && line_distance <= EPS_SAME_CONE_GENERATOR
 }
 
-/// Collect plane normals only from trim-packet frame vectors, which carry the
-/// stored normal's signed sense. A target with conflicting frame vectors stays
-/// unresolved.
+/// Collect plane normals from trim-packet frame vectors. A frame vector is the
+/// oriented face normal, so the carrier normal is that vector multiplied by the
+/// face-sense byte. A target with conflicting carrier normals stays unresolved.
 fn standard_plane_normals_from_face_frames(
+    brep: &[u8],
     records: &[StandardSurfaceRecord],
     face_frame_vectors: &[Option<FiniteVector<3>>],
 ) -> HashMap<u32, FiniteVector<3>> {
@@ -7468,8 +7480,19 @@ fn standard_plane_normals_from_face_frames(
         if prefix.kind != AnalyticSurfaceKind::Plane {
             continue;
         }
-        let Some(normal) = face_frame_vectors.get(face).copied().flatten() else {
+        let Some(face_normal) = face_frame_vectors.get(face).copied().flatten() else {
             continue;
+        };
+        let Some(forward) = crate::families::standard::records::face_sense(brep, prefix) else {
+            continue;
+        };
+        let normal = if forward {
+            face_normal
+        } else {
+            let Some(reversed) = FiniteVector::new(face_normal.get().map(|lane| -lane)) else {
+                continue;
+            };
+            reversed
         };
         if let Some(stored) = candidates.get_mut(&prefix.target) {
             if stored.is_some_and(|stored| stored != normal) {

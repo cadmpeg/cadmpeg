@@ -78,6 +78,14 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_arc_branch_least_box_excess(&mut self, source_offset: usize, excess: f64) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryArcBranchLeastBoxExcess.note(format!(
+                "Selected the arc of the edge curve at source offset {source_offset} that exceeds its face boxes by {excess:e} mm; the complementary arc exceeds them by more than a hundred times as much"
+            )),
+        );
+    }
+
     /// Retain the identity that prevented a carrier population from merging.
     pub(crate) fn push_annotation_collision(
         &mut self,

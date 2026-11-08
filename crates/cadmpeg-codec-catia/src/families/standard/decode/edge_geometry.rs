@@ -766,7 +766,7 @@ pub(super) fn standard_spline_cylinder_plane(
     ))))
 }
 
-pub(super) fn standard_spline_perpendicular_cylinders(
+pub(super) fn standard_spline_equal_cylinders(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
@@ -807,7 +807,7 @@ pub(super) fn standard_spline_perpendicular_cylinders(
         return Ok(None);
     }
     let axis_dot = first_axis.dot(second_axis);
-    if !axis_dot.is_finite() || axis_dot.abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+    if !axis_dot.is_finite() || axis_dot.abs() >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
         return Ok(None);
     }
     let denominator = 1.0 - axis_dot * axis_dot;
@@ -858,11 +858,7 @@ pub(super) fn standard_spline_perpendicular_cylinders(
         return Ok(None);
     };
     let radius = (first_radius + second_radius) * 0.5;
-    let major_radius = radius * 2.0_f64.sqrt();
     let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(radius) else {
-        return Ok(None);
-    };
-    let Some(major_radius) = cadmpeg_ir::scalar::PositiveLength::new(major_radius) else {
         return Ok(None);
     };
     let Some(center) = FinitePoint3::new(center) else {
@@ -874,6 +870,10 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     ]
     .into_iter()
     .filter_map(|(axis, major_direction)| {
+        // The branch normal is twice the sine of the angle between the major
+        // direction and either cylinder axis.
+        let half_angle_sine = 0.5 * axis.norm();
+        let major_radius = cadmpeg_ir::scalar::PositiveLength::new(radius.get() / half_angle_sine)?;
         let axis = unit_vector(axis)?;
         let major_direction = unit_vector(major_direction)?;
         let endpoint_is_on_branch = |point: Point3| {
@@ -1377,7 +1377,7 @@ pub(super) fn build_standard_edge_curve(
                                 points,
                             )? {
                                 Some(geometry) => (geometry, None),
-                                None => match standard_spline_perpendicular_cylinders(
+                                None => match standard_spline_equal_cylinders(
                                     ctx,
                                     ir,
                                     bindings,
@@ -1426,6 +1426,27 @@ pub(super) fn build_standard_edge_curve(
                 endpoints[1],
                 witness,
             );
+        }
+        if param_range.is_none() {
+            if let Some((reversed, range, evidence)) = arc_bounds::bounded_analytic_branch(
+                &geometry,
+                endpoints,
+                &arc_bounds::support_bounds(face_bounds, support),
+            ) {
+                if let arc_bounds::BranchEvidence::LeastExcess(excess) = evidence {
+                    refusal.push_arc_branch_least_box_excess(support.pos, excess);
+                }
+                match &mut geometry {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) if reversed => {
+                        circle.reverse_parameterization();
+                    }
+                    CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) if reversed => {
+                        ellipse.reverse_parameterization();
+                    }
+                    _ => {}
+                }
+                param_range = Some(range);
+            }
         }
     }
     let oriented_native_support_pcurves = if matches!(

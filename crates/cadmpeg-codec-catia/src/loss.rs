@@ -79,6 +79,8 @@ pub(crate) enum CatiaLossCode {
     GeometryPcurveRechartNonFinite,
     /// A spherical UV chord leaves its source circle plane.
     GeometryPcurveCirclePlaneMismatch,
+    /// An edge arc was selected by the smaller excess over its face boxes.
+    GeometryArcBranchLeastBoxExcess,
     /// A source-owned pcurve lacks a complete neutral boundary binding.
     GeometryPcurveSourceUseUntransferred,
     /// Binary32 coordinate uncertainty widened derived vertex tolerances.
@@ -173,6 +175,7 @@ impl CatiaLossCode {
         Self::GeometryParameterRangeInvalid,
         Self::GeometryPcurveRechartNonFinite,
         Self::GeometryPcurveCirclePlaneMismatch,
+        Self::GeometryArcBranchLeastBoxExcess,
         Self::GeometryPcurveSourceUseUntransferred,
         Self::GeometryVertexToleranceWidened,
         Self::GeometryFaceLocalFreeformNotTransferred,
@@ -231,6 +234,7 @@ impl CatiaLossCode {
             Self::GeometryParameterRangeInvalid => "geometry.parameter-range-invalid",
             Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
             Self::GeometryPcurveCirclePlaneMismatch => "geometry.pcurve-circle-plane-mismatch",
+            Self::GeometryArcBranchLeastBoxExcess => "geometry.arc-branch-least-box-excess",
             Self::GeometryPcurveSourceUseUntransferred => {
                 "geometry.pcurve-source-use-untransferred"
             }
@@ -316,6 +320,7 @@ impl CatiaLossCode {
             | Self::GeometryVertexToleranceWidened
             | Self::TopologySheetComponentsInferred => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
+            Self::GeometryArcBranchLeastBoxExcess => LossTaxonomy::CarrierAxisInferred,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
@@ -411,6 +416,7 @@ mod tests {
                 "geometry.parameter-range-invalid",
                 "geometry.pcurve-rechart-non-finite",
                 "geometry.pcurve-circle-plane-mismatch",
+                "geometry.arc-branch-least-box-excess",
                 "geometry.pcurve-source-use-untransferred",
                 "geometry.vertex-tolerance-widened",
                 "geometry.face-local-freeform-not-transferred",

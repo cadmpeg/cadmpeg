@@ -455,6 +455,116 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
 }
 
 #[test]
+fn standard_equal_oblique_cylinders_select_one_ellipse_branch() {
+    let mut ir = CadIr::empty();
+    let mut annotations = AnnotationBuilder::new();
+    ir.model.points.extend(
+        [
+            Point3::new(2.0, 0.0, 2.0 * 3.0_f64.sqrt()),
+            Point3::new(0.0, 2.0, 0.0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, position)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
+                None,
+            )
+        }),
+    );
+    let first_id =
+        SurfaceId::mint("catia:test:surface#first-cylinder".to_string()).expect("identity grammar");
+    let second_id = SurfaceId::mint("catia:test:surface#second-cylinder".to_string())
+        .expect("identity grammar");
+    ir.model.surfaces.extend([
+        Surface {
+            id: first_id.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
+            source_object: None,
+        },
+        Surface {
+            id: second_id.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(3.0_f64.sqrt() / 2.0, 0.0, 0.5),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    2.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
+            source_object: None,
+        },
+    ]);
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let (id, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut annotations,
+                bindings: &[(first_id.clone(), false, 0), (second_id.clone(), false, 1)],
+                surface_indices: &HashMap::from([(first_id, 0), (second_id, 1)]),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                face_bounds: &[],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
+    })
+    .expect("valid source object identity");
+    let id = id.expect("spline support identifies a curve carrier");
+    assert_eq!(range, None);
+    let Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) = ir.model.curves[0].geometry.solved()
+    else {
+        panic!("oblique cylinders did not select an ellipse branch");
+    };
+    let center = ellipse_curve.center().get();
+    let axis = ellipse_curve.frame().axis().as_raw();
+    let major_direction = ellipse_curve.frame().reference().as_raw();
+    let major_radius = ellipse_curve.major_radius().get();
+    let minor_radius = ellipse_curve.minor_radius().get();
+    assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!(
+        axis.dot(Vector3::new(-(3.0_f64.sqrt()) / 2.0, 0.0, 0.5))
+            .abs()
+            >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+    );
+    assert!(
+        major_direction
+            .dot(Vector3::new(0.5, 0.0, 3.0_f64.sqrt() / 2.0))
+            .abs()
+            >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+    );
+    // Axes 60 degrees apart: the branch through the acute bisector has the
+    // semi-axis r / sin(30 degrees).
+    assert!((major_radius - 4.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!((minor_radius - 2.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert_eq!(ir.model.curves[0].id, id);
+    assert!(ir.model.procedural_curves.is_empty());
+}
+
+#[test]
 fn standard_spline_retains_a_procedural_rolling_ball_support() {
     let mut ir = CadIr::empty();
     ir.model.points.extend(

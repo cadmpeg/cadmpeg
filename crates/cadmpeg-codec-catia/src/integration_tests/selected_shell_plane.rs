@@ -125,19 +125,33 @@ fn selected_plane_source(ambiguous: bool, invalid_sign: bool) -> Vec<u8> {
 }
 
 #[test]
-fn selected_shell_plane_parity_changes_only_the_oriented_face_normal() {
+fn selected_shell_plane_agrees_with_the_face_frame_orientation() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
     let baseline = decode(baseline_source());
     let corrected = decode(selected_plane_source(false, false));
-    assert_eq!(baseline.ir().model.faces.len(), 4);
-    let mut expected = baseline.ir().model.clone();
-    let face = expected
+    let model = &baseline.ir().model;
+    assert_eq!(model.faces.len(), 4);
+    let face = model
         .faces
-        .iter_mut()
+        .iter()
         .find(|face| face.id.as_str() == "catia:standard:face#1")
         .expect("plane face");
     assert_eq!(face.sense, Sense::Reversed);
-    face.sense = Sense::Forward;
-    assert_eq!(corrected.ir().model, expected);
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .expect("plane carrier");
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
+        panic!("plane carrier");
+    };
+    let frame = 1.0 / 3.0_f64.sqrt();
+    let carrier_normal = plane.frame().axis().as_raw();
+    assert!((carrier_normal.x + frame).abs() < 1e-6);
+    assert!((carrier_normal.y - frame).abs() < 1e-6);
+    assert!((carrier_normal.z + frame).abs() < 1e-6);
+    assert_eq!(corrected.ir().model, baseline.ir().model);
     assert_valid(&corrected);
 }
 
