@@ -20,7 +20,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
-
 #[test]
 fn source_less_extrude_keeps_profile_frame() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
@@ -52,7 +51,6 @@ fn source_less_extrude_keeps_profile_frame() {
     assert_eq!(group.frame.opaque_index.get(), 7);
     assert!((group.frame.opaque_scalar().get() - 2.5).abs() < 1e-12);
 }
-
 #[test]
 fn source_less_extrude_keeps_profile_record_indices() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
@@ -86,9 +84,8 @@ fn source_less_extrude_keeps_profile_record_indices() {
     let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
     assert_eq!(indices(written.ir()), expected);
 }
-
 #[test]
-fn source_less_extrude_keeps_profile_asset() {
+fn source_less_extrude_targets_generated_design_asset() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -120,11 +117,16 @@ fn source_less_extrude_keeps_profile_asset() {
             .as_str()
             .to_owned()
     };
-    let expected = asset(decoded.ir());
+    assert_ne!(
+        asset(decoded.ir()),
+        crate::manifest::GENERATED_ASSET_FOLDER_GUID
+    );
     let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
-    assert_eq!(asset(written.ir()), expected);
+    assert_eq!(
+        asset(written.ir()),
+        crate::manifest::GENERATED_ASSET_FOLDER_GUID
+    );
 }
-
 #[test]
 fn source_less_extrude_keeps_scope_and_parameter_indices() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
@@ -168,7 +170,6 @@ fn source_less_extrude_keeps_scope_and_parameter_indices() {
     let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
     assert_eq!(indices(written.ir()), expected);
 }
-
 #[test]
 fn source_less_sketch_keeps_feature_scope_index() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
@@ -200,7 +201,6 @@ fn source_less_sketch_keeps_feature_scope_index() {
     let (written, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
     assert_eq!(scope_index(written.ir()), expected);
 }
-
 #[test]
 fn source_less_sketch_keeps_relation_record_indices() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_extrude_depth.f3d");
@@ -230,7 +230,6 @@ fn source_less_sketch_keeps_relation_record_indices() {
         .collect();
     assert_eq!(actual, expected);
 }
-
 #[test]
 fn source_less_decal_keeps_edited_image_and_target() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_decal.f3d");
@@ -245,7 +244,6 @@ fn source_less_decal_keeps_edited_image_and_target() {
     report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
 }
-
 #[test]
 fn source_less_canvas_keeps_edited_image_bytes() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_canvas.f3d");
@@ -281,7 +279,6 @@ fn source_less_canvas_keeps_edited_image_bytes() {
     report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
 }
-
 #[test]
 fn source_less_canvas_mirrored_reports_omission() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_canvas.f3d");
@@ -307,7 +304,6 @@ fn source_less_canvas_mirrored_reports_omission() {
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::WriterAssetOmitted.kind()));
 }
-
 #[test]
 fn source_less_form_keeps_native_scope_and_cage() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_form.f3d");
@@ -327,7 +323,6 @@ fn source_less_form_keeps_native_scope_and_cage() {
         written.ir(),
     );
 }
-
 #[test]
 fn source_less_copy_paste_keeps_edited_occurrence_placement() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_copy_paste.f3d");
@@ -360,7 +355,6 @@ fn source_less_copy_paste_keeps_edited_occurrence_placement() {
     report.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, written.ir());
 }
-
 #[test]
 fn source_less_surface_stitch_keeps_its_input_and_gap() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_surface_stitch.f3d");
@@ -380,7 +374,6 @@ fn source_less_surface_stitch_keeps_its_input_and_gap() {
         written.ir(),
     );
 }
-
 #[test]
 fn source_less_remove_body_keeps_group_without_untyped_member() {
     let bytes = include_bytes!("../../../tests/golden/fixtures/design_remove_body.f3d");
@@ -406,7 +399,6 @@ fn source_less_remove_body_keeps_group_without_untyped_member() {
         written.ir(),
     );
 }
-
 #[test]
 fn source_less_remove_body_keeps_its_input_group() {
     use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -425,7 +417,6 @@ fn source_less_remove_body_keeps_its_input_group() {
         written.ir(),
     );
 }
-
 #[test]
 fn source_less_native_base_flange_keeps_its_references() {
     use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -444,7 +435,6 @@ fn source_less_native_base_flange_keeps_its_references() {
         written.ir(),
     );
 }
-
 #[test]
 fn source_less_empty_base_feature_keeps_its_selection() {
     use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -463,7 +453,6 @@ fn source_less_empty_base_feature_keeps_its_selection() {
         written.ir(),
     );
 }
-
 #[test]
 fn source_less_typed_sketch_text_survives_synthesis() {
     use crate::records::entity_header::{DesignEntityHeader, SegmentType, SegmentTypeData};
@@ -650,7 +639,6 @@ fn source_less_typed_sketch_text_survives_synthesis() {
         expected_layout
     );
 }
-
 #[test]
 fn generated_source_less_writes_design_type_metastream() {
     use crate::records::entity_header::SegmentType;
@@ -807,7 +795,6 @@ fn generated_source_less_writes_design_type_metastream() {
     assert_eq!(future.entities.values().copied().collect::<Vec<_>>(), [999]);
     assert_eq!(future.version, 11);
 }
-
 #[test]
 fn generated_source_less_writes_design_recipes_and_persistent_references() {
     use crate::records::{
@@ -1122,7 +1109,6 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     );
     assert_eq!(native.lost_edge_references[0].next_record_index, 4646);
 }
-
 #[test]
 fn generated_source_less_writes_design_ownership_and_record_headers() {
     use crate::records::{
