@@ -75,9 +75,12 @@ impl From<std::io::Error> for WriteError {
 impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
     fn from(error: WriteError) -> Self {
         match error {
-            WriteError::Decline(reason) => Self::Io(std::io::Error::other(format!(
-                "patch declined: {reason}"
-            ))),
+            WriteError::Decline(reason) => {
+                debug_assert!(false, "patch decline must be handled before encode: {reason}");
+                cadmpeg_ir::codec::write::transitional_from_codec(
+                    cadmpeg_core::CodecError::InvalidInput(format!("patch declined: {reason}")),
+                )
+            }
             WriteError::Fatal(error) => cadmpeg_ir::codec::write::transitional_from_codec(error),
             WriteError::Io(error) => Self::Io(error),
             WriteError::Capacity { field, value } => Self::TargetCapacity {
