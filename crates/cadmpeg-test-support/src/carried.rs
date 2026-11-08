@@ -96,12 +96,25 @@ pub enum UnheldClass {
     /// A surface on a cone with an elliptical section and a non-zero half
     /// angle.
     EllipticalCone,
+    /// A binding of a translucent appearance to a curve, edge, point or
+    /// vertex, whose style holds no transparency.
+    TranslucentLineBinding,
+    /// A solid body with more than one region: a manifold solid bounds one
+    /// connected volume.
+    MultiRegionSolid,
+    /// A product definition whose source name differs from its label, where
+    /// the format holds one product name.
+    DistinctProductNames,
+    /// A coedge with more than one pcurve, where the format associates one
+    /// pcurve with a coedge on its face's surface.
+    MultiPcurveCoedge,
 }
 
 impl UnheldClass {
-    /// Whether a serialized record of `arena` belongs to the class.
+    /// Whether a serialized record of `arena` in `document` belongs to the
+    /// class.
     #[must_use]
-    pub fn contains(self, arena: &str, record: &Value) -> bool {
+    pub fn contains(self, arena: &str, record: &Value, document: &Value) -> bool {
         match self {
             Self::EllipticalCone => {
                 arena == "surfaces"
@@ -109,8 +122,54 @@ impl UnheldClass {
                         .get("geometry")
                         .is_some_and(contains_elliptical_cone)
             }
+            Self::TranslucentLineBinding => {
+                arena == "appearance_bindings"
+                    && matches!(
+                        record
+                            .get("target")
+                            .and_then(|target| target.get("kind"))
+                            .and_then(Value::as_str),
+                        Some("curve" | "edge" | "point" | "vertex")
+                    )
+                    && record
+                        .get("appearance")
+                        .and_then(Value::as_str)
+                        .is_some_and(|appearance| translucent(document, appearance))
+            }
+            Self::MultiPcurveCoedge => {
+                arena == "coedges"
+                    && record
+                        .get("pcurves")
+                        .and_then(Value::as_array)
+                        .is_some_and(|uses| uses.len() > 1)
+            }
+            Self::DistinctProductNames => {
+                let name = |key| record.get(key).and_then(Value::as_str);
+                arena == "product_definitions"
+                    && name("source_name").zip(name("label")).is_some_and(|(source, label)| source != label)
+            }
+            Self::MultiRegionSolid => {
+                arena == "bodies"
+                    && record.get("kind").and_then(Value::as_str) == Some("solid")
+                    && record
+                        .get("regions")
+                        .and_then(Value::as_array)
+                        .is_some_and(|regions| regions.len() > 1)
+            }
         }
     }
+}
+
+fn translucent(document: &Value, appearance: &str) -> bool {
+    document
+        .get("model")
+        .and_then(|model| model.get("appearances"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|row| row.get("id").and_then(Value::as_str) == Some(appearance))
+        .filter_map(|row| row.get("base_color")?.get("a")?.as_f64())
+        .any(|alpha| alpha < 1.0)
 }
 
 fn contains_elliptical_cone(value: &Value) -> bool {
