@@ -145,7 +145,7 @@ The shell scripts (`*.sh`) need Git Bash and the commands that each script check
 
 - [ ] The `Signed off` box in the pull request description is ticked.
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
-- [ ] The `Release note` section names a change that users see, starts with `Breaking:` when users must change a command, a script, or a stored file, or is empty. The release notes list each line (`scripts/release-notes.py`).
+- [ ] The `Breaking change` section is empty unless users must change a command, a script, or a stored file. The release notes list each line under Compatibility (`scripts/release-notes.py`).
 - [ ] `python3 scripts/preflight.py` reports no `FAIL`.
 - [ ] `cargo fmt --all --check` passes.
 - [ ] `cargo clippy --workspace --all-targets` passes.

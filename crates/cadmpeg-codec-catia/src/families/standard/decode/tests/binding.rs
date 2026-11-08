@@ -1504,6 +1504,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
 }
 
 mod curve_bindings;
+mod cylindrical_arcs;
 
 #[test]
 fn owner_carrier_helper_preserves_session_depth_refusal() {

@@ -490,6 +490,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ),
     );
     losses.extend(
+        crate::design::decode::placement_construction::work_planes::class_pair_inferred_axis_losses(
+            &design.design_parameter_scopes,
+            &design.design_placement_constructions,
+            &prereqs.design_work_plane_inferred_axes,
+        ),
+    );
+    losses.extend(
         crate::design::decode::placement_construction::cylinders::bind(
             &mut design.design_parameter_scopes,
             &design.design_placement_constructions,
@@ -675,6 +682,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &mut model.features,
         geometry.subds,
+        &mut losses,
     )?;
     let canvas_assets = crate::design::decode::canvas::project_canvas_images(
         ctx,
@@ -1720,6 +1728,7 @@ fn extend_related_design_records(
         &design.design_construction_operand_groups,
         &design.design_record_headers,
         &prereqs.construction_recipes,
+        &prereqs.design_types,
     )?;
     crate::design::decode::operands::bind_face_operand_candidates(
         &mut design.design_face_operands,

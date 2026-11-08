@@ -58,7 +58,7 @@ impl Fields {
         for word in [0x8000_000a_u32, self.topology] {
             bytes.extend_from_slice(&word.to_le_bytes());
         }
-        if version != 19 {
+        if !(19..=21).contains(&version) {
             bytes.extend_from_slice(&self.qualifier.to_le_bytes());
         }
         bytes.extend_from_slice(&self.naming.to_le_bytes());
@@ -173,9 +173,9 @@ fn face_selector_forms_that_differ_in_any_control_stay_unparsed() {
         ("foreign entity context", |f| f.entities[1].0 = 0x8000_0005),
         ("zero entity", |f| f.entities[0].1 = 0),
     ];
-    for version in [19, 23, 29] {
+    for version in [19, 20, 21, 23, 29] {
         for (name, edit) in edits {
-            if name == "qualifier" && version == 19 {
+            if name == "qualifier" && (19..=21).contains(&version) {
                 continue;
             }
             let mut fields = Fields::new();
@@ -1197,6 +1197,115 @@ fn a_thicken_selection_list_joins_the_faces_of_every_wrapper() {
             .is_empty()
     );
     assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+}
+
+fn offset_thicken_fixture(ctx: &DecodeContext<'_>) -> (crate::feature::FeatureInventory, Feature) {
+    let (inventory, mut feature) = thicken_fixture(ctx);
+    retarget(
+        &mut feature,
+        "thicken",
+        FeatureOperation::MoveFace {
+            faces: FaceSelection::Native(inventory.properties[0].id()),
+            motion: FaceMotion::Offset {
+                distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),
+            },
+        },
+    );
+    (inventory, feature)
+}
+
+#[test]
+fn a_thicken_face_offset_joins_the_faces_of_every_wrapper_and_keeps_no_partial_selection() {
+    let ctx = context();
+    let (inventory, mut feature) = offset_thicken_fixture(&ctx);
+    let sources = std::collections::HashSet::from([inventory.features[0].id()]);
+    feature.native_ref = Some(inventory.features[0].id());
+    assert_eq!(
+        crate::feature::thicken_operand_losses(std::slice::from_ref(&feature), &sources).len(),
+        1
+    );
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert_eq!(states.len(), 1);
+    let FaceSelection::Historical {
+        faces: selected,
+        native,
+        ..
+    } = faces(&feature)
+    else {
+        panic!("historical faces")
+    };
+    assert_eq!(native.as_str(), inventory.properties[0].id());
+    assert_eq!(
+        selected
+            .as_slice()
+            .iter()
+            .map(HistoricalFaceId::as_str)
+            .collect::<Vec<_>>(),
+        [
+            format!("inventor:input-face#{TOKEN}-41"),
+            format!("inventor:input-face#{TOKEN}-43")
+        ]
+    );
+    assert!(matches!(
+        selection(&feature),
+        Some((Kind::ThickenOffset, _))
+    ));
+    assert!(check(&inventory, &feature, &states));
+    // The joined selection no longer counts as a native Thicken operand, and
+    // it states the input-revision assumption like every joined face.
+    assert!(
+        crate::feature::thicken_operand_losses(std::slice::from_ref(&feature), &sources).is_empty()
+    );
+    assert_eq!(
+        assumption_losses(std::slice::from_ref(&feature), &inventory).len(),
+        1
+    );
+    // One unresolved face leaves the list native: only Move Face keeps a partial selection.
+    let (mut inventory, mut feature) = offset_thicken_fixture(&ctx);
+    inventory.edge_inputs.faces.remove(&(TOKEN.to_owned(), 43));
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+    // A repeated owner is a collision and leaves the list native.
+    let (mut inventory, mut feature) = offset_thicken_fixture(&ctx);
+    inventory
+        .edge_inputs
+        .faces
+        .insert((TOKEN.to_owned(), 43), selected_face(5, 37, Surface::Other));
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+}
+
+#[test]
+fn a_thicken_tagged_translation_takes_no_face_join() {
+    let ctx = context();
+    let (inventory, mut feature) = thicken_fixture(&ctx);
+    retarget(
+        &mut feature,
+        "thicken",
+        FeatureOperation::MoveFace {
+            faces: FaceSelection::Native(inventory.properties[0].id()),
+            motion: FaceMotion::Translate {
+                direction: cadmpeg_ir::features::FeatureDirection3::from(
+                    cadmpeg_ir::units::UnitVector3::X_AXIS,
+                ),
+                distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),
+            },
+        },
+    );
+    assert!(selection(&feature).is_none());
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
 }
 
 fn cone(index: usize, sine: f64, radius: f64) -> Record {

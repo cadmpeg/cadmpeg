@@ -31,6 +31,8 @@ mod path_pattern;
 mod pattern;
 pub(crate) mod pipe;
 pub(super) mod point_data;
+mod point_direction;
+mod reverse_normal;
 pub(super) mod shared_frames;
 pub(crate) mod sheet_metal;
 mod solid_primitive;

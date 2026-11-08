@@ -3,6 +3,10 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use super::point_data::exact_point_data_construction;
+use super::point_direction::{
+    point_direction_carrier_at, PointDirectionCarrier, POINT_DIRECTION_TYPE_GUID,
+};
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::{f64s_at, finite_reals_at};
@@ -21,12 +25,52 @@ use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 use crate::layout::work_plane_legacy_class_400_matrix_frame as work_plane_legacy;
+use crate::loss::F3dLossCode;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkAxisConstruction;
 use crate::records::feature::work_geometry::DesignWorkAxisSource;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
+use std::collections::HashMap;
+
+const WORK_AXIS_CARRIER_VALUE_COUNT: u32 = 8;
+
+const WORK_AXIS_TWO_POINT_REFERENCE_TYPE: u32 = 12;
+
+const EPS_WORK_AXIS_ENDPOINT_CM: f64 = 1.0e-9;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ExactWorkAxis {
+    pub(super) construction: DesignWorkAxisConstruction,
+    pub(super) endpoint_deviation_cm: f64,
+}
+
+pub(super) fn work_axis_loss_notes(
+    scope: &DesignParameterScope,
+    axis: &ExactWorkAxis,
+) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    if let Some(DesignWorkAxisSource::PointDirection {
+        carrier_record_index,
+        reference_type,
+        input_record_indices,
+    }) = &axis.construction.source
+    {
+        losses.push(F3dLossCode::FeatureWorkAxisRuleUnassigned.note(format!(
+            "WorkAxis scope {} assumes the position and direction of carrier {carrier_record_index} give its solved axis; refType {reference_type} has no assigned construction rule, and inputs {input_record_indices:?} stay native.",
+            scope.id,
+        )));
+    }
+    if axis.endpoint_deviation_cm > 0.0 {
+        losses.push(F3dLossCode::FeatureWorkAxisEndpointToleranceAssumed.note(format!(
+            "WorkAxis scope {} assumes its two point records give the carrier endpoints; they differ from the endpoints by up to {:e} cm, within {EPS_WORK_AXIS_ENDPOINT_CM:e} cm.",
+            scope.id, axis.endpoint_deviation_cm,
+        )));
+    }
+    losses
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ScopePlacementFrame {
@@ -39,19 +83,19 @@ pub(super) fn exact_work_plane_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<ScopePlacementFrame> {
+) -> Option<(ScopePlacementFrame, [u8; 2])> {
     let mut candidate = None;
     for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
             let frame_length = paired.checked_sub(start)?;
-            let (matrix_at, reference) = match frame_length {
+            let (matrix_at, reference, inferred_axes) = match frame_length {
                 work_plane_legacy::LEN
                     if bytes.get(start + 4..start + 7) == Some(b"400")
                         && bytes.get(paired + 4..paired + 7) == Some(b"262")
                         && bytes.get(start + 11..start + work_plane_legacy::MATRIX)
                             == Some(&[0u8; work_plane_legacy::MATRIX - 11][..]) =>
                 {
-                    (start + work_plane_legacy::MATRIX, None)
+                    (start + work_plane_legacy::MATRIX, None, [0, 0])
                 }
                 work_plane_class_290::LEN
                     if bytes.get(start + 4..start + 7) == Some(b"290")
@@ -63,7 +107,7 @@ pub(super) fn exact_work_plane_frame(
                                 ..start + work_plane_class_290::MATRIX,
                         ) == Some(&[1, 1, 0, 0][..]) =>
                 {
-                    (start + work_plane_class_290::MATRIX, None)
+                    (start + work_plane_class_290::MATRIX, None, [1, 1])
                 }
                 work_plane_325::LEN
                     if matches!(
@@ -78,7 +122,7 @@ pub(super) fn exact_work_plane_frame(
                     ) && bytes.get(start + 11..start + work_plane_325::MATRIX)
                         == Some(&[0u8; work_plane_325::MATRIX - 11][..]) =>
                 {
-                    (start + work_plane_325::MATRIX, None)
+                    (start + work_plane_325::MATRIX, None, [0, 0])
                 }
                 work_plane_class_256::LEN
                     if bytes.get(start + 4..start + 7) == Some(b"256")
@@ -93,7 +137,12 @@ pub(super) fn exact_work_plane_frame(
                                 [..],
                         ) =>
                 {
-                    (start + work_plane_class_256::MATRIX, None)
+                    (
+                        start + work_plane_class_256::MATRIX,
+                        None,
+                        View::u16_le_at(bytes, start + work_plane_class_256::OPAQUE_U16)?
+                            .to_le_bytes(),
+                    )
                 }
                 work_plane_class_337_325::LEN
                     if bytes.get(start + 4..start + 7) == Some(b"337")
@@ -108,7 +157,12 @@ pub(super) fn exact_work_plane_frame(
                                 - work_plane_class_337_325::ZERO_PAIR][..],
                         ) =>
                 {
-                    (start + work_plane_class_337_325::MATRIX, None)
+                    (
+                        start + work_plane_class_337_325::MATRIX,
+                        None,
+                        View::u16_le_at(bytes, start + work_plane_class_337_325::OPAQUE_U16)?
+                            .to_le_bytes(),
+                    )
                 }
                 work_plane_class_322_332::LEN
                     if bytes.get(start + 4..start + 7) == Some(b"322")
@@ -116,10 +170,10 @@ pub(super) fn exact_work_plane_frame(
                         && bytes.get(start + 11..start + work_plane_class_322_332::MATRIX)
                             == Some(&[0u8; work_plane_class_322_332::MATRIX - 11][..]) =>
                 {
-                    (start + work_plane_class_322_332::MATRIX, None)
+                    (start + work_plane_class_322_332::MATRIX, None, [0, 0])
                 }
                 321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
-                    (start + 49, None)
+                    (start + 49, None, [0, 0])
                 }
                 work_plane_321_opaque::LEN
                     if matches!(
@@ -138,21 +192,26 @@ pub(super) fn exact_work_plane_frame(
                                 - work_plane_321_opaque::ZERO_PAIR][..],
                         ) =>
                 {
-                    (start + work_plane_321_opaque::MATRIX, None)
+                    (
+                        start + work_plane_321_opaque::MATRIX,
+                        None,
+                        View::u16_le_at(bytes, start + work_plane_321_opaque::OPAQUE_U16)?
+                            .to_le_bytes(),
+                    )
                 }
                 321 if bytes.get(start + 4..start + 7) == Some(b"364")
                     && bytes.get(paired + 4..paired + 7) == Some(b"264")
                     && bytes.get(start + 11..start + 46) == Some(&[0u8; 35][..])
                     && bytes.get(start + 46..start + 49) == Some(&[1, 0, 0][..]) =>
                 {
-                    (start + 49, None)
+                    (start + 49, None, [0, 1])
                 }
                 321 if bytes.get(start + 4..start + 7) == Some(b"364")
                     && bytes.get(paired + 4..paired + 7) == Some(b"264")
                     && bytes.get(start + 11..start + 45) == Some(&[0u8; 34][..])
                     && bytes.get(start + 45..start + 49) == Some(&[0xcc, 0xcd, 0, 0][..]) =>
                 {
-                    (start + 49, None)
+                    (start + 49, None, [0xcc, 0xcd])
                 }
                 326 if matches!(
                     (
@@ -164,7 +223,7 @@ pub(super) fn exact_work_plane_frame(
                         | (Some(b"450"), Some(b"259"))
                 ) && bytes.get(start + 11..start + 50) == Some(&[0u8; 39][..]) =>
                 {
-                    (start + 50, None)
+                    (start + 50, None, [0, 0])
                 }
                 work_plane_337::LEN
                     if matches!(
@@ -176,7 +235,7 @@ pub(super) fn exact_work_plane_frame(
                     ) && bytes.get(start + 11..start + work_plane_337::MATRIX)
                         == Some(&[0u8; work_plane_337::MATRIX - 11][..]) =>
                 {
-                    (start + work_plane_337::MATRIX, None)
+                    (start + work_plane_337::MATRIX, None, [0, 0])
                 }
                 work_plane_direct_352::LEN
                 | work_plane_direct_363::LEN
@@ -198,7 +257,12 @@ pub(super) fn exact_work_plane_frame(
                                 - work_plane_direct_352::ZERO_PAIR][..],
                         ) =>
                 {
-                    (start + work_plane_direct_352::MATRIX, None)
+                    (
+                        start + work_plane_direct_352::MATRIX,
+                        None,
+                        View::u16_le_at(bytes, start + work_plane_direct_352::OPAQUE_U16)?
+                            .to_le_bytes(),
+                    )
                 }
                 362 | 373
                     if bytes.get(start + 55..start + 58) == Some(&[1, 0, 1][..])
@@ -210,6 +274,7 @@ pub(super) fn exact_work_plane_frame(
                             View::u32_le_at(bytes, start + 58)?,
                             u64_from_index(start + 58),
                         )),
+                        [0, 0],
                     )
                 }
                 _ => continue,
@@ -225,11 +290,14 @@ pub(super) fn exact_work_plane_frame(
                 continue;
             };
             if candidate
-                .replace(ScopePlacementFrame {
-                    transform,
-                    transform_offset: u64_from_index(matrix_at),
-                    reference,
-                })
+                .replace((
+                    ScopePlacementFrame {
+                        transform,
+                        transform_offset: u64_from_index(matrix_at),
+                        reference,
+                    },
+                    inferred_axes,
+                ))
                 .is_some()
             {
                 return None;
@@ -243,12 +311,133 @@ pub(super) fn exact_work_axis_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignWorkAxisConstruction> {
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<ExactWorkAxis> {
     if scope.kind() != scope::DesignFeatureKind::WorkAxis {
         return None;
     }
     exact_two_point_work_axis_construction(bytes, records, scope)
         .or_else(|| exact_direct_work_axis_construction(bytes, records, scope))
+        .map(|construction| ExactWorkAxis {
+            construction,
+            endpoint_deviation_cm: 0.0,
+        })
+        .or_else(|| {
+            exact_point_direction_work_axis_construction(bytes, records, scope, stream_types)
+        })
+}
+
+fn exact_point_direction_work_axis_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<ExactWorkAxis> {
+    let mut candidate = None;
+    for record_index in scope.reference_members().values() {
+        let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
+            continue;
+        };
+        if *type_guid != POINT_DIRECTION_TYPE_GUID || !matches!(*version, 1 | 4) {
+            continue;
+        }
+        let mut frames = records.frames(*record_index);
+        let (Some((start, paired)), None) = (frames.next(), frames.next()) else {
+            return None;
+        };
+        let carrier = point_direction_carrier_at(bytes, start, paired, *record_index, *version)?;
+        let axis = work_axis_from_point_direction_carrier(
+            bytes,
+            records,
+            *record_index,
+            &carrier,
+            stream_types,
+        )?;
+        if candidate.as_ref().is_some_and(|previous| previous != &axis) {
+            return None;
+        }
+        candidate = Some(axis);
+    }
+    candidate
+}
+
+fn work_axis_from_point_direction_carrier(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    carrier_record_index: u32,
+    carrier: &PointDirectionCarrier,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<ExactWorkAxis> {
+    if carrier.bounding_box_index != WORK_AXIS_CARRIER_VALUE_COUNT
+        || carrier
+            .point_parameters
+            .iter()
+            .any(|value| value.get() != 0.0)
+    {
+        return None;
+    }
+    let origin = carrier.position;
+    let displacement = carrier.direction;
+    let displacement_length = displacement[0]
+        .get()
+        .hypot(displacement[1].get())
+        .hypot(displacement[2].get());
+    if displacement_length <= f64::EPSILON {
+        return None;
+    }
+    let mut endpoint_deviation_cm: f64 = 0.0;
+    let source = if carrier.reference_type == WORK_AXIS_TWO_POINT_REFERENCE_TYPE {
+        let [first, second] = carrier.input_records.as_slice() else {
+            return None;
+        };
+        let endpoint: [f64; 3] =
+            std::array::from_fn(|axis| origin[axis].get() + displacement[axis].get());
+        let mut point_offsets = [0; 2];
+        for (ordinal, (input, expected)) in [
+            (first.value, origin.map(FiniteReal::get)),
+            (second.value, endpoint),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let point = exact_point_data_construction(bytes, records, [&input], stream_types)?;
+            let deviation = point
+                .position
+                .iter()
+                .zip(expected)
+                .map(|(actual, expected)| (actual.get() - expected).abs())
+                .fold(0.0, f64::max);
+            if deviation > EPS_WORK_AXIS_ENDPOINT_CM {
+                return None;
+            }
+            endpoint_deviation_cm = endpoint_deviation_cm.max(deviation);
+            point_offsets[ordinal] = point.position_offset;
+        }
+        DesignWorkAxisSource::TwoPoint {
+            point_record_indices: [first.value, second.value],
+            point_offsets,
+        }
+    } else {
+        DesignWorkAxisSource::PointDirection {
+            carrier_record_index,
+            reference_type: carrier.reference_type,
+            input_record_indices: carrier
+                .input_records
+                .iter()
+                .map(|input| input.value)
+                .collect(),
+        }
+    };
+    Some(ExactWorkAxis {
+        construction: DesignWorkAxisConstruction {
+            origin,
+            displacement,
+            origin_offset: u64::try_from(carrier.position_at).ok()?,
+            displacement_offset: u64::try_from(carrier.direction_at).ok()?,
+            source: Some(source),
+        },
+        endpoint_deviation_cm,
+    })
 }
 
 fn exact_two_point_work_axis_construction(

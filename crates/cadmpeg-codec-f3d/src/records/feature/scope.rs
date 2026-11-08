@@ -13,7 +13,9 @@ use super::assembly_features::{
     DesignDerivedInstanceConstruction,
 };
 use super::base_feature::DesignBaseFeatureConstruction;
-use super::body_ops::{DesignCopyPasteBodiesOperation, DesignScaleOperation};
+use super::body_ops::{
+    DesignCopyPasteBodiesOperation, DesignReverseNormalOperation, DesignScaleOperation,
+};
 use super::coil::{
     DesignCoilExtent, DesignCoilPlacement, DesignCoilScope, DesignCoilSection,
     DesignCoilSectionPlacement, DesignCoilTransform,
@@ -45,7 +47,7 @@ use super::sheet_metal::{
 use super::surface_ops::{
     DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
-    DesignSurfaceStitchOperation,
+    DesignSurfacePatchSelection, DesignSurfaceStitchOperation,
 };
 use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
@@ -259,6 +261,11 @@ cadmpeg_core::named_optional_field!(
     "scale_operation"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_reverse_normal_operation,
+    DesignReverseNormalOperation,
+    "reverse_normal_operation"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_solid_primitive,
     DesignSolidPrimitive,
     "solid_primitive"
@@ -406,6 +413,12 @@ cadmpeg_core::named_optional_field!(
     deserialize_surface_patch_normal,
     DesignSurfacePatchNormalState,
     "surface_patch_normal"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_patch_selection,
+    DesignSurfacePatchSelection,
+    "surface_patch_selection"
 );
 
 macro_rules! design_feature_kinds {
@@ -620,6 +633,7 @@ design_feature_kinds! {
         DerivedInstance => "DerivedInstance": Option<DesignDerivedInstanceConstruction>,
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
+        ReverseNormal => "Reverse Normal": Option<DesignReverseNormalOperation>,
     }
     fixed {
         Revolve => "Revolve": Option<DesignRevolveConstruction>,
@@ -905,6 +919,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_scale_operation"
     )]
     scale_operation: Option<DesignScaleOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reverse_normal_operation"
+    )]
+    reverse_normal_operation: Option<DesignReverseNormalOperation>,
     /// Fixed settings carried by a `PathPattern` scope.
     #[serde(
         default,
@@ -919,7 +939,7 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_stitch_operation"
     )]
     surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
-    /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
+    /// Exact distance and boundary records carried by a `SurfaceExtend` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -956,6 +976,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_patch_normal"
     )]
     surface_patch_normal: Option<DesignSurfacePatchNormalState>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_surface_patch_selection"
+    )]
+    surface_patch_selection: Option<DesignSurfacePatchSelection>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
     #[serde(
         default,
@@ -1649,6 +1675,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.reverse_normal_operation.is_some() {
+            present.push("reverse_normal_operation");
+        }
         if wire.path_pattern_settings.is_some() {
             present.push("path_pattern_settings");
         }
@@ -1664,7 +1693,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.ruled_surface_operation.is_some() {
             present.push("ruled_surface_operation");
         }
-        if !wire.surface_patch_boundaries.is_empty() || wire.surface_patch_normal.is_some() {
+        if !wire.surface_patch_boundaries.is_empty()
+            || wire.surface_patch_normal.is_some()
+            || wire.surface_patch_selection.is_some()
+        {
             present.push("surface_patch");
         }
         if wire.edge_flange_operation.is_some() {
@@ -1876,6 +1908,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::SurfacePatch(DesignSurfacePatchScope {
                     boundaries: std::mem::take(&mut wire.surface_patch_boundaries),
                     normal: wire.surface_patch_normal.take(),
+                    selection: wire.surface_patch_selection.take(),
                 })
             }
             DesignFeatureKind::SurfaceExtend => {
@@ -1899,6 +1932,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Split => DesignScopePayload::Split,
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
+            DesignFeatureKind::ReverseNormal => {
+                DesignScopePayload::ReverseNormal(wire.reverse_normal_operation.take())
+            }
             DesignFeatureKind::Emboss => {
                 DesignScopePayload::Emboss(wire.emboss_construction.take())
             }
@@ -2015,6 +2051,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.align_envelope.is_some()
             || wire.move_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
@@ -2022,6 +2059,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.ruled_surface_operation.is_some()
             || !wire.surface_patch_boundaries.is_empty()
             || wire.surface_patch_normal.is_some()
+            || wire.surface_patch_selection.is_some()
             || wire.edge_flange_operation.is_some()
             || wire.hem_operation.is_some()
             || wire.fixed_fillet_parameters.is_some()
@@ -2138,6 +2176,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             align_envelope: None,
             move_operation: None,
             scale_operation: None,
+            reverse_normal_operation: None,
             path_pattern_settings: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
@@ -2146,6 +2185,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             base_flange: None,
             surface_patch_boundaries: Vec::new(),
             surface_patch_normal: None,
+            surface_patch_selection: None,
             edge_flange_operation: None,
             hem_operation: None,
             fixed_fillet_parameters: None,
@@ -2241,6 +2281,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
             }
+            DesignScopePayload::ReverseNormal(value) => {
+                wire.reverse_normal_operation = value;
+            }
             DesignScopePayload::PathPattern(value) => wire.path_pattern_settings = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
@@ -2249,6 +2292,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::SurfacePatch(value) => {
                 wire.surface_patch_boundaries = value.boundaries;
                 wire.surface_patch_normal = value.normal;
+                wire.surface_patch_selection = value.selection;
             }
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
@@ -2751,6 +2795,13 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn reverse_normal_operation(&self) -> Option<&DesignReverseNormalOperation> {
+        match &self.payload {
+            DesignScopePayload::ReverseNormal(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn surface_stitch_operation(&self) -> Option<&DesignSurfaceStitchOperation> {
         match &self.payload {
             DesignScopePayload::SurfaceStitch(value) => Some(value),
@@ -3012,6 +3063,13 @@ impl DesignParameterScope {
     pub(crate) fn surface_patch_normal(&self) -> Option<DesignSurfacePatchNormalState> {
         match &self.payload {
             DesignScopePayload::SurfacePatch(value) => value.normal,
+            _ => None,
+        }
+    }
+
+    pub(crate) fn surface_patch_selection(&self) -> Option<&DesignSurfacePatchSelection> {
+        match &self.payload {
+            DesignScopePayload::SurfacePatch(value) => value.selection.as_ref(),
             _ => None,
         }
     }

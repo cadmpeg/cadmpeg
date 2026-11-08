@@ -4175,9 +4175,7 @@ fn project_hole(
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let hole_form = enum16(source, 0, PmDcFeatureEnumFamily::Hole, index)?;
-    if boolean(source, 17, index)? {
-        return None;
-    }
+    let reversed = boolean(source, 17, index)?;
     let diameter = length_parameter(source, 1, index)?;
     let depth = length_parameter(source, 2, index)?;
     let head_diameter = length_parameter(source, 3, index)?;
@@ -4221,14 +4219,15 @@ fn project_hole(
         return None;
     }
     // Slot 16 is the owning sketch's direction record: the sketch-plane
-    // normal. With the slot-17 Boolean false the hole drills against it.
+    // normal. With the slot-17 Boolean false the hole drills against it;
+    // with the Boolean true it drills along it.
     let direction_record = resolve_direction(source, 16, index)?;
-    let direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+    let normal = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
         direction_record.direction[0].get(),
         direction_record.direction[1].get(),
         direction_record.direction[2].get(),
-    ))?
-    .reversed();
+    ))?;
+    let direction = if reversed { normal } else { normal.reversed() };
     let placements = hole::placements(source, label, index, transform, direction)?;
     let shape = cadmpeg_ir::features::holes::HoleShape::new(
         cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -4322,11 +4321,16 @@ pub(crate) fn thicken_operand_losses<'a>(
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
                 motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
-                ..
-            }) => feature
-                .native_ref
-                .as_ref()
-                .is_some_and(|id| thicken_sources.contains(id.as_str())),
+                faces,
+            }) => {
+                !matches!(
+                    faces,
+                    cadmpeg_ir::features::FaceSelection::Historical { .. }
+                ) && feature
+                    .native_ref
+                    .as_ref()
+                    .is_some_and(|id| thicken_sources.contains(id.as_str()))
+            }
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
                 kind.as_str() == "Thicken"
             }
