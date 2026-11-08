@@ -59,8 +59,7 @@ fn named_collection_owner_keeps_its_frame() {
         push_reference(&mut owner, 100);
         owner.extend_from_slice(&[0; 16]);
         let expected = owner.clone();
-        let delta =
-            i64::try_from(owner.len()).unwrap() - i64::try_from(old_end - start).unwrap();
+        let delta = i64::try_from(owner.len()).unwrap() - i64::try_from(old_end - start).unwrap();
         graph.bytes.splice(start..old_end, owner);
         for record in &mut graph.meta.records {
             if record.bulk_offset > u64_from_index(start) {
@@ -266,7 +265,6 @@ fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
     let wire = serde_json::to_value(feature).unwrap();
     assert_eq!(wire["collection_owner_name_count"], 3);
     assert_eq!(wire["collection_owner_backlink_offset"], start + 272);
-    let decoded: crate::records::mesh::DesignMeshFeature =
-        serde_json::from_value(wire).unwrap();
+    let decoded: crate::records::mesh::DesignMeshFeature = serde_json::from_value(wire).unwrap();
     assert_eq!(decoded, *feature);
 }
