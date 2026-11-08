@@ -15,7 +15,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 const EPS_SPATIAL_OWNER_DEPTH: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9: f64 = 1.0e-9;
@@ -361,7 +361,7 @@ pub(crate) fn project_sketch_design(
         }) {
             continue;
         }
-        let Ok(resolved) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+        let resolved = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
             Point3::new(
                 placement.transform()[0][3] * placement_origin_scale(placement),
                 placement.transform()[1][3] * placement_origin_scale(placement),
@@ -377,9 +377,8 @@ pub(crate) fn project_sketch_design(
                 placement.transform()[1][0],
                 placement.transform()[2][0],
             ),
-        ) else {
-            continue;
-        };
+        )
+        .unwrap_or(cadmpeg_ir::sketches::SketchPlacement::Unresolved {});
         let name = placement.entity_id.as_str().to_owned();
         let native_ref = placement.id.clone();
         sketches.push(Sketch {
@@ -398,41 +397,31 @@ pub(crate) fn project_sketch_design(
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
 
     let shared_identities = shared_curve_identities(curves);
+    let relation_owners = relation_member_owners(relations);
+    let mut owners = OwnerSketches {
+        placements: &placements_by_suffix,
+        unplaced: BTreeSet::new(),
+    };
     let mut entities = Vec::new();
     let mut losses = Vec::new();
     for point in points {
-        let Some(owner) = point.owner_reference else {
-            losses.push(
-                crate::loss::F3dLossCode::SketchPointOwnerUnresolved
-                    .note(format!("Sketch point {} has no owner.", point.id)),
-            );
-            continue;
-        };
-        let Some(scope) = native_stream(&point.id) else {
-            losses.push(
-                crate::loss::F3dLossCode::SketchPointOwnerUnresolved
-                    .note(format!("Sketch point {} has no native stream.", point.id)),
-            );
+        let scope = native_stream(&point.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let Some(owner) = point.owner_reference.or_else(|| {
+            relation_owners
+                .get(&(scope, point.record_index))
+                .copied()
+                .flatten()
+        }) else {
             continue;
         };
         if spatial_owners.contains(&(scope, owner)) {
             continue;
         }
-        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
-            losses.push(
-                crate::loss::F3dLossCode::SketchPointOwnerUnresolved.note(format!(
-                    "Sketch point {} has no placement for owner {owner}.",
-                    point.id
-                )),
-            );
-            continue;
-        };
-        let sketch = crate::ids::neutral_sketch_id(placement);
-        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+        let sketch = owners.sketch(scope, owner);
+        let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: point.coordinates(),
-        }) else {
-            continue;
-        };
+        })
+        .unwrap_or_else(|_| SketchGeometry::native(cadmpeg_core::nonblank_literal!("point")));
         let native_ref = point.id.clone();
         entities.push(
             SketchEntity::new(
@@ -447,18 +436,19 @@ pub(crate) fn project_sketch_design(
         );
     }
     for curve in curves {
-        let Some(owner) = curve.owner_reference else {
-            continue;
-        };
-        let Some(scope) = native_stream(&curve.id) else {
+        let scope = native_stream(&curve.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let Some(owner) = curve.owner_reference.or_else(|| {
+            relation_owners
+                .get(&(scope, curve.record_index))
+                .copied()
+                .flatten()
+        }) else {
             continue;
         };
         if spatial_owners.contains(&(scope, owner)) {
             continue;
         }
-        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
-            continue;
-        };
+        let sketch = owners.sketch(scope, owner);
         let typed = (|| -> Option<SketchGeometry> {
             let source = curve.geometry.as_ref()?;
             Some(match source {
@@ -565,7 +555,6 @@ pub(crate) fn project_sketch_design(
                 None => cadmpeg_core::nonblank_literal!("curve"),
             })
         });
-        let sketch = crate::ids::neutral_sketch_id(placement);
         let native_ref = curve.id.clone();
         let entity_id = if shared_identities.contains(&(
             scope,
@@ -596,10 +585,7 @@ pub(crate) fn project_sketch_design(
         if spatial_owners.contains(&(scope, text.owner_reference)) {
             continue;
         }
-        let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else {
-            continue;
-        };
-        let sketch = crate::ids::neutral_sketch_id(placement);
+        let sketch = owners.sketch(scope, text.owner_reference);
         let Some(text_value) = cadmpeg_core::text::NonBlankString::new(text.text.clone()) else {
             continue;
         };
@@ -642,6 +628,18 @@ pub(crate) fn project_sketch_design(
         );
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
+    for (scope, owner) in owners.unplaced {
+        sketches.push(Sketch {
+            id: crate::ids::neutral_owner_sketch_id(scope, owner),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+            native_ref: None,
+        });
+    }
+    sketches.sort_by(|a, b| a.id.cmp(&b.id));
     for sketch in &mut sketches {
         let closed = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
         losses.extend(closed.losses);
@@ -655,6 +653,44 @@ pub(crate) fn project_sketch_design(
         entities,
         losses,
     })
+}
+
+/// The planar sketch of each sketch entity container: the sketch of its
+/// placement, or a sketch with an unresolved placement for a container whose
+/// placement record does not decode.
+struct OwnerSketches<'p, 'a> {
+    placements: &'p HashMap<(&'a str, u32), &'a DesignSketchPlacement>,
+    unplaced: BTreeSet<(&'a str, u32)>,
+}
+
+impl<'a> OwnerSketches<'_, 'a> {
+    fn sketch(&mut self, scope: &'a str, owner: u32) -> cadmpeg_ir::sketches::SketchId {
+        if let Some(placement) = self.placements.get(&(scope, owner)) {
+            return crate::ids::neutral_sketch_id(placement);
+        }
+        self.unplaced.insert((scope, owner));
+        crate::ids::neutral_owner_sketch_id(scope, owner)
+    }
+}
+
+/// The sketch owner that typed relations assign to each member record, or
+/// `None` where relations of two owners list the record.
+fn relation_member_owners(relations: &[SketchRelation]) -> HashMap<(&str, u32), Option<u32>> {
+    let mut owners = HashMap::new();
+    for relation in relations {
+        let scope = native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        for member in relation.all_member_indices() {
+            owners
+                .entry((scope, member))
+                .and_modify(|owner: &mut Option<u32>| {
+                    if *owner != Some(relation.owner_reference) {
+                        *owner = None;
+                    }
+                })
+                .or_insert(Some(relation.owner_reference));
+        }
+    }
+    owners
 }
 
 /// Model-space planar sketches projected from one Design.

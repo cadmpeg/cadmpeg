@@ -432,6 +432,12 @@ pub(crate) const REDUCED_FIELDS: &[(&str, ReducedStorage)] = &[
             loss: "rhino/writer.presentation-state-order-reduced",
         },
     ),
+    (
+        "model.presentation_documents[].states[].kind.value.orientation[]",
+        ReducedStorage::Normalized {
+            loss: "rhino/writer.camera-orientation-normalized",
+        },
+    ),
 ];
 
 pub(crate) const PUBLIC_REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
@@ -461,6 +467,12 @@ pub(crate) const PUBLIC_REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField
         path: "model.presentation_documents[].states[].order",
         storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
             loss: "rhino/writer.presentation-state-order-reduced",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.presentation_documents[].states[].kind.value.orientation[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "rhino/writer.camera-orientation-normalized",
         },
     },
 ];
@@ -495,7 +507,7 @@ pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
 }];
 
 const _: () = {
-    assert!(REDUCED_FIELDS.len() == 7);
+    assert!(REDUCED_FIELDS.len() == 8);
     assert!(CAPACITY_FIELDS.len() == 1);
 };
 
