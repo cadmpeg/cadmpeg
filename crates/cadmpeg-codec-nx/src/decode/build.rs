@@ -34,6 +34,7 @@ use crate::framing::node_kind::NodeKind;
 use crate::geometry::SurfaceRefusal;
 use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
+use crate::parasolid::StreamKind;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::dialect::DialectLayers;
@@ -216,7 +217,11 @@ pub(super) fn try_decode_geometry(
         }),
         None => None,
     };
-    let preselection = rmfastload_preselection.or(terminal_preselection);
+    let preselection = if has_partition_and_plain_streams(&scan.streams) {
+        rmfastload_preselection
+    } else {
+        rmfastload_preselection.or(terminal_preselection)
+    };
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
@@ -1318,6 +1323,9 @@ pub(super) fn try_decode_geometry(
         select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
     };
     if !active_body_selection {
+        active_body_selection = select_partition_stream_bodies(&mut ir, &scan.streams);
+    }
+    if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir)?;
@@ -1718,20 +1726,60 @@ pub(super) fn rmfastload_allows_terminal_lineage(
     body_count > 1 && rmfastload_selected.is_empty()
 }
 
+fn body_stream_index(body: &BodyId) -> Option<usize> {
+    body.as_str()
+        .strip_prefix("nx:s")
+        .and_then(|text| text.split_once(':'))
+        .and_then(|(text, _)| text.parse().ok())
+}
+
 /// Return the stream ordinals that can contain selected body images. A
 /// malformed body identity disables preselection rather than guessing a
 /// stream owner.
 pub(super) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
     let mut streams = BTreeSet::new();
     for body in selected {
-        let index = body
-            .as_str()
-            .strip_prefix("nx:s")
-            .and_then(|text| text.split_once(':'))
-            .and_then(|(text, _)| text.parse().ok())?;
-        streams.insert(index);
+        streams.insert(body_stream_index(body)?);
     }
     Some(streams)
+}
+
+fn has_partition_and_plain_streams(streams: &[crate::parasolid::Stream]) -> bool {
+    streams
+        .iter()
+        .any(|stream| stream.kind() == StreamKind::Partition)
+        && streams
+            .iter()
+            .any(|stream| stream.kind() == StreamKind::Plain)
+}
+
+/// The bodies of partition streams when plain cached-body streams also carry
+/// bodies. A plain stream holds a feature-history image of a partition body.
+fn partition_stream_bodies<'a>(
+    streams: &[crate::parasolid::Stream],
+    bodies: impl IntoIterator<Item = &'a BodyId>,
+) -> Option<BTreeSet<BodyId>> {
+    let mut partition = BTreeSet::new();
+    let mut plain = false;
+    for body in bodies {
+        match streams.get(body_stream_index(body)?)?.kind() {
+            StreamKind::Partition => {
+                partition.insert(body.clone());
+            }
+            StreamKind::Plain => plain = true,
+            StreamKind::Deltas | StreamKind::Preview => {}
+        }
+    }
+    (plain && !partition.is_empty()).then_some(partition)
+}
+
+fn select_partition_stream_bodies(ir: &mut CadIr, streams: &[crate::parasolid::Stream]) -> bool {
+    let Some(selected) =
+        partition_stream_bodies(streams, ir.model.bodies.iter().map(|body| &body.id))
+    else {
+        return false;
+    };
+    apply_preselected_active_body_selection(ir, &selected, "partition_stream_bodies", None)
 }
 
 fn apply_preselected_active_body_selection(

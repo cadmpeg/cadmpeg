@@ -2113,6 +2113,10 @@ the following partition's local kernel-node namespace. A missing or duplicate
 plain tuple, an intervening non-plain stream, a missing following partition,
 or an absent or repeated terminal role leaves the partition scope unresolved.
 
+A plain cached-body stream holds a feature-history image of a body. When a
+part contains a partition stream, the bodies of its partition streams are the
+current bodies of the part, and plain-stream bodies are history images.
+
 A body-write GROUP node resolves only inside the partition scope selected by
 its body-image stream's complete run. Every retained GROUP update with the
 same node ID in that scope belongs to the relation in stream order. Equal node

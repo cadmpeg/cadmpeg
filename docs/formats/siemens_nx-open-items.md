@@ -158,6 +158,11 @@ and target pmarks to the owning partition's current state?
 
 **Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval. The general PMARK predecessor, following, sibling, initial, and current relations are defined in §4.2. They do not bind aggregate node sections to constituent deltas.
 
+The current body does not depend on this selection. In the NIST CTC-03 part,
+the one partition solid equals the solid of the revision C STEP export in face
+count, surface kinds, area, volume, and vertex box, and the ten plain-stream
+sheets have no counterpart in that export.
+
 **Need.** Identify each constituent delta's complete enclosing frame, delta-key
 association, direction, source pmark, target pmark, and partition ownership. Apply only edges that lead to
 the selected current state, including branches, undone changes, and multiple
