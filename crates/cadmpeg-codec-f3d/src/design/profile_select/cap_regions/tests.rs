@@ -1099,6 +1099,18 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
         panic!("the removed opening");
     };
     assert_eq!(regions.len(), 1);
+    // A stored reading of the same loop as a whole-loop region takes the same
+    // regions.
+    let as_region = super::ResolvedProfileSelection::Regions(vec![
+        cadmpeg_ir::features::SketchProfileRegion::loops(0, Vec::new()).unwrap(),
+    ]);
+    let Some(super::ResolvedProfileSelection::Regions(from_region)) =
+        super::removed_regions_beyond_profile(&window.sketch, resolution, 2, 1, Some(&as_region))
+            .unwrap()
+    else {
+        panic!("the removed opening from a whole-loop region reading");
+    };
+    assert_eq!(from_region, regions);
     work.finish_selection();
     let losses = work.losses();
     let [loss] = losses.as_slice() else {
