@@ -6,7 +6,6 @@
 //! of its own.
 
 mod attributes;
-pub(crate) mod body_styles;
 mod brep;
 mod coverage;
 mod design;
@@ -18,7 +17,6 @@ mod mesh_kernel;
 mod names;
 mod native;
 mod native_geometry;
-pub(crate) mod ordinals;
 mod parameters;
 mod pcurves;
 mod point_kernel;
@@ -194,10 +192,9 @@ fn write_seekable(
     let mut payloads = HashMap::new();
     for entry in &entries {
         if entry.id() != crate::native::native_id("entry", entry.name()) {
-            return Err(CodecError::malformed(
-                "current entry identity differs from its original archive member",
-            )
-            .into());
+            return Err(PatchError::Declined(
+                "current entry identity differs from its original archive member".into(),
+            ));
         }
         payloads.insert(
             entry.name().to_owned(),
@@ -213,9 +210,7 @@ fn write_seekable(
     let source_document = entries
         .iter()
         .find(|entry| entry.name() == "Document.xml")
-        .ok_or_else(|| {
-            CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
-        })?;
+        .ok_or_else(|| PatchError::Declined("the native graph has no Document.xml entry".into()))?;
     let document_xml = payloads
         .get(source_document.name())
         .ok_or_else(|| PatchError::Declined("the source document image is unavailable".into()))?
@@ -251,11 +246,10 @@ fn write_seekable(
     for property in &written_graph.properties {
         for entry in property.side_entries() {
             if !entries.iter().any(|candidate| candidate.name() == *entry) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(PatchError::Declined(format!(
                     "edited property {} references missing side entry {entry}",
                     property.id
-                ))
-                .into());
+                )));
             }
         }
     }
@@ -316,11 +310,11 @@ struct WriteOutcome {
 fn restore_entry_order(
     entries: &mut [EntryRecord],
     source_offsets: &HashMap<&str, u64>,
-) -> Result<(), CodecError> {
+) -> Result<(), PatchError> {
     for entry in &*entries {
         if !source_offsets.contains_key(entry.name()) {
-            return Err(CodecError::NotImplemented(format!(
-                "FCStd output entry {} has no retained restoration order",
+            return Err(PatchError::Declined(format!(
+                "output entry {} has no retained restoration order",
                 entry.name()
             )));
         }
@@ -329,12 +323,12 @@ fn restore_entry_order(
     Ok(())
 }
 
-fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
+fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), PatchError> {
     let mut names = HashSet::new();
     for entry in entries {
         if !names.insert(entry.name()) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate FCStd output entry {}",
+            return Err(PatchError::Declined(format!(
+                "duplicate output entry {}",
                 entry.name()
             )));
         }
@@ -397,11 +391,10 @@ fn validate_properties(
             .insert(property.id.as_str(), property)
             .is_some()
         {
-            return Err(CodecError::malformed(format_args!(
-                "edited FCStd property graph has duplicate property {}",
+            return Err(PatchError::Declined(format!(
+                "edited property graph has duplicate property {}",
                 property.id
-            ))
-            .into());
+            )));
         }
     }
     let mut written_by_id = HashMap::with_capacity(written.len());
@@ -410,11 +403,10 @@ fn validate_properties(
             .insert(property.id.as_str(), property)
             .is_some()
         {
-            return Err(CodecError::malformed(format_args!(
-                "written FCStd property graph has duplicate property {}",
+            return Err(PatchError::Declined(format!(
+                "written property graph has duplicate property {}",
                 property.id
-            ))
-            .into());
+            )));
         }
     }
     if expected_by_id.len() != written_by_id.len() {

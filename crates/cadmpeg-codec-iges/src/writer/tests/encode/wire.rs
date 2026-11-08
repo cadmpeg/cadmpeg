@@ -122,26 +122,15 @@ fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
 }
 
 #[test]
-fn encode_reports_orphan_wire_vertex_as_malformed() {
+fn encode_reports_orphan_wire_vertex_in_a_loss() {
     let mut decoded = reversed_composite_with_shared_vertex();
     decoded.ir_mut().model.shells[0]
         .edit_topology(|_, _, free_vertices| free_vertices.clear())
         .expect("wire edge keeps shell nonempty");
-    // #239 §5.0: malformed writer input is an encode-path invariant violation.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        plan_at(IgesVersion::V5_0, decoded.ir(), None)
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("orphan vertex was accepted"),
-    };
-    assert!(message.contains("no wire or face owner"), "{message}");
+    super::super::assert_encode_degrades(
+        plan_at(IgesVersion::V5_0, decoded.ir(), None),
+        "no wire or face owner",
+    );
 }
 
 #[test]
@@ -249,20 +238,22 @@ fn synthesized_owned_wire_refuses_unrepresented_body() {
 }
 
 #[test]
-fn synthesized_wire_reports_missing_edge_as_malformed() {
+fn synthesized_wire_reports_missing_edge_in_a_loss() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .expect("source line");
     let mut ir = decoded.ir().clone();
     ir.model.edges.clear();
-    let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
-        .err()
-        .expect("missing edge must be refused");
-    assert!(matches!(
-        error,
-        crate::writer::WriteError::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
-    assert!(error.to_string().contains("missing edge"), "{error}");
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3)
+        .expect("a dangling wire edge degrades its body (#209 §5.0)");
+    assert!(
+        generated
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("missing edge")),
+        "{:?}",
+        generated.losses
+    );
 }
 
 #[test]

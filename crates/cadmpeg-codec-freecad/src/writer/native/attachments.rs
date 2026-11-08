@@ -75,10 +75,11 @@ pub(crate) fn write(
             continue;
         }
         if !links.is_empty() {
+            let field = object.support_field();
             object.set(
-                "Support",
+                field,
                 xml::property(
-                    "Support",
+                    field,
                     "App::PropertyLinkSubList",
                     &format!(
                         "<LinkSubList count=\"{}\">{}</LinkSubList>",
@@ -105,7 +106,7 @@ pub(crate) fn write(
             if record.offset().is_some() && !object.properties.contains_key("AttachmentOffset") {
                 object.set(
                     "AttachmentOffset",
-                    super::super::design::placement(Transform::identity())?
+                    super::super::design::placement(Transform::identity())
                         .replace("name=\"Placement\"", "name=\"AttachmentOffset\""),
                 );
             }
@@ -113,13 +114,13 @@ pub(crate) fn write(
             if let Some(placement) = record.placement() {
                 object.set(
                     "Placement",
-                    super::super::design::placement(placement.transform())?,
+                    super::super::design::placement(placement.transform()),
                 );
             }
             if let Some(offset) = record.offset() {
                 object.set(
                     "AttachmentOffset",
-                    super::super::design::placement(offset.transform())?
+                    super::super::design::placement(offset.transform())
                         .replace("name=\"Placement\"", "name=\"AttachmentOffset\""),
                 );
             }

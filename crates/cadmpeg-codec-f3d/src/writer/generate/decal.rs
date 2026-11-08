@@ -35,7 +35,6 @@ pub(in crate::writer) fn select<'a>(target: &'a CadIr, native: &'a F3dNative) ->
     if features.next().is_some()
         || feature.ordinal != 0
         || feature.suppressed != Some(false)
-        || feature.needs_recompute
         || feature.product_definition.is_some()
         || !feature.dependencies.is_empty()
         || feature.source_text.is_some()

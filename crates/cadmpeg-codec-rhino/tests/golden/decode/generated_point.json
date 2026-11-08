@@ -129,8 +129,7 @@
           "id": "rhino:model:object-view#0-0",
           "native_ref": "rhino:object:record#000000",
           "object": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742",
-          "order": 0,
-          "visible": true
+          "order": 0
         }
       ]
     },

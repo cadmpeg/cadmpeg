@@ -37,7 +37,7 @@ pub(super) fn parameters(
     (names, available): (&HashMap<String, String>, &std::collections::HashSet<String>),
     dedicated: &[&str],
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for (name, value) in parameters {
         if dedicated.contains(&name.as_str()) {
             continue;
@@ -104,7 +104,7 @@ pub(super) fn parameters(
             if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
                 break 'mapping None;
             }
-            xml::native_named(&property, names, available)?
+            xml::native_named(&property, names, available)
         };
         if let Some(xml) = encoded {
             object.set(name.as_str(), xml);
@@ -116,7 +116,6 @@ pub(super) fn parameters(
             )));
         }
     }
-    Ok(())
 }
 
 pub(super) fn dimension_kind(

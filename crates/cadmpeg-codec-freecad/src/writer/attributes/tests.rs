@@ -60,8 +60,7 @@ fn native_ordered_links_keep_repeated_peers_and_their_emitted_names() {
             &mut document,
             &mut losses,
             &[original],
-        )
-        .unwrap();
+        );
         assert_eq!(document["Links"], format!("<Property name=\"Links\" type=\"{type_name}\" status=\"8\" group=\"Authored\" doc=\"Link documentation\" attr=\"4\" ro=\"0\" hide=\"1\"><LinkList count=\"3\"><Link value=\"Beta\"/><Link value=\"Alpha\"/><Link value=\"Beta\"/></LinkList></Property>"));
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -107,8 +106,7 @@ fn native_template_join_uses_only_unique_forward_identity() {
         &mut document,
         &mut losses,
         std::slice::from_ref(&original),
-    )
-    .unwrap();
+    );
     assert!(document["Meta"].contains("type=\"App::PropertyStringList\""));
     assert!(document["Meta"]
         .contains("<StringList count=\"1\"><String value=\"current\"/></StringList>"));
@@ -127,8 +125,7 @@ fn native_template_join_uses_only_unique_forward_identity() {
         &mut document,
         &mut losses,
         std::slice::from_ref(&original),
-    )
-    .unwrap();
+    );
     assert!(document.is_empty());
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("test:native:property#missing"));
@@ -145,8 +142,7 @@ fn native_template_join_uses_only_unique_forward_identity() {
         &mut document,
         &mut losses,
         &[original.clone(), original],
-    )
-    .unwrap();
+    );
     assert!(document.is_empty());
     assert_eq!(losses.len(), 1);
     assert_eq!(
@@ -192,8 +188,7 @@ fn reminted_native_string_list_writes_all_holes_as_zero_entries() {
         &mut document,
         &mut losses,
         &[original],
-    )
-    .unwrap();
+    );
     assert!(document["Meta"].contains("type=\"App::PropertyStringList\""));
     assert!(document["Meta"].contains("<StringList count=\"0\"></StringList>"));
     assert_eq!(losses.len(), 1);

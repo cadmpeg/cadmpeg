@@ -120,6 +120,9 @@ fn synthesized_body(
         &synthesis.bytes,
         input.limits,
     ));
+    let mut regenerated_native = synthesis.regenerated_native;
+    let withdrawn =
+        unclaim_dangling_records(input.ir, &mut regenerated_native, &mut written_native);
     let mut body = super::body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
@@ -131,11 +134,83 @@ fn synthesized_body(
     body.native_dispositions = super::synthesized_native_dispositions(
         input.ir,
         &body.losses,
-        &synthesis.regenerated_native,
+        &regenerated_native,
         &written_native,
+        &withdrawn,
     );
     body.synthesis_cause = synthesis_cause;
     Ok(body)
+}
+
+/// Withdraw the written or regenerated claim of each native record that names a
+/// native record without one, until no claimed record does, and return the
+/// withdrawn identities. A record cannot reappear while a record it names is
+/// not written (#209 §2.3 W1).
+fn unclaim_dangling_records(
+    ir: &CadIr,
+    regenerated: &mut std::collections::BTreeSet<String>,
+    written: &mut std::collections::BTreeSet<String>,
+) -> std::collections::BTreeSet<String> {
+    fn named(value: &serde_json::Value, names: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(text) => names.push(text.clone()),
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    named(value, names);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for (key, value) in fields {
+                    if key != "id" {
+                        named(value, names);
+                    }
+                }
+            }
+            serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {
+            }
+        }
+    }
+    let mut withdrawn = std::collections::BTreeSet::new();
+    let Some(namespace) = ir.native.namespace("iges") else {
+        return withdrawn;
+    };
+    let records = namespace
+        .arenas()
+        .values()
+        .flatten()
+        .map(|record| {
+            let mut names = Vec::new();
+            if let Ok(fields) = record.fields() {
+                named(&serde_json::Value::Object(fields), &mut names);
+            }
+            (record.id(), names)
+        })
+        .collect::<Vec<_>>();
+    let native = records
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<std::collections::BTreeSet<_>>();
+    loop {
+        let claimed = |id: &str| regenerated.contains(id) || written.contains(id);
+        let dangling = records
+            .iter()
+            .filter(|(id, names)| {
+                claimed(id)
+                    && names
+                        .iter()
+                        .any(|name| native.contains(name.as_str()) && !claimed(name))
+            })
+            .map(|(id, _)| (*id).to_owned())
+            .collect::<Vec<_>>();
+        if dangling.is_empty() {
+            return withdrawn;
+        }
+        for id in dangling {
+            regenerated.remove(&id);
+            written.remove(&id);
+            withdrawn.insert(id);
+        }
+    }
 }
 
 /// Confirm which current physical and Directory records are exactly present in
@@ -170,7 +245,35 @@ fn exact_physical_records(
         return std::collections::BTreeSet::new();
     };
     let mut exact = std::collections::BTreeSet::new();
-    for arena in ["cards", "entities"] {
+    if let (Some(input_cards), Some(output_cards)) =
+        (before.arenas().get("cards"), after.arenas().get("cards"))
+    {
+        // A card's identity is its line number; its content is its section. The
+        // output holds an input card while it holds an unclaimed card of the
+        // same content, claimed in record order.
+        let content = |record: &cadmpeg_ir::NativeRecord| {
+            record.fields().ok().map(|mut fields| {
+                fields.remove("id");
+                serde_json::Value::Object(fields).to_string()
+            })
+        };
+        let mut unclaimed = std::collections::BTreeMap::<String, usize>::new();
+        for card in output_cards {
+            if let Some(content) = content(card) {
+                *unclaimed.entry(content).or_default() += 1;
+            }
+        }
+        for card in input_cards {
+            if let Some(count) = content(card)
+                .and_then(|content| unclaimed.get_mut(&content))
+                .filter(|count| **count > 0)
+            {
+                *count -= 1;
+                exact.insert(card.id().to_owned());
+            }
+        }
+    }
+    for arena in ["entities"] {
         let Some(input_records) = before.arenas().get(arena) else {
             continue;
         };
