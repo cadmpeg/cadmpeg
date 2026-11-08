@@ -292,17 +292,16 @@ fn named_constraint_path_grammar_and_ambiguity() {
         } else if bound {
             // #224 D31: the cell holds unitless Real while the constraint is
             // Length, so the kept quantity check leaves the driven control
-            // explicit with its loss. Scope still reports only the missing
-            // model class.
+            // explicit with its loss. #209 §1.1: full decode reports requested
+            // scope classes as delivered.
             assert!(result.ir().scope.design);
-            assert!(!result.ir().scope.model);
+            assert!(result.ir().scope.model);
             let losses = crate::test_support::non_placement_losses(result.report());
-            assert_eq!(losses.len(), 2, "{losses:?}");
-            assert!(losses.iter().any(|note| note.code.namespace() == "fcstd"
-                && note.code.local_code() == "expression.reference-unresolved"));
-            assert!(losses
-                .iter()
-                .any(|note| note.code.local_code() == "depth.not-delivered"));
+            assert_eq!(losses.len(), 1, "{losses:?}");
+            assert!(losses.iter().any(|note| {
+                note.code.namespace() == "fcstd"
+                    && note.code.local_code() == "expression.reference-unresolved"
+            }));
         } else {
             crate::test_support::assert_design_fragment_scope(&result);
         }

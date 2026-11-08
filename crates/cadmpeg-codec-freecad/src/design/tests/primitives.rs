@@ -451,15 +451,19 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
 
     for target in ["Solid", "Reversed", "Symmetric"] {
         let result = decode(&document(target, None));
+        // #209 §1.1: full decode reports requested classes as delivered.
         assert!(
-            result.ir().scope.design && !result.ir().scope.model,
+            result.ir().scope.design && result.ir().scope.model,
             "{target}"
         );
-        assert_eq!(result.report().losses.len(), 1, "{target}");
-        assert_eq!(
-            result.report().losses[0].code.local_code(),
-            "depth.not-delivered",
-            "{target}"
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code.local_code() != "depth.not-delivered"),
+            "{target}: {:?}",
+            result.report().losses
         );
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction,
@@ -501,15 +505,19 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     ];
     for (target, replacement) in valid {
         let result = decode(&document(target, Some(replacement)));
+        // #209 §1.1: full decode reports requested classes as delivered.
         assert!(
-            result.ir().scope.design && !result.ir().scope.model,
+            result.ir().scope.design && result.ir().scope.model,
             "{target}"
         );
-        assert_eq!(result.report().losses.len(), 1, "{target}");
-        assert_eq!(
-            result.report().losses[0].code.local_code(),
-            "depth.not-delivered",
-            "{target}"
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code.local_code() != "depth.not-delivered"),
+            "{target}: {:?}",
+            result.report().losses
         );
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction,
@@ -1003,23 +1011,20 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
             solid, op: cadmpeg_ir::features::BooleanOp::Cut , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
-    // #209 §1.1: the fragment holds no model part; the wrapper appends
-    // depth.not-delivered after the codec losses.
+    // #209 §1.1: full decode reports requested classes as delivered.
     assert_eq!(
         result.ir().scope,
         cadmpeg_ir::document::ContentScope {
-            model: false,
+            model: true,
             design: true
         }
     );
-    assert_eq!(result.report().losses.len(), 4);
-    assert!(result.report().losses[..3]
+    assert_eq!(result.report().losses.len(), 3);
+    assert!(result
+        .report()
+        .losses
         .iter()
         .all(|loss| loss.code.local_code() == "feature.primitive-placement-unresolved"));
-    assert_eq!(
-        result.report().losses[3].code.local_code(),
-        "depth.not-delivered"
-    );
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model")
         .findings;
@@ -1743,23 +1748,20 @@ fn transfers_remaining_partdesign_analytic_primitives() {
     assert!(
         matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if result.ir().dimension_value(xmin).expect("resolved dimension").get() == -2.0 && result.ir().dimension_value(ymax).expect("resolved dimension").get() == 6.0))
     );
-    // #209 §1.1: the fragment holds no model part; the wrapper appends
-    // depth.not-delivered after the codec losses.
+    // #209 §1.1: full decode reports requested classes as delivered.
     assert_eq!(
         result.ir().scope,
         cadmpeg_ir::document::ContentScope {
-            model: false,
+            model: true,
             design: true
         }
     );
-    assert_eq!(result.report().losses.len(), 4);
-    assert!(result.report().losses[..3]
+    assert_eq!(result.report().losses.len(), 3);
+    assert!(result
+        .report()
+        .losses
         .iter()
         .all(|loss| loss.code.local_code() == "feature.primitive-placement-unresolved"));
-    assert_eq!(
-        result.report().losses[3].code.local_code(),
-        "depth.not-delivered"
-    );
 }
 
 #[test]

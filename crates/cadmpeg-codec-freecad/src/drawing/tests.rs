@@ -1003,3 +1003,50 @@ fn techdraw_cosmetic_vertex_and_blank_title_field_have_losses() {
             .any(|loss| loss.code.local_code() == code));
     }
 }
+
+#[test]
+fn recovering_svg_scanner_gives_up_malformed_element_and_keeps_siblings() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="TechDraw::DrawPage" name="Page" id="1"/>
+ <Object type="TechDraw::DrawSVGTemplate" name="Template" id="2"/>
+ <Object type="TechDraw::DrawViewPart" name="View" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Page"><Properties Count="2">
+  <Property name="Template" type="App::PropertyLink"><Link value="Template"/></Property>
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="View"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Template"><Properties Count="1"><Property name="Template" type="App::PropertyFileIncluded"><FileIncluded file="page.svg"/></Property></Properties></Object>
+ <Object name="View"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let malformed_svg = br#"<svg width="210mm" height="297mm"><broken><unclosed></svg>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("page.svg", malformed_svg),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("recovering SVG parse");
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.message.contains("broken")
+                && (loss.message.contains("given up")
+                    || loss.message.contains("cannot be admitted"))
+        }),
+        "losses: {:?}",
+        result.report().losses
+    );
+    let sheet = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find_map(|drawing| drawing.sheet.as_ref())
+        .expect("a sheet with root dimensions survives malformed SVG children");
+    assert!(sheet.is_valid());
+    assert_eq!(sheet.width_mm.get(), 210.0);
+    assert_eq!(sheet.height_mm.get(), 297.0);
+}

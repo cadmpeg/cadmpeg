@@ -582,10 +582,11 @@ fn transfers_stored_and_external_part_feature_families() {
         .filter(|record| record.type_name == "Part::Part2DObjectPython")
         .all(|record| !record.neutral()));
     crate::test_support::assert_design_fragment_scope(&result);
+    // #209 §1.1: full decode reports requested scope classes as delivered.
     assert_eq!(
-        result.report().losses.len(),
-        1,
-        "stored, imported and vendor-native features report only the scope loss"
+        crate::test_support::non_placement_losses(result.report()).len(),
+        0,
+        "stored, imported and vendor-native features report no scope loss"
     );
     assert!(result.source_fidelity().unrepresented().is_empty());
     let objects = result
@@ -675,20 +676,17 @@ fn reports_attributable_native_design_blockers() {
             &DecodeOptions::default(),
         )
         .expect("native feature");
-    // #209 §1.1: the fragment holds no model part, so the wrapper also
-    // charges depth.not-delivered for the missing model class.
+    // #209 §1.1: full decode reports requested model and design classes
+    // as delivered; this design fragment charges only its attributable
+    // native blocker.
     assert_eq!(
         result.ir().scope,
         cadmpeg_ir::document::ContentScope {
-            model: false,
+            model: true,
             design: true
         }
     );
-    assert_eq!(result.report().losses.len(), 2);
-    assert_eq!(
-        result.report().losses[1].code.local_code(),
-        "depth.not-delivered"
-    );
+    assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].severity,
         cadmpeg_ir::report::Severity::Blocking
