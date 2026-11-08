@@ -294,6 +294,21 @@ pub(in crate::writer) fn definition_metadata_losses(
     version: crate::RhinoArchiveVersion,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let referenced = referenced_definitions(ir);
+    let kinds = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| {
+            definition.kind != cadmpeg_ir::products::ProductDefinitionKind::Part
+                && definition_written(ir, &referenced, definition)
+        })
+        .map(|definition| {
+            crate::loss::RhinoLossCode::WriterProductMetadataReduced.note(format!(
+                "product definition {} of kind {:?} is written as a 3DM instance definition, which holds a part",
+                definition.id, definition.kind
+            ))
+        })
+        .collect::<Vec<_>>();
     ir.model
         .product_definitions
         .iter()
@@ -316,6 +331,7 @@ pub(in crate::writer) fn definition_metadata_losses(
                 ))
             })
         })
+        .chain(kinds)
         .collect()
 }
 
