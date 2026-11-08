@@ -127,10 +127,7 @@ fn definitions(
         .unwrap_or_default();
     native_properties.retain(|property| xml::validate(property, &available).is_ok());
     for definition in &ir.model.product_definitions {
-        let Some(name) = names
-            .get(definition.id.as_str())
-            .cloned()
-        else {
+        let Some(name) = names.get(definition.id.as_str()).cloned() else {
             debug_assert!(false, "product has no output identity");
             continue;
         };
@@ -689,19 +686,14 @@ pub(super) fn write(
         };
         names.insert(occurrence.id.as_str().to_owned(), name.clone());
         let first_use = match occurrence.native_ref.as_ref() {
-            Some(native) => emitted_links
-                .insert(native.clone(), name.clone())
-                .is_none(),
+            Some(native) => emitted_links.insert(native.clone(), name.clone()).is_none(),
             None => true,
         };
         let missing_prototype = matches!(
             &occurrence.prototype,
             PrototypeReference::Local { definition } if !names.contains_key(definition.as_str())
         );
-        let Some(object) = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-        else {
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
             debug_assert!(false, "instance output is absent");
             continue;
         };
@@ -824,9 +816,7 @@ pub(super) fn write(
                 )));
                 continue;
             };
-            let Some(child) = names
-                .get(occurrence.id.as_str())
-            else {
+            let Some(child) = names.get(occurrence.id.as_str()) else {
                 debug_assert!(false, "instance child has no output identity");
                 continue;
             };
@@ -889,10 +879,7 @@ pub(super) fn write(
             }
             parents.insert(member.clone(), name.clone());
         }
-        let Some(object) = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-        else {
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
             debug_assert!(false, "product group has no output object");
             continue;
         };
@@ -960,10 +947,7 @@ fn resolve_linked_transforms(
                     debug_assert!(false, "linked instance has no occurrence");
                     continue;
                 };
-                let Some(object) = objects
-                    .iter_mut()
-                    .find(|object| object.name == *link)
-                else {
+                let Some(object) = objects.iter_mut().find(|object| object.name == *link) else {
                     debug_assert!(false, "linked instance output is absent");
                     continue;
                 };
@@ -1014,10 +998,7 @@ fn resolve_linked_transforms(
                     current.transform
                 }
             };
-            let Some(object) = objects
-                .iter_mut()
-                .find(|object| object.name == *link)
-            else {
+            let Some(object) = objects.iter_mut().find(|object| object.name == *link) else {
                 debug_assert!(false, "linked instance output is absent");
                 continue;
             };

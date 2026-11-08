@@ -110,7 +110,11 @@ fn part_dress_up(
     object: &mut Object,
     names: &HashMap<String, String>,
 ) -> Result<bool, FeatureError> {
-    let expected = if fillet { "Part::Fillet" } else { "Part::Chamfer" };
+    let expected = if fillet {
+        "Part::Fillet"
+    } else {
+        "Part::Chamfer"
+    };
     if source_tag != Some(expected)
         || tag(&group["edges"]) == "all"
         || value["flip_direction"].as_bool().unwrap_or(false)

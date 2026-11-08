@@ -1306,9 +1306,14 @@ fn serialize_geometry_inner(
                     let Some(face) = ir.model.faces.iter().find(|value| value.id == *face_id)
                     else {
                         shell_degraded = true;
-                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
-                            format!("face {face_id} in body {} is absent and is omitted", body.id),
-                        ));
+                        losses.push(
+                            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
+                                    "face {face_id} in body {} is absent and is omitted",
+                                    body.id
+                                ),
+                            ),
+                        );
                         continue;
                     };
                     children.push((*index, face.sense));

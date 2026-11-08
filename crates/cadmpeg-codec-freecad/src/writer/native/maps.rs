@@ -170,10 +170,7 @@ pub(crate) fn write(
         );
         let carrier = format!("<StringHasher saveall=\"{}\" threshold=\"{threshold}\" count=\"0\" new=\"1\"/><StringHasher2 file=\"{file}\"/>", u8::from(save_all));
         if let Some(owner) = &table.owner_property {
-            let Some(property) = properties
-                .iter()
-                .find(|property| property.id == *owner)
-            else {
+            let Some(property) = properties.iter().find(|property| property.id == *owner) else {
                 debug_assert!(false, "admitted hasher owner disappeared");
                 continue;
             };
@@ -323,10 +320,7 @@ pub(crate) fn write(
             .filter(|name| !archive_entries.contains_key(name));
         let map_xml = if let Some(file) = side_entry {
             let marker = "<ElementMap new=\"1\" count=\"1\"><Element key=\"Dummy\" value=\"Dummy\"/></ElementMap>";
-            let map_xml = format!(
-                "{marker}<ElementMap2 file=\"{}\"/>",
-                xml::escaped(&file)
-            );
+            let map_xml = format!("{marker}<ElementMap2 file=\"{}\"/>", xml::escaped(&file));
             archive_entries.insert(file, format!("BeginElementMap v1\n{content}").into_bytes());
             map_xml
         } else {

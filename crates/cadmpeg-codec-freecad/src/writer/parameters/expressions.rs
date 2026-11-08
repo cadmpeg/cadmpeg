@@ -96,10 +96,7 @@ pub(super) fn write(
                 debug_assert!(false, "generated expression XML parses");
                 continue;
             };
-            let Some(path) = document
-                .root_element()
-                .attribute("path")
-            else {
+            let Some(path) = document.root_element().attribute("path") else {
                 debug_assert!(false, "generated expression lacks a path");
                 continue;
             };

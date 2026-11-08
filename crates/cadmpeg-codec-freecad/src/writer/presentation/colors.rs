@@ -74,9 +74,10 @@ fn material(
         for value in &mut property.values {
             if value.tag == "PropertyMaterial" {
                 if let Some(color) = appearance.base_color {
-                    value
-                        .attributes
-                        .insert("diffuseColor".into(), packed(color, transparency_byte).to_string());
+                    value.attributes.insert(
+                        "diffuseColor".into(),
+                        packed(color, transparency_byte).to_string(),
+                    );
                 } else {
                     value.attributes.remove("diffuseColor");
                 }
@@ -480,21 +481,21 @@ pub(super) fn write(
                 SHAPE_APPEARANCE_SCHEMA.to_owned(),
             )
         } else if let Some((id, property)) = selection(&binding.target) {
-                (
-                    format!(
-                        "{name} {} appearance",
-                        names
-                            .get(&format!("{id}:subelement"))
-                            .map_or("", String::as_str)
-                    ),
-                    format!("FCStd {property}"),
-                )
-            } else {
-                (
-                    format!("{name} shape appearance"),
-                    "FCStd ViewProvider ShapeMaterial".to_owned(),
-                )
-            };
+            (
+                format!(
+                    "{name} {} appearance",
+                    names
+                        .get(&format!("{id}:subelement"))
+                        .map_or("", String::as_str)
+                ),
+                format!("FCStd {property}"),
+            )
+        } else {
+            (
+                format!("{name} shape appearance"),
+                "FCStd ViewProvider ShapeMaterial".to_owned(),
+            )
+        };
         if appearance
             .name
             .as_ref()
@@ -643,9 +644,7 @@ pub(super) fn write(
         }
         let filename = format!("{owner}.{property}");
         entries.insert(filename.clone(), bytes);
-        let Some(provider) = providers
-            .get_mut(&owner)
-        else {
+        let Some(provider) = providers.get_mut(&owner) else {
             debug_assert!(false, "topology color provider is absent");
             continue;
         };
@@ -679,7 +678,10 @@ pub(super) fn write(
             }
         };
         let filename = format!("{owner}.ShapeAppearance");
-        entries.insert(filename.clone(), material_list(&materials, transparency_byte));
+        entries.insert(
+            filename.clone(),
+            material_list(&materials, transparency_byte),
+        );
         provider.properties.remove("ShapeMaterial");
         provider.properties.insert(
             "ShapeAppearance".into(),
@@ -734,7 +736,9 @@ fn material_list(materials: &[&Appearance], transparency_byte: bool) -> Vec<u8> 
         ] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        let opacity = appearance.base_color.map_or(1.0, |color| f64::from(color.a()));
+        let opacity = appearance
+            .base_color
+            .map_or(1.0, |color| f64::from(color.a()));
         let shininess = scalar(appearance, "shininess").unwrap_or(DEFAULT_SHININESS);
         let transparency = scalar(appearance, "transparency").unwrap_or(1.0 - opacity);
         for value in [shininess, transparency] {

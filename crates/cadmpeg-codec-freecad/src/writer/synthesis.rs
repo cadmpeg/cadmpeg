@@ -317,9 +317,12 @@ pub(super) fn write(
         .filter(|payload| reusable_payloads.contains(&payload.id))
     {
         for (record, kind, _, index) in current_topology.payload_records(&payload.id) {
-            if let (Some(index), crate::brep::TextShapeKind::Face
-            | crate::brep::TextShapeKind::Edge
-            | crate::brep::TextShapeKind::Vertex) = (index, kind)
+            if let (
+                Some(index),
+                crate::brep::TextShapeKind::Face
+                | crate::brep::TextShapeKind::Edge
+                | crate::brep::TextShapeKind::Vertex,
+            ) = (index, kind)
             {
                 names.insert(
                     format!("{record}:subelement"),
@@ -438,10 +441,7 @@ pub(super) fn write(
                 names.insert(feature.id.as_str().to_owned(), name);
                 continue;
             }
-            let Some(name) = names
-                .get(feature.id.as_str())
-                .cloned()
-            else {
+            let Some(name) = names.get(feature.id.as_str()).cloned() else {
                 debug_assert!(false, "feature has no output identity");
                 continue;
             };
@@ -1170,10 +1170,7 @@ pub(super) fn write(
         if property_name == "Shape" {
             brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         }
-        let Some(object) = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-        else {
+        let Some(object) = objects.iter_mut().find(|object| object.name == name) else {
             debug_assert!(false, "body owner is absent");
             continue;
         };
@@ -1227,7 +1224,11 @@ pub(super) fn write(
         .iter()
         .filter(|payload| reusable_payloads.contains(&payload.id))
     {
-        let Some(key) = payload.id.split_once('#').map(|(_, key)| format!("#{key}:")) else {
+        let Some(key) = payload
+            .id
+            .split_once('#')
+            .map(|(_, key)| format!("#{key}:"))
+        else {
             continue;
         };
         if ir
@@ -1782,16 +1783,15 @@ pub(super) fn write(
     };
     let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses)?;
     entries.insert("Document.xml".into(), document.into_bytes());
-    let gui =
-        super::presentation::write(
-            ir,
-            &names,
-            &body_names,
-            &objects,
-            &mut entries,
-            &mut losses,
-            crate::gui::requires_alpha_conversion(program_version.as_deref()),
-        )?;
+    let gui = super::presentation::write(
+        ir,
+        &names,
+        &body_names,
+        &objects,
+        &mut entries,
+        &mut losses,
+        crate::gui::requires_alpha_conversion(program_version.as_deref()),
+    )?;
     let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses)?;
     super::dispositions::gui(ir, &names, &gui, &mut native_dispositions)?;
     let gui_bytes = if gui.is_empty() {

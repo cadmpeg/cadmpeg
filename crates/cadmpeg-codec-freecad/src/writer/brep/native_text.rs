@@ -7,8 +7,8 @@
 //! payload, topology identities and carriers.
 
 use crate::brep::{
-    NurbsCurve2d, Polygon3dRecord, PolygonOnTriangulationRecord, ShapePayload,
-    ShapePayloadRecord, Tables, TextCurve, TextCurve2d, TextEdgeRepresentation, TextOrientation,
+    NurbsCurve2d, Polygon3dRecord, PolygonOnTriangulationRecord, ShapePayload, ShapePayloadRecord,
+    Tables, TextCurve, TextCurve2d, TextEdgeRepresentation, TextOrientation,
     TextPointRepresentation, TextShapeKind, TextShapeUse, TextSurface, TextTShapeGeometry,
     TextTopologyVersion,
 };
@@ -87,7 +87,12 @@ pub(in crate::writer) fn text(
     )
     .ok()?;
     for polygon in &tables.polygons_on_triangulations {
-        writeln!(out, "{}", crate::brep::polygon_on_triangulation_text(polygon)).ok()?;
+        writeln!(
+            out,
+            "{}",
+            crate::brep::polygon_on_triangulation_text(polygon)
+        )
+        .ok()?;
     }
     writeln!(out, "Surfaces {}", tables.surfaces.len()).ok()?;
     for value in tables.surfaces {
