@@ -3323,6 +3323,7 @@ fn check_feature_references(
             FeatureOperation::FilledSurface {
                 boundary,
                 support_faces,
+                interior_constraints,
                 ..
             } => {
                 match boundary {
@@ -3332,6 +3333,7 @@ fn check_feature_references(
                     crate::features::SurfaceBoundary::Path(path) => paths.push(path),
                 }
                 face_selections.push(support_faces);
+                paths.extend(interior_constraints);
             }
             FeatureOperation::TrimSurface { faces, tool, .. } => {
                 face_selections.push(faces);

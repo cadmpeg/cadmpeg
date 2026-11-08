@@ -3553,6 +3553,16 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_merge_result"
         )]
         merge_result: Option<bool>,
+        #[doc = "Curves and points inside the boundary that constrain the patch, in source order."]
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        interior_constraints: Vec<PathRef>,
+        #[doc = "Whether the generated patch normal is reversed, when resolved."]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_reverse_normal"
+        )]
+        reverse_normal: Option<bool>,
     },
     /// Restricts selected surface faces to one side of a trimming path.
     TrimSurface {
@@ -9486,6 +9496,7 @@ cadmpeg_core::named_optional_field!(
     "gap_tolerance"
 );
 cadmpeg_core::named_optional_field!(deserialize_merge_result, bool, "merge_result");
+cadmpeg_core::named_optional_field!(deserialize_reverse_normal, bool, "reverse_normal");
 cadmpeg_core::named_optional_field!(deserialize_angle, Angle, "angle");
 cadmpeg_core::named_optional_field!(deserialize_alternate_face, bool, "alternate_face");
 cadmpeg_core::named_optional_field!(deserialize_corner, RuledSurfaceCorner, "corner");

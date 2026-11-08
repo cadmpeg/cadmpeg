@@ -57,6 +57,8 @@ pub(in super::super) fn filled_surface_feature_definition(
             SurfaceContinuity::Contact,
         ),
         merge_result: Some(false),
+        interior_constraints: Vec::new(),
+        reverse_normal: None,
     })
 }
 

@@ -77,6 +77,8 @@ pub(super) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("MergeResult")
             .and_then(|value| parse_bool(value)),
+        interior_constraints: Vec::new(),
+        reverse_normal: None,
     })
 }
 

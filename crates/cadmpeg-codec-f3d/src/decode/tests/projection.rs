@@ -668,6 +668,8 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
             support_faces,
             continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(continuity),
             merge_result,
+            interior_constraints: Vec::new(),
+            reverse_normal: None,
         })
     };
 

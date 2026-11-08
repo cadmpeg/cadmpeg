@@ -1037,6 +1037,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             support_faces,
             continuity,
             merge_result,
+            interior_constraints,
+            ..
         }) => {
             use cadmpeg_ir::features::SurfaceBoundary;
 
@@ -1066,6 +1068,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || !continuity_is_resolved
                 || (support_is_required && !face_selection_is_resolved(support_faces))
                 || merge_result.is_none()
+                || interior_constraints
+                    .iter()
+                    .any(|path| !loft_path_is_resolved(path))
         }
         FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) => {
             groups.is_empty()
@@ -1775,6 +1780,7 @@ fn design_projection_gaps(
             FeatureDefinition::Operation(FeatureOperation::FilledSurface {
                 boundary,
                 support_faces,
+                interior_constraints,
                 ..
             }) => {
                 match boundary {
@@ -1783,6 +1789,10 @@ fn design_projection_gaps(
                         gaps.path_selections += usize::from(!loft_path_is_resolved(path));
                     }
                 }
+                gaps.path_selections += interior_constraints
+                    .iter()
+                    .filter(|path| !loft_path_is_resolved(path))
+                    .count();
                 face_selection(support_faces);
             }
             FeatureDefinition::Operation(FeatureOperation::Loft {

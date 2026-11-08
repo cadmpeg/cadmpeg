@@ -487,10 +487,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         support_faces: &FaceSelection,
         continuity: &cadmpeg_ir::features::FilledSurfaceContinuityState,
         merge_result: Option<bool>,
+        constrained_or_reversed: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
+            if constrained_or_reversed {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has filled-surface interior constraints or a reversed normal",
+                    feature.id
+                )));
+            }
             let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses a path-based filled-surface boundary",

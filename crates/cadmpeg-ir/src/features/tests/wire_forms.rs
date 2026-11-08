@@ -803,6 +803,8 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
             .unwrap(),
         ),
         merge_result: Some(false),
+        interior_constraints: Vec::new(),
+        reverse_normal: None,
     });
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(
@@ -842,6 +844,8 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: crate::features::FilledSurfaceContinuityState::unresolved(),
         merge_result: None,
+        interior_constraints: Vec::new(),
+        reverse_normal: None,
     });
     let wire = serde_json::to_value(&definition).unwrap();
     assert!(wire.get("continuity").is_none());
