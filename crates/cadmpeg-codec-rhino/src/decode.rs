@@ -2584,19 +2584,23 @@ impl<'a> DecodeContext<'a> {
                             properties: std::collections::BTreeMap::new(),
                             textures: Vec::new(),
                         });
-                        model.appearance_bindings.push(cadmpeg_ir::appearance::AppearanceBinding {
-                            native_ref: None,
-                            id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!(
-                                "rhino:model:point-color-binding#{key}-{index}"
-                            ))
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
-                            target: cadmpeg_ir::appearance::AppearanceTarget::Point(point_id.clone()),
-                            appearance,
-                            source_entity_id: None,
-                            object_type: None,
-                            visible: None,
-                            channels: std::collections::BTreeMap::new(),
-                        });
+                        model
+                            .appearance_bindings
+                            .push(cadmpeg_ir::appearance::AppearanceBinding {
+                                native_ref: None,
+                                id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!(
+                                    "rhino:model:point-color-binding#{key}-{index}"
+                                ))
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                                target: cadmpeg_ir::appearance::AppearanceTarget::Point(
+                                    point_id.clone(),
+                                ),
+                                appearance,
+                                source_entity_id: None,
+                                object_type: None,
+                                visible: None,
+                                channels: std::collections::BTreeMap::new(),
+                            });
                     }
                     self.session.append_model_mut()?.vertices.push(Vertex {
                         native_ref: None,
