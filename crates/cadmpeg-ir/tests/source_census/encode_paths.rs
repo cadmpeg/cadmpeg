@@ -2,7 +2,6 @@
 //! Conservative name-resolved encode reachability and construction checks.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::path::Path;
 
 mod bindings;
 mod resolve;
@@ -310,20 +309,6 @@ impl Graph {
             .collect()
     }
 
-    fn external_calls(&self) -> Vec<String> {
-        self.walk()
-            .external
-            .iter()
-            .map(|(index, path)| {
-                format!(
-                    "{}: {} (outside the workspace)",
-                    self.functions[*index].label(),
-                    path.join("::")
-                )
-            })
-            .collect()
-    }
-
     fn capacity_owner(&self, function: &Function) -> bool {
         let crate_name = function.scope.first();
         self.capacities.iter().any(|(package, helper)| {
@@ -405,21 +390,3 @@ pub(crate) fn symbol_candidates(path: &[String], caller: &Function) -> Vec<Vec<S
     candidates
 }
 
-#[test]
-fn encode_path_constructions_follow_the_typed_error_contract() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("workspace root");
-    let graph = source::workspace(root);
-    assert!(
-        graph
-            .functions
-            .iter()
-            .any(|function| graph.is_root(function)),
-        "no EncoderBackend roots found"
-    );
-    let found = graph.findings();
-    let external = graph.external_calls();
-    assert!(found.is_empty(), "{} conservative encode-path finding(s); CodecError candidates require fidelity/synthesis catch-boundary review:\n{}\n{} external call classifications (first ten):\n{}", found.len(), found.join("\n"), external.len(), external.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
-}

@@ -28,7 +28,7 @@ pub(super) fn preserve_indices(
     records: &mut Vec<u8>,
     model: &Model,
     topology: &super::index::NativeGenerationIndex<'_>,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    limits: &cadmpeg_core::decode::ResourceLimits,
     starts: &Starts,
 ) -> Result<(), CodecError> {
     if topology.edge_ownerships.is_empty()
@@ -46,7 +46,7 @@ pub(super) fn preserve_indices(
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy {
-        limits,
+        limits: *limits,
         ..Default::default()
     };
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);

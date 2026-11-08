@@ -4474,6 +4474,10 @@ fn object_attributes_for_target(
     let material = materials
         .material_index(ir, material_target)
         .or_else(|| materials.material_index(ir, identity));
+    let layer_color = color.is_some_and(|value| {
+        tables::inherits_layer_color(ir, material_target, value)
+            || tables::inherits_layer_color(ir, identity, value)
+    });
     // Rhino can state an object display colour independently of its material.
     // Keep that channel absent when the effective colour comes from material.
     let direct_color = ir
@@ -4489,7 +4493,9 @@ fn object_attributes_for_target(
                 .find(|face| face.id.as_str() == identity)
                 .and_then(|face| face.color)
         });
-    let color = if material.is_some() {
+    let color = if layer_color {
+        None
+    } else if material.is_some() {
         direct_color
     } else {
         color
@@ -4563,13 +4569,14 @@ fn object_attributes_for_target(
     }
     if color.is_some() {
         payload.extend([13, 1]);
-    } else if material.is_some()
-        || (ir.model.presentation_layers.is_empty()
+    } else if !layer_color
+        && (material.is_some()
+            || (ir.model.presentation_layers.is_empty()
             && ir
                 .model
                 .bodies
                 .iter()
-                .any(|body| body.id.as_str() == identity))
+                .any(|body| body.id.as_str() == identity)))
     {
         payload.extend([13, 2]);
     }

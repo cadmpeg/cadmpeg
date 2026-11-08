@@ -29,7 +29,6 @@ struct Extrusion {
     distance: Scalar,
     scope_index: u32,
     parameter_index: Option<u32>,
-    profile_asset: Option<crate::records::mesh::DesignRelaxedGuidText>,
     profile_indices: Option<(u32, u32)>,
     profile_frame: Option<(u32, f64)>,
     current_state: u32,
@@ -676,7 +675,6 @@ fn select_extrusions(
                 && crate::ids::design_segment(&scope.id)
                     == owner.native_ref.as_deref().and_then(crate::ids::design_segment)
         });
-        let profile_asset = profile.map(|profile| profile.asset_id.clone());
         let profile_indices = profile.and_then(|profile| {
             let mut references = scope.reference_members().values().copied();
             let group = references.next()?;
@@ -694,7 +692,7 @@ fn select_extrusions(
                 || group.frame.variant || group.frame.closing_flag || !group.lost_edge_references.is_empty() { return None; }
             Some((group.frame.opaque_index.get(), group.frame.opaque_scalar().get()))
         });
-        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, scope_index: scope.record_index, parameter_index, profile_asset, profile_indices, profile_frame, current_state, previous_state })
+        Some(Extrusion { ordinal: feature.ordinal, id: feature.id.clone(), container, distance, scope_index: scope.record_index, parameter_index, profile_indices, profile_frame, current_state, previous_state })
     }).collect()
 }
 
@@ -1685,15 +1683,7 @@ pub(super) fn encode(
         out.extend_from_slice(&[0; 10]);
         reference(&mut out, profile + 3);
         out.extend_from_slice(&1u32.to_le_bytes());
-        native_lp_utf16(
-            &mut out,
-            extrusion
-                .profile_asset
-                .as_ref()
-                .map_or("00000000-0000-4000-8000-000000000001", |asset| {
-                    asset.as_str()
-                }),
-        )?;
+        native_lp_utf16(&mut out, crate::manifest::GENERATED_ASSET_FOLDER_GUID)?;
         native_lp_utf16(&mut out, &extrusion.container.to_string())?;
         out.extend_from_slice(&[0; 94]);
         mark(&mut secondary, profile, out.len());
