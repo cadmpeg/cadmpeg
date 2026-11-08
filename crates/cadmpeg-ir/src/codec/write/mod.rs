@@ -23,7 +23,6 @@ use crate::report::{
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_core::target::TargetCatalog;
-use cadmpeg_core::CodecError;
 
 pub mod approximation;
 mod carried;
@@ -565,19 +564,21 @@ impl EncoderBackend for CadirEncoder {
                     false,
                     "CADIR non-finite serialization without validation finding: {error}"
                 );
-                return Err(session.finish().err().map(Into::into).unwrap_or_else(|| {
-                    // The serializer reported a non-finite value but validation
-                    // found no finding; the input contract is violated.
-                    panic!("CADIR non-finite serialization without validation finding: {error}")
-                }));
+                return Err(session.finish().err().map_or_else(
+                    || {
+                        // The serializer reported a non-finite value but validation
+                        // found no finding; the input contract is violated.
+                        panic!("CADIR non-finite serialization without validation finding: {error}")
+                    },
+                    Into::into,
+                ));
             }
             Err(error @ crate::hash::finite_json::CanonicalJsonError::Serialize(_)) => {
                 debug_assert!(false, "CADIR serialization invariant: {error}");
-                return Err(session
-                    .finish()
-                    .err()
-                    .map(Into::into)
-                    .unwrap_or_else(|| panic!("CADIR serialization invariant: {error}")));
+                return Err(session.finish().err().map_or_else(
+                    || panic!("CADIR serialization invariant: {error}"),
+                    Into::into,
+                ));
             }
             Ok(()) => {}
         }
