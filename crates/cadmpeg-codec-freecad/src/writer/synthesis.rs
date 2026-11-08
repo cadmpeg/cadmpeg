@@ -1822,10 +1822,6 @@ pub(super) fn write(
         &mut dispositions.pcurves,
         &mut dispositions.procedural_surfaces,
         &mut dispositions.procedural_curves,
-        &mut dispositions.features,
-        &mut dispositions.product_definitions,
-        &mut dispositions.appearances,
-        &mut dispositions.appearance_bindings,
         &mut dispositions.feature_input_topologies,
         &mut dispositions.feature_result_topologies,
     ] {
