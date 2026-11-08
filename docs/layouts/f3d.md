@@ -3239,7 +3239,7 @@ Offsets are relative to the primary indexed scope header. The two marked referen
 
 ## `coil_ten_reference_compact_prologue`
 
-Spec §3.1 · layout: byte offsets · size: 56 B
+Spec §3.1 · layout: byte offsets · size: 58 B
 
 Offsets are relative to the primary indexed scope header. The section lanes at offsets 92 and 107 are those of coil_compact_scope_discriminators.
 
@@ -3247,16 +3247,32 @@ Offsets are relative to the primary indexed scope header. The section lanes at o
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
-| 20 | 4 | `operation` | `u32` | little | spec | the u32 operation at offset 20 |
+| 20 | 4 | `form_constant` | `u32` | little | spec | u32 `1` at offset 20 · value `1` |
 | 25 | 1 | `left_hand` | `u8` | little | spec | the left-hand Boolean at offset 25 |
-| 26 | 4 | `structural_constant` | `u32` | little | spec | u32 `1` at offset 26 · value `1` |
+| 26 | 4 | `operation` | `u32` | little | spec | the u32 operation at offset 26 |
 | 30 | 4 | `extent` | `u32` | little | spec | the u32 extent selector at offset 30 |
-| 34 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
-| 45 | 11 | `ninth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
+| 34 | 11 | `first_member_reference` | `bytes[11]` | little | spec | A marked reference at offset 34 names a member of the ordered reference table. |
+| 45 | 11 | `second_member_reference` | `bytes[11]` | little | spec | In the unflagged form, a second marked reference at offset 45 names a member of the table |
+| 56 | 2 | `trailing_flags` | `bytes[2]` | little | spec | bytes 56 and 57 are `1` and `0` · value `[1, 0]` |
 
 Unstated regions:
 
 - `24..25` (1 B): The compact form keeps this byte for the SpirePrimitive clockwise lane.
+
+## `coil_ten_reference_flagged_prologue_tail`
+
+Spec §3.1 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the primary indexed scope header. Offsets 0 through 44 are those of coil_ten_reference_compact_prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 45 | 2 | `leading_flags` | `bytes[2]` | little | spec | In the flagged form, bytes 45 and 46 are `0` and `1` · value `[0, 1]` |
+| 47 | 11 | `second_member_reference` | `bytes[11]` | little | spec | the second marked reference starts at offset 47 and names a member of the table |
+
+Unstated regions:
+
+- `0..45` (45 B): The coil_ten_reference_compact_prologue fields precede the flag bytes.
 
 ## `coil_long_scope_matrix`
 

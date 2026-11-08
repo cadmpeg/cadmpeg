@@ -1026,10 +1026,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_thicken(scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Coil) => {
-                    project_coil(scope, &parameters, construction_groups)?
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
-                }
+                Some(DesignFeatureFamily::Coil) => project_coil(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    &mut projection_losses,
+                )?
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Scale) => {
                     if let Some(operation) = scope.scale_operation() {
                         let factor =
@@ -9283,6 +9286,7 @@ fn project_coil(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
@@ -9395,15 +9399,10 @@ fn project_coil(
             // Boolean target and must not suppress the typed result.
             None
         } else {
-            let expected_role = if scope.coil_has_ten_reference_target() {
-                DesignOperandRole::BODIES_A
-            } else {
-                DesignOperandRole::BODIES_B
-            };
             let mut body_groups = construction_groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-                    && group.role() == expected_role
+                    && scope.coil_target_group_admits(group.role(), group.scope_reference_ordinal)
             });
             let first_body_group = body_groups.next();
             if body_groups.next().is_some() {
@@ -9470,6 +9469,14 @@ fn project_coil(
         },
     };
     let clockwise = or_none!(scope.coil_clockwise());
+    if let Some(group) = first_body_group.filter(|group| group.members().len() != 1) {
+        losses.push(crate::loss::F3dLossCode::CoilTargetMembersAssumed.note(format!(
+            "Coil scope {} targets group {} with {} members; the group is read as one body selection.",
+            scope.id,
+            group.id,
+            group.members().len()
+        )));
+    }
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Coil {
         construction: CoilConstruction {
             placement,

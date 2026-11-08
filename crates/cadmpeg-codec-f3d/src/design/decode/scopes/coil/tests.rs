@@ -1169,7 +1169,11 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
 
 #[test]
 fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
-    let scope = |operation: u32, constant: u32, ninth_reference: u32| {
+    let scope_with_flags = |form_constant: u32,
+                            operation: u32,
+                            second_reference: u32,
+                            flagged: bool,
+                            flag_bytes: [u8; 2]| {
         let reference_members: [u32; 10] =
             [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010];
         let kind = "CoilPrimitive";
@@ -1182,10 +1186,17 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
         bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
         bytes[4..7].copy_from_slice(b"399");
         bytes[7..11].copy_from_slice(&331u32.to_le_bytes());
-        bytes[20..24].copy_from_slice(&operation.to_le_bytes());
-        bytes[26..30].copy_from_slice(&constant.to_le_bytes());
+        bytes[20..24].copy_from_slice(&form_constant.to_le_bytes());
+        bytes[26..30].copy_from_slice(&operation.to_le_bytes());
         bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
-        for (offset, target) in [(34usize, 1005u32), (45, ninth_reference)] {
+        let second_at = if flagged {
+            bytes[45..47].copy_from_slice(&flag_bytes);
+            47
+        } else {
+            bytes[56..58].copy_from_slice(&flag_bytes);
+            45
+        };
+        for (offset, target) in [(34usize, 1003u32), (second_at, second_reference)] {
             bytes[offset] = 1;
             bytes[offset + 1..offset + 5].copy_from_slice(&target.to_le_bytes());
         }
@@ -1219,10 +1230,28 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
         .unwrap()
         .expect("ten-reference Coil scope")
     };
+    let scope = |form_constant: u32, operation: u32, second_reference: u32, flagged: bool| {
+        let flag_bytes = if flagged { [0, 1] } else { [1, 0] };
+        scope_with_flags(
+            form_constant,
+            operation,
+            second_reference,
+            flagged,
+            flag_bytes,
+        )
+    };
+    assert_eq!(
+        scope_with_flags(1, 2, 1007, false, [0, 0]).coil_operation(),
+        None
+    );
+    assert_eq!(
+        scope_with_flags(1, 2, 1007, true, [0, 0]).coil_operation(),
+        None
+    );
 
-    let join = scope(1, 1, 1009);
+    let join = scope(1, 1, 1009, false);
     assert_eq!(join.coil_operation(), Some(DesignExtrudeOperation::Join));
-    assert_eq!(join.coil_operation_offset(), Some(20));
+    assert_eq!(join.coil_operation_offset(), Some(26));
     assert_eq!(
         join.coil_extent(),
         Some(DesignCoilExtent::RevolutionsHeight)
@@ -1239,13 +1268,30 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
     assert_eq!(join.coil_section_placement_offset(), Some(92));
     assert_eq!(join.coil_clockwise(), Some(true));
     assert_eq!(join.coil_clockwise_offset(), Some(25));
-
     assert!(join.coil_has_ten_reference_target());
 
-    assert_eq!(scope(2, 1, 1009).coil_operation(), None);
-    assert_eq!(scope(1, 1, 1008).coil_operation(), None);
-    for compact_lanes in [scope(1, 4, 1009), scope(1, 4, 1008)] {
-        assert_eq!(compact_lanes.coil_operation(), None);
-        assert!(!compact_lanes.coil_has_ten_reference_target());
+    for (operation, expected) in [
+        (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+    ] {
+        assert_eq!(
+            scope(1, operation, 1009, false).coil_operation(),
+            Some(expected)
+        );
     }
+    assert_eq!(scope(1, 4, 1009, false).coil_operation(), None);
+    for second_reference in [1007, 1010] {
+        for flagged in [false, true] {
+            assert_eq!(
+                scope(1, 2, second_reference, flagged).coil_operation(),
+                Some(DesignExtrudeOperation::Cut)
+            );
+        }
+    }
+    for not_a_member in [scope(1, 1, 2000, false), scope(1, 1, 2000, true)] {
+        assert_eq!(not_a_member.coil_operation(), None);
+    }
+    let other_form_constant = scope(2, 1, 1009, false);
+    assert_eq!(other_form_constant.coil_operation(), None);
+    assert!(!other_form_constant.coil_has_ten_reference_target());
 }

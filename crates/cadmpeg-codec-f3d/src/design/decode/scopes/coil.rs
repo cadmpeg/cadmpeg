@@ -20,6 +20,7 @@ use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
 use crate::layout::coil_ten_reference_compact_prologue as coil_ten;
+use crate::layout::coil_ten_reference_flagged_prologue_tail as coil_ten_flagged;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::coil;
 use crate::records::feature::coil::DesignCoilExtent;
@@ -537,11 +538,15 @@ pub(super) fn exact_coil_discriminators(
     }
     let ten_reference =
         exact_ten_reference_compact_coil(bytes, start, paired_at, kind, reference_members);
-    let operation_offset = start.checked_add(coil_compact::OPERATION)?;
+    let operation_offset = start.checked_add(if ten_reference {
+        coil_ten::OPERATION
+    } else {
+        coil_compact::OPERATION
+    })?;
     let operation = match (kind, View::u32_le_at(bytes, operation_offset)?) {
-        (&scope::DesignFeatureKind::CoilPrimitive, 1) if ten_reference => {
-            DesignExtrudeOperation::Join
-        }
+        (_, 1) if ten_reference => DesignExtrudeOperation::Join,
+        (_, 2) if ten_reference => DesignExtrudeOperation::Cut,
+        (_, 3) if ten_reference => DesignExtrudeOperation::Intersect,
         _ if ten_reference => return None,
         (&scope::DesignFeatureKind::CoilPrimitive, _)
             if !COMPACT_COIL_REFERENCE_COUNTS.contains(&reference_members.len()) =>
@@ -575,16 +580,17 @@ pub(super) fn exact_coil_discriminators(
         _ => return None,
     };
     let structural_constant = match kind {
-        scope::DesignFeatureKind::SpirePrimitive => 2,
-        scope::DesignFeatureKind::CoilPrimitive if ten_reference => {
-            coil_ten::STRUCTURAL_CONSTANT_VALUE
-        }
-        scope::DesignFeatureKind::CoilPrimitive => 4,
+        scope::DesignFeatureKind::SpirePrimitive => Some(2),
+        scope::DesignFeatureKind::CoilPrimitive if ten_reference => None,
+        scope::DesignFeatureKind::CoilPrimitive => Some(4),
         _ => return None,
     };
-    if View::u32_le_at(bytes, start.checked_add(coil_compact::STRUCTURAL_CONSTANT)?)?
-        != structural_constant
-    {
+    if structural_constant.is_some_and(|constant| {
+        start
+            .checked_add(coil_compact::STRUCTURAL_CONSTANT)
+            .and_then(|at| View::u32_le_at(bytes, at))
+            != Some(constant)
+    }) {
         return None;
     }
     let extent_offset = start.checked_add(coil_compact::EXTENT)?;
@@ -663,17 +669,28 @@ fn exact_ten_reference_compact_coil(
     reference_members: &[u32],
 ) -> bool {
     (|| {
-        let zero_run =
-            start.checked_add(coil_ten::ZERO_RUN_9)?..start.checked_add(coil_ten::OPERATION)?;
+        let at = |relative: usize| start.checked_add(relative);
+        let member = |relative: usize| {
+            marked_record_reference(bytes, at(relative)?)
+                .filter(|reference| reference_members.contains(reference))
+        };
+        let zero_run = at(coil_ten::ZERO_RUN_9)?..at(coil_ten::FORM_CONSTANT)?;
+        let unflagged = member(coil_ten::SECOND_MEMBER_REFERENCE).is_some()
+            && bytes.get(at(coil_ten::TRAILING_FLAGS)?..at(coil_ten::TRAILING_FLAGS + 2)?)?
+                == [1, 0];
+        let flagged = bytes
+            .get(at(coil_ten_flagged::LEADING_FLAGS)?..at(coil_ten_flagged::LEADING_FLAGS + 2)?)?
+            == [0, 1]
+            && member(coil_ten_flagged::SECOND_MEMBER_REFERENCE).is_some();
         Some(
             *kind == scope::DesignFeatureKind::CoilPrimitive
                 && reference_members.len() == 10
                 && paired_at.checked_sub(start)? == TEN_REFERENCE_COMPACT_FRAME
                 && bytes.get(zero_run)?.iter().all(|byte| *byte == 0)
-                && marked_record_reference(bytes, start.checked_add(coil_ten::FIFTH_REFERENCE)?)?
-                    == *reference_members.get(4)?
-                && marked_record_reference(bytes, start.checked_add(coil_ten::NINTH_REFERENCE)?)?
-                    == *reference_members.get(8)?,
+                && View::u32_le_at(bytes, at(coil_ten::FORM_CONSTANT)?)?
+                    == coil_ten::FORM_CONSTANT_VALUE
+                && member(coil_ten::FIRST_MEMBER_REFERENCE).is_some()
+                && (unflagged || flagged),
         )
     })()
     .unwrap_or(false)

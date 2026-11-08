@@ -10639,7 +10639,7 @@ name = "coil_ten_reference_compact_prologue"
 kind = "byte"
 section = "3.1"
 anchor = "The 466-byte ten-reference `CoilPrimitive` form uses the compact discriminator lanes."
-size = 56
+size = 58
 note = "Offsets are relative to the primary indexed scope header. The section lanes at offsets 92 and 107 are those of coil_compact_scope_discriminators."
 
 [[record.field]]
@@ -10657,11 +10657,12 @@ source = "spec"
 anchor = "nine zero bytes at offsets 11 through 19"
 
 [[record.field]]
-name = "operation"
+name = "form_constant"
 offset = 20
 type = "u32"
+value = 1
 source = "spec"
-anchor = "the u32 operation at offset 20"
+anchor = "u32 `1` at offset 20"
 
 [[record.gap]]
 offset = 24
@@ -10676,12 +10677,11 @@ source = "spec"
 anchor = "the left-hand Boolean at offset 25"
 
 [[record.field]]
-name = "structural_constant"
+name = "operation"
 offset = 26
 type = "u32"
-value = 1
 source = "spec"
-anchor = "u32 `1` at offset 26"
+anchor = "the u32 operation at offset 26"
 
 [[record.field]]
 name = "extent"
@@ -10691,18 +10691,54 @@ source = "spec"
 anchor = "the u32 extent selector at offset 30"
 
 [[record.field]]
-name = "fifth_reference"
+name = "first_member_reference"
 offset = 34
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references."
+anchor = "A marked reference at offset 34 names a member of the ordered reference table."
 
 [[record.field]]
-name = "ninth_reference"
+name = "second_member_reference"
 offset = 45
 type = "bytes[11]"
 source = "spec"
-anchor = "Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references."
+anchor = "In the unflagged form, a second marked reference at offset 45 names a member of the table"
+
+[[record.field]]
+name = "trailing_flags"
+offset = 56
+type = "bytes[2]"
+value = [1, 0]
+source = "spec"
+anchor = "bytes 56 and 57 are `1` and `0`"
+
+[[record]]
+name = "coil_ten_reference_flagged_prologue_tail"
+kind = "byte"
+section = "3.1"
+anchor = "In the flagged form, bytes 45 and 46 are `0` and `1`"
+size = 58
+note = "Offsets are relative to the primary indexed scope header. Offsets 0 through 44 are those of coil_ten_reference_compact_prologue."
+
+[[record.gap]]
+offset = 0
+size = 45
+note = "The coil_ten_reference_compact_prologue fields precede the flag bytes."
+
+[[record.field]]
+name = "leading_flags"
+offset = 45
+type = "bytes[2]"
+value = [0, 1]
+source = "spec"
+anchor = "In the flagged form, bytes 45 and 46 are `0` and `1`"
+
+[[record.field]]
+name = "second_member_reference"
+offset = 47
+type = "bytes[11]"
+source = "spec"
+anchor = "the second marked reference starts at offset 47 and names a member of the table"
 
 [[record]]
 name = "coil_long_scope_matrix"
