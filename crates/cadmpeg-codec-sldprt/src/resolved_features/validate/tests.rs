@@ -269,7 +269,7 @@ fn native_validation_rejects_edited_relation_binding() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("expected rejection"),
@@ -322,7 +322,7 @@ fn native_validation_rejects_edited_relation_instance() {
         Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
             panic
                 .downcast_ref::<&str>()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .unwrap_or_default()
         }),
         Ok(Ok(_)) => panic!("expected rejection"),
