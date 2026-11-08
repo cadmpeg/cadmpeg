@@ -309,6 +309,8 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// A generic attribute target was written as a typed STEP target.
     SourceAttributeTargetNormalized,
+    /// A document attribute value cannot be held in the CAx-IF DRI/VRI form.
+    DocumentAttributeValueDegraded,
     /// A document timestamp uses STEP's extended syntax.
     TimestampNormalized,
     /// Procedural definitions were reduced to STEP carriers.
@@ -572,6 +574,7 @@ impl StepLossCode {
         Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
         Self::SourceAttributeTargetNormalized,
+        Self::DocumentAttributeValueDegraded,
         Self::TimestampNormalized,
         Self::ProceduralReducedToCarrier,
         Self::ProceduralCurveCacheToleranceOmitted,
@@ -788,6 +791,7 @@ impl StepLossCode {
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::SourceAttributeTargetNormalized => "attribute.target-normalized",
+            Self::DocumentAttributeValueDegraded => "attribute.document-value-degraded",
             Self::TimestampNormalized => "attribute.timestamp-normalized",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::ProceduralCurveCacheToleranceOmitted => {
@@ -918,6 +922,7 @@ impl StepLossCode {
             | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
             | Self::SourceAttributeTargetNormalized
+            | Self::DocumentAttributeValueDegraded
             | Self::TimestampNormalized
             | Self::ProceduralReducedToCarrier
             | Self::ProceduralCurveCacheToleranceOmitted
@@ -991,6 +996,7 @@ impl StepLossCode {
             | Self::DisplayColorUnstyled
             | Self::SourceAttributeNotWritten
             | Self::SourceAttributeTargetNormalized
+            | Self::DocumentAttributeValueDegraded
             | Self::TimestampNormalized => LossTaxonomy::AttributesNotTransferred,
             Self::PlacementReferenceInferred => LossTaxonomy::CarrierAxisInferred,
             Self::ConflictingRepresentationUnits
