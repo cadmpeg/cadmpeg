@@ -311,6 +311,7 @@ fn public_reduced_fields_expose_each_target_independent_row() {
                 ReducedStorage::AngularTolerance => PublicStorage::Normalized {
                     loss: "rhino/writer.angular-tolerance-reduced",
                 },
+                ReducedStorage::Normalized { loss } => PublicStorage::Normalized { loss },
             };
             Some(ReducedField { path, storage })
         })
