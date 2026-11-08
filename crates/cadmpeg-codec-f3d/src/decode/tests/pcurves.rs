@@ -711,13 +711,26 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
     let duplicate = source_less.model.procedural_curves[0].clone();
     source_less.model.procedural_curves.push(duplicate);
     let mut encoded = Vec::new();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect_err("duplicate procedural construction must be rejected");
-    assert!(error
-        .to_string()
-        .contains("multiple procedural constructions"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut encoded))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("duplicate procedural construction must be rejected"),
+    };
+    assert!(
+        message.contains("multiple procedural constructions"),
+        "{message}"
+    );
 }
 
 #[test]

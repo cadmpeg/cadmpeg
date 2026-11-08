@@ -1424,13 +1424,26 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     source_less.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.01))
         .unwrap();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cache-less extrusion tolerance must be rejected");
-    assert!(error
-        .to_string()
-        .contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("cache-less extrusion tolerance must be rejected"),
+    };
+    assert!(
+        message.contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"),
+        "{message}"
+    );
 }
 
 #[test]

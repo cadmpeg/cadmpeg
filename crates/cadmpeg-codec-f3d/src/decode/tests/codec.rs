@@ -826,11 +826,24 @@ fn generated_f3d_rejects_an_incoherent_delta_state_header() {
         state.next_ref = Some(14);
         state.node_index = 16;
     });
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("an incoherent history cannot be serialized");
-    assert!(error
-        .to_string()
-        .contains("coherent doubly linked state chain"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("an incoherent history cannot be serialized"),
+    };
+    assert!(
+        message.contains("coherent doubly linked state chain"),
+        "{message}"
+    );
 }
 
 #[test]

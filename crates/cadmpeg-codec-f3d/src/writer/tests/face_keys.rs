@@ -119,13 +119,21 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             &[first_wire, second_wire],
         )
         .unwrap();
-    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
-        panic!("the removed native backlink cannot encode duplicate target claims")
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("the removed native backlink cannot encode duplicate target claims"),
     };
-    assert!(
-        error.to_string().contains("unknown field `face`"),
-        "{error}"
-    );
+    assert!(message.contains("unknown field `face`"), "{message}");
     let oversized = record(0, Some(u64::MAX));
     ir.model.faces[0].native_ref = Some(oversized.id());
     ir.native
@@ -136,13 +144,21 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             &[oversized],
         )
         .unwrap();
-    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
-        panic!("the signed native field cannot hold u64::MAX")
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("the signed native field cannot hold u64::MAX"),
     };
-    assert!(
-        error.to_string().contains("signed 64-bit native slot"),
-        "{error}"
-    );
+    assert!(message.contains("signed 64-bit native slot"), "{message}");
 }
 
 #[test]

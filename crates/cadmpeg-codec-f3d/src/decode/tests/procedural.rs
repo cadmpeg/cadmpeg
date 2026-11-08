@@ -625,15 +625,29 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     unexpected_tolerance.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.04))
         .unwrap();
-    assert!(F3dCodec
-        .plan(
-            EncodeInput::new(&unexpected_tolerance, None),
-            TargetRequest::Inherit
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("none-shape scaled compound loft with tolerance must fail")
-        .to_string()
-        .contains("none shape cannot carry a cache-fit tolerance"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(
+                EncodeInput::new(&unexpected_tolerance, None),
+                TargetRequest::Inherit,
+            )
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("none-shape scaled compound loft with tolerance must fail"),
+    };
+    assert!(
+        message.contains("none shape cannot carry a cache-fit tolerance"),
+        "{message}"
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1233,11 +1247,23 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error.to_string().contains("requires 1 operands, got 0"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("invalid law arity must be rejected"),
+    };
+    assert!(message.contains("requires 1 operands, got 0"), "{message}");
 
     source_less.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
