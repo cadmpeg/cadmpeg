@@ -97,6 +97,63 @@ fn unchanged_numeric_property(property: &PropertyRecord, generated: &str) -> boo
     })
 }
 
+fn same_property_value(source: &str, generated: &str) -> bool {
+    fn same_node(a: roxmltree::Node<'_, '_>, b: roxmltree::Node<'_, '_>) -> bool {
+        if a.node_type() != b.node_type() {
+            return false;
+        }
+        if a.is_text() {
+            return a.text() == b.text();
+        }
+        if !a.is_element() {
+            return false;
+        }
+        if a.tag_name() != b.tag_name()
+            || a.attributes().len() != b.attributes().len()
+            || !a
+                .attributes()
+                .all(|attribute| b.attribute(attribute.name()) == Some(attribute.value()))
+        {
+            return false;
+        }
+        a.children()
+            .filter(|node| node.is_element() || node.is_text())
+            .count()
+            == b.children()
+                .filter(|node| node.is_element() || node.is_text())
+                .count()
+    }
+    let (Ok(source), Ok(generated)) = (
+        roxmltree::Document::parse(source),
+        roxmltree::Document::parse(generated),
+    ) else {
+        return false;
+    };
+    let source = source.root_element();
+    let generated = generated.root_element();
+    if source.tag_name() != generated.tag_name()
+        || source.attribute("type") != generated.attribute("type")
+        || source.attribute("name") != generated.attribute("name")
+    {
+        return false;
+    }
+    let mut source = source
+        .descendants()
+        .skip(1)
+        .filter(|node| node.is_element() || node.is_text());
+    let mut generated = generated
+        .descendants()
+        .skip(1)
+        .filter(|node| node.is_element() || node.is_text());
+    loop {
+        match (source.next(), generated.next()) {
+            (None, None) => return true,
+            (Some(a), Some(b)) if same_node(a, b) => {}
+            _ => return false,
+        }
+    }
+}
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -1502,13 +1559,13 @@ pub(super) fn write(
                 .iter()
                 .filter(|property| property.owner == *original.id())
             {
-                if object
-                    .properties
-                    .get(&property.name)
-                    .is_some_and(|generated| unchanged_numeric_property(property, generated))
-                {
+                if let Some(generated) = object.properties.get(&property.name) {
                     if let Some(source) = xml::native_named(property, &names, &available)? {
-                        object.set(&property.name, source);
+                        if unchanged_numeric_property(property, generated)
+                            || same_property_value(&source, generated)
+                        {
+                            object.set(&property.name, source);
+                        }
                     }
                 }
             }

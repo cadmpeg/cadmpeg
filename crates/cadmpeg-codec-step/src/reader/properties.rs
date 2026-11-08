@@ -29,6 +29,13 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
+    let children: HashSet<u64> = exchange
+        .entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+        .filter_map(|(_, record)| {
+            super::named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)
+                .and_then(ValueExt::reference)
+        })
+        .collect();
     'properties: for (relation_id, relation) in
         exchange.entities("PROPERTY_DEFINITION_REPRESENTATION")
     {
@@ -55,7 +62,7 @@ pub(super) fn decode(
         let Some(owner_id) = property.parameters.get(2).and_then(ValueExt::reference) else {
             continue;
         };
-        let (target, owner_rep_id) = if let Some(definition) = definitions.get(&owner_id) {
+        let (mut target, owner_rep_id) = if let Some(definition) = definitions.get(&owner_id) {
             (AttributeTarget::ProductDefinition(definition.clone()), None)
         } else if let Some(occurrence) = occurrences.get(&owner_id).and_then(|items| items.first())
         {
@@ -123,9 +130,6 @@ pub(super) fn decode(
         let Some(value_record) = exchange.records().get(&value_id) else {
             continue;
         };
-        if !value_record.parameter(0).is_some_and(empty_or_omitted) {
-            continue;
-        }
         let Some(name) = property.parameters.first().and_then(|value| {
             decode_text(
                 exchange,
@@ -138,6 +142,25 @@ pub(super) fn decode(
         }) else {
             continue;
         };
+        let item_name = value_record.parameter(0).and_then(|value| {
+            decode_text(
+                exchange,
+                value,
+                &mut losses,
+                value_id,
+                "property item name",
+                StepLossCode::MetadataStringInvalid,
+            )
+        });
+        let document_property = definitions.contains_key(&owner_id)
+            && !children.contains(&owner_id)
+            && !name.is_empty()
+            && item_name.as_deref() == Some(name.as_str());
+        if document_property {
+            target = AttributeTarget::Document;
+        } else if !value_record.parameter(0).is_some_and(empty_or_omitted) {
+            continue;
+        }
         let value_ids: Vec<u64> = if let Some(row) = value_record.partial("ROW_REPRESENTATION_ITEM")
         {
             let Some(Value::List(items)) = row.parameters.get(1) else {
@@ -161,7 +184,8 @@ pub(super) fn decode(
         let mut values = Vec::new();
         ctx.reserve_working(&mut values, value_ids.len(), "STEP property row values")?;
         for id in &value_ids {
-            let Some(value) = scalar_property_value(exchange, *id, &mut losses) else {
+            let Some(value) = scalar_property_value(exchange, *id, &mut losses, document_property)
+            else {
                 continue 'properties;
             };
             values.push(value);
@@ -220,9 +244,10 @@ fn scalar_property_value(
     exchange: &Exchange,
     id: u64,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    named: bool,
 ) -> Option<AttributeValue> {
     let record = exchange.records().get(&id)?;
-    if !record.parameter(0).is_some_and(empty_or_omitted) {
+    if !named && !record.parameter(0).is_some_and(empty_or_omitted) {
         return None;
     }
     if let Some(item) = record.partial("DESCRIPTIVE_REPRESENTATION_ITEM") {
@@ -250,6 +275,16 @@ fn scalar_property_value(
             .get(1)?
             .logical()
             .map(AttributeValue::Boolean)
+    } else if let Some(item) = record.partial("VALUE_REPRESENTATION_ITEM") {
+        match item.parameters.get(1)? {
+            Value::Typed(kind, value) if kind == "COUNT_MEASURE" => {
+                value.integer().map(AttributeValue::Integer)
+            }
+            Value::Typed(kind, value) if kind == "NUMERIC_MEASURE" => {
+                value.number().and_then(AttributeValue::float)
+            }
+            _ => None,
+        }
     } else {
         None
     }
@@ -269,6 +304,28 @@ fn empty_or_omitted(value: &Value) -> bool {
 mod tests {
     use crate::test_support::exchange::decode_inline;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    #[test]
+    fn named_root_property_decodes_as_document_attribute() {
+        let decoded = decode_inline(
+            "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','Part','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('part','',#4,#5);
+#7=PROPERTY_DEFINITION('Count','',#6);
+#8=VALUE_REPRESENTATION_ITEM('Count',COUNT_MEASURE(7));
+#9=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));
+#10=REPRESENTATION('',(#8),#9);
+#11=PROPERTY_DEFINITION_REPRESENTATION(#7,#10);",
+        );
+        assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+            attribute.name == "Count"
+                && attribute.target == AttributeTarget::Document
+                && attribute.values == [Some(AttributeValue::Integer(7))]
+        }));
+    }
 
     #[test]
     fn ordered_property_row_decodes_and_round_trips() {
