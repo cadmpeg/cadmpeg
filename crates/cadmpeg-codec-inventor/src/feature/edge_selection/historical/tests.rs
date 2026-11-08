@@ -29,6 +29,17 @@ fn selector_bytes_with_form(
     version: u8,
     form: u8,
 ) -> Vec<u8> {
+    selector_bytes_with_words(generators, secondary, version, form, 2, 2)
+}
+
+fn selector_bytes_with_words(
+    generators: &[u32],
+    secondary: &[u32],
+    version: u8,
+    form: u8,
+    topology: u32,
+    naming: u32,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend_from_slice(&1_u16.to_le_bytes());
@@ -42,13 +53,13 @@ fn selector_bytes_with_form(
         bytes.extend_from_slice(&word.to_le_bytes());
     }
     bytes.extend_from_slice(&[1, form]);
-    for word in [0x8000_000a_u32, 2] {
+    for word in [0x8000_000a_u32, topology] {
         bytes.extend_from_slice(&word.to_le_bytes());
     }
-    if version != 19 {
+    if !(19..=21).contains(&version) {
         bytes.extend_from_slice(&0_u32.to_le_bytes());
     }
-    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&naming.to_le_bytes());
     for values in [generators, secondary] {
         bytes.extend_from_slice(&8_u16.to_le_bytes());
         bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
@@ -620,7 +631,7 @@ fn historical_projection_is_atomic_and_pins_each_unresolved_selection_loss() {
 #[test]
 fn historical_selector_references_require_qualified_typed_targets() {
     let bytes = selector_bytes(&[31, 37], &[], 29);
-    for change in 0..7 {
+    for change in 0..8 {
         let mut selector = parse(View::over_retained(&bytes), 29)
             .expect("framed")
             .expect("direct");
@@ -639,7 +650,34 @@ fn historical_selector_references_require_qualified_typed_targets() {
             ]),
             _ => None,
         };
-        assert_eq!(links(&selector, target), change == 0);
+        let body_source = |ordinal| (ordinal == 9).then_some(if change == 7 { 3 } else { 2 });
+        assert_eq!(links(&selector, target, body_source), change == 0);
+    }
+}
+
+#[test]
+fn the_body_words_name_the_selected_body_in_any_segment_version() {
+    for version in [19, 20, 21, 23, 25, 29] {
+        let bytes = selector_bytes_with_words(&[31], &[], version, 5, 53, 53);
+        let selector = parse(View::over_retained(&bytes), version)
+            .expect("framed")
+            .expect("direct");
+        assert_eq!(selector.body_source, 53);
+        let target = |ordinal| match ordinal {
+            9 => Some(crate::pmdc::inventor_id(0x9087_4d47)),
+            7 => Some(super::super::super::EDGE_ITEM_TYPE),
+            3 => Some([
+                0x42, 0x20, 0xe9, 0xcc, 0xd1, 0x11, 0xc5, 0x71, 0, 8, 0xa7, 0xba, 0x32, 0xa3, 0xdc,
+                9,
+            ]),
+            _ => None,
+        };
+        assert!(links(&selector, target, |_| Some(53)));
+        assert!(!links(&selector, target, |_| Some(2)));
+        let unequal = selector_bytes_with_words(&[31], &[], version, 5, 53, 54);
+        assert!(parse(View::over_retained(&unequal), version)
+            .expect("framed refusal")
+            .is_none());
     }
 }
 
