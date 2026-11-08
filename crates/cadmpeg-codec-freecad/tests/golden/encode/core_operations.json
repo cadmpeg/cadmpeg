@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 135170,
-      "payload_sha256": "134665734a952b263c5ea0f1e28f7931683dee1a586bcb3d06e385d5996de422"
+      "payload_len": 135285,
+      "payload_sha256": "daed51bc800efc1a334a18682ffc4016b0d08521ae684cf8679e83ed2efede02"
     },
     {
       "name": "RevolutionProfile.InternalShape.brp",
@@ -421,6 +421,16 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#LinearPattern:Direction2:property conflicts with operation property Direction2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#LinearPattern:Reversed2:property conflicts with operation property Reversed2",
         "severity": "warning"
       },
@@ -581,7 +591,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 7 native record(s) from `fcstd.properties`: fcstd:native:property#DatumAxis:Shape, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#PatternBase:PreviewShape",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.properties`: fcstd:native:property#DatumAxis:Shape",
         "severity": "info"
       },
       {
@@ -1120,6 +1130,7 @@
                 "fcstd:native:property#Draft:Label2": "regenerated",
                 "fcstd:native:property#Draft:NeutralPlane": "regenerated",
                 "fcstd:native:property#Draft:Placement": "regenerated",
+                "fcstd:native:property#Draft:PreviewShape": "written",
                 "fcstd:native:property#Draft:PullDirection": "regenerated",
                 "fcstd:native:property#Draft:Refine": "regenerated",
                 "fcstd:native:property#Draft:Reversed": "regenerated",
@@ -1136,6 +1147,7 @@
                 "fcstd:native:property#DraftBase:Label": "regenerated",
                 "fcstd:native:property#DraftBase:Label2": "regenerated",
                 "fcstd:native:property#DraftBase:Placement": "regenerated",
+                "fcstd:native:property#DraftBase:PreviewShape": "written",
                 "fcstd:native:property#DraftBase:Shape": "regenerated",
                 "fcstd:native:property#DraftBase:ShapeMaterial": "written",
                 "fcstd:native:property#DraftBase:Suppressed": "regenerated",
@@ -1195,6 +1207,7 @@
                 "fcstd:native:property#Hole:Midplane": "regenerated",
                 "fcstd:native:property#Hole:ModelThread": "regenerated",
                 "fcstd:native:property#Hole:Placement": "regenerated",
+                "fcstd:native:property#Hole:PreviewShape": "written",
                 "fcstd:native:property#Hole:Profile": "regenerated",
                 "fcstd:native:property#Hole:Refine": "regenerated",
                 "fcstd:native:property#Hole:Reversed": "regenerated",
@@ -1226,6 +1239,7 @@
                 "fcstd:native:property#HoleBase:Label": "regenerated",
                 "fcstd:native:property#HoleBase:Label2": "regenerated",
                 "fcstd:native:property#HoleBase:Placement": "regenerated",
+                "fcstd:native:property#HoleBase:PreviewShape": "written",
                 "fcstd:native:property#HoleBase:Shape": "regenerated",
                 "fcstd:native:property#HoleBase:ShapeMaterial": "written",
                 "fcstd:native:property#HoleBase:Suppressed": "regenerated",
@@ -1289,6 +1303,7 @@
                 "fcstd:native:property#LinearPattern:Offset2": "regenerated",
                 "fcstd:native:property#LinearPattern:Originals": "regenerated",
                 "fcstd:native:property#LinearPattern:Placement": "regenerated",
+                "fcstd:native:property#LinearPattern:PreviewShape": "written",
                 "fcstd:native:property#LinearPattern:Refine": "regenerated",
                 "fcstd:native:property#LinearPattern:Reversed": "regenerated",
                 "fcstd:native:property#LinearPattern:Reversed2": "regenerated",
@@ -1439,6 +1454,7 @@
                 "fcstd:native:property#PatternBase:MapPathParameter": "regenerated",
                 "fcstd:native:property#PatternBase:MapReversed": "regenerated",
                 "fcstd:native:property#PatternBase:Placement": "regenerated",
+                "fcstd:native:property#PatternBase:PreviewShape": "written",
                 "fcstd:native:property#PatternBase:Refine": "regenerated",
                 "fcstd:native:property#PatternBase:Shape": "regenerated",
                 "fcstd:native:property#PatternBase:ShapeMaterial": "written",
