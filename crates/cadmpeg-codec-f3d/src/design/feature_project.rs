@@ -863,25 +863,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 .map(|distance| (operation, distance))
                         })
                     {
-                        use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
-                        use cadmpeg_ir::features::{FaceSelection, SurfaceExtension};
-
-                        let method = match operation.method {
-                            DesignSurfaceExtendMethod::Natural => SurfaceExtension::Natural,
-                            DesignSurfaceExtendMethod::Tangent => SurfaceExtension::Linear,
-                            DesignSurfaceExtendMethod::Perpendicular => {
-                                SurfaceExtension::Perpendicular
-                            }
-                        };
                         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-                            faces: FaceSelection::Native(format!(
+                            faces: cadmpeg_ir::features::FaceSelection::Native(format!(
                                 "{}{}{}",
                                 native_scope,
                                 ":design-record#",
                                 u64::from(operation.boundary_record_index)
                             )),
                             distance: Some(distance),
-                            method,
+                            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
