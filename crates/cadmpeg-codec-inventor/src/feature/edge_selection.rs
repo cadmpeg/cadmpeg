@@ -16,6 +16,7 @@ use cadmpeg_core::{
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use std::collections::{HashMap, HashSet};
 
+mod adjacency;
 mod archive;
 pub(in crate::feature) mod geometry;
 pub(crate) mod historical;
@@ -518,11 +519,19 @@ pub(super) fn inventory(
                     record_sources.insert(source);
                 }
             }
-            if record.type_id == super::face_selection::SELECTOR_TYPE {
+            if matches!(
+                record.type_id,
+                super::face_selection::SELECTOR_TYPE | super::face_selection::DIRECT_SELECTOR_TYPE
+            ) {
                 if let Ok(source) = historical::source(record.payload, version) {
                     *face_sources.entry(source).or_default() += 1;
                 }
-                match super::face_selection::parse(ctx, record.payload, version) {
+                let parsed = if record.type_id == super::face_selection::DIRECT_SELECTOR_TYPE {
+                    super::face_selection::parse_direct(ctx, record.payload, version)
+                } else {
+                    super::face_selection::parse(ctx, record.payload, version)
+                };
+                match parsed {
                     Ok(Some(face)) => {
                         if super::face_selection::links(
                             &face,

@@ -2746,6 +2746,13 @@ pub(crate) fn project(
         inventory,
     )?);
     input_topologies.extend(face_selection::project(ctx, &mut features, inventory)?);
+    input_topologies.extend(chamfer::oriented::project(
+        ctx,
+        &mut features,
+        inventory,
+        |token, reference| resolve_property(token, reference.index(), &index),
+        |source, slot| length_parameter(source, slot, &index),
+    )?);
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {
@@ -4052,6 +4059,7 @@ fn project_chamfer(
         spec,
         flip_direction,
         direct,
+        ..
     } = operands;
     let (feature_id, result) = match feature_result(ctx, source, 11, index)? {
         Ok(value) => value,
