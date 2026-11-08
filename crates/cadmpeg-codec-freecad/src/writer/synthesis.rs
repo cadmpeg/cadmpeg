@@ -1035,13 +1035,13 @@ pub(super) fn write(
             .iter()
             .find_map(|property| {
                 let owner_matches = names.get(&property.owner) == Some(&name);
-                let [file] = property.side_entries() else {
-                    return None;
-                };
+                let file = property
+                    .side_entries()
+                    .iter()
+                    .find(|entry| entry.to_ascii_lowercase().ends_with(".brp"))?;
                 (owner_matches
                     && property.name == property_name
                     && property.type_name == "Part::PropertyPartShape"
-                    && file.to_ascii_lowercase().ends_with(".brp")
                     && entry_names.contains(file)
                     && native_properties
                         .iter()
