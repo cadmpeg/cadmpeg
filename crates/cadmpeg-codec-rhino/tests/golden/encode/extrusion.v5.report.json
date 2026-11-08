@@ -71,7 +71,7 @@
       "curves": "reported",
       "declared_measures": "omitted",
       "drawings": "omitted",
-      "edges": "reported",
+      "edges": "written",
       "faces": "written",
       "feature_input_topologies": "omitted",
       "feature_result_topologies": "omitted",
@@ -80,7 +80,7 @@
       "mass_properties": "omitted",
       "occurrences": "reported",
       "parameters": "dropped",
-      "pcurves": "reported",
+      "pcurves": "written",
       "physical_materials": "omitted",
       "physics_scenes": "omitted",
       "pmi": "omitted",
@@ -115,49 +115,6 @@
     "target": "rhino:archive-50"
   },
   "losses": [
-    {
-      "code": {
-        "code": "writer.carrier-resolved",
-        "kind": "procedural_reduced",
-        "namespace": "rhino",
-        "scope": "namespaced"
-      },
-      "message": "surface rhino:object:surface#5268696e-6f49-4400-0000-000000000000.lateral-0 and profile rhino:object:curve#5268696e-6f49-4400-0000-000000000000.profile-0.start.sweep-origin are written as an independent extrusion object",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "writer.entity-omitted",
-        "kind": "geometry_not_transferred",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "mesh rhino:object:tessellation#5268696e-6f49-4400-0000-000000000000.cache-0 omitted: mesh rhino:object:tessellation#5268696e-6f49-4400-0000-000000000000.cache-0 has no faces for a native Rhino mesh",
-      "severity": "error"
-    },
-    {
-      "code": {
-        "code": "writer.plane-domain-restricted",
-        "kind": "geometry_not_transferred",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "plane surface rhino:object:surface#5268696e-6f49-4400-0000-000000000000.cap-0 is written with a finite 3DM parameter domain",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "writer.pcurve-reversal-defaulted",
-        "kind": "topology_not_transferred",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "pcurve rhino:object:pcurve#5268696e-6f49-4400-0000-000000000000.cap-0.profile-0 has no wrapper reversal value; 3DM writes false",
-      "severity": "warning"
-    },
     {
       "code": {
         "code": "native.records-omitted",
