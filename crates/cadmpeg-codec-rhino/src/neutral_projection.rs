@@ -26,18 +26,6 @@ fn source_matches(source: Option<&SourceObjectAssociation>, identity: &str) -> b
     source.is_some_and(|source| source.object_id.as_str() == identity)
 }
 
-fn hex_color(text: &str) -> Result<[u8; 4], CodecError> {
-    if text.len() != 8 {
-        return Err(CodecError::malformed("body color is not eight hex digits"));
-    }
-    let mut channels = [0; 4];
-    for (index, channel) in channels.iter_mut().enumerate() {
-        *channel = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16)
-            .map_err(|_| CodecError::malformed("body color is not eight hex digits"))?;
-    }
-    Ok(channels)
-}
-
 fn items(ir: &CadIr, source_order: usize, identity: &str) -> Vec<PresentationItem> {
     let mut items = Vec::new();
     let source_record = format!("rhino:object:record#{source_order:06}");
@@ -222,63 +210,11 @@ pub(crate) fn project(
                 )),
             );
         }
-        // Object user strings project to neutral attributes targeted at the
-        // records built from the object (#223 item 5).
-        let stub = format!("rhino:object:record#{source_order:06}");
-        let mut strings: Vec<(String, String)> = Vec::new();
-        if let Some(records) = ir
-            .native
-            .namespace("rhino")
-            .and_then(|namespace| namespace.arenas().get("object_presentation"))
-        {
-            for record in records {
-                let linked = matches!(&record.field("links"), Some(serde_json::Value::Array(links)) if links
-                    .iter()
-                    .any(|link| link.as_str() == Some(stub.as_str())));
-                if !linked {
-                    continue;
-                }
-                for arena_key in ["user_strings", "attribute_user_strings"] {
-                    if let Some(serde_json::Value::Array(items)) = record.field(arena_key) {
-                        for item in &items {
-                            if let (Some(key), Some(value)) = (
-                                item.get("key").and_then(|key| key.as_str()),
-                                item.get("value").and_then(|value| value.as_str()),
-                            ) {
-                                strings.push((key.to_owned(), value.to_owned()));
-                            }
-                        }
-                    }
-                }
-                break;
-            }
-        }
-        let user_string = |key: &str| {
-            strings
-                .iter()
-                .find(|(candidate, _)| candidate == key)
-                .map(|(_, value)| value.as_str())
-        };
         if let Some(attributes) = object.attributes.parsed() {
-            let uuid = object.identity.object_id.to_string();
             for body in &mut ir.model.bodies {
-                let named_target = targets.iter().any(|target| matches!(target, PresentationItem::Body { body: id } if *id == body.id));
-                let shares_uuid = body.id.as_str().contains(&uuid);
-                if named_target || shares_uuid {
+                if targets.iter().any(|target| matches!(target, PresentationItem::Body { body: id } if *id == body.id)) {
                     // Object visibility and layer visibility are independent.
-                    if named_target {
-                        body.visible = Some(attributes.visible);
-                    }
-                    if let Some(name) = user_string("cadmpeg:body-name") {
-                        body.name = Some(name.to_owned());
-                    }
-                    if let Some(text) = user_string("cadmpeg:body-color") {
-                        if let Ok([r, g, b, a]) = hex_color(text) {
-                            body.color = Some(
-                                cadmpeg_ir::topology::Color::from_rgba8(r, g, b, a).invert_alpha(),
-                            );
-                        }
-                    }
+                    body.visible = Some(attributes.visible);
                 }
             }
         }
@@ -302,14 +238,6 @@ pub(crate) fn project(
                         _ => continue,
                     };
                     ctx.charge_entities(1, "rhino_object_visibility")?;
-                    let order = user_string("cadmpeg:object-view-order")
-                        .and_then(|value| value.parse::<u32>().ok())
-                        .unwrap_or_else(|| ir.model.view_presentations.len() as u32);
-                    let visible = match user_string("cadmpeg:object-view-visible") {
-                        Some("true") => true,
-                        Some("false") => false,
-                        _ => attributes.visible,
-                    };
                     ir.model
                         .view_presentations
                         .push(cadmpeg_ir::presentation::ViewPresentation {
@@ -318,9 +246,10 @@ pub(crate) fn project(
                             ))
                             .map_err(CodecError::malformed)?,
                             object: Some(target),
-                            order,
+                            order: u32::try_from(ir.model.view_presentations.len())
+                                .map_err(CodecError::malformed)?,
                             expanded: None,
-                            visible: Some(visible),
+                            visible: Some(attributes.visible),
                             display_mode: None,
                             selection_style: None,
                             line_width: None,
@@ -406,10 +335,6 @@ pub(crate) fn project(
             }
         }
         if !object.identity.name.trim().is_empty() {
-            let classification =
-                user_string("cadmpeg:object-name-classification").unwrap_or("name");
-            let name = user_string("cadmpeg:object-name-value")
-                .map_or_else(|| object.identity.name.clone(), str::to_owned);
             for (target_order, target) in targets.iter().filter_map(attribute_target).enumerate() {
                 ctx.charge_entities(1, "rhino_object_names")?;
                 let key = IdentityKey::try_new(format!("{source_order}-{target_order}"))
@@ -422,9 +347,40 @@ pub(crate) fn project(
                     ),
                     Some(native_ref.clone()),
                     target,
-                    classification.to_owned(),
-                    vec![AttributeValue::String(name.clone())],
+                    "name".to_owned(),
+                    vec![AttributeValue::String(object.identity.name.clone())],
                 )?);
+            }
+        }
+        // Object user strings project to neutral attributes targeted at the
+        // records built from the object (#223 item 5).
+        let stub = format!("rhino:object:record#{source_order:06}");
+        let mut strings: Vec<(String, String)> = Vec::new();
+        if let Some(records) = ir
+            .native
+            .namespace("rhino")
+            .and_then(|namespace| namespace.arenas().get("object_presentation"))
+        {
+            for record in records {
+                let linked = matches!(&record.field("links"), Some(serde_json::Value::Array(links)) if links
+                    .iter()
+                    .any(|link| link.as_str() == Some(stub.as_str())));
+                if !linked {
+                    continue;
+                }
+                for arena_key in ["user_strings", "attribute_user_strings"] {
+                    if let Some(serde_json::Value::Array(items)) = record.field(arena_key) {
+                        for item in &items {
+                            if let (Some(key), Some(value)) = (
+                                item.get("key").and_then(|key| key.as_str()),
+                                item.get("value").and_then(|value| value.as_str()),
+                            ) {
+                                strings.push((key.to_owned(), value.to_owned()));
+                            }
+                        }
+                    }
+                }
+                break;
             }
         }
         let record_targets: Vec<(String, String)> = targets

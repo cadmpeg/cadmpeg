@@ -454,7 +454,7 @@ fn single_free_vertex_uses_its_appearance_before_the_body_color() {
 
 #[test]
 fn single_free_point_keeps_distinct_body_and_point_colors() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, View};
     let source = RhinoCodec
         .decode(
             &mut Cursor::new(include_bytes!(
@@ -476,28 +476,41 @@ fn single_free_point_keeps_distinct_body_and_point_colors() {
         .expect("decode body color");
     let stored_color = cadmpeg_ir::topology::Color::new(26.0 / 255.0, 0.0, 0.0, 1.0).unwrap();
     assert_eq!(decoded.ir().model.bodies[0].color, Some(stored_color));
-    // A single free point is now written as a point object that keeps its
-    // binding; the distinct body color is preserved by its user string
-    // (#235, #209 §5.1).
-    assert_eq!(
-        decoded.ir().model.appearance_bindings[0].id.as_str(),
-        ir.model.appearance_bindings[0].id.as_str()
-    );
-    assert!(report.losses.iter().all(|loss| {
-        loss.code != RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
+            && loss
+                .message
+                .contains(ir.model.appearance_bindings[0].id.as_str())
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterPointCloudIdentityReduced.kind()
+            && loss.message.contains(ir.model.vertices[0].id.as_str())
+            && loss.message.contains(ir.model.points[0].id.as_str())
     }));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::desktop();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let scan = crate::container::scan(&ctx, &bytes).expect("scan archive");
-    assert!(
-        scan.objects
-            .iter()
-            .filter_map(|object| object.framed())
-            .all(|object| object.class_uuid
-                != crate::wire::Uuid::from_wire(super::super::POINT_CLOUD_CLASS)),
-        "single point is not a point cloud"
-    );
+    let cloud = scan
+        .objects
+        .iter()
+        .filter_map(|object| object.framed())
+        .find(|object| {
+            object.class_uuid == crate::wire::Uuid::from_wire(super::super::POINT_CLOUD_CLASS)
+        })
+        .expect("point cloud");
+    let mut view = View::over_retained(&bytes)
+        .child(cloud.class_data_range.start, cloud.class_data_range.end)
+        .expect("cloud payload");
+    assert_eq!(view.req_u8().unwrap(), 0x11);
+    assert_eq!(view.req_i32_le().unwrap(), 1);
+    for _ in 0..(3 + 16 + 6) {
+        view.req_f64_le().unwrap();
+    }
+    assert_eq!(view.req_i32_le().unwrap(), 0);
+    assert_eq!(view.req_i32_le().unwrap(), 0);
+    assert_eq!(view.req_i32_le().unwrap(), 1);
+    assert_eq!(view.req_take(4).unwrap(), &[0, 0, 0, 0]);
 }
 
 #[test]
