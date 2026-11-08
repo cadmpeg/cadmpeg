@@ -184,11 +184,18 @@ pub(crate) fn member_losses(
         })
         .filter(|key| !known.contains(key))
         .collect::<HashSet<_>>();
+    let mut losses = super::box_member::role_losses(&inventory.text_members);
     if unresolved.is_empty() {
-        return Vec::new();
+        return losses;
     }
-    member_loss_counts(
+    let admitted = inventory
+        .text_members
+        .iter()
+        .map(|member| (member.segment_token.as_str(), member.record_ordinal))
+        .collect::<HashSet<_>>();
+    losses.extend(member_loss_counts(
         &unresolved,
+        &admitted,
         document
             .segments
             .iter()
@@ -208,22 +215,35 @@ pub(crate) fn member_losses(
                 }))
             })
             .flatten(),
-    )
+    ));
+    losses
 }
 
 pub(super) fn member_loss_counts<'a>(
     unresolved: &HashSet<(&str, u32)>,
+    admitted: &HashSet<(&str, u32)>,
     records: impl IntoIterator<Item = (&'a str, u32, [u8; 16])>,
 ) -> Vec<LossNote> {
     let mut counts = BTreeMap::new();
+    let mut box_members = 0usize;
     let mut seen = HashSet::new();
     for (token, ordinal, record_type) in records {
         if unresolved.contains(&(token, ordinal)) {
             seen.insert((token, ordinal));
-            *counts.entry(record_type).or_insert(0usize) += 1;
+            if super::box_member::is_box_member_type(record_type)
+                && admitted.contains(&(token, ordinal))
+            {
+                box_members += 1;
+            } else {
+                *counts.entry(record_type).or_insert(0usize) += 1;
+            }
         }
     }
-    let mut losses = counts.into_iter().map(|(record_type, count)| {
+    let mut losses = Vec::new();
+    if box_members != 0 {
+        losses.push(super::box_member::member_loss(box_members));
+    }
+    losses.extend(counts.into_iter().map(|(record_type, count)| {
         if super::text::is_text_member_type(record_type) {
             return super::text::member_loss(record_type, count);
         }
@@ -231,7 +251,7 @@ pub(super) fn member_loss_counts<'a>(
             "Retained {count} Inventor sketch member record(s) of type {}: byte grammar and curve operands remain unresolved.",
             crate::pmdc::type_id_string(record_type),
         ))
-    }).collect::<Vec<_>>();
+    }));
     let missing = unresolved.iter().filter(|key| !seen.contains(*key)).count();
     if missing != 0 {
         losses.push(InventorLossCode::SketchMemberNative.note(format!(

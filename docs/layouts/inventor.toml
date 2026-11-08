@@ -5324,3 +5324,128 @@ anchor = "In segment major version 19, its type-2 property vector has 20 slots"
 path = "crates/cadmpeg-codec-inventor/src/feature/coil.rs"
 contains = "if source.properties.references().len() != 20 {"
 note = "The shared Coil refusal predicate checks the property-vector count."
+
+[[record]]
+name = "pm_dc_box_group_body"
+kind = "byte"
+section = "12"
+anchor = "A box group stores `value:u32` and seven references after the content header, 32 bytes in all"
+size = 32
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/box_member.rs"
+note = "Offsets start after the segment-major-19 content header."
+
+[[record.field]]
+name = "value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`value:u32` and seven references"
+
+[[record.field]]
+name = "references"
+offset = 4
+type = "u32[7]"
+source = "spec"
+anchor = "seven references after the content header"
+
+[[record]]
+name = "pm_dc_box_frame_fixed"
+kind = "byte"
+section = "12"
+anchor = "The fields from `sketch_reference` through `zero_mask` occupy 44 bytes"
+size = 44
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/box_member.rs"
+note = "Offsets start after the segment-major-19 content header. The explicit placement cells follow this part."
+
+[[record.field]]
+name = "sketch_reference"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "sketch_reference u32"
+
+[[record.field]]
+name = "width"
+offset = 4
+type = "f64"
+source = "spec"
+anchor = "width f64"
+
+[[record.field]]
+name = "height"
+offset = 12
+type = "f64"
+source = "spec"
+anchor = "height f64"
+
+[[record.field]]
+name = "corner_x"
+offset = 20
+type = "f64"
+source = "spec"
+anchor = "corner_x f64"
+
+[[record.field]]
+name = "corner_y"
+offset = 28
+type = "f64"
+source = "spec"
+anchor = "corner_y f64"
+
+[[record.field]]
+name = "value"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "value u32"
+
+[[record.field]]
+name = "value_mask"
+offset = 40
+type = "u16"
+source = "spec"
+anchor = "value_mask u16"
+
+[[record.field]]
+name = "zero_mask"
+offset = 42
+type = "u16"
+source = "spec"
+anchor = "zero_mask u16"
+
+[[record]]
+name = "pm_dc_box_frame_tail"
+kind = "byte"
+section = "12"
+anchor = "the four tail fields occupy 15 bytes"
+size = 15
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/box_member.rs"
+note = "Offsets start after the explicit placement cells of the box frame."
+
+[[record.field]]
+name = "tail_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "tail_value u32"
+
+[[record.field]]
+name = "tail_flags"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "tail_flags u16"
+
+[[record.field]]
+name = "tail_scale"
+offset = 6
+type = "f64"
+source = "spec"
+anchor = "tail_scale f64"
+
+[[record.field]]
+name = "tail_state"
+offset = 14
+type = "u8"
+source = "spec"
+anchor = "tail_state u8"

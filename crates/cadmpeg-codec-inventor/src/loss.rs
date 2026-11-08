@@ -73,6 +73,11 @@ pub(crate) enum InventorLossCode {
     SketchMemberNative,
     /// A sketch text member record stores no curve; it stays native.
     SketchTextMemberNative,
+    /// A sketch box frame or box group record stores no curve; it stays native.
+    SketchBoxMemberNative,
+    /// A sketch box member record names entities that do not fill the roles
+    /// that its layout assigns; the record stays native.
+    SketchBoxRoleMismatch,
     /// A planar curve member has no resolved curve rule; it stays native.
     SketchMemberCurveNative,
     /// A polygon control relation names two different vertex references; the
@@ -308,6 +313,8 @@ impl InventorLossCode {
         Self::SketchCurveNative,
         Self::SketchMemberNative,
         Self::SketchTextMemberNative,
+        Self::SketchBoxMemberNative,
+        Self::SketchBoxRoleMismatch,
         Self::SketchMemberCurveNative,
         Self::SketchPolygonControlVerticesDiffer,
         Self::SketchSplinePointNative,
@@ -439,6 +446,8 @@ impl InventorLossCode {
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
             Self::SketchTextMemberNative => "sketch.text-member-native",
+            Self::SketchBoxMemberNative => "sketch.box-member-native",
+            Self::SketchBoxRoleMismatch => "sketch.box-role-mismatch",
             Self::SketchMemberCurveNative => "sketch.member-curve-native",
             Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
@@ -663,6 +672,8 @@ impl InventorLossCode {
             | Self::SketchCurveNative
             | Self::SketchMemberNative
             | Self::SketchTextMemberNative
+            | Self::SketchBoxMemberNative
+            | Self::SketchBoxRoleMismatch
             | Self::SketchMemberCurveNative
             | Self::SketchPolygonControlVerticesDiffer
             | Self::SketchSplinePointNative
@@ -762,6 +773,8 @@ mod tests {
                 "sketch.curve-native",
                 "sketch.member-native",
                 "sketch.text-member-native",
+                "sketch.box-member-native",
+                "sketch.box-role-mismatch",
                 "sketch.member-curve-native",
                 "sketch.polygon-control-vertices-differ",
                 "sketch.spline-point-native",

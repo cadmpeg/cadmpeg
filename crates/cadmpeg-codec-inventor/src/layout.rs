@@ -617,3 +617,67 @@ pub(crate) mod pm_dc_open_cubic_pole_prefix {
     /// Stated value of `pole_value` (`u32`). Spec §12.
     pub(crate) const POLE_VALUE_VALUE: u32 = 0x0000_0008;
 }
+
+/// Byte offsets for the `pm_dc_box_group_body` record.
+///
+/// Spec §12. Record length 32 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 content header.
+/// ```
+pub(crate) mod pm_dc_box_group_body {
+    /// Record length in bytes. Spec §12.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `value` (`u32`, little-endian). Spec §12.
+    pub(crate) const VALUE: usize = 0;
+    /// Offset of `references` (`u32[7]`, little-endian). Spec §12.
+    pub(crate) const REFERENCES: usize = 4;
+}
+
+/// Byte offsets for the `pm_dc_box_frame_fixed` record.
+///
+/// Spec §12. Record length 44 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 content header. The explicit placement cells follow this part.
+/// ```
+pub(crate) mod pm_dc_box_frame_fixed {
+    /// Record length in bytes. Spec §12.
+    pub(crate) const LEN: usize = 44;
+    /// Offset of `sketch_reference` (`u32`, little-endian). Spec §12.
+    pub(crate) const SKETCH_REFERENCE: usize = 0;
+    /// Offset of `width` (`f64`, little-endian). Spec §12.
+    pub(crate) const WIDTH: usize = 4;
+    /// Offset of `height` (`f64`, little-endian). Spec §12.
+    pub(crate) const HEIGHT: usize = 12;
+    /// Offset of `corner_x` (`f64`, little-endian). Spec §12.
+    pub(crate) const CORNER_X: usize = 20;
+    /// Offset of `corner_y` (`f64`, little-endian). Spec §12.
+    pub(crate) const CORNER_Y: usize = 28;
+    /// Offset of `value` (`u32`, little-endian). Spec §12.
+    pub(crate) const VALUE: usize = 36;
+    /// Offset of `value_mask` (`u16`, little-endian). Spec §12.
+    pub(crate) const VALUE_MASK: usize = 40;
+    /// Offset of `zero_mask` (`u16`, little-endian). Spec §12.
+    pub(crate) const ZERO_MASK: usize = 42;
+}
+
+/// Byte offsets for the `pm_dc_box_frame_tail` record.
+///
+/// Spec §12. Record length 15 B.
+///
+/// ```text
+/// Offsets start after the explicit placement cells of the box frame.
+/// ```
+pub(crate) mod pm_dc_box_frame_tail {
+    /// Record length in bytes. Spec §12.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `tail_value` (`u32`, little-endian). Spec §12.
+    pub(crate) const TAIL_VALUE: usize = 0;
+    /// Offset of `tail_flags` (`u16`, little-endian). Spec §12.
+    pub(crate) const TAIL_FLAGS: usize = 4;
+    /// Offset of `tail_scale` (`f64`, little-endian). Spec §12.
+    pub(crate) const TAIL_SCALE: usize = 6;
+    /// Offset of `tail_state` (`u8`). Spec §12.
+    pub(crate) const TAIL_STATE: usize = 14;
+}
