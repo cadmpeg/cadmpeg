@@ -112,6 +112,10 @@ use crate::settings::MillimeterScale;
 pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 /// Maximum bytes retained across all Rhino object records in one document.
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
+/// Deviation within which a revolved profile rises at unit speed along the
+/// axis and moves radially in one direction: a few units in the last place
+/// of binary64.
+const EPS_REVOLVED_PROFILE: f64 = 1.0e-12;
 
 #[derive(Debug)]
 enum CandidateError {
@@ -4189,7 +4193,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     let components = face_components(expand.ctx(), resolved)?;
     let grouping = region_shell_groups(expand.ctx(), raw, resolved, &components)?;
     let free_vertex_indices = brep_free_vertex_indices(expand.ctx(), resolved)?;
-    if !free_vertex_indices.is_empty() && grouping.shells.len() != 1 {
+    let has_wire_edges = resolved.edges.iter().any(|edge| edge.trims.is_empty());
+    let shell_count = grouping.shells.len().max(usize::from(has_wire_edges));
+    if !free_vertex_indices.is_empty() && shell_count != 1 {
         return Ok(finish_brep_fallback(
             staged,
             "Brep free vertices have no unique shell membership",
@@ -4388,6 +4394,44 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         }
     }
     let mut regions: Vec<Region> = Vec::new();
+    let mut wire_edge_ids = resolved
+        .edges
+        .iter()
+        .zip(&edge_ids)
+        .filter(|(edge, _)| edge.trims.is_empty())
+        .map(|(_, id)| id.clone())
+        .collect::<Vec<_>>();
+    let wire_body = grouping.shells.is_empty() && !wire_edge_ids.is_empty();
+    if wire_body {
+        let region_id = cadmpeg_ir::ids::RegionId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+            key.clone()
+                .then(cadmpeg_ir::identity_key!(".slot-"))
+                .then(0_usize),
+        );
+        let shell_id = cadmpeg_ir::ids::ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+            key.clone()
+                .then(cadmpeg_ir::identity_key!(".component-"))
+                .then(0_usize),
+        );
+        staged.draft.model_mut().shells.push(
+            Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                Vec::new(),
+                std::mem::take(&mut wire_edge_ids),
+                std::mem::take(&mut free_vertex_ids),
+            )
+            .map_err(|message| crate::curves::GeometryError::unpositioned(message.to_string()))?,
+        );
+        regions.push(Region {
+            native_ref: None,
+            id: region_id,
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+    }
 
     for (component, shell) in grouping.shells.iter().enumerate() {
         let region_label = shell.region;
@@ -4416,7 +4460,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 shell_id.clone(),
                 region_id.clone(),
                 shell_faces,
-                Vec::new(),
+                if component == 0 {
+                    std::mem::take(&mut wire_edge_ids)
+                } else {
+                    Vec::new()
+                },
                 if component == 0 {
                     std::mem::take(&mut free_vertex_ids)
                 } else {
@@ -4450,6 +4498,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         native_ref: None,
         id: body_id.clone(),
         kind: match body_kind {
+            _ if wire_body => BodyKind::Wire,
             crate::brep::BrepBodyKind::Solid => BodyKind::Solid,
             crate::brep::BrepBodyKind::Sheet => BodyKind::Sheet,
         },
@@ -4709,6 +4758,19 @@ fn stage_brep_procedural_surface(
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
     let key = IdentityKey::try_new(context.key.to_owned())
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+    let angular_axis = match &definition {
+        crate::surfaces::DecodedProceduralSurface::Revolution {
+            axis_origin,
+            axis_direction: Some(axis_direction),
+            angular_interval,
+            parameter_interval,
+            transposed: false,
+            ..
+        } if angular_interval == parameter_interval => {
+            Some((axis_origin.get(), *axis_direction.as_raw()))
+        }
+        _ => None,
+    };
     let definition = definition.into_definition(
         |child_index, _, child| {
             stage_curve_tree_indexed(
@@ -4732,10 +4794,30 @@ fn stage_brep_procedural_surface(
                 .then(index),
         ))
     }?;
+    let analytic = angular_axis.and_then(|(axis_origin, axis)| {
+        let ProceduralSurfaceDefinition::Revolution(revolution) = &definition else {
+            return None;
+        };
+        let directrix = staged
+            .draft
+            .model()
+            .curves
+            .iter()
+            .find(|curve| curve.id == *revolution.directrix())?;
+        match directrix.geometry.solved()? {
+            SolvedCurveGeometry::Circle(circle) => revolved_circle(axis_origin, axis, circle),
+            profile => {
+                let (start, velocity) = linear_profile(profile)?;
+                revolved_linear_profile(axis_origin, axis, start, velocity)
+            }
+        }
+    });
     staged.draft.model_mut().surfaces.push(Surface {
         native_ref: None,
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
+        geometry: SurfaceGeometry::Solved(
+            analytic.unwrap_or(SolvedSurfaceGeometry::Nurbs(geometry)),
+        ),
         source_object: Some(context.association.identity.clone()),
     });
     let procedural_id = cadmpeg_ir::ids::ProceduralSurfaceId::compose(
@@ -4758,6 +4840,150 @@ fn stage_brep_procedural_surface(
     staged.links.push(surface_id.to_string());
     staged.links.push(procedural_id.to_string());
     Ok(surface_id)
+}
+
+/// The sphere or torus a revolution surface traces when its first parameter
+/// is the angle and its profile is a circle in a plane through the axis whose
+/// angle is measured from the axis normal toward the axis: the profile angle
+/// is then the analytic carrier's second parameter, so trims carry over.
+fn revolved_circle(
+    axis_origin: cadmpeg_ir::math::Point3,
+    axis: cadmpeg_ir::math::Vector3,
+    circle: &cadmpeg_ir::geometry::analytic::CircleCurve,
+) -> Option<SolvedSurfaceGeometry> {
+    use cadmpeg_ir::math::Vector3;
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let reference = *circle.frame().reference().as_raw();
+    let rise = circle.frame().axis().as_raw().cross(reference);
+    if dot(reference, axis).abs() > EPS_REVOLVED_PROFILE
+        || (dot(rise, axis) - 1.0).abs() > EPS_REVOLVED_PROFILE
+    {
+        return None;
+    }
+    let center = circle.center().get();
+    let offset = Vector3::new(
+        center.x - axis_origin.x,
+        center.y - axis_origin.y,
+        center.z - axis_origin.z,
+    );
+    let height = dot(offset, axis);
+    let radial = Vector3::new(
+        offset.x - height * axis.x,
+        offset.y - height * axis.y,
+        offset.z - height * axis.z,
+    );
+    let origin = axis_origin.translated(axis, height);
+    let radius = circle.radius().get();
+    let major = radial.norm();
+    if major <= EPS_REVOLVED_PROFILE {
+        return cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            origin, axis, reference, radius,
+        )
+        .ok()
+        .map(SolvedSurfaceGeometry::Sphere);
+    }
+    if (dot(radial, reference) - major).abs() > EPS_REVOLVED_PROFILE * major.max(1.0) {
+        return None;
+    }
+    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(origin, axis, reference, major, radius)
+        .ok()
+        .map(SolvedSurfaceGeometry::Torus)
+}
+
+/// A profile that moves linearly in its parameter: its point at parameter 0
+/// and its velocity.
+fn linear_profile(
+    geometry: &SolvedCurveGeometry,
+) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    match geometry {
+        SolvedCurveGeometry::Line(line) => Some((line.origin().get(), *line.direction().as_raw())),
+        SolvedCurveGeometry::Nurbs(nurbs)
+            if nurbs.degree() == 1
+                && nurbs.pole_count() == 2
+                && nurbs.pole_rows().weight_at(0).is_none() =>
+        {
+            let from = nurbs.pole_rows().point_at(0)?.get();
+            let to = nurbs.pole_rows().point_at(1)?.get();
+            let knots = nurbs.knots().as_slice();
+            let (first, last) = (*knots.first()?, *knots.last()?);
+            let span = last - first;
+            let velocity = cadmpeg_ir::math::Vector3::new(
+                (to.x - from.x) / span,
+                (to.y - from.y) / span,
+                (to.z - from.z) / span,
+            );
+            Some((from.translated(velocity, -first), velocity))
+        }
+        _ => None,
+    }
+}
+
+/// The cylinder or circular cone a revolution surface traces when its first
+/// parameter is the angle and its profile rises along the axis at unit
+/// speed: the profile parameter is then the height, as in the analytic
+/// carrier, so trims carry over.
+fn revolved_linear_profile(
+    axis_origin: cadmpeg_ir::math::Point3,
+    axis: cadmpeg_ir::math::Vector3,
+    start: cadmpeg_ir::math::Point3,
+    velocity: cadmpeg_ir::math::Vector3,
+) -> Option<SolvedSurfaceGeometry> {
+    use cadmpeg_ir::math::Vector3;
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let reject = |vector: Vector3| {
+        let along = dot(vector, axis);
+        Vector3::new(
+            vector.x - along * axis.x,
+            vector.y - along * axis.y,
+            vector.z - along * axis.z,
+        )
+    };
+    if (dot(velocity, axis) - 1.0).abs() > EPS_REVOLVED_PROFILE {
+        return None;
+    }
+    let offset = Vector3::new(
+        start.x - axis_origin.x,
+        start.y - axis_origin.y,
+        start.z - axis_origin.z,
+    );
+    let center = axis_origin.translated(axis, dot(offset, axis));
+    let radial = reject(offset);
+    let spread = reject(velocity);
+    let radius = radial.norm();
+    let slope_size = spread.norm();
+    let direction = if radius > 0.0 { radial } else { spread };
+    let length = direction.norm();
+    if length <= 0.0 {
+        return None;
+    }
+    let reference = Vector3::new(
+        direction.x / length,
+        direction.y / length,
+        direction.z / length,
+    );
+    if slope_size <= EPS_REVOLVED_PROFILE {
+        return cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            center, axis, reference, radius,
+        )
+        .ok()
+        .map(SolvedSurfaceGeometry::Cylinder);
+    }
+    let slope = dot(spread, reference);
+    if (slope.abs() - slope_size).abs() > EPS_REVOLVED_PROFILE {
+        return None;
+    }
+    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+        center,
+        axis,
+        reference,
+        radius,
+        1.0,
+        slope.atan(),
+    )
+    .ok()
+    .map(SolvedSurfaceGeometry::Cone)
 }
 
 fn stage_curve_tree_indexed(

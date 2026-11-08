@@ -911,10 +911,10 @@ pub(super) fn append_reference_marker(
     payload[start + 88..start + 92].copy_from_slice(&local_id.to_le_bytes());
 }
 
-pub(crate) fn append_generated_object_name(
+/// Append a name object without its named-object header.
+pub(crate) fn append_object_name_string(
     payload: &mut Vec<u8>,
     name: &str,
-    object_id: u32,
 ) -> Result<(), crate::writer::write_error::WriteError> {
     let units = name.encode_utf16().collect::<Vec<_>>();
     let length = crate::writer::feature_input_name_len(units.len())?;
@@ -923,6 +923,15 @@ pub(crate) fn append_generated_object_name(
     for unit in units {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
+    Ok(())
+}
+
+pub(crate) fn append_generated_object_name(
+    payload: &mut Vec<u8>,
+    name: &str,
+    object_id: u32,
+) -> Result<(), crate::writer::write_error::WriteError> {
+    append_object_name_string(payload, name)?;
     payload.extend_from_slice(&[0; 8]);
     payload.extend_from_slice(&object_id.to_le_bytes());
     Ok(())
