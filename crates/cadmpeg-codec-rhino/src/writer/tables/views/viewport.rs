@@ -157,7 +157,7 @@ pub(super) fn reduced_state_order(document: Option<&PresentationDocument>) -> Op
         .states()
         .iter()
         .enumerate()
-        .any(|(index, state)| usize::try_from(state.order).map_or(true, |order| order != index));
+        .any(|(index, state)| usize::try_from(state.order) != Ok(index));
     shifted.then(|| {
         crate::loss::RhinoLossCode::WriterPresentationStateOrderReduced.note(format!(
             "camera {} presentation state order is stored at its sequence position",
