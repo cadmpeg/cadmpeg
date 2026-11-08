@@ -38,6 +38,11 @@ fn nurbs_curve_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn nurbs_surface_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("nurbs_surface"));
+}
+
+#[test]
 fn null_entity_synthesis_preserves_held_records() {
     assert_synthesis_closure(fixture("null_entity"));
 }
