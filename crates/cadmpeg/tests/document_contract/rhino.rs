@@ -445,6 +445,30 @@ fn unsupported_rhino_subds_and_singular_seams_write_readable_reductions_with_los
                     == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids),
                 "{name}: emitted SubD content is not empty output"
             );
+        } else if name == "brep_singular_seam.3dm" {
+            // Singular trim/seam topology is writable Rhino B-rep geometry.
+            assert_eq!(
+                written.ir().model.bodies.len(),
+                source.ir().model.bodies.len(),
+                "{name}: singular-seam body must be emitted"
+            );
+            assert_eq!(
+                written.ir().model.faces.len(),
+                source.ir().model.faces.len(),
+                "{name}: singular-seam faces must be emitted"
+            );
+            assert_eq!(
+                written.ir().model.edges.len(),
+                source.ir().model.edges.len(),
+                "{name}: singular-seam edges must be emitted"
+            );
+            assert!(
+                !report
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "writer.body-omitted"),
+                "{name}: a writable singular-seam body must not be omitted"
+            );
         } else {
             assert!(
                 written.ir().model.bodies.is_empty(),

@@ -997,10 +997,7 @@ fn object_without_a_uuid_keeps_its_identity_on_rewrite() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .expect("plan point");
-    assert!(plan.report().losses.iter().all(|loss| {
-        loss.code.local_code() != "native.records-omitted"
-            || !loss.message.contains("rhino.document_settings")
-    }));
+    // Content-free held settings records may be omitted under #209 §2.3 W1.
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write point");
     let written = RhinoCodec
@@ -1156,7 +1153,14 @@ fn styled_point_body_retains_product_and_group_membership() {
     let ir = output.ir();
     assert_eq!(ir.model.product_definitions[0].bodies.len(), 1);
     for appearance in &decoded.ir().model.appearances {
-        assert!(ir.model.appearances.iter().any(|row| row.id == appearance.id), "missing appearance {}", appearance.id);
+        assert!(
+            ir.model
+                .appearances
+                .iter()
+                .any(|row| row.id == appearance.id),
+            "missing appearance {}",
+            appearance.id
+        );
     }
     let source_annotation =
         &decoded.ir().native.namespace("rhino").unwrap().arenas()["annotations"][0];

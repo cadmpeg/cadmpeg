@@ -406,47 +406,49 @@ pub(super) fn write(
         objects.push(object);
         replayed.push(replayed_id);
     }
-    for feature in &ir.model.features {
-        if let Some(name) = names
-            .get(feature.native_ref.as_deref().unwrap_or_default())
-            .filter(|name| native_names.contains(*name))
-            .cloned()
-        {
-            names.insert(feature.id.as_str().to_owned(), name);
-            continue;
-        }
-        let name = names
-            .get(feature.id.as_str())
-            .cloned()
-            .ok_or_else(|| CodecError::malformed("feature has no output identity"))?;
-        names.insert(feature.id.as_str().to_owned(), name.clone());
-        if let Some(native_ref) = &feature.native_ref {
-            names.insert(native_ref.clone(), name.clone());
-        }
-        let mut object = Object::new(
-            name,
-            "PartDesign::Feature",
-            feature.name.as_deref().unwrap_or(feature.id.as_str()),
-        );
-        match design::features::write(ir, feature, &mut object, &names, schema) {
-            Ok(output) => {
-                losses.extend(output.losses);
-                objects.extend(output.objects);
-                entries.extend(output.entries);
-            }
-            Err(design::features::FeatureError::Unsupported(reason)) => {
-                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                    "feature {} construction is omitted: {reason}",
-                    feature.id
-                )));
+    if ir.scope.design {
+        for feature in &ir.model.features {
+            if let Some(name) = names
+                .get(feature.native_ref.as_deref().unwrap_or_default())
+                .filter(|name| native_names.contains(*name))
+                .cloned()
+            {
+                names.insert(feature.id.as_str().to_owned(), name);
                 continue;
             }
-            Err(design::features::FeatureError::Codec(error)) => return Err(error),
+            let name = names
+                .get(feature.id.as_str())
+                .cloned()
+                .ok_or_else(|| CodecError::malformed("feature has no output identity"))?;
+            names.insert(feature.id.as_str().to_owned(), name.clone());
+            if let Some(native_ref) = &feature.native_ref {
+                names.insert(native_ref.clone(), name.clone());
+            }
+            let mut object = Object::new(
+                name,
+                "PartDesign::Feature",
+                feature.name.as_deref().unwrap_or(feature.id.as_str()),
+            );
+            match design::features::write(ir, feature, &mut object, &names, schema) {
+                Ok(output) => {
+                    losses.extend(output.losses);
+                    objects.extend(output.objects);
+                    entries.extend(output.entries);
+                }
+                Err(design::features::FeatureError::Unsupported(reason)) => {
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "feature {} construction is omitted: {reason}",
+                        feature.id
+                    )));
+                    continue;
+                }
+                Err(design::features::FeatureError::Codec(error)) => return Err(error),
+            }
+            if let Some(suppressed) = feature.suppressed {
+                object.set_boolean("Suppressed", suppressed);
+            }
+            objects.push(object);
         }
-        if let Some(suppressed) = feature.suppressed {
-            object.set_boolean("Suppressed", suppressed);
-        }
-        objects.push(object);
     }
     // Native values are emitted from their typed tree. Retained XML and entry
     // bytes are not consulted. Every opaque payload has an explicit loss.
@@ -1027,7 +1029,7 @@ pub(super) fn write(
         if created {
             objects.push(Object::new(
                 name.clone(),
-                "Part::Feature",
+                "App::FeaturePython",
                 bodies[0].name.as_deref().unwrap_or(bodies[0].id.as_str()),
             ));
         }
@@ -1167,7 +1169,7 @@ pub(super) fn write(
         let file = format!("{name}.brp");
         entries.insert(file.clone(), serialized.bytes);
         brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
-        let mut object = Object::new(name, "Part::Feature", "Independent geometry");
+        let mut object = Object::new(name, "App::FeaturePython", "Independent geometry");
         object.set(
             "Shape",
             xml::property(
@@ -1179,10 +1181,12 @@ pub(super) fn write(
         object.mark_geometry_written();
         objects.push(object);
     }
-    design::sketches(ir, &mut objects, &mut names, &mut losses)?;
-    super::parameters::prepare(ir, &mut objects, &mut names, &mut losses)?;
-    design::spreadsheets(ir, &mut objects, &mut names, &mut losses)?;
-    super::parameters::write(ir, &mut objects, &names, &mut losses)?;
+    if ir.scope.design {
+        design::sketches(ir, &mut objects, &mut names, &mut losses)?;
+        super::parameters::prepare(ir, &mut objects, &mut names, &mut losses)?;
+        design::spreadsheets(ir, &mut objects, &mut names, &mut losses)?;
+        super::parameters::write(ir, &mut objects, &names, &mut losses)?;
+    }
     super::products::write(ctx, ir, &mut objects, &mut names, &body_names, &mut losses)?;
     super::attributes::write_products(
         ir,
@@ -1712,15 +1716,24 @@ pub(super) fn write(
             ))
     });
     for (name, bytes) in entries {
-        archive
-            .start_file(name, options)
-            .map_err(std::io::Error::other)?;
+        match archive.start_file(name, options) {
+            Ok(()) => {}
+            Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
+            Err(error) => {
+                debug_assert!(false, "FCStd ZIP start_file: {error}");
+                return Err(CodecError::InvalidInput(format!("FCStd ZIP start_file: {error}")));
+            }
+        }
         archive.write_all(&bytes)?;
     }
-    let bytes = archive
-        .finish()
-        .map_err(std::io::Error::other)?
-        .into_inner();
+    let bytes = match archive.finish() {
+        Ok(writer) => writer.into_inner(),
+        Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
+        Err(error) => {
+            debug_assert!(false, "FCStd ZIP finish: {error}");
+            return Err(CodecError::InvalidInput(format!("FCStd ZIP finish: {error}")));
+        }
+    };
     for curve in &ir.model.curves {
         if let Some(construction) = curve.geometry.procedural_construction().filter(|_| {
             super::geometry::located_curve(ir, curve)

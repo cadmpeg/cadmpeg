@@ -69,7 +69,11 @@ pub(super) fn held_revolution(
         Some(domain[0][1]),
         Some(domain[1][1]),
     ];
-    if construction.record_bounds().map(cadmpeg_ir::geometry::RecordBounds::get) != Some(expected) {
+    if construction
+        .record_bounds()
+        .map(cadmpeg_ir::geometry::RecordBounds::get)
+        != Some(expected)
+    {
         return Ok(None);
     }
     let (profile, conversion) = match WritableObjectCurve::try_new(curve) {
