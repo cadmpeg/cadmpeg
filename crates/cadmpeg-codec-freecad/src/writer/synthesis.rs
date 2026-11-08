@@ -194,6 +194,7 @@ pub(super) fn write(
     losses.extend(super::synthesis_graph::admission(ir, ctx)?);
     let current_topology = crate::topology_transfer::current_bindings(ctx, ir)?;
     let root_kinds = brep::RootKinds::new(ctx, ir, &current_topology)?;
+    let reusable_payloads = super::native_geometry::unchanged_payloads(ctx, ir)?;
     let mut native_dispositions = super::dispositions::initial();
     let mut objects = Vec::new();
     let mut names;
@@ -309,6 +310,24 @@ pub(super) fn write(
         })
         .collect();
     names = super::names::prepare(ir, &native_objects, &native_properties, &body_properties);
+    // A payload re-emitted from its typed tables keeps the source's indexed
+    // subelement names, which selections must name.
+    for payload in shape_payloads
+        .iter()
+        .filter(|payload| reusable_payloads.contains(&payload.id))
+    {
+        for (record, kind, _, index) in current_topology.payload_records(&payload.id) {
+            if let (Some(index), crate::brep::TextShapeKind::Face
+            | crate::brep::TextShapeKind::Edge
+            | crate::brep::TextShapeKind::Vertex) = (index, kind)
+            {
+                names.insert(
+                    format!("{record}:subelement"),
+                    format!("{}{index}", crate::topology_transfer::indexed_name(kind)),
+                );
+            }
+        }
+    }
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
     // Replays restore the source declaration order: the re-decode derives
     // declaration indices from the emitted sequence, so emitting in arena
@@ -373,6 +392,11 @@ pub(super) fn write(
         object
             .declaration_attributes
             .clone_from(&original.attributes);
+        if let Some(view_type) = &original.view_type {
+            object
+                .declaration_attributes
+                .insert("ViewType".into(), view_type.clone());
+        }
         object.dependencies = original
             .dependencies
             .iter()
@@ -984,8 +1008,13 @@ pub(super) fn write(
             }
         }
     }
+    let (polygons3d, polygons_on_triangulations) = namespace
+        .map(crate::brep::polygon_arenas)
+        .transpose()?
+        .unwrap_or_default();
     let mut body_names = HashMap::new();
     let mut emitted_topology = Vec::new();
+    let mut exact_shapes = HashSet::new();
     let mut shape_groups = BTreeMap::<(String, String), Vec<&cadmpeg_ir::topology::Body>>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
         let proposed = names
@@ -1018,9 +1047,35 @@ pub(super) fn write(
             .filter(|_| property_name == "Shape")
             .find(|occurrence| names.get(occurrence.id.as_str()) == Some(&name))
             .and_then(|occurrence| occurrence.transform);
-        let Some(serialized) =
-            brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds, root_override, &mut losses)?
-        else {
+        let reused = reusable_payload(
+            ir,
+            &bodies,
+            (&source_uses, &shape_payloads),
+            &reusable_payloads,
+        );
+        let reemitted = reused.and_then(|payload| {
+            brep::native_with_uses(
+                payload,
+                (&polygons3d, &polygons_on_triangulations),
+                &current_topology,
+                root_override,
+            )
+        });
+        if let (Some(payload), Some(_)) = (reused, &reemitted) {
+            exact_shapes.insert(payload.property.clone());
+        }
+        let serialized = match reemitted {
+            Some(serialized) => Some(serialized),
+            None => brep::serialize_with_uses(
+                ctx,
+                ir,
+                &bodies,
+                &root_kinds,
+                root_override,
+                &mut losses,
+            )?,
+        };
+        let Some(serialized) = serialized else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
                     "body {} is omitted because a required carrier has no OCCT text encoding",
@@ -1158,6 +1213,63 @@ pub(super) fn write(
         // location as coupled lanes. Restoring the property does not compose
         // the same placement twice. Keep canonical construction placements and
         // typed native placements; body-only objects use their BRep root.
+    }
+    // A payload that projects no body (a bare edge or vertex carrier, such as
+    // a datum axis's) has no neutral group above; unchanged, it re-emits from
+    // its typed tables with its native property.
+    for payload in shape_payloads
+        .iter()
+        .filter(|payload| reusable_payloads.contains(&payload.id))
+    {
+        let Some(key) = payload.id.split_once('#').map(|(_, key)| format!("#{key}:")) else {
+            continue;
+        };
+        if ir
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.id.as_str().contains(&key))
+        {
+            continue;
+        }
+        let Some(property) = native_properties
+            .iter()
+            .find(|property| property.id == payload.property)
+        else {
+            continue;
+        };
+        let Some(entry) = native_entries
+            .iter()
+            .find(|entry| entry.id() == payload.entry)
+            .map(|entry| entry.name().to_owned())
+        else {
+            continue;
+        };
+        let Some(object) = names
+            .get(&property.owner)
+            .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
+        else {
+            continue;
+        };
+        if object.properties.contains_key(&property.name) || entries.contains_key(&entry) {
+            continue;
+        }
+        let Some(serialized) = brep::native_with_uses(
+            payload,
+            (&polygons3d, &polygons_on_triangulations),
+            &current_topology,
+            None,
+        ) else {
+            continue;
+        };
+        let mut reachable = available.clone();
+        reachable.insert(entry.clone());
+        let Some(value) = xml::native_named(property, &names, &reachable)? else {
+            continue;
+        };
+        entries.insert(entry, serialized.bytes);
+        object.set(&property.name, value);
+        exact_shapes.insert(property.id.clone());
     }
     super::mesh_kernel::write(
         ctx,
@@ -1318,7 +1430,7 @@ pub(super) fn write(
         &topology_join,
         &mut objects,
         &names,
-        &native_properties,
+        (&native_properties, &exact_shapes),
         super::native::MapOutput {
             archive_entries: &mut entries,
             losses: &mut losses,
@@ -1375,6 +1487,8 @@ pub(super) fn write(
         document_properties.insert(property.name.clone(), placeholder);
         placeholders.push(property.id.clone());
     }
+    replay_unchanged_placements(&mut objects, &native_properties, &names, &available)?;
+    replay_dependency_lists(&mut objects, &native_objects, &names);
     // Replayed properties settle into declaration sequence: neutral passes
     // (attributes, operands, parameters, products) append or replace by
     // name, which disturbs the property order the re-decode derives. Native
@@ -1700,6 +1814,23 @@ pub(super) fn write(
             }
         }
     }
+    for object in &objects {
+        let Some(distances) = object.edge_distances else {
+            continue;
+        };
+        let file = object
+            .properties
+            .get("Edges")
+            .and_then(|xml| roxmltree::Document::parse(xml).ok())
+            .and_then(|document| {
+                document
+                    .descendants()
+                    .find_map(|node| node.attribute("file").map(str::to_owned))
+            });
+        if let Some(bytes) = file.and_then(|file| entries.get_mut(&file)) {
+            set_edge_distances(bytes, distances);
+        }
+    }
     super::dispositions::emitted(
         ir,
         &objects,
@@ -1850,4 +1981,173 @@ pub(super) fn write(
     body.native_dispositions = native_dispositions;
     body.losses = losses;
     Ok(body)
+}
+
+/// The payload a body group re-emits from its typed tables: every body of
+/// the group comes from one unchanged payload, and every held body of that
+/// payload is in the group.
+fn reusable_payload<'a>(
+    ir: &CadIr,
+    bodies: &[&cadmpeg_ir::topology::Body],
+    (source_uses, payloads): (
+        &[crate::native::source_use::SourceUseSelector],
+        &'a [crate::brep::ShapePayloadRecord],
+    ),
+    unchanged: &HashSet<String>,
+) -> Option<&'a crate::brep::ShapePayloadRecord> {
+    let payload_of = |body: &cadmpeg_ir::topology::Body| {
+        let source = source_uses
+            .iter()
+            .find(|source| Some(source.id.as_str()) == body.native_ref.as_deref())?;
+        payloads.iter().find(|payload| payload.id == source.owner)
+    };
+    let payload = payload_of(bodies.first()?)?;
+    if !unchanged.contains(&payload.id)
+        || !bodies
+            .iter()
+            .all(|body| payload_of(body).is_some_and(|other| other.id == payload.id))
+    {
+        return None;
+    }
+    let key = format!("#{}:", payload.id.split_once('#')?.1);
+    ir.model
+        .bodies
+        .iter()
+        .filter(|body| body.id.as_str().contains(&key))
+        .all(|body| bodies.iter().any(|member| member.id == body.id))
+        .then_some(payload)
+}
+
+/// A `Part::PropertyFilletEdges` side file is a count, then per edge its
+/// number and two distances; every row takes `distances`.
+fn set_edge_distances(bytes: &mut [u8], distances: [f64; 2]) {
+    const ROW: usize = 20;
+    let Some(rows) = bytes.get_mut(4..) else {
+        return;
+    };
+    for row in rows.chunks_exact_mut(ROW) {
+        row[4..12].copy_from_slice(&distances[0].to_le_bytes());
+        row[12..20].copy_from_slice(&distances[1].to_le_bytes());
+    }
+}
+
+/// The seven numbers of a written or native `PropertyPlacement`.
+fn placement_values(values: &[(&str, &str)]) -> Option<[f64; 7]> {
+    let mut result = [0.0; 7];
+    for (slot, key) in result
+        .iter_mut()
+        .zip(["Px", "Py", "Pz", "Q0", "Q1", "Q2", "Q3"])
+    {
+        *slot = values
+            .iter()
+            .find(|(name, _)| *name == key)?
+            .1
+            .parse()
+            .ok()?;
+    }
+    Some(result)
+}
+
+/// Native lanes a regenerated object leaves unchanged replay verbatim,
+/// keeping status and spelling: every native placement lane (`Placement`,
+/// and the `LinkPlacement` an `App::Link` stores beside it) equal to the
+/// written placement, and an empty expression engine the writer omitted.
+fn replay_unchanged_placements(
+    objects: &mut [Object],
+    native_properties: &[PropertyRecord],
+    names: &HashMap<String, String>,
+    available: &HashSet<String>,
+) -> Result<(), CodecError> {
+    for object in objects.iter_mut() {
+        let owned = native_properties
+            .iter()
+            .filter(|property| names.get(&property.owner) == Some(&object.name))
+            .collect::<Vec<_>>();
+        if !object.properties.contains_key("ExpressionEngine") {
+            if let Some(engine) = owned.iter().find(|property| {
+                property.name == "ExpressionEngine"
+                    && !property
+                        .values()
+                        .iter()
+                        .any(|value| value.tag == "Expression")
+            }) {
+                if let Some(value) = xml::native_named(engine, names, available)? {
+                    object.set("ExpressionEngine", value);
+                }
+            }
+        }
+        let Some(written) = object.properties.get("Placement").cloned() else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(&written) else {
+            continue;
+        };
+        let Some(written_values) = document
+            .descendants()
+            .find(|node| node.has_tag_name("PropertyPlacement"))
+            .map(|node| {
+                node.attributes()
+                    .map(|attribute| (attribute.name(), attribute.value()))
+                    .collect::<Vec<_>>()
+            })
+            .and_then(|values| placement_values(&values))
+        else {
+            continue;
+        };
+        for native in owned.iter().filter(|property| {
+            property.type_name == "App::PropertyPlacement"
+                && matches!(property.name.as_str(), "Placement" | "LinkPlacement")
+        }) {
+            let native_values = native
+                .values()
+                .iter()
+                .find(|value| value.tag == "PropertyPlacement")
+                .and_then(|value| {
+                    placement_values(
+                        &value
+                            .attributes
+                            .iter()
+                            .map(|(name, value)| (name.as_str(), value.as_str()))
+                            .collect::<Vec<_>>(),
+                    )
+                });
+            if native_values != Some(written_values) {
+                continue;
+            }
+            if let Some(value) = xml::native_named(native, names, available)? {
+                object.set(&native.name, value);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// FreeCAD lists a dependency once per link property, so one target can
+/// repeat. A native list that names exactly the targets the writer derived
+/// is written back in its own order and multiplicity.
+fn replay_dependency_lists(
+    objects: &mut [Object],
+    native_objects: &[ObjectRecord],
+    names: &HashMap<String, String>,
+) {
+    for object in objects.iter_mut() {
+        let Some(native) = native_objects
+            .iter()
+            .find(|native| names.get(native.id().as_str()) == Some(&object.name))
+        else {
+            continue;
+        };
+        let Some(listed) = native
+            .dependencies
+            .iter()
+            .map(|id| names.get(id).cloned())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let derived: HashSet<&String> = object.dependencies.iter().collect();
+        if listed.iter().collect::<HashSet<_>>() == derived {
+            object.dependencies = listed;
+        }
+    }
 }

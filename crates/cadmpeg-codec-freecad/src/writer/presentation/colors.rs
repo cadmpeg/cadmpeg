@@ -517,15 +517,76 @@ pub(super) fn write(
             );
         }
     }
+    // An unbound appearance read from a view provider's own material (an
+    // origin feature's, which owns no body) returns to that provider.
+    let (gui_properties, gui_providers) = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| {
+            Ok::<_, CodecError>((
+                namespace.arena_as::<crate::native::GuiPropertyRecord>("gui_properties")?,
+                namespace.arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")?,
+            ))
+        })
+        .transpose()?
+        .unwrap_or_default();
     for appearance in &ir.model.appearances {
-        if !bound.contains(appearance.id.as_str()) {
-            losses.push(
-                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-                    "unbound appearance {} has no FreeCAD GUI owner and is omitted",
-                    appearance.id
-                )),
-            );
+        if bound.contains(appearance.id.as_str()) {
+            continue;
         }
+        let owner = appearance
+            .native_ref
+            .as_deref()
+            .and_then(|id| gui_properties.iter().find(|property| property.id == id))
+            .and_then(|property| {
+                gui_providers
+                    .iter()
+                    .find(|provider| provider.id == property.owner)
+            })
+            .map(|provider| provider.name.clone())
+            .filter(|name| providers.contains_key(name));
+        match (owner, appearance.schema.as_deref()) {
+            (Some(owner), Some(SHAPE_APPEARANCE_SCHEMA)) => {
+                material_lists
+                    .entry(owner)
+                    .or_default()
+                    .insert(WHOLE_OBJECT_SLOT, appearance);
+                continue;
+            }
+            (Some(owner), Some("FCStd ViewProvider ShapeMaterial")) => {
+                if let Some(provider) = providers.get_mut(&owner) {
+                    material(provider, appearance, true, transparency_byte)?;
+                    // A body-less provider's own color has no neutral home;
+                    // the decoder reads the material diffuse as a separate
+                    // lane only beside it.
+                    if appearance
+                        .properties
+                        .keys()
+                        .any(|key| key.as_str() == "diffuse_packed")
+                    {
+                        for name in ["ShapeColor", "Transparency"] {
+                            if let Some(value) = provider
+                                .native
+                                .get(name)
+                                .map(native_property)
+                                .transpose()?
+                                .flatten()
+                            {
+                                provider.properties.insert(name.into(), value);
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        losses.push(
+            FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                "unbound appearance {} has no FreeCAD GUI owner and is omitted",
+                appearance.id
+            )),
+        );
     }
     for ((owner, property), overrides) in arrays {
         let prefix = if property == "DiffuseColor" {

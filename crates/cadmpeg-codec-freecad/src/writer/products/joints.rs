@@ -96,7 +96,7 @@ fn scalar(object: &mut Object, name: &str, value: Option<FiniteReal>, angular: b
                 },
                 "Float",
                 if angular {
-                    value.get().to_degrees()
+                    xml::degrees(value.get())
                 } else {
                     value.get()
                 },

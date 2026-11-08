@@ -504,7 +504,7 @@ pub(super) fn write(
                 property_name,
                 "App::PropertyAngle",
                 "Float",
-                value.get().to_degrees(),
+                xml::degrees(value.get()),
             ),
             Some(ParameterValue::Real(value)) => {
                 xml::scalar(property_name, "App::PropertyFloat", "Float", value.get())
