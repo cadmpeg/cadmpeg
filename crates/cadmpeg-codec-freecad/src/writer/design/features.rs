@@ -108,7 +108,7 @@ fn negate_direction(value: &mut serde_json::Value) {
         let component = direction
             .get(key)
             .and_then(serde_json::Value::as_number)
-            .and_then(|number| number.as_f64());
+            .and_then(serde_json::Number::as_f64);
         if let Some(component) = component {
             if let Some(slot) = direction.get_mut(key) {
                 *slot = serde_json::json!(-component);
