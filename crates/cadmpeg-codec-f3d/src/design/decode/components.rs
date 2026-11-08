@@ -192,7 +192,10 @@ fn occurrence_frame_part(
     Ok(ctx
         .decode_part(output, extent, spec, |_| {
             let occurrence = parse();
-            if typed && occurrence.is_none() {
+            let local = bytes
+                .get(frame.start..frame.member_end)
+                .is_some_and(crate::xref::places_local_occurrence);
+            if typed && local && occurrence.is_none() {
                 return Err(CodecError::malformed(format_args!(
                     "component occurrence {} has an invalid member sequence",
                     frame.entity_id

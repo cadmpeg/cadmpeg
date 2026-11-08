@@ -22,7 +22,7 @@ fn placement_table() -> crate::xref::XrefTable {
             neutron_data: "data-guid".into(),
             transform: None,
         }],
-        placement_failures: Vec::new(),
+        unreadable_placements: Vec::new(),
         placement_metadata_missing: false,
         placement_overrides: vec![crate::xref::PlacementOverride {
             ordinal: 4,

@@ -133,7 +133,11 @@ fn nested_headers_do_not_create_additional_placement_records() {
         1
     );
     bytes[4..7].copy_from_slice(b"381");
-    assert!(super::super::typed_occurrence_placement_records(&bytes, &meta).is_err());
+    assert!(
+        super::super::typed_occurrence_placement_records(&bytes, &meta)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
