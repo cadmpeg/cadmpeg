@@ -78,6 +78,11 @@ pub(crate) fn write(
         // would invent an archive member the source never had, and the
         // re-decode would gain a file reference the source lacks (#238).
         if entries.is_empty() {
+            // The document's default empty hasher is the root table; maps
+            // that name it still resolve.
+            if table.owner_property.is_none() {
+                table_indices.insert(table.index, 0);
+            }
             continue;
         }
         let Some(save_all) = table.save_all else {

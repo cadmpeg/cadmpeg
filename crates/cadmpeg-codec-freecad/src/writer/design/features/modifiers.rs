@@ -100,8 +100,8 @@ pub(super) fn dress_up(
     Ok(())
 }
 /// A `Part::Fillet` or `Part::Chamfer` keeps its type: `Base` links the
-/// solid, the native `Edges` list keeps its edge numbers, and every row
-/// takes the definition's distances. A law the part tool cannot store
+/// solid, the replayed native `Edges` list keeps its edge numbers, and every
+/// row takes the definition's distances. A law the part tool cannot store
 /// falls back to the `PartDesign` encoding.
 fn part_dress_up(
     value: &Value,
@@ -112,7 +112,6 @@ fn part_dress_up(
 ) -> Result<bool, FeatureError> {
     let expected = if fillet { "Part::Fillet" } else { "Part::Chamfer" };
     if source_tag != Some(expected)
-        || !object.properties.contains_key("Edges")
         || tag(&group["edges"]) == "all"
         || value["flip_direction"].as_bool().unwrap_or(false)
     {
