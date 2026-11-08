@@ -129,12 +129,15 @@ pub(crate) fn unpaired_after_allowances(
     let target = Document::read(after, &BTreeSet::new())?;
     let pairs = pair(&source, &target, false, true);
     let mut unpaired = removed;
+    // A regenerated record need not pair, as in `agree_pairing`.
     unpaired.extend(
         source
             .records
             .iter()
             .enumerate()
-            .filter(|(index, _)| !pairs.contains_key(index))
+            .filter(|(index, record)| {
+                !pairs.contains_key(index) && !allowances.regenerated.contains(&record.id)
+            })
             .map(|(_, record)| record.id.clone()),
     );
     Ok(unpaired)
@@ -479,6 +482,28 @@ fn agree_pairing(
             .records
             .iter()
             .position(|candidate| candidate.id == record.id && candidate.arena == record.arena)
+        {
+            pairs.insert(index, other);
+        }
+    }
+    // A regenerated record can take the identity its new position implies.
+    // One that pairs neither by content nor by identity pairs with the next
+    // unpaired record of its arena, in arena order, so the records that name
+    // it still resolve through the identity mapping.
+    let taken: BTreeSet<usize> = pairs.values().copied().collect();
+    let mut free = BTreeMap::<&str, std::collections::VecDeque<usize>>::new();
+    for (index, record) in after.records.iter().enumerate() {
+        if !taken.contains(&index) {
+            free.entry(record.arena.as_str()).or_default().push_back(index);
+        }
+    }
+    for (index, record) in before.records.iter().enumerate() {
+        if pairs.contains_key(&index) || !regenerated.contains(&record.id) {
+            continue;
+        }
+        if let Some(other) = free
+            .get_mut(record.arena.as_str())
+            .and_then(std::collections::VecDeque::pop_front)
         {
             pairs.insert(index, other);
         }
