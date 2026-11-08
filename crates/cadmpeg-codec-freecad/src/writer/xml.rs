@@ -491,6 +491,9 @@ pub(crate) struct Object {
     /// re-decode reproduces it. Synthesized objects without one take their
     /// emission position.
     pub(crate) declaration_id: DeclarationId,
+    /// The two distances a `Part::Fillet` or `Part::Chamfer` writes into
+    /// every row of its `Edges` side file.
+    pub(crate) edge_distances: Option<[f64; 2]>,
 }
 
 impl Object {
@@ -504,12 +507,23 @@ impl Object {
             extensions: Vec::new(),
             declaration_attributes: BTreeMap::new(),
             declaration_id: DeclarationId::Generated,
+            edge_distances: None,
         }
     }
 
     pub(crate) fn set(&mut self, name: &str, property: String) {
         self.geometry = GeometryEmission::Unknown;
         self.properties.insert(name.into(), property);
+    }
+
+    /// The attachment support link's name: FreeCAD 1.0 renamed `Support` to
+    /// `AttachmentSupport`, and an object keeps the spelling it carries.
+    pub(crate) fn support_field(&self) -> &'static str {
+        if self.properties.contains_key("AttachmentSupport") {
+            "AttachmentSupport"
+        } else {
+            "Support"
+        }
     }
 
     pub(crate) fn mark_grouping_only(&mut self) {
@@ -585,3 +599,14 @@ pub(crate) fn property_bool_value(xml: &str) -> Option<bool> {
 
 #[cfg(test)]
 mod tests;
+
+/// The shortest decimal degree value that FreeCAD stores for `radians` and
+/// that converts back to the same radians, so a written angle re-reads
+/// unchanged.
+pub(crate) fn degrees(radians: f64) -> f64 {
+    let direct = radians.to_degrees();
+    (0..=17)
+        .filter_map(|digits| format!("{direct:.digits$e}").parse::<f64>().ok())
+        .find(|candidate| candidate.to_radians() == radians)
+        .unwrap_or(direct)
+}

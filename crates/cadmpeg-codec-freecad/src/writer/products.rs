@@ -177,6 +177,11 @@ fn definitions(
                         .find(|native| native.id().as_str() == id)
                 }) {
                     object.declaration_attributes.clone_from(&native.attributes);
+                    if let Some(view_type) = &native.view_type {
+                        object
+                            .declaration_attributes
+                            .insert("ViewType".into(), view_type.clone());
+                    }
                 }
                 object
             }

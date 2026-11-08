@@ -423,6 +423,8 @@ fn validation_location_error(error: LocationIdentityError) -> CodecError {
 
 struct NativeUse {
     root: usize,
+    owner: String,
+    shape: usize,
     property: String,
     kind: crate::brep::TextShapeKind,
     source_index: Option<usize>,
@@ -470,6 +472,8 @@ fn current_native_topology(
             row.id,
             NativeUse {
                 root: row.key.root,
+                owner: working_text(ctx, &row.owner)?,
+                shape: row.key.shape,
                 property: working_text(ctx, &payload.property)?,
                 kind,
                 source_index,
@@ -624,6 +628,24 @@ impl CurrentTopologyBindings {
                 .flatten()
                 .map(String::as_str),
         )
+    }
+
+    /// Current neutral records bound to one payload's source topology, each
+    /// with its kind, one-based `TShape` index and one-based indexed name.
+    pub(crate) fn payload_records<'a>(
+        &'a self,
+        payload: &'a str,
+    ) -> impl Iterator<Item = (&'a str, crate::brep::TextShapeKind, usize, Option<usize>)> + 'a
+    {
+        self.record_native.iter().filter_map(move |(record, native)| {
+            let source = self.topology.get(native)?;
+            (source.owner == payload).then_some((
+                record.as_str(),
+                source.kind,
+                source.shape,
+                source.source_index,
+            ))
+        })
     }
 
     pub(crate) fn native_for_record(&self, record: &str) -> Option<&str> {

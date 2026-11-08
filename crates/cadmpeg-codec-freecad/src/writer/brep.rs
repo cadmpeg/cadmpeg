@@ -12,6 +12,7 @@ use std::fmt::Write as _;
 
 use super::geometry;
 use crate::loss::FreecadLossCode;
+mod native_text;
 mod reachable;
 use reachable::Reach;
 
@@ -229,6 +230,48 @@ impl TopologyObserver for EmittedTopology<'_, '_> {
         self.uses = emitted_topology_uses(self.ctx, shapes, &self.indices, roots)?;
         Ok(())
     }
+}
+
+/// A payload whose typed tables still agree with the Model, emitted from
+/// those tables (W1) with the topology uses its current neutral records bind.
+/// An owner placement that moved off the stored root location is appended as
+/// one more location, which the roots use.
+pub(super) fn native_with_uses(
+    payload: &crate::brep::ShapePayloadRecord,
+    polygons: (
+        &[crate::brep::Polygon3dRecord],
+        &[crate::brep::PolygonOnTriangulationRecord],
+    ),
+    current: &crate::topology_transfer::CurrentTopologyBindings,
+    root_override: Option<cadmpeg_ir::transform::Transform>,
+) -> Option<SerializedShape> {
+    let tables = crate::brep::Tables::from_payload(payload, polygons.0, polygons.1)
+        .ok()
+        .flatten()?;
+    let mut root = None;
+    if let Some(placement) = root_override {
+        for use_ in tables.roots {
+            if use_.location.resolve(tables.locations).ok()? != placement {
+                root = Some(placement);
+            }
+        }
+    }
+    let text = native_text::text(payload, polygons.0, polygons.1, root)?;
+    let count = tables.tshapes.len();
+    let uses = current
+        .payload_records(&payload.id)
+        .filter_map(|(record, kind, shape, _)| {
+            Some(EmittedTopologyUse {
+                neutral_id: record.to_owned(),
+                kind,
+                native_shape: count.checked_sub(shape)?.checked_add(1)?,
+            })
+        })
+        .collect();
+    Some(SerializedShape {
+        bytes: text.into_bytes(),
+        uses,
+    })
 }
 
 pub(super) fn serialize_with_uses(

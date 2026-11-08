@@ -59,7 +59,7 @@ pub(in crate::writer) fn write(
                             value.get().to_string()
                         }
                         cadmpeg_ir::features::ParameterValue::Angle(value) => {
-                            value.get().to_degrees().to_string()
+                            super::super::xml::degrees(value.get()).to_string()
                         }
                         cadmpeg_ir::features::ParameterValue::Real(value) => {
                             value.get().to_string()

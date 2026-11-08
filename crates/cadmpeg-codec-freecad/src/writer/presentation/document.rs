@@ -43,12 +43,33 @@ fn descendants(state: &GuiStateRecord) -> Result<String, CodecError> {
     xml::gui_state_content(state)
 }
 
+/// The numbers that follow `field` in an Inventor camera string.
+fn camera_field(settings: &str, field: &str, count: usize) -> Option<Vec<f64>> {
+    let mut tokens = settings.split_whitespace();
+    tokens.find(|token| *token == field)?;
+    tokens
+        .take(count)
+        .map(|token| token.parse().ok())
+        .collect::<Option<Vec<f64>>>()
+        .filter(|values| values.len() == count)
+}
+
 fn camera_settings(camera: &cadmpeg_ir::presentation::CameraState) -> String {
-    let settings = camera
+    let stored = camera
         .properties
         .iter()
         .find(|(key, _)| key.as_str() == "settings")
-        .map_or("OrthographicCamera { }", |(_, value)| value.as_str());
+        .map(|(_, value)| value.as_str());
+    // The stored string is the camera's own spelling; it is rebuilt only when
+    // the typed position or orientation moved off it.
+    if let Some(stored) = stored.filter(|stored| {
+        camera_field(stored, "position", 3) == camera.position.map(|value| value.get().to_vec())
+            && camera_field(stored, "orientation", 4)
+                == camera.orientation.map(|value| value.get().to_vec())
+    }) {
+        return stored.to_owned();
+    }
+    let settings = stored.unwrap_or("OrthographicCamera { }");
     let tokens: Vec<_> = settings.split_whitespace().collect();
     let family = if tokens.first() == Some(&"PerspectiveCamera") {
         "PerspectiveCamera"

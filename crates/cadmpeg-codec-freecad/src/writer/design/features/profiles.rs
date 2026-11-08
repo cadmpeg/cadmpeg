@@ -205,7 +205,7 @@ fn part_revolution(
             "Angle",
             "App::PropertyFloatConstraint",
             "Float",
-            number(&termination["angle"], "revolution angle")?.to_degrees(),
+            xml::degrees(number(&termination["angle"], "revolution angle")?),
         ),
     );
     boolean(object, "Symmetric", tag(extent) == "symmetric");

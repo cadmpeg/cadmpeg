@@ -75,10 +75,11 @@ pub(crate) fn write(
             continue;
         }
         if !links.is_empty() {
+            let field = object.support_field();
             object.set(
-                "Support",
+                field,
                 xml::property(
-                    "Support",
+                    field,
                     "App::PropertyLinkSubList",
                     &format!(
                         "<LinkSubList count=\"{}\">{}</LinkSubList>",

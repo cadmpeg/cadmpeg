@@ -1096,7 +1096,7 @@ fn parse_hex(value: &str, field: &str) -> Result<i64, CodecError> {
     Ok(if negative { -value } else { value })
 }
 
-fn parse_string_table(
+pub(crate) fn parse_string_table(
     bytes: &[u8],
     declared_count: usize,
     side_entry: bool,
