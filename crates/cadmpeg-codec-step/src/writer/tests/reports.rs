@@ -1313,12 +1313,22 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 }
 
 #[test]
-fn face_on_unknown_surface_is_skipped_and_reported() {
+fn face_on_unwritable_surface_is_skipped_and_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let target = ir.model.faces[0].surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
         if s.id.as_str() == target {
-            s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+            s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                    0.4,
+                    0.5,
+                )
+                .unwrap(),
+            ));
         }
     }
     let mut buf = Vec::new();
@@ -1334,7 +1344,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     assert_eq!(
         s.matches("ADVANCED_FACE").count(),
         5,
-        "the unknown-surface face should be omitted"
+        "the elliptical-cone face should be omitted"
     );
     let unknown_notes: Vec<_> = report
         .losses
@@ -1554,6 +1564,9 @@ fn elliptical_cone_reduction_is_reported() {
         loss.code == StepLossCode::EllipticalConeReduced.kind()
             && loss.message.contains(ir.model.surfaces[0].id.as_str())
     }));
+    assert!(!String::from_utf8(buf)
+        .expect("STEP output is UTF-8")
+        .contains("CONICAL_SURFACE"));
 }
 
 /// Plans a document whose single surface is a circular cone of `half_angle`.
@@ -1702,8 +1715,7 @@ fn transformed_cone_basis_outside_wr2_is_omitted_with_error() {
 fn transformed_elliptical_cone_basis_is_reported() {
     let (report, text) = transformed_surface_report(transformed_cone_basis(0.4, 0.5));
 
-    assert!(text.contains("SURFACE_REPLICA"));
-    assert!(text.contains("CONICAL_SURFACE"));
+    assert!(!text.contains("CONICAL_SURFACE"));
     assert!(report
         .losses
         .iter()
