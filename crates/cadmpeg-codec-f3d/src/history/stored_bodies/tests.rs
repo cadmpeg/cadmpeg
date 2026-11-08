@@ -207,3 +207,19 @@ fn a_base_feature_scope_projected_as_a_paste_copy_reports_its_assumed_placement(
         [crate::loss::F3dLossCode::FeaturePasteCopyPlacementAssumed.kind()]
     );
 }
+
+#[test]
+fn contains_in_source_scopes_slots_by_brep_and_retains_ambiguity() {
+    let bodies = [
+        solid("f3d:brep/other.smbh/brep:entity#2"),
+        solid("f3d:brep:entity#5"),
+        body("f3d:brep:saved-edge-body#5"),
+        body("f3d:brep/selected.smbh/brep:saved-edge-body#7"),
+    ];
+    let active = ActiveBodies::new(&bodies, PRIMARY);
+    assert!(!active.contains_in_source(2, Some("selected.smbh")));
+    assert!(active.contains_in_source(2, Some("other.smbh")));
+    assert!(active.contains_in_source(2, None));
+    assert!(active.contains_in_source(5, Some("selected.smbh")));
+    assert!(!active.contains_in_source(7, Some("selected.smbh")));
+}

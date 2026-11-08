@@ -367,10 +367,12 @@ fn presentation_material(
         let Some(brep_container_entity) = local_reference(bytes, &mut reference_at) else {
             continue;
         };
-        if local_reference_value(bytes, &mut reference_at) != Some(LocalReference::Null) {
-            continue;
-        }
-        let Some(scene_node_entity) = local_reference(bytes, &mut reference_at) else {
+        let scene_node_entity = match local_reference_value(bytes, &mut reference_at) {
+            Some(LocalReference::Null) => local_reference(bytes, &mut reference_at),
+            Some(LocalReference::Target(target)) if target != 0 => Some(target),
+            _ => None,
+        };
+        let Some(scene_node_entity) = scene_node_entity else {
             continue;
         };
         if entity_types
@@ -410,6 +412,10 @@ fn presentation_material(
             == Some(legacy_marker.as_slice())
         {
             (visual_marker_at + legacy_marker.len(), true)
+        } else if bytes.get(visual_marker_at..visual_marker_at + physical_marker.len())
+            == Some(physical_marker.as_slice())
+        {
+            (visual_marker_at + physical_marker.len(), true)
         } else if bytes.get(visual_marker_at..visual_marker_at + modern_marker.len())
             == Some(modern_marker.as_slice())
         {
@@ -429,7 +435,7 @@ fn presentation_material(
         let visual_preset = if legacy {
             if let Some(at) = skip_zeros(bytes, after_visual_marker, end) {
                 lp_utf16_bounded(bytes, at, 1..=256)
-                    .and_then(|(value, _)| value.starts_with("Prism-").then_some((at, value)))
+                    .and_then(|(value, _)| value.starts_with("Prism").then_some((at, value)))
             } else {
                 None
             }

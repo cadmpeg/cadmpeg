@@ -67,6 +67,15 @@ impl<'a> ActiveBodies<'a> {
                 .is_some_and(cadmpeg_asm::brep::emit::is_saved_free_edge_body)
     }
 
+    /// Whether `slot` has an active result body or an ambiguous identity in `source`.
+    pub(super) fn contains_in_source(&self, slot: i64, source: Option<&str>) -> bool {
+        !self.is_saved_edge(slot, source)
+            && self
+                .by_slot
+                .get(&slot)
+                .is_some_and(|bodies| bodies.iter().any(|body| self.in_source(body, source)))
+    }
+
     /// The result bodies at `slots`. A saved free edge is not a result body.
     pub(super) fn resolve(
         &self,
