@@ -64,11 +64,11 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
                 shell
                     .wire_edges()
                     .iter()
-                    .any(|edge| &edge.as_str() == neutral)
+                    .any(|edge| edge.as_str() == neutral.as_str())
                     || shell
                         .free_vertices()
                         .iter()
-                        .any(|vertex| &vertex.as_str() == neutral)
+                        .any(|vertex| vertex.as_str() == neutral.as_str())
             })
         }) else {
             return false;
