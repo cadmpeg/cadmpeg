@@ -57,6 +57,7 @@ mod mirror;
 mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
+mod reverse_normal;
 mod surface_offset;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
@@ -81,6 +82,8 @@ macro_rules! or_none {
         }
     };
 }
+
+mod delete_face;
 
 fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
     let first = matches.next()?;
@@ -765,7 +768,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         None
                     };
                     if chamfer.is_none() {
-                        chamfer = project_chamfer(scope, &parameters, inputs, ctx)?;
+                        chamfer = project_chamfer(
+                            scope,
+                            &parameters,
+                            inputs,
+                            ctx,
+                            &mut projection_losses,
+                        )?;
                     }
                     chamfer.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
@@ -1291,6 +1300,21 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             })
                         })
                     } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                    {
+                        reverse_normal::project_reverse_normal(
+                            scope,
+                            construction_groups,
+                            design_types,
+                            &mut projection_losses,
+                        )
+                        .unwrap_or_else(|| {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
+                                kind: scope.kind_name().into(),
+                                parameters: BTreeMap::new(),
+                            })
+                        })
+                    } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                     {
                         project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
@@ -1339,7 +1363,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         crate::records::feature::scope::DesignFeatureKind::DeleteFace
                             | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                     ) {
-                        project_delete_face(scope, construction_groups, face_operands)?
+                        delete_face::project_delete_face(scope, construction_groups, face_operands)?
                             .unwrap_or_else(|| {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
@@ -5695,6 +5719,7 @@ fn project_chamfer(
     parameters: &[(u32, &DesignParameter)],
     inputs: &ProjectInputs<'_>,
     ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     enum Lanes<'a> {
         Distance(&'a [&'a DesignParameter]),
@@ -5724,7 +5749,6 @@ fn project_chamfer(
         left.scope_reference_ordinal
             .cmp(&right.scope_reference_ordinal)
     });
-    let group_count = edge_groups.len();
     let ordered_parameters =
         |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
             {
@@ -5751,6 +5775,33 @@ fn project_chamfer(
     let right_distances = ordered_parameters(&|kind| kind == "rightDistance")?;
     let angles =
         ordered_parameters(&|kind| matches!(kind, "Angle" | "Rotate Angle" | "rotateAngle"))?;
+    // Face-role groups next to the one edge-role group add faces to that
+    // selection. When the scope stores one specification, they all take it.
+    let face_groups = edge_groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
+        .count();
+    let one_specification = [&distances, &first_distances, &left_distances]
+        .into_iter()
+        .map(Vec::len)
+        .sum::<usize>()
+        == 1;
+    let shared_specification =
+        one_specification && face_groups != 0 && edge_groups.len() - face_groups == 1;
+    let group_count = if shared_specification {
+        1
+    } else {
+        edge_groups.len()
+    };
+    // The specification is shared with one edge-role group. Any other role
+    // keeps that reading and says so.
+    let edge_role_assumed = shared_specification
+        && edge_groups.iter().any(|group| {
+            !matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X10 | DesignOperandRole::BODIES_B
+            )
+        });
     if !parameters.iter().all(|(_, parameter)| {
         matches!(
             parameter.source_kind_str(),
@@ -5831,7 +5882,8 @@ fn project_chamfer(
         candidates.push(spec);
     }
     let mut groups = Vec::new();
-    for (spec, group) in candidates.into_iter().zip(edge_groups) {
+    for (ordinal, group) in edge_groups.into_iter().enumerate() {
+        let spec = *or_none!(candidates.get(if group_count == 1 { 0 } else { ordinal }));
         let group = ChamferGroup {
             edges: resolved_edge_treatment_group_with_corners(
                 group,
@@ -5851,9 +5903,16 @@ fn project_chamfer(
         };
         groups.push(group);
     }
+    let groups = or_none!(groups.try_into().ok());
+    if edge_role_assumed {
+        losses.push(crate::loss::F3dLossCode::ChamferEdgeRoleAssumed.note(format!(
+            "Chamfer scope {} shares one specification between face groups and a group whose role is not the edge role; the group is read as the edge group.",
+            scope.id
+        )));
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
-            groups: or_none!(groups.try_into().ok()),
+            groups,
             flip_direction: false,
         },
     )))
@@ -7290,7 +7349,7 @@ pub(super) fn project_fixed_sweep(
                 DesignOperandRole::ROLE_0X5 => {
                     paths.push(*group);
                 }
-                DesignOperandRole::BODIES_A => {
+                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B => {
                     bodies.push(*group);
                 }
                 DesignOperandRole::FACES => {
@@ -7360,7 +7419,19 @@ pub(super) fn project_fixed_sweep(
         };
         let expected_group_count =
             profiles.len() + paths.len() + bodies.len() + guide_surfaces.len();
+        let first_ordinal = groups
+            .iter()
+            .map(|group| group.scope_reference_ordinal)
+            .min();
+        let body_leads = bodies.iter().all(|body| {
+            let ordinal = match body.role() {
+                DesignOperandRole::BODIES_A => 0,
+                _ => 7,
+            };
+            body.scope_reference_ordinal == ordinal && first_ordinal == Some(ordinal)
+        });
         if bodies.len() > 1
+            || !body_leads
             || groups.len() != expected_group_count
             || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
             || (guide_surface_form && paths.len() != 1)
@@ -7449,9 +7520,12 @@ pub(super) fn project_fixed_sweep(
                 } else {
                     or_none!(fixed_boolean_operation(*operation).try_into().ok())
                 },
-                section: cadmpeg_ir::features::SweepSection::Profile(PlanarProfileRef::Native(
-                    profile.id.clone(),
-                )),
+                section: cadmpeg_ir::features::SweepSection::Profile(
+                    match resolved_profile_face_group(scope, profile, face_operands)? {
+                        Some(cadmpeg_ir::features::ProfileRef::Planar(faces)) => faces,
+                        _ => PlanarProfileRef::Native(profile.id.clone()),
+                    },
+                ),
                 sections: Vec::new(),
             },
 
@@ -8676,12 +8750,17 @@ fn project_move_face(
         DesignOperandRole::ROLE_0X10
     ));
     let member_count = or_none!(scope.reference_members().len().checked_sub(2));
-    if group.scope_reference_ordinal != 0
-        || group.record_index != *or_none!(scope.reference_members().values().next())
+    // The transform is the last reference after the group and its members, or
+    // the first reference before them.
+    let group_ordinal = usize::from(
+        scope.reference_members().values().next() == Some(&operation.transform_record_index),
+    );
+    if usize::try_from(group.scope_reference_ordinal).ok() != Some(group_ordinal)
+        || group.record_index != *or_none!(scope.reference_members().values().nth(group_ordinal))
         || !group.members().iter().map(|member| member.value).eq(scope
             .reference_members()
             .values()
-            .skip(1)
+            .skip(group_ordinal + 1)
             .take(member_count)
             .copied())
     {
@@ -8730,69 +8809,6 @@ fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::F
         axis_dir: rotation.direction,
         angle: rotation.angle,
     })
-}
-
-fn project_delete_face(
-    scope: &DesignParameterScope,
-    construction_groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-
-    let reference_count = scope.reference_members().len();
-    let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
-    let heal = match scope.kind_name() {
-        "DeleteFace" if matches!(count_offset, 123 | 127 | 131) => true,
-        "SurfaceDeleteFace" if matches!(count_offset, 123 | 127 | 131 | 134 | 138 | 142) => false,
-        _ => return Ok(None),
-    };
-    if !matches!(tail_length, 77 | 78) {
-        return Ok(None);
-    }
-    if reference_count < 2 {
-        return Ok(None);
-    }
-    let stream = or_none!(native_stream(&scope.id));
-    let matching = construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    });
-    let Some(group) = unique_feature_match(matching) else {
-        return Ok(None);
-    };
-    if group.scope_reference_ordinal != 0
-        || group.record_index != *or_none!(scope.reference_members().values().next())
-        || group.role() != DesignOperandRole::ROLE_0X10
-        || !group.members().iter().map(|member| member.value).eq(scope
-            .reference_members()
-            .values()
-            .skip(1)
-            .copied())
-    {
-        return Ok(None);
-    }
-    let faces = resolved_historical_face_group(
-        scope,
-        scope.previous_history_state_id(),
-        group,
-        face_operands,
-    )
-    .map_or_else(
-        || {
-            if heal {
-                Ok(None)
-            } else {
-                resolved_face_group(group, face_operands)
-            }
-        },
-        |face| Ok(Some(face)),
-    )?;
-    let faces = match faces {
-        Some(faces) => faces,
-        None => FaceSelection::Native(group.id.clone()),
-    };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::DeleteFace { faces, heal },
-    )))
 }
 
 fn project_extrude(

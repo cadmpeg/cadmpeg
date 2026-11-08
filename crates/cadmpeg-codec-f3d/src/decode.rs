@@ -311,6 +311,14 @@ fn report_unresolved_configuration_rules(
             "{count} Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
         ),);
     }
+    let count = crate::design::configurations::inferred_configuration_suppression_count(
+        &ir.model.configurations,
+    );
+    if count != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationSuppressionInferred, format_args!(
+            "{count} suppressed feature state(s) of the active Design configuration were taken from the current feature state, assuming that no suppression column without a neutral feature names those features."
+        ),);
+    }
 }
 
 fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
@@ -839,6 +847,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) => {
             !body_selection_is_resolved(bodies)
                 || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
+        }
+        FeatureDefinition::Operation(FeatureOperation::ReverseShape { source }) => {
+            !body_selection_is_resolved(source)
         }
         FeatureDefinition::Operation(FeatureOperation::InsertComponent { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
@@ -3352,6 +3363,12 @@ impl<'a> F3dDecodeSession<'a> {
                 let xref = prereqs.store(&mut self.native);
                 let projected = match design {
                     DesignState::Projected(design) => {
+                        report_unresolved_configuration_rules(
+                            &mut self.report,
+                            &design.design_configurations,
+                            design.configuration_roots_unbound,
+                            &self.ir,
+                        );
                         design.store(&mut self.native);
                         crate::design::decode::sketch_owners::attach(
                             ctx,

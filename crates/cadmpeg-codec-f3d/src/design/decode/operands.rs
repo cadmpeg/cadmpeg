@@ -861,6 +861,7 @@ pub(crate) fn decode_face_operands(
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
+    types: &[crate::records::entity_header::SegmentType],
 ) -> Result<Vec<DesignFaceOperand>, CodecError> {
     let mut header_index = HashMap::new();
     for header in headers {
@@ -908,6 +909,9 @@ pub(crate) fn decode_face_operands(
         let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
             && group.role() == DesignOperandRole::FACES;
+        let is_sweep_profile = design_feature_family(&scope.kind())
+            == Some(DesignFeatureFamily::Sweep)
+            && group.role() == DesignOperandRole::PROFILE;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
             && group.role() == DesignOperandRole::ROLE_0X21;
@@ -969,6 +973,7 @@ pub(crate) fn decode_face_operands(
             && !is_shell_operand
             && !is_loft_profile
             && !is_sweep_guide_surface
+            && !is_sweep_profile
             && !is_revolve_axis
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
@@ -997,12 +1002,25 @@ pub(crate) fn decode_face_operands(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let stream_types = is_sweep_profile
+            .then(|| crate::design::decode::meta::stream_types_by_entity(types, &entry.name));
         for (group_member_index, record_index) in group
             .members()
             .iter()
             .map(|member| &member.value)
             .enumerate()
         {
+            if stream_types.as_ref().is_some_and(|types| {
+                !types
+                    .get(&u64::from(*record_index))
+                    .is_some_and(|(guid, _)| {
+                        guid.eq_ignore_ascii_case(
+                            crate::records::feature::path_features::pipe::RECIPE_GUID,
+                        )
+                    })
+            }) {
+                continue;
+            }
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
             }
@@ -1884,6 +1902,7 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::RectangularPattern)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Mirror)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::ReverseNormal
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::MoveFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
@@ -3222,8 +3241,11 @@ fn extended_construction_path_prefix(bytes: &[u8], start: usize) -> Option<bool>
             .get(zero_run..start + extended_path::PREFIX_VALUE)?
             .iter()
             .all(|byte| *byte == 0)
-            && View::u32_le_at(bytes, start + extended_path::PREFIX_VALUE)?
-                == extended_path::PREFIX_VALUE_VALUE
+            && matches!(
+                View::u32_le_at(bytes, start + extended_path::PREFIX_VALUE)?,
+                crate::layout::assembly_locator_prefix_two::WORD_VALUE
+                    | extended_path::PREFIX_VALUE_VALUE
+            )
             && bytes
                 .get(trailing_zero_run..start + extended_path::ENTITY_MARKER)?
                 .iter()
@@ -5420,10 +5442,11 @@ pub(in crate::design) fn parse_sketch_profile(
     }
     if tail_length == 83 {
         // The 83-byte tail omits the marked reference that follows the third
-        // u32 of the 94-byte tail, which is then zero.
+        // u32 of the 94-byte tail, which is then zero. Its second u32 is
+        // zero or one.
         let tail = after_entity_suffix;
         if View::u32_le_at(bytes, tail)? != 1
-            || View::u32_le_at(bytes, tail + 4)? != 1
+            || !matches!(View::u32_le_at(bytes, tail + 4)?, 0 | 1)
             || bytes.get(tail + 8..tail + 16)? != [0; 8]
             || View::u32_le_at(bytes, tail + 16)? != 0x41
             || marked_record_reference(bytes, tail + 46) != header.record_index.checked_add(2)

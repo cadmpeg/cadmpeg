@@ -58,7 +58,7 @@ impl Fields {
         for word in [0x8000_000a_u32, self.topology] {
             bytes.extend_from_slice(&word.to_le_bytes());
         }
-        if version != 19 {
+        if !(19..=21).contains(&version) {
             bytes.extend_from_slice(&self.qualifier.to_le_bytes());
         }
         bytes.extend_from_slice(&self.naming.to_le_bytes());
@@ -173,9 +173,9 @@ fn face_selector_forms_that_differ_in_any_control_stay_unparsed() {
         ("foreign entity context", |f| f.entities[1].0 = 0x8000_0005),
         ("zero entity", |f| f.entities[0].1 = 0),
     ];
-    for version in [19, 23, 29] {
+    for version in [19, 20, 21, 23, 29] {
         for (name, edit) in edits {
-            if name == "qualifier" && version == 19 {
+            if name == "qualifier" && (19..=21).contains(&version) {
                 continue;
             }
             let mut fields = Fields::new();
@@ -580,19 +580,25 @@ fn fixture(
     for (selector, item, owner) in [(41, 21, 5), (43, 22, 6)] {
         inventory.edge_inputs.faces.insert(
             (token.clone(), selector),
-            SelectedFace {
-                owner,
-                item,
-                repeated_attribute: false,
-                unshared_family: false,
-            },
+            selected_face(owner, item, Surface::Other),
         );
     }
     (inventory, feature)
 }
 
+fn selected_face(owner: i64, item: u32, surface: Surface) -> SelectedFace {
+    SelectedFace {
+        owner,
+        item,
+        repeated_attribute: false,
+        unshared_family: false,
+        identical_owners: false,
+        surface,
+    }
+}
+
 fn faces(feature: &Feature) -> &FaceSelection {
-    selection(feature).expect("Move Face")
+    selection(feature).expect("face-selecting feature").1
 }
 
 fn check(
@@ -820,4 +826,555 @@ fn only_face_motion_features_take_the_face_join() {
         );
         assert!(native_losses(std::slice::from_ref(&feature)).is_empty());
     }
+}
+
+/// Replaces the Move Face operation of a fixture by `definition` under `tag`.
+fn retarget(feature: &mut Feature, tag: &str, definition: FeatureOperation) {
+    feature.source_tag = Some(tag.into());
+    feature.evaluation =
+        FeatureEvaluation::from_definition(FeatureDefinition::Operation(definition));
+}
+
+fn shell(native: String) -> FeatureOperation {
+    FeatureOperation::Shell {
+        bodies: None,
+        removed_faces: FaceSelection::Native(native),
+        thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0),
+        outward: None,
+        mode: None,
+        join: None,
+        resolve_intersections: None,
+        allow_self_intersections: None,
+    }
+}
+
+#[test]
+fn shell_removed_faces_join_like_a_face_collection_and_keep_no_partial_selection() {
+    let ctx = context();
+    let (inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    retarget(&mut feature, "shell", shell(inventory.properties[0].id()));
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].faces.len(), 2);
+    assert!(matches!(
+        faces(&feature),
+        FaceSelection::Historical { native, .. } if native.as_str() == inventory.properties[0].id()
+    ));
+    assert!(check(&inventory, &feature, &states));
+    // One unresolved removed face leaves the whole selection native.
+    let (mut inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    retarget(&mut feature, "shell", shell(inventory.properties[0].id()));
+    inventory.edge_inputs.faces.remove(&(TOKEN.to_owned(), 43));
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+    // A shell without the Shell source tag takes no join.
+    let (inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    retarget(&mut feature, "other", shell(inventory.properties[0].id()));
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+}
+
+fn thread(native: String, diameter: Option<f64>) -> FeatureOperation {
+    FeatureOperation::CosmeticThread {
+        face: FaceSelection::Native(native),
+        standard: None,
+        designation: None,
+        diameter: diameter.and_then(cadmpeg_ir::scalar::PositiveLength::new),
+        pitch: None,
+        modeled: None,
+        extent: None,
+    }
+}
+
+/// A thread annotation that selects the face of selector 41 on a surface.
+fn thread_fixture(
+    ctx: &DecodeContext<'_>,
+    surface: Surface,
+    diameter: Option<f64>,
+) -> (crate::feature::FeatureInventory, Feature) {
+    let (mut inventory, mut feature) = fixture(ctx, [&[41], &[]]);
+    retarget(
+        &mut feature,
+        "thread",
+        thread(inventory.properties[0].id(), diameter),
+    );
+    inventory
+        .edge_inputs
+        .faces
+        .insert((TOKEN.to_owned(), 41), selected_face(5, 21, surface));
+    (inventory, feature)
+}
+
+#[test]
+fn a_thread_face_within_a_tolerance_states_the_assumption() {
+    let ctx = context();
+    let surface = |ratio, sine| Surface::Cone {
+        ratio,
+        sine,
+        radius: 0.25,
+    };
+    for (face, diameter, assumed) in [
+        (surface(1.0, 0.0), Some(5.0), false),
+        (surface(1.0, 0.0), None, false),
+        (surface(1.0, 0.1), Some(9.0), false),
+        (surface(1.000_000_000_5, 0.0), Some(5.0), true),
+        (surface(1.0, 5e-10), Some(5.0), true),
+        (surface(1.0, 0.0), Some(5.000_000_5), true),
+    ] {
+        let (inventory, mut feature) = thread_fixture(&ctx, face, diameter);
+        let before = assumption_losses(std::slice::from_ref(&feature), &inventory);
+        assert!(before.is_empty(), "a native selection uses no face");
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
+        assert_eq!(
+            notes
+                .iter()
+                .any(|note| note.code.local_code() == "feature.face-join-thread-tolerance-assumed"),
+            assumed,
+            "{face:?} {diameter:?}"
+        );
+    }
+}
+
+#[test]
+fn a_thread_face_with_a_non_finite_cone_ratio_names_it() {
+    // The record keeps the surface a cone.
+    let mut records = archive(44);
+    records[0] = face_on(1, 3, false);
+    let mut nan_cone = cone(3, 0.0, 0.25);
+    let mut tokens = nan_cone.tokens.to_vec();
+    tokens[6] = Token::Double(f64::NAN);
+    nan_cone.tokens = tokens.into();
+    records.push(nan_cone);
+    let selected = run(&records, 44).expect("selected");
+    assert!(matches!(selected.surface, Surface::Cone { ratio, .. } if ratio.is_nan()));
+    // A finite ratio outside the tolerance is not a cone.
+    let mut far = records.clone();
+    let mut wide = cone(3, 0.0, 0.25);
+    let mut tokens = wide.tokens.to_vec();
+    tokens[6] = Token::Double(1.1);
+    wide.tokens = tokens.into();
+    let last = far.len() - 1;
+    far[last] = wide;
+    assert_eq!(run(&far, 44).expect("selected").surface, Surface::Other);
+    // The note names the value, and the tolerance note does not claim it.
+    let ctx = context();
+    for ratio in [f64::NAN, f64::INFINITY] {
+        let surface = Surface::Cone {
+            ratio,
+            sine: 0.0,
+            radius: 0.25,
+        };
+        let (inventory, mut feature) = thread_fixture(&ctx, surface, Some(5.0));
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
+        let codes = notes
+            .iter()
+            .map(|note| note.code.local_code())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&"feature.face-join-thread-ratio-nonfinite"));
+        assert!(!codes.contains(&"feature.face-join-thread-tolerance-assumed"));
+    }
+}
+
+#[test]
+fn a_thread_joins_one_cylinder_or_cone_of_the_stated_size() {
+    let ctx = context();
+    // The cylinder radius is in archive length units; the diameter is in millimetres.
+    let cylinder = Surface::Cone {
+        ratio: 1.0,
+        sine: 0.0,
+        radius: 0.25,
+    };
+    let taper = Surface::Cone {
+        ratio: 1.0,
+        sine: 0.1,
+        radius: 0.25,
+    };
+    for (surface, diameter, joins) in [
+        (cylinder, Some(5.0), true),
+        (cylinder, None, true),
+        (cylinder, Some(5.5), false),
+        (cylinder, Some(2.5), false),
+        (taper, Some(9.0), true),
+        (Surface::Plane, Some(5.0), false),
+        (Surface::Other, None, false),
+    ] {
+        let (inventory, mut feature) = thread_fixture(&ctx, surface, diameter);
+        let states =
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        assert_eq!(states.len(), usize::from(joins), "{surface:?} {diameter:?}");
+        assert_eq!(
+            matches!(faces(&feature), FaceSelection::Historical { .. }),
+            joins
+        );
+        if joins {
+            assert!(check(&inventory, &feature, &states));
+        }
+    }
+}
+
+#[test]
+fn a_thread_selects_exactly_one_face() {
+    let ctx = context();
+    let cylinder = Surface::Cone {
+        ratio: 1.0,
+        sine: 0.0,
+        radius: 0.25,
+    };
+    let (mut inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    retarget(
+        &mut feature,
+        "thread",
+        thread(inventory.properties[0].id(), None),
+    );
+    for (selector, item, owner) in [(41, 21, 5), (43, 22, 6)] {
+        inventory.edge_inputs.faces.insert(
+            (TOKEN.to_owned(), selector),
+            selected_face(owner, item, cylinder),
+        );
+    }
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+    // A stored two-face thread selection does not validate.
+    let (inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+    let mut motion = fixture(&ctx, [&[41], &[43]]).1;
+    let states = project(&ctx, std::slice::from_mut(&mut motion), &inventory).expect("project");
+    let FaceSelection::Historical {
+        state,
+        faces,
+        native,
+    } = faces(&motion).clone()
+    else {
+        panic!("historical faces")
+    };
+    retarget(
+        &mut feature,
+        "thread",
+        FeatureOperation::CosmeticThread {
+            face: FaceSelection::Historical {
+                state,
+                faces,
+                native,
+            },
+            standard: None,
+            designation: None,
+            diameter: None,
+            pitch: None,
+            modeled: None,
+            extent: None,
+        },
+    );
+    assert!(!check(&inventory, &feature, &states));
+}
+
+/// A Thicken feature whose selection list holds two wrappers. Each wrapper
+/// names a face collection of one face item.
+fn thicken_fixture(ctx: &DecodeContext<'_>) -> (crate::feature::FeatureInventory, Feature) {
+    let source = test_feature(10, 1, &[(0, 30)]);
+    let properties = vec![
+        test_property(
+            30,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::SelectionList,
+                items: reference_list(&[31, 33]),
+            },
+        ),
+        test_property(
+            31,
+            PmDcFeaturePropertyKind::ThickenSelection {
+                faces: reference(33),
+                parameter: reference(60),
+            },
+        ),
+        test_property(
+            32,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::FaceCollection,
+                items: reference_list(&[34]),
+            },
+        ),
+        test_property(
+            33,
+            PmDcFeaturePropertyKind::ThickenSelection {
+                faces: reference(37),
+                parameter: reference(60),
+            },
+        ),
+        face_item(34, &[41]),
+        test_property(
+            36,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::FaceCollection,
+                items: reference_list(&[37]),
+            },
+        ),
+        face_item(37, &[43]),
+    ];
+    let mut feature =
+        crate::feature::native_feature(ctx, &source.identity, None, source.id()).expect("feature");
+    retarget(
+        &mut feature,
+        "thicken",
+        FeatureOperation::Thicken {
+            faces: FaceSelection::Native(properties[0].id()),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
+            side: None,
+        },
+    );
+    let mut inventory = crate::feature::FeatureInventory {
+        features: vec![source],
+        properties,
+        ..crate::feature::FeatureInventory::default()
+    };
+    for (selector, item, owner) in [(41, 34, 5), (43, 37, 6)] {
+        inventory.edge_inputs.faces.insert(
+            (TOKEN.to_owned(), selector),
+            selected_face(owner, item, Surface::Other),
+        );
+    }
+    (inventory, feature)
+}
+
+#[test]
+fn a_thicken_selection_list_joins_the_faces_of_every_wrapper() {
+    let ctx = context();
+    let (inventory, mut feature) = thicken_fixture(&ctx);
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert_eq!(states.len(), 1);
+    let FaceSelection::Historical {
+        faces: selected,
+        native,
+        ..
+    } = faces(&feature)
+    else {
+        panic!("historical faces")
+    };
+    assert_eq!(native.as_str(), inventory.properties[0].id());
+    assert_eq!(
+        selected
+            .as_slice()
+            .iter()
+            .map(HistoricalFaceId::as_str)
+            .collect::<Vec<_>>(),
+        [
+            format!("inventor:input-face#{TOKEN}-41"),
+            format!("inventor:input-face#{TOKEN}-43")
+        ]
+    );
+    assert!(check(&inventory, &feature, &states));
+    // A wrapper that does not name a face collection leaves the list native.
+    let (mut inventory, mut feature) = thicken_fixture(&ctx);
+    inventory.properties[1] = test_property(
+        31,
+        PmDcFeaturePropertyKind::ThickenSelection {
+            faces: reference(31),
+            parameter: reference(60),
+        },
+    );
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    // One unresolved face leaves the list native: a Thicken has no partial selection.
+    let (mut inventory, mut feature) = thicken_fixture(&ctx);
+    inventory.edge_inputs.faces.remove(&(TOKEN.to_owned(), 43));
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+}
+
+fn cone(index: usize, sine: f64, radius: f64) -> Record {
+    record(
+        index,
+        "cone-surface",
+        vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Position([0.0, 0.0, 0.0]),
+            Token::Vector3([0.0, 0.0, 1.0]),
+            Token::Vector3([radius, 0.0, 0.0]),
+            Token::Double(1.0),
+            Token::False,
+            Token::False,
+            Token::Double(sine),
+            Token::Double(1.0),
+            Token::Double(radius),
+        ],
+    )
+}
+
+fn plane(index: usize) -> Record {
+    record(
+        index,
+        "plane-surface",
+        vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Position([0.0, 0.0, 1.0]),
+            Token::Vector3([0.0, 0.0, 1.0]),
+            Token::Vector3([1.0, 0.0, 0.0]),
+        ],
+    )
+}
+
+/// A face whose surface is record `surface`; field 8 is its sense.
+fn face_on(index: usize, surface: usize, reversed: bool) -> Record {
+    let mut tokens = vec![Token::Ref(-1), Token::Long(-1)];
+    tokens.extend(std::iter::repeat_n(Token::Ref(-1), 5));
+    tokens.push(Token::Ref(i64::try_from(surface).expect("small index")));
+    tokens.push(if reversed { Token::True } else { Token::False });
+    record(index, "face", tokens)
+}
+
+#[test]
+fn a_selected_face_reports_the_surface_of_its_owner() {
+    for schema in [38, 44] {
+        for (surface, expected) in [
+            (
+                cone(3, 0.0, 0.25),
+                Surface::Cone {
+                    ratio: 1.0,
+                    sine: 0.0,
+                    radius: 0.25,
+                },
+            ),
+            (plane(3), Surface::Plane),
+            (
+                record(3, "torus-surface", vec![Token::Ref(-1)]),
+                Surface::Other,
+            ),
+        ] {
+            let mut records = archive(schema);
+            records[0] = face_on(1, 3, false);
+            records.push(surface);
+            assert_eq!(run(&records, schema).expect("selected").surface, expected);
+        }
+        // A cone with a non-unit axis ratio is not classified.
+        let mut records = archive(schema);
+        records[0] = face_on(1, 3, false);
+        let mut elliptic = cone(3, 0.0, 0.25);
+        let mut tokens = elliptic.tokens.to_vec();
+        tokens[6] = Token::Double(0.5);
+        elliptic.tokens = tokens.into();
+        records.push(elliptic);
+        assert_eq!(
+            run(&records, schema).expect("selected").surface,
+            Surface::Other
+        );
+    }
+}
+
+/// Two faces on separate surface records with matched attributes of one pair.
+fn two_owners(schema: u32, second: Record, reversed: bool) -> Vec<Record> {
+    let mut records = archive(schema);
+    records[0] = face_on(1, 3, false);
+    records.push(cone(3, 0.0, 0.25));
+    records.push(face_on(2, 4, reversed));
+    records.push(second);
+    records.push(matched(12, 2, schema, 9, 7, 1));
+    records
+}
+
+#[test]
+fn several_owners_of_identical_surface_geometry_select_the_lowest_entity_index() {
+    for schema in [38, 44] {
+        let face = run(&two_owners(schema, cone(4, 0.0, 0.25), false), schema).expect("selected");
+        assert_eq!(face.owner, 1);
+        assert!(face.identical_owners);
+        // Record order does not choose the owner.
+        let mut reordered = two_owners(schema, cone(4, 0.0, 0.25), false);
+        reordered.reverse();
+        let face = run(&reordered, schema).expect("selected");
+        assert_eq!(face.owner, 1);
+        // A single owner states no such assumption.
+        assert!(
+            !run(&archive(schema), schema)
+                .expect("selected")
+                .identical_owners
+        );
+    }
+}
+
+#[test]
+fn several_owners_of_different_surfaces_senses_or_unstored_geometry_select_nothing() {
+    for schema in [38, 44] {
+        for (name, records) in [
+            ("radius", two_owners(schema, cone(4, 0.0, 0.5), false)),
+            ("surface kind", two_owners(schema, plane(4), false)),
+            ("sense", two_owners(schema, cone(4, 0.0, 0.25), true)),
+        ] {
+            assert!(run(&records, schema).is_none(), "{name} at schema {schema}");
+        }
+        // The second owner stores no surface.
+        let mut unstored = two_owners(schema, cone(4, 0.0, 0.25), false);
+        unstored[4] = face(2);
+        assert!(run(&unstored, schema).is_none());
+        // One owner of another qualifier.
+        let mut mixed = two_owners(schema, cone(4, 0.0, 0.25), false);
+        mixed.pop();
+        mixed.push(matched(12, 2, schema, 9, 7, 0));
+        assert!(run(&mixed, schema).is_none());
+        // The second owner has no sense field.
+        let mut senseless = two_owners(schema, cone(4, 0.0, 0.25), false);
+        let mut tokens = senseless[4].tokens.to_vec();
+        tokens.pop();
+        senseless[4].tokens = tokens.into();
+        assert!(run(&senseless, schema).is_none());
+        // Both owners name a record that is not a surface.
+        let mut unsurfaced = two_owners(schema, cone(4, 0.0, 0.25), false);
+        for index in [3, 5] {
+            let copy = unsurfaced[index].clone();
+            let mut tokens = copy.tokens.to_vec();
+            tokens[0] = Token::Ident("edge".into());
+            unsurfaced[index] = record(copy.index, "edge", tokens);
+        }
+        assert!(run(&unsurfaced, schema).is_none());
+        // One owner that is not a face.
+        let mut edge = two_owners(schema, cone(4, 0.0, 0.25), false);
+        edge[4] = record(2, "edge", vec![Token::Ref(-1)]);
+        assert!(run(&edge, schema).is_none());
+    }
+}
+
+#[test]
+fn assumption_losses_state_identical_owners_for_every_face_selecting_kind() {
+    let ctx = context();
+    let (mut inventory, mut feature) = thread_fixture(
+        &ctx,
+        Surface::Cone {
+            ratio: 1.0,
+            sine: 0.0,
+            radius: 0.25,
+        },
+        Some(5.0),
+    );
+    inventory
+        .edge_inputs
+        .faces
+        .get_mut(&(TOKEN.to_owned(), 41))
+        .expect("face")
+        .identical_owners = true;
+    assert!(assumption_losses(std::slice::from_ref(&feature), &inventory).is_empty());
+    project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
+    assert_eq!(notes.len(), 2);
+    assert!(notes[1].message.contains("identical surface geometry"));
 }

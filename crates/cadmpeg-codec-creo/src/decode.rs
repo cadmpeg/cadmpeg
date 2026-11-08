@@ -23,6 +23,7 @@ mod feature_history;
 mod holes;
 mod native;
 mod native_records;
+mod pmi;
 mod quadratic;
 mod records;
 mod sketch;

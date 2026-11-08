@@ -29,6 +29,17 @@ fn selector_bytes_with_form(
     version: u8,
     form: u8,
 ) -> Vec<u8> {
+    selector_bytes_with_words(generators, secondary, version, form, 2, 2)
+}
+
+fn selector_bytes_with_words(
+    generators: &[u32],
+    secondary: &[u32],
+    version: u8,
+    form: u8,
+    topology: u32,
+    naming: u32,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend_from_slice(&1_u16.to_le_bytes());
@@ -42,13 +53,13 @@ fn selector_bytes_with_form(
         bytes.extend_from_slice(&word.to_le_bytes());
     }
     bytes.extend_from_slice(&[1, form]);
-    for word in [0x8000_000a_u32, 2] {
+    for word in [0x8000_000a_u32, topology] {
         bytes.extend_from_slice(&word.to_le_bytes());
     }
-    if version != 19 {
+    if !(19..=21).contains(&version) {
         bytes.extend_from_slice(&0_u32.to_le_bytes());
     }
-    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&naming.to_le_bytes());
     for values in [generators, secondary] {
         bytes.extend_from_slice(&8_u16.to_le_bytes());
         bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
@@ -101,7 +112,12 @@ fn secondary_names_are_distinct_nonzero_feature_sources_that_leave_the_join_unch
 #[test]
 fn selector_forms_check_array_counts_secondary_names_and_suffix() {
     for version in [19, 23, 29] {
-        for generators in [&[31][..], &[31, 37][..]] {
+        for generators in [
+            &[31][..],
+            &[31, 37][..],
+            &[31, 37, 41][..],
+            &[31, 37, 41, 43][..],
+        ] {
             let bytes = selector_bytes(generators, &[], version);
             let selector = parse(View::over_retained(&bytes), version)
                 .expect("framed")
@@ -124,7 +140,9 @@ fn selector_forms_check_array_counts_secondary_names_and_suffix() {
             (&[][..], &[][..]),
             (&[31, 31], &[]),
             (&[0], &[]),
-            (&[31, 37, 41], &[]),
+            (&[31, 37, 41], &[41]),
+            (&[31, 37, 41, 31], &[]),
+            (&[31, 37, 41, 43, 47], &[]),
             (&[31], &[0]),
             (&[31], &[31]),
             (&[31, 37], &[37]),
@@ -270,7 +288,7 @@ fn each_generator_form_joins_one_stored_edge_with_signed_geometry() {
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
     for schema in [38, 40, 42, 44] {
-        for generators in [&[31][..], &[31, 37][..]] {
+        for generators in [&[31][..], &[31, 37][..], &[31, 37, 41, 43][..]] {
             let bytes = selector_bytes(generators, &[], 29);
             let selector = parse(View::over_retained(&bytes), 29)
                 .expect("framed")
@@ -522,6 +540,7 @@ pub(crate) fn fixture(
         ),
         SelectedEdge {
             owners: 1,
+            generators: 1,
             owner: 1,
             item,
             geometry: sample,
@@ -612,7 +631,7 @@ fn historical_projection_is_atomic_and_pins_each_unresolved_selection_loss() {
 #[test]
 fn historical_selector_references_require_qualified_typed_targets() {
     let bytes = selector_bytes(&[31, 37], &[], 29);
-    for change in 0..7 {
+    for change in 0..8 {
         let mut selector = parse(View::over_retained(&bytes), 29)
             .expect("framed")
             .expect("direct");
@@ -631,7 +650,34 @@ fn historical_selector_references_require_qualified_typed_targets() {
             ]),
             _ => None,
         };
-        assert_eq!(links(&selector, target), change == 0);
+        let body_source = |ordinal| (ordinal == 9).then_some(if change == 7 { 3 } else { 2 });
+        assert_eq!(links(&selector, target, body_source), change == 0);
+    }
+}
+
+#[test]
+fn the_body_words_name_the_selected_body_in_any_segment_version() {
+    for version in [19, 20, 21, 23, 25, 29] {
+        let bytes = selector_bytes_with_words(&[31], &[], version, 5, 53, 53);
+        let selector = parse(View::over_retained(&bytes), version)
+            .expect("framed")
+            .expect("direct");
+        assert_eq!(selector.body_source, 53);
+        let target = |ordinal| match ordinal {
+            9 => Some(crate::pmdc::inventor_id(0x9087_4d47)),
+            7 => Some(super::super::super::EDGE_ITEM_TYPE),
+            3 => Some([
+                0x42, 0x20, 0xe9, 0xcc, 0xd1, 0x11, 0xc5, 0x71, 0, 8, 0xa7, 0xba, 0x32, 0xa3, 0xdc,
+                9,
+            ]),
+            _ => None,
+        };
+        assert!(links(&selector, target, |_| Some(53)));
+        assert!(!links(&selector, target, |_| Some(2)));
+        let unequal = selector_bytes_with_words(&[31], &[], version, 5, 53, 54);
+        assert!(parse(View::over_retained(&unequal), version)
+            .expect("framed refusal")
+            .is_none());
     }
 }
 
@@ -783,6 +829,38 @@ fn ambiguous_owner_loss_counts_features_that_use_such_an_edge() {
 }
 
 #[test]
+fn a_selector_with_more_than_two_generators_states_the_assumption() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
+            .expect("context");
+    for generators in [1, 2, 3, 4] {
+        let (mut inventory, mut feature) = fixture(&ctx, false);
+        let token = inventory.features[0]
+            .identity
+            .segment_token
+            .as_str()
+            .to_owned();
+        inventory
+            .edge_inputs
+            .historical
+            .get_mut(&(token, 9))
+            .expect("revision")
+            .generators = generators;
+        assert!(generator_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("projection");
+        let losses = generator_losses(&inventory, std::slice::from_ref(&feature));
+        assert_eq!(losses.len(), usize::from(generators > 2));
+        if let Some(loss) = losses.first() {
+            assert_eq!(
+                loss.code.local_code(),
+                "feature.edge-selector-generators-assumed"
+            );
+        }
+    }
+}
+
+#[test]
 fn selector_list_counts_are_bounded_before_allocation() {
     let mut bytes = selector_bytes(&[31, 37], &[], 29);
     let marker = [8, 0, 0, 0x30];
@@ -840,6 +918,7 @@ fn every_member_of_a_historical_group_must_join_a_distinct_revision() {
                 .expect("first revision");
             let second = SelectedEdge {
                 owners: if change == 2 { 2 } else { 1 },
+                generators: 1,
                 owner: if change == 2 { 1 } else { 2 },
                 item: first.item,
                 geometry: first.geometry.clone(),

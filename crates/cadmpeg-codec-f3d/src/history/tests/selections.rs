@@ -940,7 +940,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
         transition: None,
     };
 
-    bind_snapshot_revision_ids(std::slice::from_mut(&mut state)).unwrap();
+    bind_snapshot_revision_ids(std::slice::from_mut(&mut state));
 
     assert_eq!(
         state

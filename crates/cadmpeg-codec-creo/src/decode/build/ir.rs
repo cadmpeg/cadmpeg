@@ -789,6 +789,8 @@ pub(in super::super) fn build_ir(
     )?;
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
+    super::super::pmi::transfer(ctx, scan, &mut ir, &mut annotations, &mut transfer_losses)?;
+    super::super::pmi::tags::transfer(ctx, scan, &mut ir, &mut annotations, &mut transfer_losses)?;
     let (feature_result_topology_count, feature_result_edge_count) = finish_feature_transfers(
         ctx,
         scan,
