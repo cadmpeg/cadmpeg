@@ -284,6 +284,24 @@ fn parameter_ordinals_rank_within_each_owner() {
 }
 
 #[test]
+fn occurrence_ordinals_rank_within_each_parent() {
+    let before = json!({"model":{"occurrences":[
+        {"id":"a","parent":{"kind":"root"},"ordinal":0},
+        {"id":"b","parent":{"kind":"occurrence","occurrence":"a"},"ordinal":1}]}});
+    let after = json!({"model":{"occurrences":[
+        {"id":"x","parent":{"kind":"root"},"ordinal":0},
+        {"id":"y","parent":{"kind":"occurrence","occurrence":"x"},"ordinal":0}]}});
+    assert!(accepts(&before, &after));
+    let siblings = json!({"model":{"occurrences":[
+        {"id":"a","parent":{"kind":"root"},"ordinal":0,"name":"first"},
+        {"id":"b","parent":{"kind":"root"},"ordinal":1,"name":"second"}]}});
+    let mut swapped = siblings.clone();
+    swapped["model"]["occurrences"][0]["ordinal"] = json!(1);
+    swapped["model"]["occurrences"][1]["ordinal"] = json!(0);
+    assert!(!accepts(&siblings, &swapped));
+}
+
+#[test]
 fn top_level_source_and_unknowns_are_not_record_content() {
     let mut before = document(&json!([{"id":"a","x":1.0,"native_ref":"old","source":"old"}]));
     let mut after = document(&json!([{"id":"x","x":1.0,"native_ref":"new","source":"new"}]));
