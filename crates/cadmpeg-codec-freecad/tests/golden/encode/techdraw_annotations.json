@@ -2,13 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 23031,
-      "payload_sha256": "52418df62fc4c38a5bfbece9bcf6523d95786c4dbcdc874548465ad4185e4e3f"
+      "payload_len": 23281,
+      "payload_sha256": "f26f0bea8ac326f721a1e4c8cab3b979ed782bdb11bfd9dba72b8b6052b8a80c"
     },
     {
       "name": "Model.Shape.brp",
-      "payload_len": 2536,
-      "payload_sha256": "0ee0796132540ba0caa67fdf4ea3bcd8018d6300c8bd8fdedbaece52bac590f5"
+      "payload_len": 2557,
+      "payload_sha256": "cc199ac7f3ffc9584269c973fc4bbe793ca730f600e4d6c74e5eea55f7450fc9"
     },
     {
       "name": "cc0_template.svg",
@@ -262,6 +262,16 @@
           "namespace": "export",
           "scope": "namespaced"
         },
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.applications`: fcstd:native:application#Symbol",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
         "message": "the fcstd write omits 6 native record(s) from `fcstd.drawings`: fcstd:native:drawing#Dimension, fcstd:native:drawing#Note, fcstd:native:drawing#Page, fcstd:native:drawing#Symbol, fcstd:native:drawing#Template, fcstd:native:drawing#View",
         "severity": "info"
       },
@@ -291,7 +301,7 @@
                 "fcstd:native:application#Model": "regenerated",
                 "fcstd:native:application#Note": "regenerated",
                 "fcstd:native:application#Page": "regenerated",
-                "fcstd:native:application#Symbol": "regenerated",
+                "fcstd:native:application#Symbol": "dropped",
                 "fcstd:native:application#Template": "regenerated",
                 "fcstd:native:application#View": "regenerated"
               }
