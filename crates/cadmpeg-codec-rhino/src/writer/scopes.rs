@@ -194,13 +194,16 @@ fn drop_dangling_owner<T>(
 /// would otherwise drop it silently when no object claims it.
 /// The curves a procedural surface construction references; the solved
 /// carrier that replaces the construction holds none of them.
-fn construction_curves(model: &cadmpeg_ir::document::Model, construction: &str) -> Vec<String> {
+pub(super) fn construction_curves(
+    model: &cadmpeg_ir::document::Model,
+    construction: &str,
+) -> Vec<String> {
     fn strings(value: &serde_json::Value, out: &mut Vec<String>) {
         match value {
             serde_json::Value::String(text) => out.push(text.clone()),
             serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
             serde_json::Value::Object(fields) => {
-                fields.values().for_each(|item| strings(item, out))
+                fields.values().for_each(|item| strings(item, out));
             }
             _ => {}
         }

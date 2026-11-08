@@ -109,6 +109,8 @@ pub(crate) struct PointCloud {
     pub(crate) points: Vec<FinitePoint3>,
     /// Whether a unit conversion was applied.
     pub(crate) scaled: bool,
+    /// Per-point RGBA colors, present when the channel matches the points.
+    pub(crate) colors: Vec<[u8; 4]>,
     /// Repairs applied to optional channels that do not match the point count.
     pub(crate) warnings: Diagnostics,
 }
@@ -1640,6 +1642,7 @@ fn read_cloud(
     bbox(reader)?;
     reader.i32()?;
     let mut warnings = Diagnostics::new();
+    let mut colors = Vec::new();
     if minor >= 1 {
         let normal_count = crate::wire::element_count(reader, 24)?;
         if normal_count != 0 && normal_count != point_count {
@@ -1653,7 +1656,10 @@ fn read_cloud(
         }
         let color_count = crate::wire::element_count(reader, 4)?;
         for _ in 0..color_count {
-            reader.take(4)?;
+            let bytes = reader.take(4)?;
+            if color_count == point_count {
+                colors.push([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            }
         }
         if color_count != 0 && color_count != point_count {
             warnings.push_coded(
@@ -1688,6 +1694,7 @@ fn read_cloud(
     Ok(PointCloud {
         points,
         scaled: scale != MillimeterScale::IDENTITY,
+        colors,
         warnings,
     })
 }

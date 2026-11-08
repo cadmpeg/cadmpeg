@@ -45,6 +45,7 @@ fn point_cloud_resource_refusal_keeps_all_geometry_arenas_empty() {
                 crate::curves::DecodedGeometry::PointCloud(crate::curves::PointCloud {
                     points: vec![point, point],
                     scaled: false,
+                    colors: Vec::new(),
                     warnings: crate::loss::Diagnostics::new(),
                 }),
             )
