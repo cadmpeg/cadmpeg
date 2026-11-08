@@ -998,15 +998,11 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
     extended.faces = original.faces.clone();
     decoded.ir_mut().model.tessellations[0] = extended;
 
-    // #237 item 1, #217 §5.0: the patch path's refusal selects synthesis,
+    // #237 item 1, #239 §5.0: the patch path's refusal selects synthesis,
     // which writes the tessellation without the channels the table cannot
     // carry and names the omission.
-    let expected = cadmpeg_core::CodecError::InvalidInput(
-        "tessellation channels: the SLDPRT display-list table carries exactly three \
-         auxiliary channels after the strip, position and normal channels"
-            .into(),
-    )
-    .to_string();
+    let expected = "tessellation channels: the SLDPRT display-list table carries exactly three \
+         auxiliary channels after the strip, position and normal channels";
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -1020,7 +1016,7 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
     assert!(matches!(
         plan.report().synthesis_cause(),
         Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
-            if *reason == expected
+            if reason == expected
     ));
     let tessellation = original.id.to_string();
     assert!(plan.report().losses.iter().any(|loss| loss
