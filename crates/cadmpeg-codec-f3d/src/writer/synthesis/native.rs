@@ -20,12 +20,25 @@ fn sketch_owner_matches(
     let Some(scope) = crate::ids::native_stream(record_id) else {
         return false;
     };
-    target
+    let Some(sketch) = target
         .model
         .sketches
         .iter()
         .find(|sketch| sketch.id == entity.sketch)
-        .and_then(|sketch| sketch.native_ref.as_deref())
+    else {
+        return false;
+    };
+    // An owner container without a placement has the unplaced sketch the
+    // decoder keys by its stream and owner (spec §3.1).
+    if sketch.native_ref.is_none() {
+        return matches!(
+            sketch.placement,
+            cadmpeg_ir::sketches::SketchPlacement::Unresolved { .. }
+        ) && sketch.id == crate::ids::neutral_owner_sketch_id(scope, owner);
+    }
+    sketch
+        .native_ref
+        .as_deref()
         .and_then(|id| placements.iter().find(|placement| placement.id == id))
         .is_some_and(|placement| {
             placement.entity_id.suffix() == u64::from(owner)
@@ -52,6 +65,7 @@ const WRITTEN: &[&str] = &[
     "design_types",
     "design_entity_headers",
     "design_record_headers",
+    "design_mesh_features",
     "body_native_keys",
     "body_visibilities",
     "edge_continuities",
@@ -97,6 +111,93 @@ fn relink_history_chains(histories: &mut [crate::history_records::AsmHistory]) {
             previous = Some(state.node_index);
         }
     }
+}
+
+/// Type GUID, base-type GUID, version and module of the same-index spline
+/// subtype a NURBS sketch curve names (spec §3.1).
+const SPLINE_SUBTYPE: (&str, &str, u32, &str) = (
+    "EE518F9E-9CC3-4424-9CAB-2B92426E5312",
+    "9FF71F46-205F-484B-A2B5-A245D0D8FE33",
+    4,
+    "Geometry",
+);
+
+/// Register the spline subtype in each Design segment whose NURBS sketch
+/// curves name it where the source type table carries no registration: a
+/// regenerated NURBS curve writes the subtype record, and its type must be
+/// in the generated table.
+fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
+    use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
+    let registered = native.design_types.iter().any(|kind| {
+        kind.type_guid.as_str().eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
+            && kind.version == SPLINE_SUBTYPE.2
+            && kind.module == SPLINE_SUBTYPE.3
+    });
+    let Some(segment) = native
+        .sketch_curve_identities
+        .iter()
+        .filter(|record| {
+            matches!(
+                record.geometry,
+                Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs { .. })
+            )
+        })
+        .find_map(|record| crate::ids::design_segment(&record.id))
+        .filter(|_| !registered)
+        .map(str::to_owned)
+    else {
+        return Ok(());
+    };
+    let in_segment = |kind: &&SegmentType| crate::ids::design_segment(kind.id()) == Some(&segment);
+    let byte_offset = native
+        .design_types
+        .iter()
+        .filter(in_segment)
+        .filter_map(|kind| kind.byte_offset)
+        .max()
+        .map_or(Some(0), |offset| offset.checked_add(1))
+        .ok_or_else(|| CodecError::InvalidInput("F3D type-table offset exceeds u64".into()))?;
+    let class_tag = native
+        .design_types
+        .iter()
+        .filter(in_segment)
+        .filter_map(|kind| kind.class_tag.as_str().parse::<u32>().ok())
+        .max()
+        .map_or(Some(256), |tag| tag.checked_add(1));
+    let Some(class_tag) = class_tag.filter(|tag| *tag <= 999) else {
+        return Ok(());
+    };
+    let kind = SegmentType::try_new(
+        format!("{segment}/MetaStream.dat:design-type#{byte_offset}"),
+        SegmentTypeData {
+            class_tag: class_tag
+                .to_string()
+                .try_into()
+                .map_err(CodecError::Malformed)?,
+            byte_offset: Some(byte_offset),
+            type_guid: SPLINE_SUBTYPE
+                .0
+                .to_owned()
+                .try_into()
+                .map_err(CodecError::Malformed)?,
+            type_guid_offset: None,
+            base_type_guid: BaseTypeGuid::Guid {
+                value: SPLINE_SUBTYPE
+                    .1
+                    .to_owned()
+                    .try_into()
+                    .map_err(CodecError::Malformed)?,
+                offset: None,
+            },
+            version: SPLINE_SUBTYPE.2,
+            version_offset: None,
+            module: SPLINE_SUBTYPE.3.to_owned(),
+            entities: crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+        },
+    )
+    .map_err(CodecError::Malformed)?;
+    native.design_types.push(kind);
+    Ok(())
 }
 
 pub(super) fn reconcile(
@@ -225,6 +326,12 @@ pub(super) fn reconcile(
                             cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
                             ) if kind.as_str() == "Decal" => scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal,
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::MeshImport { .. },
+                            ) => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
+                            }
                             _ => false,
                         }
                 })
@@ -321,7 +428,18 @@ pub(super) fn reconcile(
         sketch_texts: original.sketch_texts.clone(),
         ..F3dNative::default()
     };
+    native.design_mesh_features = original
+        .design_mesh_features
+        .into_iter()
+        .filter(|mesh| {
+            native.design_parameter_scopes.iter().any(|scope| {
+                crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&mesh.id)
+                    && scope.record_index == mesh.scope().record().record_index()
+            })
+        })
+        .collect();
     retain_mesh_sentinels(target, &mut native);
+    register_spline_subtypes(&mut native)?;
     super::streams::reconcile(&mut native, losses);
     // Native namespace storage orders every arena by record id, so the
     // generated registry follows id order rather than the decoded file
@@ -462,7 +580,7 @@ pub(super) fn reconcile(
             return false;
         };
         let Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
-            carrier_reference: None,
+            carrier_reference,
             subtype_class_tag,
             geometry,
             ..
@@ -474,11 +592,9 @@ pub(super) fn reconcile(
             .design_types
             .iter()
             .position(|kind| {
-                kind.type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case("EE518F9E-9CC3-4424-9CAB-2B92426E5312")
-                    && kind.version == 4
-                    && kind.module == "Geometry"
+                kind.type_guid.as_str().eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
+                    && kind.version == SPLINE_SUBTYPE.2
+                    && kind.module == SPLINE_SUBTYPE.3
             })
             .and_then(|ordinal| ordinal.checked_add(256))
             .filter(|tag| *tag <= 999)
@@ -497,6 +613,9 @@ pub(super) fn reconcile(
         ) else {
             return false;
         };
+        // The neutral curve regenerates the control data, so the record
+        // stores it inline instead of naming an unowned carrier record.
+        *carrier_reference = None;
         *subtype_class_tag = tag;
         *geometry = updated;
         true
