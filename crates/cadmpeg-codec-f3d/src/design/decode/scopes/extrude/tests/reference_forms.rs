@@ -250,3 +250,94 @@ fn reference_aware_two_sided_extents_keep_side_specific_references() {
             .is_none()
     );
 }
+
+#[test]
+fn slotted_prologue_reads_one_sided_and_symmetric_directions_at_shifted_offsets() {
+    let make = |operation_offset: usize, direction: u32, first: u32, second: u32| {
+        let mut bytes = vec![0; 304];
+        bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+        bytes[operation_offset..operation_offset + 4].copy_from_slice(&4u32.to_le_bytes());
+        bytes[operation_offset + 4..operation_offset + 8].copy_from_slice(&direction.to_le_bytes());
+        bytes[operation_offset + 13] = 1;
+        bytes[operation_offset + 34..operation_offset + 42].copy_from_slice(&1.0f64.to_le_bytes());
+        let mut cursor = operation_offset + 42;
+        for reference in [10u32, 11, 12, 13] {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 5].copy_from_slice(&reference.to_le_bytes());
+            cursor += 11;
+        }
+        cursor += 3;
+        bytes[cursor..cursor + 4].copy_from_slice(&first.to_le_bytes());
+        if first == 2 {
+            bytes[cursor + 4] = 1;
+            bytes[cursor + 5..cursor + 9].copy_from_slice(&14u32.to_le_bytes());
+        } else {
+            bytes[cursor + 13..cursor + 17].copy_from_slice(&second.to_le_bytes());
+        }
+        if direction == 3 {
+            bytes[operation_offset + 8..operation_offset + 12].copy_from_slice(&2u32.to_le_bytes());
+            bytes[cursor + 25..cursor + 29].copy_from_slice(&2u32.to_le_bytes());
+        }
+        bytes
+    };
+    let references = [10, 11, 12, 13, 14];
+    for (operation_offset, direction, first, second, extent) in [
+        (26, 1, 1, 0, DesignExtrudeExtent::OneSidedDistance),
+        (27, 1, 1, 0, DesignExtrudeExtent::OneSidedDistance),
+        (26, 3, 1, 1, DesignExtrudeExtent::SymmetricDistance),
+        (27, 3, 1, 1, DesignExtrudeExtent::SymmetricDistance),
+        (26, 1, 2, 0, DesignExtrudeExtent::OneSidedToFace),
+    ] {
+        let bytes = make(operation_offset, direction, first, second);
+        let value =
+            super::super::exact_extrude_prologue(&bytes, 0, 300, "300", "260", 300, &references)
+                .unwrap_or_else(|| {
+                    panic!("slotted prologue {operation_offset} {direction} {first}")
+                });
+        assert_eq!(value.extent(), Some(extent));
+        assert_eq!(value.operation(), DesignExtrudeOperation::NewBody);
+        let DesignExtrudePrologue::ReferenceAware {
+            operation_offset: actual,
+            ..
+        } = value
+        else {
+            panic!("reference-aware prologue");
+        };
+        assert_eq!(actual, u64::try_from(operation_offset).unwrap());
+    }
+}
+
+#[test]
+fn slotted_prologue_reads_two_face_targets_outside_the_dedicated_shifted_frame() {
+    let mut bytes = vec![0; 304];
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[27..31].copy_from_slice(&2u32.to_le_bytes());
+    bytes[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes[35..39].copy_from_slice(&1u32.to_le_bytes());
+    bytes[40] = 1;
+    bytes[61..69].copy_from_slice(&1.0f64.to_le_bytes());
+    let mut cursor = 69;
+    for reference in [10u32, 11, 12, 13] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&reference.to_le_bytes());
+        cursor += 11;
+    }
+    cursor += 3;
+    bytes[cursor..cursor + 4].copy_from_slice(&2u32.to_le_bytes());
+    for (offset, reference) in [(4, 14u32), (28, 15), (43, 16)] {
+        bytes[cursor + offset] = 1;
+        bytes[cursor + offset + 1..cursor + offset + 5].copy_from_slice(&reference.to_le_bytes());
+    }
+    bytes[cursor + 19..cursor + 23].copy_from_slice(&1u32.to_le_bytes());
+    bytes[cursor + 23..cursor + 27].copy_from_slice(&2u32.to_le_bytes());
+    let references = [10, 11, 12, 13, 14, 15, 16];
+    let value =
+        super::super::exact_extrude_prologue(&bytes, 0, 300, "300", "260", 300, &references)
+            .expect("two face targets");
+    assert_eq!(value.extent(), Some(DesignExtrudeExtent::TwoSidedToFaces));
+    assert_eq!(value.operation(), DesignExtrudeOperation::Cut);
+    assert!(
+        super::super::exact_extrude_prologue(&bytes, 0, 300, "300", "260", 292, &references)
+            .is_none()
+    );
+}

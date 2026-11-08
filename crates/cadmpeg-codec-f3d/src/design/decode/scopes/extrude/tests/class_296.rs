@@ -685,7 +685,10 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
     let mut invalid_face_extend = to_face_scalar_54.clone();
     invalid_face_extend[scalar_54::FACE_EXTEND..scalar_54::FACE_EXTEND + 4]
         .copy_from_slice(&2u32.to_le_bytes());
-    assert!(prologue(&invalid_face_extend).is_none());
+    assert!(!matches!(
+        prologue(&invalid_face_extend),
+        Some(DesignExtrudePrologue::LegacyShifted { .. })
+    ));
 
     let mut invalid_reference_count = to_face_scalar_54.clone();
     invalid_reference_count[to_face_tail::REFERENCE_COUNT..to_face_tail::REFERENCE_COUNT + 4]

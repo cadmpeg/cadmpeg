@@ -272,6 +272,36 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedToFaces)
     );
+    let short_reference = scope(
+        "Extrude",
+        2,
+        (1, 2),
+        0,
+        1,
+        2,
+        Some(6),
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        reference: Some(reference),
+        operation_offset,
+        ..
+    }) = short_reference.extrude_prologue()
+    else {
+        panic!("short referenced Extrude prologue");
+    };
+    assert_eq!(reference.record_index, 77);
+    assert_eq!(reference.trailing_zero_count, 6);
+    assert_eq!(operation_offset, 36);
+    let serialized = serde_json::to_value(reference).unwrap();
+    assert_eq!(serialized["trailing_zero_count"], 6);
+    let decoded: crate::records::feature::extrude::DesignExtrudePrologueReference =
+        serde_json::from_value(serialized).unwrap();
+    assert_eq!(decoded.trailing_zero_count, 6);
+
     let compact_reference = scope(
         "Extrude",
         2,

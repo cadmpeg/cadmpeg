@@ -3658,7 +3658,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     crate::layout::typed_reference_extrude_anchor_prefix::LEN,
                                 )) == Some(operation_offset)
                         } else {
-                            matches!(reference.trailing_zero_count, 7 | 8) && marker_valid
+                            matches!(reference.trailing_zero_count, 6..=8) && marker_valid
                         };
                         scope
                             .byte_offset()
@@ -6170,13 +6170,21 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let selected_start_without_group = matches!(
                 extrude_start,
                 records::feature::extrude::DesignExtrudeStart::FromFace
-            ) && matches!(
+            ) && ((matches!(
                 extrude_extent,
                 records::feature::extrude::DesignExtrudeExtent::OneSidedDistance
             ) && prologue.operation()
                 == records::feature::extrude::DesignExtrudeOperation::NewBody
                 && face_operand_group_count == 0
-                && face_groups.is_empty();
+                && face_groups.is_empty())
+                || (matches!(
+                    extrude_extent,
+                    records::feature::extrude::DesignExtrudeExtent::OneSidedToFace
+                ) && face_groups.len() == 1
+                    && face_groups.iter().all(|group| {
+                        group.extrude_face_role()
+                            == Some(records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
+                    })));
             if ctx.holds_design_intent()
                 && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands

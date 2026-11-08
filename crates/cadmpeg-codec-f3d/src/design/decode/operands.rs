@@ -2185,6 +2185,20 @@ pub(in crate::design) fn assign_extrude_face_roles(
     scope: &DesignParameterScope,
     groups: &mut [DesignConstructionOperandGroup],
 ) {
+    let face_group_count = groups
+        .iter()
+        .filter(|group| {
+            matches!(
+                extrude_operand_role(scope, group.role()),
+                Some(PendingExtrudeRole::Faces(_))
+            )
+        })
+        .count();
+    let start_group_absent = face_group_count == 1
+        && scope
+            .extrude_prologue()
+            .and_then(DesignExtrudePrologue::extent)
+            == Some(DesignExtrudeExtent::OneSidedToFace);
     let mut face_groups =
         groups
             .iter_mut()
@@ -2192,8 +2206,9 @@ pub(in crate::design) fn assign_extrude_face_roles(
                 Some(PendingExtrudeRole::Faces(encoding)) => Some((group, encoding)),
                 _ => None,
             });
-    if scope.extrude_prologue().map(DesignExtrudePrologue::start)
-        == Some(DesignExtrudeStart::FromFace)
+    if !start_group_absent
+        && scope.extrude_prologue().map(DesignExtrudePrologue::start)
+            == Some(DesignExtrudeStart::FromFace)
     {
         if let Some((group, encoding)) = face_groups.next() {
             group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {

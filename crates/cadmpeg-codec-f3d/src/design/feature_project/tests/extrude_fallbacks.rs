@@ -21,6 +21,13 @@ pub(super) fn scope() -> DesignParameterScope {
 }
 
 pub(super) fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
+    scope_with_start(extent, DesignExtrudeStart::ProfilePlane)
+}
+
+fn scope_with_start(
+    extent: DesignExtrudeExtent,
+    start: DesignExtrudeStart,
+) -> DesignParameterScope {
     DesignParameterScope::try_new(
         DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -45,7 +52,7 @@ pub(super) fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterS
                     direction_reversed_offset: 140,
                     solid_operation: true,
                     solid_operation_offset: 141,
-                    start: DesignExtrudeStart::ProfilePlane,
+                    start,
                     start_offset: 142,
                 }),
                 ..Default::default()
@@ -527,4 +534,66 @@ fn wall_thickness_stays_native_while_the_extrude_distance_projects() {
         panic!("wall Extrude definition");
     };
     assert!(matches!(side.termination, LinearTermination::Blind { length } if length.get() == 5.5));
+}
+
+#[test]
+fn selected_face_start_without_a_start_group_reads_the_offset_plane() {
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+    let mut draft = scope_with_start(
+        DesignExtrudeExtent::OneSidedToFace,
+        DesignExtrudeStart::FromFace,
+    )
+    .into_draft();
+    draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+        vec![100, 101, 102],
+        vec![185, 196, 207],
+        "reference_members",
+    )
+    .unwrap();
+    let scope = DesignParameterScope::try_new(draft.with_fixture_layout()).unwrap();
+    let profile = profile_group(100, 0);
+    let mut face = profile_group(101, 1);
+    face.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+        encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
+        usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+    };
+    let parameter = |kind: &str, value: f64| {
+        parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "value",
+            kind,
+            Some("mm"),
+            "d1",
+            value,
+        ))
+        .unwrap()
+    };
+    let profile_offset = parameter("ProfileOffset", 0.5);
+    let side_offset = parameter("Side1Offset", 0.0);
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_extrude(
+            ctx,
+            &scope,
+            &[(0, &profile_offset), (1, &side_offset)],
+            &[profile, face],
+            &[],
+            &[],
+            &[],
+        )
+    })
+    .unwrap()
+    .expect("selected-face start without a start group");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        start: ExtrudeStart::OffsetProfilePlane { offset },
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = definition
+    else {
+        panic!("offset-plane start definition");
+    };
+    assert_eq!(offset.get(), 5.0);
+    assert!(matches!(
+        side.termination,
+        LinearTermination::ToFace { offset: None, .. }
+    ));
 }

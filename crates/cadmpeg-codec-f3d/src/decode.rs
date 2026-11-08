@@ -2076,6 +2076,22 @@ fn report_design_projection_gaps(
                 format!("Extrude {} assumes the second-side control preserves the face termination (DR-329).", feature.id),
             ));
         }
+        if prologue.start() == crate::records::feature::extrude::DesignExtrudeStart::FromFace
+            && matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude {
+                        start: cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. },
+                        ..
+                    }
+                )
+            )
+        {
+            report.losses.push(F3dLossCode::FeatureExtrudeStartFaceAbsentAssumed.note(format!(
+                "Extrude {} reads its selected-face start without a start group as the offset profile plane (DR-322).",
+                feature.id
+            )));
+        }
         if prologue.extent()
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()

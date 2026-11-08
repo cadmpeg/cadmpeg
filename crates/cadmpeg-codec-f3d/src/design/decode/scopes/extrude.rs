@@ -224,6 +224,7 @@ pub(super) fn exact_extrude_prologue(
         )
     })
     .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
+    .or_else(|| exact_slotted_extrude_prologue(bytes, start, reference_count_at, reference_members))
 }
 
 pub(crate) fn is_class_296_one_sided_to_face_layout(
@@ -995,6 +996,26 @@ fn exact_current_extrude_prologue(
         reference_members,
         legacy_class_415_symmetric_distance,
         false,
+        false,
+    )
+}
+
+/// The current Extrude prologue at the compact or shifted operation offset
+/// with any travel direction.
+fn exact_slotted_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    exact_current_extrude_prologue_with(
+        bytes,
+        start,
+        reference_count_at,
+        reference_members,
+        false,
+        false,
+        true,
     )
 }
 
@@ -1013,6 +1034,7 @@ pub(super) fn exact_typed_extrude_prologue(
         reference_members,
         false,
         true,
+        false,
     )
 }
 
@@ -1026,6 +1048,7 @@ fn exact_current_extrude_prologue_with(
     reference_members: &[u32],
     legacy_class_415_symmetric_distance: bool,
     typed: bool,
+    any_direction: bool,
 ) -> Option<DesignExtrudePrologue> {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
@@ -1082,7 +1105,8 @@ fn exact_current_extrude_prologue_with(
             start
                 .checked_add(shifted_extrude::OPERATION)?
                 .checked_add(extrude_fields::DIRECTION)?,
-        ) == Some(2)
+        )
+        .is_some_and(|direction| direction == 2 || (any_direction && matches!(direction, 1 | 3)))
         && exact_legacy_shifted_extrude_prologue(
             bytes,
             start,
@@ -1098,7 +1122,9 @@ fn exact_current_extrude_prologue_with(
             start.checked_add(compact_extrude::ZERO_RUN_2)?
                 ..start.checked_add(compact_extrude::OPERATION)?,
         ) == Some(&[0; 2])
-        && View::u32_le_at(bytes, start.checked_add(compact_extrude::DIRECTION)?) == Some(2)
+        && View::u32_le_at(bytes, start.checked_add(compact_extrude::DIRECTION)?).is_some_and(
+            |direction| direction == 2 || (any_direction && matches!(direction, 1 | 3)),
+        )
     {
         start.checked_add(compact_extrude::OPERATION)?
     } else if bytes.get(
@@ -1138,12 +1164,15 @@ fn exact_current_extrude_prologue_with(
         let reference_record_index_offset = start.checked_add(26)?;
         let record_index = View::u32_le_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;
+        let six_zero_operation = start.checked_add(36)?;
         let mut candidates = [
+            (six_zero_operation, None),
             (start.checked_add(37)?, None),
             (start.checked_add(38)?, None),
             (start.checked_add(38)?, Some(start.checked_add(37)?)),
         ]
         .into_iter()
+        .filter(|(operation_offset, _)| any_direction || *operation_offset != six_zero_operation)
         .filter(|(operation_offset, marker_offset)| {
             let padding_end = marker_offset.unwrap_or(*operation_offset);
             bytes
@@ -1306,6 +1335,13 @@ fn exact_current_extrude_prologue_with(
         && (direct_offset == start.checked_add(compact_extrude::OPERATION)?
             || direct_offset == start.checked_add(shifted_extrude::OPERATION)?)
         && first_side_extent != 1
+        && !(any_direction && direction_face_extend_values[0] == 1 && first_side_extent == 2)
+        && !(any_direction
+            && direction_face_extend_values[0] == 2
+            && first_side_extent == 2
+            && direct_offset == start.checked_add(shifted_extrude::OPERATION)?
+            && first_target_option == Some(1)
+            && reference_count_at.checked_sub(start)? != shifted_reference_aware::REFERENCE_COUNT)
         && !(direction_face_extend_values[0] == 2
             && (first_side_extent == 4
                 || (first_side_extent == 2

@@ -521,6 +521,15 @@ pub(super) fn project_extrude(
                 offset: or_none!(profile_offset),
             }
         }
+        DesignExtrudeStart::FromFace
+            if start_groups.is_empty()
+                && termination_groups.len() == 1
+                && prologue.extent() == Some(DesignExtrudeExtent::OneSidedToFace) =>
+        {
+            ExtrudeStart::OffsetProfilePlane {
+                offset: or_none!(profile_offset),
+            }
+        }
         DesignExtrudeStart::FromFace => {
             let [start] = start_groups.as_slice() else {
                 return Ok(None);
