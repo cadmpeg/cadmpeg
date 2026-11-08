@@ -4,7 +4,7 @@ use super::*;
 use crate::feature::tests::{reference, segment};
 use crate::feature::{parse_pattern_feature, MIRROR_FEATURE_TYPE, WORK_PLANE_TYPE};
 use crate::record_identity::{Located, RecordTypeId};
-use crate::test_support::mirror::{pattern, property, seed, Fixture};
+use crate::test_support::mirror::{pattern, property, seed, supplied_form, Fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
 #[test]
@@ -851,11 +851,6 @@ fn a_plane_supplied_by_a_work_plane_keeps_the_stored_reflection() {
         (plane_origin, plane_normal)
     };
     assert_eq!(frame(&plain), frame(&supplied));
-}
-
-fn supplied_form() -> (Fixture, PmDcPatternFeature) {
-    let (fixture, source) = crate::test_support::mirror::replacement_form();
-    (fixture.with_supplying_plane(), source)
 }
 
 fn with_supplier(
