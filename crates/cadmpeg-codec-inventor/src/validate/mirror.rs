@@ -30,6 +30,8 @@ pub(super) fn validate_mirrors(
     let selection_type = crate::pmdc::type_id_string(crate::feature::mirror::SELECTION_TYPE);
     let options_type = crate::pmdc::type_id_string(crate::feature::mirror::OPTIONS_TYPE);
     let instance_map_type = crate::pmdc::type_id_string(crate::feature::mirror::instance_map::TYPE);
+    let plane_reference_type =
+        crate::pmdc::type_id_string(crate::feature::mirror::plane_reference::TYPE);
     let generated_nodes = data
         .pm_dc_feature_properties
         .iter()
@@ -73,6 +75,7 @@ pub(super) fn validate_mirrors(
                 record.type_id == selection_type
                     || record.type_id == options_type
                     || record.type_id == instance_map_type
+                    || record.type_id == plane_reference_type
                     || (record.type_id == generic_type
                         && generated_nodes.contains(&(record.token.as_str(), record.ordinal)))
             })
@@ -146,8 +149,12 @@ pub(super) fn validate_mirrors(
             let token = source.identity.segment_token.as_str();
             let history = histories.get(token)?;
             let placement = history.placement(source.identity.record_ordinal)?;
+            let plane_dependency =
+                crate::feature::mirror::supplying_feature(&index, history, source);
             if !matches_history(feature, placement, source.header.flags)
-                || feature.dependencies.len() != source.participants.references().len()
+                || feature.dependencies.len()
+                    != source.participants.references().len()
+                        + usize::from(plane_dependency.is_some())
             {
                 return None;
             }
@@ -156,24 +163,27 @@ pub(super) fn validate_mirrors(
                 .as_ref()?;
             let result = results.get(&feature.id)?.as_ref()?;
             let mut dependencies = feature.dependencies.iter();
+            let matched = index.matches_projection(source, label, feature, result, |ordinal| {
+                let (identity, native, flags) = records.get(&(token, ordinal))?.as_ref()?;
+                let id = crate::feature::mirror::seed_feature_id(
+                    history,
+                    source.identity.record_ordinal,
+                    identity,
+                )?;
+                let seed = features.get(&id)?.as_ref()?;
+                let before = history.placement(ordinal)?;
+                if !matches_history(seed, before, *flags)
+                    || dependencies.next() != Some(&id)
+                    || seed.native_ref.as_deref() != Some(native.as_str())
+                {
+                    return None;
+                }
+                Some(id)
+            });
             Some(
-                index.matches_projection(source, label, feature, result, |ordinal| {
-                    let (identity, native, flags) = records.get(&(token, ordinal))?.as_ref()?;
-                    let id = crate::feature::mirror::seed_feature_id(
-                        history,
-                        source.identity.record_ordinal,
-                        identity,
-                    )?;
-                    let seed = features.get(&id)?.as_ref()?;
-                    let before = history.placement(ordinal)?;
-                    if !matches_history(seed, before, *flags)
-                        || dependencies.next() != Some(&id)
-                        || seed.native_ref.as_deref() != Some(native.as_str())
-                    {
-                        return None;
-                    }
-                    Some(id)
-                }),
+                matched
+                    && dependencies.next() == plane_dependency.as_ref()
+                    && dependencies.next().is_none(),
             )
         })() == Some(true);
         if !admitted {

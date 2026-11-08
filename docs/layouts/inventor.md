@@ -1485,6 +1485,24 @@ Parsed by:
 | 48 | 4 | `owner_count` | `u32` | little | spec | the single-entry Mirror instance map has type · value `1` |
 | 52 | 4 | `owner` | `u32` | little | spec | the single-entry Mirror instance map has type |
 
+## `pm_dc_mirror_plane_reference_tail_v19`
+
+Spec §13 · layout: byte offsets · size: 18 B
+
+Offsets start after the segment-major-19 content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/mirror/plane_reference.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | In segment major version 19, a plane-reference record of type · value `-1` |
+| 4 | 4 | `owner` | `u32` | little | spec | In segment major version 19, a plane-reference record of type |
+| 8 | 1 | `marker0` | `u8` | little | spec | In segment major version 19, a plane-reference record of type · value `1` |
+| 9 | 1 | `marker1` | `u8` | little | spec | In segment major version 19, a plane-reference record of type · value `5` |
+| 10 | 4 | `target` | `u32` | little | spec | In segment major version 19, a plane-reference record of type |
+| 14 | 4 | `role` | `u32` | little | spec | In segment major version 19, a plane-reference record of type |
+
 ## `pm_dc_mirror_generated_body_feature_v19`
 
 Spec §13 · layout: byte offsets · size: 66 B
