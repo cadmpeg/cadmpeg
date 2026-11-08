@@ -500,7 +500,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. The nonzero-control and alternate envelopes remain `xref.placement-undecoded` losses.
+**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. The nonzero-control and alternate envelopes are given up as `f3d.bulk_record` parts.
 
 ### DR-100. Rigid-group operand forms and root identities
 

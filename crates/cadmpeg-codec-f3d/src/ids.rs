@@ -615,6 +615,15 @@ pub(crate) fn neutral_sketch_id(
     )
 }
 
+/// The neutral planar-sketch key for the sketch entity container `owner` of
+/// `stream`; equal to [`neutral_sketch_id`] of that container's placement.
+pub(crate) fn neutral_owner_sketch_id(stream: &str, owner: u32) -> cadmpeg_ir::sketches::SketchId {
+    cadmpeg_ir::sketches::SketchId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch"),
+        sketch_owner_key(stream, u64::from(owner)),
+    )
+}
+
 /// The neutral spatial-sketch key for a sketch `placement`.
 pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
@@ -628,9 +637,15 @@ pub(crate) fn neutral_spatial_sketch_id(
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
 /// stream, escaped, joined to its entity suffix by `@`.
 fn sketch_placement_key(placement: &DesignSketchPlacement) -> cadmpeg_ir::ids::IdentityKey {
-    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
+    sketch_owner_key(
+        native_stream(&placement.id).unwrap_or(DEFAULT_STREAM),
+        placement.entity_id.suffix(),
+    )
+}
+
+fn sketch_owner_key(stream: &str, owner: u64) -> cadmpeg_ir::ids::IdentityKey {
     cadmpeg_ir::identity_key!("@")
-        .then(placement.entity_id.suffix())
+        .then(owner)
         .with_prefix(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream))
 }
 

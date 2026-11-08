@@ -52,6 +52,42 @@ fn normalized_edits_require_the_named_loss_and_use_the_declared_value() {
 }
 
 #[test]
+fn a_vector_row_normalizes_the_whole_array() {
+    use crate::cross_closure::ReducedProbe;
+    use cadmpeg_ir::codec::write::ReducedStorage;
+    use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
+
+    let pointer = "/model/views/0/axis/0";
+    let row = ReducedProbe {
+        path: "model.views[].axis[]",
+        storage: ReducedStorage::Normalized {
+            loss: "rhino/writer.axis-normalized",
+        },
+        normalize: Some(|axis| {
+            let first = axis[0].as_f64().unwrap_or_default();
+            let second = axis[1].as_f64().unwrap_or_default();
+            let length = first.hypot(second);
+            json!([first / length, second / length])
+        }),
+    };
+    let note = LossNote::new(
+        LossKind::namespaced(
+            cadmpeg_ir::loss_namespace!("rhino"),
+            "writer.axis-normalized",
+            LossTaxonomy::AttributesNotTransferred,
+        ),
+        "view#1 axis normalized",
+    );
+    let mut candidate = json!({"model":{"views":[{"axis":[3.0, 4.0]}]}});
+    normalize_edit(&mut candidate, pointer, &row, "view#1", &[note])
+        .expect("declared loss permits normalization");
+    assert_eq!(
+        candidate.pointer("/model/views/0/axis"),
+        Some(&json!([0.6, 0.8]))
+    );
+}
+
+#[test]
 fn dropped_native_list_member_does_not_make_the_owner_missing() {
     use crate::comparison::{unpaired_after_allowances, Allowances};
     let before = json!({
@@ -106,6 +142,18 @@ fn scalar_leaves_are_edited_and_projected_keys_are_not() {
     assert_eq!(
         scalar_edits(&drawing, "drawings"),
         [("/name".to_owned(), json!("Sheetx"))]
+    );
+}
+
+#[test]
+fn record_order_is_an_ordinal_and_is_not_edited() {
+    let view = json!({"id": "v", "order": 1, "visible": true, "states": [{"order": 0}]});
+    assert_eq!(
+        scalar_edits(&view, "view_presentations"),
+        [
+            ("/states/0/order".to_owned(), json!(1)),
+            ("/visible".to_owned(), json!(false)),
+        ]
     );
 }
 

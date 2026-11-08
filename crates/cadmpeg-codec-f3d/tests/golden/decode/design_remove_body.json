@@ -274,8 +274,97 @@
       ],
       "configurations": [],
       "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
+      "sketches": [
+        {
+          "id": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "placement": {
+            "kind": "unresolved"
+          }
+        }
+      ],
+      "sketch_entities": [
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1830",
+          "geometry": {
+            "kind": "arc",
+            "center": {
+              "u": 10.0,
+              "v": 20.0
+            },
+            "radius": 30.0,
+            "start_angle": 0.0,
+            "end_angle": 3.141592653589793
+          }
+        },
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p500",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006",
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": 12.5,
+              "v": -25.0
+            }
+          }
+        },
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p501",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1212",
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": 30.0,
+              "v": 40.0
+            }
+          }
+        },
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p502",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1418",
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": -10.0,
+              "v": 5.0
+            }
+          }
+        },
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p503",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1624",
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": 20.0,
+              "v": 10.0
+            }
+          }
+        },
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p600",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070",
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": -40.0,
+              "v": 50.0
+            }
+          }
+        }
+      ],
       "sketch_constraints": [],
       "spatial_sketches": [],
       "spatial_sketch_entities": [],
@@ -1725,56 +1814,11 @@
         "code": {
           "scope": "namespaced",
           "namespace": "f3d",
-          "code": "sketch.point-owner-unresolved",
-          "kind": "reference_graph_not_closed",
-          "strict_floor": "warning"
+          "code": "sketch.curve-unprofiled",
+          "kind": "feature_history_retained"
         },
         "severity": "warning",
-        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006 has no placement for owner 277."
-      },
-      {
-        "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.point-owner-unresolved",
-          "kind": "reference_graph_not_closed",
-          "strict_floor": "warning"
-        },
-        "severity": "warning",
-        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1212 has no placement for owner 277."
-      },
-      {
-        "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.point-owner-unresolved",
-          "kind": "reference_graph_not_closed",
-          "strict_floor": "warning"
-        },
-        "severity": "warning",
-        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1418 has no placement for owner 277."
-      },
-      {
-        "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.point-owner-unresolved",
-          "kind": "reference_graph_not_closed",
-          "strict_floor": "warning"
-        },
-        "severity": "warning",
-        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1624 has no placement for owner 277."
-      },
-      {
-        "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.point-owner-unresolved",
-          "kind": "reference_graph_not_closed",
-          "strict_floor": "warning"
-        },
-        "severity": "warning",
-        "message": "Sketch point f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070 has no placement for owner 277."
+        "message": "sketch entity f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0: curve is not part of any closed profile loop"
       },
       {
         "code": {
@@ -2223,6 +2267,36 @@
           "stream": "f3d:FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
           "offset": 0,
           "tag": "GenericSchema"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "sketch_entity"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p500": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "sketch_entity"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p501": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "sketch_entity"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p502": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "sketch_entity"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p503": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "sketch_entity"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p600": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "sketch_entity"
         }
       },
       "exactness": {

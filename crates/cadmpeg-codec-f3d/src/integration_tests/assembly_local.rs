@@ -54,7 +54,8 @@ fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies()
             .report()
             .losses
             .iter()
-            .any(|loss| { loss.code.local_code() == "xref.placement-undecoded" }),
+            .any(|loss| loss.code.local_code() == "record.unreadable"
+                && loss.message.contains("f3d.bulk_record")),
         "the nonuniform source matrix is outside the rigid XREF grammar"
     );
     assert!(merged
@@ -155,7 +156,7 @@ fn rigid_source_occurrence_retains_its_actual_matrix_and_translation_scale() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code.local_code() == "xref.placement-undecoded" }));
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
     assert_eq!(merged.ir().model.occurrences.len(), 1);
     let expected = Transform::affine([
         [0.0, -1.0, 0.0, 10.0],

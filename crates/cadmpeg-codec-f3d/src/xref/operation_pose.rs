@@ -169,7 +169,7 @@ fn read(
             }
         }
         let bytes = scan.entry_bytes(&entry.name)?;
-        for record in crate::metastream::primary_record_frames(&meta, bytes.len())? {
+        for record in crate::metastream::live_primary_record_frames(&meta, bytes.len()) {
             let Some(binding) = types.get(&record.entity_id) else {
                 continue;
             };
