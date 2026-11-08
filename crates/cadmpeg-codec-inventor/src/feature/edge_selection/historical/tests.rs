@@ -544,6 +544,7 @@ pub(crate) fn fixture(
             owner: 1,
             item,
             geometry: sample,
+            faces: None,
         },
     );
     (inventory, feature)
@@ -922,6 +923,7 @@ fn every_member_of_a_historical_group_must_join_a_distinct_revision() {
                 owner: if change == 2 { 1 } else { 2 },
                 item: first.item,
                 geometry: first.geometry.clone(),
+                faces: None,
             };
             if change != 1 {
                 inventory.edge_inputs.historical.insert((token, 10), second);

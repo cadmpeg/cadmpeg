@@ -132,13 +132,16 @@ pub(super) fn links(
 #[derive(Debug)]
 pub(in crate::feature) struct SelectedEdge {
     /// The matched owner with the lowest record index.
-    pub(super) owner: i64,
+    pub(in crate::feature) owner: i64,
     /// Number of matched owners, all with the same geometry.
-    pub(super) owners: usize,
+    pub(in crate::feature) owners: usize,
     /// Length of the generator array of the selector.
-    pub(super) generators: usize,
-    pub(super) item: u32,
-    pub(super) geometry: EdgeGeometry,
+    pub(in crate::feature) generators: usize,
+    pub(in crate::feature) item: u32,
+    pub(in crate::feature) geometry: EdgeGeometry,
+    /// Entity indexes of the two faces that use the owner, when the edge has
+    /// exactly one matched owner and its coedge ring holds two distinct faces.
+    pub(in crate::feature) faces: Option<[i64; 2]>,
 }
 
 pub(crate) const fn supported_schema(schema: u32) -> bool {
@@ -220,6 +223,11 @@ pub(super) fn selected(
                 generators: selector.generators.len(),
                 item,
                 geometry,
+                faces: if owners.len() == 1 {
+                    super::adjacency::faces(owner, &by_index)
+                } else {
+                    None
+                },
             },
         ));
     }
@@ -246,14 +254,19 @@ fn controls<'a>(
     }
 }
 
-fn state_id(source: &crate::feature::PmDcFeature) -> Result<FeatureInputTopologyId, CodecError> {
+pub(in crate::feature) fn state_id(
+    source: &crate::feature::PmDcFeature,
+) -> Result<FeatureInputTopologyId, CodecError> {
     Ok(FeatureInputTopologyId::compose(
         &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-input"),
         source.identity.key()?,
     ))
 }
 
-fn edge_id(token: &str, source: u32) -> Result<HistoricalEdgeId, CodecError> {
+pub(in crate::feature) fn edge_id(
+    token: &str,
+    source: u32,
+) -> Result<HistoricalEdgeId, CodecError> {
     HistoricalEdgeId::mint(format!("inventor:input-edge#{token}-{source}"))
         .map_err(CodecError::malformed)
 }
@@ -466,6 +479,12 @@ pub(crate) fn project(
         });
     }
     Ok(states)
+}
+
+/// Whether the selection is a historical edge selection whose native
+/// reference is `native`.
+pub(crate) fn joins(selection: &EdgeSelection, native: &str) -> bool {
+    matches!(selection, EdgeSelection::Historical { native: actual, .. } if actual.as_str() == native)
 }
 
 fn selections(feature: &Feature) -> Vec<&EdgeSelection> {

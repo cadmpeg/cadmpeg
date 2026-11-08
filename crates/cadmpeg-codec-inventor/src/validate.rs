@@ -2287,6 +2287,11 @@ fn validate_features(
                         raw_feature,
                         groups,
                         *flip_direction,
+                    ) && crate::feature::chamfer::oriented::valid(
+                        feature,
+                        raw_feature,
+                        &expected,
+                        &ir.model.feature_input_topologies,
                     )
                 }),
                 _ => false,

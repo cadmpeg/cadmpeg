@@ -337,6 +337,23 @@ pub(crate) fn project_native_fixture(
     properties: Vec<PmDcFeatureProperty>,
     chamfer: bool,
 ) -> crate::feature::FeatureProjection {
+    let inventory = crate::feature::FeatureInventory {
+        features: vec![source],
+        properties,
+        labels: vec![label(chamfer)],
+        ..Default::default()
+    };
+    project_inventory_fixture(inventory, Vec::new(), &[])
+}
+
+/// Projects an inventory through the whole feature projection. The raw
+/// parameters join the document, and the neutral parameters carry their values.
+pub(crate) fn project_inventory_fixture(
+    mut inventory: crate::feature::FeatureInventory,
+    raw_parameters: Vec<crate::design::PmDcParameter>,
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) -> crate::feature::FeatureProjection {
+    let source = inventory.features[0].clone();
     let root = crate::record_identity::Located::new(
         crate::design::scope::PmDcModelRootPayload {
             save_version_major: 19,
@@ -358,22 +375,14 @@ pub(crate) fn project_native_fixture(
         source.identity.segment_token.clone(),
         0,
     );
-    let inventory = crate::feature::FeatureInventory {
-        features: vec![source],
-        properties,
-        labels: vec![
-            label(chamfer),
-            crate::feature::tests::test_label(
-                0,
-                0,
-                crate::feature::ClassId::try_from("0".repeat(32)).expect("root class"),
-                &[101],
-            ),
-        ],
-        ..Default::default()
-    };
+    inventory.labels.push(crate::feature::tests::test_label(
+        0,
+        0,
+        crate::feature::ClassId::try_from("0".repeat(32)).expect("root class"),
+        &[101],
+    ));
     let design = crate::design::DesignInventory {
-        parameters: Vec::new(),
+        parameters: raw_parameters,
         expressions: Vec::new(),
         units: Vec::new(),
         parameter_tables: Vec::new(),
@@ -406,7 +415,7 @@ pub(crate) fn project_native_fixture(
         &inventory,
         &design,
         &sketch,
-        &[],
+        parameters,
         &crate::feature::ProjectedSketches {
             sketches: &[],
             entities: &[],
