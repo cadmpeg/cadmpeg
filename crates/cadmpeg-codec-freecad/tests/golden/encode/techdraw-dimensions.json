@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 75665,
-      "payload_sha256": "6d3d62f0f550c8ae50208da4906f07a14e1ae166334677995e5d0a0db426d252"
+      "payload_len": 76497,
+      "payload_sha256": "eb5bba3cf6368eb29bee0f590f04613883299f9e545b5fe2b658f9e09d5d06af"
     },
     {
       "name": "Box.Shape.brp",
@@ -492,16 +492,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Cylinder:ExpressionEngine",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the fcstd write omits 1 native record(s) from `fcstd.string_tables`: fcstd:native:string-table#0",
         "severity": "info"
       }
@@ -721,6 +711,7 @@
                 "fcstd:native:property#Box:AttacherType": "regenerated",
                 "fcstd:native:property#Box:AttachmentOffset": "regenerated",
                 "fcstd:native:property#Box:AttachmentSupport": "regenerated",
+                "fcstd:native:property#Box:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Box:Height": "regenerated",
                 "fcstd:native:property#Box:Label": "regenerated",
                 "fcstd:native:property#Box:Label2": "regenerated",
@@ -770,6 +761,7 @@
                 "fcstd:native:property#Cylinder:AttacherType": "regenerated",
                 "fcstd:native:property#Cylinder:AttachmentOffset": "regenerated",
                 "fcstd:native:property#Cylinder:AttachmentSupport": "regenerated",
+                "fcstd:native:property#Cylinder:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Cylinder:FirstAngle": "regenerated",
                 "fcstd:native:property#Cylinder:Height": "regenerated",
                 "fcstd:native:property#Cylinder:Label": "regenerated",
