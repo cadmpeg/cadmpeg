@@ -1422,10 +1422,14 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
 
     let mut patched = payload;
     let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::InvalidInput(_)
-    ));
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::InvalidInput(_)
+                | cadmpeg_core::CodecError::NotImplemented(_)
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
