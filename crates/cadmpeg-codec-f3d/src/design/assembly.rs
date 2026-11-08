@@ -913,7 +913,7 @@ pub(crate) fn project_assembly_joints_with_paths(
                     .is_some_and(|paths| {
                         paths
                             .iter()
-                            .any(|path| !path.paired_occurrence_keys().is_empty())
+                            .any(|path| !path.occurrence_lists().is_empty())
                     });
                 if paired {
                     paired_joints += 1;
@@ -995,7 +995,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     if paired_joints != 0 {
         losses.push(F3dLossCode::AssemblyOperandPathPairsNative.note(format!(
-            "{paired_joints} projected Design assembly joint(s) have operand paths with occurrence identity pairs whose effect on the joint is not known; the pairs are retained natively."
+            "{paired_joints} projected Design assembly joint(s) have operand paths with occurrence identity lists whose effect on the joint is not known; the lists are retained natively."
         )));
     }
     if unprojected != 0 {
@@ -1296,7 +1296,7 @@ fn project_assembly_joint(
 }
 
 /// The fixed joints of a rigid group's members after its first two, with the
-/// number of those joints whose operand paths carry occurrence identity pairs
+/// number of those joints whose operand paths carry occurrence identity lists
 /// and the number of members that do not project.
 #[derive(Default)]
 struct RigidGroupMemberJoints {
@@ -1340,7 +1340,7 @@ fn rigid_group_member_joints(
     let first_paired = first
         .qualifier
         .occurrence_path()
-        .is_some_and(|path| !path.paired_occurrence_keys().is_empty());
+        .is_some_and(|path| !path.occurrence_lists().is_empty());
     for (ordinal, member) in alignment.additional_members.iter().enumerate() {
         let operands = project_qualified_operands(
             [&first.qualifier, &member.qualifier],
@@ -1385,7 +1385,7 @@ fn rigid_group_member_joints(
             || member
                 .qualifier
                 .occurrence_path()
-                .is_some_and(|path| !path.paired_occurrence_keys().is_empty())
+                .is_some_and(|path| !path.occurrence_lists().is_empty())
         {
             projected.paired += 1;
         }
@@ -1904,7 +1904,7 @@ mod tests {
                 let mut path = path(index, typed).unwrap();
                 if paired {
                     path = path
-                        .with_paired_occurrence_keys(vec![
+                        .with_occurrence_lists(vec![vec![
                             crate::records::identity::Located {
                                 value: "43".to_owned().try_into().unwrap(),
                                 offset: 400,
@@ -1916,7 +1916,7 @@ mod tests {
                                     .unwrap(),
                                 offset: 410,
                             },
-                        ])
+                        ]])
                         .unwrap();
                 }
                 DesignAssemblyOperandQualifier::OccurrencePath { path }

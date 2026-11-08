@@ -44,8 +44,10 @@ use std::collections::{HashMap, HashSet};
 
 mod crossing_loops;
 mod loft_sketch_profile_binding;
+mod path_pattern_binding;
 mod resolution_rules;
 mod spatial_transition;
+mod sweep_paths;
 mod typed_regions;
 mod unprofiled_curves;
 

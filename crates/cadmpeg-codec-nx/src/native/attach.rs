@@ -385,12 +385,15 @@ fn attach_records(
     #[cfg(test)]
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    let uses = model.structure.occurrences.as_slice().len();
-    let placements = model.om.assembly_placements.len();
-    if uses != 0 || placements != 0 {
+    let placement_count = model.om.assembly_placements.len();
+    let use_count = model.structure.occurrences.as_slice().len();
+    if placement_count != 0 {
+        losses.push(NxLossCode::AssemblyPlacementFrameUnresolved.note(format!(
+            "Withheld {placement_count} NX placement(s) and {use_count} FastLoad component use(s) from neutral output because the native records do not establish a general placement-to-component association, assembly root frame, or translation unit. Their placement frames and component uses remain in the NX native namespace."
+        )));
+    } else if use_count != 0 {
         losses.push(NxLossCode::AssemblyOccurrencesUnresolved.note(format!(
-            "The file retains {uses} assembly use(s) and {placements} placement frame(s), \
-             but their neutral occurrence graph is unresolved."
+            "No NX placement frame is available for {use_count} FastLoad component use(s); their native roster records remain in the NX namespace."
         )));
     }
     for section in &model.om.object_record_identity_bounded_sections {

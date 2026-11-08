@@ -152,6 +152,7 @@ pub(crate) fn decode_sketch_placements(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
     let mut record_offsets = HashMap::new();
@@ -178,7 +179,9 @@ pub(crate) fn decode_sketch_placements(
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
+        for (entity_suffix, visibility) in
+            decode_sketch_visibilities_in_stream(bytes, &metadata, losses)?
+        {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
@@ -337,6 +340,7 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
     for frame in super::meta::typed_primary_frames(
@@ -433,12 +437,8 @@ fn decode_sketch_visibilities_in_stream(
     if out.is_empty() {
         return Ok(out);
     }
-    let visibilities = out
-        .iter()
-        .copied()
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut listed = std::collections::HashSet::new();
-    let mut collections = std::collections::HashSet::new();
+    let visibilities = out.iter().copied().collect::<HashMap<_, _>>();
+    let mut collections = std::collections::BTreeMap::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
         metadata,
@@ -465,39 +465,177 @@ fn decode_sketch_visibilities_in_stream(
                 frame.entity_id
             )));
         };
-        collections.insert(frame.entity_id);
-        for target in members {
-            if !listed.insert(target)
-                || !visibilities.get(&target).is_some_and(|visibility| {
-                    visibility.ordinal_collection.map(std::num::NonZeroU64::get)
-                        == Some(frame.entity_id)
-                })
-            {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D sketch ordinal collection {} has an invalid sketch member {target}",
-                    frame.entity_id
-                )));
+        collections.insert(frame.entity_id, members);
+    }
+    let mut folders = std::collections::BTreeMap::new();
+    for frame in super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        "45B3FDEA-5EBA-4B33-ADF8-47041CAC3602",
+        "sketch folder",
+    )? {
+        let folder = (frame.design_type.version == 1
+            && frame.design_type.module == "Geometry"
+            && frame
+                .design_type
+                .base_type_guid
+                .value()
+                .is_some_and(|base| {
+                    base.as_str()
+                        .eq_ignore_ascii_case("A193F53F-86D7-4F45-A01C-51F5ECEEFC0E")
+                }))
+        .then(|| parse_sketch_folder(&bytes[frame.start..frame.end]))
+        .flatten();
+        let Some(folder) = folder else {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D sketch folder {} has an invalid frame",
+                frame.entity_id
+            )));
+        };
+        losses.push(F3dLossCode::SketchFolderUnprojected.note(format!(
+            "Sketch folder {} (number {}, {} members) grouping is dropped; its sketches remain in the parent collection.",
+            if folder.name.is_empty() { "unnamed" } else { &folder.name }, folder.number, folder.members.len()
+        )));
+        losses.push(F3dLossCode::SketchFolderClosingReference.note(format!(
+            "Sketch folder {} closing reference to record {} has an unresolved role and is not decoded.",
+            frame.entity_id, folder.closing
+        )));
+        folders.insert(frame.entity_id, folder);
+    }
+    let mut listed = std::collections::HashSet::new();
+    let mut invalid = std::collections::BTreeMap::<u64, u64>::new();
+    for (&container, members) in &collections {
+        for target in members
+            .chunks_exact(crate::layout::sketch_geometry_ordinal_collection_reference::LEN)
+            .filter_map(|reference| {
+                View::u64_le_at(
+                    reference,
+                    crate::layout::sketch_geometry_ordinal_collection_reference::TARGET,
+                )
+            })
+        {
+            let valid = visibilities.get(&target).is_some_and(|visibility| {
+                visibility.ordinal_collection.map(std::num::NonZeroU64::get) == Some(container)
+            }) || folders
+                .get(&target)
+                .is_some_and(|folder| folder.parent == container);
+            if !listed.insert(target) || !valid {
+                invalid.insert(target, container);
             }
         }
     }
-    for (entity, visibility) in &out {
-        let collection_valid = match visibility.ordinal_collection {
-            Some(collection) => collections.contains(&collection.get()) && listed.contains(entity),
-            None => !listed.contains(entity),
-        };
-        if !collection_valid {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity} has an invalid ordinal collection"
+    for (&container, folder) in &folders {
+        for target in folder.members.iter().copied() {
+            let valid = visibilities.get(&target).is_some_and(|visibility| {
+                visibility.ordinal_collection.map(std::num::NonZeroU64::get) == Some(container)
+            });
+            if !listed.insert(target) || !valid {
+                invalid.insert(target, container);
+            }
+        }
+    }
+    for (entity, visibility) in &mut out {
+        let direct = visibility.ordinal_collection.map(std::num::NonZeroU64::get);
+        let root = direct.and_then(|id| {
+            if collections.contains_key(&id) {
+                Some(id)
+            } else {
+                folders
+                    .get(&id)
+                    .map(|folder| folder.parent)
+                    .filter(|parent| collections.contains_key(parent))
+            }
+        });
+        let bad_container = invalid
+            .get(entity)
+            .copied()
+            .or_else(|| direct.and_then(|id| invalid.get(&id).copied()));
+        if let Some(container) = bad_container {
+            losses.push(F3dLossCode::SketchMembershipConflict.note(format!(
+                "Sketch {entity} has a repeated or conflicting member-run entry in container {container}; its Geometry-member reference selects its container."
+            )));
+        }
+        if let Some(id) = direct.filter(|_| root.is_none()) {
+            losses.push(F3dLossCode::SketchOwnerUnresolved.note(format!(
+                "Sketch {entity} names container {id}, which does not resolve to a collection; its collection binding is dropped."
+            )));
+        }
+        visibility.ordinal_collection = root.and_then(std::num::NonZeroU64::new);
+    }
+    for (target, container) in invalid {
+        if !visibilities.contains_key(&target) && !folders.contains_key(&target) {
+            losses.push(F3dLossCode::SketchOwnerUnresolved.note(format!(
+                "Sketch {target} listed by container {container} does not resolve; its collection binding is dropped."
             )));
         }
     }
     Ok(out)
 }
 
-fn ordinal_collection_members(
-    bytes: &[u8],
-    version: u32,
-) -> Option<impl Iterator<Item = u64> + '_> {
+struct SketchFolder {
+    name: String,
+    number: u32,
+    members: Vec<u64>,
+    parent: u64,
+    closing: u64,
+}
+
+fn parse_sketch_folder(bytes: &[u8]) -> Option<SketchFolder> {
+    use crate::layout::sketch_folder_prefix as folder;
+    if bytes.get(folder::ZERO_RUN..folder::MARKER)? != [0; 9]
+        || bytes.get(folder::MARKER) != Some(&1)
+        || bytes.get(folder::ZERO_RUN_2..folder::FLAG)? != [0; 5]
+        || !matches!(bytes.get(folder::FLAG), Some(0 | 1))
+        || bytes.get(folder::ZERO_RUN_3..folder::LEN)? != [0; 5]
+    {
+        return None;
+    }
+    let (name, mut cursor) = lp_utf16_bounded(bytes, folder::LEN, 0..=bytes.len() / 2)?;
+    let number = View::u32_le_at(bytes, cursor)?;
+    if number == 0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let count = View::u32_le_at(bytes, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    let count = cadmpeg_core::decode::bounded_len(
+        u64::from(count),
+        crate::layout::sketch_geometry_ordinal_collection_reference::LEN,
+        bytes.len().checked_sub(cursor)?,
+    )?;
+    let mut members = Vec::new();
+    for _ in 0..count {
+        let (target, None) = take_reference(bytes, &mut cursor)?.local()? else {
+            return None;
+        };
+        if target == 0 {
+            return None;
+        }
+        members.push(target);
+    }
+    let (parent, None) = take_reference(bytes, &mut cursor)?.local()? else {
+        return None;
+    };
+    if parent == 0 {
+        return None;
+    }
+    while bytes.get(cursor) == Some(&0) {
+        cursor += 1;
+    }
+    let closing = take_reference(bytes, &mut cursor)?.target()?;
+    if cursor != bytes.len() {
+        return None;
+    }
+    Some(SketchFolder {
+        name,
+        number,
+        members,
+        parent,
+        closing,
+    })
+}
+
+fn ordinal_collection_members(bytes: &[u8], version: u32) -> Option<&[u8]> {
     use crate::layout::sketch_geometry_ordinal_collection_reference as reference;
     use crate::layout::sketch_ordinal_collection_prefix as collection;
     if bytes.get(collection::ZERO_RUN..collection::LEN)? != [0; 9] {
@@ -529,10 +667,7 @@ fn ordinal_collection_members(
             return None;
         }
     }
-    Some(
-        run.chunks_exact(reference::LEN)
-            .filter_map(|member| View::u64_le_at(member, reference::TARGET)),
-    )
+    Some(run)
 }
 
 fn decode_sketch_visibility_member(

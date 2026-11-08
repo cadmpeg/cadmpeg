@@ -391,6 +391,7 @@ pub(crate) fn project_native_fixture(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();

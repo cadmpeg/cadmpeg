@@ -61,6 +61,14 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     assert_eq!(svg.data(), br#"<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297"><rect x="5" y="5" width="200" height="287" fill="none" stroke="black"/><text x="10" y="288">cadmpeg CC0</text></svg>"#);
     let geometry = template.template_geometry.as_ref().unwrap();
     assert_eq!(geometry.curves.len(), 4);
+    let [label] = geometry.texts.as_slice() else {
+        panic!("one template label")
+    };
+    assert_eq!(label.text, "cadmpeg CC0");
+    for (actual, expected) in label.position.get().into_iter().zip([10.0, 9.0]) {
+        assert!((actual - expected).abs() < LENGTH_TOLERANCE);
+    }
+    assert!(label.height.is_none());
     let corners = [
         [5.0, 292.0],
         [205.0, 292.0],

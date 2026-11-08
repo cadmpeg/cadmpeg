@@ -12,6 +12,7 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::layout::compact_loft_operation_prefix as compact_loft;
+use crate::layout::compact_sweep_prologue as compact_sweep;
 use crate::layout::direction_pair_revolve_scope_frame as direction_pair_revolve;
 use crate::layout::marked_to_object_revolve_prologue as marked_to_object;
 use crate::layout::marker_one_revolve_prologue as revolve;
@@ -657,13 +658,23 @@ pub(super) fn exact_path_feature_construction(
             {
                 return None;
             }
+            let compact = bytes
+                .get(start + compact_sweep::ZERO_RUN..start + compact_sweep::OPERATION)
+                == Some(&[0; 10])
+                && bytes.get(start + compact_sweep::MARKER) == Some(&1);
             match candidate_lanes.as_slice() {
                 [l0, l1, l2, l3, l4, l5] => {
                     let lanes = [*l0, *l1, *l2, *l3, *l4, *l5];
+                    let op_offset = start
+                        + if compact {
+                            compact_sweep::OPERATION
+                        } else {
+                            25
+                        };
                     Some(DesignPathFeatureConstruction::Sweep(
                         path_features::DesignSweepConstruction {
-                            operation: operation(start + 25)?,
-                            operation_offset: u64::try_from(start + 25).ok()?,
+                            operation: operation(op_offset)?,
+                            operation_offset: u64::try_from(op_offset).ok()?,
                             values: lanes.iter().map(|(_, scalar)| scalar.value).collect(),
                             record_indexes: lanes
                                 .iter()
@@ -681,10 +692,9 @@ pub(super) fn exact_path_feature_construction(
                         && scope.paired_class_tag.as_str() == "260"
                         && parameter_scope_payload_length(scope) == Some(423)
                         && scope.reference_members().len() == 9
-                        && bytes.get(start + 11..start + 21) == Some(&[0; 10])
-                        && bytes.get(start + 25) == Some(&1) =>
+                        && compact =>
                 {
-                    let op_offset = start + 21;
+                    let op_offset = start + compact_sweep::OPERATION;
                     let lanes = [*l0, *l1];
                     Some(DesignPathFeatureConstruction::Sweep(
                         path_features::DesignSweepConstruction {

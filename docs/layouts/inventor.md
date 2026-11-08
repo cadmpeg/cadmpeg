@@ -97,7 +97,7 @@ Parsed by:
 
 Spec §13.4 · layout: byte offsets · size: 32 B
 
-Offsets start after the state content header in segment major versions 19 and 23.
+Offsets start after the state content header in segment major versions 19, 23, 25, and 31.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
@@ -114,20 +114,20 @@ Parsed by:
 
 Spec §13.4 · layout: byte offsets · size: 4 B
 
-Offset starts after the 22-byte content header in segment major version 23.
+Offset of each stamp starts after the content header, 22 bytes before segment major version 28 and 26 bytes from it.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `stamp` | `i32` | little | spec | In segment major version 23, the source header includes one stamp |
+| 0 | 4 | `stamp` | `i32` | little | spec | one stamp in version 23, and two stamps in versions 25 and 31 |
 
 ## `pm_dc_derived_component_suffix`
 
 Spec §13.4 · layout: byte offsets · size: 4 B
 
-Offsets start after the component terminal reference in segment major version 23.
+Offsets start after the component terminal reference in segment major versions 23, 25, and 31.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
@@ -1845,3 +1845,53 @@ Parsed by:
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-inventor/src/feature/coil.rs` — The shared Coil refusal predicate checks the property-vector count.
+
+## `pm_dc_box_group_body`
+
+Spec §12 · layout: byte offsets · size: 32 B
+
+Offsets start after the segment-major-19 content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/box_member.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `value` | `u32` | little | spec | `value:u32` and seven references |
+| 4 | 28 | `references` | `u32[7]` | little | spec | seven references after the content header |
+
+## `pm_dc_box_frame_fixed`
+
+Spec §12 · layout: byte offsets · size: 44 B
+
+Offsets start after the segment-major-19 content header. The explicit placement cells follow this part.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/box_member.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `sketch_reference` | `u32` | little | spec | sketch_reference u32 |
+| 4 | 8 | `width` | `f64` | little | spec | width f64 |
+| 12 | 8 | `height` | `f64` | little | spec | height f64 |
+| 20 | 8 | `corner_x` | `f64` | little | spec | corner_x f64 |
+| 28 | 8 | `corner_y` | `f64` | little | spec | corner_y f64 |
+| 36 | 4 | `value` | `u32` | little | spec | value u32 |
+| 40 | 2 | `value_mask` | `u16` | little | spec | value_mask u16 |
+| 42 | 2 | `zero_mask` | `u16` | little | spec | zero_mask u16 |
+
+## `pm_dc_box_frame_tail`
+
+Spec §12 · layout: byte offsets · size: 15 B
+
+Offsets start after the explicit placement cells of the box frame.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/box_member.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `tail_value` | `u32` | little | spec | tail_value u32 |
+| 4 | 2 | `tail_flags` | `u16` | little | spec | tail_flags u16 |
+| 6 | 8 | `tail_scale` | `f64` | little | spec | tail_scale f64 |
+| 14 | 1 | `tail_state` | `u8` | little | spec | tail_state u8 |

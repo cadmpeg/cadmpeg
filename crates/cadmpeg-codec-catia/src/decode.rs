@@ -298,6 +298,22 @@ fn finish_decode(
             .then_some(scan.main_data_stream().or(scan.brep.as_deref()))
             .flatten(),
     )?;
+    let sheet_count = sketch::outer_sheet::transfer(
+        ctx,
+        cadmpeg_core::decode::View::over_retained(&scan.data),
+        &mut ir,
+        &mut annotations,
+        &native,
+        &modeling_graph_scope,
+    )?;
+    if sheet_count != 0 {
+        report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+        report
+            .losses
+            .push(CatiaLossCode::TopologySheetComponentsInferred.note(format!(
+            "Inferred {sheet_count} sheet bodies from closed Fill boundary components after excluding flagged sketch members"
+        )));
+    }
     let object_record_count: usize = native
         .object_graphs
         .iter()
