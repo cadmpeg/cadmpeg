@@ -338,6 +338,7 @@ mod tests {
             ("Title", AttributeValue::String("Bracket".into())),
             ("Revision", AttributeValue::Integer(3)),
             ("Mass", AttributeValue::float(1.5).expect("finite mass")),
+            ("Hidden", AttributeValue::Boolean(false)),
         ] {
             ir.model.attributes.push(SourceAttribute {
                 id: format!("test:model:attribute#{name}")
@@ -363,6 +364,7 @@ mod tests {
         assert!(text.contains("VALUE_REPRESENTATION_ITEM"));
         assert!(text.contains("COUNT_MEASURE(3)"));
         assert!(text.contains("NUMERIC_MEASURE"));
+        assert!(text.contains("BOOLEAN_REPRESENTATION_ITEM('Hidden',.F.)"));
 
         let decoded = crate::StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -371,6 +373,7 @@ mod tests {
             ("Title", AttributeValue::String("Bracket".into())),
             ("Revision", AttributeValue::Integer(3)),
             ("Mass", AttributeValue::float(1.5).expect("finite mass")),
+            ("Hidden", AttributeValue::Boolean(false)),
         ] {
             assert!(
                 decoded.ir().model.attributes.iter().any(|attribute| {
@@ -395,7 +398,7 @@ mod tests {
             native_ref: None,
             target: AttributeTarget::Document,
             name: "Flag".into(),
-            values: vec![Some(AttributeValue::Boolean(true))],
+            values: vec![Some(AttributeValue::Reference("Other".into()))],
         });
         let mut bytes = Vec::new();
         let report = crate::export::write_step(
