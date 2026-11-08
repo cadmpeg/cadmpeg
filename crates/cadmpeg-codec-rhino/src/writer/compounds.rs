@@ -271,9 +271,14 @@ pub(super) fn payload(
             let payload = value.payload()?;
             let mut notes: Vec<LossNote> = conversion.into_iter().collect();
             if let Some(construction) = curve.geometry.procedural_construction() {
+                let parts = components(ir, curve)
+                    .iter()
+                    .map(|part| part.id.as_str())
+                    .collect::<Vec<_>>();
                 notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                    "curve {} compound construction {construction} was reduced to a held solved carrier",
-                    curve.id
+                    "curve {} compound construction {construction} was reduced to a held solved carrier; its component curve(s): {}",
+                    curve.id,
+                    parts.join(", ")
                 )));
             }
             Ok((CurvePayload::leaf(payload, &curve.id), notes))
