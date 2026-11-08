@@ -1,20 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::Cursor;
-
 use super::decode;
-use crate::test_support::test_sheet::joined_planar_sheet;
-use cadmpeg_codec_step::StepCodec;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_test_support::catia::joined_planar_sheet;
 
 const FORWARD_SHEET_ROSTER: u8 = 0x33;
 const CLOSED_LOOP_TAIL: u8 = 0x01;
 
 #[test]
-fn native_owned_sheet_preserves_joined_faces_through_step() {
+fn native_owned_sheet_decodes_joined_faces() {
     let decoded = decode(joined_planar_sheet(FORWARD_SHEET_ROSTER, CLOSED_LOOP_TAIL));
     assert_joined_faces(decoded.ir());
     assert!(decoded
@@ -36,16 +31,6 @@ fn native_owned_sheet_preserves_joined_faces_through_step() {
             cadmpeg_ir::Exactness::Inferred
         );
     }
-
-    let step = StepCodec::default();
-    let mut exported = Vec::new();
-    step.plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut exported))
-        .expect("write decoded sheet as STEP");
-    let readback = step
-        .decode(&mut Cursor::new(exported), &DecodeOptions::default())
-        .expect("read the exported STEP sheet");
-    assert_joined_faces(readback.ir());
 }
 
 #[test]

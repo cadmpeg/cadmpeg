@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generated native records for two planar faces with one shared edge.
 
-use super::test_b2::b2_line_profile_stream;
-use super::test_container::standard_catpart_from_streams;
-
-pub(crate) fn joined_planar_sheet(roster_control: u8, second_loop_tail: u8) -> Vec<u8> {
+/// Build a nested CATPart with two planar faces and one source-shared edge.
+/// The roster control and second loop tail allow targeted rejection tests.
+#[must_use]
+pub fn joined_planar_sheet(roster_control: u8, second_loop_tail: u8) -> Vec<u8> {
     const FIRST_FACE: u8 = 1;
     const FIRST_LOOP: u8 = 3;
     const PLANE: u8 = 5;
@@ -19,7 +19,12 @@ pub(crate) fn joined_planar_sheet(roster_control: u8, second_loop_tail: u8) -> V
     }
     let child = |from, to| 4 * (to - from - 1) + 3;
     // Include a standalone profile to select the freeform route.
-    let mut bytes = b2_line_profile_stream();
+    let mut bytes = Vec::new();
+    let mut profile = Vec::new();
+    for value in [1.0_f64, 2.0, 3.0, 0.0, 0.6, 0.8, 1.0, -4.0, 9.0] {
+        profile.extend(value.to_le_bytes());
+    }
+    frame(&mut bytes, 0x03, 0x0e, &profile);
     let mut group = vec![0x81, 0x03, 0x05, 0x01];
     for value in [0.0_f32, 2.0, 0.0, 1.0, 0.0, 0.0] {
         group.extend(value.to_le_bytes());
@@ -109,5 +114,43 @@ pub(crate) fn joined_planar_sheet(roster_control: u8, second_loop_tail: u8) -> V
     for _ in vertices {
         frame(&mut bytes, 0x03, 0x5d, &[1]);
     }
-    standard_catpart_from_streams(&bytes, &[])
+    wrap_main_stream(&bytes)
+}
+
+fn wrap_main_stream(main: &[u8]) -> Vec<u8> {
+    const MAGIC: &[u8; 8] = b"V5_CFV2\0";
+    const HEADER_LEN: u32 = 16;
+    let main_len = u32::try_from(main.len()).expect("small main stream");
+    let directory_offset = HEADER_LEN + main_len;
+    let mut directory = b"CATIA_V5 CB0001\0".to_vec();
+    for (name, offset, length) in [
+        ("MainDataStream", HEADER_LEN, main_len),
+        ("SurfacicReps", directory_offset, 0),
+    ] {
+        let mut descriptor = [0; 0x54];
+        descriptor[0x0c..0x10].copy_from_slice(&length.to_be_bytes());
+        for (slot, unit) in descriptor[0x10..0x50]
+            .chunks_exact_mut(2)
+            .zip(name.encode_utf16())
+        {
+            slot.copy_from_slice(&unit.to_le_bytes());
+        }
+        descriptor[0x50..0x54].copy_from_slice(&1_u32.to_be_bytes());
+        directory.extend(descriptor);
+        for field in [offset, length, length, 0, 0] {
+            directory.extend(field.to_be_bytes());
+        }
+    }
+    directory.extend(b"CB__END");
+    let directory_len = u32::try_from(directory.len()).expect("small directory");
+    let outer_end = HEADER_LEN + directory_offset + directory_len;
+    let mut file = MAGIC.to_vec();
+    file.extend(outer_end.to_be_bytes());
+    file.extend(0_u32.to_be_bytes());
+    file.extend(MAGIC);
+    file.extend(directory_offset.to_be_bytes());
+    file.extend(directory_len.to_be_bytes());
+    file.extend(main);
+    file.extend(directory);
+    file
 }

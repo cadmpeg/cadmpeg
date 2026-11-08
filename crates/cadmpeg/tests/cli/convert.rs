@@ -25,6 +25,52 @@ use crate::support::geometryless_creo;
 #[cfg(feature = "sldprt")]
 use crate::support::sldprt_cube;
 
+#[cfg(all(feature = "catia", feature = "step"))]
+#[test]
+fn convert_native_owned_sheet_preserves_shared_edge_in_step() {
+    use std::io::Cursor;
+
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::topology::Sense;
+    use cadmpeg_test_support::catia::joined_planar_sheet;
+
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("joined.CATPart");
+    let output = dir.path().join("joined.step");
+    fs::write(&input, joined_planar_sheet(0x33, 0x01)).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .arg("convert")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .assert()
+        .success();
+
+    let step = cadmpeg_codec_step::StepCodec::default()
+        .decode(
+            &mut Cursor::new(fs::read(output).unwrap()),
+            &DecodeOptions::default(),
+        )
+        .expect("read the exported STEP sheet");
+    let model = &step.ir().model;
+    assert_eq!(model.faces.len(), 2);
+    assert_eq!(model.edges.len(), 7);
+    assert!(model.faces.iter().all(|face| face.sense == Sense::Forward));
+    let shared: Vec<_> = model
+        .coedges
+        .iter()
+        .filter(|side| side.radial_next != side.id)
+        .collect();
+    let [first, second] = shared.as_slice() else {
+        panic!("one edge shared by two coedges");
+    };
+    assert_eq!(first.edge, second.edge);
+    assert_eq!(first.radial_next, second.id);
+    assert_eq!(second.radial_next, first.id);
+    assert_ne!(first.sense, second.sense);
+}
+
 #[cfg(feature = "fcstd")]
 #[test]
 fn validation_budgets_follow_loaded_native_and_cadir_input_sizes() {

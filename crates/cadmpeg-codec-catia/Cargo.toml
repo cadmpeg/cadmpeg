@@ -28,7 +28,6 @@ serde-value.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-cadmpeg-codec-step.workspace = true
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
 
