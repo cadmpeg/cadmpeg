@@ -304,6 +304,10 @@ fn step_observe() -> StepObserved {
     ]));
     carried.unheld = std::collections::BTreeSet::from([
         cadmpeg_test_support::carried::UnheldClass::EllipticalCone,
+        cadmpeg_test_support::carried::UnheldClass::TranslucentLineBinding,
+        cadmpeg_test_support::carried::UnheldClass::MultiRegionSolid,
+        cadmpeg_test_support::carried::UnheldClass::DistinctProductNames,
+        cadmpeg_test_support::carried::UnheldClass::MultiPcurveCoedge,
     ]);
     StepObserved {
         carried,

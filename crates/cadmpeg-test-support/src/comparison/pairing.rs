@@ -272,6 +272,11 @@ pub(super) fn pair(
                 .collect()
         })
         .collect();
+    let nulled: Vec<bool> = before
+        .records
+        .iter()
+        .map(|record| holds_null(&record.value))
+        .collect();
     if cross {
         loop {
             let mut claims = BTreeMap::<usize, Vec<usize>>::new();
@@ -309,8 +314,11 @@ pub(super) fn pair(
             let mut changed = false;
             let mut contested = None;
             for (right, claimants) in claims {
-                if let [first, _, ..] = claimants.as_slice() {
-                    contested.get_or_insert((*first, right));
+                // A nulled reference agrees with any value, so a record that
+                // states every reference outranks one that does not.
+                let mut exact = claimants.iter().filter(|left| !nulled[**left]);
+                if let (true, Some(left), None) = (claimants.len() > 1, exact.next(), exact.next()) {
+                    contested.get_or_insert((*left, right));
                 }
                 if let [left] = claimants.as_slice() {
                     if !references_agree_with_pairs(
@@ -336,11 +344,9 @@ pub(super) fn pair(
                 }
             }
             // Twins, such as identical bodies, leave every record with
-            // several candidates, or several records with one candidate.
-            // Pair the first such record, in the source order that puts
-            // required records first, with its first candidate; the
-            // references of that pair then single out the partners of its
-            // twin's other records.
+            // several candidates. Pair the first such record with its first
+            // candidate; the references of that pair then single out the
+            // partners of its twin's other records.
             if !changed {
                 let Some((left, right)) = contested.or(ambiguous) else {
                     break;
@@ -416,6 +422,15 @@ pub(super) fn pair(
         }
     }
     pairs
+}
+
+fn holds_null(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Array(items) => items.iter().any(holds_null),
+        Value::Object(fields) => fields.values().any(holds_null),
+        _ => false,
+    }
 }
 
 /// The unranked record comparison of the active mode.

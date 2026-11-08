@@ -342,7 +342,7 @@ fn required_ids_with_source(
                             carried
                                 .unheld
                                 .iter()
-                                .any(|class| class.contains(arena, record))
+                                .any(|class| class.contains(arena, record, source))
                         });
                     if supported {
                         let variants = source_rows.get(id).map_or_else(BTreeSet::new, |record| {
@@ -390,8 +390,10 @@ fn required_ids_with_source(
         }
         seeds.insert(id.clone());
     }
+    // A record needs what its source record references (§4.5 rule 2),
+    // whether or not the projection keeps the referencing path.
     let mut needs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let rows = before_rows(before);
+    let rows = before_rows(source);
     for (id, row) in &rows {
         let mut targets = BTreeSet::new();
         record_needs(row, &identities, &mut targets);
@@ -1612,6 +1614,88 @@ mod tests {
         assert!(required.contains("circular"));
         assert!(required.contains("elliptical-cylinder"));
         assert!(super::required_ids(&before, &Carried::all(), "step").contains("elliptical"));
+
+        let bindings = json!({"model": {
+            "appearances": [
+                {"id": "translucent", "base_color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 0.5}},
+                {"id": "opaque", "base_color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}}
+            ],
+            "appearance_bindings": [
+                {"id": "point-translucent", "target": {"kind": "point", "id": "p"}, "appearance": "translucent"},
+                {"id": "face-translucent", "target": {"kind": "face", "id": "f"}, "appearance": "translucent"},
+                {"id": "point-opaque", "target": {"kind": "point", "id": "p"}, "appearance": "opaque"}
+            ]
+        }});
+        carried.unheld.insert(UnheldClass::TranslucentLineBinding);
+        let required = super::required_ids(&bindings, &carried, "step");
+        assert!(!required.contains("point-translucent"));
+        assert!(required.contains("face-translucent"));
+        assert!(required.contains("point-opaque"));
+        assert!(required.contains("translucent"));
+
+        let solids = json!({"model": {
+            "bodies": [
+                {"id": "lumps", "kind": "solid", "regions": ["a", "b"]},
+                {"id": "lump", "kind": "solid", "regions": ["c"]},
+                {"id": "sheets", "kind": "sheet", "regions": ["d", "e"]}
+            ],
+            "regions": [
+                {"id": "a", "body": "lumps"}, {"id": "b", "body": "lumps"},
+                {"id": "c", "body": "lump"}, {"id": "d", "body": "sheets"},
+                {"id": "e", "body": "sheets"}
+            ],
+            "product_definitions": [
+                {"id": "renamed", "source_name": "Product", "label": "Shown"},
+                {"id": "named", "source_name": "Part", "label": "Part"}
+            ],
+            "coedges": [
+                {"id": "two-pcurves", "pcurves": [{"pcurve": "p0"}, {"pcurve": "p1"}]},
+                {"id": "one-pcurve", "pcurves": [{"pcurve": "p0"}]}
+            ],
+            "pcurves": [{"id": "p0"}, {"id": "p1"}]
+        }});
+        carried.unheld.insert(UnheldClass::MultiRegionSolid);
+        carried.unheld.insert(UnheldClass::DistinctProductNames);
+        carried.unheld.insert(UnheldClass::MultiPcurveCoedge);
+        let required = super::required_ids(&solids, &carried, "step");
+        for id in ["lumps", "a", "b", "renamed", "two-pcurves"] {
+            assert!(!required.contains(id));
+        }
+        for id in ["lump", "c", "sheets", "d", "e", "named", "one-pcurve", "p1"] {
+            assert!(required.contains(id));
+        }
+    }
+
+    #[test]
+    fn a_reference_the_projection_drops_is_still_a_need() {
+        use crate::carried::Carried;
+
+        let before = json!({"model": {
+            "surfaces": [{"id": "surface", "geometry": {"kind": "procedural", "construction": "construction"}}],
+            "procedural_surfaces": [{"id": "construction", "definition": {"kind": "uncarried"}}]
+        }});
+        let projected = json!({"model": {
+            "surfaces": [{"id": "surface", "geometry": {"kind": "procedural"}}],
+            "procedural_surfaces": [{"id": "construction"}]
+        }});
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([crate::carried::UnheldClass::EllipticalCone]);
+        let required = super::required_ids_with_source(&projected, &before, &carried, "step");
+        assert!(required.contains("surface"));
+        let mut unheld = before.clone();
+        unheld["model"]["surfaces"].as_array_mut().unwrap().push(json!(
+            {"id": "cone", "geometry": {"kind": "cone", "ratio": 0.5, "half_angle": 0.5}}
+        ));
+        unheld["model"]["surfaces"][0]["geometry"]["construction"] = json!("cone");
+        let mut projected_unheld = projected.clone();
+        projected_unheld["model"]["surfaces"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id": "cone"}));
+        let required =
+            super::required_ids_with_source(&projected_unheld, &unheld, &carried, "step");
+        assert!(!required.contains("cone"));
+        assert!(!required.contains("surface"));
     }
 
     #[test]
