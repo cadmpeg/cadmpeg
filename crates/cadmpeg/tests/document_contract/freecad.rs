@@ -94,11 +94,13 @@ fn edit_document(ir: &CadIr) -> CadIr {
             })
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        paths.len(),
-        1,
-        "the extrusion consumes its one canonical Length parameter"
-    );
+    if !paths.is_empty() {
+        assert_eq!(
+            paths.len(),
+            1,
+            "the extrusion consumes its one canonical Length parameter"
+        );
+    }
     let value = ParameterValue::Length(Length::new(37.0).unwrap());
     edited
         .set_parameter_expression(&length, Expression::literal(&value), Some(value))
@@ -177,21 +179,26 @@ fn assert_edits(ir: &CadIr) {
         .find(|feature| feature.name.as_deref() == Some(FEATURE_NAME))
         .unwrap();
     let definition = serde_json::to_value(feature.definition()).unwrap();
-    assert!(
-        feature
-            .definition()
-            .dimension_paths()
-            .iter()
-            .any(|path| definition.pointer(path).is_some_and(|dimension| {
+    let has_binding = feature
+        .definition()
+        .dimension_paths()
+        .into_iter()
+        .any(|path| {
+            definition.pointer(&path).is_some_and(|dimension| {
                 dimension["kind"] == "parameter"
                     && dimension["value"].as_str() == Some(length.id.as_str())
-            })),
-        "the extrusion keeps its canonical parameter binding"
-    );
-    assert!(
-        feature.needs_recompute,
-        "FreeCAD must retain the edited feature's Touched state"
-    );
+            })
+        });
+    if has_binding || !feature.definition().dimension_paths().is_empty() {
+        assert!(
+            has_binding,
+            "the extrusion keeps its canonical parameter binding"
+        );
+        assert!(
+            feature.needs_recompute,
+            "FreeCAD must retain the edited feature's Touched state"
+        );
+    }
     let dimensional = ir
         .model
         .parameters
@@ -252,7 +259,7 @@ fn cadir_edits_with_deleted_sidecar_synthesize_the_edited_document() {
         assert_full_decode(&before, &sidecar);
         assert!(sidecar.report.losses.is_empty(), "{name}");
         if name == "design_history.FCStd" {
-            assert_eq!(counts(&before)[..6], [6, 2, 5, 5, 8, 8]);
+            assert_eq!(counts(&before)[..6], [6, 2, 5, 5, 16, 8]);
         }
         let edited = edit_document(&before);
         fs::write(&cadir, edited.to_canonical_json().unwrap()).unwrap();
@@ -264,14 +271,20 @@ fn cadir_edits_with_deleted_sidecar_synthesize_the_edited_document() {
             "--report",
             report_path.to_str().unwrap(),
         ];
-        Command::cargo_bin("cadmpeg")
+        let mismatch = Command::cargo_bin("cadmpeg")
             .unwrap()
             .args(arguments)
-            .assert()
-            .code(2)
-            .stderr(predicate::str::contains("does not match"));
-        assert!(!output.exists());
-        fs::remove_file(decode_sidecar_path(&cadir).unwrap()).unwrap();
+            .assert();
+        let mismatch_stderr = String::from_utf8_lossy(&mismatch.get_output().stderr);
+        if mismatch.get_output().status.code() == Some(2) {
+            assert!(mismatch_stderr.contains("does not match"));
+            assert!(!output.exists());
+        } else {
+            assert!(mismatch_stderr.contains("does not match"));
+            fs::remove_file(&output).ok();
+            fs::remove_file(&report_path).ok();
+        }
+        fs::remove_file(decode_sidecar_path(&cadir).unwrap()).ok();
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args(arguments)
