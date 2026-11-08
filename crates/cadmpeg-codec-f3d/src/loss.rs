@@ -250,10 +250,6 @@ pub(crate) enum F3dLossCode {
     MeshContainerMissing,
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
-    /// The external-reference table was present but not decoded.
-    XrefTableUndecoded,
-    /// A typed occurrence placement failed its frame grammar.
-    XrefPlacementUndecoded,
     /// Legacy placement identities remain in their complete native frames.
     XrefPlacementMetadataNative,
     /// A legacy placement role has no containing reference-table entry.
@@ -535,8 +531,6 @@ impl F3dLossCode {
         Self::MeshContainerUndecoded,
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
-        Self::XrefTableUndecoded,
-        Self::XrefPlacementUndecoded,
         Self::XrefPlacementMetadataNative,
         Self::XrefPlacementRoleUnbound,
         Self::XrefPlacementCurrentPose,
@@ -736,8 +730,6 @@ impl F3dLossCode {
             Self::MeshContainerUndecoded => "mesh.container-undecoded",
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
-            Self::XrefTableUndecoded => "xref.table-undecoded",
-            Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
             Self::XrefPlacementRoleUnbound => "xref.placement-role-unbound",
             Self::XrefPlacementCurrentPose => "xref.placement-current-pose",
@@ -976,8 +968,6 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
-            | Self::XrefTableUndecoded
-            | Self::XrefPlacementUndecoded
             | Self::XrefPlacementRoleUnbound
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
@@ -1069,14 +1059,12 @@ impl F3dLossCode {
             | Self::XrefContainedPoseNative
             | Self::XrefOwnedPose
             | Self::XrefOwnedPoseDisagrees
-            | Self::XrefOwnedPoseNative
-            | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
+            | Self::XrefOwnedPoseNative => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefPlacementUndecoded
             | Self::XrefPlacementRoleUnbound
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
@@ -1363,8 +1351,6 @@ mod tests {
                 "mesh.container-undecoded",
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
-                "xref.table-undecoded",
-                "xref.placement-undecoded",
                 "xref.placement-metadata-native",
                 "xref.placement-role-unbound",
                 "xref.placement-current-pose",
