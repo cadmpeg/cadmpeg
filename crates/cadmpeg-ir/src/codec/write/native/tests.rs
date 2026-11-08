@@ -132,7 +132,56 @@ fn typed_omissions_name_sorted_ids_and_exclude_written_siblings() {
     dispositions.complete(&ir);
     assert_eq!(dispositions.dropped_counts(&ir)["foreign"]["settings"], 2);
     let losses = dispositions.omission_losses(&ir, "own");
-    assert_eq!(losses.len(), 2);
-    assert_eq!(losses[0].message, "the own write omits 2 native record(s) from `foreign.settings`: foreign:native:setting#a, foreign:native:setting#z");
-    assert!(losses[1].message.contains("foreign:native:unknown#one"));
+    assert_eq!(losses.len(), 3);
+    assert_eq!(
+        losses[0].message,
+        "the own write omits native record foreign:native:setting#a from `foreign.settings`"
+    );
+    assert_eq!(
+        losses[1].message,
+        "the own write omits native record foreign:native:setting#z from `foreign.settings`"
+    );
+    assert!(losses
+        .iter()
+        .all(|loss| !loss.message.contains("foreign:native:setting#keep")));
+    assert!(losses[2].message.contains("foreign:native:unknown#one"));
+}
+
+#[test]
+fn each_omitted_foreign_record_has_its_own_loss() {
+    let mut ir = document();
+    ir.native.namespace_mut("foreign").arenas_mut().insert(
+        "records".into(),
+        vec![
+            record("foreign:native:record#one"),
+            record("foreign:native:record#two"),
+        ],
+    );
+    let mut dispositions = NativeDispositions::for_namespace(
+        "own",
+        ["settings"],
+        NativeDisposition::Dropped,
+    );
+    dispositions.complete(&ir);
+    let losses = dispositions.omission_losses(&ir, "own");
+    let own = losses
+        .iter()
+        .filter(|loss| loss.message.contains("`own.settings`"))
+        .count();
+    assert_eq!(own, 1);
+    for id in [
+        "foreign:native:record#one",
+        "foreign:native:record#two",
+        "foreign:native:unknown#one",
+    ] {
+        assert_eq!(
+            losses
+                .iter()
+                .filter(|loss| loss.message.contains(id))
+                .count(),
+            1,
+            "{id}"
+        );
+    }
+    assert_eq!(losses.len(), 4);
 }
