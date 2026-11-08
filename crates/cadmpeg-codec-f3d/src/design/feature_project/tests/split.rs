@@ -2,9 +2,8 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::feature_project::{
-    project_delete_face, project_split, project_split_face, selected_work_planes,
-};
+use crate::design::feature_project::delete_face::project_delete_face;
+use crate::design::feature_project::{project_split, project_split_face, selected_work_planes};
 use crate::ids::feature_input_topology_id;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
