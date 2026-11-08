@@ -47,6 +47,54 @@ pub(in crate::writer) struct FeatureOutput {
 
 /// Write a neutral operation. Unsupported content is an internal admission
 /// signal; the caller drops that feature and charges its export loss.
+/// Read a retained axis-reversal flag from the native property arena.
+/// Absent flags read as clear, matching the decoder default.
+fn retained_flag(ir: &cadmpeg_ir::CadIr, owner: Option<&str>, name: &str) -> bool {
+    let Some(owner) = owner else {
+        return false;
+    };
+    let Some(namespace) = ir.native.namespace("fcstd") else {
+        return false;
+    };
+    namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .ok()
+        .and_then(|properties| {
+            properties
+                .into_iter()
+                .find(|property| property.owner == owner && property.name == name)
+        })
+        .and_then(|property| {
+            property
+                .values()
+                .first()
+                .and_then(|value| value.attributes.get("value"))
+                .and_then(|value| value.parse::<bool>().ok())
+        })
+        .unwrap_or(false)
+}
+
+/// Negate a pattern direction vector written with a reversal flag set.
+fn negate_direction(value: &mut serde_json::Value) {
+    let Some(direction) = value
+        .get_mut("direction")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    for key in ["x", "y", "z"] {
+        let component = direction
+            .get(key)
+            .and_then(serde_json::Value::as_number)
+            .and_then(|number| number.as_f64());
+        if let Some(component) = component {
+            if let Some(slot) = direction.get_mut(key) {
+                *slot = serde_json::json!(-component);
+            }
+        }
+    }
+}
+
 pub(in crate::writer) fn write(
     ir: &cadmpeg_ir::CadIr,
     feature: &Feature,
@@ -198,14 +246,28 @@ pub(in crate::writer) fn write(
         }
         "pattern" => {
             links(object, "Originals", &value["seeds"], names)?;
-            // The neutral pattern direction is the resolved final
-            // direction; the writer must not replay the source Reversed
-            // flag or the decoder would flip it a second time. It writes
-            // clear flags so the retained values cannot reapply.
-            boolean(object, "Reversed", false);
-            boolean(object, "Reversed2", false);
+            let pattern_value = &value["pattern"];
+            // The neutral pattern vector is the resolved final direction.
+            // FreeCAD reads `Direction` back through the `Reversed` flag,
+            // so a reversed pattern writes its raw (unreversed) vector
+            // and re-states the flag value unchanged.
+            let reversed1 = retained_flag(ir, feature.native_ref.as_deref(), "Reversed");
+            let reversed2 = retained_flag(ir, feature.native_ref.as_deref(), "Reversed2");
+            let mut pattern_json = pattern_value.clone();
+            if matches!(tag(pattern_value), "linear" | "linear_offsets") {
+                if reversed1 {
+                    negate_direction(&mut pattern_json);
+                }
+                if reversed2 {
+                    if let Some(second) = pattern_json.get_mut("second") {
+                        negate_direction(second);
+                    }
+                }
+            }
+            boolean(object, "Reversed", reversed1);
+            boolean(object, "Reversed2", reversed2);
             pattern(
-                &value["pattern"],
+                &pattern_json,
                 object,
                 names,
                 &mut output.objects,
