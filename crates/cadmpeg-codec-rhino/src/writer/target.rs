@@ -374,7 +374,7 @@ pub(crate) fn plan(
         native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {
             match error {
                 super::WriteError::Omit(message) => {
-                    transitional_from_codec(CodecError::UnsupportedContent(message))
+                    transitional_from_codec(CodecError::InvalidInput(message))
                 }
                 super::WriteError::Fail(error) => transitional_from_codec(error),
                 super::WriteError::Encode(error) => error,
