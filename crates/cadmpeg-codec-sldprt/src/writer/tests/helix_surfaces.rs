@@ -1571,14 +1571,16 @@ fn source_less_partial_surface_operations_remain_operations() {
         let expected = feature.evaluation.definition().clone();
         assert!(matches!(
             &expected,
-            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-                faces: FaceSelection::Unresolved,
-                distance: None
-            } | FeatureOperation::ExtendSurface {
-                faces: FaceSelection::Unresolved,
-                distance: None,
-                method: SurfaceExtension::Unresolved
-            })
+            FeatureDefinition::Operation(
+                FeatureOperation::OffsetSurface {
+                    faces: FaceSelection::Unresolved,
+                    distance: None
+                } | FeatureOperation::ExtendSurface {
+                    faces: FaceSelection::Unresolved,
+                    distance: None,
+                    method: SurfaceExtension::Unresolved
+                }
+            )
         ));
         ir.native = cadmpeg_ir::Native::default();
         ir.source = None;

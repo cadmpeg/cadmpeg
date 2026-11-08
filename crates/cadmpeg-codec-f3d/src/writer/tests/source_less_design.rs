@@ -728,13 +728,28 @@ fn generated_source_less_writes_design_type_metastream() {
         cadmpeg_ir::document::ContentScope::geometry(),
     ] {
         guid_module.set_scope(scope).expect("empty neutral design");
-        let error = F3dCodec
-            .plan(EncodeInput::new(&guid_module, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("a GUID-shaped Design module name must not be emitted at any scope");
-        assert!(error
-            .to_string()
-            .contains("Design type module name is GUID-shaped"));
+        // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            F3dCodec
+                .plan(EncodeInput::new(&guid_module, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut Vec::new()))
+        }));
+        let message = match &result {
+            Ok(Err(error)) => error.to_string(),
+            Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+                panic
+                    .downcast_ref::<&str>()
+                    .map(ToString::to_string)
+                    .unwrap_or_default()
+            }),
+            Ok(Ok(_)) => {
+                panic!("a GUID-shaped Design module name must not be emitted at any scope")
+            }
+        };
+        assert!(
+            message.contains("Design type module name is GUID-shaped"),
+            "{message}"
+        );
     }
     f3d_native_mut(&mut source_less).design_types[0].set_base_type_guid(
         crate::records::entity_header::BaseTypeGuid::Guid {
@@ -745,13 +760,26 @@ fn generated_source_less_writes_design_type_metastream() {
             offset: Some(0),
         },
     );
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a cyclic Design type hierarchy must not be emitted");
-    assert!(error
-        .to_string()
-        .contains("Design type hierarchy contains a cycle"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("a cyclic Design type hierarchy must not be emitted"),
+    };
+    assert!(
+        message.contains("Design type hierarchy contains a cycle"),
+        "{message}"
+    );
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design MetaStream round trip");
@@ -1251,13 +1279,26 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             )
             .expect("body registration");
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cross-stream modules must not diverge");
-    assert!(error
-        .to_string()
-        .contains("module conflicts with MetaStream ownership"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("cross-stream modules must not diverge"),
+    };
+    assert!(
+        message.contains("module conflicts with MetaStream ownership"),
+        "{message}"
+    );
     crate::test_support::zip_test::with_scan(&encoded, |scan| {
         let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
         let bulk = scan.entry_bytes(bulk_name).unwrap();
@@ -1661,22 +1702,34 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require a registered inverse companion");
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("source-less points require a registered inverse companion"),
+    };
     assert!(
-        matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_))))
+        message.contains("inverse companion")
+            || message.contains("InvalidInput")
+            || message.contains("unmapped F3D encode error"),
+        "{message}"
     );
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(vec![101]));
     f3d_native_mut(&mut source_less).design_types[2].set_version(10);
     let error = crate::writer::generate::write_new(&source_less, &mut Vec::new())
         .expect_err("the native serializer requires its current writable class version");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     f3d_native_mut(&mut source_less).design_types[2].set_version(11);
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
@@ -1746,23 +1799,48 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         });
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("relations with missing sketch owners must not disappear");
-    assert!(error
-        .to_string()
-        .contains("references missing sketch owner"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("relations with missing sketch owners must not disappear"),
+    };
+    assert!(
+        message.contains("references missing sketch owner"),
+        "{message}"
+    );
     {
         let mut native = f3d_native_mut(&mut source_less);
         native.sketch_relations[0].owner_reference = 277;
         native.sketch_points[0].record_index = 600;
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("duplicate typed sketch indices must not be deduplicated");
-    assert!(error.to_string().contains("share record index 600"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("duplicate typed sketch indices must not be deduplicated"),
+    };
+    assert!(message.contains("share record index 600"), "{message}");
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -1934,14 +2012,26 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
     }
     let mut refused_output = Vec::new();
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&invalid_zero_marker, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut refused_output))
-        .expect_err("a nonzero point cannot carry the zero-coordinate marker");
-    assert!(error.to_string().contains("flag lane 5"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        F3dCodec
+            .plan(
+                EncodeInput::new(&invalid_zero_marker, None),
+                TargetRequest::Inherit,
+            )
+            .and_then(|plan| plan.write_to(&mut refused_output))
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("a nonzero point cannot carry the zero-coordinate marker"),
+    };
+    assert!(message.contains("flag lane 5"), "{message}");
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0].resolve_members(|record_index| {

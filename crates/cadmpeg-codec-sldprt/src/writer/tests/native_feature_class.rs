@@ -72,9 +72,13 @@ fn source_less_feature_without_a_name_stays_unnamed() {
         .unwrap();
     assert_eq!(written.ir().model.features[0].name, None);
     let native = sldprt_native(written.ir());
-    assert!(native.feature_input_lanes.iter().any(|lane| {
-        lane.names.iter().any(|name| name.value.is_empty())
-    }));
-    assert!(native.feature_input_lanes.iter().flat_map(|lane| &lane.names)
+    assert!(native
+        .feature_input_lanes
+        .iter()
+        .any(|lane| { lane.names.iter().any(|name| name.value.is_empty()) }));
+    assert!(native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.names)
         .all(|name| !name.value.starts_with("Feature")));
 }

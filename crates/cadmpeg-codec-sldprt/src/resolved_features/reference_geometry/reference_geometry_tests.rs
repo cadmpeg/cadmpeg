@@ -301,8 +301,7 @@ fn synthetic_block_instance_archive_has_a_declared_placement() {
     );
     reader.ptr(None).unwrap();
     assert_eq!(reader.p, payload.len());
-    let names = crate::resolved_features::names::object_names(&ctx, &payload, "test#lane")
-        .unwrap();
+    let names = crate::resolved_features::names::object_names(&ctx, &payload, "test#lane").unwrap();
     assert_eq!(names.len(), 2);
     assert_eq!(names[0].value, "Use");
     assert_eq!(names[1].value, "Block");

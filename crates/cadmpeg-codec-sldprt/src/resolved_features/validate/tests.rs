@@ -256,15 +256,28 @@ fn native_validation_rejects_edited_relation_binding() {
     .any(|finding| finding
         .message
         .contains("inconsistent relation class or scalar")));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("inconsistent relation class or scalar"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("expected rejection"),
+    };
+    assert!(
+        message.contains("inconsistent relation class or scalar"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -296,15 +309,28 @@ fn native_validation_rejects_edited_relation_instance() {
             .message
             .contains("relation instances do not match the native payload")
     }));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("relation instances do not match the native payload"));
+    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+    }));
+    let message = match &result {
+        Ok(Err(error)) => error.to_string(),
+        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+            panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        }),
+        Ok(Ok(_)) => panic!("expected rejection"),
+    };
+    assert!(
+        message.contains("relation instances do not match the native payload"),
+        "{message}"
+    );
 }
 
 #[test]

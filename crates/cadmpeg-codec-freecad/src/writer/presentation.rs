@@ -184,9 +184,9 @@ fn neutral_views(
     providers: &mut BTreeMap<String, Provider>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let native_providers = ir
-        .native
-        .namespace("fcstd")
+    let namespace = ir.native.namespace("fcstd");
+    let native_providers = namespace
+        .as_ref()
         .map(|namespace| namespace.arena_as::<GuiViewProviderRecord>("gui_view_providers"))
         .transpose()?
         .unwrap_or_default();

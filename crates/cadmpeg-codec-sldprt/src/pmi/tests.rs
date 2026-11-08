@@ -694,7 +694,10 @@ fn damaged_page_graph_is_untyped_not_a_part() {
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
     assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].code, crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind());
+    assert_eq!(
+        losses[0].code,
+        crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind()
+    );
     assert!(
         losses[0].message.contains("offset 0") && losses[0].message.contains("length 512"),
         "{}",
@@ -1425,8 +1428,7 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::InvalidInput(_)
-                | cadmpeg_core::CodecError::NotImplemented(_)
+            cadmpeg_core::CodecError::InvalidInput(_) | cadmpeg_core::CodecError::NotImplemented(_)
         ),
         "{error:?}"
     );

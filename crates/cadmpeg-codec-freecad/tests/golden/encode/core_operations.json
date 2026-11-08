@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 116647,
-      "payload_sha256": "96ff439269eb7426f52443a769274c10def8b3a62cd2b2151852a43cccc31ee9"
+      "payload_len": 116652,
+      "payload_sha256": "ecb1d90598979c337cc6dcd2f63704d2900dbb99f4b478385b22fa4d93e2d4d4"
     },
     {
       "name": "RevolutionProfile.InternalShape.brp",
@@ -308,36 +308,36 @@
         "assembly_joints": "written",
         "assets": "dropped",
         "attributes": "written",
-        "bodies": "written",
-        "coedges": "written",
+        "bodies": "reported",
+        "coedges": "reported",
         "colliders": "omitted",
         "configurations": "dropped",
-        "curves": "written",
+        "curves": "reported",
         "declared_measures": "omitted",
         "drawings": "reported",
-        "edges": "written",
-        "faces": "written",
+        "edges": "reported",
+        "faces": "reported",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
         "features": "written",
-        "loops": "written",
+        "loops": "reported",
         "mass_properties": "omitted",
         "occurrences": "written",
         "parameters": "written",
-        "pcurves": "written",
+        "pcurves": "reported",
         "physical_materials": "omitted",
         "physics_scenes": "omitted",
         "pmi": "dropped",
-        "points": "written",
+        "points": "reported",
         "presentation_documents": "reported",
         "presentation_layers": "dropped",
-        "procedural_curves": "written",
-        "procedural_surfaces": "written",
+        "procedural_curves": "reported",
+        "procedural_surfaces": "reported",
         "product_definitions": "written",
-        "regions": "written",
+        "regions": "reported",
         "rigid_bodies": "omitted",
         "semantic_annotations": "reported",
-        "shells": "written",
+        "shells": "reported",
         "sketch_constraints": "written",
         "sketch_entities": "written",
         "sketches": "written",
@@ -347,9 +347,9 @@
         "spatial_sketches": "dropped",
         "spreadsheets": "written",
         "subds": "dropped",
-        "surfaces": "written",
+        "surfaces": "reported",
         "tessellations": "reported",
-        "vertices": "written",
+        "vertices": "reported",
         "view_presentations": "reported"
       },
       "coverage": "declared"
@@ -407,6 +407,106 @@
           "scope": "namespaced"
         },
         "message": "FreeCAD GUI carriers create presentation records for appearance or visibility state without an authored neutral presentation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural curve record fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural curve record fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural curve record fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural curve record fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural surface record fcstd:model:surface#Loft:Shape:Loft.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural surface record fcstd:model:surface#LoftSectionA:Shape:LoftSectionA.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural surface record fcstd:model:surface#LoftSectionB:Shape:LoftSectionB.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2:basis:construction is omitted from FCStd synthesis",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2:construction is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {

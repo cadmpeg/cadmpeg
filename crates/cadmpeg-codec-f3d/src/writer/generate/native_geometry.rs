@@ -1670,9 +1670,7 @@ fn native_compound_loft_scale(
             })?;
         let curve = native_spline_field_curve(
             curve.geometry.solved().ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(
-                    "carrier has no solved geometry".into(),
-                )
+                cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
             })?,
             native_pcurve_knot_domain(member.data.pcurve.as_ref())?,
         )?;
@@ -2529,9 +2527,7 @@ fn encode_native_law_surface(
     match &construction.tail {
         cadmpeg_ir::geometry::LawSurfaceTail::Full { .. } => {
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "full law surface requires a cache-fit tolerance".into(),
-                )
+                CodecError::NotImplemented("full law surface requires a cache-fit tolerance".into())
             })?;
             if construction.parameter_ranges.is_none() {
                 native_enum(bytes, 0);
@@ -2539,9 +2535,7 @@ fn encode_native_law_surface(
             native_nurbs_surface(
                 bytes,
                 solved_cache.ok_or_else(|| {
-                    CodecError::NotImplemented(
-                        "full law surface requires a solved cache".into(),
-                    )
+                    CodecError::NotImplemented("full law surface requires a solved cache".into())
                 })?,
             )?;
             native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
@@ -4217,9 +4211,7 @@ fn native_rolling_ball_side(
             })?;
         let curve = native_spline_field_curve(
             curve.geometry.solved().ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(
-                    "carrier has no solved geometry".into(),
-                )
+                cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
             })?,
             match support.parameter_range {
                 [Some(lower), Some(upper)] => Some([lower, upper]),
@@ -4828,10 +4820,7 @@ mod native_interval_curve_tests {
 
         let error =
             native_interval_curve(&circle, [1.0, 1.0]).expect_err("a range that states no span");
-        assert!(
-            matches!(error, CodecError::NotImplemented(_)),
-            "{error}"
-        );
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(
             error.to_string().contains("finite ordered range"),
             "{error}"
@@ -5280,9 +5269,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("projection source curve is missing".into()))?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D carrier has no solved geometry".into(),
-                )
+                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
             context.parameter_range().endpoints(),
         )?;
@@ -5519,9 +5506,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
         let base = native_interval_curve(
             base.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D carrier has no solved geometry".into(),
-                )
+                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
             base_range.endpoints(),
         )?;
@@ -5743,9 +5728,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("vector offset source curve is missing".into()))?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D carrier has no solved geometry".into(),
-                )
+                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
             parameter_range.endpoints(),
         )?;
@@ -5786,9 +5769,7 @@ pub(crate) fn native_procedural_curve(
             .ok_or_else(|| CodecError::Malformed("subset source curve is missing".into()))?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less F3D carrier has no solved geometry".into(),
-                )
+                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
             parameter_range.endpoints(),
         )?;
@@ -6205,10 +6186,7 @@ mod pcurve_chart_tests {
                     .expect("finite pcurve output decodes");
             } else {
                 let error = result.expect_err("pcurve evaluation overflows a pole coordinate");
-                assert!(
-                    matches!(error, CodecError::NotImplemented(_)),
-                    "{error}"
-                );
+                assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
                 assert!(error.to_string().contains("control_points"), "{error}");
                 assert_eq!(output, [0x93, 0x2a]);
             }

@@ -138,8 +138,15 @@ fn truncated_container_has_no_complete_layout_baseline() {
     ))
     .unwrap();
     let codec = crate::SldprtCodec;
-    let full = codec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
-    let cut = codec.decode(&mut Cursor::new(&bytes[..bytes.len() / 2]), &DecodeOptions::default()).unwrap();
+    let full = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let cut = codec
+        .decode(
+            &mut Cursor::new(&bytes[..bytes.len() / 2]),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let baselines = |result: &cadmpeg_ir::codec::DecodeResult| {
         crate::native::SldprtNative::load(result.ir().native.namespace("sldprt").unwrap())
             .unwrap()
@@ -147,5 +154,9 @@ fn truncated_container_has_no_complete_layout_baseline() {
     };
     assert_eq!(baselines(&full).len(), 1);
     assert!(baselines(&cut).is_empty());
-    assert!(cut.report().losses.iter().any(|loss| loss.code.local_code() == "record.unreadable"));
+    assert!(cut
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
 }

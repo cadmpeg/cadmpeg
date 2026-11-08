@@ -114,8 +114,7 @@ fn declared_name_length_at(payload: &[u8], offset: usize) -> Option<usize> {
     if payload.get(offset..end)? != CLASS_MARKER
         || usize::from(View::u16_le_at(payload, end)?) != CLASS.len()
         || payload.get(end + 2..end + 2 + CLASS.len())? != CLASS
-        || payload.get(end + 2 + CLASS.len()..end + 5 + CLASS.len())?
-            != &NAME_MARKER[2..]
+        || payload.get(end + 2 + CLASS.len()..end + 5 + CLASS.len())? != &NAME_MARKER[2..]
     {
         return None;
     }
