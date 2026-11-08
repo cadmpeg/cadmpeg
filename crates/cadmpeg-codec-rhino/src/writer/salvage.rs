@@ -27,7 +27,10 @@ pub(super) fn write(
     records: SalvageRecords<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<usize, WriteError> {
-    let SalvageRecords { carried, curves: written_curves } = records;
+    let SalvageRecords {
+        carried,
+        curves: written_curves,
+    } = records;
     let mut count = 0;
     for point in &body.model.points {
         if carried.contains(point.id.as_str()) {

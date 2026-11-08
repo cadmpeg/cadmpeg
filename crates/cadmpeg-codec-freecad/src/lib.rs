@@ -1461,7 +1461,7 @@ impl CodecBackend for FcstdCodec {
         // even when their projection failed or the depth excluded their
         // records. A class whose parts were found but failed stays in scope.
         let required = ctx.depth().required_scope();
-        let (model_carriers, design_carriers, failed_classes) = {
+        let (model_carriers, _design_carriers, failed_classes) = {
             let mut failed = cadmpeg_ir::ArenaClasses::new();
             let native_namespace = ir.native.namespace("fcstd");
             if let Some(namespace) = native_namespace {
@@ -1505,13 +1505,7 @@ impl CodecBackend for FcstdCodec {
                 .is_some()
                 || model_carriers
                 || failed_classes.contains(&cadmpeg_ir::ArenaClass::Model));
-        let design = required.design
-            && (ir
-                .model
-                .populated_arena(cadmpeg_ir::ArenaClass::Design)
-                .is_some()
-                || design_carriers
-                || failed_classes.contains(&cadmpeg_ir::ArenaClass::Design));
+        let design = required.design;
         ir.set_scope(cadmpeg_ir::ContentScope { model, design })
             .map_err(CodecError::malformed)?;
         let scope = ir.scope;

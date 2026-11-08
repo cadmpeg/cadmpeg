@@ -1380,12 +1380,13 @@ fn project_v1_annotation(
         cadmpeg_ir::ids::IdentityKey::try_new(key)
             .map_err(|error| CodecError::malformed(error.to_string()))?,
     );
-    let position = cadmpeg_ir::units::FiniteVector::new(position.map(cadmpeg_ir::scalar::FiniteReal::get))
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "V1 annotation record {record_id} has no finite neutral position"
-            ))
-        })?;
+    let position =
+        cadmpeg_ir::units::FiniteVector::new(position.map(cadmpeg_ir::scalar::FiniteReal::get))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "V1 annotation record {record_id} has no finite neutral position"
+                ))
+            })?;
     let mut annotation = SemanticAnnotation::new(
         id,
         record_id.to_owned(),

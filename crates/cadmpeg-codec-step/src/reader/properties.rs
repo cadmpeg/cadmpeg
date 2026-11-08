@@ -328,6 +328,90 @@ mod tests {
     }
 
     #[test]
+    fn document_attributes_write_cax_if_form_and_round_trip() {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use std::io::Cursor;
+
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        for (name, value) in [
+            ("Title", AttributeValue::String("Bracket".into())),
+            ("Revision", AttributeValue::Integer(3)),
+            ("Mass", AttributeValue::float(1.5).expect("finite mass")),
+        ] {
+            ir.model.attributes.push(SourceAttribute {
+                id: format!("test:model:attribute#{name}")
+                    .try_into()
+                    .expect("attribute id"),
+                native_ref: None,
+                target: AttributeTarget::Document,
+                name: name.into(),
+                values: vec![Some(value)],
+            });
+        }
+        let mut bytes = Vec::new();
+        crate::export::write_step(
+            &ir,
+            &mut bytes,
+            crate::StepSchema::Ap242Edition3,
+            &crate::StepWriteOptions::default(),
+        )
+        .expect("write document attributes");
+        let text = std::str::from_utf8(&bytes).expect("utf-8");
+        assert!(text.contains("PROPERTY_DEFINITION_REPRESENTATION"));
+        assert!(text.contains("DESCRIPTIVE_REPRESENTATION_ITEM"));
+        assert!(text.contains("VALUE_REPRESENTATION_ITEM"));
+        assert!(text.contains("COUNT_MEASURE(3)"));
+        assert!(text.contains("NUMERIC_MEASURE"));
+
+        let decoded = crate::StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode document attributes");
+        for (name, value) in [
+            ("Title", AttributeValue::String("Bracket".into())),
+            ("Revision", AttributeValue::Integer(3)),
+            ("Mass", AttributeValue::float(1.5).expect("finite mass")),
+        ] {
+            assert!(
+                decoded.ir().model.attributes.iter().any(|attribute| {
+                    attribute.target == AttributeTarget::Document
+                        && attribute.name == name
+                        && attribute.values == [Some(value.clone())]
+                }),
+                "missing document attribute {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn document_attribute_value_not_representable_in_cax_if_is_degraded() {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        ir.model.attributes.push(SourceAttribute {
+            id: "test:model:attribute#Flag"
+                .try_into()
+                .expect("attribute id"),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "Flag".into(),
+            values: vec![Some(AttributeValue::Boolean(true))],
+        });
+        let mut bytes = Vec::new();
+        let report = crate::export::write_step(
+            &ir,
+            &mut bytes,
+            crate::StepSchema::Ap242Edition3,
+            &crate::StepWriteOptions::default(),
+        )
+        .expect("write degraded document attribute");
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == crate::loss::StepLossCode::DocumentAttributeValueDegraded.kind()
+                && loss.message.contains("Flag")
+        }));
+    }
+
+    #[test]
     fn ordered_property_row_decodes_and_round_trips() {
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
         let source = decode_inline(
