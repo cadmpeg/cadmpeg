@@ -52,6 +52,7 @@ const WRITTEN: &[&str] = &[
     "design_types",
     "design_entity_headers",
     "design_record_headers",
+    "design_mesh_features",
     "body_native_keys",
     "body_visibilities",
     "edge_continuities",
@@ -225,6 +226,12 @@ pub(super) fn reconcile(
                             cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
                             ) if kind.as_str() == "Decal" => scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal,
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::MeshImport { .. },
+                            ) => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
+                            }
                             _ => false,
                         }
                 })
@@ -321,6 +328,16 @@ pub(super) fn reconcile(
         sketch_texts: original.sketch_texts.clone(),
         ..F3dNative::default()
     };
+    native.design_mesh_features = original
+        .design_mesh_features
+        .into_iter()
+        .filter(|mesh| {
+            native.design_parameter_scopes.iter().any(|scope| {
+                crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&mesh.id)
+                    && scope.record_index == mesh.scope().record().record_index()
+            })
+        })
+        .collect();
     retain_mesh_sentinels(target, &mut native);
     super::streams::reconcile(&mut native, losses);
     // Native namespace storage orders every arena by record id, so the
