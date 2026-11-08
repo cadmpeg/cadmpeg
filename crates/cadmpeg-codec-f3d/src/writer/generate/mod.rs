@@ -52,11 +52,11 @@ pub(super) struct Generated {
     pub(super) written_recipes: BTreeSet<String>,
 }
 
-#[cfg(test)]
 /// First `FusionDesignSegmentType` number of the authored mesh segments; the
 /// lower numbers hold the parameter, feature, Canvas and Decal segments.
 const MESH_SEGMENT_START: usize = 7;
 
+#[cfg(test)]
 pub(crate) fn write_new(
     target: &CadIr,
     writer: &mut dyn Write,
