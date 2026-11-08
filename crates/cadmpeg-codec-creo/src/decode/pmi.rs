@@ -142,7 +142,7 @@ pub(super) fn transfer(
         annotations,
         losses,
     )?;
-    let targets = targets::flatness_targets(ctx, scan, &owners, &tolerances, ir)?;
+    let targets = targets::surface_targets(ctx, scan, &owners, &tolerances, ir)?;
     let mut emitted = 0usize;
     let mut text_magnitudes = 0usize;
     let mut conflicting = 0usize;
@@ -239,10 +239,11 @@ pub(super) fn transfer(
                     (&second_key, tolerance.offset),
                     (kind, secondary),
                     second_references,
-                    Vec::new(),
+                    target.clone().into_iter().collect(),
                 )?;
                 emitted += 1;
                 text_magnitudes += 1;
+                inferred_targets += usize::from(target.is_some());
             } else {
                 unresolved += 1;
             }

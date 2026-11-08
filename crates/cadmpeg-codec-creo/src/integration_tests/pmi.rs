@@ -14,6 +14,7 @@ use crate::CreoCodec;
 
 const MAGNITUDE_TOLERANCE: f64 = 1.0e-9;
 const POSITION_NOMINAL_TOLERANCE: f64 = 0.01;
+const PLANE_OFFSET_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
 fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
@@ -86,11 +87,33 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             }
             _ => panic!("unexpected tolerance"),
         };
-        if *tolerance == GeometricToleranceKind::Flatness {
-            assert!(pmi.targets.iter().any(|target| matches!(
-                target,
-                PmiTarget::Face { face } if face.as_str() == "creo:visibgeom:face#106"
-            )));
+        let target_plane = match pmi.targets.as_slice() {
+            [PmiTarget::Face { face }] => Some(face_plane(&result, face.as_str())),
+            [] => None,
+            _ => panic!("one face target"),
+        };
+        let magnitude_mm = magnitude.get().value.get();
+        match (tolerance, target_plane) {
+            (GeometricToleranceKind::Flatness, Some((axis, offset))) => {
+                assert_plane(axis, offset, [0.0, 0.0, 1.0], 0.0);
+            }
+            (GeometricToleranceKind::Perpendicularity, Some((axis, offset))) => {
+                assert_plane(axis, offset, [1.0, 0.0, 0.0], 400.0);
+            }
+            (GeometricToleranceKind::SurfaceProfile, Some((axis, offset)))
+                if (magnitude_mm - 1.25).abs() < MAGNITUDE_TOLERANCE =>
+            {
+                assert_plane(axis, offset, [0.0, 1.0, 0.0], -225.0);
+            }
+            (GeometricToleranceKind::SurfaceProfile, Some((axis, offset))) => {
+                assert!(
+                    axis[2].abs() < MAGNITUDE_TOLERANCE,
+                    "hex side axis {axis:?}"
+                );
+                assert!((offset.abs() - 50.0).abs() < PLANE_OFFSET_TOLERANCE);
+            }
+            (GeometricToleranceKind::Position, None) => {}
+            (kind, plane) => panic!("unexpected target for {kind:?}: {plane:?}"),
         }
         let Some(system_id) = datum_system else {
             assert!(expected.is_empty());
@@ -209,6 +232,38 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
                 })
         }));
     }
+}
+
+/// The unit axis and signed origin offset of a face's planar carrier.
+fn face_plane(result: &cadmpeg_ir::codec::DecodeResult, face: &str) -> ([f64; 3], f64) {
+    let model = &result.ir().model;
+    let surface = &model
+        .faces
+        .iter()
+        .find(|item| item.id.as_str() == face)
+        .expect("target face")
+        .surface;
+    let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
+    )) = model
+        .surfaces
+        .iter()
+        .find(|item| &item.id == surface)
+        .map(|item| &item.geometry)
+    else {
+        panic!("planar target carrier")
+    };
+    let axis = <[f64; 3]>::from(*plane.frame().axis().as_raw());
+    let origin = <[f64; 3]>::from(plane.origin().get());
+    let offset = axis.iter().zip(origin).map(|(a, o)| a * o).sum();
+    (axis, offset)
+}
+
+/// Compare a carrier with a STEP-twin plane up to orientation.
+fn assert_plane(axis: [f64; 3], offset: f64, expected_axis: [f64; 3], expected_offset: f64) {
+    let dot: f64 = axis.iter().zip(expected_axis).map(|(a, e)| a * e).sum();
+    assert!((dot.abs() - 1.0).abs() < MAGNITUDE_TOLERANCE, "{axis:?}");
+    assert!((offset * dot.signum() - expected_offset).abs() < PLANE_OFFSET_TOLERANCE);
 }
 
 fn composite_source(unit: &[u8], principal_unit: bool, conflicting_magnitude: bool) -> Vec<u8> {

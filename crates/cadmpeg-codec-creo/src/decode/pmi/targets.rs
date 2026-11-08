@@ -18,7 +18,7 @@ const DISPLAY_VALUE_MATCH_TOLERANCE: f64 = 1.0e-9;
 
 type Owner = (u32, u32);
 
-pub(super) fn flatness_targets(
+pub(super) fn surface_targets(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     owners: &BTreeMap<Owner, Option<(Element, &str)>>,
@@ -49,9 +49,6 @@ pub(super) fn flatness_targets(
             let Some(tolerance) = tolerances.get(&owner) else {
                 continue;
             };
-            if tolerance.kind != Some(b"FLATNESS") || prefix.tolerance_type != 2 {
-                continue;
-            }
             let (Some(stored), Some(displayed)) = (
                 tolerance.magnitude,
                 super::text_magnitude(prefix.value_string),

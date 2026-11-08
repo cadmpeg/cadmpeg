@@ -502,7 +502,7 @@ fn positional_text(row: &mut View<'_>) -> Option<(String, usize)> {
 
 fn compact(view: &mut View<'_>) -> Option<u32> {
     let local = view.read_len();
-    let (value, end) = crate::psb::complete_compact_int(view.window(), local)?;
+    let (value, end) = crate::psb::packed_compact_int(view.window(), local)?;
     view.seek(view.start().checked_add(end)?)?;
     Some(value)
 }

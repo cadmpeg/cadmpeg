@@ -6791,6 +6791,47 @@ zero-based `geom_tol_array` slot. A dimension can reference several tolerances.
 A type-2 placement can contain an attachment of type `25`; its `attach_id`
 selects a surface.
 
+The `geom_tol_array` header is `f8 <count> f7 <class> fb`, and `e1` fills each
+leading empty slot. The first occupied slot stores a named prototype:
+
+```text
+e3 e0 00 dtl_named_item\0 e2 e0 00 dtl_item\0 e2 e0 0a name\0 [f1] <name>
+e0 01 tol_type\0 [f1] <tol_type> e0 01 tol_class\0 <tol_class>
+e0 01 feat_id\0 <feat_id> e0 0a value_string\0 f8 01 <value>\0
+e0 00 tol_text\0 f8 01 f7 <class> fb e3 ... e0 01 owner_id\0 <slot> ...
+e0 00 gtol_place_ptr\0 <placement>
+```
+
+`<name>` is `e1` or a NUL-terminated string, and `<feat_id>` is `f6` or a
+compact integer. A later occupied slot stores the same leading fields
+positionally:
+
+```text
+e3 [f7 <class>] e2 e2 <name> <tol_type> <tol_class> <feat_id> [f8 01] <value>\0
+f8 01 f7 <class> fb e3 f7 <class> <db_type> <text_type> <text_value>\0
+[f5] <txt_attrib> <txt_attrib2> <slot> <height> <width_factor>
+e2 <thickness> <vertical_extent_start> <vertical_extent_end> <placement>
+```
+
+`<value>` is the displayed magnitude text. An `e8` byte can precede its UTF-8
+characters. `<txt_attrib>` is a compact integer or `eb` and four bytes. `<slot>`
+is the row's zero-based `geom_tol_array` slot and equals the `Annot_Id` of its
+annotation element.
+
+A named placement is `[f1|f2|f3] [f7 <class>] e3 e0 01 type\0 [f1] <type>
+e0 01 id\0 [f1] <id> e0 01 attribute\0 [f1] <attribute> e0 02 coord\0 f8 03
+<coord> e0 00 gtol_attach_pnt\0 <attachment>`; a positional placement is
+`e3 <type> <id> <attribute> <coord> <attachment>`. `<coord>` stores three
+scalars in the frame-slot lane of §9.1. `e4`, `e5`, and `e6` repeat the
+preceding coordinate one, two, and three times.
+`<attachment>` is `e1` when the placement has no attachment. The first
+attachment of a section is named:
+`e3 e0 01 type\0 [f0] <type> e0 01 attach_id\0 [f1] <id> e0 00 att_offsets\0
+[f7 <class>] f8 <count> ...`. A later attachment stores the same fields
+positionally: `e3 [f0] [f7 <class>] <type> <id> [f7 <class>] f8 <count> ...`.
+A type-2 placement and its type-`25` attachment store the same surface
+identifier.
+
 The `set_datum_tag_xar` named prototype stores a datum label in
 `p_datum_tag_name` and a zero-based `gtol_datum_def_xar` slot in `dtm_def_id`.
 The definition prototype's `p_ldr.note_att` type `25` selects a surface by

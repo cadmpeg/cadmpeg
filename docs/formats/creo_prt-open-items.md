@@ -1510,23 +1510,18 @@ transfer the rest of legacy persistence.
 **Question.** Which serialized length or terminator bounds each binary
 `geom_tol_array` element and its nested fields?
 
-**Known.** The array header has an `f8` slot count and a class reference. A
-populated element contains type-`00` `dtl_named_item`, `dtl_item`, and
-`tol_text` fields. The first two can start with `e2`; `tol_text` can start with
-`f8 01 f7 0a fb`, followed by `e3` and a named `db_type` field. The named
-binary text row's `owner_id` can equal the first occupied slot. A depth-bounded
-ASCII text row can carry its enclosing slot index in `owner_id`. The binary
-window from the first `dtl_named_item` to the next `dim_array` marker contains
-`value_string`, `datum_refs`, and `frame_datum_refs`.
-Depth-bounded ASCII elements can instead contain direct `value` and
-`datum_refs_array` fields. The ASCII object-array depth grammar has separate
-row boundaries. A typed positional prefix can carry the tolerance type, value,
-nested text owner, and placement pointer. A named row can carry null
-`drfs_data`, leaving the following positional scan without a `drf_id` anchor.
+**Known.** `creo_prt.md` §8.9 defines the array header, the named prototype,
+the leading positional fields, the `value_string` and `tol_text` arrays, the
+placement, and the attachment prefix. A typed positional row is located by
+its complete leading fields and its unique annotation slot. The bytes after
+the attachment's `att_offsets` array contain `view_id`, `point`, `vec`,
+`private_attribute`, `datum_refs`, `frame_datum_refs`, and `drfs_data` fields
+before the next row. A named row can carry `prim_dtm_string`,
+`sec_dtm_string`, `ter_dtm_string`, and `frame_level_datum_refs`.
 
-**Need.** Establish the complete binary element and array extent from their
-serialized productions. Consume nested fields and distinguish later slots to
-transfer their datum and target references.
+**Need.** Establish the production that ends a row after its attachment.
+Consume the datum fields of each row to transfer its datum and target
+references.
 
 **Note.** Boundary tests gave these results:
 
@@ -1539,7 +1534,9 @@ transfer their datum and target references.
 7. The `datum_refs` count ends the element: sibling datum arrays follow it.
 8. The `f8` count is the number of occupied rows: null slots occur in the array.
 9. A `drf_id` frame is required to locate subsequent prefixes: typed prefixes with matching annotation owners and neutral values also occur after null `drfs_data`.
-
+10. The `dtl_item` `name` is always `e1`: empty NUL-terminated names occur in named and positional rows.
+11. A positional `value_string` stores one bare string: composite rows store `f8 02` and two strings, and the next row omits the repeated count.
+12. A positional `tol_text` array has one element: composite rows store one element per frame line with one owner slot.
 ### PP-23. Geometric-tolerance datum identities
 
 **Question.** Which native records bind tolerance datum labels and frame
@@ -1601,10 +1598,10 @@ curve, surface, and bounded-face targets for a geometric tolerance?
 the tolerance in `gtol_ids`. A type-2 placement can carry a nested attachment
 whose identifier equals the outer identifier. Dimension and geometry
 identifiers can overlap. A surface reference can resolve without a bounded
-face. A type-2 placement can contain a type-`25` attachment to a surface;
-the decoder uses its unique bounded face when one is present and records the
-inference.
-Some positional placement identifiers start with `c0` and remain unresolved.
+face. A type-2 placement and its type-`25` attachment store the same surface
+identifier; the decoder uses the surface's unique bounded face and records the
+inference. Attachments of types `1` and `16` and placements of type `5`
+remain unresolved.
 
 **Need.** Establish each pointer's namespace and its complete owned target
 join before transferring a face or curve attachment.
@@ -1617,10 +1614,11 @@ join before transferring a face or curve attachment.
 4. A dimension selects at most one tolerance: one dimension has two reciprocal links.
 5. A type-2 pointer selects a dimension slot: tested identifiers exceed the dimension array bounds.
 6. A type-4 pointer selects a reciprocal dimension: the tested in-range slots lack backlinks.
-7. A class reference states an inline attachment type: classed payloads lack the explicit type marker.
-8. A `c0`-prefixed placement identifier uses the admitted compact-integer lane: that decoder rejects the token.
+7. A class reference states an inline attachment type: the byte after a positional `e3` is the replayed `type` field, and a class reference uses `f7`.
+8. A `c0`-prefixed placement identifier is a separate lane: it is a three-byte compact integer.
 9. A dimension feature identifier selects the position target faces: the 85 mm dimension has a null `feat_id`.
 10. The dimension distance selects the position target faces: four native face pairs match each of the 85 mm and 50 mm distances.
+11. Only a flatness tolerance's type-`25` attachment selects its target: perpendicularity, profile, runout, and position attachments select the STEP-twin target surface.
 
 ### PP-25. PMI attribute units
 
