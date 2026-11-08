@@ -387,6 +387,47 @@ mod tests {
     }
 
     #[test]
+    fn a_document_attribute_with_several_values_round_trips_as_a_named_row() {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let values = vec![
+            Some(AttributeValue::Integer(42)),
+            Some(AttributeValue::Integer(2026)),
+            Some(AttributeValue::String("rev".into())),
+        ];
+        ir.model.attributes.push(SourceAttribute {
+            id: "test:model:attribute#Record"
+                .try_into()
+                .expect("attribute id"),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "Record".into(),
+            values: values.clone(),
+        });
+        let mut bytes = Vec::new();
+        crate::export::write_step(
+            &ir,
+            &mut bytes,
+            crate::StepSchema::Ap242Edition3,
+            &crate::StepWriteOptions::default(),
+        )
+        .expect("write the row attribute");
+        assert!(std::str::from_utf8(&bytes)
+            .expect("utf-8")
+            .contains("ROW_REPRESENTATION_ITEM('Record',"));
+        let decoded = crate::StepCodec::default()
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode the row attribute");
+        assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+            attribute.target == AttributeTarget::Document
+                && attribute.name == "Record"
+                && attribute.values == values
+        }));
+    }
+
+    #[test]
     fn document_attribute_value_not_representable_in_cax_if_is_degraded() {
         use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 
