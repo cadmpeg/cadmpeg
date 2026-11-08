@@ -3715,6 +3715,180 @@ mod tests {
     }
 
     #[test]
+    fn lzma_history_extends_to_the_declared_length_beyond_one_mebibyte() {
+        const PAYLOAD: &str = "0053a48ba682b207b0fc90f390f421bbe0454d93fbdef3696a4b6d4d92722dce9b3e68c474434892c98c07c5beb98dca44aeaba9ab2223f2882aee8b03d2f91f0db2d992bc4bd6264eb20170048e0fbb4664c8d8d61d6518c42f1d81863421753d7e9f702f114b4d2d35d5979c83aa50622bdb69839a374be1eb877da227ab52d1b16c861b74f87be1e3b043fceff052a73d3f97ecb51a94141b4e995df947fa4ee752e2920656199e449ee2d2e446f654f088752c30dbc2505491229706035fc9703b14c0323798a51501a5e8a3092aecaaff5a26ac720c1692a7be398f24e1709ea7235fec28cb85d195988a7e2a91f22775f719c006984d98fdd8afd5900fc42553f8f591363105a5b0ee6fc1704d470cd19111aaad5ffb0606e2778f2008a66bfffecd0a40";
+        let head = (0..64u32)
+            .map(|index| u8::try_from((index * 73 + 41) * 151 % 251).unwrap())
+            .collect::<Vec<_>>();
+        let mut expected = head.clone();
+        expected.resize(head.len() + (1 << 20) + 4096, 0);
+        expected.extend_from_slice(&head);
+        let payload = (0..PAYLOAD.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&PAYLOAD[at..at + 2], 16).unwrap())
+            .collect::<Vec<_>>();
+        let descriptor = [0x81, 0xa1, b'T', 0];
+        let mut body = Vec::new();
+        body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+        body.extend_from_slice(&descriptor);
+        body.extend_from_slice(&1_052_800u32.to_le_bytes());
+        body.extend_from_slice(&[LZMA_PROPERTIES, LZMA_DICTIONARY_LOG]);
+        body.extend_from_slice(&payload);
+        let stream = inflate_stream(&body).expect("history beyond one mebibyte");
+        assert_eq!(stream.bytes.len(), 1_052_800);
+        assert_eq!(stream.bytes, expected);
+        assert_eq!(stream.history_lengths, [1_052_800]);
+    }
+
+    fn split_part(payload: &[u8]) -> Vec<u8> {
+        raw_stream_body(
+            &[0x81, 0xa1, b'T', 3],
+            u32::try_from(payload.len()).unwrap(),
+            payload,
+        )
+    }
+
+    fn split_body(descriptor: &[u8], parts: &[Vec<u8>], trailing: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+        body.extend_from_slice(descriptor);
+        for part in parts {
+            body.extend_from_slice(part);
+        }
+        body.extend_from_slice(trailing);
+        body
+    }
+
+    fn three_way_split(dimension: u8, sizes: [u8; 3]) -> Vec<u8> {
+        vec![
+            0x84, 0xa1, b'D', dimension, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x93, sizes[0], sizes[1],
+            sizes[2], 0xa1, b'T', 3,
+        ]
+    }
+
+    fn one_value_parts() -> [Vec<u8>; 3] {
+        let part = split_part(&1.0f32.to_le_bytes());
+        assert_eq!(part.len(), 16);
+        [part.clone(), part.clone(), part]
+    }
+
+    #[test]
+    fn split_stream_with_one_value_per_component_decodes() {
+        let stream = inflate_stream(&split_body(
+            &three_way_split(3, [16; 3]),
+            &one_value_parts(),
+            &[],
+        ))
+        .unwrap();
+        assert_eq!(stream.bytes, [1.0f32; 3].map(f32::to_le_bytes).concat());
+    }
+
+    #[test]
+    fn split_stream_refuses_a_dimension_that_differs_from_its_segment_count() {
+        assert!(inflate_stream(&split_body(
+            &three_way_split(2, [16; 3]),
+            &one_value_parts(),
+            &[],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn packed_split_stream_refuses_three_segments() {
+        let packed = [
+            0x85, 0xa1, b'D', 3, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x93, 16, 16, 16, 0xa1, b'T', 3,
+            0xa1, b'U', 0xc3,
+        ];
+        assert!(inflate_stream(&split_body(&packed, &one_value_parts(), &[])).is_err());
+    }
+
+    #[test]
+    fn split_stream_refuses_a_nested_split_component() {
+        let [first, second, third] = one_value_parts();
+        let nested = split_body(
+            &three_way_split(3, [16; 3]),
+            &[first, second.clone(), third.clone()],
+            &[],
+        );
+        let nested_size = u8::try_from(nested.len()).unwrap();
+        let error = inflate_stream(&split_body(
+            &three_way_split(3, [nested_size, 16, 16]),
+            &[nested, second, third],
+            &[],
+        ))
+        .err()
+        .expect("a nested split stream is refused");
+        assert_eq!(
+            error.to_string(),
+            CodecError::malformed(
+                "paramesh split component 0: malformed container: paramesh split stream descriptor is invalid"
+            )
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn split_stream_refuses_components_of_unequal_length() {
+        let one = split_part(&1.0f32.to_le_bytes());
+        let two = split_part(&[1.0f32, 2.0].map(f32::to_le_bytes).concat());
+        assert!(inflate_stream(&split_body(
+            &three_way_split(3, [16, 20, 16]),
+            &[one.clone(), two, one],
+            &[],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn split_stream_refuses_a_component_that_is_not_whole_f32_values() {
+        let odd = split_part(&[1, 2, 3]);
+        assert!(inflate_stream(&split_body(
+            &three_way_split(3, [15; 3]),
+            &[odd.clone(), odd.clone(), odd],
+            &[],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn split_stream_refuses_bytes_after_its_last_component() {
+        assert!(inflate_stream(&split_body(
+            &three_way_split(3, [16; 3]),
+            &one_value_parts(),
+            &[0],
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn a_face_group_without_triangles_stays_in_the_metadata_only() {
+        const GROUP_A: &str = "d46db2ae-2a8b-4624-b83c-bcb6cbce247f";
+        const GROUP_B: &str = "7619477f-0f38-4b32-860e-81c9feb3d0f4";
+        let registry = face_group_channel_entry("r0", &[(0, GROUP_A), (1, GROUP_B)]);
+        let mesh = decode_mesh_container(&container_with_registry_and_groups(
+            &TWO_TRIANGLE_VERTICES,
+            &TWO_TRIANGLE_CORNERS,
+            &registry,
+            &[("r0", delta_descriptor(), terminal_delta_values(&[0, 0]))],
+            2,
+        ))
+        .expect("one face group holds both triangles");
+        assert_eq!(mesh.triangle_groups.len(), 1);
+        assert_eq!(mesh.triangle_groups[0].source_id, GROUP_A);
+        assert_eq!(mesh.triangle_groups[0].triangles, [0, 1]);
+        let metadata = mesh.face_group_metadata.expect("retained face groups");
+        assert_eq!(metadata.declared_count, 2);
+        assert_eq!(
+            metadata
+                .entries
+                .iter()
+                .map(|entry| (entry.key, entry.guid.as_str()))
+                .collect::<Vec<_>>(),
+            [(0, GROUP_A), (1, GROUP_B)]
+        );
+    }
+
+    #[test]
     fn stream_descriptor_retains_boolean_values() {
         assert_eq!(
             stream_descriptor(&[0x83, 0xa1, b'D', 3, 0xa1, b'T', 3, 0xa1, b'U', 0xc3])
