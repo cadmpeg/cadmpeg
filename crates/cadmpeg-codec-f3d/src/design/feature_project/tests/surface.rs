@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
@@ -13,8 +12,7 @@ use cadmpeg_ir::features::FeatureOperation;
 
 const EPS_SURFACE_DISTANCE_MM: f64 = 1.0e-12;
 
-#[test]
-fn dispatcher_projects_perpendicular_surface_extend() {
+fn surface_extend_features(distance: f64) -> Vec<Feature> {
     let mut scope = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#surface-extend",
         crate::records::feature::scope::DesignFeatureKind::SurfaceExtend,
@@ -24,11 +22,9 @@ fn dispatcher_projects_perpendicular_surface_extend() {
         scope.payload_mut()
     {
         *slot = Some(DesignSurfaceExtendOperation {
-            distance: crate::test_support::real(0.04),
+            distance: crate::test_support::real(distance),
             distance_offset: 40,
             distance_record_index: 400,
-            method: DesignSurfaceExtendMethod::Perpendicular,
-            method_offset: 102,
             boundary_record_index: 500,
             boundary_reference_record_index: 900,
             boundary_reference_offset: 106,
@@ -52,20 +48,37 @@ fn dispatcher_projects_perpendicular_surface_extend() {
             )
             .expect("test projection has a synthetic exact timeline")
         });
+    features
+}
 
+#[test]
+fn dispatcher_projects_surface_extend_with_an_unresolved_method() {
+    let features = surface_extend_features(0.04);
     let [Feature { evaluation, .. }] = features.as_slice() else {
-        panic!("perpendicular SurfaceExtend did not project as a typed feature");
+        panic!("SurfaceExtend did not project as one feature");
     };
     let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces: FaceSelection::Native(native),
         distance: Some(distance),
-        method: cadmpeg_ir::features::SurfaceExtension::Perpendicular,
+        method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
     }) = evaluation.definition()
     else {
-        panic!("perpendicular SurfaceExtend did not project as a typed feature");
+        panic!("SurfaceExtend did not project as a typed feature");
     };
     assert!(native.ends_with(":design-record#500"));
     assert!((distance.get() - 0.4).abs() < EPS_SURFACE_DISTANCE_MM);
+}
+
+#[test]
+fn dispatcher_keeps_a_negative_surface_extend_native() {
+    let features = surface_extend_features(-0.02);
+    let [Feature { evaluation, .. }] = features.as_slice() else {
+        panic!("SurfaceExtend did not project as one feature");
+    };
+    assert!(matches!(
+        evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "SurfaceExtend"
+    ));
 }
 
 fn grouped_surface_offset_scope() -> DesignParameterScope {

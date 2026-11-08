@@ -400,6 +400,11 @@ pub(crate) enum F3dLossCode {
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `SurfaceExtend` scope projects with an unresolved extension method.
+    FeatureSurfaceExtendMethodUnresolved,
+    /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
+    FeatureSurfaceExtendDistanceNonpositive,
+    FeatureSurfaceBoundaryFlagRecordAssumed,
     /// `PathPattern` flip, orientation, or start settings have no curve-driven pattern field.
     FeaturePathPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
@@ -766,6 +771,9 @@ impl F3dLossCode {
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureSurfaceExtendMethodUnresolved,
+        Self::FeatureSurfaceExtendDistanceNonpositive,
+        Self::FeatureSurfaceBoundaryFlagRecordAssumed,
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
@@ -1065,6 +1073,15 @@ impl F3dLossCode {
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureSurfaceExtendMethodUnresolved => {
+                "feature.surface-extend-method-unresolved"
+            }
+            Self::FeatureSurfaceExtendDistanceNonpositive => {
+                "feature.surface-extend-distance-nonpositive"
+            }
+            Self::FeatureSurfaceBoundaryFlagRecordAssumed => {
+                "feature.surface-boundary-flag-record-assumed"
+            }
             Self::FeaturePathPatternPlacementNotTransferred => {
                 "feature.path-pattern-placement-not-transferred"
             }
@@ -1369,6 +1386,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -1597,6 +1617,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -1921,6 +1944,9 @@ mod tests {
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.surface-extend-method-unresolved",
+                "feature.surface-extend-distance-nonpositive",
+                "feature.surface-boundary-flag-record-assumed",
                 "feature.path-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
