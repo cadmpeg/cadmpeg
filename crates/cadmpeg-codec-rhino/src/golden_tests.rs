@@ -131,7 +131,11 @@ fn e2_structure_fixture_matches_builder() {
         .get("views")
         .into_iter()
         .flatten()
-        .any(|record| record.field("name").as_ref().and_then(|value| value.as_str()) == Some("Witness view")));
+        .any(|record| record
+            .field("name")
+            .as_ref()
+            .and_then(|value| value.as_str())
+            == Some("Witness view")));
     assert_eq!(namespace.arenas()["groups"].len(), 1);
     let group = &namespace.arenas()["groups"][0];
     assert_eq!(

@@ -74,7 +74,7 @@ pub(super) fn encode_smbh(
                 native_history_tail(&mut bytes, native, output)?;
                 return Ok(bytes);
             }
-            return Err(CodecError::UnsupportedContent(
+            return Err(CodecError::NotImplemented(
                 "source-less F3D generation requires owned face topology or a nonempty wire shell"
                     .into(),
             ));
@@ -391,7 +391,7 @@ fn encode_wire_body_smbh(
             .iter()
             .any(|body| body.kind != cadmpeg_ir::topology::BodyKind::Wire)
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "source-less F3D wire generation requires face-less wire bodies with nonempty wire shells"
                 .into(),
         ));
@@ -734,13 +734,13 @@ fn encode_source_less_surfaces(
                 records.extend_from_slice(&[0x0b; 5]);
             }
             Some(SolvedSurfaceGeometry::Polygonal(_)) => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "source-less F3D face generation does not support polygonal surface carrier {}",
                     surface.id
                 )));
             }
             Some(SolvedSurfaceGeometry::Transformed(_)) => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::NotImplemented(format!(
                     "source-less F3D face generation does not support transformed surface carrier {}",
                     surface.id
                 )));
@@ -753,7 +753,7 @@ fn encode_source_less_surfaces(
                 {
                     native_ident(records, "mesh_surface")?;
                 } else if !native_cacheless_procedural_surface(records, target, surface)? {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::NotImplemented(format!(
                         "source-less F3D face generation does not support surface carrier {}",
                         surface.id
                     )));
@@ -868,7 +868,7 @@ fn encode_source_less_curves(
                 records.extend_from_slice(&[0x0b, 0x0b]);
             }
             _ => {
-                return Err(CodecError::UnsupportedContent(
+                return Err(CodecError::NotImplemented(
                     "source-less F3D does not support this curve carrier".into(),
                 ))
             }
@@ -929,7 +929,7 @@ fn encode_face_topology_smbh(
         || model.faces.is_empty()
         || model.loops.len() < model.faces.len()
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "source-less F3D generation requires owned face topology".into(),
         ));
     }
@@ -1178,7 +1178,7 @@ fn encode_face_topology_smbh(
                 CodecError::malformed(format_args!("shell does not own face {}", face.id))
             })?;
         let first_loop = face.loops.iter().next().ok_or_else(|| {
-            CodecError::UnsupportedContent(
+            CodecError::NotImplemented(
                 "source-less F3D face generation requires every face to own a loop".into(),
             )
         })?;
@@ -1351,7 +1351,7 @@ fn encode_face_topology_smbh(
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
         if coedge.pcurves.len() > 1 {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::NotImplemented(format!(
                 "coedge {} has an ordered pcurve collection",
                 coedge.id
             )));
@@ -1554,7 +1554,7 @@ fn closed_edge_traversal(
     tolerance: f64,
 ) -> Result<[f64; 2], CodecError> {
     let no_traversal = || {
-        CodecError::UnsupportedContent(format!(
+        CodecError::NotImplemented(format!(
             "source-less F3D edge generation requires a parameter range for edge {}",
             edge.id
         ))

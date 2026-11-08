@@ -16,7 +16,9 @@ use crate::loss::StepLossCode;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
-fn a_solid_with_a_carrierless_edge_keeps_its_faces_as_a_sheet() {
+fn a_solid_with_a_carrierless_face_edge_synthesizes_its_curve() {
+    // #209 §5.2: a face-context edge with no 3D carrier is synthesized from
+    // endpoint vertices so the face and shell remain writable.
     let mut ir = unit_cube().expect("unit cube");
     let removed_curve = ir.model.edges[0].curve().expect("curve").clone();
     ir.model.edges[0].carrier = EdgeCarrier::Free;
@@ -33,29 +35,20 @@ fn a_solid_with_a_carrierless_edge_keeps_its_faces_as_a_sheet() {
     assert!(report
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::RegionSolidReducedToSheet.kind()));
+        .any(|loss| loss.code == StepLossCode::EdgeCurveSynthesizedFromVertices.kind()));
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("partial STEP decodes");
     assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(decoded.ir().model.faces.len(), 6);
     assert_eq!(decoded.ir().model.edges.len(), 12);
-    assert_eq!(
-        decoded
-            .ir()
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge.curve().is_none())
-            .count(),
-        1
-    );
 }
 
 #[test]
-fn carrierless_edges_keep_their_body_placement() {
+fn carrierless_edges_synthesized_curves_keep_their_body_placement() {
+    // #209 §5.2: carrierless face-context edges are synthesized so placement
+    // and topology are preserved.
     let mut ir = unit_cube().unwrap();
     let retained = ir.model.edges[0].curve().unwrap().clone();
     for edge in ir.model.edges.iter_mut().skip(1) {
@@ -81,30 +74,14 @@ fn carrierless_edges_keep_their_body_placement() {
     assert!(report
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::RegionSolidReducedToSheet.kind()));
+        .any(|loss| loss.code == StepLossCode::EdgeCurveSynthesizedFromVertices.kind()));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
-    let sheet = decoded
-        .ir()
-        .model
-        .bodies
-        .iter()
-        .find(|body| body.kind == BodyKind::Sheet)
-        .unwrap();
-    assert_eq!(sheet.transform, ir.model.bodies[0].transform);
+    let body = &decoded.ir().model.bodies[0];
+    assert_eq!(body.transform, ir.model.bodies[0].transform);
     assert_eq!(decoded.ir().model.faces.len(), 6);
     assert_eq!(decoded.ir().model.edges.len(), 12);
-    assert_eq!(
-        decoded
-            .ir()
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge.curve().is_none())
-            .count(),
-        11
-    );
 }
 
 #[test]

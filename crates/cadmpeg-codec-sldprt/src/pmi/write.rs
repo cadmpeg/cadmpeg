@@ -205,7 +205,7 @@ pub(crate) fn payload(
     if !ir.scope.model {
         for source in native.into_iter().flat_map(|native| &native.pmi_dimensions) {
             if source.item_count.get() != 1 {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(CodecError::InvalidInput(format!(
                     "SLDPRT PMI {} contains untyped additional items",
                     source.id
                 )));
@@ -232,7 +232,7 @@ pub(crate) fn payload(
             {
                 continue;
             }
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "SLDPRT PMI {} has no semantic database encoding",
                 annotation.id
             )));
@@ -261,13 +261,13 @@ pub(crate) fn payload(
             || annotation.name.is_some()
             || annotation.visible.is_some()
         {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(CodecError::InvalidInput(format!(
                 "SLDPRT PMI {} requires semantic-field reduction",
                 annotation.id
             )));
         }
         let value = dimension.resolved_nominal(ir).ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::InvalidInput(format!(
                 "SLDPRT PMI {} has no evaluated nominal",
                 annotation.id
             ))

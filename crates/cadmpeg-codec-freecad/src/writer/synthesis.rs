@@ -1745,15 +1745,24 @@ pub(super) fn write(
             ))
     });
     for (name, bytes) in entries {
-        archive
-            .start_file(name, options)
-            .map_err(std::io::Error::other)?;
+        match archive.start_file(name, options) {
+            Ok(()) => {}
+            Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
+            Err(error) => {
+                debug_assert!(false, "FCStd ZIP start_file: {error}");
+                return Err(CodecError::InvalidInput(format!("FCStd ZIP start_file: {error}")));
+            }
+        }
         archive.write_all(&bytes)?;
     }
-    let bytes = archive
-        .finish()
-        .map_err(std::io::Error::other)?
-        .into_inner();
+    let bytes = match archive.finish() {
+        Ok(writer) => writer.into_inner(),
+        Err(zip::result::ZipError::Io(error)) => return Err(CodecError::Io(error)),
+        Err(error) => {
+            debug_assert!(false, "FCStd ZIP finish: {error}");
+            return Err(CodecError::InvalidInput(format!("FCStd ZIP finish: {error}")));
+        }
+    };
     for curve in &ir.model.curves {
         if let Some(construction) = curve.geometry.procedural_construction().filter(|_| {
             super::geometry::located_curve(ir, curve)

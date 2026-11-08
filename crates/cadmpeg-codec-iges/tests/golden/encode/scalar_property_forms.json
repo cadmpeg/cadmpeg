@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     406       1       0       0       0       0       0       000000000D      1\n     406       0       0       1       2                               0D      2\n     406       2       0       0       0       0       0       000000000D      3\n     406       0       0       1       9                               0D      4\n     406       3       0       0       0       0       0       000000000D      5\n     406       0       0       1      10                               0D      6\n     406       4       0       0       0       0       0       000000000D      7\n     406       0       0       1      12                               0D      8\n     406       5       0       0       0       0       0       000000000D      9\n     406       0       0       1      13                               0D     10\n     406       6       0       0       0       0       0       000000000D     11\n     406       0       0       1      14                               0D     12\n     406       7       0       0       0       0       0       000000000D     13\n     406       0       0       1      18                               0D     14\n     406       8       0       0       0       0       0       000000000D     15\n     406       0       0       1      19                               0D     16\n     406       9       0       0       0       0       0       000000000D     17\n     406       0       0       1      20                               0D     18\n     406      10       0       0       0       0       0       000000000D     19\n     406       0       0       1      21                               0D     20\n     406      11       0       0       0       0       0       000000000D     21\n     406       0       0       1       3                               0D     22\n     406      12       0       0       0       0       0       000000000D     23\n     406       0       0       1       5                               0D     24\n     406      13       0       0       0       0       0       000000000D     25\n     406       0       0       1       6                               0D     26\n     406      14       0       0       0       0       0       000000000D     27\n     406       0       0       1       8                               0D     28\n406,3,0,1,2;                                                           1P      1\n406,4,7HGENERIC,6HMIL123,6HVEND42,5HINT99;                             3P      2\n406,6,1,0,1,0,1,0;                                                     5P      3\n406,2,8HBASE.IGS,10HDETAIL.IGS;                                        7P      4\n406,3,2.5000000000000000D0,3HAWG,7HANSI123;                            9P      5\n406,2,4HMAIN,3HHOT;                                                   11P      6\n406,1,1.2500000000000000D1;                                           13P      7\n406,1,223;                                                            15P      8\n406,1,1;                                                              17P      9\n406,1,0;                                                              19P     10\n406,2,17,5HPOWER;                                                     21P     11\n406,5,2.5000000000000000D-1,0,2,1,1.0000000000000001D-1;              23P     12\n406,5,5.0000000000000000D-1,4.5000000000000001D-1,1,2,8;              25P     13\n406,1,3HPA7;                                                          27P     14\nS0000001G0000003D0000028P0000014                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,64,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     406       1       0       0       0       0       0       000000000D      1\n     406       0       0       1       2                   PROP2       0D      2\n     406       2       0       0       0       0       0       000000000D      3\n     406       0       0       1       3                   PROP3       0D      4\n     406       3       0       0       0       0       0       000000000D      5\n     406       0       0       1       5                   PROP5       0D      6\n     406       4       0       0       0       0       0       000000000D      7\n     406       0       0       1       6                   PROP6       0D      8\n     406       5       0       0       0       0       0       000000000D      9\n     406       0       0       1       8                   PROP8       0D     10\n     406       6       0       0       0       0       0       000000000D     11\n     406       0       0       1       9                   PROP9       0D     12\n     406       7       0       0       0       0       0       000000000D     13\n     406       0       0       1      10                  PROP10       0D     14\n     406       8       0       0       0       0       0       000000000D     15\n     406       0       0       1      12                  PROP12       0D     16\n     406       9       0       0       0       0       0       000000000D     17\n     406       0       0       1      13                  PROP13       0D     18\n     406      10       0       0       0       0       0       000000000D     19\n     406       0       0       1      14                  PROP14       0D     20\n     406      11       0       0       0       0       0       000000000D     21\n     406       0       0       1      18                  PROP18       0D     22\n     406      12       0       0       0       0       0       000000000D     23\n     406       0       0       1      19                  PROP19       0D     24\n     406      13       0       0       0       0       0       000000000D     25\n     406       0       0       1      20                  PROP20       0D     26\n     406      14       0       0       0       0       0       000000000D     27\n     406       0       0       1      21                  PROP21       0D     28\n406,3,0,1,2;                                                           1P      1\n406,2,17,5HPOWER;                                                      3P      2\n406,5,0.25,0,2,1,0.1;                                                  5P      3\n406,5,0.5,0.45,1,2,8;                                                  7P      4\n406,1,3HPA7;                                                           9P      5\n406,4,7HGENERIC,6HMIL123,6HVEND42,5HINT99;                            11P      6\n406,6,1,0,1,0,1,0;                                                    13P      7\n406,2,8HBASE.IGS,10HDETAIL.IGS;                                       15P      8\n406,3,2.5,3HAWG,7HANSI123;                                            17P      9\n406,2,4HMAIN,3HHOT;                                                   19P     10\n406,1,12.5;                                                           21P     11\n406,1,223;                                                            23P     12\n406,1,1;                                                              25P     13\n406,1,0;                                                              27P     14\nS0000001G0000003D0000028P0000014                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -104,26 +104,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 14 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D27, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 14 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#23, iges:entity:directory#25, iges:entity:directory#27, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
@@ -217,13 +197,45 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D11": "regenerated",
+                "iges:presentation:display-attributes#D13": "regenerated",
+                "iges:presentation:display-attributes#D15": "regenerated",
+                "iges:presentation:display-attributes#D17": "regenerated",
+                "iges:presentation:display-attributes#D19": "regenerated",
+                "iges:presentation:display-attributes#D21": "regenerated",
+                "iges:presentation:display-attributes#D23": "regenerated",
+                "iges:presentation:display-attributes#D25": "regenerated",
+                "iges:presentation:display-attributes#D27": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated",
+                "iges:presentation:display-attributes#D7": "regenerated",
+                "iges:presentation:display-attributes#D9": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
             },
             "entities": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:entity:directory#1": "written",
+                "iges:entity:directory#11": "written",
+                "iges:entity:directory#13": "written",
+                "iges:entity:directory#15": "written",
+                "iges:entity:directory#17": "written",
+                "iges:entity:directory#19": "written",
+                "iges:entity:directory#21": "written",
+                "iges:entity:directory#23": "written",
+                "iges:entity:directory#25": "written",
+                "iges:entity:directory#27": "written",
+                "iges:entity:directory#3": "written",
+                "iges:entity:directory#5": "written",
+                "iges:entity:directory#7": "written",
+                "iges:entity:directory#9": "written"
+              }
             },
             "external_references": {
               "disposition": "dropped"

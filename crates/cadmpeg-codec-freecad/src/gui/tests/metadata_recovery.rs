@@ -213,7 +213,7 @@ fn missing_archive_tail_reports_unavailable_body_style() {
 }
 
 #[test]
-fn failed_gui_member_does_not_add_design_scope() {
+fn failed_gui_member_does_not_add_design_content() {
     use cadmpeg_test_support::zip_fixture::{self, RawEntry};
     let document = b"<Document SchemaVersion='4'><Objects Count='1'><Object name='Page' type='TechDraw::DrawPage'/></Objects><ObjectData Count='1'><Object name='Page'><Properties Count='0'/></Object></ObjectData></Document>";
     let gui = b"<Document SchemaVersion='1'><ViewProviderData Count='1'><ViewProvider name='Page'><Properties Count='1'><Property name='ShapeAppearance' type='App::PropertyMaterialList'><MaterialList file='materials.bin' version='2'/></Property></Properties></ViewProvider></ViewProviderData></Document>";
@@ -225,8 +225,11 @@ fn failed_gui_member_does_not_add_design_scope() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    // #209 §1.1: Full decode reports requested design scope as delivered.
+    // #209 §1.1: requested scope classes are reported as delivered; a
+    // failed GUI member does not add design content or mark design
+    // unrepresented.
     assert!(decoded.ir().scope.design);
+    assert!(decoded.ir().model.features.is_empty());
     assert!(!decoded
         .source_fidelity()
         .unrepresented()

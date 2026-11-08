@@ -66,7 +66,7 @@ fn validate_recipe_class_headers<'a>(
             continue;
         }
         let prefix = stream.strip_suffix("BulkStream.dat").ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            CodecError::NotImplemented(format!(
                 "F3D recipe stream {stream} has no matching metadata"
             ))
         })?;
@@ -79,17 +79,17 @@ fn validate_recipe_class_headers<'a>(
         {
             let length = cadmpeg_core::decode::u64_from_index(edit.value.len());
             let end = edit.offset.checked_add(length).ok_or_else(|| {
-                CodecError::UnsupportedContent("F3D recipe identity extent overflows".into())
+                CodecError::NotImplemented("F3D recipe identity extent overflows".into())
             })?;
             for row in meta.records.iter().chain(&meta.secondary_records) {
                 let tag_start = row.bulk_offset.checked_add(4).ok_or_else(|| {
-                    CodecError::UnsupportedContent("F3D record class offset overflows".into())
+                    CodecError::NotImplemented("F3D record class offset overflows".into())
                 })?;
                 let tag_end = tag_start.checked_add(3).ok_or_else(|| {
-                    CodecError::UnsupportedContent("F3D record class extent overflows".into())
+                    CodecError::NotImplemented("F3D record class extent overflows".into())
                 })?;
                 if edit.offset < tag_end && tag_start < end {
-                    return Err(CodecError::UnsupportedContent(format!(
+                    return Err(CodecError::NotImplemented(format!(
                         "F3D recipe identity edit in {stream} overlaps an indexed record class"
                     )));
                 }
@@ -104,7 +104,7 @@ fn validate_recipe_class_headers<'a>(
 /// `source_image` must match the F3D source represented by `target`. The
 /// function validates changed topology, geometry, design, sketch, history, and
 /// appearance fields before patching records. An edit the patch path cannot
-/// express returns [`CodecError::UnsupportedContent`]; the target layer turns
+/// express returns [`CodecError::NotImplemented`]; the target layer turns
 /// that decline into synthesis with `PatchDeclined`.
 ///
 /// Completeness of the patch is checked by rebuilding the document from the
@@ -180,7 +180,7 @@ pub(crate) fn write_with_context<'a>(
         .map(|point| point.id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
     if baseline_point_ids != target_point_ids {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "F3D point regeneration requires the unchanged point-id set and finite coordinates"
                 .into(),
         ));
@@ -271,7 +271,7 @@ pub(crate) fn write_with_context<'a>(
     let design_type_edits = validate_design_type_edits(natives)?;
     let lost_edge_edits = validate_lost_edge_edits(natives)?;
     if let Some(reference) = lost_edge_edits.values().flatten().next() {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(CodecError::NotImplemented(format!(
             "F3D lost-edge edit {} changes an indexed record identity",
             reference.id
         )));
@@ -299,7 +299,7 @@ pub(crate) fn write_with_context<'a>(
             .zip(target_act_table_references)
             .all(|(before, after)| before.content_eq(after))
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
         ));
     }
@@ -520,7 +520,7 @@ pub(crate) fn write_with_context<'a>(
         supported.store(encode_ctx, supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),
         ));
@@ -877,7 +877,7 @@ pub(crate) fn write_with_context<'a>(
         ));
     }
     if patched_protein_appearances.len() != protein_appearance_edits.len() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(CodecError::NotImplemented(
             "one or more edited F3D appearances have no writable Protein carrier".into(),
         ));
     }
