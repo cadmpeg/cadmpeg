@@ -369,6 +369,8 @@ pub(crate) enum F3dLossCode {
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
+    FeatureWorkAxisRuleUnassigned,
+    FeatureWorkAxisEndpointToleranceAssumed,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
@@ -400,6 +402,11 @@ pub(crate) enum F3dLossCode {
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `SurfaceExtend` scope projects with an unresolved extension method.
+    FeatureSurfaceExtendMethodUnresolved,
+    /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
+    FeatureSurfaceExtendDistanceNonpositive,
+    FeatureSurfaceBoundaryFlagRecordAssumed,
     /// `PathPattern` flip, orientation, or start settings have no curve-driven pattern field.
     FeaturePathPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
@@ -753,6 +760,8 @@ impl F3dLossCode {
         Self::FeatureFormCageOrderAssumed,
         Self::FeatureFormEmptyCagesAssumed,
         Self::FeatureScaleFrameLengthFormAssumed,
+        Self::FeatureWorkAxisRuleUnassigned,
+        Self::FeatureWorkAxisEndpointToleranceAssumed,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureCombineSelectionNative,
@@ -766,6 +775,9 @@ impl F3dLossCode {
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureSurfaceExtendMethodUnresolved,
+        Self::FeatureSurfaceExtendDistanceNonpositive,
+        Self::FeatureSurfaceBoundaryFlagRecordAssumed,
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
         Self::FeatureFaceOperandUnresolved,
@@ -1050,6 +1062,10 @@ impl F3dLossCode {
             Self::FeatureFormCageOrderAssumed => "feature.form-cage-order-assumed",
             Self::FeatureFormEmptyCagesAssumed => "feature.form-empty-cages-assumed",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
+            Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
+            Self::FeatureWorkAxisEndpointToleranceAssumed => {
+                "feature.work-axis-endpoint-tolerance-assumed"
+            }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
@@ -1065,6 +1081,15 @@ impl F3dLossCode {
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureSurfaceExtendMethodUnresolved => {
+                "feature.surface-extend-method-unresolved"
+            }
+            Self::FeatureSurfaceExtendDistanceNonpositive => {
+                "feature.surface-extend-distance-nonpositive"
+            }
+            Self::FeatureSurfaceBoundaryFlagRecordAssumed => {
+                "feature.surface-boundary-flag-record-assumed"
+            }
             Self::FeaturePathPatternPlacementNotTransferred => {
                 "feature.path-pattern-placement-not-transferred"
             }
@@ -1356,6 +1381,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureWorkAxisRuleUnassigned
+            | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
@@ -1369,6 +1396,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -1584,6 +1614,8 @@ impl F3dLossCode {
             | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormEmptyCagesAssumed
             | Self::FeatureScaleFrameLengthFormAssumed
+            | Self::FeatureWorkAxisRuleUnassigned
+            | Self::FeatureWorkAxisEndpointToleranceAssumed
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
@@ -1597,6 +1629,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
             | Self::FeatureFaceOperandUnresolved
@@ -1908,6 +1943,8 @@ mod tests {
                 "feature.form-cage-order-assumed",
                 "feature.form-empty-cages-assumed",
                 "feature.scale-frame-length-form-assumed",
+                "feature.work-axis-rule-unassigned",
+                "feature.work-axis-endpoint-tolerance-assumed",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.combine-selection-native",
@@ -1921,6 +1958,9 @@ mod tests {
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.surface-extend-method-unresolved",
+                "feature.surface-extend-distance-nonpositive",
+                "feature.surface-boundary-flag-record-assumed",
                 "feature.path-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
                 "feature.face-operand-unresolved",
