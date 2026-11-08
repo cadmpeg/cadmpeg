@@ -76,7 +76,8 @@ fn archive_session_reference_error_keeps_the_member_decode_loss() {
         .body
         .losses
         .iter()
-        .any(|loss| loss.code == crate::F3dLossCode::XrefTableUndecoded.kind()));
+        .any(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("zip.entry")));
 }
 
 mod memory;
@@ -178,7 +179,7 @@ fn archive_session_formatted_space_diagnostic_reexecutes_after_relocation() {
     body.notes
         .push("truncated input at space 7 offset 11".to_owned());
     body.losses
-        .push(crate::F3dLossCode::XrefTableUndecoded.note("stored slice escapes parent space 7"));
+        .push(crate::F3dLossCode::XrefMemberUndecoded.note("stored slice escapes parent space 7"));
     ctx.register_slice(view, range).unwrap();
     let mut results = std::collections::BTreeMap::from([("leaf.f3d".to_owned(), member)]);
     let (decoded, _) = session.take_member(&ctx, "leaf.f3d", &mut results).unwrap();

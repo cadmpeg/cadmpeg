@@ -623,7 +623,11 @@ fn f3z_nested_member_part_depth_limit_keeps_root() {
         })
         .collect();
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("middle.f3d"));
+    assert!(losses[0]
+        .provenance
+        .as_ref()
+        .and_then(cadmpeg_ir::SourceProvenance::stream_name)
+        .is_some_and(|stream| stream.starts_with(&format!("f3d:xref/role-{XREF_ROLE}%2F"))));
     assert!(losses[0].message.contains("RecursionDepth"));
     assert!(losses[0].message.contains("limit 6, used 6, requested 1"));
     assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
@@ -789,9 +793,11 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
     )
     .expect("noncommuting nested placements");
     assert!(
-        decoded.report().losses.iter().all(|loss| loss.code
-            != F3dLossCode::XrefPlacementUndecoded.kind()
-            && loss.code != F3dLossCode::XrefTableUndecoded.kind()),
+        decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "record.unreadable"),
         "{:?}",
         decoded.report().losses
     );
