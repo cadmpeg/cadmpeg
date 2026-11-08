@@ -1466,7 +1466,7 @@ fn exact_current_extrude_prologue_with(
         .or_else(|| {
             exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
         })
-        .or_else(|| match mixed_to_face_control {
+        .or(match mixed_to_face_control {
             Some(0) if first_side_extent == 1 => Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
             Some(1) if first_side_extent == 1 => {
                 Some(DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)

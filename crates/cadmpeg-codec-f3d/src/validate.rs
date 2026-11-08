@@ -6082,7 +6082,17 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     profile_offset_count == 1
                 }
             };
-            let expected_face_group_count = usize::from(
+            let target_face_group_count = match extrude_extent {
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero => {
+                    1usize.checked_sub(target_shape_group_count)
+                }
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
+                | records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo => {
+                    2usize.checked_sub(target_shape_group_count)
+                }
+                _ => Some(0),
+            };
+            let expected_face_group_count = target_face_group_count.map(|target_face_group_count| usize::from(
                 matches!(
                     extrude_extent,
                     records::feature::extrude::DesignExtrudeExtent::OneSidedToFace
@@ -6095,17 +6105,10 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace
                     | records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne
                     | records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace
-            )) + (1usize.saturating_sub(target_shape_group_count)) * usize::from(matches!(
-                extrude_extent,
-                records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero
-            )) + (2usize.saturating_sub(target_shape_group_count)) * usize::from(matches!(
-                extrude_extent,
-                records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionZero
-                    | records::feature::extrude::DesignExtrudeExtent::TwoSidedToTargetsOptionTwo
-            )) + usize::from(matches!(
+            )) + target_face_group_count + usize::from(matches!(
                 extrude_start,
                 records::feature::extrude::DesignExtrudeStart::FromFace
-            ));
+            )));
             let mut face_groups = native.design_construction_operand_groups.iter().filter(|group| {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
@@ -6126,7 +6129,9 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     if start == records::feature::extrude::DesignExtrudeStart::FromFace {
                         roles.push(records::topology::extrude_selection::DesignExtrudeFaceRole::Start);
                     }
-                    let terminations = expected_face_group_count.saturating_sub(roles.len());
+                    let terminations = expected_face_group_count
+                        .and_then(|count| count.checked_sub(roles.len()))
+                        .unwrap_or(0);
                     roles.extend(std::iter::repeat_n(
                         records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
                         terminations,
@@ -6177,7 +6182,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && (!extent_matches_operands
                     || !start_matches_operands
                     || (!selected_start_without_group
-                        && (face_operand_group_count != expected_face_group_count
+                        && (Some(face_operand_group_count) != expected_face_group_count
                             || face_groups
                                 .iter()
                                 .map(|group| group.extrude_face_role())
