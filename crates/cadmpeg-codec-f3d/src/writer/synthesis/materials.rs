@@ -20,18 +20,28 @@ pub(super) fn author_neutral(
         .iter()
         .map(|row| row.entity_suffix)
         .collect::<std::collections::BTreeSet<_>>();
-    let registered = native.design_types.iter().flat_map(|kind| kind.entities.values().copied()).collect::<std::collections::BTreeSet<_>>();
+    let registered = native
+        .design_types
+        .iter()
+        .flat_map(|kind| kind.entities.values().copied())
+        .collect::<std::collections::BTreeSet<_>>();
     used.extend(registered.iter().copied());
     let mut presentations = Vec::new();
     let mut scenes = Vec::new();
-    let mut container = native.design_types.iter().find(|kind| {
-        kind.type_guid.as_str().eq_ignore_ascii_case(crate::design::presentation::BREP_CONTAINER_TYPE_GUID)
-            && kind.version == crate::design::presentation::BREP_CONTAINER_TYPE_VERSION
-    }).and_then(|kind| {
-        let mut values = kind.entities.values().copied();
-        let first = values.next()?;
-        values.next().is_none().then_some(first)
-    });
+    let mut container = native
+        .design_types
+        .iter()
+        .find(|kind| {
+            kind.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(crate::design::presentation::BREP_CONTAINER_TYPE_GUID)
+                && kind.version == crate::design::presentation::BREP_CONTAINER_TYPE_VERSION
+        })
+        .and_then(|kind| {
+            let mut values = kind.entities.values().copied();
+            let first = values.next()?;
+            values.next().is_none().then_some(first)
+        });
     for binding in &mut target.model.appearance_bindings {
         if binding.source_entity_id.is_some() {
             continue;
@@ -172,10 +182,14 @@ pub(super) fn author_neutral(
         ),
     ];
     for (guid, base, version, module, entities) in registrations {
-        if let Some(existing) = native.design_types.iter_mut().find(|kind| kind.type_guid.as_str().eq_ignore_ascii_case(guid) && kind.version == version) {
+        if let Some(existing) = native.design_types.iter_mut().find(|kind| {
+            kind.type_guid.as_str().eq_ignore_ascii_case(guid) && kind.version == version
+        }) {
             let mut combined = existing.entities.values().copied().collect::<Vec<_>>();
             for entity in entities {
-                if !combined.contains(&entity) { combined.push(entity); }
+                if !combined.contains(&entity) {
+                    combined.push(entity);
+                }
             }
             existing.set_entities(ReferenceRun::unlocated(combined));
             continue;

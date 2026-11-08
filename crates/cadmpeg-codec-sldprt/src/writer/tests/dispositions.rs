@@ -27,17 +27,20 @@ fn native_arena_registry_matches_native_dispositions_on_every_golden() {
         .collect::<BTreeSet<_>>();
     let mut checked = 0;
     for (name, bytes) in fixtures() {
-        let decoded = match SldprtCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()) {
+        let decoded = match SldprtCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        {
             Ok(decoded) => decoded,
             Err(error) => {
                 let golden = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/golden/decode")
                     .join(format!("{name}.json"));
-                let snapshot: serde_json::Value = serde_json::from_slice(
-                    &std::fs::read(golden).expect("decode golden"),
-                )
-                .expect("decode golden JSON");
-                assert_eq!(snapshot["decode_error"].as_str(), Some(error.to_string().as_str()));
+                let snapshot: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(golden).expect("decode golden"))
+                        .expect("decode golden JSON");
+                assert_eq!(
+                    snapshot["decode_error"].as_str(),
+                    Some(error.to_string().as_str())
+                );
                 continue;
             }
         };

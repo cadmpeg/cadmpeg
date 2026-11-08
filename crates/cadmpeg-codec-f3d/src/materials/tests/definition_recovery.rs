@@ -37,17 +37,18 @@ fn damaged_definition_record_keeps_readable_catalog_sibling() {
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
-    let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-        cadmpeg_ir::CodecFormat::F3d,
-        &ctx,
-    );
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
     let catalog = definition_catalog(&ctx, root, "synthetic.protein", &mut parts).unwrap();
     assert_eq!(
         catalog.get(&("Prism-001".to_owned(), "GenericSchema".to_owned())),
         Some(&Some("Plastic/Thermoplastic".to_owned()))
     );
     let (_, native, _, losses) = parts.into_parts();
-    assert_eq!(native.namespace("f3d").unwrap().arenas()["unknowns"].len(), 1);
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     let provenance = losses[0].provenance.as_ref().unwrap();
@@ -57,4 +58,3 @@ fn damaged_definition_record_keeps_readable_catalog_sibling() {
     );
     assert!(provenance.byte_len().is_some());
 }
-

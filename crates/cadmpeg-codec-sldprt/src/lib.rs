@@ -456,9 +456,7 @@ impl EncoderBackend for SldprtCodec {
             Ok(body) => Ok(body),
             Err(writer::write_error::WriteError::Decline(reason)) => {
                 debug_assert!(false, "patch decline escaped target planning: {reason}");
-                Err(cadmpeg_ir::codec::write::transitional_from_codec(
-                    cadmpeg_core::CodecError::InvalidInput(format!("patch declined: {reason}")),
-                ))
+                panic!("patch decline escaped target planning: {reason}");
             }
             Err(error) => Err(error.into()),
         }

@@ -174,11 +174,15 @@ pub(super) fn prepare(
         if bound.contains(&appearance.id)
             && appearance.base_color.is_none()
             && appearance.schema.is_none()
-            && appearance.name.as_deref().is_some_and(|name| !name.starts_with("Prism-"))
+            && appearance
+                .name
+                .as_deref()
+                .is_some_and(|name| !name.starts_with("Prism-"))
         {
             appearance.name = None;
             losses.push(F3dLossCode::WriterAppearancePropertiesOmitted.note(format!(
-                "appearance {} omits its name because the Design material preset cannot encode it", appearance.id,
+                "appearance {} omits its name because the Design material preset cannot encode it",
+                appearance.id,
             )));
         }
         if !bound.contains(&appearance.id) && appearance.physical_token.take().is_some() {

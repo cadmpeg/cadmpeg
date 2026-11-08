@@ -2218,9 +2218,7 @@ pub(super) fn validate_construction_recipe_edits(
                 CodecError::NotImplemented(format!("cannot add F3D recipe record index: {id}"))
             })?;
             let new = after.record_index.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "cannot remove F3D recipe record index: {id}"
-                ))
+                CodecError::NotImplemented(format!("cannot remove F3D recipe record index: {id}"))
             })?;
             Some(Edit {
                 offset: source_position(old.offset, id, "recipe record-index offset")?,
@@ -2233,9 +2231,7 @@ pub(super) fn validate_construction_recipe_edits(
             None
         } else {
             let old = before.design.as_ref().ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "cannot add F3D recipe design identity: {id}"
-                ))
+                CodecError::NotImplemented(format!("cannot add F3D recipe design identity: {id}"))
             })?;
             let new = after.design.as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
@@ -2645,10 +2641,7 @@ pub(super) fn validate_sketch_curve_edits(
             continue;
         }
         let geometry = curve.geometry.clone().ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "cannot remove sketch-curve geometry: {}",
-                curve.id
-            ))
+            CodecError::NotImplemented(format!("cannot remove sketch-curve geometry: {}", curve.id))
         })?;
         if !same_sketch_layout(before.geometry.as_ref(), &geometry) {
             return Err(CodecError::NotImplemented(format!(

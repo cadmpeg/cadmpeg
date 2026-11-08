@@ -360,7 +360,11 @@ fn generated_f3d_rewrites_vertex_ownership() {
         .iter()
         .find(|edge| edge.native_ref.as_deref() == Some(owner.as_str()))
         .expect("the regenerated native owner names a held edge");
-    let endpoint = if ownership.endpoint_index.map(cadmpeg_asm::brep::records::EndpointSlot::code) == Some(0) {
+    let endpoint = if ownership
+        .endpoint_index
+        .map(cadmpeg_asm::brep::records::EndpointSlot::code)
+        == Some(0)
+    {
         &edge.start
     } else {
         &edge.end

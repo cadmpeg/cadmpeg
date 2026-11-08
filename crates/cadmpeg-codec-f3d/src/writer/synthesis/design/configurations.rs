@@ -291,9 +291,7 @@ pub(super) fn regenerate(
                     crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
                 );
                 next_rule_index = next_rule_index.checked_add(1).ok_or_else(|| {
-                    CodecError::NotImplemented(
-                        "F3D configuration rule name space exhausted".into(),
-                    )
+                    CodecError::NotImplemented("F3D configuration rule name space exhausted".into())
                 })?;
                 if !reserved_rule_names.contains(&candidate)
                     && !used_rule_names.contains(&candidate)

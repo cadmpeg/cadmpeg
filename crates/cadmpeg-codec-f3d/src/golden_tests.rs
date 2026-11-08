@@ -1293,7 +1293,6 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
     rotate_rings(value);
 }
 
-
 fn neutralize_stream_names(value: &mut serde_json::Value) {
     fn normalize(text: &str) -> String {
         let mut text = text.to_owned();
@@ -1315,7 +1314,12 @@ fn neutralize_stream_names(value: &mut serde_json::Value) {
             let prefix = &text[..hash];
             let rest = &text[hash + 1..];
             let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if !digits.is_empty() && rest[digits.len()..].is_empty() && prefix.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            if !digits.is_empty()
+                && rest[digits.len()..].is_empty()
+                && prefix
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            {
                 text = format!("{}#0", prefix);
             }
         }
@@ -1433,7 +1437,10 @@ fn an_edit_survives_native_writer_fallback() {
                             != Some("mesh_import")
                     });
                 }
-                if let Some(tess) = model.get_mut("tessellations").and_then(|t| t.as_array_mut()) {
+                if let Some(tess) = model
+                    .get_mut("tessellations")
+                    .and_then(|t| t.as_array_mut())
+                {
                     tess.clear();
                 }
                 if let Some(subds) = model.get_mut("subds").and_then(|s| s.as_array_mut()) {
@@ -1462,7 +1469,9 @@ fn an_edit_survives_native_writer_fallback() {
         // (debug removed)
         if preserved_view != authored_view {
             fn first_diff(a: &serde_json::Value, b: &serde_json::Value, path: &str) -> String {
-                if a == b { return String::new(); }
+                if a == b {
+                    return String::new();
+                }
                 match (a, b) {
                     (serde_json::Value::Object(oa), serde_json::Value::Object(ob)) => {
                         for key in oa.keys().chain(ob.keys()) {
@@ -1470,7 +1479,9 @@ fn an_edit_survives_native_writer_fallback() {
                             let vb = ob.get(key).cloned().unwrap_or(serde_json::Value::Null);
                             if va != vb {
                                 let d = first_diff(&va, &vb, &format!("{path}/{key}"));
-                                if !d.is_empty() { return d; }
+                                if !d.is_empty() {
+                                    return d;
+                                }
                                 return format!("{path}/{key}: {} vs {}", va, vb);
                             }
                         }
@@ -1480,7 +1491,9 @@ fn an_edit_survives_native_writer_fallback() {
                         for (i, (va, vb)) in a.iter().zip(b.iter()).enumerate() {
                             if va != vb {
                                 let d = first_diff(va, vb, &format!("{path}[{i}]"));
-                                if !d.is_empty() { return d; }
+                                if !d.is_empty() {
+                                    return d;
+                                }
                                 return format!("{path}[{i}]: {} vs {}", va, vb);
                             }
                         }
@@ -1492,7 +1505,11 @@ fn an_edit_survives_native_writer_fallback() {
                     _ => format!("{path}: {} vs {}", a, b),
                 }
             }
-            panic!("{}: {}", name, first_diff(&preserved_view, &authored_view, ""));
+            panic!(
+                "{}: {}",
+                name,
+                first_diff(&preserved_view, &authored_view, "")
+            );
         }
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
