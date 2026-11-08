@@ -3168,6 +3168,28 @@ pub(crate) mod form_serializer_frame_132 {
     pub(crate) const ENTRY_NAME_LENGTH: usize = 21;
 }
 
+/// Byte offsets for the `compact_selection_envelope_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the group's primary indexed header. The ordered member references start at offset 36.
+/// ```
+pub(crate) mod compact_selection_envelope_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 21;
+    /// Stated value of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
+    /// Offset of `owner_scope_record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_SCOPE_RECORD_INDEX: usize = 22;
+    /// Offset of `owner_zero_tail` (`bytes[2]`). Spec §3.1.
+    pub(crate) const OWNER_ZERO_TAIL: usize = 30;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 32;
+}
+
 /// Byte offsets for the `form_class_328_scope` record.
 ///
 /// Spec §1.1.1. Record length 940 B.
