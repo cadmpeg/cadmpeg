@@ -5,14 +5,16 @@ use super::{native_property, Provider};
 use crate::loss::FreecadLossCode;
 use crate::writer::xml;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::appearance::AppearanceTarget;
+use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 use cadmpeg_ir::codec::write::ExportLossCode;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Color;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-fn packed(color: Color) -> u32 {
+/// `transparency_byte` stores the low byte as transparency, as the
+/// `ProgramVersion` the writer emits makes FreeCAD read it.
+fn packed(color: Color, transparency_byte: bool) -> u32 {
     let byte = |value: f32| -> u32 {
         let stored = (f64::from(value) * 255.0).round();
         u32::from(
@@ -21,7 +23,10 @@ fn packed(color: Color) -> u32 {
                 .unwrap_or(0),
         )
     };
-    byte(color.r()) << 24 | byte(color.g()) << 16 | byte(color.b()) << 8 | byte(color.a())
+    crate::gui::convert_packed_alpha(
+        byte(color.r()) << 24 | byte(color.g()) << 16 | byte(color.b()) << 8 | byte(color.a()),
+        transparency_byte,
+    )
 }
 
 fn transparency(color: Color) -> u8 {
@@ -31,12 +36,12 @@ fn transparency(color: Color) -> u8 {
         .unwrap_or(0)
 }
 
-fn object_color(provider: &mut Provider, color: Color) {
+fn object_color(provider: &mut Provider, color: Color, transparency_byte: bool) {
     provider.set(
         "ShapeColor",
         "App::PropertyColor",
         "PropertyColor",
-        packed(color),
+        packed(color, transparency_byte),
     );
     provider.set(
         "Transparency",
@@ -50,7 +55,11 @@ fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
     whole_object: bool,
+    transparency_byte: bool,
 ) -> Result<(), CodecError> {
+    if !whole_object {
+        return Ok(());
+    }
     let scalar = |name: &str| {
         appearance
             .properties
@@ -67,7 +76,7 @@ fn material(
                 if let Some(color) = appearance.base_color {
                     value
                         .attributes
-                        .insert("diffuseColor".into(), packed(color).to_string());
+                        .insert("diffuseColor".into(), packed(color, transparency_byte).to_string());
                 } else {
                     value.attributes.remove("diffuseColor");
                 }
@@ -89,7 +98,7 @@ fn material(
     } else if let Some(color) = appearance.base_color.filter(|_| whole_object) {
         let attributes = [
             ("ambientColor", "0".to_owned()),
-            ("diffuseColor", packed(color).to_string()),
+            ("diffuseColor", packed(color, transparency_byte).to_string()),
             ("specularColor", "0".to_owned()),
             ("emissiveColor", "0".to_owned()),
             ("shininess", shininess.unwrap_or(0.0).to_string()),
@@ -110,7 +119,7 @@ fn material(
             ("emissiveColor", "0".into()),
         ];
         if let Some(color) = appearance.base_color {
-            attributes.push(("diffuseColor", packed(color).to_string()));
+            attributes.push(("diffuseColor", packed(color, transparency_byte).to_string()));
         }
         if let Some(value) = shininess {
             attributes.push(("shininess", value.to_string()));
@@ -179,6 +188,7 @@ pub(super) fn write(
     providers: &mut BTreeMap<String, Provider>,
     entries: &mut BTreeMap<String, Vec<u8>>,
     losses: &mut Vec<LossNote>,
+    transparency_byte: bool,
 ) -> Result<(), CodecError> {
     // The neutral arenas own both values and absence of their material lanes.
     // Ambient/specular/emissive members of an object material have no neutral
@@ -255,7 +265,7 @@ pub(super) fn write(
                 .get(name)
                 .is_none_or(|first| first.color == Some(*color))
         }) {
-            let bytes = packed(color).to_be_bytes();
+            let bytes = packed(color, false).to_be_bytes();
             let stored = [
                 f32::from(bytes[0]) / 255.0,
                 f32::from(bytes[1]) / 255.0,
@@ -280,7 +290,6 @@ pub(super) fn write(
             }
         }
         let Some(first) = first_by_provider.get(name) else {
-            eprintln!("  CRE {name} vis={:?}", body.visible);
             first_by_provider.insert(name, body);
             let provider = providers
                 .entry(name.clone())
@@ -295,8 +304,8 @@ pub(super) fn write(
                 provider.visible(visible);
             }
             if let Some(color) = body.color {
-                object_color(provider, color);
-                defaults.insert(name.clone(), packed(color));
+                object_color(provider, color, transparency_byte);
+                defaults.insert(name.clone(), packed(color, transparency_byte));
             }
             continue;
         };
@@ -317,6 +326,8 @@ pub(super) fn write(
         }
     }
     let mut arrays = BTreeMap::<(String, &str), BTreeMap<usize, u32>>::new();
+    let mut array_sources = BTreeMap::<(String, &str), HashSet<&str>>::new();
+    let mut material_lists = BTreeMap::<String, BTreeMap<usize, &Appearance>>::new();
     let mut bound = HashSet::new();
     for binding in &ir.model.appearance_bindings {
         let appearance = ir
@@ -338,6 +349,16 @@ pub(super) fn write(
             .entry(name.clone())
             .or_insert_with(|| Provider::new(name.clone()));
         bound.insert(appearance.id.as_str());
+        let material_slot = (appearance.schema.as_deref() == Some(SHAPE_APPEARANCE_SCHEMA))
+            .then(|| match selection(&binding.target) {
+                None => Some(WHOLE_OBJECT_SLOT),
+                Some((id, "DiffuseColor")) => names
+                    .get(&format!("{id}:subelement"))
+                    .and_then(|value| value.strip_prefix("Face")?.parse::<usize>().ok())
+                    .filter(|index| *index > 0),
+                Some(_) => None,
+            })
+            .flatten();
         if first_by_provider.contains_key(&name) {
             if binding.visible.is_some() {
                 losses.push(
@@ -350,7 +371,12 @@ pub(super) fn write(
         } else if let Some(visible) = ir.effective_visibility(&binding.target) {
             provider.visible(visible);
         }
-        if let Some(color) = ir.effective_display_color(&binding.target) {
+        if let Some(slot) = material_slot {
+            material_lists
+                .entry(name.clone())
+                .or_default()
+                .insert(slot, appearance);
+        } else if let Some(color) = ir.effective_display_color(&binding.target) {
             if let Some((id, property)) = selection(&binding.target) {
                 let index = names
                     .get(&format!("{id}:subelement"))
@@ -369,7 +395,11 @@ pub(super) fn write(
                     arrays
                         .entry((name.clone(), property))
                         .or_default()
-                        .insert(index, packed(color));
+                        .insert(index, packed(color, transparency_byte));
+                    array_sources
+                        .entry((name.clone(), property))
+                        .or_default()
+                        .insert(appearance.id.as_str());
                 } else {
                     losses.push(
                         FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
@@ -384,11 +414,17 @@ pub(super) fn write(
                 // `ShapeColor` (#238 §5.5). The bound color remains the
                 // array fallback for topology color lists naming this
                 // provider.
-                defaults.insert(name.clone(), packed(color));
+                defaults.insert(name.clone(), packed(color, transparency_byte));
             }
         }
-        material(provider, appearance, selection(&binding.target).is_none())?;
+        material(
+            provider,
+            appearance,
+            selection(&binding.target).is_none() && material_slot.is_none(),
+            transparency_byte,
+        )?;
         if selection(&binding.target).is_none()
+            && material_slot.is_none()
             && !provider.properties.contains_key("ShapeMaterial")
             && appearance.base_color.is_some()
         {
@@ -430,8 +466,12 @@ pub(super) fn write(
                 ),
             }
         }
-        let (expected_name, expected_schema) =
-            if let Some((id, property)) = selection(&binding.target) {
+        let (expected_name, expected_schema) = if let Some(slot) = material_slot {
+            (
+                format!("{name} face {} material", slot.max(1)),
+                SHAPE_APPEARANCE_SCHEMA.to_owned(),
+            )
+        } else if let Some((id, property)) = selection(&binding.target) {
                 (
                     format!(
                         "{name} {} appearance",
@@ -455,7 +495,7 @@ pub(super) fn write(
                 .schema
                 .as_ref()
                 .is_some_and(|value| value != &expected_schema)
-            || appearance.asset_guid.is_some()
+            || (appearance.asset_guid.is_some() && material_slot.is_none())
             || appearance.library_id.is_some()
             || appearance.visual_guid.is_some()
             || appearance.physical_token.is_some()
@@ -502,18 +542,33 @@ pub(super) fn write(
             .filter_map(|(_, value)| value.strip_prefix(prefix)?.parse::<usize>().ok())
             .max()
             .unwrap_or(0);
-        let count = u32::try_from(count)
+        // One appearance bound to every element is FreeCAD's one-entry
+        // list, which applies its color to the whole element kind.
+        let uniform = count != 0
+            && overrides.len() == count
+            && (1..=count).all(|index| overrides.contains_key(&index))
+            && array_sources
+                .get(&(owner.clone(), property))
+                .is_some_and(|sources| sources.len() == 1);
+        let colors = if uniform {
+            overrides.values().take(1).copied().collect::<Vec<_>>()
+        } else {
+            (1..=count)
+                .map(|index| {
+                    overrides.get(&index).copied().unwrap_or_else(|| {
+                        defaults.get(&owner).copied().unwrap_or_else(|| {
+                            crate::gui::convert_packed_alpha(DEFAULT_DIFFUSE, transparency_byte)
+                        })
+                    })
+                })
+                .collect()
+        };
+        let stored = u32::try_from(colors.len())
             .map_err(|_| CodecError::malformed("GUI topology color count exceeds u32"))?;
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(&count.to_le_bytes());
-        for index in 1..=count {
-            bytes.extend_from_slice(
-                &overrides
-                    .get(&usize::try_from(index).map_err(CodecError::malformed)?)
-                    .copied()
-                    .unwrap_or_else(|| defaults.get(&owner).copied().unwrap_or(0xcccc_ccff))
-                    .to_le_bytes(),
-            );
+        bytes.extend_from_slice(&stored.to_le_bytes());
+        for color in colors {
+            bytes.extend_from_slice(&color.to_le_bytes());
         }
         let filename = format!("{owner}.{property}");
         entries.insert(filename.clone(), bytes);
@@ -529,8 +584,104 @@ pub(super) fn write(
             ),
         );
     }
+    for (owner, slots) in material_lists {
+        let Some(provider) = providers.get_mut(&owner) else {
+            continue;
+        };
+        let materials: Vec<&Appearance> = match slots.get(&WHOLE_OBJECT_SLOT) {
+            Some(whole) if slots.len() == 1 => vec![*whole],
+            _ => {
+                let faces: BTreeMap<_, _> = slots
+                    .into_iter()
+                    .filter(|(slot, _)| *slot != WHOLE_OBJECT_SLOT)
+                    .collect();
+                let count = faces.keys().max().copied().unwrap_or(0);
+                let Some(fallback) = faces.values().next().copied() else {
+                    continue;
+                };
+                (1..=count)
+                    .map(|index| faces.get(&index).copied().unwrap_or(fallback))
+                    .collect()
+            }
+        };
+        let filename = format!("{owner}.ShapeAppearance");
+        entries.insert(filename.clone(), material_list(&materials, transparency_byte));
+        provider.properties.remove("ShapeMaterial");
+        provider.properties.insert(
+            "ShapeAppearance".into(),
+            xml::property(
+                "ShapeAppearance",
+                "App::PropertyMaterialList",
+                &xml::element(
+                    "MaterialList",
+                    &[("file", filename), ("version", "3".to_owned())],
+                ),
+            ),
+        );
+    }
     Ok(())
 }
+
+/// The `ShapeAppearance` material lane of an appearance a FreeCAD 1.0
+/// material list produced.
+const SHAPE_APPEARANCE_SCHEMA: &str = "FCStd ShapeAppearance";
+/// The slot of a material that applies to the whole object.
+const WHOLE_OBJECT_SLOT: usize = 0;
+
+/// A version-3 `App::PropertyMaterialList` side file: the packed colors and
+/// scalars of every material, then each material's image, image path and
+/// UUID strings.
+fn material_list(materials: &[&Appearance], transparency_byte: bool) -> Vec<u8> {
+    let scalar = |appearance: &Appearance, name: &str| {
+        appearance
+            .properties
+            .iter()
+            .find(|(key, _)| key.as_str() == name)
+            .map(|(_, value)| value.get())
+    };
+    let packed_property = |appearance: &Appearance, name: &str| {
+        let stored = scalar(appearance, name)
+            .and_then(cadmpeg_core::convert::truncate_f64_to_u32)
+            .unwrap_or(0);
+        crate::gui::convert_packed_alpha(stored, transparency_byte)
+    };
+    let mut bytes = Vec::new();
+    let count = u32::try_from(materials.len()).unwrap_or(u32::MAX);
+    bytes.extend_from_slice(&count.to_le_bytes());
+    for appearance in materials {
+        let diffuse = appearance
+            .base_color
+            .map_or(DEFAULT_DIFFUSE, |color| packed(color, false));
+        for value in [
+            packed_property(appearance, "ambient_packed"),
+            crate::gui::convert_packed_alpha(diffuse, transparency_byte),
+            packed_property(appearance, "specular_packed"),
+            packed_property(appearance, "emissive_packed"),
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let opacity = appearance.base_color.map_or(1.0, |color| f64::from(color.a()));
+        let shininess = scalar(appearance, "shininess").unwrap_or(DEFAULT_SHININESS);
+        let transparency = scalar(appearance, "transparency").unwrap_or(1.0 - opacity);
+        for value in [shininess, transparency] {
+            let stored = cadmpeg_core::convert::f32_from_f64(value).unwrap_or(0.0);
+            bytes.extend_from_slice(&stored.to_le_bytes());
+        }
+    }
+    for appearance in materials {
+        for text in ["", "", appearance.asset_guid.as_deref().unwrap_or("")] {
+            let length = u32::try_from(text.len()).unwrap_or(u32::MAX);
+            bytes.extend_from_slice(&length.to_le_bytes());
+            bytes.extend_from_slice(text.as_bytes());
+        }
+    }
+    bytes
+}
+
+/// FreeCAD's default shape diffuse color, opaque light grey.
+const DEFAULT_DIFFUSE: u32 = 0xcccc_ccff;
+/// FreeCAD's default material shininess.
+const DEFAULT_SHININESS: f64 = 0.9;
 
 #[cfg(test)]
 mod tests {
@@ -539,7 +690,7 @@ mod tests {
     #[test]
     fn color_channels_follow_declared_storage_rounding() {
         let color = Color::new(0.1, 0.0, 1.0, 0.375).unwrap();
-        assert_eq!(packed(color).to_be_bytes(), [26, 0, 255, 96]);
+        assert_eq!(packed(color, false).to_be_bytes(), [26, 0, 255, 96]);
         assert_eq!(transparency(color), 62);
     }
 
@@ -549,7 +700,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        material(&mut provider, &appearance, true).unwrap();
+        material(&mut provider, &appearance, true, false).unwrap();
         let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
         let value = document
             .descendants()

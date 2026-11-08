@@ -311,11 +311,20 @@ pub(super) fn write(
     objects: &[Object],
     entries: &mut BTreeMap<String, Vec<u8>>,
     losses: &mut Vec<LossNote>,
+    transparency_byte: bool,
 ) -> Result<String, CodecError> {
     let live: HashSet<_> = objects.iter().map(|object| object.name.as_str()).collect();
     let mut providers = native(ir, names, &live, losses)?;
     neutral_views(ir, names, &live, &mut providers, losses)?;
-    colors::write(ir, names, body_names, &mut providers, entries, losses)?;
+    colors::write(
+        ir,
+        names,
+        body_names,
+        &mut providers,
+        entries,
+        losses,
+        transparency_byte,
+    )?;
     for provider in providers.values_mut() {
         for (name, original) in &provider.native {
             if provider

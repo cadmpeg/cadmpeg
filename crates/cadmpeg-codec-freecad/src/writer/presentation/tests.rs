@@ -73,6 +73,7 @@ fn shared_body_color_quantization_names_each_body() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .unwrap();
     for body in [first, second] {
@@ -109,6 +110,7 @@ fn independent_body_style_and_bound_color_use_separate_properties() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .expect("presentation");
     let document = roxmltree::Document::parse(&providers["Shape"].properties["ShapeColor"])
@@ -172,6 +174,7 @@ fn binding_visibility_does_not_invent_body_visibility() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .unwrap();
     assert!(!providers["Shape"].properties.contains_key("Visibility"));
@@ -210,6 +213,7 @@ fn face_colors_are_regenerated_as_complete_typed_binary_lists() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .expect("topology colors");
     assert_eq!(

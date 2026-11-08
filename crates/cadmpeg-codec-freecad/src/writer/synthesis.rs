@@ -1647,7 +1647,15 @@ pub(super) fn write(
     let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses)?;
     entries.insert("Document.xml".into(), document.into_bytes());
     let gui =
-        super::presentation::write(ir, &names, &body_names, &objects, &mut entries, &mut losses)?;
+        super::presentation::write(
+            ir,
+            &names,
+            &body_names,
+            &objects,
+            &mut entries,
+            &mut losses,
+            crate::gui::requires_alpha_conversion(program_version.as_deref()),
+        )?;
     let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses)?;
     super::dispositions::gui(ir, &names, &gui, &mut native_dispositions)?;
     let gui_bytes = if gui.is_empty() {
