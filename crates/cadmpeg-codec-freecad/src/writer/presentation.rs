@@ -254,8 +254,19 @@ fn neutral_views(
             ("DisplayMode", view.display_mode.as_ref()),
             ("SelectionStyle", view.selection_style.as_ref()),
         ] {
-            if let Some(value) = value {
+            let Some(value) = value else {
+                continue;
+            };
+            // An enumeration stores its selected index.
+            if value.parse::<i64>().is_ok() {
                 provider.set(key, "App::PropertyEnumeration", "Integer", value);
+            } else {
+                losses.push(
+                    FreecadLossCode::PresentationViewModeNotTransferred.note(format!(
+                        "view {} {key} {value:?} is not an enumeration index and is omitted",
+                        view.id
+                    )),
+                );
             }
         }
         if let Some(value) = view.line_width {

@@ -1108,7 +1108,7 @@ fn unheld_neutral_model_does_not_erase_typed_native_geometry_during_synthesis() 
 }
 
 #[test]
-fn edited_annotation_string_parameter_reaches_output() {
+fn edited_dimension_caption_reaches_output() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="1"><Property name="Caption" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
         .decode(
@@ -1117,8 +1117,8 @@ fn edited_annotation_string_parameter_reaches_output() {
         )
         .unwrap();
     let mut ir = decoded.ir().clone();
-    let annotation = &mut ir.model.semantic_annotations[0];
-    *annotation.parameters.get_mut("Caption").unwrap() = "after".into();
+    let drawing = &mut ir.model.drawings[0];
+    *drawing.parameters.get_mut("Caption").unwrap() = "after".into();
     let plan = FcstdCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
@@ -1127,10 +1127,7 @@ fn edited_annotation_string_parameter_reaches_output() {
     let output = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(
-        output.ir().model.semantic_annotations[0].parameters["Caption"],
-        "after"
-    );
+    assert_eq!(output.ir().model.drawings[0].parameters["Caption"], "after");
 }
 
 #[test]

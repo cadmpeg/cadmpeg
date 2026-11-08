@@ -31,7 +31,7 @@ pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
 
 pub(super) fn parameters(
     object: &mut Object,
-    owner: &str,
+    (owner, record): (&str, &str),
     parameters: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     properties: &[crate::native::PropertyRecord],
     (names, available): (&HashMap<String, String>, &std::collections::HashSet<String>),
@@ -64,9 +64,11 @@ pub(super) fn parameters(
                 object.set(name.as_str(), xml);
             } else {
                 object.properties.shift_remove(name.as_str());
-                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                    "drawing {owner} parameter {name} has no writable property and is omitted"
-                )));
+                losses.push(
+                    FreecadLossCode::DrawingParameterNotTransferred.note(format!(
+                        "{record} parameter {name} has no writable property and is omitted"
+                    )),
+                );
             }
             continue;
         };
@@ -110,10 +112,12 @@ pub(super) fn parameters(
             object.set(name.as_str(), xml);
         } else {
             object.properties.shift_remove(name.as_str());
-            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "drawing property {} cannot encode its current parameter and is omitted",
-                source.id
-            )));
+            losses.push(
+                FreecadLossCode::DrawingParameterNotTransferred.note(format!(
+                    "{record} parameter {name} does not parse as property {} and is omitted",
+                    source.id
+                )),
+            );
         }
     }
 }

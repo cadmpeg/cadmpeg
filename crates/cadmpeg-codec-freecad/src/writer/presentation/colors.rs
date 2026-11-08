@@ -51,6 +51,21 @@ fn object_color(provider: &mut Provider, color: Color, transparency_byte: bool) 
     );
 }
 
+/// The display precedence `FreeCAD` applies to a binding of one color lane.
+fn derived_precedence(schema: Option<&str>, target: &AppearanceTarget) -> Option<&'static str> {
+    Some(match (schema?, target) {
+        ("FCStd ViewProvider line style", _) => "edge_over_object",
+        ("FCStd ViewProvider point style", _) => "vertex_over_object",
+        ("FCStd DiffuseColor", _) | (SHAPE_APPEARANCE_SCHEMA, AppearanceTarget::Face(_)) => {
+            "face_over_object"
+        }
+        ("FCStd LineColorArray", _) => "edge_array_over_line",
+        ("FCStd PointColorArray", _) => "vertex_array_over_point",
+        (SHAPE_APPEARANCE_SCHEMA, AppearanceTarget::Body(_)) => "shape_over_object",
+        _ => return None,
+    })
+}
+
 /// `ShapeMaterial` attributes the neutral appearance owns.
 const NEUTRAL_MATERIAL_LANES: [&str; 3] = ["diffuseColor", "transparency", "shininess"];
 
@@ -463,13 +478,19 @@ pub(super) fn write(
                 )),
             );
         }
-        if !binding.channels.is_empty() {
-            losses.push(
-                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-                    "appearance binding {} independent channel gates have no native provider state",
-                    binding.id
-                )),
-            );
+        // FreeCAD's display precedence follows from the color lane and the
+        // element kind; the re-decode derives it.
+        let derived = derived_precedence(appearance.schema.as_deref(), &binding.target);
+        if !binding.channels.is_empty()
+            && (binding.channels.len() != 1
+                || binding.channels.iter().any(|(key, value)| {
+                    key.as_str() != "precedence" || Some(value.as_str()) != derived
+                }))
+        {
+            losses.push(FreecadLossCode::AppearanceChannelDerived.note(format!(
+                "appearance binding {} channels are derived from its color lane and element kind",
+                binding.id
+            )));
         }
         for (key, value) in &appearance.properties {
             match key.as_str() {
@@ -494,35 +515,17 @@ pub(super) fn write(
                 ),
             }
         }
-        let (expected_name, expected_schema) = if let Some(slot) = material_slot {
-            (
-                format!("{name} face {} material", slot.max(1)),
-                SHAPE_APPEARANCE_SCHEMA.to_owned(),
-            )
-        } else if let Some((id, property)) = selection(&binding.target) {
-            (
-                format!(
-                    "{name} {} appearance",
-                    names
-                        .get(&format!("{id}:subelement"))
-                        .map_or("", String::as_str)
-                ),
-                format!("FCStd {property}"),
-            )
+        let expected_schema = if material_slot.is_some() {
+            SHAPE_APPEARANCE_SCHEMA.to_owned()
+        } else if let Some((_, property)) = selection(&binding.target) {
+            format!("FCStd {property}")
         } else {
-            (
-                format!("{name} shape appearance"),
-                "FCStd ViewProvider ShapeMaterial".to_owned(),
-            )
+            "FCStd ViewProvider ShapeMaterial".to_owned()
         };
         if appearance
-            .name
+            .schema
             .as_ref()
-            .is_some_and(|value| value != &expected_name)
-            || appearance
-                .schema
-                .as_ref()
-                .is_some_and(|value| value != &expected_schema)
+            .is_some_and(|value| value != &expected_schema)
             || (appearance.asset_guid.is_some() && material_slot.is_none())
             || appearance.library_id.is_some()
             || appearance.visual_guid.is_some()
@@ -543,6 +546,14 @@ pub(super) fn write(
                     appearance.id
                 )),
             );
+        }
+    }
+    for appearance in &ir.model.appearances {
+        if appearance.name.is_some() {
+            losses.push(FreecadLossCode::AppearanceNameNotTransferred.note(format!(
+                "appearance {} name has no FreeCAD GUI home",
+                appearance.id
+            )));
         }
     }
     // An unbound appearance read from a view provider's own material (an
@@ -605,26 +616,20 @@ pub(super) fn write(
             (Some(owner), Some(schema)) => {
                 // An entry of the provider's own color list with no element
                 // to bind returns to its list position.
-                let entry = [
-                    ("DiffuseColor", "Face"),
-                    ("LineColorArray", "Edge"),
-                    ("PointColorArray", "Vertex"),
-                ]
-                .into_iter()
-                .find(|(property, _)| schema.strip_prefix("FCStd ") == Some(*property))
-                .and_then(|(property, prefix)| {
-                    let index = appearance
-                        .name
-                        .as_deref()?
-                        .strip_prefix(owner.as_str())?
-                        .strip_prefix(' ')?
-                        .strip_suffix(" appearance")?
-                        .strip_prefix(prefix)?
-                        .parse::<usize>()
-                        .ok()
-                        .filter(|index| *index > 0)?;
-                    Some((property, index, appearance.base_color?))
-                });
+                // Appearances read from one list keep their entry order.
+                let entry = ["DiffuseColor", "LineColorArray", "PointColorArray"]
+                    .into_iter()
+                    .find(|property| schema.strip_prefix("FCStd ") == Some(*property))
+                    .and_then(|property| {
+                        let index = ir
+                            .model
+                            .appearances
+                            .iter()
+                            .filter(|other| other.native_ref == appearance.native_ref)
+                            .position(|other| other.id == appearance.id)?
+                            + 1;
+                        Some((property, index, appearance.base_color?))
+                    });
                 if let Some((property, index, color)) = entry {
                     arrays
                         .entry((owner.clone(), property))
@@ -701,8 +706,7 @@ pub(super) fn write(
             let [entry] = native.side_entries.as_slice() else {
                 return None;
             };
-            let value =
-                xml::native_gui_with(native, &HashSet::from([entry.clone()]))?;
+            let value = xml::native_gui_with(native, &HashSet::from([entry.clone()]))?;
             Some((entry.clone(), value))
         });
         let (filename, value) = native.unwrap_or_else(|| {

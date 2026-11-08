@@ -387,15 +387,18 @@ fn definitions(
     Ok(groups)
 }
 
+/// A `FreeCAD` Placement, which is rigid: any other transform keeps its
+/// translation, and `code` names `owner`.
 fn placement(
     transform: cadmpeg_ir::transform::Transform,
     owner: &str,
+    code: FreecadLossCode,
     losses: &mut Vec<LossNote>,
 ) -> String {
     let transform = if transform.is_proper_rigid() {
         transform
     } else {
-        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!("{owner} affine placement is reduced to its translation because FreeCAD Placement is rigid")));
+        losses.push(code.note(format!("{owner} affine placement is reduced to its translation because FreeCAD Placement is rigid")));
         let rows = transform.affine_rows();
         let translation = cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, rows[0][3]],
@@ -788,7 +791,12 @@ pub(super) fn write(
                         split_scale(frame.transform()).unwrap_or((frame.transform(), [1.0; 3]));
                     object.set(
                         "Placement",
-                        placement(rigid, occurrence.id.as_str(), losses),
+                        placement(
+                            rigid,
+                            occurrence.id.as_str(),
+                            FreecadLossCode::ProductPlacementNotRigid,
+                            losses,
+                        ),
                     );
                 }
             }
@@ -854,9 +862,21 @@ pub(super) fn write(
                 let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
                 object.set(
                     "Placement",
-                    placement(rigid, occurrence.id.as_str(), losses),
+                    placement(
+                        rigid,
+                        occurrence.id.as_str(),
+                        FreecadLossCode::ProductPlacementNotRigid,
+                        losses,
+                    ),
                 );
-                if scale != [1.0; 3] {
+                // Only a link stores a scale beside its Placement.
+                let link = matches!(object.kind.as_str(), "App::Link" | "App::LinkElement");
+                if scale != [1.0; 3] && !link {
+                    losses.push(FreecadLossCode::ProductPlacementNotRigid.note(format!(
+                        "{} scale is dropped because FreeCAD Placement is rigid",
+                        occurrence.id
+                    )));
+                } else if scale != [1.0; 3] {
                     object.set(
                         "ScaleVector",
                         xml::property(
@@ -1015,7 +1035,14 @@ fn resolve_linked_transforms(
             .all(|(_, _, linked)| Some(linked) == uses.first().map(|(_, _, first)| first))
             .then(|| uses.first().map(|(_, _, first)| *first))
             .flatten();
-        let rendered = agreed.map(|linked| placement(linked, prototype, losses));
+        let rendered = agreed.map(|linked| {
+            placement(
+                linked,
+                prototype,
+                FreecadLossCode::ProductPlacementNotRigid,
+                losses,
+            )
+        });
         let consistent = match (
             &rendered,
             objects.iter().find(|object| object.name == prototype),
@@ -1051,7 +1078,15 @@ fn resolve_linked_transforms(
                 bool_property(object, "LinkTransform", true);
                 if let Some(transform) = current.transform {
                     let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
-                    object.set("Placement", placement(rigid, occurrence.as_str(), losses));
+                    object.set(
+                        "Placement",
+                        placement(
+                            rigid,
+                            occurrence.as_str(),
+                            FreecadLossCode::ProductPlacementNotRigid,
+                            losses,
+                        ),
+                    );
                     if scale != [1.0; 3] {
                         object.set(
                             "ScaleVector",
@@ -1106,7 +1141,15 @@ fn resolve_linked_transforms(
                 continue;
             };
             let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
-            object.set("Placement", placement(rigid, occurrence.as_str(), losses));
+            object.set(
+                "Placement",
+                placement(
+                    rigid,
+                    occurrence.as_str(),
+                    FreecadLossCode::ProductPlacementNotRigid,
+                    losses,
+                ),
+            );
             if scale != [1.0; 3] {
                 object.set(
                     "ScaleVector",
