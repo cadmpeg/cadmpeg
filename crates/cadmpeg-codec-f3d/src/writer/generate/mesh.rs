@@ -45,6 +45,8 @@ const SCOPE_TAIL_PREVIOUS_STATE: usize = 31;
 const SCOPE_BODY_GAP: usize = 24;
 /// Null history-state identity.
 const NULL_STATE: u32 = u32::MAX;
+/// Zero bytes of the widest stored element (four f32 components).
+const ZERO_ELEMENT: [u8; 16] = [0; 16];
 
 /// Native scope, mesh graph and member records of one mesh import. Synthesis
 /// re-emits them when they still project to the neutral feature
@@ -79,9 +81,13 @@ pub(in crate::writer) fn select<'a>(target: &'a CadIr, native: &'a F3dNative) ->
         .collect();
     features.sort_by_key(|(feature, _)| feature.ordinal);
     let mut selected = Vec::new();
-    let mut rank = 0u32;
-    for (feature, ids) in features {
-        rank = rank.saturating_add(1);
+    for (position, (feature, ids)) in features.into_iter().enumerate() {
+        let Some(rank) = position
+            .checked_add(1)
+            .and_then(|rank| u32::try_from(rank).ok())
+        else {
+            continue;
+        };
         if feature.suppressed == Some(true)
             || feature.product_definition.is_some()
             || !feature.dependencies.is_empty()
@@ -894,7 +900,7 @@ fn container_vertices(tessellation: &Tessellation, placement: [f64; 16]) -> Opti
         let columns: Vec<usize> = (0..3).filter(|index| *index != column).collect();
         let minor = m[rows[0]][columns[0]] * m[rows[1]][columns[1]]
             - m[rows[0]][columns[1]] * m[rows[1]][columns[0]];
-        if (row + column) % 2 == 0 {
+        if (row + column).is_multiple_of(2) {
             minor
         } else {
             -minor
@@ -968,47 +974,40 @@ fn corner_normal_bytes(tessellation: &Tessellation, placement: [f64; 16]) -> Vec
 
 /// A corner channel from one element per corner: each vertex defaults to the
 /// element of its first corner, and every corner that differs from its
-/// vertex default is an override (spec §1.1.2, attribute channels).
+/// vertex default is an override (spec §1.1.2, attribute channels). `None`
+/// when a count leaves the u32 range or an element is wider than any layout.
 fn corner_channel(
     role: u32,
     element_code: u32,
     corners: &[Vec<u8>],
     flat: &[u32],
-    vertex_count: usize,
+    vertex_count: u32,
     item_size: usize,
-) -> Channel {
-    let mut defaults: Vec<Option<&[u8]>> = vec![None; vertex_count];
+) -> Option<Channel> {
+    let zero = ZERO_ELEMENT.get(..item_size)?;
+    let mut defaults: BTreeMap<u32, &[u8]> = BTreeMap::new();
     for (element, vertex) in corners.iter().zip(flat) {
-        if let Some(slot) = usize::try_from(*vertex)
-            .ok()
-            .and_then(|vertex| defaults.get_mut(vertex))
-        {
-            slot.get_or_insert(element.as_slice());
-        }
+        defaults.entry(*vertex).or_insert(element.as_slice());
     }
-    let zero = vec![0; item_size];
-    let mut values: Vec<u8> = defaults
-        .iter()
-        .flat_map(|element| element.unwrap_or(&zero).iter().copied())
-        .collect();
+    let mut values = Vec::new();
+    for vertex in 0..vertex_count {
+        values.extend_from_slice(defaults.get(&vertex).copied().unwrap_or(zero));
+    }
     let mut positions = Vec::new();
     for (position, (element, vertex)) in corners.iter().zip(flat).enumerate() {
-        let default = usize::try_from(*vertex)
-            .ok()
-            .and_then(|vertex| defaults.get(vertex).copied().flatten());
-        if default != Some(element.as_slice()) {
-            positions.push(u32::try_from(position).unwrap_or(u32::MAX));
+        if defaults.get(vertex).copied() != Some(element.as_slice()) {
+            positions.push(u32::try_from(position).ok()?);
             values.extend_from_slice(element);
         }
     }
-    Channel {
+    Some(Channel {
         domain: ChannelDomain::Corner,
         role,
         element_code,
         values,
         positions,
         groups: Vec::new(),
-    }
+    })
 }
 
 /// The override positions of a decoded corner channel whose table is in the
@@ -1048,22 +1047,22 @@ fn channels(
     let mut channels = Vec::new();
     for channel in tessellation.channels() {
         let (role, code) = (channel.kind(), channel.flags());
-        let Ok(item_size) = usize::try_from(channel.item_size()) else {
-            continue;
-        };
-        if Layout::for_element(code).is_none() || item_size == 0 {
+        let item_size = Layout::for_element(code).map(Layout::element_bytes);
+        let Some(item_size) = item_size.filter(|size| {
+            usize::try_from(channel.item_size()).is_ok_and(|stored| stored == *size)
+        }) else {
             losses.push(F3dLossCode::WriterTessellationOmitted.note(format!(
                 "tessellation {}: channel with element code {code} has no container layout and is omitted",
                 tessellation.id
             )));
             continue;
-        }
+        };
         match (role, code, channel.addressing()) {
             (0, crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE, ChannelAddressing::Corner { indices })
                 if !written_normals =>
             {
                 written_normals = true;
-                channels.push(normal_channel(
+                channels.extend(normal_channel(
                     channel.data(),
                     indices,
                     &normals,
@@ -1088,16 +1087,24 @@ fn channels(
                 groups: Vec::new(),
             }),
             (_, _, ChannelAddressing::Corner { indices }) => {
-                let elements: Vec<Vec<u8>> = indices
+                let element = |selector: u32| {
+                    let start = usize::try_from(selector).ok()?.checked_mul(item_size)?;
+                    channel
+                        .data()
+                        .get(start..start.checked_add(item_size)?)
+                        .map(<[u8]>::to_vec)
+                };
+                let Some(elements) = indices
                     .iter()
-                    .map(|selector| {
-                        let start = usize::try_from(*selector).unwrap_or(usize::MAX).saturating_mul(item_size);
-                        channel
-                            .data()
-                            .get(start..start.saturating_add(item_size))
-                            .map_or_else(|| vec![0; item_size], <[u8]>::to_vec)
-                    })
-                    .collect();
+                    .map(|selector| element(*selector))
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    losses.push(F3dLossCode::WriterTessellationOmitted.note(format!(
+                        "tessellation {}: a corner channel selects no stored element and is omitted",
+                        tessellation.id
+                    )));
+                    continue;
+                };
                 match stored_positions(indices, &flat, vertex_count_u32) {
                     Some(positions) => channels.push(Channel {
                         domain: ChannelDomain::Corner,
@@ -1107,12 +1114,12 @@ fn channels(
                         positions,
                         groups: Vec::new(),
                     }),
-                    None => channels.push(corner_channel(
+                    None => channels.extend(corner_channel(
                         role,
                         code,
                         &elements,
                         &flat,
-                        vertex_count,
+                        vertex_count_u32,
                         item_size,
                     )),
                 }
@@ -1128,13 +1135,13 @@ fn channels(
         }
     }
     if !written_normals {
-        channels.push(corner_channel(
+        channels.extend(corner_channel(
             0,
             crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE,
             &normals,
             &flat,
-            vertex_count,
-            8,
+            vertex_count_u32,
+            Layout::PackedDirection.element_bytes(),
         ));
     }
     if !written_groups {
@@ -1153,14 +1160,14 @@ fn normal_channel(
     flat: &[u32],
     vertex_count: u32,
     item_size: usize,
-) -> Channel {
+) -> Option<Channel> {
     let rebuilt = || {
         corner_channel(
             0,
             crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE,
             normals,
             flat,
-            usize::try_from(vertex_count).unwrap_or_default(),
+            vertex_count,
             item_size,
         )
     };
@@ -1168,29 +1175,28 @@ fn normal_channel(
         return rebuilt();
     };
     let mut values = stored.to_vec();
-    let mut assigned = vec![false; stored.len() / item_size.max(1)];
+    let mut assigned = std::collections::BTreeSet::new();
     for (selector, normal) in selectors.iter().zip(normals) {
-        let Ok(entry) = usize::try_from(*selector) else {
+        let slot = usize::try_from(*selector)
+            .ok()
+            .and_then(|entry| entry.checked_mul(item_size))
+            .and_then(|start| values.get_mut(start..start.checked_add(item_size)?));
+        let Some(slot) = slot else {
             return rebuilt();
         };
-        let start = entry * item_size;
-        let Some(slot) = values.get_mut(start..start + item_size) else {
-            return rebuilt();
-        };
-        if assigned[entry] && slot != normal.as_slice() {
+        if !assigned.insert(*selector) && slot != normal.as_slice() {
             return rebuilt();
         }
         slot.copy_from_slice(normal);
-        assigned[entry] = true;
     }
-    Channel {
+    Some(Channel {
         domain: ChannelDomain::Corner,
         role: 0,
         element_code: crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE,
         values,
         positions,
         groups: Vec::new(),
-    }
+    })
 }
 
 /// The role-0 face-group partition. A stored value stream whose keys still
@@ -1235,7 +1241,8 @@ fn group_channel(tessellation: &Tessellation, stored: Option<&[u8]>) -> Result<C
             });
         }
     }
-    let mut keys = vec![0_u32; tessellation.triangle_count()];
+    let triangles = tessellation.triangles();
+    let mut keys = vec![0_u32; triangles.len()];
     let mut records = Vec::new();
     for (ordinal, group) in groups.iter().enumerate() {
         let key = u32::try_from(ordinal)

@@ -29,6 +29,16 @@ pub(super) enum Layout {
 }
 
 impl Layout {
+    /// Bytes of one stored element.
+    pub(super) fn element_bytes(self) -> usize {
+        match self {
+            Self::TerminalDelta => 4,
+            Self::Float2 | Self::PackedDirection => 8,
+            Self::Float3 => 12,
+            Self::Float4 => 16,
+        }
+    }
+
     fn descriptor(self) -> &'static [u8] {
         match self {
             Self::TerminalDelta => &[0x82, 0xa1, b'T', 1, 0xa1, b'd', 1],
@@ -109,7 +119,7 @@ fn bytes_field(out: &mut Vec<u8>, field: u64, value: &[u8]) {
     out.extend_from_slice(value);
 }
 
-/// MessagePack string: fixstr or str8 (spec §1.1.2 name tables).
+/// `MessagePack` string: fixstr or str8 (spec §1.1.2 name tables).
 fn message_pack_string(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     let length = value.len();
     if let Ok(short) = u8::try_from(length) {
@@ -159,10 +169,11 @@ pub(super) fn terminal_delta(values: &[u32]) -> Option<Vec<u8>> {
 
 /// Decode terminal-delta words; the inverse of [`terminal_delta`].
 pub(super) fn terminal_delta_values(words: &[u8]) -> Option<Vec<u32>> {
-    let words: Vec<u32> = words
-        .chunks_exact(4)
-        .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
-        .collect();
+    let mut view = cadmpeg_core::decode::View::over_retained(words);
+    let mut words = Vec::new();
+    while !view.is_empty() {
+        words.push(view.u32_le()?);
+    }
     let (terminal, deltas) = words.split_last()?;
     let total: i64 = deltas.iter().map(|word| i64::from(word.cast_signed())).sum();
     let mut current = i64::from(*terminal).checked_sub(total)?;
