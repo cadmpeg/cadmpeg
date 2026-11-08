@@ -2035,7 +2035,7 @@ pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option
     if !carrier.payload.valid_plane() {
         return None;
     }
-    let z = origin_z.map_or(0.0, |z| z.get());
+    let z = origin_z.map_or(0.0, FiniteReal::get);
     let origin = FinitePoint3::new(Point3::new(point[0], point[1], z))?;
     let frame = OrthonormalFrame3::about_horizontal_normal((*direction).into())?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(

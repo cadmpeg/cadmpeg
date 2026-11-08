@@ -567,7 +567,8 @@ mod tests {
         bytes.extend([0xb3, 0x13, 0x5b, 32, 0x04, 5, 0x81, 0x04, 5, 5, 1]);
         bytes.extend([0; 24]);
         bytes.extend([0x08, 0x64, 0x28]);
-        let group = parse_consolidated_record(&bytes, group_at, bytes.len()).unwrap();
+        let group = parse_consolidated_record(&bytes, group_at, bytes.len())
+            .expect("valid fixture sheet group");
         assert!(backward_root(&group, &bytes));
         let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
         assert_eq!(
@@ -590,7 +591,7 @@ mod tests {
     #[test]
     fn wide_sheet_roster_retains_three_byte_slots_and_member_bits() {
         let sheet = [0x18, 2, 0, 3, 0x0e, 0x00, 0x01, 0x01, 0, 0x23, 3];
-        let (slots, bits) = roster(&sheet, Family::A).unwrap();
+        let (slots, bits) = roster(&sheet, Family::A).expect("valid fixture sheet group");
         assert_eq!(slots, [0, 0x10100]);
         assert_eq!(bits, [0x23]);
         assert!(wide_roster(&sheet, 1).is_none());
@@ -605,7 +606,8 @@ mod tests {
         let mut bytes = vec![0xb2, 0x13, 0x5b, 33, 5, 0x82, 3, 0x06, 5, 9, 1];
         bytes.extend([0; 24]);
         bytes.extend([0x08, 0xd6, 0x28]);
-        let root_frame = parse_consolidated_record(&bytes, 0, bytes.len()).unwrap();
+        let root_frame =
+            parse_consolidated_record(&bytes, 0, bytes.len()).expect("valid fixture sheet group");
         assert!(root(&root_frame, &bytes));
         let start = bytes.len();
         let first_roster = [0xa5, 3, 0x61, 7, 0, 0, 0, 5, 0x08, 2, 3, 0x0f, 0, 0x23, 3];
@@ -622,7 +624,8 @@ mod tests {
         ] {
             bytes.extend(frame);
         }
-        let slots = shell_slots(payload(&bytes, &root_frame).unwrap()).unwrap();
+        let slots = shell_slots(payload(&bytes, &root_frame).expect("valid fixture sheet group"))
+            .expect("valid fixture sheet group");
         let alloc = Allocations::read(&bytes, start, None);
         assert_eq!(
             alloc.faces(&bytes, &slots),

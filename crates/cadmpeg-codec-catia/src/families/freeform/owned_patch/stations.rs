@@ -77,7 +77,7 @@ pub(super) fn edge_station(
 fn map_record(bytes: &[u8], record: &ConsolidatedRecord) -> Option<class25::Class25ParameterMap> {
     let bytes = payload(bytes, record)?;
     match (record.family(), record.class()) {
-        (Family::B, 0x23 | 0x24 | 0x25) => class25::parse(bytes),
+        (Family::B, 0x23..=0x25) => class25::parse(bytes),
         (Family::A, 0x25) => class25::parse_a(bytes),
         _ => None,
     }
@@ -513,7 +513,8 @@ mod tests {
         bytes.push(0x21);
         bytes.extend(12.25_f64.to_le_bytes());
         let knots = [2.0, 4.0, 7.0];
-        let first_arc = spline_first_arc(&[5, 0x15, 0x0d, 8, 0x17], &knots).unwrap();
+        let first_arc =
+            spline_first_arc(&[5, 0x15, 0x0d, 8, 0x17], &knots).expect("valid fixture station");
         assert_eq!(
             station_value(
                 &bytes,

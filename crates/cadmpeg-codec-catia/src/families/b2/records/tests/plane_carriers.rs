@@ -14,7 +14,8 @@ fn stream(selector: u8, values: &[f64], width: u8, flag: u8) -> Vec<u8> {
 
 #[test]
 fn six_plane_layouts_preserve_points_directions_and_bounds_at_every_header_width() {
-    let cases: &[(u8, &[f64], [f64; 3], [f64; 3])] = &[
+    type PlaneCase<'a> = (u8, &'a [f64], [f64; 3], [f64; 3]);
+    let cases: &[PlaneCase<'_>] = &[
         (
             0xec,
             &[10.0, 20.0, -2.0, 5.0, -2.0, 3.0],
@@ -68,7 +69,7 @@ fn six_plane_layouts_preserve_points_directions_and_bounds_at_every_header_width
                     point, direction, u_range, v_range, origin_z, ..
                 } if *point == [10.0, 20.0] && direction.get() == expected_direction
                     && u_range.endpoints() == [-2.0, 5.0] && v_range.endpoints() == [-2.0, 3.0]
-                    && origin_z.map_or(0.0, |z| z.get()) == expected_origin[2]));
+                    && origin_z.map_or(0.0, cadmpeg_ir::scalar::FiniteReal::get) == expected_origin[2]));
                 let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane))) =
                     b2_plane_geometry(carrier)
                 else {

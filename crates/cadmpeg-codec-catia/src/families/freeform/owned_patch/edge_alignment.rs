@@ -213,7 +213,7 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     fn edge(points: Vec<Point2>, forward: bool) -> Use {
-        let degree = u32::try_from(points.len() - 1).unwrap();
+        let degree = u32::try_from(points.len() - 1).expect("valid test edge or pcurve");
         let knots = [0.0, 1.0]
             .into_iter()
             .flat_map(|t| std::iter::repeat_n(t, points.len()))
@@ -226,9 +226,13 @@ mod tests {
             None,
             false,
         )
-        .unwrap();
-        let vertices = [(1, lift(&points[0])), (2, lift(points.last().unwrap()))];
-        let nurbs = PcurveNurbs::from_lanes(degree, knots, points, None, false).unwrap();
+        .expect("valid test edge or pcurve");
+        let vertices = [
+            (1, lift(&points[0])),
+            (2, lift(points.last().expect("valid test edge or pcurve"))),
+        ];
+        let nurbs = PcurveNurbs::from_lanes(degree, knots, points, None, false)
+            .expect("valid test edge or pcurve");
         Use {
             edge: 0,
             vertices,
@@ -246,7 +250,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid test edge or pcurve"),
         );
         let first = edge(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], true);
         let mut same = edge(
@@ -257,9 +261,23 @@ mod tests {
             ],
             false,
         );
-        assert!((evaluate_uv(&same.pcurve, 0.5).unwrap().u - 0.5).abs() > GAP_MM);
-        align(&first, &mut same, &plane).unwrap();
-        assert!((evaluate_uv(&same.pcurve, 0.5).unwrap().u - 0.5).abs() <= UV_FIT_TOLERANCE);
+        assert!(
+            (evaluate_uv(&same.pcurve, 0.5)
+                .expect("valid test edge or pcurve")
+                .u
+                - 0.5)
+                .abs()
+                > GAP_MM
+        );
+        align(&first, &mut same, &plane).expect("valid test edge or pcurve");
+        assert!(
+            (evaluate_uv(&same.pcurve, 0.5)
+                .expect("valid test edge or pcurve")
+                .u
+                - 0.5)
+                .abs()
+                <= UV_FIT_TOLERANCE
+        );
         assert!(!same.forward);
         let mut different = edge(
             vec![

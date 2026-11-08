@@ -136,7 +136,7 @@ pub(crate) enum Class25SourceRelation {
     },
     Sampled {
         range: IncreasingParameterInterval,
-        samples: Class25SamplePairs,
+        samples: Box<Class25SamplePairs>,
     },
 }
 
@@ -234,7 +234,10 @@ fn parse_with_limit(
             if !samples.valid() {
                 return None;
             }
-            Class25SourceRelation::Sampled { range, samples }
+            Class25SourceRelation::Sampled {
+                range,
+                samples: Box::new(samples),
+            }
         }
         _ => return None,
     };

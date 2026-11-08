@@ -81,7 +81,7 @@ impl Extrusion {
 
     pub(super) fn surface(
         &self,
-        offset: DirectrixOffset,
+        offset: &DirectrixOffset,
         point: impl Fn(f64) -> Option<Point3>,
     ) -> Option<NurbsSurface> {
         let axis = *self.direction.as_raw();

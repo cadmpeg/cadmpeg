@@ -373,10 +373,10 @@ pub(super) fn standard_surface_record_groups(
 /// Counts source-closed surface rosters and those with valid local supports.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct SurfaceRosterCensus {
-    pub(crate) roster_count: usize,
-    pub(crate) record_count: usize,
-    pub(crate) supported_roster_count: usize,
-    pub(crate) supported_record_count: usize,
+    pub(crate) rosters: usize,
+    pub(crate) records: usize,
+    pub(crate) supported_rosters: usize,
+    pub(crate) supported_records: usize,
 }
 
 pub(crate) fn surface_roster_census(
@@ -385,12 +385,12 @@ pub(crate) fn surface_roster_census(
 ) -> Result<SurfaceRosterCensus, CodecError> {
     let mut census = SurfaceRosterCensus::default();
     for records in standard_surface_record_groups(ctx, brep)? {
-        census.roster_count += 1;
-        census.record_count += records.len();
+        census.rosters += 1;
+        census.records += records.len();
         if let Some(support_start) = records.last().map(StandardSurfaceRecord::end) {
             if standard_curve_supports_at(brep, records.len(), support_start).is_some() {
-                census.supported_roster_count += 1;
-                census.supported_record_count += records.len();
+                census.supported_rosters += 1;
+                census.supported_records += records.len();
             }
         }
     }
@@ -1210,19 +1210,19 @@ mod tests {
             super::surface_roster_census(ctx, &bytes)
         })
         .expect("census");
-        assert_eq!(census.roster_count, 1);
-        assert_eq!(census.record_count, 1);
-        assert_eq!(census.supported_roster_count, 0);
-        assert_eq!(census.supported_record_count, 0);
+        assert_eq!(census.rosters, 1);
+        assert_eq!(census.records, 1);
+        assert_eq!(census.supported_rosters, 0);
+        assert_eq!(census.supported_records, 0);
 
         bytes.extend_from_slice(&[1, 0, 0, 0x00, 0x02, 0x00, 0x33, 0x36, 0, 0]);
         let census = crate::test_support::with_service_context(|ctx| {
             super::surface_roster_census(ctx, &bytes)
         })
         .expect("supported census");
-        assert_eq!(census.roster_count, 1);
-        assert_eq!(census.record_count, 1);
-        assert_eq!(census.supported_roster_count, 1);
-        assert_eq!(census.supported_record_count, 1);
+        assert_eq!(census.rosters, 1);
+        assert_eq!(census.records, 1);
+        assert_eq!(census.supported_rosters, 1);
+        assert_eq!(census.supported_records, 1);
     }
 }

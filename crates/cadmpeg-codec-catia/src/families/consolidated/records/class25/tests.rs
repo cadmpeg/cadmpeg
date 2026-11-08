@@ -118,7 +118,7 @@ fn class25_samples_keep_pairing_and_do_not_require_endpoint_samples() {
             assert_eq!(wire["source"][0], if decreasing { 4.0 } else { 1.0 });
             assert_eq!(
                 serde_json::from_value::<Class25SamplePairs>(wire).expect("load paired arrays"),
-                samples
+                *samples
             );
         }
     }
@@ -160,7 +160,10 @@ fn class25_keeps_sample_endpoints_with_binary_rounding() {
     let Class25SourceRelation::Sampled { samples, .. } = map.source else {
         panic!("sampled map")
     };
-    assert_eq!(samples.pairs().last().unwrap()[0], rounded);
+    assert_eq!(
+        samples.pairs().last().expect("first sample pair")[0],
+        rounded
+    );
 }
 
 #[test]

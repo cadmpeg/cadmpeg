@@ -29,7 +29,7 @@ pub(super) const SPHERE_BRIDGE_RADIUS_TOLERANCE_MM: f64 = 1.0e-6;
 
 pub(super) enum Carrier<'a> {
     RollingBall(&'a ProceduralSurfaceDefinition, f64),
-    OwnedRollingBall(Cow<'a, ProceduralSurfaceDefinition>, f64),
+    OwnedRollingBall(Box<Cow<'a, ProceduralSurfaceDefinition>>, f64),
     Cylinder(SpatialCylinder),
     Cone(B2Cone, bool),
     Torus(B2Torus, bool),
@@ -206,11 +206,11 @@ impl Carrier<'_> {
             Self::Cone(cone, _) => Some(SolvedSurfaceGeometry::Cone(cone.surface)),
             Self::Torus(torus, _) => match b2_torus_geometry(torus) {
                 SurfaceGeometry::Solved(geometry) => Some(geometry),
-                _ => None,
+                SurfaceGeometry::Procedural { .. } => None,
             },
             Self::Sphere(sphere) => match b2_sphere_geometry(sphere) {
                 SurfaceGeometry::Solved(geometry) => Some(geometry),
-                _ => None,
+                SurfaceGeometry::Procedural { .. } => None,
             },
             Self::Plane(plane) => Some(SolvedSurfaceGeometry::Plane(plane.surface)),
             Self::Tensor(surface) => Some(SolvedSurfaceGeometry::Nurbs((*surface).clone())),
@@ -316,19 +316,19 @@ impl SpatialPlane {
         } else {
             None
         };
-        let x = view.f64_le()?;
+        let origin_x = view.f64_le()?;
         let compressed_origin = (layout, mask) == (0xb4, 0xd6);
-        let y = if compressed_origin {
+        let origin_y = if compressed_origin {
             0.0
         } else {
             view.f64_le()?
         };
-        let z = if compressed_origin || (layout, mask) == (0xc4, 0x3c) {
+        let origin_z = if compressed_origin || (layout, mask) == (0xc4, 0x3c) {
             0.0
         } else {
             view.f64_le()?
         };
-        let origin = FinitePoint3::new(Point3::new(x, y, z))?;
+        let origin = FinitePoint3::new(Point3::new(origin_x, origin_y, origin_z))?;
         let mut direction = |mask: u8| {
             let omitted = mask & 0x70;
             let unit_component = mask & 0x08 != 0;
@@ -508,7 +508,9 @@ mod tests {
             bytes.extend(value.to_le_bytes());
         }
         assert_eq!(
-            offset_cache(&bytes, [[0.0, 4.0], [2.0, 9.0]]).unwrap().1,
+            offset_cache(&bytes, [[0.0, 4.0], [2.0, 9.0]])
+                .expect("valid fixture carrier")
+                .1,
             3.0
         );
         assert!(offset_cache(&bytes, [[0.0, 10.0], [2.0, 9.0]]).is_none());
@@ -526,7 +528,7 @@ mod tests {
         }
         bytes.push(3);
         bytes.extend((0.5 - std::f64::consts::FRAC_PI_2).to_le_bytes());
-        let cylinder = SpatialCylinder::read(&bytes).unwrap();
+        let cylinder = SpatialCylinder::read(&bytes).expect("valid fixture carrier");
         assert_eq!(
             cylinder.surface.frame().axis().as_raw(),
             &Vector3::new(0.0, 1.0, 0.0)

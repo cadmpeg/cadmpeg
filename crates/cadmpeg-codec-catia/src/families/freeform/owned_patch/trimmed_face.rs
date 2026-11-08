@@ -188,7 +188,7 @@ where
                                 cached.and_then(|&i| rolling_ball(ir, i, radius))
                             {
                                 return Some(Carrier::OwnedRollingBall(
-                                    Cow::Borrowed(definition),
+                                    Box::new(Cow::Borrowed(definition)),
                                     chart_end,
                                 ));
                             }
@@ -207,7 +207,7 @@ where
                             }
                             if let Some(definition) = jet.clone().definition_at_radius(radius) {
                                 return Some(Carrier::OwnedRollingBall(
-                                    Cow::Owned(definition),
+                                    Box::new(Cow::Owned(definition)),
                                     chart_end,
                                 ));
                             }
@@ -302,7 +302,7 @@ where
                         .next()?;
                     let v_end = jet.chart_v_end;
                     return Some(Carrier::OwnedRollingBall(
-                        Cow::Owned(jet.definition_at_radius(radius)?),
+                        Box::new(Cow::Owned(jet.definition_at_radius(radius)?)),
                         v_end,
                     ));
                 }
@@ -365,7 +365,7 @@ where
         }
         let carrier = self.carrier(ir, base, carriers, refusal)?;
         let uv = consolidated_jet_pcurve(&curve, &ConsolidatedCarrierChart::Identity, refusal)?;
-        let surface = chart.surface(offset, |t| {
+        let surface = chart.surface(&offset, |t| {
             let p = eval::decode::pcurve_uv(EvaluationAdmission::Standard, &uv, t)
                 .ok()?
                 .get();
@@ -791,7 +791,7 @@ where
             return None;
         }
         let tail = bytes.get(at..)?;
-        let bounds = ring_tail(tail, count, inner)?;
+        let bounds = ring_tail(tail, count, inner)?.bounds();
         Some(Ring { trims, bounds })
     }
 }
@@ -807,7 +807,22 @@ struct Ring {
     bounds: Option<RingBounds>,
 }
 
-fn ring_tail(bytes: &[u8], count: usize, inner: bool) -> Option<Option<RingBounds>> {
+#[derive(Debug, PartialEq)]
+enum RingTail {
+    Unbounded,
+    Bounded(RingBounds),
+}
+
+impl RingTail {
+    fn bounds(self) -> Option<RingBounds> {
+        match self {
+            Self::Unbounded => None,
+            Self::Bounded(bounds) => Some(bounds),
+        }
+    }
+}
+
+fn ring_tail(bytes: &[u8], count: usize, inner: bool) -> Option<RingTail> {
     let mut view = View::over_retained(bytes);
     if usize::from(view.u8()?) != 0x80 + count
         || !matches!(
@@ -819,7 +834,7 @@ fn ring_tail(bytes: &[u8], count: usize, inner: bool) -> Option<Option<RingBound
     }
     view.skip((3 * count).div_ceil(8))?;
     let bounds = match view.u8()? {
-        0x01 => None,
+        0x01 => RingTail::Unbounded,
         0x0d if !inner => {
             let lower = [view.f64_le()?, view.f64_le()?];
             let upper = [view.f64_le()?, view.f64_le()?];
@@ -838,7 +853,7 @@ fn ring_tail(bytes: &[u8], count: usize, inner: bool) -> Option<Option<RingBound
                 }
                 *axis = [f64::from(lo), f64::from(hi)];
             }
-            Some(RingBounds {
+            RingTail::Bounded(RingBounds {
                 chart,
                 model: bounds,
             })
@@ -846,40 +861,6 @@ fn ring_tail(bytes: &[u8], count: usize, inner: bool) -> Option<Option<RingBound
         _ => return None,
     };
     view.is_empty().then_some(bounds)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{line_at, ring_tail, RingBounds};
-
-    #[test]
-    fn clipped_line_projection_returns_the_original_parameter() {
-        let endpoints = [[2.0, 3.0], [6.0, 3.0]];
-        let range = [0.25, 0.75];
-        assert_eq!(line_at(endpoints, range, [3.0, 3.0]), Some(0.375));
-        assert_eq!(line_at(endpoints, range, [6.0, 3.0]), Some(0.75));
-    }
-
-    #[test]
-    fn outer_loop_tail_accepts_ordered_numeric_bounds() {
-        let mut tail = vec![0x84, 0xc1, 0x9b, 0x0d, 0x0d];
-        for parameter in [-1.0_f64, 0.0, 1.0, 2.0] {
-            tail.extend(parameter.to_le_bytes());
-        }
-        tail.push(0x01);
-        for bound in [-4.0_f32, 1.0, -3.0, 1.0, 0.0, 2.0] {
-            tail.extend(bound.to_le_bytes());
-        }
-        assert_eq!(
-            ring_tail(&tail, 4, false),
-            Some(Some(RingBounds {
-                chart: [[-1.0, 1.0], [0.0, 2.0]],
-                model: [[-4.0, 1.0], [-3.0, 1.0], [0.0, 2.0]],
-            }))
-        );
-        assert_eq!(ring_tail(&tail, 4, true), None);
-        assert_eq!(ring_tail(&tail[..tail.len() - 1], 4, false), None);
-    }
 }
 
 pub(super) struct DecodedFace<'a> {
@@ -913,7 +894,7 @@ impl Ring {
         vertices: Option<&BTreeMap<usize, Point3>>,
         shared_surface: Option<&SolvedSurfaceGeometry>,
     ) -> Option<Patch> {
-        let fit_checked = |trims| {
+        let fit_checked = |trims: &[Trim]| {
             let context = RingFit {
                 vertices,
                 shared_surface,
@@ -922,7 +903,7 @@ impl Ring {
             let patch = fit(ir, carrier, face, member, trims, &context)?;
             self.contains_vertices(&patch.sides).then_some(patch)
         };
-        fit_checked(self.trims.clone())
+        fit_checked(&self.trims)
             .or_else(|| {
                 let bounds = self.bounds?;
                 let mut trims = self.trims.clone();
@@ -935,7 +916,7 @@ impl Ring {
                     }
                 }
                 if changed {
-                    fit_checked(trims)
+                    fit_checked(&trims)
                 } else {
                     None
                 }
@@ -948,7 +929,7 @@ impl Ring {
                     changed |= range != trim.range;
                     trim.range = range;
                 }
-                changed.then(|| fit_checked(trims)).flatten()
+                changed.then(|| fit_checked(&trims)).flatten()
             })
     }
 }
@@ -1058,7 +1039,7 @@ impl DecodedFace<'_> {
             &self.carrier,
             self.face_pos,
             self.member,
-            self.outer.trims.clone(),
+            &self.outer.trims,
             &context,
         )?;
         if !self.outer.contains_vertices(&patch.sides) {
@@ -1571,16 +1552,16 @@ fn fit(
     carrier: &Carrier<'_>,
     face: usize,
     member: Member,
-    trims: Vec<Trim>,
+    trims: &[Trim],
     context: &RingFit<'_>,
 ) -> Option<Patch> {
     let try_fit = |trims: &[Trim], recover| {
         fit_with_alternate_lines(ir, carrier, face, member, trims, context, recover)
     };
-    if let Some(patch) = try_fit(&trims, false) {
+    if let Some(patch) = try_fit(trims, false) {
         return Some(patch);
     }
-    let mut mapped = trims.clone();
+    let mut mapped = trims.to_vec();
     let mut changed = false;
     for trim in &mut mapped {
         if !matches!(trim.pcurve, PcurveGeometry::Line(_)) {
@@ -1608,7 +1589,7 @@ fn fit(
             return Some(patch);
         }
     }
-    try_fit(&trims, true)
+    try_fit(trims, true)
 }
 
 fn apply_mapped_range(trim: &mut Trim) -> bool {
@@ -1637,6 +1618,7 @@ fn fit_with_alternate_lines(
     context: &RingFit<'_>,
     recover: bool,
 ) -> Option<Patch> {
+    const MAX_ALTERNATE_LINES: usize = 4;
     let mut trims = Cow::Borrowed(trims);
     if let (Carrier::Plane(_), Some(vertices)) = (carrier, context.vertices) {
         if let Some(SolvedSurfaceGeometry::Plane(plane)) = carrier.solved([[0.0; 2]; 2], false) {
@@ -1651,9 +1633,8 @@ fn fit_with_alternate_lines(
     let choices = trims
         .iter()
         .enumerate()
-        .filter_map(|(i, trim)| Some((i, trim.alternate_line.clone()?)))
+        .filter_map(|(i, trim)| Some((i, trim.alternate_line?)))
         .collect::<Vec<_>>();
-    const MAX_ALTERNATE_LINES: usize = 4;
     if choices.len() > MAX_ALTERNATE_LINES {
         return None;
     }
@@ -1662,7 +1643,7 @@ fn fit_with_alternate_lines(
         let mut ring = trims.to_vec();
         for (lane, (i, line)) in choices.iter().enumerate() {
             if mask & (1 << lane) != 0 {
-                ring[*i].pcurve = PcurveGeometry::Line(line.clone());
+                ring[*i].pcurve = PcurveGeometry::Line(*line);
             }
         }
         if let Some(patch) = fit_ring(ir, carrier, face, member, ring, context, recover) {
@@ -1803,12 +1784,12 @@ fn fit_ring(
         return None;
     }
     let [[u_lo, u_hi], [v_lo, v_hi]] = carrier.bounds()?;
-    let [a, b] = [carrier.point([u_lo, v_lo]), carrier.point([u_hi, v_hi])];
+    let [chart_start, chart_end] = [carrier.point([u_lo, v_lo]), carrier.point([u_hi, v_hi])];
     let limits = std::array::from_fn(|axis| {
         let [lo, hi] = [[u_min, u_max], [v_min, v_max]][axis];
         [
-            (lo - CHART_SLACK).max(a[axis].min(b[axis])),
-            (hi + CHART_SLACK).min(a[axis].max(b[axis])),
+            (lo - CHART_SLACK).max(chart_start[axis].min(chart_end[axis])),
+            (hi + CHART_SLACK).min(chart_start[axis].max(chart_end[axis])),
         ]
     });
     let solved = match context.shared_surface {
@@ -1910,4 +1891,38 @@ fn fit_ring(
         sides,
         inner_starts: Vec::new(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{line_at, ring_tail, RingBounds, RingTail};
+
+    #[test]
+    fn clipped_line_projection_returns_the_original_parameter() {
+        let endpoints = [[2.0, 3.0], [6.0, 3.0]];
+        let range = [0.25, 0.75];
+        assert_eq!(line_at(endpoints, range, [3.0, 3.0]), Some(0.375));
+        assert_eq!(line_at(endpoints, range, [6.0, 3.0]), Some(0.75));
+    }
+
+    #[test]
+    fn outer_loop_tail_accepts_ordered_numeric_bounds() {
+        let mut tail = vec![0x84, 0xc1, 0x9b, 0x0d, 0x0d];
+        for parameter in [-1.0_f64, 0.0, 1.0, 2.0] {
+            tail.extend(parameter.to_le_bytes());
+        }
+        tail.push(0x01);
+        for bound in [-4.0_f32, 1.0, -3.0, 1.0, 0.0, 2.0] {
+            tail.extend(bound.to_le_bytes());
+        }
+        assert_eq!(
+            ring_tail(&tail, 4, false),
+            Some(RingTail::Bounded(RingBounds {
+                chart: [[-1.0, 1.0], [0.0, 2.0]],
+                model: [[-4.0, 1.0], [-3.0, 1.0], [0.0, 2.0]],
+            }))
+        );
+        assert_eq!(ring_tail(&tail, 4, true), None);
+        assert_eq!(ring_tail(&tail[..tail.len() - 1], 4, false), None);
+    }
 }

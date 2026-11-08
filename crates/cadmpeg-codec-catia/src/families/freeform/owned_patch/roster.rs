@@ -251,13 +251,14 @@ mod tests {
         let split = header.len() + face.len();
         bytes.splice(split..split, [0xff; 7]);
         let sources = vec![vec![
-            SourceExtent::within(&bytes, 0, split).unwrap(),
-            SourceExtent::within(&bytes, split + 7, bytes.len()).unwrap(),
+            SourceExtent::within(&bytes, 0, split).expect("valid fixture roster"),
+            SourceExtent::within(&bytes, split + 7, bytes.len()).expect("valid fixture roster"),
         ]];
-        let records =
-            crate::wire::records::consolidated_records_in_sources(&bytes, &sources).unwrap();
+        let records = crate::wire::records::consolidated_records_in_sources(&bytes, &sources)
+            .expect("valid fixture roster");
         crate::test_support::with_service_context(|ctx| {
-            let found = members(ctx, &bytes, &sources, &records, &BTreeSet::new()).unwrap();
+            let found = members(ctx, &bytes, &sources, &records, &BTreeSet::new())
+                .expect("valid fixture roster");
             assert_eq!(found.len(), 2);
             assert_eq!(found[&(0, header.len())].body, (0, 0));
             assert!(!found[&(0, header.len())].forward);
@@ -266,7 +267,7 @@ mod tests {
             let mut bad = bytes.clone();
             bad[29] = 3;
             assert!(members(ctx, &bad, &sources, &records, &BTreeSet::new())
-                .unwrap()
+                .expect("valid fixture roster")
                 .is_empty());
         });
     }

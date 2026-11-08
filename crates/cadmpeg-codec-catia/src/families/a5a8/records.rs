@@ -1182,7 +1182,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<
             Some([0x08, marker])
                 if a5_int(*marker).is_some() || *marker == 0x0f || owned && *marker % 4 == 3 =>
             {
-                at += 2
+                at += 2;
             }
             _ => return None,
         }

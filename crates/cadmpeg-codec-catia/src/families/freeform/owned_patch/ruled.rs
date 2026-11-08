@@ -35,9 +35,9 @@ impl Ruled {
             .sites
             .iter()
             .map(|s| {
-                let [a, b, c] = s.point.get();
-                let [d, e, f] = s.reference_point.get();
-                [a, b, c, d, e, f]
+                let [x, y, z] = s.point.get();
+                let [ref_x, ref_y, ref_z] = s.reference_point.get();
+                [x, y, z, ref_x, ref_y, ref_z]
             })
             .collect::<Vec<_>>();
         let first = guide
@@ -94,7 +94,7 @@ impl Ruled {
         let evaluate = |curve| {
             eval::decode::curve_point_solved(EvaluationAdmission::Standard, curve, u)
                 .ok()
-                .map(|p| p.get())
+                .map(cadmpeg_ir::features::FinitePoint3::get)
         };
         let p = evaluate(&self.guides[0])?;
         let q = evaluate(&self.guides[1])?;
@@ -108,7 +108,7 @@ impl Ruled {
         let tangent = |guide| {
             eval::curve_tangent_solved(EvaluationAdmission::Standard, guide, u)
                 .ok()
-                .map(|value| value.get())
+                .map(cadmpeg_ir::features::FiniteVector3::get)
         };
         let p_tangent = tangent(&self.guides[0])?;
         let q_tangent = tangent(&self.guides[1])?;

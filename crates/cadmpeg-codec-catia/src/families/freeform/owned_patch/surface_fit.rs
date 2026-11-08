@@ -39,9 +39,12 @@ fn parameter([a, b]: [f64; 2], fraction: f64) -> f64 {
 
 fn control_row([a, b, c, d]: [Point3; 4]) -> [Point3; 4] {
     let bc = |a: f64, b: f64, c: f64, d: f64| {
-        let p = 27.0 * (b - a) - (d - a);
-        let q = 27.0 * (c - a) - 8.0 * (d - a);
-        [a + (2.0 * p - q) / 18.0, a + (2.0 * q - p) / 18.0]
+        let first_residual = 27.0 * (b - a) - (d - a);
+        let second_residual = 27.0 * (c - a) - 8.0 * (d - a);
+        [
+            a + (2.0 * first_residual - second_residual) / 18.0,
+            a + (2.0 * second_residual - first_residual) / 18.0,
+        ]
     };
     let [x1, x2] = bc(a.x, b.x, c.x, d.x);
     let [y1, y2] = bc(a.y, b.y, c.y, d.y);
@@ -69,7 +72,7 @@ fn cell(evaluate: &impl Fn(f64, f64) -> Option<Point3>, u: [f64; 2], v: [f64; 2]
     Some(rows)
 }
 
-fn evaluate_cell(poles: Cell, u: f64, v: f64) -> Point3 {
+fn evaluate_cell(poles: &Cell, u: f64, v: f64) -> Point3 {
     let lerp = |a: Point3, b: Point3, t| a.translated(b.vector_from(a), t);
     let curve = |[a, b, c, d]: [Point3; 4], t| {
         let [ab, bc, cd] = [lerp(a, b, t), lerp(b, c, t), lerp(c, d, t)];
@@ -139,7 +142,7 @@ pub(super) fn rolling(
         |u, v| {
             eval::rolling_ball_jet_point(definition, u, v)
                 .ok()
-                .map(|p| p.get())
+                .map(cadmpeg_ir::features::FinitePoint3::get)
         },
     )
 }
@@ -173,7 +176,7 @@ fn fit(
                 let holds = |s, t| {
                     Some(
                         evaluate(parameter(u, s), parameter(v, t))?
-                            .distance(evaluate_cell(poles, s, t))
+                            .distance(evaluate_cell(&poles, s, t))
                             <= FIT_ERROR_MM,
                     )
                 };

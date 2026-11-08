@@ -37,7 +37,7 @@ fn matches_edge(a: &Use, b: &Use) -> Option<bool> {
         let t = interval_parameter(side.curve.full_knot_endpoints().endpoints(), f);
         eval::decode::nurbs_curve_point_at(EvaluationAdmission::Standard, &side.curve, t)
             .ok()
-            .map(|p| p.get())
+            .map(FinitePoint3::get)
     };
     for step in 0..=EDGE_SAMPLES {
         let f = f64::from(step) / f64::from(EDGE_SAMPLES);
@@ -322,7 +322,7 @@ fn append_component(
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve.clone(),
                     geometry: side.pcurve.clone(),
-                    metadata: Default::default(),
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
                 });
                 let [lo, hi] = side.curve.full_knot_endpoints().endpoints();
                 let range = if orders[&(patch.face, side.edge)] {

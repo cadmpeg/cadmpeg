@@ -8,9 +8,11 @@ use cadmpeg_ir::math::Point3;
 use super::super::{edge_alignment, trimmed_face, Patch, Use, GAP_MM};
 use super::ANCHOR_AGREEMENT_MM;
 
+type SitesByFace = BTreeMap<usize, Option<Point3>>;
+
 #[derive(Default)]
 pub(super) struct PrimarySites {
-    by_vertex: BTreeMap<((usize, usize), usize), BTreeMap<usize, Option<Point3>>>,
+    by_vertex: BTreeMap<((usize, usize), usize), SitesByFace>,
 }
 
 impl PrimarySites {

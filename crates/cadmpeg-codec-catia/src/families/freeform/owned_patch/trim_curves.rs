@@ -197,7 +197,7 @@ mod tests {
         for value in [-1.0_f64, 2.0, 0.0, 0.0, 1.0, 1.0] {
             bytes.extend(value.to_le_bytes());
         }
-        let (_, range) = spline(&bytes).unwrap();
+        let (_, range) = spline(&bytes).expect("valid fixture trim");
         assert_eq!(range, [-1.0, 2.0]);
     }
 }

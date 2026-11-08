@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded polynomial approximation of a native rolling-ball face carrier.
 
+use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
@@ -55,7 +56,7 @@ impl ClosedPatch {
         let mut points = Vec::new();
         for (index, edge) in self.edges.iter().enumerate() {
             for step in 0..LOOP_ORIENTATION_SAMPLES {
-                let fraction = step as f64 / LOOP_ORIENTATION_SAMPLES as f64;
+                let fraction = f64_from_index(step)? / f64_from_index(LOOP_ORIENTATION_SAMPLES)?;
                 let fraction = if index == 1 && same_order {
                     1.0 - fraction
                 } else {
@@ -108,16 +109,18 @@ fn chart_v(value: f64, bounds: Option<[f64; 2]>) -> Option<f64> {
     Some(value.clamp(lower, upper))
 }
 
-fn bernstein(degree: usize, t: f64) -> Vec<f64> {
+fn bernstein(degree: usize, t: f64) -> Option<Vec<f64>> {
     let mut row = Vec::with_capacity(degree + 1);
     let mut coefficient = 1.0;
     for index in 0..=degree {
-        row.push(coefficient * t.powi(index as i32) * (1.0 - t).powi((degree - index) as i32));
+        let power = i32::try_from(index).ok()?;
+        let complement = i32::try_from(degree - index).ok()?;
+        row.push(coefficient * t.powi(power) * (1.0 - t).powi(complement));
         if index < degree {
-            coefficient *= (degree - index) as f64 / (index + 1) as f64;
+            coefficient *= f64::from(complement) / f64_from_index(index + 1)?;
         }
     }
-    row
+    Some(row)
 }
 
 fn solve(matrix: &[Vec<f64>], values: &[f64]) -> Option<Vec<f64>> {
@@ -148,13 +151,12 @@ fn solve(matrix: &[Vec<f64>], values: &[f64]) -> Option<Vec<f64>> {
         for value in &mut rows[column] {
             *value /= scale;
         }
-        for other in 0..count {
-            if other == column {
-                continue;
-            }
-            let factor = rows[other][column];
-            for entry in column..=count {
-                rows[other][entry] -= factor * rows[column][entry];
+        let (before, tail) = rows.split_at_mut(column);
+        let (pivot_row, after) = tail.split_first_mut()?;
+        for row in before.iter_mut().chain(after) {
+            let factor = row[column];
+            for (entry, pivot_entry) in row[column..].iter_mut().zip(&pivot_row[column..]) {
+                *entry -= factor * pivot_entry;
             }
         }
     }
@@ -183,16 +185,18 @@ pub(super) fn fit(
         Some([point.x, point.y, point.z])
     };
     let u_basis = (0..=U_DEGREE)
-        .map(|index| bernstein(U_DEGREE, index as f64 / U_DEGREE as f64))
-        .collect::<Vec<_>>();
+        .map(|index| bernstein(U_DEGREE, f64_from_index(index)? / f64_from_index(U_DEGREE)?))
+        .collect::<Option<Vec<_>>>()?;
     let v_basis = (0..=V_DEGREE)
-        .map(|index| bernstein(V_DEGREE, index as f64 / V_DEGREE as f64))
-        .collect::<Vec<_>>();
+        .map(|index| bernstein(V_DEGREE, f64_from_index(index)? / f64_from_index(V_DEGREE)?))
+        .collect::<Option<Vec<_>>>()?;
     let mut samples = [[[0.0; 3]; V_DEGREE + 1]; U_DEGREE + 1];
     for (i, row) in samples.iter_mut().enumerate() {
-        let u = u_range[0] + (u_range[1] - u_range[0]) * i as f64 / U_DEGREE as f64;
+        let u =
+            u_range[0] + (u_range[1] - u_range[0]) * f64_from_index(i)? / f64_from_index(U_DEGREE)?;
         for (j, point) in row.iter_mut().enumerate() {
-            let v = v_range[0] + (v_range[1] - v_range[0]) * j as f64 / V_DEGREE as f64;
+            let v = v_range[0]
+                + (v_range[1] - v_range[0]) * f64_from_index(j)? / f64_from_index(V_DEGREE)?;
             *point = evaluate(u, v)?;
         }
     }
@@ -218,13 +222,13 @@ pub(super) fn fit(
         }
     }
     for i in 0..=HOLDOUT_STEPS {
-        let tu = i as f64 / HOLDOUT_STEPS as f64;
+        let tu = f64_from_index(i)? / f64_from_index(HOLDOUT_STEPS)?;
         let u = u_range[0] + (u_range[1] - u_range[0]) * tu;
-        let bu = bernstein(U_DEGREE, tu);
+        let bu = bernstein(U_DEGREE, tu)?;
         for j in 0..=HOLDOUT_STEPS {
-            let tv = j as f64 / HOLDOUT_STEPS as f64;
+            let tv = f64_from_index(j)? / f64_from_index(HOLDOUT_STEPS)?;
             let v = v_range[0] + (v_range[1] - v_range[0]) * tv;
-            let bv = bernstein(V_DEGREE, tv);
+            let bv = bernstein(V_DEGREE, tv)?;
             let actual = evaluate(u, v)?;
             let mut predicted = [0.0; 3];
             for (row, weight_u) in poles.iter().zip(&bu) {
@@ -252,7 +256,7 @@ pub(super) fn fit(
         .collect();
     NurbsSurface::new(
         NurbsSurfaceAxis::new(
-            U_DEGREE as u32,
+            u32::try_from(U_DEGREE).ok()?,
             vec![
                 u_range[0], u_range[0], u_range[0], u_range[0], u_range[1], u_range[1], u_range[1],
                 u_range[1],
@@ -260,7 +264,7 @@ pub(super) fn fit(
             false,
         ),
         NurbsSurfaceAxis::new(
-            V_DEGREE as u32,
+            u32::try_from(V_DEGREE).ok()?,
             vec![
                 v_range[0], v_range[0], v_range[0], v_range[0], v_range[0], v_range[0], v_range[1],
                 v_range[1], v_range[1], v_range[1], v_range[1], v_range[1],
@@ -318,8 +322,13 @@ pub(super) fn fit_bezier_lanes<const N: usize>(
     tolerance: f64,
 ) -> Option<(Vec<f64>, Vec<[f64; N]>)> {
     let basis = (0..=EDGE_DEGREE)
-        .map(|index| bernstein(EDGE_DEGREE, index as f64 / EDGE_DEGREE as f64))
-        .collect::<Vec<_>>();
+        .map(|index| {
+            bernstein(
+                EDGE_DEGREE,
+                f64_from_index(index)? / f64_from_index(EDGE_DEGREE)?,
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
     let mut spans = vec![range];
     for depth in 0..=MAX_EDGE_SPLIT_DEPTH {
         let mut next = Vec::new();
@@ -328,7 +337,7 @@ pub(super) fn fit_bezier_lanes<const N: usize>(
         for &[lower, upper] in &spans {
             let samples = (0..=EDGE_DEGREE)
                 .map(|index| {
-                    let fraction = index as f64 / EDGE_DEGREE as f64;
+                    let fraction = f64_from_index(index)? / f64_from_index(EDGE_DEGREE)?;
                     evaluate(interpolate_interval([lower, upper], fraction))
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -343,9 +352,9 @@ pub(super) fn fit_bezier_lanes<const N: usize>(
             poles[EDGE_DEGREE] = evaluate(upper)?;
             let mut maximum_error = 0.0_f64;
             for index in 0..=EDGE_HOLDOUT_STEPS {
-                let fraction = index as f64 / EDGE_HOLDOUT_STEPS as f64;
+                let fraction = f64_from_index(index)? / f64_from_index(EDGE_HOLDOUT_STEPS)?;
                 let actual = evaluate(interpolate_interval([lower, upper], fraction))?;
-                let coefficients = bernstein(EDGE_DEGREE, fraction);
+                let coefficients = bernstein(EDGE_DEGREE, fraction)?;
                 let mut predicted = [0.0; N];
                 for (pole, coefficient) in poles.iter().zip(coefficients) {
                     for (value, control) in predicted.iter_mut().zip(pole) {
@@ -427,19 +436,19 @@ pub(super) fn closed_patch(
                 let (knots, points, first, second) = pcurve.native_lanes();
                 let knots = knots
                     .into_iter()
-                    .map(|value| value.get())
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
                     .collect::<Vec<_>>();
                 let points = points
                     .into_iter()
-                    .map(|value| value.get())
+                    .map(cadmpeg_ir::units::FiniteVector::get)
                     .collect::<Vec<_>>();
                 let first = first
                     .into_iter()
-                    .map(|value| value.get())
+                    .map(cadmpeg_ir::units::FiniteVector::get)
                     .collect::<Vec<_>>();
                 let second = second
                     .into_iter()
-                    .map(|value| value.get())
+                    .map(cadmpeg_ir::units::FiniteVector::get)
                     .collect::<Vec<_>>();
                 let geometry = crate::assemble::quintic_jet_pcurve(
                     crate::wire::records::ConsolidatedPcurve::DEGREE,
@@ -539,7 +548,7 @@ const SIX_EDGE_HOLDOUT_U: usize = 60;
 const SIX_EDGE_HOLDOUT_V: usize = 30;
 const RAIL_SCAN_STEPS: usize = 100;
 const GOLDEN_SEARCH_STEPS: usize = 40;
-const GOLDEN_RATIO_INV: f64 = 0.618033988749895;
+const GOLDEN_RATIO_INV: f64 = 0.618_033_988_749_895;
 const MAX_CORNER_RESIDUAL_MM: f64 = 0.001;
 const RAIL_ENDPOINT_TOLERANCE_MM: f64 = 0.01;
 const EDGE_DELIM_BYTES: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
@@ -800,14 +809,14 @@ fn bspline_basis(knots: &[f64], degree: usize, mut t: f64, i: usize) -> f64 {
     values.get(i).copied().unwrap_or(0.0)
 }
 
-fn knot_vector(low: f64, high: f64, spans: usize) -> Vec<f64> {
+fn knot_vector(low: f64, high: f64, spans: usize) -> Option<Vec<f64>> {
     let mut knots = vec![low; 6];
     for i in 1..spans {
-        let knot = low + (high - low) * (i as f64) / (spans as f64);
+        let knot = low + (high - low) * (f64_from_index(i)?) / (f64_from_index(spans)?);
         knots.extend([knot; 3]);
     }
     knots.extend([high; 6]);
-    knots
+    Some(knots)
 }
 
 pub(super) fn bind_rolling_ball_six_edge(
@@ -847,7 +856,8 @@ pub(super) fn bind_rolling_ball_six_edge(
         let mut best_t = t_min;
         let mut best_dist = f64::INFINITY;
         for step in 0..=RAIL_SCAN_STEPS {
-            let t = t_min + (t_max - t_min) * (step as f64) / (RAIL_SCAN_STEPS as f64);
+            let t = t_min
+                + (t_max - t_min) * (f64_from_index(step)?) / (f64_from_index(RAIL_SCAN_STEPS)?);
             let pt = eval_at(t, s)?;
             let d = dist(point, pt);
             if d < best_dist {
@@ -855,7 +865,7 @@ pub(super) fn bind_rolling_ball_six_edge(
                 best_t = t;
             }
         }
-        let step_size = (t_max - t_min) / (RAIL_SCAN_STEPS as f64);
+        let step_size = (t_max - t_min) / (f64_from_index(RAIL_SCAN_STEPS)?);
         let mut lower = (best_t - step_size).max(t_min);
         let mut upper = (best_t + step_size).min(t_max);
         let mut t1 = upper - GOLDEN_RATIO_INV * (upper - lower);
@@ -900,8 +910,8 @@ pub(super) fn bind_rolling_ball_six_edge(
     if rail0_params.len() != 3 || rail1_params.len() != 3 {
         return None;
     }
-    rail0_params.sort_by(|a, b| a.total_cmp(b));
-    rail1_params.sort_by(|a, b| a.total_cmp(b));
+    rail0_params.sort_by(f64::total_cmp);
+    rail1_params.sort_by(f64::total_cmp);
     if (rail0_params[0] - rail1_params[0]).abs() > RAIL_ENDPOINT_TOLERANCE_MM
         || (rail0_params[2] - rail1_params[2]).abs() > RAIL_ENDPOINT_TOLERANCE_MM
     {
@@ -974,7 +984,7 @@ pub(super) fn fit_rectangular_patch(
     let ProceduralSurfaceDefinition::RollingBallJet(stations) = definition else {
         return None;
     };
-    let uniform = knot_vector(u_min, u_max, SIX_EDGE_U_SPANS);
+    let uniform = knot_vector(u_min, u_max, SIX_EDGE_U_SPANS)?;
     fit_patch_with_knots(definition, [u_min, u_max], uniform).or_else(|| {
         let interior = stations
             .stations()
@@ -1008,7 +1018,7 @@ fn fit_patch_with_knots(
             .get();
         Some([pt.x, pt.y, pt.z])
     };
-    let kv = knot_vector(0.0, 1.0, SIX_EDGE_V_SPANS);
+    let kv = knot_vector(0.0, 1.0, SIX_EDGE_V_SPANS)?;
     let mut gu = Vec::with_capacity(u_poles);
     for i in 0..u_poles {
         let sum: f64 = ku[i + 1..=i + 5].iter().sum();
@@ -1070,13 +1080,14 @@ fn fit_patch_with_knots(
         }
     }
     for i in 0..=SIX_EDGE_HOLDOUT_U {
-        let u = u_min + (u_max - u_min) * (i as f64) / (SIX_EDGE_HOLDOUT_U as f64);
+        let u =
+            u_min + (u_max - u_min) * (f64_from_index(i)?) / (f64_from_index(SIX_EDGE_HOLDOUT_U)?);
         let mut u_weights = Vec::with_capacity(u_poles);
         for k in 0..u_poles {
             u_weights.push(bspline_basis(&ku, SIX_EDGE_U_DEGREE, u, k));
         }
         for j in 0..=SIX_EDGE_HOLDOUT_V {
-            let v = (j as f64) / (SIX_EDGE_HOLDOUT_V as f64);
+            let v = (f64_from_index(j)?) / (f64_from_index(SIX_EDGE_HOLDOUT_V)?);
             let mut v_weights = Vec::with_capacity(SIX_EDGE_V_POLES);
             for k in 0..SIX_EDGE_V_POLES {
                 v_weights.push(bspline_basis(&kv, SIX_EDGE_V_DEGREE, v, k));
@@ -1120,7 +1131,7 @@ fn fit_patch_with_knots(
         .collect();
 
     let max_curve = NurbsCurve::from_lanes(
-        SIX_EDGE_V_DEGREE as u32,
+        u32::try_from(SIX_EDGE_V_DEGREE).ok()?,
         kv.clone(),
         max_points,
         None,
@@ -1128,7 +1139,7 @@ fn fit_patch_with_knots(
     )
     .ok()?;
     let upper_curve = NurbsCurve::from_lanes(
-        SIX_EDGE_U_DEGREE as u32,
+        u32::try_from(SIX_EDGE_U_DEGREE).ok()?,
         ku.clone(),
         upper_points,
         None,
@@ -1136,7 +1147,7 @@ fn fit_patch_with_knots(
     )
     .ok()?;
     let min_curve = NurbsCurve::from_lanes(
-        SIX_EDGE_V_DEGREE as u32,
+        u32::try_from(SIX_EDGE_V_DEGREE).ok()?,
         kv.clone(),
         min_points,
         None,
@@ -1144,7 +1155,7 @@ fn fit_patch_with_knots(
     )
     .ok()?;
     let lower_curve = NurbsCurve::from_lanes(
-        SIX_EDGE_U_DEGREE as u32,
+        u32::try_from(SIX_EDGE_U_DEGREE).ok()?,
         ku.clone(),
         lower_points,
         None,
@@ -1161,8 +1172,8 @@ fn fit_patch_with_knots(
         })
         .collect();
     let surface = NurbsSurface::new(
-        NurbsSurfaceAxis::new(SIX_EDGE_U_DEGREE as u32, ku, false),
-        NurbsSurfaceAxis::new(SIX_EDGE_V_DEGREE as u32, kv, false),
+        NurbsSurfaceAxis::new(u32::try_from(SIX_EDGE_U_DEGREE).ok()?, ku, false),
+        NurbsSurfaceAxis::new(u32::try_from(SIX_EDGE_V_DEGREE).ok()?, kv, false),
         NurbsPoleGrid::Polynomial {
             rows: surface_points,
         },
@@ -1186,14 +1197,14 @@ mod tests {
             eval, fit_lifted_edge, EvaluationAdmission, Point3, EDGE_DEGREE, MAX_EDGE_ERROR_MM,
         };
         let evaluate = |t: f64| Some([t, t.sin(), 0.0]);
-        let curve = fit_lifted_edge([0.0, 8.0], evaluate).unwrap();
+        let curve = fit_lifted_edge([0.0, 8.0], evaluate).expect("valid fixture geometry");
         let runs = curve.knots().chunk_by(|a, b| a == b).collect::<Vec<_>>();
         assert!(runs.len() > 2, "the test curve must require subdivision");
         for run in &runs[1..runs.len() - 1] {
             assert_eq!(run.len(), EDGE_DEGREE);
             let t = run[0];
             let at = eval::decode::nurbs_curve_point_at(EvaluationAdmission::Standard, &curve, t)
-                .unwrap()
+                .expect("valid fixture geometry")
                 .get();
             assert!(at.distance(Point3::new(t, t.sin(), 0.0)) <= MAX_EDGE_ERROR_MM);
         }
@@ -1205,9 +1216,9 @@ mod tests {
         let mut buffer = Vec::new();
         buffer.extend_from_slice(&EDGE_DELIM_BYTES);
         buffer.extend_from_slice(&[0x01, 0x06, 0x06]);
-        for i in 0..6 {
+        for i in 0_u16..6 {
             buffer.extend_from_slice(&VERTEX_ROW_PREFIX);
-            let coord = (i as f32) * 10.0;
+            let coord = f32::from(i) * 10.0;
             buffer.extend_from_slice(&coord.to_le_bytes());
             buffer.extend_from_slice(&coord.to_le_bytes());
             buffer.extend_from_slice(&coord.to_le_bytes());
@@ -1216,7 +1227,7 @@ mod tests {
 
         let corners = extract_boundary_corner_table(&buffer);
         assert!(corners.is_some());
-        let c = corners.unwrap();
+        let c = corners.expect("valid fixture geometry");
         assert_eq!(c[0], [0.0, 0.0, 0.0]);
         assert_eq!(c[5], [50.0, 50.0, 50.0]);
 
@@ -1288,7 +1299,9 @@ mod tests {
             let mut row = [0_u8; 38];
             row[..4].copy_from_slice(&[1, 0, 4, 0]);
             row[4..8].copy_from_slice(&tags[index].to_le_bytes());
-            row[11..15].copy_from_slice(&(35_u32 - index as u32).to_le_bytes());
+            row[11..15].copy_from_slice(
+                &(35_u32 - u32::try_from(index).expect("fixture index fits")).to_le_bytes(),
+            );
             row[19..23].copy_from_slice(&27_u32.to_le_bytes());
             mfbrp.extend_from_slice(&row);
         }

@@ -692,13 +692,17 @@ pub(super) fn try_decode_freeform_surfaces(
             &mut annotations,
             &scan.data,
             &consolidated_records,
-            scan.main_data_stream(),
-            scan.surfacic_reps_stream(),
-            mfbrp_data.as_deref(),
+            RollingBallStreams {
+                main: scan.main_data_stream(),
+                surfacic: scan.surfacic_reps_stream(),
+                mfbrp: mfbrp_data.as_deref(),
+            },
             refusal,
             &mut admission,
         )));
-        let owned_patch_count = if !topology_transferred {
+        let owned_patch_count = if topology_transferred {
+            0
+        } else {
             admitted!(owned_patch::append(
                 &mut ir,
                 &mut annotations,
@@ -711,8 +715,6 @@ pub(super) fn try_decode_freeform_surfaces(
                 refusal,
                 &mut admission,
             ))
-        } else {
-            0
         };
         if planar_two_edge_candidate {
             if let Err(error) = append_planar_two_edge_pool(
@@ -855,15 +857,15 @@ pub(super) fn try_decode_freeform_surfaces(
         } else {
             false
         };
-        let surface_roster_census = if !wire_topology_transferred {
+        let surface_roster_census = if wire_topology_transferred {
+            None
+        } else {
             match scan.brep.as_deref() {
                 Some(brep) => Some(admitted!(
                     crate::families::standard::records::surface_roster_census(ctx, brep)
                 )),
                 None => None,
             }
-        } else {
-            None
         };
         let mut losses = Vec::new();
         if !wire_topology_transferred {
@@ -922,18 +924,18 @@ pub(super) fn try_decode_freeform_surfaces(
             usize::from(object_stream_selection_exhausted),
         );
         if let Some(census) = surface_roster_census {
-            coverage.record(crate::coverage::CLOSED_SURFACE_ROSTER_COUNT, census.roster_count);
+            coverage.record(crate::coverage::CLOSED_SURFACE_ROSTER_COUNT, census.rosters);
             coverage.record(
                 crate::coverage::CLOSED_SURFACE_ROSTER_RECORD_COUNT,
-                census.record_count,
+                census.records,
             );
             coverage.record(
                 crate::coverage::SUPPORTED_SURFACE_ROSTER_COUNT,
-                census.supported_roster_count,
+                census.supported_rosters,
             );
             coverage.record(
                 crate::coverage::SUPPORTED_SURFACE_ROSTER_RECORD_COUNT,
-                census.supported_record_count,
+                census.supported_records,
             );
         }
         coverage.record(
@@ -1526,7 +1528,7 @@ fn append_planar_two_edge_pool(
     let Some(source_index) = records
         .iter()
         .find(|record| record.byte_offset() == plane.pos)
-        .map(|record| record.source_index())
+        .map(crate::wire::records::ConsolidatedRecord::source_index)
     else {
         return Ok(());
     };
@@ -1603,17 +1605,21 @@ fn append_planar_two_edge_pool(
     attach_closed_two_edge_face(
         ir,
         annotations,
-        &closed,
-        &surface_id,
-        &curve_ids,
-        "planar",
-        "consolidated_b2_03_27_face",
-        plane.pos,
-        source_index,
-        *owner_pos,
-        Some(face_orientation),
-        data,
-        records,
+        TwoEdgeFace {
+            closed: &closed,
+            surface_id: &surface_id,
+            curves: &curve_ids,
+            origin: ClosedFaceOrigin {
+                source_kind: "planar",
+                annotation_source: "consolidated_b2_03_27_face",
+                carrier_pos: plane.pos,
+            },
+            source_index,
+            owner_pos: *owner_pos,
+            desired_forward: Some(face_orientation),
+            data,
+            records,
+        },
         admission,
     )?;
     Ok(())
@@ -1625,19 +1631,16 @@ fn selected_singleton_face_orientation(
     source_index: usize,
     owner_pos: usize,
 ) -> Option<bool> {
-    let pair = records
-        .windows(2)
-        .filter(|pair| {
-            pair[0].source_index() == source_index
-                && pair[1].source_index() == source_index
-                && pair[0].family() == crate::wire::records::ConsolidatedFamily::B
-                && pair[0].class() == 0x61
-                && pair[1].family() == crate::wire::records::ConsolidatedFamily::B
-                && pair[1].class() == 0x5f
-                && pair[1].byte_offset() < owner_pos
-                && crate::wire::records::records_are_contiguous(pair)
-        })
-        .last()?;
+    let pair = records.windows(2).rfind(|pair| {
+        pair[0].source_index() == source_index
+            && pair[1].source_index() == source_index
+            && pair[0].family() == crate::wire::records::ConsolidatedFamily::B
+            && pair[0].class() == 0x61
+            && pair[1].family() == crate::wire::records::ConsolidatedFamily::B
+            && pair[1].class() == 0x5f
+            && pair[1].byte_offset() < owner_pos
+            && crate::wire::records::records_are_contiguous(pair)
+    })?;
     let face_pos = pair[1].byte_offset();
     if records.iter().any(|record| {
         record.source_index() == source_index
@@ -1651,17 +1654,27 @@ fn selected_singleton_face_orientation(
     crate::native::class61::singleton_face_orientation_bit(data, &pair[0])
 }
 
+#[derive(Clone, Copy, Default)]
+struct RollingBallStreams<'a> {
+    main: Option<&'a [u8]>,
+    surfacic: Option<&'a [u8]>,
+    mfbrp: Option<&'a [u8]>,
+}
+
 fn append_a5_rolling_ball_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-    main_data: Option<&[u8]>,
-    surfacic_data: Option<&[u8]>,
-    mfbrp_data: Option<&[u8]>,
+    streams: RollingBallStreams<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<BTreeMap<usize, usize>, cadmpeg_core::CodecError> {
+    let RollingBallStreams {
+        main: main_data,
+        surfacic: surfacic_data,
+        mfbrp: mfbrp_data,
+    } = streams;
     let mut carriers = BTreeMap::new();
     let face_construction_positions = records
         .windows(2)
@@ -1849,17 +1862,21 @@ fn append_a5_rolling_ball_pools(
                         attach_closed_two_edge_face(
                             ir,
                             annotations,
-                            &closed,
-                            &id,
-                            &curve_ids,
-                            "rolling-ball",
-                            "consolidated_a5_03_32_face",
-                            jet.pos,
-                            source_index,
-                            owner_pos,
-                            None,
-                            data,
-                            records,
+                            TwoEdgeFace {
+                                closed: &closed,
+                                surface_id: &id,
+                                curves: &curve_ids,
+                                origin: ClosedFaceOrigin {
+                                    source_kind: "rolling-ball",
+                                    annotation_source: "consolidated_a5_03_32_face",
+                                    carrier_pos: jet.pos,
+                                },
+                                source_index,
+                                owner_pos,
+                                desired_forward: None,
+                                data,
+                                records,
+                            },
                             admission,
                         )?;
                     }
@@ -1907,9 +1924,11 @@ fn append_a5_rolling_ball_pools(
                         &fitted,
                         &domain,
                         &id,
-                        "rolling-ball",
-                        "consolidated_a5_03_32_face",
-                        jet.pos,
+                        ClosedFaceOrigin {
+                            source_kind: "rolling-ball",
+                            annotation_source: "consolidated_a5_03_32_face",
+                            carrier_pos: jet.pos,
+                        },
                         admission,
                     )?;
                 }
@@ -1920,22 +1939,48 @@ fn append_a5_rolling_ball_pools(
     Ok(carriers)
 }
 
-fn attach_closed_two_edge_face(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    closed: &rolling_ball_patch::ClosedPatch,
-    surface_id: &SurfaceId,
-    curves: &[CurveId],
-    source_kind: &str,
-    annotation_source: &str,
+#[derive(Clone, Copy)]
+struct ClosedFaceOrigin {
+    source_kind: &'static str,
+    annotation_source: &'static str,
     carrier_pos: usize,
+}
+
+#[derive(Clone, Copy)]
+struct TwoEdgeFace<'a> {
+    closed: &'a rolling_ball_patch::ClosedPatch,
+    surface_id: &'a SurfaceId,
+    curves: &'a [CurveId],
+    origin: ClosedFaceOrigin,
     source_index: usize,
     owner_pos: usize,
     desired_forward: Option<bool>,
-    data: &[u8],
-    records: &[crate::wire::records::ConsolidatedRecord],
+    data: &'a [u8],
+    records: &'a [crate::wire::records::ConsolidatedRecord],
+}
+
+fn attach_closed_two_edge_face(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
+    face: TwoEdgeFace<'_>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let TwoEdgeFace {
+        closed,
+        surface_id,
+        curves,
+        origin:
+            ClosedFaceOrigin {
+                source_kind,
+                annotation_source,
+                carrier_pos,
+            },
+        source_index,
+        owner_pos,
+        desired_forward,
+        data,
+        records,
+    } = face;
     let source_records = records
         .iter()
         .filter(|record| record.source_index() == source_index)
@@ -1948,7 +1993,7 @@ fn attach_closed_two_edge_face(
                 && record.class() == 0x62
                 && record.byte_offset() > owner_pos
         })
-        .map(|record| record.byte_offset())
+        .map(crate::wire::records::ConsolidatedRecord::byte_offset)
         .min();
     let boundary_nodes =
         crate::families::b2::records::b2_edge_nodes_from_records(data, &source_records)
@@ -2089,7 +2134,7 @@ fn attach_closed_two_edge_face(
         ir.model.pcurves.push(Pcurve {
             id: pcurve_ids[index].clone(),
             geometry: closed.edges[index].geometry.clone(),
-            metadata: Default::default(),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         });
         admission.charge()?;
         ir.model.coedges.push(Coedge {
@@ -2097,10 +2142,10 @@ fn attach_closed_two_edge_face(
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
             radial_next: coedge_ids[index].clone(),
-            sense: if (index == 0 || !same_order) != reverse_loop {
-                Sense::Forward
-            } else {
+            sense: if (index == 0 || !same_order) == reverse_loop {
                 Sense::Reversed
+            } else {
+                Sense::Forward
             },
             pcurves: vec![PcurveUse {
                 pcurve: pcurve_ids[index].clone(),
@@ -2113,7 +2158,7 @@ fn attach_closed_two_edge_face(
     let ring_coedges = if reverse_loop {
         coedge_ids.into_iter().rev().collect()
     } else {
-        coedge_ids.to_vec()
+        coedge_ids.clone()
     };
     let Ok(ring) = LoopRing::new(ring_coedges, Vec::new()) else {
         return Ok(());
@@ -2170,11 +2215,14 @@ fn attach_closed_six_edge_face(
     fitted: &rolling_ball_patch::FittedSixEdgePatch,
     domain: &rolling_ball_patch::SixEdgeDomain,
     surface_id: &SurfaceId,
-    source_kind: &str,
-    annotation_source: &str,
-    carrier_pos: usize,
+    origin: ClosedFaceOrigin,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let ClosedFaceOrigin {
+        source_kind,
+        annotation_source,
+        carrier_pos,
+    } = origin;
     let mint =
         |kind: &str, suffix: &str| format!("catia:{source_kind}:{kind}#{carrier_pos}:{suffix}");
     let body_id = BodyId::mint(mint("body", "0")).map_err(cadmpeg_core::CodecError::malformed)?;
@@ -2358,7 +2406,7 @@ fn attach_closed_six_edge_face(
         });
     }
 
-    let Ok(ring) = LoopRing::new(coedge_ids.to_vec(), Vec::new()) else {
+    let Ok(ring) = LoopRing::new(coedge_ids.clone(), Vec::new()) else {
         return Ok(());
     };
     admission.charge()?;
@@ -2580,9 +2628,7 @@ pub(super) fn append_freeform_surface_pools(
         annotations,
         data,
         records,
-        None,
-        None,
-        None,
+        RollingBallStreams::default(),
         refusal,
         admission,
     )?;

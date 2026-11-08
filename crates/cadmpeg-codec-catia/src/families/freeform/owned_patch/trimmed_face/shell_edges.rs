@@ -51,9 +51,9 @@ pub(super) fn recover(face: &DecodedFace<'_>, edges: &BTreeMap<usize, &Use>) -> 
                 .range
                 .map(|t| chart(t).and_then(|uv| carrier.evaluate(uv)));
             let [a, b] = [a?, b?];
-            let [p, q] = edge.vertices.map(|(_, point)| point);
-            let direct = a.distance(p) + b.distance(q);
-            let reversed = a.distance(q) + b.distance(p);
+            let [start, end] = edge.vertices.map(|(_, point)| point);
+            let direct = a.distance(start) + b.distance(end);
+            let reversed = a.distance(end) + b.distance(start);
             if (direct - reversed).abs() <= GAP_MM {
                 return None;
             }
@@ -115,18 +115,18 @@ pub(super) fn select_line(
         .iter()
         .filter_map(|id| {
             eval::analytic_surface_parameters_solved(&surface, *vertices.get(id)?)
-                .map(|point| point.get())
+                .map(cadmpeg_ir::units::FinitePoint2::get)
         })
         .collect::<Vec<_>>();
     if sites.is_empty() {
         return;
     }
-    let alternate = PcurveGeometry::Line(alternate.clone());
+    let alternate = PcurveGeometry::Line(*alternate);
     let contains = |geometry: &PcurveGeometry| {
         let endpoints = trim.range.map(|t| {
             eval::decode::pcurve_uv(EvaluationAdmission::Standard, geometry, t)
                 .ok()
-                .map(|point| point.get())
+                .map(cadmpeg_ir::units::FinitePoint2::get)
         });
         let [Some(a), Some(b)] = endpoints else {
             return false;
