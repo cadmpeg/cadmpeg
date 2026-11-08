@@ -46,7 +46,6 @@ fn scope() -> crate::records::feature::scope::DesignParameterScope {
             previous_history_state_id_offset: None,
             reference_count_offset: 150,
             reference_members: crate::records::identity::ReferenceRun::unlocated(vec![9]),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: "261".to_owned().try_into().unwrap(),
             paired_byte_offset: 0,
         }

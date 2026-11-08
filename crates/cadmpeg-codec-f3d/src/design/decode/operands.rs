@@ -2281,9 +2281,10 @@ fn push_extrude_selection_group(
 /// Decode counted construction-operand groups named by feature scopes.
 ///
 /// A scope reference member whose record opens the group grammar but does not
-/// close it is recorded on the owning scope, so a group the grammar cannot read
-/// is distinguishable from a reference member that is not a group at all.
+/// close it is given up as its `f3d.bulk_record` part.
 pub(crate) fn decode_construction_operand_groups(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -2342,7 +2343,6 @@ pub(crate) fn decode_construction_operand_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if scope.emboss_operand_construction().is_some() && !matches!(ordinal, 0 | 2) {
                 continue;
@@ -2369,18 +2369,84 @@ pub(crate) fn decode_construction_operand_groups(
                     );
                 }
                 ConstructionOperandGroupParse::Unclosed => {
-                    unclosed.push(record_index);
+                    give_up_unclosed_group(ctx, parts, scan, &entry.name, header)?;
                 }
                 ConstructionOperandGroupParse::NotAGroup => {}
             }
         }
-        scope.unclosed_construction_operand_groups = unclosed;
         if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude) {
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+/// Give up the primary record that holds a construction-operand group whose
+/// grammar does not close. Without a primary index the part runs to the end of
+/// its stream.
+fn give_up_unclosed_group(
+    ctx: &DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    scan: &ContainerScan,
+    stream: &str,
+    header: &DesignRecordHeader,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+
+    let source = scan
+        .entry_view(stream)
+        .ok_or_else(|| CodecError::malformed("construction-operand group has no source view"))?;
+    let start = header
+        .byte_offset
+        .and_then(|offset| usize::try_from(offset).ok())
+        .ok_or_else(|| CodecError::malformed("F3D source record has no scanner position"))?;
+    let frames = match crate::design::decode::meta::metadata_for_bulk_stream(scan, stream)? {
+        Some(meta) => crate::metastream::live_primary_record_frames(&meta, source.window().len()),
+        None => Vec::new(),
+    };
+    let (start, end) = frames
+        .iter()
+        .find(|frame| frame.start <= start && start < frame.end)
+        .map_or((start, source.window().len()), |frame| {
+            (frame.start, frame.end)
+        });
+    let begin = source
+        .start()
+        .checked_add(start)
+        .ok_or_else(|| CodecError::malformed("construction-operand group start overflows"))?;
+    let finish = source
+        .start()
+        .checked_add(end)
+        .ok_or_else(|| CodecError::malformed("construction-operand group end overflows"))?;
+    let extent = source
+        .child(begin, finish)
+        .ok_or_else(|| CodecError::malformed("construction-operand group exceeds its stream"))?;
+    let id = cadmpeg_ir::ids::Identity::new(design_record_id(
+        stream,
+        ":design-record-header#",
+        u64_from_index(start),
+    ))
+    .map_err(CodecError::malformed)?;
+    let mut spec = PartSpec::new("f3d.bulk_record")
+        .holding([cadmpeg_ir::document::ArenaClass::Design])
+        .record_id(id);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    let stub_id = spec.unreadable_id(cadmpeg_ir::CodecFormat::F3d, extent)?;
+    if parts.fidelity().retained_record(stub_id.as_str()).is_some() {
+        return Ok(());
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        Err::<(), CodecError>(CodecError::malformed(format_args!(
+            "F3D construction-operand group record {} does not close its grammar",
+            header.record_index
+        )))
+    })?;
+    Ok(())
 }
 
 fn push_construction_operand_group(
