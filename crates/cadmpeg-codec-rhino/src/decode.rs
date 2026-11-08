@@ -112,6 +112,10 @@ use crate::settings::MillimeterScale;
 pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 /// Maximum bytes retained across all Rhino object records in one document.
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
+/// Deviation of a revolved profile line's unit direction from the unit axis
+/// within which the line is parallel to the axis: a few units in the last
+/// place of binary64.
+const EPS_REVOLVED_LINE_PARALLEL: f64 = 1.0e-14;
 
 #[derive(Debug)]
 enum CandidateError {
@@ -4754,6 +4758,19 @@ fn stage_brep_procedural_surface(
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
     let key = IdentityKey::try_new(context.key.to_owned())
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+    let angular_axis = match &definition {
+        crate::surfaces::DecodedProceduralSurface::Revolution {
+            axis_origin,
+            axis_direction: Some(axis_direction),
+            angular_interval,
+            parameter_interval,
+            transposed: false,
+            ..
+        } if angular_interval == parameter_interval => {
+            Some((axis_origin.get(), *axis_direction.as_raw()))
+        }
+        _ => None,
+    };
     let definition = definition.into_definition(
         |child_index, _, child| {
             stage_curve_tree_indexed(
@@ -4777,10 +4794,28 @@ fn stage_brep_procedural_surface(
                 .then(index),
         ))
     }?;
+    let cylinder = angular_axis.and_then(|(axis_origin, axis)| {
+        let ProceduralSurfaceDefinition::Revolution(revolution) = &definition else {
+            return None;
+        };
+        let directrix = staged
+            .draft
+            .model()
+            .curves
+            .iter()
+            .find(|curve| curve.id == *revolution.directrix())?;
+        let Some(SolvedCurveGeometry::Line(line)) = directrix.geometry.solved() else {
+            return None;
+        };
+        revolved_line_cylinder(axis_origin, axis, line)
+    });
     staged.draft.model_mut().surfaces.push(Surface {
         native_ref: None,
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
+        geometry: SurfaceGeometry::Solved(cylinder.map_or_else(
+            || SolvedSurfaceGeometry::Nurbs(geometry),
+            SolvedSurfaceGeometry::Cylinder,
+        )),
         source_object: Some(context.association.identity.clone()),
     });
     let procedural_id = cadmpeg_ir::ids::ProceduralSurfaceId::compose(
@@ -4803,6 +4838,43 @@ fn stage_brep_procedural_surface(
     staged.links.push(surface_id.to_string());
     staged.links.push(procedural_id.to_string());
     Ok(surface_id)
+}
+
+/// The cylinder a revolution surface traces when its profile is a line
+/// parallel to the axis and its first parameter is the angle: the profile
+/// parameter is then the height along the axis, so the cylinder keeps the
+/// surface parameterization.
+fn revolved_line_cylinder(
+    axis_origin: cadmpeg_ir::math::Point3,
+    axis: cadmpeg_ir::math::Vector3,
+    line: &cadmpeg_ir::geometry::analytic::LineCurve,
+) -> Option<cadmpeg_ir::geometry::analytic::CylinderSurface> {
+    let direction = *line.direction().as_raw();
+    let parallel = direction.x * axis.x + direction.y * axis.y + direction.z * axis.z;
+    if (parallel - 1.0).abs() > EPS_REVOLVED_LINE_PARALLEL {
+        return None;
+    }
+    let start = line.origin().get();
+    let offset = cadmpeg_ir::math::Vector3::new(
+        start.x - axis_origin.x,
+        start.y - axis_origin.y,
+        start.z - axis_origin.z,
+    );
+    let height = offset.x * axis.x + offset.y * axis.y + offset.z * axis.z;
+    let radial = cadmpeg_ir::math::Vector3::new(
+        offset.x - height * axis.x,
+        offset.y - height * axis.y,
+        offset.z - height * axis.z,
+    );
+    let radius = radial.norm();
+    let center = axis_origin.translated(axis, height);
+    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        center,
+        axis,
+        cadmpeg_ir::math::Vector3::new(radial.x / radius, radial.y / radius, radial.z / radius),
+        radius,
+    )
+    .ok()
 }
 
 fn stage_curve_tree_indexed(
