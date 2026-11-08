@@ -532,11 +532,13 @@ pub(crate) fn bind_extrude_profile_selections(
                     let FeatureDefinition::Operation(FeatureOperation::Extrude {
                         profile,
                         extent,
+                        op,
                         ..
                     }) = definition
                     else {
                         break 'feature_edit;
                     };
+                    let cut = matches!(op, cadmpeg_ir::features::BooleanOp::Cut);
                     let is_to_termination = has_to_termination(extent);
                     if let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile {
                         let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
@@ -767,8 +769,11 @@ pub(crate) fn bind_extrude_profile_selections(
                                 members,
                                 sketch,
                                 scoped_resolution,
-                                scope.history_state_id(),
-                                effective_previous_history_state_id,
+                                ExtrudeTransition {
+                                    history_state_id: scope.history_state_id(),
+                                    previous_history_state_id: effective_previous_history_state_id,
+                                    cut,
+                                },
                             )?;
                             selections.push(selection);
                         }
@@ -1370,16 +1375,30 @@ fn copy_bound_path(
     }
 }
 
+/// The history states an Extrude's profile selection reads, and whether the
+/// Extrude cuts.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ExtrudeTransition {
+    pub(super) history_state_id: Option<i64>,
+    pub(super) previous_history_state_id: Option<i64>,
+    pub(super) cut: bool,
+}
+
 pub(super) fn resolved_extrude_profile_selection(
     sketch_id: &cadmpeg_ir::sketches::SketchId,
     group: &DesignExtrudeSelectionGroup,
     members: &[DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: ScopedExtrudeProfileResolution<'_>,
-    history_state_id: Option<i64>,
-    previous_history_state_id: Option<i64>,
+    transition: ExtrudeTransition,
 ) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+
+    let ExtrudeTransition {
+        history_state_id,
+        previous_history_state_id,
+        cut,
+    } = transition;
 
     let mut selection_members = Vec::new();
     for member in members.iter().filter(|member| {
@@ -1475,6 +1494,16 @@ pub(super) fn resolved_extrude_profile_selection(
             resolved_profiles.as_ref(),
         )? {
             resolved_profiles = Some(proven);
+        } else if cut {
+            if let Some(proven) = cap_regions::removed_regions_beyond_profile(
+                sketch,
+                resolution,
+                state_id,
+                previous_state_id,
+                resolved_profiles.as_ref(),
+            )? {
+                resolved_profiles = Some(proven);
+            }
         }
     }
     if resolved_profiles.is_none() && exact_member_run {
