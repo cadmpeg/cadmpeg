@@ -120,15 +120,25 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
         let duplicate = source_less.model.procedural_surfaces[0].clone();
         source_less.model.procedural_surfaces.push(duplicate);
 
-        let error = F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .unwrap_err();
+        // #239 §5.0: writer-detected input/precondition violations are invariant errors.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            F3dCodec
+                .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut Vec::new()))
+        }));
+        let message = match &result {
+            Ok(Err(error)) => error.to_string(),
+            Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
+                panic
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default()
+            }),
+            Ok(Ok(_)) => panic!("duplicate procedural owner must be rejected"),
+        };
         assert!(
-            error
-                .to_string()
-                .contains("multiple procedural constructions"),
-            "unexpected {label} duplicate-owner error: {error}"
+            message.contains("multiple procedural constructions"),
+            "unexpected {label} duplicate-owner error: {message}"
         );
     }
 }
