@@ -4392,6 +4392,24 @@ fn framed_object_record(
     direct_class_data: Option<&[u8]>,
     attributes: Option<Vec<u8>>,
 ) -> Result<Vec<u8>, CodecError> {
+    framed_object_record_with_userdata(
+        object_type,
+        class_uuid,
+        payload,
+        direct_class_data,
+        attributes,
+        &[],
+    )
+}
+
+fn framed_object_record_with_userdata(
+    object_type: i64,
+    class_uuid: [u8; 16],
+    payload: &[u8],
+    direct_class_data: Option<&[u8]>,
+    attributes: Option<Vec<u8>>,
+    userdata: &[Vec<u8>],
+) -> Result<Vec<u8>, CodecError> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
@@ -4402,7 +4420,12 @@ fn framed_object_record(
         crc_chunk(TCODE_CLASS_DATA, payload)?
     };
     let class_end = short_chunk(TCODE_CLASS_END, 0);
-    let class = long_chunk(TCODE_CLASS_WRAPPER, &[uuid, class_data, class_end].concat())?;
+    let mut class_body = [uuid, class_data].concat();
+    for chunk in userdata {
+        class_body.extend(chunk);
+    }
+    class_body.extend(class_end);
+    let class = long_chunk(TCODE_CLASS_WRAPPER, &class_body)?;
     let object_end = short_chunk(TCODE_OBJECT_RECORD_END, 0);
     let mut body = [object_type, class].concat();
     if let Some(attributes) = attributes {
@@ -4417,28 +4440,21 @@ fn framed_object_record(
 fn neutral_object_uuid(identity: &str) -> [u8; 16] {
     if identity.starts_with("rhino:object:") {
         if let Some((_, key)) = identity.split_once('#') {
-            if key.len() == 36
-                && [8, 13, 18, 23]
+            let candidate = if key.len() == 36 {
+                Some(key)
+            } else if key.len() > 36 && key.as_bytes().get(36).is_some_and(|b| *b == b'.') {
+                Some(&key[..36])
+            } else {
+                None
+            };
+            if let Some(uuid_text) = candidate {
+                if [8, 13, 18, 23]
                     .iter()
-                    .all(|index| key.as_bytes()[*index] == b'-')
-            {
-                let digits = key.bytes().filter(|byte| *byte != b'-').collect::<Vec<_>>();
-                let mut canonical = [0; 16];
-                let mut valid = true;
-                for (slot, pair) in canonical.iter_mut().zip(digits.chunks_exact(2)) {
-                    let nibble = |byte: u8| {
-                        char::from(byte)
-                            .to_digit(16)
-                            .and_then(|v| u8::try_from(v).ok())
-                    };
-                    if let (Some(high), Some(low)) = (nibble(pair[0]), nibble(pair[1])) {
-                        *slot = (high << 4) | low;
-                    } else {
-                        valid = false;
+                    .all(|index| uuid_text.as_bytes()[*index] == b'-')
+                {
+                    if let Some(uuid) = crate::presentation::parse_uuid_text(uuid_text) {
+                        return uuid.to_wire();
                     }
-                }
-                if valid {
-                    return crate::wire::Uuid::from_canonical(canonical).to_wire();
                 }
             }
         }
