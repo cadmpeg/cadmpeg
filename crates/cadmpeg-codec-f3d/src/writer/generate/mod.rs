@@ -28,6 +28,7 @@ mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
 pub(super) mod records;
+mod reemitted;
 mod reindex;
 pub(super) mod sketches;
 mod smbh;
@@ -211,7 +212,12 @@ pub(super) fn write_with_limits(
         .map(|decal| decal::encode(decal, &output_ctx))
         .transpose()?;
     let encoded_meshes = mesh::encode(mesh::select(target, &native), &output_ctx)?;
-    let design_native = mesh::without_reemitted(&native, &encoded_meshes);
+    let design_native = reemitted::design1_native(
+        &native,
+        target,
+        &encoded_meshes,
+        written_sketches.as_ref(),
+    );
     if let Some(design_native) = &design_native {
         for kind in &mut design_registry.types {
             kind.entity_ids.retain(|entity| {

@@ -227,40 +227,6 @@ pub(super) struct EncodedMesh {
     pub(super) native_records: Option<(String, std::collections::BTreeSet<u32>)>,
 }
 
-/// The native records without the Design records the mesh segments re-emit.
-pub(super) fn without_reemitted(native: &F3dNative, meshes: &[EncodedMesh]) -> Option<F3dNative> {
-    let owned: Vec<_> = meshes
-        .iter()
-        .filter_map(|mesh| mesh.native_records.as_ref())
-        .collect();
-    if owned.is_empty() {
-        return None;
-    }
-    let owns = |segment: Option<&str>, index: u64| {
-        owned.iter().any(|(owner, indices)| {
-            segment == Some(owner.as_str())
-                && u32::try_from(index).is_ok_and(|index| indices.contains(&index))
-        })
-    };
-    let mut native = native.clone();
-    native
-        .design_record_headers
-        .retain(|header| !owns(crate::ids::design_segment(&header.id), u64::from(header.record_index)));
-    for kind in &mut native.design_types {
-        let segment = crate::ids::design_segment(kind.id()).map(str::to_owned);
-        let entities: Vec<u64> = kind
-            .entities
-            .values()
-            .copied()
-            .filter(|entity| !owns(segment.as_deref(), *entity))
-            .collect();
-        if entities.len() != kind.entities.values().count() {
-            kind.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
-        }
-    }
-    Some(native)
-}
-
 /// Record indices of one mesh body graph.
 struct BodyIndices {
     body: u32,
