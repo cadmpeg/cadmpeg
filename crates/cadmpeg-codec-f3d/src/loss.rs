@@ -405,6 +405,8 @@ pub(crate) enum F3dLossCode {
     FeaturePathPatternPlacementNotTransferred,
     /// A `Thicken` scope stores flag bytes whose Thicken settings are unresolved.
     FeatureThickenFlagsAssumed,
+    /// A `Shell` reference table stores references outside its face-group members.
+    FeatureShellTableMembersAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
@@ -770,6 +772,7 @@ impl F3dLossCode {
         Self::FeatureLoftSettingsAssumed,
         Self::FeaturePathPatternPlacementNotTransferred,
         Self::FeatureThickenFlagsAssumed,
+        Self::FeatureShellTableMembersAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
@@ -1074,6 +1077,7 @@ impl F3dLossCode {
                 "feature.path-pattern-placement-not-transferred"
             }
             Self::FeatureThickenFlagsAssumed => "feature.thicken-flags-assumed",
+            Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
@@ -1377,6 +1381,7 @@ impl F3dLossCode {
             | Self::FeatureLoftSettingsAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -1606,6 +1611,7 @@ impl F3dLossCode {
             | Self::FeatureLoftSettingsAssumed
             | Self::FeaturePathPatternPlacementNotTransferred
             | Self::FeatureThickenFlagsAssumed
+            | Self::FeatureShellTableMembersAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
@@ -1931,6 +1937,7 @@ mod tests {
                 "feature.loft-settings-assumed",
                 "feature.path-pattern-placement-not-transferred",
                 "feature.thicken-flags-assumed",
+                "feature.shell-table-members-assumed",
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",
