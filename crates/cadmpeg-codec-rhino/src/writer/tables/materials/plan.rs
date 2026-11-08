@@ -90,11 +90,19 @@ impl MaterialPlan {
                     }),
             );
             if !omitted.is_empty() {
+                let bindings = ir
+                    .model
+                    .appearance_bindings
+                    .iter()
+                    .filter(|binding| binding.appearance == appearance.id)
+                    .map(|binding| binding.id.as_str())
+                    .collect::<Vec<_>>();
                 plan.losses
                     .push(RhinoLossCode::WriterAppearanceMetadataOmitted.note(format!(
-                        "appearance {} metadata keys are not preserved: {}",
+                        "appearance {} metadata keys are not preserved: {}; its binding(s): {}",
                         appearance.id,
-                        omitted.join(", ")
+                        omitted.join(", "),
+                        bindings.join(", ")
                     )));
             }
         }

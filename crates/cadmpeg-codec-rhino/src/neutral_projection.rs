@@ -317,6 +317,15 @@ pub(crate) fn project(
                                 }
                                 _ => continue,
                             };
+                            if ir.model.appearance_bindings.iter().any(|binding| {
+                                binding.target == target
+                                    && binding
+                                        .id
+                                        .as_str()
+                                        .starts_with("rhino:model:point-color-binding#")
+                            }) {
+                                continue;
+                            }
                             ctx.charge_entities(1, "rhino_display_color_bindings")?;
                             ir.model.appearance_bindings.push(
                                 cadmpeg_ir::appearance::AppearanceBinding {

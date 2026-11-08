@@ -316,9 +316,9 @@ pub(super) fn withheld_parameter_curve_loss(curve: &cadmpeg_ir::ids::CurveId) ->
     ))
 }
 
-/// Writes each withheld parameter-space curve that no other writer writes as
-/// standalone geometry, and removes its withholding loss once an entity
-/// writes it.
+/// Writes each withheld parameter-space curve that no other writer writes with
+/// its source status, and removes its withholding loss once an entity writes
+/// it.
 pub(super) fn append_withheld_parameter_curves(
     ir: &CadIr,
     version: crate::IgesVersion,
@@ -360,7 +360,7 @@ pub(super) fn append_withheld_parameter_curves(
                     geometry: &geometry,
                     span: span.as_ref(),
                     sense: cadmpeg_ir::topology::Sense::Forward,
-                    status: EntityStatus::Independent,
+                    status: EntityStatus::ParameterCurve,
                     reference_offset: 0,
                 },
             ) {

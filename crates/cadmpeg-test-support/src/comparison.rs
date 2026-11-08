@@ -446,9 +446,9 @@ fn agree_once(
     regenerated: &BTreeSet<String>,
     cross: bool,
 ) -> Result<(), String> {
-    let before = without_fields(before, fields);
-    let before = Document::read(&before, pruned)?;
-    let after = Document::read(after, &BTreeSet::new())?;
+    let source = without_fields(before, fields);
+    let before = Document::read(&source, pruned)?;
+    let after = cross_additions_pruned(&source, &before, after, pruned, cross)?;
     if agree_pairing(
         before.clone(),
         after.clone(),
@@ -462,6 +462,44 @@ fn agree_once(
         return Ok(());
     }
     agree_pairing(before, after, permitted, regenerated, cross, true)
+}
+
+/// The re-decode read for comparison. In cross mode, a source record the
+/// comparison removes loses its list entries, and so does each re-decode
+/// record of the same arenas that pairs with no source record: the record a
+/// writer wrote in place of a degraded one is an addition (§5.2).
+fn cross_additions_pruned(
+    source: &Value,
+    before: &Document,
+    after: &Value,
+    pruned: &BTreeSet<String>,
+    cross: bool,
+) -> Result<Document, String> {
+    let read = Document::read(after, &BTreeSet::new())?;
+    if !cross || pruned.is_empty() {
+        return Ok(read);
+    }
+    let arenas = Document::read(source, &BTreeSet::new())?
+        .records
+        .iter()
+        .filter(|record| pruned.contains(&record.id))
+        .map(|record| record.arena.clone())
+        .collect::<BTreeSet<_>>();
+    let used = pair(before, &read, cross, true)
+        .into_values()
+        .collect::<BTreeSet<_>>();
+    let added = read
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(index, record)| !used.contains(index) && arenas.contains(&record.arena))
+        .map(|(_, record)| record.id.clone())
+        .collect::<BTreeSet<_>>();
+    if added.is_empty() {
+        Ok(read)
+    } else {
+        Document::read(after, &added)
+    }
 }
 
 fn agree_pairing(
@@ -494,7 +532,9 @@ fn agree_pairing(
     let mut free = BTreeMap::<&str, std::collections::VecDeque<usize>>::new();
     for (index, record) in after.records.iter().enumerate() {
         if !taken.contains(&index) {
-            free.entry(record.arena.as_str()).or_default().push_back(index);
+            free.entry(record.arena.as_str())
+                .or_default()
+                .push_back(index);
         }
     }
     for (index, record) in before.records.iter().enumerate() {
