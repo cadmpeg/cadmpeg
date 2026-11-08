@@ -2347,6 +2347,19 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 
+## `compact_sweep_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Offsets are relative to the primary indexed scope header. The scope body follows the prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A compact Sweep scope stores ten zero bytes at offsets 11 through 20 |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | stores ten zero bytes at offsets 11 through 20 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `operation` | `u32` | little | spec | the u32 operation enum at offset 21 |
+| 25 | 1 | `marker` | `u8` | little | spec | and byte `1` at offset 25 · value `1` |
+
 ## `legacy_loft_body_carrier`
 
 Spec §3.1 · layout: byte offsets · size: 87 B
@@ -3048,6 +3061,21 @@ Offsets are relative to the serializer's primary indexed header. Classes 315, 34
 Unstated regions:
 
 - `25..132` (107 B): The LP-UTF16 entry name, marked surface reference, and two-byte zero tail occupy this variable-length region; the complete serializer frame remains 132 bytes.
+
+## `compact_selection_envelope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the group's primary indexed header. The ordered member references start at offset 36.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A compact counted selection envelope starts with an indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes, a marked owning-scope reference |
+| 21 | 1 | `owner_marker` | `u8` | little | spec | a marked owning-scope reference · value `1` |
+| 22 | 8 | `owner_scope_record_index` | `u64` | little | spec | a marked owning-scope reference |
+| 30 | 2 | `owner_zero_tail` | `bytes[2]` | little | spec | `u8 1 + u64 record index + u16 0` |
+| 32 | 4 | `member_count` | `u32` | little | spec | `u32 member_count` |
 
 ## `form_class_328_scope`
 
@@ -8996,6 +9024,40 @@ Unstated regions:
 
 - `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
 - `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
+
+## `reverse_normal_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 115 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/reverse_normal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact Reverse Normal prefix |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The compact Reverse Normal prefix |
+| 21 | 4 | `group_count` | `u32` | little | spec | The compact Reverse Normal prefix · value `1` |
+| 25 | 11 | `group_reference` | `bytes[11]` | little | spec | The compact Reverse Normal prefix |
+| 36 | 76 | `null_guid` | `bytes[76]` | little | spec | The compact Reverse Normal prefix |
+| 112 | 3 | `zero_tail` | `bytes[3]` | little | spec | The compact Reverse Normal prefix |
+
+## `shifted_reverse_normal_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 119 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/reverse_normal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The shifted Reverse Normal prefix |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The shifted Reverse Normal prefix |
+| 20 | 1 | `shift_marker` | `u8` | little | spec | The shifted Reverse Normal prefix · value `1` |
+| 21 | 4 | `zero_run_after_marker` | `bytes[4]` | little | spec | The shifted Reverse Normal prefix |
+| 25 | 4 | `group_count` | `u32` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. · value `1` |
+| 29 | 11 | `group_reference` | `bytes[11]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
+| 40 | 76 | `null_guid` | `bytes[76]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
+| 116 | 3 | `zero_tail` | `bytes[3]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
 
 ## `path_pattern_settings`
 

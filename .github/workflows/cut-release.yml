@@ -12,7 +12,9 @@
 #   2. Waits for the CI run on the bump commit. The bump changes Cargo.toml, so
 #      that run is the full gate on Linux, macOS, and Windows.
 #   3. Tags the bump commit, which triggers the Release workflow (release.yml)
-#      that builds artifacts and creates the GitHub Release.
+#      that builds artifacts and creates the GitHub Release. The tag push mints
+#      its own App token: an installation token expires after one hour, and
+#      the CI wait in step 2 alone can take longer than that.
 #
 # If the CI run on the bump commit fails, nothing is tagged. Fix main, then
 # dispatch this workflow again with the next version.
@@ -71,8 +73,8 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           ref: main
-          # Check out with the App token so the later commit and tag pushes are
-          # authenticated as the App and therefore trigger release.yml.
+          # Check out with the App token so the bump push is authenticated as
+          # the App, which may push to main.
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Install stable toolchain
@@ -191,12 +193,24 @@ jobs:
             sleep 60
           done
 
+      - name: Mint GitHub App token for the tag push
+        id: tag-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Tag the bump commit
         shell: bash
         env:
           SHA: ${{ steps.commit.outputs.sha }}
+          TOKEN: ${{ steps.tag-token.outputs.token }}
         run: |
           set -euo pipefail
           version="${{ steps.commit.outputs.version }}"
           git tag "v${version}" "${SHA}"
-          git push origin "v${version}"
+          # The empty extraheader drops the checkout's expired token so the
+          # push authenticates with the fresh one in the URL.
+          git -c http.https://github.com/.extraheader= push \
+            "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" \
+            "refs/tags/v${version}"

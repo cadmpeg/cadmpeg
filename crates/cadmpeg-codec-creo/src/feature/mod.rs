@@ -11,6 +11,8 @@ pub(crate) mod dimensions;
 pub(crate) mod entity;
 mod helpers;
 pub(crate) mod operations;
+pub(crate) mod pmi_datums;
+pub(crate) mod pmi_framing;
 pub(crate) mod rows;
 pub(crate) mod schema;
 pub(crate) mod segment_rows;

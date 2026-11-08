@@ -6395,6 +6395,34 @@ fn emit_standard_topology(
         let id = curve.id.clone();
         curve_indices.insert(id, index);
     }
+    let edge_endpoints = |row: usize| {
+        edge_vertices[row].map(|vertex| ir.model.points[point_assignment[vertex]].position().get())
+    };
+    let cylindrical_arc_ranges = edge_geometry::cylindrical_arcs::ranges(
+        ir,
+        bindings,
+        surface_indices,
+        &curve_indices,
+        supports,
+        topology,
+        edge_endpoints,
+    );
+    for (&row, &range) in &cylindrical_arc_ranges {
+        let Some([start, end]) = range else {
+            continue;
+        };
+        let edge = &mut ir.model.edges[row];
+        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            edge.curve().cloned(),
+            Some(ordered_range([start, end])),
+        )
+        .map_err(CodecError::malformed)?;
+        annotations.derived(&edge.id, "param_range")?;
+        if start > end {
+            std::mem::swap(&mut edge.start, &mut edge.end);
+            edge_reversed[row] = true;
+        }
+    }
     let mut edge_coedges = ctx.alloc_filled(
         ir.model.edges.len(),
         Vec::new(),

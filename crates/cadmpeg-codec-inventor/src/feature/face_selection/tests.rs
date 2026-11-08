@@ -58,7 +58,7 @@ impl Fields {
         for word in [0x8000_000a_u32, self.topology] {
             bytes.extend_from_slice(&word.to_le_bytes());
         }
-        if version != 19 {
+        if !(19..=21).contains(&version) {
             bytes.extend_from_slice(&self.qualifier.to_le_bytes());
         }
         bytes.extend_from_slice(&self.naming.to_le_bytes());
@@ -173,9 +173,9 @@ fn face_selector_forms_that_differ_in_any_control_stay_unparsed() {
         ("foreign entity context", |f| f.entities[1].0 = 0x8000_0005),
         ("zero entity", |f| f.entities[0].1 = 0),
     ];
-    for version in [19, 23, 29] {
+    for version in [19, 20, 21, 23, 29] {
         for (name, edit) in edits {
-            if name == "qualifier" && version == 19 {
+            if name == "qualifier" && (19..=21).contains(&version) {
                 continue;
             }
             let mut fields = Fields::new();
