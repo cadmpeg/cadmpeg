@@ -532,11 +532,13 @@ pub(crate) fn bind_extrude_profile_selections(
                     let FeatureDefinition::Operation(FeatureOperation::Extrude {
                         profile,
                         extent,
+                        op,
                         ..
                     }) = definition
                     else {
                         break 'feature_edit;
                     };
+                    let cut = matches!(op, cadmpeg_ir::features::BooleanOp::Cut);
                     let is_to_termination = has_to_termination(extent);
                     if let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile {
                         let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
@@ -769,6 +771,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 scoped_resolution,
                                 scope.history_state_id(),
                                 effective_previous_history_state_id,
+                                cut,
                             )?;
                             selections.push(selection);
                         }
@@ -1378,6 +1381,7 @@ pub(super) fn resolved_extrude_profile_selection(
     resolution: ScopedExtrudeProfileResolution<'_>,
     history_state_id: Option<i64>,
     previous_history_state_id: Option<i64>,
+    cut: bool,
 ) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
@@ -1475,14 +1479,16 @@ pub(super) fn resolved_extrude_profile_selection(
             resolved_profiles.as_ref(),
         )? {
             resolved_profiles = Some(proven);
-        } else if let Some(proven) = cap_regions::removed_regions_beyond_profile(
-            sketch,
-            resolution,
-            state_id,
-            previous_state_id,
-            resolved_profiles.as_ref(),
-        )? {
-            resolved_profiles = Some(proven);
+        } else if cut {
+            if let Some(proven) = cap_regions::removed_regions_beyond_profile(
+                sketch,
+                resolution,
+                state_id,
+                previous_state_id,
+                resolved_profiles.as_ref(),
+            )? {
+                resolved_profiles = Some(proven);
+            }
         }
     }
     if resolved_profiles.is_none() && exact_member_run {

@@ -263,7 +263,7 @@ impl ProfileGeometryWork {
         let beyond = self.cut_regions_beyond_profile_selections.get();
         if beyond != 0 {
             losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
-                "{beyond} extrude profile selection(s) took the atomic regions a cut removed from the planes it changed, in place of a stored profile reading that covers other regions: a region is removed when one interior point lay on such a face before the cut and on none after it. The region boundaries include curves outside the stored profile, and were not compared with the face boundaries."
+                "{beyond} extrude profile selection(s) took the atomic regions a cut removed from the planes it changed, in place of a stored profile reading that covers other regions: a region is removed when one interior point lay on such a face before the cut and on none after it. The extrude is a Cut, and at least one taken region is bounded by curves outside the stored profile. A region over no face of those planes before or after the cut is left unselected, and the region boundaries were not compared with the face boundaries."
             )));
         }
         let island_absence = self.island_absence_assumed_selections.get();

@@ -236,6 +236,7 @@ fn multiloop_fallback_selects_smallest_profile() {
             scoped_resolution,
             None,
             None,
+            false,
         )
         .unwrap();
 
@@ -283,6 +284,7 @@ fn multiloop_fallback_fails_when_member_not_curve() {
             scoped_resolution,
             None,
             None,
+            false,
         )
         .unwrap();
 

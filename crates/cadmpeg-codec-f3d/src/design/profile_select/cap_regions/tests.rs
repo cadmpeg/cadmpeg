@@ -1081,6 +1081,12 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
         ctx: &ctx,
     };
     let current = super::ResolvedProfileSelection::Loops(vec![0]);
+    // The reading replaces only a stored profile read as loops.
+    assert!(
+        super::removed_regions_beyond_profile(&window.sketch, resolution, 2, 1, None)
+            .unwrap()
+            .is_none()
+    );
     assert!(
         super::removed_profile_selection(&window.sketch, resolution, 2, 1, Some(&current),)
             .unwrap()
