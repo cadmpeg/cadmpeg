@@ -156,10 +156,12 @@ impl Projection<'_> {
             transform: Some(transform),
             linked_prototype: None,
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            visible: object
-                .attributes
-                .parsed()
-                .map(|attributes| attributes.visible),
+            visible: Some(
+                object
+                    .attributes
+                    .parsed()
+                    .is_none_or(|attributes| attributes.visible),
+            ),
             link: None,
             native_ref: Some(native_ref.clone()),
         });
