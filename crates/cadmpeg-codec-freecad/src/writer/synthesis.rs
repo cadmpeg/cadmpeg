@@ -2076,6 +2076,37 @@ fn replay_unchanged_placements(
                 }
             }
         }
+        // A link lane naming the same targets and subelements keeps its
+        // native spelling, including the persistent shadow names.
+        for native in owned.iter().filter(|property| {
+            property.type_name.starts_with("App::PropertyLink") && !property.links().is_empty()
+        }) {
+            let Some(written) = object.properties.get(&native.name) else {
+                continue;
+            };
+            let listed = native
+                .links()
+                .iter()
+                .map(|link| {
+                    let link = link.as_ref()?;
+                    let target = names.get(link.object()?)?;
+                    Some(if link.subelements().is_empty() {
+                        vec![(target.clone(), String::new())]
+                    } else {
+                        link.subelements()
+                            .iter()
+                            .map(|sub| (target.clone(), sub.clone()))
+                            .collect()
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(|links| links.concat());
+            if listed.is_some() && listed == written_links(written) {
+                if let Some(value) = xml::native_named(native, names, available)? {
+                    object.set(&native.name, value);
+                }
+            }
+        }
         let Some(written) = object.properties.get("Placement").cloned() else {
             continue;
         };
@@ -2150,4 +2181,38 @@ fn replay_dependency_lists(
             object.dependencies = listed;
         }
     }
+}
+
+/// The (target, subelement) pairs a written link property names, in order.
+fn written_links(xml: &str) -> Option<Vec<(String, String)>> {
+    let document = roxmltree::Document::parse(xml).ok()?;
+    let mut links = Vec::new();
+    for node in document.descendants().filter(roxmltree::Node::is_element) {
+        match node.tag_name().name() {
+            "LinkSub" => {
+                let target = node.attribute("value")?.to_owned();
+                let subs = node
+                    .children()
+                    .filter(|child| child.has_tag_name("Sub"))
+                    .filter_map(|child| child.attribute("value"))
+                    .collect::<Vec<_>>();
+                if subs.is_empty() {
+                    links.push((target.clone(), String::new()));
+                }
+                links.extend(subs.into_iter().map(|sub| (target.clone(), sub.to_owned())));
+            }
+            "Link" => {
+                if let Some(target) = node.attribute("obj") {
+                    links.push((
+                        target.to_owned(),
+                        node.attribute("sub").unwrap_or_default().to_owned(),
+                    ));
+                } else if let Some(target) = node.attribute("value") {
+                    links.push((target.to_owned(), String::new()));
+                }
+            }
+            _ => {}
+        }
+    }
+    Some(links)
 }
