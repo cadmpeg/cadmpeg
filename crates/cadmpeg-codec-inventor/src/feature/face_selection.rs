@@ -32,6 +32,12 @@ pub(super) const SELECTOR_TYPE: [u8; 16] = [
     0x2c, 0x81, 0xaa, 0x03, 0xd2, 0x11, 0xff, 0x26, 0x00, 0x08, 0x1f, 0xbb, 0x32, 0xa3, 0xdc, 0x09,
 ];
 
+/// Type of a direct face selector record.
+pub(super) const DIRECT_SELECTOR_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d55);
+
+/// The largest generator array that a direct face selector stores.
+const DIRECT_GENERATOR_LIMIT: usize = 4;
+
 /// Type of the surface-body wrapper that a selector names.
 pub(super) const BODY_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d47);
 
@@ -60,6 +66,10 @@ pub(super) struct FaceSelector {
 pub(in crate::feature) struct SelectedFace {
     /// Entity index of the matched face revision.
     pub(super) owner: i64,
+    /// Entity indexes of every matched owner, ascending.
+    pub(super) owners: Vec<i64>,
+    /// Length of the generator array of the selector.
+    pub(super) generators: usize,
     /// Record ordinal of the face item that lists the selector.
     pub(super) item: u32,
     /// The pair has more than one matching attribute on the owner.
@@ -153,6 +163,66 @@ pub(super) fn parse(
     }
     let item = cursor.reference("face selector item")?;
     cursor.finish("face selector")?;
+    let mut names = ctx.alloc_filled(
+        generators.values().len(),
+        0,
+        "retain Inventor face selector generators",
+    )?;
+    names.copy_from_slice(generators.values());
+    Ok(Some(FaceSelector {
+        source: header.source_index,
+        generators: names,
+        key,
+        body_source,
+        body,
+        item,
+        context,
+    }))
+}
+
+/// Parses a direct face selector, or `None` for another selector form. The
+/// direct form has the field order of the direct edge selector and ends with a
+/// face-item reference, a context reference, and the key.
+pub(super) fn parse_direct(
+    ctx: &DecodeContext<'_>,
+    payload: View<'_>,
+    version: u8,
+) -> Result<Option<FaceSelector>, CodecError> {
+    let mut cursor = Cursor::new(payload);
+    let header = state_content_header(&mut cursor, version)?;
+    if cursor.i32("direct face selector state")? != -1
+        || cursor.u8("direct face selector enabled")? != 1
+        || cursor.u8("direct face selector form")? != 5
+    {
+        return Ok(None);
+    }
+    let body = cursor.reference("direct face selector body")?;
+    let body_source = cursor.u32("direct face selector topology")?;
+    if (super::edge_selection::selector_has_qualifier(version)
+        && cursor.u32("direct face selector qualifier")? != 0)
+        || cursor.u32("direct face selector naming form")? != body_source
+    {
+        return Ok(None);
+    }
+    let generators = u32_list_with_context(ctx, &mut cursor, 8, "direct face selector generators")?;
+    let secondary = u32_list_with_context(ctx, &mut cursor, 8, "direct face selector secondary")?;
+    let mut distinct = HashSet::new();
+    if !(1..=DIRECT_GENERATOR_LIMIT).contains(&generators.values().len())
+        || generators.values().contains(&0)
+        || secondary.values().contains(&0)
+        || !generators
+            .values()
+            .iter()
+            .chain(secondary.values())
+            .all(|value| distinct.insert(*value))
+        || cursor.u8("direct face selector suffix form")? != 0
+    {
+        return Ok(None);
+    }
+    let item = cursor.reference("direct face selector item")?;
+    let context = cursor.reference("direct face selector context")?;
+    let key = cursor.u32("direct face selector key")?;
+    cursor.finish("direct face selector")?;
     let mut names = ctx.alloc_filled(
         generators.values().len(),
         0,
@@ -391,6 +461,8 @@ pub(super) fn selected(
             selector.source,
             SelectedFace {
                 owner: ids[0],
+                owners: ids.clone(),
+                generators: selector.generators.len(),
                 item,
                 repeated_attribute,
                 unshared_family,
@@ -412,7 +484,10 @@ fn state_id(source: &PmDcFeature) -> Result<FeatureInputTopologyId, CodecError> 
     ))
 }
 
-fn face_id(token: &str, source: u32) -> Result<HistoricalFaceId, CodecError> {
+pub(in crate::feature) fn face_id(
+    token: &str,
+    source: u32,
+) -> Result<HistoricalFaceId, CodecError> {
     HistoricalFaceId::mint(format!("inventor:input-face#{token}-{source}"))
         .map_err(CodecError::malformed)
 }
