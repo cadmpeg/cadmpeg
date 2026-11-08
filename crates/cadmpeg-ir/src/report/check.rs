@@ -17,6 +17,8 @@ use crate::report::{loss::LossNote, Severity};
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum Check {
+    /// A document field contains a non-finite number.
+    FiniteValue,
     /// A whole-document check was skipped for a fragment.
     FragmentSkipped,
     /// An entity id does not match `<format>:<scope>:<kind>#<key>`, or is not
@@ -123,6 +125,7 @@ pub enum Check {
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::FiniteValue => "finite_value",
             Self::FragmentSkipped => "fragment_skipped",
             Self::Identity => "identity",
             Self::Pmi => "pmi",

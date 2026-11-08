@@ -14,11 +14,15 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 #[test]
 fn document_attributes_write_as_named_root_properties() {
     let mut ir = unit_cube().expect("cube");
-    for (name, value) in [
+    let representable = [
         ("Remark", AttributeValue::String("sample".into())),
         ("Count", AttributeValue::Integer(7)),
-        ("Enabled", AttributeValue::Boolean(true)),
-    ] {
+    ];
+    for (name, value) in representable
+        .iter()
+        .cloned()
+        .chain([("Enabled", AttributeValue::Boolean(true))])
+    {
         ir.model.attributes.push(SourceAttribute {
             id: format!("test:model:attribute#{name}").try_into().unwrap(),
             native_ref: None,
@@ -28,28 +32,31 @@ fn document_attributes_write_as_named_root_properties() {
         });
     }
     let mut output = Vec::new();
-    write_step(
+    let report = write_step(
         &ir,
         &mut output,
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
     )
     .unwrap();
+    // Boolean document attributes cannot be held exactly in the CAx-IF
+    // DRI/VRI form (#209 §5.2).
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::DocumentAttributeValueDegraded.kind()
+            && loss.message.contains("Enabled")
+    }));
     let written = std::str::from_utf8(&output).unwrap();
     assert!(written.contains("DESCRIPTIVE_REPRESENTATION_ITEM('Remark','sample')"));
     assert!(written.contains("VALUE_REPRESENTATION_ITEM('Count',COUNT_MEASURE(7))"));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
-    for expected in &ir.model.attributes {
-        assert!(decoded
-            .ir()
-            .model
-            .attributes
-            .iter()
-            .any(|actual| actual.target == AttributeTarget::Document
-                && actual.name == expected.name
-                && actual.values == expected.values));
+    for (name, value) in representable {
+        assert!(decoded.ir().model.attributes.iter().any(|actual| {
+            actual.target == AttributeTarget::Document
+                && actual.name == name
+                && actual.values == [Some(value.clone())]
+        }));
     }
 }
 
