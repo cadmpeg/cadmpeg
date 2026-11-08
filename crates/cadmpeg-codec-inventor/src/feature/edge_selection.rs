@@ -874,6 +874,7 @@ pub(crate) fn native_losses(
     let mut losses = empty_item_losses(inventory, features);
     losses.extend(historical::native_losses(features));
     losses.extend(historical::ambiguous_owner_losses(inventory, features));
+    losses.extend(historical::generator_losses(inventory, features));
     losses
 }
 
