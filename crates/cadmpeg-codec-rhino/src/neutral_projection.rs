@@ -210,11 +210,15 @@ pub(crate) fn project(
                 )),
             );
         }
+        let mut owns_body = false;
         if let Some(attributes) = object.attributes.parsed() {
             for body in &mut ir.model.bodies {
-                if targets.iter().any(|target| matches!(target, PresentationItem::Body { body: id } if *id == body.id)) {
+                let owned = body.native_ref.as_deref() == Some(native_ref.as_str())
+                    || targets.iter().any(|target| matches!(target, PresentationItem::Body { body: id } if *id == body.id));
+                if owned {
                     // Object visibility and layer visibility are independent.
                     body.visible = Some(attributes.visible);
+                    owns_body = true;
                 }
             }
         }
@@ -249,7 +253,7 @@ pub(crate) fn project(
                             order: u32::try_from(ir.model.view_presentations.len())
                                 .map_err(CodecError::malformed)?,
                             expanded: None,
-                            visible: Some(attributes.visible),
+                            visible: (!owns_body).then_some(attributes.visible),
                             display_mode: None,
                             selection_style: None,
                             line_width: None,
