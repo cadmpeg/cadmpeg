@@ -2,6 +2,7 @@
 //! Author dense T-spline cage programs from neutral topology.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -207,7 +208,7 @@ pub(in crate::writer) fn encode(
     macro_rules! record {
         ($($arg:tt)*) => {{
             charge_record(ctx, charge_output)?;
-            output.push_str(&format!($($arg)*));
+            write!(output, $($arg)*).expect("write to string");
             output.push('\n');
         }};
     }
@@ -284,7 +285,7 @@ pub(in crate::writer) fn encode_symmetry(
     macro_rules! record {
         ($($args:tt)*) => {{
             charge_record(ctx, charge_output)?;
-            output.push_str(&format!($($args)*));
+            write!(output, $($args)*).expect("write to string");
             output.push('\n');
         }};
     }

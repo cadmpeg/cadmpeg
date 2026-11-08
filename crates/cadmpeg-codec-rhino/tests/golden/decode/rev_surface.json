@@ -37,7 +37,7 @@
               ]
             }
           },
-          "id": "rhino:object:curve#record-000000-offset-177.directrix",
+          "id": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.directrix",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -74,7 +74,7 @@
               "y": 2.0,
               "z": 3.0
             },
-            "directrix": "rhino:object:curve#record-000000-offset-177.directrix",
+            "directrix": "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.directrix",
             "kind": "revolution",
             "parameter_interval": [
               4.0,
@@ -82,14 +82,14 @@
             ],
             "transposed": true
           },
-          "id": "rhino:object:procedural-surface#record-000000-offset-177",
+          "id": "rhino:object:procedural-surface#5268696e-6f49-4400-0000-000000000000",
           "record_bounds": [
             4.0,
             6.0,
             9.0,
             8.0
           ],
-          "surface": "rhino:object:surface#record-000000-offset-177"
+          "surface": "rhino:object:surface#5268696e-6f49-4400-0000-000000000000"
         }
       ],
       "product_definitions": [],
@@ -185,7 +185,7 @@
             ],
             "v_periodic": false
           },
-          "id": "rhino:object:surface#record-000000-offset-177",
+          "id": "rhino:object:surface#5268696e-6f49-4400-0000-000000000000",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000"
@@ -332,7 +332,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
@@ -361,15 +361,15 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "rhino:object:curve#record-000000-offset-177.directrix": {
+        "rhino:object:curve#5268696e-6f49-4400-0000-000000000000.directrix": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:procedural-surface#record-000000-offset-177": {
+        "rhino:object:procedural-surface#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         },
-        "rhino:object:surface#record-000000-offset-177": {
+        "rhino:object:surface#5268696e-6f49-4400-0000-000000000000": {
           "entity": "derived",
           "scope": "entity"
         }

@@ -555,12 +555,25 @@ impl EncoderBackend for CadirEncoder {
         let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
         let session = EncodeSession::from_context(&ctx)?;
         let mut bytes = Vec::new();
-        crate::hash::finite_json::write_cadir_json(&session, &mut bytes, input.ir).map_err(
-            |error| match error {
-                crate::hash::finite_json::CanonicalJsonError::Resource(error) => error.into(),
-                error => transitional_from_codec(CodecError::malformed(error.to_string())),
-            },
-        )?;
+        match crate::hash::finite_json::write_cadir_json(&session, &mut bytes, input.ir) {
+            Err(crate::hash::finite_json::CanonicalJsonError::Resource(limit)) => {
+                return Err(limit.into());
+            }
+            Err(error @ crate::hash::finite_json::CanonicalJsonError::NonFinite { .. }) => {
+                if let Some(finding) = ValidatedFinding::for_cadir_encode(input.ir) {
+                    return Err(EncodeError::InvalidInput(finding));
+                }
+                return Err(transitional_from_codec(CodecError::malformed(
+                    error.to_string(),
+                )));
+            }
+            Err(error @ crate::hash::finite_json::CanonicalJsonError::Serialize(_)) => {
+                return Err(transitional_from_codec(CodecError::malformed(
+                    error.to_string(),
+                )));
+            }
+            Ok(()) => {}
+        }
         session.finish()?;
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
