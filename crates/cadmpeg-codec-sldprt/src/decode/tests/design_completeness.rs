@@ -791,6 +791,8 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             support_faces: face.clone(),
             continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),
             merge_result: Some(false),
+            interior_constraints: Vec::new(),
+            reverse_normal: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: face.clone(),
@@ -926,6 +928,8 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                     SurfaceContinuity::Contact,
                 ),
                 merge_result: Some(false),
+                interior_constraints: Vec::new(),
+                reverse_normal: None,
             }),
         ),
         feature(

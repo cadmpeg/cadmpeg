@@ -18588,6 +18588,133 @@ source = "spec"
 anchor = "The following `u32le` at `P + 32` is `4`"
 
 [[record]]
+name = "surface_patch_v5_selection_frame"
+kind = "byte"
+section = "3.1"
+anchor = "A `SurfacePatch` scope of type version 5, 6, or 7"
+size = 43
+note = "Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix."
+
+[[record.field]]
+name = "scope_prefix"
+offset = 0
+type = "bytes[31]"
+source = "spec"
+anchor = "A `SurfacePatch` scope of type version 5, 6, or 7"
+
+[[record.field]]
+name = "selection_prefix"
+offset = 31
+type = "bytes[12]"
+source = "spec"
+anchor = "`Q` is 31 in versions 5 and 6"
+
+[[record]]
+name = "surface_patch_selection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `SurfacePatch` scope of type version 5, 6, or 7"
+size = 12
+note = "Offsets are relative to P + Q. The settings references follow at offset 12."
+
+[[record.field]]
+name = "leading_word"
+offset = 0
+type = "u32"
+value = 4
+source = "spec"
+anchor = "The u32 at `P + Q` is `4`"
+
+[[record.field]]
+name = "selection_word"
+offset = 4
+type = "u32"
+value = 1
+source = "spec"
+anchor = "the u32 at `P + Q + 4` is `1`"
+
+[[record.field]]
+name = "settings_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The u32 at `P + Q + 8` is the settings count `S`"
+
+[[record]]
+name = "surface_patch_v5_interior_list_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The interior-list prefix follows the last settings reference"
+size = 12
+note = "Offsets are relative to the end of the last settings reference. The interior references follow at offset 12."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "In version 5 it is eight zero bytes"
+
+[[record.field]]
+name = "interior_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the u32 interior count `I`, at prefix offset 8"
+
+[[record]]
+name = "surface_patch_v6_interior_list_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The interior-list prefix follows the last settings reference"
+size = 16
+note = "Type versions 6 and 7. Offsets are relative to the end of the last settings reference. The interior references follow at offset 16."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[12]"
+source = "spec"
+anchor = "In versions 6 and 7 it is twelve zero bytes"
+
+[[record.field]]
+name = "interior_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "the u32 interior count `I`, at prefix offset 12"
+
+[[record]]
+name = "surface_patch_v5_tool_reference_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The tool-reference prefix follows the last interior reference"
+size = 4
+note = "Offsets are relative to the end of the last interior reference. The tool-body reference follows at offset 4."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "It is four zero bytes in version 5"
+
+[[record]]
+name = "surface_patch_v6_tool_reference_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The tool-reference prefix follows the last interior reference"
+size = 8
+note = "Type versions 6 and 7. Offsets are relative to the end of the last interior reference. The tool-body reference follows at offset 8."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes in versions 6 and 7"
+
+[[record]]
 name = "hem_common_controls"
 kind = "byte"
 section = "3.1"

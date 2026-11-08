@@ -47,7 +47,7 @@ use super::sheet_metal::{
 use super::surface_ops::{
     DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
-    DesignSurfaceStitchOperation,
+    DesignSurfacePatchSelection, DesignSurfaceStitchOperation,
 };
 use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
@@ -413,6 +413,12 @@ cadmpeg_core::named_optional_field!(
     deserialize_surface_patch_normal,
     DesignSurfacePatchNormalState,
     "surface_patch_normal"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_patch_selection,
+    DesignSurfacePatchSelection,
+    "surface_patch_selection"
 );
 
 macro_rules! design_feature_kinds {
@@ -970,6 +976,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_patch_normal"
     )]
     surface_patch_normal: Option<DesignSurfacePatchNormalState>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_surface_patch_selection"
+    )]
+    surface_patch_selection: Option<DesignSurfacePatchSelection>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
     #[serde(
         default,
@@ -1681,7 +1693,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.ruled_surface_operation.is_some() {
             present.push("ruled_surface_operation");
         }
-        if !wire.surface_patch_boundaries.is_empty() || wire.surface_patch_normal.is_some() {
+        if !wire.surface_patch_boundaries.is_empty()
+            || wire.surface_patch_normal.is_some()
+            || wire.surface_patch_selection.is_some()
+        {
             present.push("surface_patch");
         }
         if wire.edge_flange_operation.is_some() {
@@ -1893,6 +1908,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::SurfacePatch(DesignSurfacePatchScope {
                     boundaries: std::mem::take(&mut wire.surface_patch_boundaries),
                     normal: wire.surface_patch_normal.take(),
+                    selection: wire.surface_patch_selection.take(),
                 })
             }
             DesignFeatureKind::SurfaceExtend => {
@@ -2043,6 +2059,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.ruled_surface_operation.is_some()
             || !wire.surface_patch_boundaries.is_empty()
             || wire.surface_patch_normal.is_some()
+            || wire.surface_patch_selection.is_some()
             || wire.edge_flange_operation.is_some()
             || wire.hem_operation.is_some()
             || wire.fixed_fillet_parameters.is_some()
@@ -2168,6 +2185,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             base_flange: None,
             surface_patch_boundaries: Vec::new(),
             surface_patch_normal: None,
+            surface_patch_selection: None,
             edge_flange_operation: None,
             hem_operation: None,
             fixed_fillet_parameters: None,
@@ -2274,6 +2292,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::SurfacePatch(value) => {
                 wire.surface_patch_boundaries = value.boundaries;
                 wire.surface_patch_normal = value.normal;
+                wire.surface_patch_selection = value.selection;
             }
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
@@ -3044,6 +3063,13 @@ impl DesignParameterScope {
     pub(crate) fn surface_patch_normal(&self) -> Option<DesignSurfacePatchNormalState> {
         match &self.payload {
             DesignScopePayload::SurfacePatch(value) => value.normal,
+            _ => None,
+        }
+    }
+
+    pub(crate) fn surface_patch_selection(&self) -> Option<&DesignSurfacePatchSelection> {
+        match &self.payload {
+            DesignScopePayload::SurfacePatch(value) => value.selection.as_ref(),
             _ => None,
         }
     }
