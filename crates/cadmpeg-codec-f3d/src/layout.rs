@@ -893,6 +893,8 @@ pub(crate) mod paramesh_flagged_mesh_body_join_prefix {
     pub(crate) const FLAG: usize = 20;
     /// Stated value of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG_VALUE: u8 = 1;
+    /// Offset of `first_presence` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_PRESENCE: usize = 45;
     /// Offset of `first_transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const FIRST_TRANSFORM: usize = 46;
     /// Offset of `second_transform` (`f64[16]`, little-endian). Spec §3.1.
@@ -921,6 +923,8 @@ pub(crate) mod paramesh_mesh_body_join_prefix {
     pub(crate) const LEN: usize = 564;
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `first_presence` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_PRESENCE: usize = 41;
     /// Offset of `first_transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const FIRST_TRANSFORM: usize = 42;
     /// Offset of `second_transform` (`f64[16]`, little-endian). Spec §3.1.

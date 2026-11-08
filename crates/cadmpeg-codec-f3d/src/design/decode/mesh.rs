@@ -43,7 +43,7 @@ use crate::records::mesh::{
     DesignMeshEntryName, DesignMeshFeature, DesignMeshFixedRecord, DesignMeshGuid,
     DesignMeshPlacement, DesignMeshRecordIdentity, DesignMeshSceneBounds, DesignMeshSceneNode,
     DesignMeshSceneState, DesignMeshScope, DesignMeshTextureResource, DesignMeshTextureTable,
-    MeshAffineTransform, MeshBodyLayout, MESH_COLLECTION_ENTRY_NAME,
+    MeshAffineTransform, MeshBodyLayout, VariableMeshBodyLayout, MESH_COLLECTION_ENTRY_NAME,
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
@@ -65,6 +65,7 @@ const MESH_GUID_TYPE_VERSION: u32 = 1;
 const MESH_BODY_TYPE_GUID: &str = "EA90DA22-556C-4C61-89BB-20C2681B7A9D";
 const MESH_BODY_BASE_TYPE_GUID: &str = "CB844AB6-240D-4FC9-9C9F-3679DC896D6F";
 const MESH_BODY_TYPE_VERSION: u32 = 7;
+const MESH_BODY_PRESENTATION_PREFIX_BYTES: usize = 15;
 const MESH_COLLECTION_TYPE_GUID: &str = "443807AD-8025-41A3-8A50-5157579C3D78";
 const MESH_COLLECTION_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_COLLECTION_TYPE_VERSION: u32 = 0;
@@ -265,7 +266,8 @@ struct MeshTextureTableRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshWrapperRecord {
-    identity: DesignMeshFixedRecord<{ u64_from_index(body_wrapper::LEN) }>,
+    identity: DesignMeshRecordIdentity,
+    opaque_tail: Option<cadmpeg_ir::native::bytes::NativeBytes>,
     body_record_index: u32,
 }
 
@@ -667,6 +669,113 @@ fn parse_mesh_body_record(
             collection_record_index,
         })
     })();
+    match parsed {
+        Some(body) => Ok(body),
+        None => parse_variable_mesh_body_record(bytes, frame),
+    }
+}
+
+fn parse_variable_mesh_body_record(
+    bytes: &[u8],
+    frame: TypedPrimaryFrame<'_>,
+) -> Result<MeshBodyRecord, CodecError> {
+    let record = &bytes[frame.start..frame.end];
+    let identity = record_identity(record, frame, "mesh-body")?;
+    let parsed = (|| {
+        let byte_at = |position| {
+            let mut view = View::over_retained(record);
+            view.seek(position)?;
+            view.u8()
+        };
+        let flagged = byte_at(flagged_body::FLAG) == Some(flagged_body::FLAG_VALUE);
+        let zero_run = if flagged {
+            flagged_body::ZERO_RUN_9..flagged_body::FLAG
+        } else {
+            mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10
+        };
+        let mut view = View::over_retained(record);
+        view.seek(zero_run.start)?;
+        view.take(zero_run.len())?
+            .iter()
+            .all(|byte| *byte == 0)
+            .then_some(())?;
+        let shifted = flagged && frame.design_type.version != 6;
+        let first = if shifted {
+            flagged_body::FIRST_PRESENCE
+        } else {
+            mesh_body::FIRST_PRESENCE
+        };
+        let mut at = first;
+        let mut presence = [0_u64; 2];
+        let mut transforms = [None; 2];
+        for ordinal in 0..2 {
+            presence[ordinal] = u64_from_index(at);
+            let marker = byte_at(at)?;
+            at = at.checked_add(1)?;
+            transforms[ordinal] = Some(match marker {
+                0 => {
+                    let transform = MeshAffineTransform::parse(record, at)?;
+                    at = at.checked_add(16 * 8)?;
+                    transform
+                }
+                1 => MeshAffineTransform::identity(),
+                _ => return None,
+            });
+        }
+        let transform = transforms[0]?;
+        (transforms[1]? == transform).then_some(())?;
+        let guid_at = at.checked_add(MESH_BODY_PRESENTATION_PREFIX_BYTES)?;
+        let (first_guid, after_first) = lp_utf16_bounded(record, guid_at, 36..=36)?;
+        crate::bytes::is_guid_hyphenated(&first_guid).then_some(())?;
+        let (library, after_library) = lp_utf16_bounded(record, after_first, 36..=36)?;
+        (library.eq_ignore_ascii_case(crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID)
+            && View::u32_le_at(record, after_library) == Some(0))
+        .then_some(())?;
+        let (_, after_preset) =
+            lp_utf16_bounded(record, after_library.checked_add(4)?, 0..=record.len())?;
+        let mut reference_at = after_preset;
+        if byte_at(reference_at) == Some(0) {
+            reference_at = reference_at.checked_add(1)?;
+        }
+        let mut offsets = [0_u64; 5];
+        let mut ids = [0_u32; 5];
+        for ordinal in 0..5 {
+            if ordinal == 4 && byte_at(reference_at) == Some(0) {
+                reference_at = reference_at.checked_add(1)?;
+            }
+            ids[ordinal] = exact_local_record_index(record, reference_at)?;
+            offsets[ordinal] = u64_from_index(reference_at);
+            reference_at = reference_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
+        }
+        let (name, end) = lp_utf16_bounded(record, reference_at, 0..=record.len())?;
+        (end <= record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?).then_some(())?;
+        let collection_at = record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?;
+        let collection_record_index = exact_local_record_index(record, collection_at)?;
+        let mut storage = Vec::new();
+        storage.try_reserve_exact(record.len()).ok()?;
+        storage.extend_from_slice(record);
+        let placement = DesignMeshPlacement::new_variable(
+            identity,
+            transform,
+            shifted,
+            name,
+            cadmpeg_ir::native::bytes::NativeBytes::new(storage),
+            VariableMeshBodyLayout {
+                presence_offsets: presence,
+                reference_offsets: offsets,
+            },
+        )
+        .ok()?;
+        Some(MeshBodyRecord {
+            placement,
+            scope_record_index: ids[0],
+            wrapper_record_index: ids[1],
+            owner_record_index: ids[2],
+            guid_record_index: ids[3],
+            scene_node_record_index: ids[4],
+            collection_record_index,
+        })
+    })();
     parsed.ok_or_else(|| malformed_frame("mesh-body", frame.entity_id))
 }
 
@@ -925,15 +1034,24 @@ fn parse_mesh_wrapper_record(
         "mesh-wrapper",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-wrapper")?)
-        .map_err(|_| malformed_frame("mesh-wrapper", frame.entity_id))?;
+    let identity = record_identity(record, frame, "mesh-wrapper")?;
     let parsed = (|| {
         (record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE) == Some(&[0; 10]))
             .then_some(())?;
         let body_record_index = exact_local_record_index(record, body_wrapper::BODY_REFERENCE)?;
         (record.get(body_wrapper::ZERO_TAIL_8..body_wrapper::LEN) == Some(&[0; 8])).then_some(())?;
+        let tail = record.get(body_wrapper::LEN..)?;
+        let opaque_tail = if tail.is_empty() {
+            None
+        } else {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(tail.len()).ok()?;
+            storage.extend_from_slice(tail);
+            Some(cadmpeg_ir::native::bytes::NativeBytes::new(storage))
+        };
         Some(MeshWrapperRecord {
             identity,
+            opaque_tail,
             body_record_index,
         })
     })();
@@ -1693,6 +1811,7 @@ where
                 entry: entry_name.entry,
                 guid: guid.guid,
                 wrapper_record: wrapper.identity,
+                wrapper_opaque_tail: wrapper.opaque_tail,
                 scene_state,
                 scene_node: scene_node.node,
                 scene_auxiliary_record: scene_auxiliary,
@@ -1781,6 +1900,38 @@ fn mesh_image_asset(
     ))
 }
 
+pub(crate) fn mesh_wrapper_tail_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::bodies)
+        .filter_map(|body| {
+            body.wrapper_opaque_tail.as_ref()?;
+            Some(
+                crate::loss::F3dLossCode::MeshWrapperBytesUninterpreted.note(format!(
+                    "mesh-wrapper record {} retains its uninterpreted tail",
+                    body.wrapper_record.record_index(),
+                )),
+            )
+        })
+}
+
+pub(crate) fn mesh_body_identity_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::bodies)
+        .filter(|body| body.placement.identity_assumed())
+        .map(|body| {
+            crate::loss::F3dLossCode::MeshBodyIdentityAssumed.note(format!(
+                "mesh-body record {} reads a compact matrix as identity",
+                body.placement.record().record_index(),
+            ))
+        })
+}
+
 pub(crate) fn mesh_owner_frame_losses(
     features: &[DesignMeshFeature],
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
@@ -1805,7 +1956,7 @@ pub(crate) fn mesh_body_frame_losses(
             body.placement.native_frame()?;
             Some(
                 crate::loss::F3dLossCode::MeshBodyBytesUninterpreted.note(format!(
-                    "mesh-body record {} retains its version-6 frame with uninterpreted bytes",
+                    "mesh-body record {} retains its frame with uninterpreted bytes",
                     body.placement.record().record_index(),
                 )),
             )
@@ -2933,6 +3084,113 @@ mod tests {
     }
 
     #[test]
+    fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
+        for compact in [false, true] {
+            let mut graph = synthetic_mesh_graph(false);
+            let frame = sole_typed_frame(&graph, MESH_BODY_TYPE_GUID);
+            let start = frame.start;
+            let old_end = frame.end;
+            let old = &graph.bytes[start..old_end];
+            let mut body = old[..mesh_body::FIRST_PRESENCE].to_vec();
+            body[20] = 1;
+            body.splice(21..21, [0; 4]);
+            for offset in [mesh_body::FIRST_TRANSFORM, mesh_body::SECOND_TRANSFORM] {
+                if compact {
+                    body.push(1);
+                } else {
+                    body.push(0);
+                    body.extend_from_slice(&old[offset..offset + MATRIX_BYTES]);
+                }
+            }
+            body.extend_from_slice(&1.0_f32.to_le_bytes());
+            body.extend_from_slice(&[1, 1]);
+            body.extend_from_slice(&[0; 9]);
+            lp_utf16(&mut body, "11111111-2222-4333-8444-555555555555");
+            lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+            body.extend_from_slice(&[0; 4]);
+            lp_utf16(&mut body, "PrismMaterial-018");
+            if !compact {
+                body.push(0);
+            }
+            body.extend_from_slice(
+                &old[mesh_body::FEATURE_SCOPE_REFERENCE
+                    ..mesh_body::CONTAINER_GUID_REFERENCE + SAME_SEGMENT_REFERENCE_BYTES],
+            );
+            if compact {
+                body.push(0);
+            }
+            body.extend_from_slice(&old[mesh_body::SCENE_NODE_REFERENCE..mesh_body::LEN]);
+            lp_utf16(&mut body, "Axle");
+            body.extend_from_slice(&[0; 4]);
+            body.extend_from_slice(&1.0_f32.to_le_bytes());
+            body.extend_from_slice(&[1, 1]);
+            body.extend_from_slice(&[0; 9]);
+            lp_utf16(&mut body, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE");
+            lp_utf16(&mut body, "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C");
+            body.extend_from_slice(&[0; 4]);
+            lp_utf16(&mut body, "PrismMaterial-018_physmat_aspects:Prism-256");
+            body.extend_from_slice(&old[old.len() - SAME_SEGMENT_REFERENCE_BYTES..]);
+            let expected = body.clone();
+            let delta =
+                i64::try_from(body.len()).unwrap() - i64::try_from(old_end - start).unwrap();
+            graph.bytes.splice(start..old_end, body);
+            for record in &mut graph.meta.records {
+                if record.bulk_offset > u64_from_index(start) {
+                    record.bulk_offset = record.bulk_offset.checked_add_signed(delta).unwrap();
+                }
+            }
+            let features = parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_texture_asset,
+            )
+            .expect("variable mesh body");
+            let [feature] = features.as_slice() else {
+                panic!("one feature")
+            };
+            let wire = serde_json::to_value(feature).unwrap();
+            let row = &wire["bodies"][0];
+            assert_eq!(row["body_name"], "Axle");
+            if compact {
+                assert!(row.get("transform_offsets").is_none());
+                assert_eq!(
+                    row["body_variable_layout"]["presence_offsets"],
+                    serde_json::json!([45, 46])
+                );
+                assert_eq!(row["scope_reference_offset"], start + 256);
+                assert_eq!(row["scene_node_reference_offset"], start + 301);
+            } else {
+                assert_eq!(
+                    row["transform_offsets"],
+                    serde_json::json!([start + 46, start + 175])
+                );
+                assert_eq!(
+                    row["body_variable_layout"]["presence_offsets"],
+                    serde_json::json!([45, 174])
+                );
+                assert_eq!(row["scope_reference_offset"], start + 513);
+                assert_eq!(row["scene_node_reference_offset"], start + 557);
+            }
+            let decoded: crate::records::mesh::DesignMeshFeature =
+                serde_json::from_value(wire).unwrap();
+            assert_eq!(
+                decoded.bodies()[0]
+                    .placement
+                    .native_frame()
+                    .unwrap()
+                    .as_ref(),
+                expected.as_slice()
+            );
+            assert_eq!(decoded, *feature);
+            assert_eq!(
+                super::mesh_body_identity_losses(&features).count(),
+                usize::from(compact)
+            );
+        }
+    }
+
+    #[test]
     fn version_six_mesh_body_keeps_name_and_frame() {
         let mut graph = synthetic_mesh_graph(false);
         graph
@@ -3470,6 +3728,40 @@ mod tests {
                 crate::ids::native_design_mesh_feature_id("Synthetic/BulkStream.dat", 100)
             );
         };
+    }
+
+    #[test]
+    fn mesh_wrapper_keeps_its_extended_tail() {
+        let mut graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_WRAPPER_TYPE_GUID);
+        let end = frame.end;
+        graph.bytes.splice(end..end, [9, 8, 7]);
+        for record in &mut graph.meta.records {
+            if record.bulk_offset >= u64_from_index(end) {
+                record.bulk_offset += 3;
+            }
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("extended wrapper");
+        let [feature] = features.as_slice() else {
+            panic!("one feature")
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["bodies"][0]["wrapper_opaque_tail"], "090807");
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
+        let losses: Vec<_> = super::mesh_wrapper_tail_losses(&features).collect();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "mesh.wrapper-bytes-uninterpreted"
+        );
     }
 
     #[test]

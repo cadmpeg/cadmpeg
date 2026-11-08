@@ -1566,12 +1566,12 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-327. Mesh body and collection-owner payload fields
 
-**Question.** What do the remaining version-6 mesh-body and version-19 and version-20 collection-owner payload fields mean?
+**Question.** What do the compact matrix flags and the remaining mesh-body, mesh-wrapper, and collection-owner payload fields mean?
 
-**Known.** A version-6 body stores placement matrices, graph references, a display name, and additional bytes. The collection owner stores a named collection reference and other fields. The decoder retains both complete native frames.
+**Known.** A version-6 body stores placement matrices, graph references, a display name, and additional bytes. A matrix presence byte `01` has no matrix payload. Fifteen bytes separate the second presence byte and its payload from the first presentation envelope. The decoder uses an identity matrix for this form. The collection owner stores a named collection reference and other fields. A mesh wrapper can continue after its fixed prefix. The decoder retains these bytes.
 
 **Need.** Controlled saves that vary one body or collection-owner property at a time and identify the remaining fields.
 
 **Conflict.** None.
 
-**Note.** The decoder reports `mesh.body-bytes-uninterpreted` and `mesh.owner-bytes-uninterpreted`.
+**Note.** The decoder reports `mesh.body-bytes-uninterpreted`, `mesh.body-identity-assumed`, `mesh.wrapper-bytes-uninterpreted`, and `mesh.owner-bytes-uninterpreted`.
