@@ -170,7 +170,6 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             payload: crate::records::feature::scope::DesignFeatureKind::BaseFeature
                 .try_into()
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )

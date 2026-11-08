@@ -514,7 +514,6 @@ fn seed_scope(record_index: u32, history_state_id: Option<i64>) -> DesignParamet
         payload: crate::records::feature::scope::DesignFeatureKind::Extrude
             .try_into()
             .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::references::DesignClassTag::try_from("263".to_owned())
             .unwrap(),
         paired_byte_offset: 128,
