@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude extents carried only by fixed scalar lanes.
 
-use crate::design::feature_project::project_extrude;
+use crate::design::feature_project::extrude::project_extrude;
 use crate::ids::neutral_sketch_id;
 use crate::records::feature::extrude::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
