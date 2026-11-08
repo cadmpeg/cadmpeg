@@ -71,12 +71,14 @@ pub(crate) fn write(
         }
         let mut rows = Vec::new();
         let mut indices = external::write(ir, sketch, object, names, losses)?;
-        for entity in ir
+        let mut entities = ir
             .model
             .sketch_entities
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
-        {
+            .collect::<Vec<_>>();
+        entities.sort_by_key(|entity| source_order(entity.id().as_str()));
+        for entity in entities {
             if external::is_external(entity) {
                 continue;
             }
@@ -122,12 +124,14 @@ pub(crate) fn write(
             ),
         );
         let mut constraints = Vec::new();
-        for constraint in ir
+        let mut sources = ir
             .model
             .sketch_constraints
             .iter()
             .filter(|constraint| constraint.sketch == sketch.id)
-        {
+            .collect::<Vec<_>>();
+        sources.sort_by_key(|constraint| source_order(constraint.id.as_str()));
+        for constraint in sources {
             if let Some(row) = constraints::row(ir, constraint, &indices)
                 .or_else(|| native::constraint(ir, constraint, &indices))
             {
@@ -154,6 +158,15 @@ pub(crate) fn write(
         );
     }
     Ok(())
+}
+
+/// Arenas hold records in identity order, so `Sketch:10` precedes
+/// `Sketch:2`. Geometry and constraint indices are positional in FreeCAD:
+/// a trailing decimal index orders numerically, ties by the full identity.
+fn source_order(id: &str) -> (&str, Option<u64>, &str) {
+    let prefix = id.trim_end_matches(|c: char| c.is_ascii_digit());
+    let index = id.strip_prefix(prefix).and_then(|digits| digits.parse().ok());
+    (prefix, index, id)
 }
 
 #[cfg(test)]

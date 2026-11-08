@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Constraint;
 use cadmpeg_ir::{
     document::CadIr,
-    features::{Expression, ParameterValue},
+    features::{Expression, FeatureOperation, ParameterValue},
     report::loss::LossNote,
 };
 use std::collections::HashMap;
@@ -86,13 +86,25 @@ pub(in crate::writer) fn parameter_reference(
     names: &HashMap<String, String>,
 ) -> Option<String> {
     let dependency = ir.model.parameters.iter().find(|value| value.id == *id)?;
+    // A constraint path names only the constraint's own dimension, which the
+    // sketch's feature owns; a sheet cell or a feature property that drives
+    // the constraint keeps its own owner and selector.
+    let sketch_owned = |sketch: &cadmpeg_ir::sketches::SketchId| {
+        ir.model.features.iter().any(|feature| {
+            Some(&feature.id) == dependency.owner.as_ref()
+                && matches!(
+                    feature.evaluation.definition().operation(),
+                    FeatureOperation::Sketch { sketch: binding } if binding.id() == Some(sketch)
+                )
+        })
+    };
     let constraint_path = ir.model.sketch_constraints.iter().find_map(|constraint| {
         constraint
             .definition
             .kind()
             .dimension_parameters()
             .ok()
-            .filter(|parameters| parameters.contains(id))
+            .filter(|parameters| parameters.contains(id) && sketch_owned(&constraint.sketch))
             .and_then(|_| names.get(&format!("constraint-path:{}", constraint.id)))
     });
     let symbol = constraint_path
