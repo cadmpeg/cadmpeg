@@ -38,9 +38,11 @@ pub(super) fn exact_thicken_operation(
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    if bytes.get(start + thicken::ZERO_RUN_9..start + thicken::PROLOGUE_MARKER)? != [0; 9] {
-        return None;
-    }
+    zero_run_end(
+        bytes,
+        start + thicken::ZERO_RUN_9,
+        thicken::PROLOGUE_MARKER - thicken::ZERO_RUN_9,
+    )?;
     let (mut cursor, prologue_flag) = match bytes.get(start + thicken::PROLOGUE_MARKER)? {
         0 => (start + thicken::LEN, None),
         1 if View::u32_le_at(bytes, start + thicken::LEN)? == 0 => {
@@ -98,13 +100,9 @@ pub(super) fn exact_thicken_operation(
     }
     marked_record_reference(bytes, cursor + U32_LEN)?;
     cursor += U32_LEN + MARKED_REFERENCE_LEN;
-    if bytes.get(cursor..cursor + GUID_ZERO_RUN)? != [0; GUID_ZERO_RUN] {
-        return None;
-    }
-    let guid_end = fixed_guid_end(bytes, cursor + GUID_ZERO_RUN)?;
-    if bytes.get(guid_end..guid_end + TABLE_ZERO_RUN)? != [0; TABLE_ZERO_RUN]
-        || u64::try_from(guid_end + TABLE_ZERO_RUN).ok()? != scope.reference_count_offset()
-    {
+    let guid_end = fixed_guid_end(bytes, zero_run_end(bytes, cursor, GUID_ZERO_RUN)?)?;
+    let table_at = zero_run_end(bytes, guid_end, TABLE_ZERO_RUN)?;
+    if u64::try_from(table_at).ok()? != scope.reference_count_offset() {
         return None;
     }
     let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
@@ -139,28 +137,28 @@ impl WallSlotPrefix {
     fn slots_at(self, bytes: &[u8], start: usize) -> Option<usize> {
         let at = |offset: usize| bytes.get(start.checked_add(offset)?).copied();
         let zero = |from: usize, to: usize| {
-            bytes
-                .get(start.checked_add(from)?..start.checked_add(to)?)
-                .map(|run| run.iter().all(|byte| *byte == 0))
+            start
+                .checked_add(from)
+                .and_then(|at| zero_run_end(bytes, at, to.checked_sub(from)?))
+                .is_some()
         };
         let flag = |offset: usize| matches!(at(offset), Some(0 | 1));
         let marked = || {
-            zero(shell_marked::ZERO_RUN_9, shell_marked::FEATURE_FORM) == Some(true)
+            zero(shell_marked::ZERO_RUN_9, shell_marked::FEATURE_FORM)
                 && at(shell_marked::FEATURE_FORM) == Some(shell_marked::FEATURE_FORM_VALUE)
                 && flag(shell_marked::FLAG)
-                && zero(shell_marked::ZERO_RUN_3, shell_marked::SLOT_MARKER) == Some(true)
+                && zero(shell_marked::ZERO_RUN_3, shell_marked::SLOT_MARKER)
                 && at(shell_marked::SLOT_MARKER) == Some(shell_marked::SLOT_MARKER_VALUE)
         };
         let (admitted, slots) = match self {
             Self::Cornered => (
-                zero(shell_slots::ZERO_RUN_10, shell_slots::TANGENT_CHAIN) == Some(true)
+                zero(shell_slots::ZERO_RUN_10, shell_slots::TANGENT_CHAIN)
                     && flag(shell_slots::TANGENT_CHAIN)
                     && flag(shell_slots::ROUNDED_CORNERS),
                 shell_slots::LEN,
             ),
             Self::Compact => (
-                zero(shell_compact::ZERO_RUN_10, shell_compact::FLAG) == Some(true)
-                    && flag(shell_compact::FLAG),
+                zero(shell_compact::ZERO_RUN_10, shell_compact::FLAG) && flag(shell_compact::FLAG),
                 shell_compact::LEN,
             ),
             Self::Marked => (marked(), shell_marked::MARKED_SLOTS),
