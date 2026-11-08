@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reverse the OCCT periodic-knot and cyclic-pole normalization.
 
-use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 
 pub(in crate::writer) struct Axis {
     pub(in crate::writer) rows: Vec<(f64, usize)>,
@@ -11,12 +11,11 @@ pub(in crate::writer) struct Axis {
 
 /// Recover one OCCT axis without changing its parameterization.
 pub(in crate::writer) fn axis(
-    knots: &KnotVector,
+    full: &[f64],
     degree: u32,
     count: usize,
     periodic: bool,
 ) -> Option<Axis> {
-    let full = knots.as_slice();
     let degree = usize::try_from(degree).ok()?;
     let padding = if periodic {
         let first = *full.get(degree)?;
@@ -79,9 +78,9 @@ pub(in crate::writer) fn cyclic_tail<T: PartialEq>(lane: &[T], axis: &Axis) -> b
     lane.len() == axis.count + axis.padding && lane[axis.count..] == lane[..axis.padding]
 }
 
-pub(super) fn curve(value: &NurbsCurve) -> Option<String> {
+pub(in crate::writer) fn curve(value: &NurbsCurve) -> Option<String> {
     let axis = axis(
-        value.knots(),
+        value.knots().as_slice(),
         value.degree(),
         value.pole_count(),
         value.periodic(),
@@ -115,15 +114,15 @@ pub(super) fn curve(value: &NurbsCurve) -> Option<String> {
     Some(output)
 }
 
-pub(super) fn surface(value: &NurbsSurface) -> Option<String> {
+pub(in crate::writer) fn surface(value: &NurbsSurface) -> Option<String> {
     let u = axis(
-        value.u_knots(),
+        value.u_knots().as_slice(),
         value.u_degree(),
         value.u_count(),
         value.u_periodic(),
     )?;
     let v = axis(
-        value.v_knots(),
+        value.v_knots().as_slice(),
         value.v_degree(),
         value.v_count(),
         value.v_periodic(),

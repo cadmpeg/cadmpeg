@@ -37,7 +37,7 @@ impl Provider {
     fn visible(&mut self, value: bool) {
         self.set("Visibility", "App::PropertyBool", "Bool", u8::from(value));
     }
-    fn scalar_override(&mut self, name: &str, value: &str) -> Result<bool, CodecError> {
+    fn scalar_override(&mut self, name: &str, value: &str) -> bool {
         if let Some(original) = self.native.get(name) {
             let mut property = original.clone();
             if let Some(root) = property.values.iter_mut().find(|value| {
@@ -49,20 +49,16 @@ impl Provider {
                     "Value"
                 };
                 root.attributes.insert(key.into(), value.into());
-                if let Some(output) = native_property(&property)? {
+                if let Some(output) = xml::native_gui(&property) {
                     self.properties.insert(name.into(), output);
-                    return Ok(true);
+                    return true;
                 }
             }
-            return Ok(false);
+            return false;
         }
         self.set(name, "App::PropertyString", "String", value);
-        Ok(true)
+        true
     }
-}
-
-fn native_property(record: &GuiPropertyRecord) -> Result<Option<String>, CodecError> {
-    xml::native_gui(record)
 }
 
 fn unchanged_scalar(record: &GuiPropertyRecord, generated: &str) -> bool {
@@ -157,7 +153,7 @@ fn native(
             .iter()
             .filter(|property| property.owner == record.id)
         {
-            match native_property(property)? {
+            match xml::native_gui(property) {
                 Some(value) => {
                     provider.properties.insert(property.name.clone(), value);
                     provider
@@ -283,7 +279,7 @@ fn neutral_views(
             ) {
                 continue;
             }
-            if !provider.scalar_override(key.as_str(), value)? {
+            if !provider.scalar_override(key.as_str(), value) {
                 losses.push(FreecadLossCode::ExportPresentationNotTransferred.note(format!("view {} textual property {key} has no neutral scalar encoding; its typed native value tree is emitted independently",view.id)));
             }
         }
@@ -311,11 +307,20 @@ pub(super) fn write(
     objects: &[Object],
     entries: &mut BTreeMap<String, Vec<u8>>,
     losses: &mut Vec<LossNote>,
+    transparency_byte: bool,
 ) -> Result<String, CodecError> {
     let live: HashSet<_> = objects.iter().map(|object| object.name.as_str()).collect();
     let mut providers = native(ir, names, &live, losses)?;
     neutral_views(ir, names, &live, &mut providers, losses)?;
-    colors::write(ir, names, body_names, &mut providers, entries, losses)?;
+    colors::write(
+        ir,
+        names,
+        body_names,
+        &mut providers,
+        entries,
+        losses,
+        transparency_byte,
+    )?;
     for provider in providers.values_mut() {
         for (name, original) in &provider.native {
             if provider
@@ -323,7 +328,7 @@ pub(super) fn write(
                 .get(name)
                 .is_some_and(|generated| unchanged_scalar(original, generated))
             {
-                if let Some(property) = native_property(original)? {
+                if let Some(property) = xml::native_gui(original) {
                     provider.properties.insert(name.clone(), property);
                 }
             }
@@ -340,7 +345,10 @@ pub(super) fn write(
         };
         for (key, expected) in &view.properties {
             if let Some(property) = provider.properties.get(key.as_str()) {
-                let parsed = roxmltree::Document::parse(property).map_err(CodecError::malformed)?;
+                let Ok(parsed) = roxmltree::Document::parse(property) else {
+                    debug_assert!(false, "generated GUI property XML parses");
+                    continue;
+                };
                 let actual = parsed
                     .root_element()
                     .first_element_child()

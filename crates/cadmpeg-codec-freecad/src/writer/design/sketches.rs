@@ -3,7 +3,6 @@
 
 use super::super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -19,7 +18,7 @@ pub(crate) fn write(
     objects: &mut Vec<Object>,
     names: &mut HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     for sketch in &ir.model.sketches {
         let feature_name = ir.model.features.iter().find(|feature| matches!(feature.evaluation.definition().operation(), cadmpeg_ir::features::FeatureOperation::Sketch { sketch: binding } if binding.id() == Some(&sketch.id))).and_then(|feature| names.get(feature.id.as_str())).cloned();
         let name = feature_name
@@ -43,26 +42,26 @@ pub(crate) fn write(
         names.insert(sketch.id.as_str().to_owned(), name);
         let object = &mut objects[index];
         object.kind = "Sketcher::SketchObject".into();
-        if let Some((origin, normal, x_axis)) = sketch.placement.resolved() {
-            let z = normal
-                .unit_nonzero()
-                .ok_or_else(|| CodecError::malformed("sketch normal is zero"))?;
-            let x = x_axis
-                .unit_nonzero()
-                .ok_or_else(|| CodecError::malformed("sketch axis is zero"))?;
-            let y = cadmpeg_ir::math::Vector3::new(
-                z.y * x.z - z.z * x.y,
-                z.z * x.x - z.x * x.z,
-                z.x * x.y - z.y * x.x,
-            );
-            let origin = origin.get();
-            let transform = Transform::affine([
-                [x.x, y.x, z.x, origin.x],
-                [x.y, y.y, z.y, origin.y],
-                [x.z, y.z, z.z, origin.z],
-            ])
-            .ok_or_else(|| CodecError::malformed("sketch placement is non-finite"))?;
-            object.set("Placement", super::placement(transform)?);
+        let transform = sketch
+            .placement
+            .resolved()
+            .and_then(|(origin, normal, x_axis)| {
+                let z = normal.unit_nonzero()?;
+                let x = x_axis.unit_nonzero()?;
+                let y = cadmpeg_ir::math::Vector3::new(
+                    z.y * x.z - z.z * x.y,
+                    z.z * x.x - z.x * x.z,
+                    z.x * x.y - z.y * x.x,
+                );
+                let origin = origin.get();
+                Transform::affine([
+                    [x.x, y.x, z.x, origin.x],
+                    [x.y, y.y, z.y, origin.y],
+                    [x.z, y.z, z.z, origin.z],
+                ])
+            });
+        if let Some(transform) = transform {
+            object.set("Placement", super::placement(transform));
         } else {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                 "sketch {} has no resolved placement; local geometry is written at the origin",
@@ -70,13 +69,15 @@ pub(crate) fn write(
             )));
         }
         let mut rows = Vec::new();
-        let mut indices = external::write(ir, sketch, object, names, losses)?;
-        for entity in ir
+        let mut indices = external::write(ir, sketch, object, names, losses);
+        let mut entities = ir
             .model
             .sketch_entities
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
-        {
+            .collect::<Vec<_>>();
+        entities.sort_by_key(|entity| source_order(entity.id().as_str()));
+        for entity in entities {
             if external::is_external(entity) {
                 continue;
             }
@@ -96,10 +97,11 @@ pub(crate) fn write(
             }
             let row = geometry::row(entity).or_else(|| native::geometry(ir, entity));
             if let Some(row) = row {
-                // (O-capacity) XML geometry references use signed indices.
-                let ordinal = i64::try_from(rows.len()).map_err(|_| {
-                    CodecError::InvalidInput("FreeCAD sketch index exceeds i64".into())
-                })?;
+                // XML geometry references use signed indices.
+                let Ok(ordinal) = i64::try_from(rows.len()) else {
+                    debug_assert!(false, "a geometry index fits the signed lane");
+                    continue;
+                };
                 indices.insert(id.to_owned(), (ordinal, 0));
                 rows.push(row);
             } else {
@@ -122,12 +124,14 @@ pub(crate) fn write(
             ),
         );
         let mut constraints = Vec::new();
-        for constraint in ir
+        let mut sources = ir
             .model
             .sketch_constraints
             .iter()
             .filter(|constraint| constraint.sketch == sketch.id)
-        {
+            .collect::<Vec<_>>();
+        sources.sort_by_key(|constraint| source_order(constraint.id.as_str()));
+        for constraint in sources {
             if let Some(row) = constraints::row(ir, constraint, &indices)
                 .or_else(|| native::constraint(ir, constraint, &indices))
             {
@@ -153,7 +157,17 @@ pub(crate) fn write(
             ),
         );
     }
-    Ok(())
+}
+
+/// Arenas hold records in identity order, so `Sketch:10` precedes
+/// `Sketch:2`. Geometry and constraint indices are positional in `FreeCAD`:
+/// a trailing decimal index orders numerically, ties by the full identity.
+fn source_order(id: &str) -> (&str, Option<u64>, &str) {
+    let prefix = id.trim_end_matches(|c: char| c.is_ascii_digit());
+    let index = id
+        .strip_prefix(prefix)
+        .and_then(|digits| digits.parse().ok());
+    (prefix, index, id)
 }
 
 #[cfg(test)]

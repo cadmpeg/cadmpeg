@@ -46,7 +46,7 @@ fn synthesize(ir: &CadIr) -> (CadIr, Vec<LossNote>) {
     let mut objects = Vec::new();
     let mut names = HashMap::new();
     let mut losses = Vec::new();
-    write(ir, &mut objects, &mut names, &mut losses).expect("write neutral sketch");
+    write(ir, &mut objects, &mut names, &mut losses);
     (decode(&objects), losses)
 }
 #[test]
@@ -151,7 +151,7 @@ fn external_cache_indices_and_live_dependency_survive_synthesis() {
     let mut objects = vec![support];
     let mut names = HashMap::new();
     let mut losses = Vec::new();
-    write(&ir, &mut objects, &mut names, &mut losses).expect("write typed external cache");
+    write(&ir, &mut objects, &mut names, &mut losses);
     assert!(losses.is_empty(), "{losses:?}");
     let written = decode(&objects);
     assert_eq!(written.model.sketch_entities.len(), 1);

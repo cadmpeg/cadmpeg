@@ -37,9 +37,7 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
         }],
         side_entries: Vec::new(),
     };
-    let rendered = native_property(&record)
-        .expect("typed property")
-        .expect("inline");
+    let rendered = crate::writer::xml::native_gui(&record).expect("inline");
     let document = roxmltree::Document::parse(&rendered).expect("XML");
     assert_eq!(
         document
@@ -73,6 +71,7 @@ fn shared_body_color_quantization_names_each_body() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .unwrap();
     for body in [first, second] {
@@ -109,6 +108,7 @@ fn independent_body_style_and_bound_color_use_separate_properties() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .expect("presentation");
     let document = roxmltree::Document::parse(&providers["Shape"].properties["ShapeColor"])
@@ -172,6 +172,7 @@ fn binding_visibility_does_not_invent_body_visibility() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .unwrap();
     assert!(!providers["Shape"].properties.contains_key("Visibility"));
@@ -210,6 +211,7 @@ fn face_colors_are_regenerated_as_complete_typed_binary_lists() {
         &mut providers,
         &mut entries,
         &mut losses,
+        false,
     )
     .expect("topology colors");
     assert_eq!(
@@ -286,7 +288,7 @@ fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
     for property in [record("Visibility", "0"), record("DeletedSetting", "1")] {
         provider.properties.insert(
             property.name.clone(),
-            native_property(&property).expect("typed").expect("inline"),
+            xml::native_gui(&property).expect("inline"),
         );
         provider.native.insert(property.name.clone(), property);
     }

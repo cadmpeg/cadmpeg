@@ -186,10 +186,13 @@ fn source_free_partial_box_keeps_its_native_dependency_and_only_omits_the_unheld
             cadmpeg_ir::codec::write::NativeDisposition::Dropped,
         );
     }
+    // Without Length the later properties take lower declaration slots, so
+    // their records re-decode changed and are declared dropped; their values
+    // are asserted in the output below.
     for property in properties.iter().filter(|property| {
         property.owner == bad.id().as_str() && matches!(property.name.as_str(), "Width" | "Height")
     }) {
-        assert_ne!(
+        assert_eq!(
             plan.report().native_dispositions.record_disposition(
                 "fcstd",
                 "properties",

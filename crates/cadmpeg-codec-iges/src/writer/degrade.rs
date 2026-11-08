@@ -35,7 +35,9 @@ pub(super) fn graph(
         admit(ctx, &mut result, &part, version, body.id.as_str())?;
     }
     // Body-owned carriers must not reappear as free geometry after a body was
-    // omitted. Each remaining independent carrier is admitted on its own.
+    // omitted. Each remaining independent carrier is admitted on its own; a
+    // dependent carrier that the whole document withholds stays withheld.
+    let ownership = super::ownership::SourceOwnership::build(ir);
     for id in ir
         .model
         .edges
@@ -48,15 +50,17 @@ pub(super) fn graph(
         if owned.contains(id) {
             continue;
         }
+        if ownership.withholds(ir, id) {
+            super::ownership::report_unowned_support(&mut result.losses, id);
+            continue;
+        }
         let (part, identities) = scoped(ir, ctx, id)?;
         owned.extend(identities);
         admit(ctx, &mut result, &part, version, id)?;
     }
-    if result.entities.is_empty() && result.losses.is_empty() {
-        result
-            .losses
-            .push(IgesLossCode::WriterEntityOmitted.note(reason));
-    }
+    result
+        .losses
+        .push(IgesLossCode::WriterEntityOmitted.note(reason));
     Ok(result)
 }
 
@@ -141,7 +145,7 @@ fn admit(
     }
     match synthesis_graph(ctx, ir, version) {
         Ok(graph) => append(result, graph),
-        Err(CodecError::InvalidInput(reason)) => {
+        Err(CodecError::InvalidInput(reason) | CodecError::Malformed(reason)) => {
             // Type 508 can carry the model-space edge boundary without UV
             // images. Prefer that degradation to discarding an entire body.
             if ir.model.bodies.len() == 1 && !ir.model.pcurves.is_empty() {
@@ -156,7 +160,7 @@ fn admit(
                         }
                         return append(result, graph);
                     }
-                    Err(CodecError::InvalidInput(_)) => {}
+                    Err(CodecError::InvalidInput(_) | CodecError::Malformed(_)) => {}
                     Err(error) => return Err(error),
                 }
             }

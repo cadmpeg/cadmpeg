@@ -5245,7 +5245,7 @@ fn decode_color(value: u32, transparency: Option<f32>) -> Result<Color, CodecErr
     .ok_or_else(|| CodecError::Malformed("GUI color components must be in [0, 1]".into()))
 }
 
-fn convert_packed_alpha(value: u32, required: bool) -> u32 {
+pub(crate) fn convert_packed_alpha(value: u32, required: bool) -> u32 {
     if required {
         (value & 0xffff_ff00) | (0xff - (value & 0xff))
     } else {
