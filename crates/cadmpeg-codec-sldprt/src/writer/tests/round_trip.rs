@@ -1434,6 +1434,46 @@ fn unowned_planar_sketch_does_not_gain_a_feature() {
 }
 
 #[test]
+fn a_lane_whose_projection_holds_is_written_as_held() {
+    use cadmpeg_ir::codec::write::Encoder;
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/authored_nested_circle.sldprt"
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let lanes = |ir: &cadmpeg_ir::CadIr| {
+        crate::test_support::native::sldprt_native(ir)
+            .feature_input_lanes
+            .into_iter()
+            .map(|lane| lane.native_payload.to_vec())
+            .collect::<Vec<_>>()
+    };
+    let write = |ir: &cadmpeg_ir::CadIr| {
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap()
+    };
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    let held = write(decoded.ir());
+    assert_eq!(lanes(held.ir()), lanes(decoded.ir()));
+    assert_eq!(held.ir().model.sketches.len(), 1);
+
+    let mut document = serde_json::to_value(decoded.ir()).unwrap();
+    let origin = &mut document["model"]["sketches"][0]["placement"]["frame"]["origin"]["x"];
+    *origin = serde_json::json!(origin.as_f64().unwrap() + 1.0);
+    let edited = cadmpeg_ir::CadIr::from_json(&document.to_string()).unwrap();
+    let regenerated = write(&edited);
+    assert_ne!(lanes(regenerated.ir()), lanes(decoded.ir()));
+}
+
+#[test]
 fn solid_region_retains_multiple_shells() {
     use cadmpeg_ir::codec::write::Encoder;
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
