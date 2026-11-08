@@ -895,12 +895,6 @@ pub(super) fn write_with_limits(
                 ));
                 continue;
             }
-            if feature.needs_recompute {
-                partial = true;
-                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!("feature {} recompute state is not encoded", feature.id),
-                ));
-            }
             if matches!(feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
