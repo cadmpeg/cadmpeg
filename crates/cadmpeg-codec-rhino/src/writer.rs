@@ -1202,12 +1202,11 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         }
-        if let Some((wire, curve_id, conversion)) = wire::single_curve(&baked, archive_version)? {
+        if let Some((wire, edges)) = wire::wire_brep(&baked, archive_version)? {
             let body = &baked.model.bodies[0];
-            let edge = &baked.model.edges[0];
             let display = presentation::display(
                 ir,
-                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edges[0].edge.id.clone()),
                 None,
             );
             ctx.charge_entities(wire.record_count, "write Rhino Brep records")?;
@@ -1223,12 +1222,19 @@ fn prepare_write<'a, 'budget>(
                 )?,
                 "retain Rhino Brep records",
             )?;
-            losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-                "body {} wire ownership is written as a 3DM Brep without shell membership: region {}, shell {}",
-                body.id, baked.model.regions[0].id, baked.model.shells[0].id
-            )));
-            losses.extend(conversion);
-            if let Some(curve) = baked.model.curves.iter().find(|curve| curve.id == curve_id) {
+            if body.kind != cadmpeg_ir::topology::BodyKind::Wire {
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "body {} of kind {:?} is written as a faceless 3DM Brep, which holds a wire body",
+                    body.id, body.kind
+                )));
+            }
+            for wire::WireEdge {
+                edge,
+                curve,
+                conversion,
+            } in edges
+            {
+                losses.extend(conversion);
                 if matches!(
                     curve.geometry.solved(),
                     Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(_))
@@ -1254,8 +1260,8 @@ fn prepare_write<'a, 'budget>(
                         curve.id, edge.id
                     )));
                 }
+                written_curves.insert(curve.id.to_string());
             }
-            written_curves.insert(curve_id.to_string());
             written_bodies.insert(body.id.to_string());
             brep_count += 1;
             continue;

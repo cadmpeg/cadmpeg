@@ -165,7 +165,14 @@ fn general_and_wire_bodies_preserve_wire_geometry_style_and_placement() {
         assert_curve_style(&decoded, curve, &ir, ir.model.bodies[0].name.as_deref());
         assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
         assert_eq!(curve_position(curve, 4.0), Point3::new(14.0, 20.0, 30.0));
-        assert_grouping_loss(&losses);
+        if kind == BodyKind::Wire {
+            assert_eq!(decoded.model.bodies[0].kind, BodyKind::Wire);
+            assert!(!losses
+                .iter()
+                .any(|loss| loss.code == RhinoLossCode::WriterEntityOmitted.kind()));
+        } else {
+            assert_grouping_loss(&losses);
+        }
     }
 }
 
@@ -190,7 +197,7 @@ fn free_vertex_with_tolerance_keeps_its_point() {
 }
 
 #[test]
-fn wire_brep_retains_edge_and_endpoints_and_names_unrepresented_ownership() {
+fn wire_brep_retains_edge_endpoints_and_shell_ownership() {
     let ir = wire(BodyKind::Wire);
     let (decoded, losses) = roundtrip(&ir);
     assert_eq!(decoded.model.curves.len(), 1);
@@ -212,16 +219,22 @@ fn wire_brep_retains_edge_and_endpoints_and_names_unrepresented_ownership() {
     for point in source_positions {
         assert!(output_positions.contains(&point));
     }
-    let reduction = losses
+    let [body] = decoded.model.bodies.as_slice() else {
+        panic!("one wire body");
+    };
+    let [region] = decoded.model.regions.as_slice() else {
+        panic!("one region");
+    };
+    let [shell] = decoded.model.shells.as_slice() else {
+        panic!("one shell");
+    };
+    assert_eq!(body.kind, BodyKind::Wire);
+    assert_eq!(body.regions, [region.id.clone()]);
+    assert_eq!(region.shells, [shell.id.clone()]);
+    assert_eq!(shell.wire_edges(), [decoded.model.edges[0].id.clone()]);
+    assert!(!losses
         .iter()
-        .find(|loss| {
-            loss.code == RhinoLossCode::WriterEntityOmitted.kind()
-                && loss.message.contains("wire ownership")
-        })
-        .expect("wire reduction is reported");
-    assert!(reduction.message.contains(ir.model.bodies[0].id.as_str()));
-    assert!(reduction.message.contains(ir.model.regions[0].id.as_str()));
-    assert!(reduction.message.contains(ir.model.shells[0].id.as_str()));
+        .any(|loss| loss.code == RhinoLossCode::WriterEntityOmitted.kind()));
 }
 
 #[test]
