@@ -486,10 +486,11 @@ fn bounded_support_circle_is_written_as_its_exact_arc() {
     let [curve] = decoded.ir().model.curves.as_slice() else {
         panic!("one arc");
     };
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
-        panic!("bounded arc has an exact NURBS carrier");
+    let Some(SolvedCurveGeometry::Circle(_)) = curve.geometry.solved() else {
+        panic!("bounded arc has its exact circle carrier");
     };
-    let [start, end] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)
+    let [start, end] = curve
+        .parameter_range
         .expect("bounded arc domain")
         .endpoints();
     assert!(start.abs() < DOMAIN_TOLERANCE);
