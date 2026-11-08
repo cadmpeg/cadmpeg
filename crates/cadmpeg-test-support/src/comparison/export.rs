@@ -36,6 +36,7 @@ impl Allowances {
                 users.entry(target).or_default().insert(record.id.clone());
             }
         }
+        let regenerated = regenerated_report_records(before, export_report);
         let mut removed = stubs.clone();
         for id in dropped_report_records(before, export_report) {
             removed.insert(id);
@@ -48,10 +49,23 @@ impl Allowances {
                 }
             }
         }
+        let scope_expanded = export_report
+            .get("losses")
+            .and_then(Value::as_array)
+            .is_some_and(|losses| {
+                losses.iter().any(|loss| {
+                    let code = loss.get("code");
+                    code.and_then(|c| c.get("code")).and_then(Value::as_str)
+                        == Some("writer.scope-expanded")
+                        || code.and_then(Value::as_str) == Some("rhino/writer.scope-expanded")
+                })
+            });
         Ok(Self {
             removed,
             removed_fields: stub_fields(before, &stubs),
             absent_fields: BTreeSet::new(),
+            regenerated,
+            scope_expanded,
         })
     }
 }
@@ -146,6 +160,51 @@ fn dropped_report_records(before: &Value, export_report: &Value) -> BTreeSet<Str
         }
     }
     dropped
+}
+
+/// Records the export report marks as regenerated. Regenerated native
+/// records may have stale expected content in edit comparisons.
+fn regenerated_report_records(before: &Value, export_report: &Value) -> BTreeSet<String> {
+    let Some(namespaces) = export_report
+        .get("native_dispositions")
+        .and_then(|dispositions| dispositions.get("namespaces"))
+        .and_then(Value::as_object)
+    else {
+        return BTreeSet::new();
+    };
+    let Some(native) = before.get("native").and_then(Value::as_object) else {
+        return BTreeSet::new();
+    };
+    let mut regenerated = BTreeSet::new();
+    for (namespace, arenas) in native {
+        let Some(arenas) = arenas.as_object() else {
+            continue;
+        };
+        for (arena, rows) in arenas {
+            let Some(rows) = rows.as_array() else {
+                continue;
+            };
+            let exceptions = namespaces
+                .get(namespace)
+                .and_then(|namespaces| namespaces.get("arenas"))
+                .and_then(|arenas| arenas.get(arena))
+                .and_then(|declared| declared.get("records"))
+                .and_then(Value::as_object);
+            for row in rows {
+                let Some(id) = row.get("id").and_then(Value::as_str) else {
+                    continue;
+                };
+                if exceptions
+                    .and_then(|exceptions| exceptions.get(id))
+                    .and_then(Value::as_str)
+                    == Some("regenerated")
+                {
+                    regenerated.insert(id.to_owned());
+                }
+            }
+        }
+    }
+    regenerated
 }
 
 /// Records a record needs: a string equal to a record identity outside an

@@ -614,10 +614,12 @@ fn product_definition_keeps_its_native_uuid() {
         written.ir().model.occurrences[0].prototype,
         decoded.ir().model.occurrences[0].prototype
     );
-    assert_eq!(
-        written.ir().model.occurrences,
-        decoded.ir().model.occurrences
-    );
+    // Layer fallback 0 (not -1) resolves default-layer visibility explicitly; #209 §2.3.
+    let mut expected = decoded.ir().model.occurrences.clone();
+    if expected[0].visible.is_none() {
+        expected[0].visible = Some(true);
+    }
+    assert_eq!(written.ir().model.occurrences, expected);
 }
 
 #[test]

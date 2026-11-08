@@ -2,8 +2,9 @@
 //! Text and leader objects regenerated from current semantic annotations.
 
 use super::{
-    anonymous, anonymous_with_children, framed_object_record, integer, object_attributes_payload,
-    utf16, wire_index, CadIr, CodecError, LossNote, Map, RhinoLossCode, Value,
+    anonymous, anonymous_with_children, attribute_userdata_chunk, framed_object_record_full,
+    integer, object_attributes_payload, object_user_strings, utf16, wire_index, CadIr, CodecError,
+    LossNote, Map, RhinoLossCode, Value,
 };
 use crate::writer::WriteError;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
@@ -19,6 +20,9 @@ const DOT_CLASS: [u8; 16] = [
 ];
 const ARROW_CLASS: [u8; 16] = [
     0x1a, 0x4e, 0xd9, 0x8b, 0xe1, 0x59, 0xd4, 0x11, 0x80, 0x18, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
+const LEGACY_TEXT_CLASS: [u8; 16] = [
+    0x41, 0x55, 0xf7, 0x46, 0x6b, 0xf4, 0xbe, 0x48, 0xaa, 0x7e, 0xb3, 0x53, 0xbb, 0xe0, 0x68, 0xa7,
 ];
 const V2_LINEAR_CLASS: [u8; 16] = [
     0x0d, 0xb2, 0xe6, 0x5d, 0x6b, 0x48, 0xd4, 0x11, 0x80, 0x14, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -74,6 +78,86 @@ fn plane(position: [f64; 3], fields: Option<&Map<String, Value>>) -> Vec<u8> {
         output.extend(value.to_le_bytes());
     }
     output
+}
+
+fn legacy_text_payload(
+    annotation: &SemanticAnnotation,
+    position: [f64; 3],
+    fields: &Map<String, Value>,
+    leader: bool,
+) -> Option<Vec<u8>> {
+    let justification = fields.get("legacy_justification")?.as_i64()? as i32;
+    let style_index = fields
+        .get("legacy_style_index")
+        .and_then(Value::as_i64)
+        .unwrap_or(0) as i32;
+    let text_display_mode = fields
+        .get("legacy_text_display_mode")
+        .and_then(Value::as_i64)
+        .unwrap_or(0) as i32;
+    let text_height = fields
+        .get("legacy_text_height")
+        .and_then(Value::as_f64)
+        .filter(|v| v.is_finite())?;
+    let user_positioned = fields
+        .get("legacy_user_positioned_text")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let user_text = fields
+        .get("legacy_user_text")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let rich_text = annotation.text.join("\n");
+    let kind: i32 = if leader { 6 } else { 7 };
+
+    let mut annotation_fields = kind.to_le_bytes().to_vec();
+    annotation_fields.extend(text_display_mode.to_le_bytes());
+    annotation_fields.extend(plane(position, Some(fields)));
+
+    let points: Vec<[f64; 2]> = if leader {
+        fields
+            .get("leader_points")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|p| {
+                let a = p.as_array()?;
+                if a.len() >= 2 {
+                    Some([a[0].as_f64()?, a[1].as_f64()?])
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    annotation_fields.extend(i32::try_from(points.len()).ok()?.to_le_bytes());
+    for point in &points {
+        annotation_fields.extend(point[0].to_le_bytes());
+        annotation_fields.extend(point[1].to_le_bytes());
+    }
+    annotation_fields.extend(utf16(&rich_text).ok()?);
+    annotation_fields.extend(i32::from(user_positioned).to_le_bytes());
+    annotation_fields.extend(style_index.to_le_bytes());
+    annotation_fields.extend(text_height.to_le_bytes());
+    annotation_fields.extend(justification.to_le_bytes());
+    // minor >= 1: stored_text_scaling (1 byte bool)
+    annotation_fields.push(0);
+    // minor >= 2: user_text
+    annotation_fields.extend(utf16(user_text).ok()?);
+    // minor >= 3: text_style_index, dimension_style_index (for kind==7)
+    if kind == 7 {
+        annotation_fields.extend(style_index.to_le_bytes());
+        annotation_fields.extend((-1i32).to_le_bytes());
+    } else {
+        annotation_fields.extend((-1i32).to_le_bytes());
+        annotation_fields.extend(style_index.to_le_bytes());
+    }
+
+    let inner = anonymous(1, 3, &annotation_fields).ok()?;
+    let outer = anonymous(1, 0, &inner).ok()?;
+    Some(outer)
 }
 
 fn text(
@@ -517,7 +601,24 @@ pub(in crate::writer) fn records(
                 (DOT_CLASS, dot(annotation, position.get(), fields)?)
             }
             SemanticAnnotationKind::Text => {
-                (TEXT_CLASS, text(annotation, position.get(), fields, false)?)
+                if let Some(native_fields) = native.as_ref() {
+                    if native_fields
+                        .get("legacy_justification")
+                        .is_some_and(|v| !v.is_null())
+                    {
+                        if let Some(payload) =
+                            legacy_text_payload(annotation, position.get(), native_fields, false)
+                        {
+                            (LEGACY_TEXT_CLASS, payload)
+                        } else {
+                            (TEXT_CLASS, text(annotation, position.get(), fields, false)?)
+                        }
+                    } else {
+                        (TEXT_CLASS, text(annotation, position.get(), fields, false)?)
+                    }
+                } else {
+                    (TEXT_CLASS, text(annotation, position.get(), fields, false)?)
+                }
             }
             SemanticAnnotationKind::Leader if is_arrow => {
                 let head = fields
@@ -608,13 +709,14 @@ pub(in crate::writer) fn records(
         {
             attributes[1..17].copy_from_slice(&uuid.to_wire());
         }
-        output.push(framed_object_record(
+        output.push(framed_object_record_full(
             if is_dot { 0x2000 } else { 0x200 },
             class,
             &payload,
             (!is_dot && !is_arrow && annotation.kind != SemanticAnnotationKind::Dimension)
                 .then_some(&[][..]),
             Some(attributes),
+            attribute_userdata_chunk(&object_user_strings(ir, annotation.id.as_str(), ""))?,
         )?);
         written.insert(annotation.id.to_string());
     }

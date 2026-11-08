@@ -30,7 +30,7 @@ pub(crate) const ON_EXTRUSION: Uuid = Uuid::from_canonical([
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 /// Obsolete V5 extrusion display-mesh cache userdata class and item UUID.
-const ON_V5_EXTRUSION_DISPLAY_MESH_CACHE: Uuid = Uuid::from_canonical([
+pub(crate) const ON_V5_EXTRUSION_DISPLAY_MESH_CACHE: Uuid = Uuid::from_canonical([
     0xa8, 0x13, 0x0a, 0x3e, 0xe4, 0xf3, 0x4c, 0xb0, 0xbb, 0x8a, 0xf1, 0x0a, 0x47, 0x39, 0x12, 0xd0,
 ]);
 const UNIT_TOLERANCE: f64 = EPS_EXTRUSION_DEGENERATE;

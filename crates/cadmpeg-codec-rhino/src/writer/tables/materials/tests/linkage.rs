@@ -205,7 +205,7 @@ fn removing_the_last_current_appearance_reemits_all_simple_native_material_value
 }
 
 #[test]
-fn unsupported_absent_legacy_fields_are_not_filled_to_claim_native_w1_support() {
+fn absent_legacy_fields_are_preserved_without_filling_defaults() {
     let mut ir = CadIr::empty();
     let source = material();
     let mut fields = source.fields().expect("material fields");
@@ -217,29 +217,38 @@ fn unsupported_absent_legacy_fields_are_not_filled_to_claim_native_w1_support() 
     fields.insert("diffuse_texture_alpha_transparency".into(), Value::Null);
     let record = NativeRecord::new(source.id().try_into().expect("identity"), fields)
         .expect("legacy field states");
-    assert!(!native_complete(&record));
+    assert!(native_complete(&record));
     let id = record.id().to_owned();
     ir.native
         .namespace_mut("rhino")
         .arenas_mut()
         .insert("materials".into(), vec![record]);
-    let before = serde_json::to_value(&ir.native).expect("legacy snapshot");
-    assert!(materials(&ir)
-        .expect("unsupported legacy omission")
-        .is_empty());
+    let encoded = materials(&ir).expect("legacy-preserving encode");
+    assert_eq!(encoded.len(), 1);
+    let output = read(&encoded, false);
+    let written = output
+        .native
+        .namespace("rhino")
+        .and_then(|namespace| namespace.arenas().get("materials"))
+        .and_then(|records| records.iter().find(|record| record.id() == id))
+        .expect("written legacy material");
+    let written = written.fields().expect("written fields");
+    assert_eq!(written.get("reflection_glossiness"), Some(&Value::Null));
+    assert_eq!(written.get("refraction_glossiness"), Some(&Value::Null));
     assert_eq!(
-        native_index(&ir, &id).expect("unsupported material index"),
-        None
+        written.get("fresnel_index_of_refraction"),
+        Some(&Value::Null)
+    );
+    assert_eq!(written.get("rdk_instance_uuid"), Some(&Value::Null));
+    assert_eq!(
+        written.get("diffuse_texture_alpha_transparency"),
+        Some(&Value::Null)
     );
     let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
         .expect("dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "materials", &id),
-        NativeDisposition::Dropped
-    );
-    assert_eq!(
-        serde_json::to_value(&ir.native).expect("legacy state remains"),
-        before
+        NativeDisposition::Written
     );
 }
 

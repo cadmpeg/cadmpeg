@@ -4,6 +4,7 @@
 use super::super::super::WriteError;
 use super::{crc_chunk_with_direct, flag, integer, vector, Map, Value};
 use cadmpeg_ir::presentation::{PresentationDocument, PresentationStateKind};
+use cadmpeg_ir::report::loss::LossNote;
 
 type CameraPose = ([f64; 3], [[f64; 3]; 3]);
 
@@ -61,6 +62,145 @@ fn pose(document: Option<&PresentationDocument>) -> Result<Option<CameraPose>, W
         ],
     ];
     Ok(Some((position, axes)))
+}
+
+fn canonical_orientation(raw: [f64; 4]) -> [f64; 4] {
+    let [x, y, z, angle] = raw;
+    let norm = x.hypot(y).hypot(z);
+    if !norm.is_finite() || norm == 0.0 {
+        return raw;
+    }
+    let axis = [x / norm, y / norm, z / norm];
+    let (sin, cos) = angle.sin_cos();
+    let one = 1.0 - cos;
+    let axes = [
+        [
+            cos + axis[0] * axis[0] * one,
+            axis[1] * axis[0] * one + axis[2] * sin,
+            axis[2] * axis[0] * one - axis[1] * sin,
+        ],
+        [
+            axis[0] * axis[1] * one - axis[2] * sin,
+            cos + axis[1] * axis[1] * one,
+            axis[2] * axis[1] * one + axis[0] * sin,
+        ],
+        [
+            axis[0] * axis[2] * one + axis[1] * sin,
+            axis[1] * axis[2] * one - axis[0] * sin,
+            cos + axis[2] * axis[2] * one,
+        ],
+    ];
+    let camera_x = axes[2];
+    let camera_y = axes[1];
+    let camera_z = axes[0];
+    let matrix = [
+        [camera_x[0], camera_y[0], camera_z[0]],
+        [camera_x[1], camera_y[1], camera_z[1]],
+        [camera_x[2], camera_y[2], camera_z[2]],
+    ];
+    let trace = matrix[0][0] + matrix[1][1] + matrix[2][2];
+    let (w, recovered) = if trace > 0.0 {
+        let scale = (trace + 1.0).sqrt() * 2.0;
+        (
+            scale / 4.0,
+            [
+                (matrix[2][1] - matrix[1][2]) / scale,
+                (matrix[0][2] - matrix[2][0]) / scale,
+                (matrix[1][0] - matrix[0][1]) / scale,
+            ],
+        )
+    } else {
+        let major_axis = if matrix[0][0] > matrix[1][1] && matrix[0][0] > matrix[2][2] {
+            0
+        } else if matrix[1][1] > matrix[2][2] {
+            1
+        } else {
+            2
+        };
+        let next_axis = (major_axis + 1) % 3;
+        let last_axis = (major_axis + 2) % 3;
+        let scale = (1.0 + matrix[major_axis][major_axis]
+            - matrix[next_axis][next_axis]
+            - matrix[last_axis][last_axis])
+            .sqrt()
+            * 2.0;
+        let mut recovered = [0.0; 3];
+        recovered[major_axis] = scale / 4.0;
+        recovered[next_axis] =
+            (matrix[next_axis][major_axis] + matrix[major_axis][next_axis]) / scale;
+        recovered[last_axis] =
+            (matrix[last_axis][major_axis] + matrix[major_axis][last_axis]) / scale;
+        (
+            (matrix[last_axis][next_axis] - matrix[next_axis][last_axis]) / scale,
+            recovered,
+        )
+    };
+    let norm = recovered[0]
+        .mul_add(recovered[0], recovered[1].mul_add(recovered[1], recovered[2] * recovered[2]))
+        .sqrt();
+    if norm <= f64::EPSILON {
+        return [0.0, 0.0, 1.0, 0.0];
+    }
+    let angle = 2.0 * norm.atan2(w);
+    [
+        recovered[0] / norm,
+        recovered[1] / norm,
+        recovered[2] / norm,
+        angle,
+    ]
+}
+
+pub(super) fn orientation_userdata(
+    document: Option<&PresentationDocument>,
+) -> Result<Option<Vec<u8>>, WriteError> {
+    let Some(document) = document else {
+        return Ok(None);
+    };
+    let camera = document
+        .states()
+        .iter()
+        .find_map(|state| match &state.kind {
+            PresentationStateKind::Camera(camera) => Some(camera),
+            PresentationStateKind::Native(_) => None,
+        });
+    let Some(orientation) = camera.and_then(|camera| camera.orientation) else {
+        return Ok(None);
+    };
+    let raw = orientation.get();
+    if canonical_orientation(raw) == raw {
+        return Ok(None);
+    }
+    let [x, y, z, angle] = raw;
+    let text = format!("{x:e},{y:e},{z:e},{angle:e}");
+    let strings = [("cadmpeg:camera-orientation".to_owned(), text)];
+    let userdata = super::super::super::user_string_chunk(&strings)
+        .map_err(|error| WriteError::Fail(error))?;
+    let mut body = userdata;
+    body.extend(super::super::super::short_chunk(0x8002_7fff, 0));
+    Ok(Some(super::super::super::crc_chunk_with_direct(
+        0x2000_8d3b,
+        &body,
+        &[],
+    )?))
+}
+
+pub(super) fn reduced_state_order(document: Option<&PresentationDocument>) -> Option<LossNote> {
+    let document = document?;
+    let shifted = document
+        .states()
+        .iter()
+        .enumerate()
+        .any(|(index, state)| u64::from(state.order) != u64::from(index as u32));
+    if shifted {
+        Some(
+            crate::loss::RhinoLossCode::WriterPresentationStateOrderReduced.note(format!(
+                "camera {} presentation state order is stored at its sequence position",
+                document.id
+            )),
+        )
+    } else {
+        None
+    }
 }
 
 pub(super) fn encode(

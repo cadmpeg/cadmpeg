@@ -237,6 +237,8 @@ fn shell_can_lose_only_an_allowed_face_entry() {
         removed: ["f2".to_owned()].into(),
         removed_fields: BTreeSet::new(),
         absent_fields: BTreeSet::new(),
+        regenerated: BTreeSet::new(),
+        scope_expanded: false,
     };
     assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
 }
@@ -301,6 +303,8 @@ fn removal_in_a_nested_list_preserves_the_holder() {
         removed: ["f".to_owned()].into(),
         removed_fields: BTreeSet::new(),
         absent_fields: BTreeSet::new(),
+        regenerated: BTreeSet::new(),
+        scope_expanded: false,
     };
     assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
     let mut dropped_holder = after;
