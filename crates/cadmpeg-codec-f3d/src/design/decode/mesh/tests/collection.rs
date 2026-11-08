@@ -321,7 +321,7 @@ fn distinct_guid_records_for_one_container_do_not_join() {
     let entry = first[0].bodies()[0].entry.name().to_owned();
     let uuid = first[0].bodies()[0].guid.value().to_owned();
     assert_eq!(
-        resolve_mesh_bodies(&[first.clone()], &entry, &uuid),
+        resolve_mesh_bodies(std::slice::from_ref(&first), &entry, &uuid),
         Some(vec![(0, 0, 0)])
     );
     assert_eq!(resolve_mesh_bodies(&[first, second], &entry, &uuid), None);
