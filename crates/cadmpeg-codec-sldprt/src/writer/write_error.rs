@@ -41,6 +41,9 @@ impl From<CodecError> for WriteError {
     fn from(error: CodecError) -> Self {
         match error {
             CodecError::Io(error) => Self::Io(error),
+            // Writer-internal content the target cannot express declines to
+            // synthesis (#239 §5.0; former UnsupportedContent).
+            CodecError::InvalidInput(reason) => Self::Decline(reason),
             error => Self::Fatal(error),
         }
     }
