@@ -307,7 +307,11 @@ pub(super) fn pair(
                 }
             }
             let mut changed = false;
+            let mut contested = None;
             for (right, claimants) in claims {
+                if let [first, _, ..] = claimants.as_slice() {
+                    contested.get_or_insert((*first, right));
+                }
                 if let [left] = claimants.as_slice() {
                     if !references_agree_with_pairs(
                         &before.records[*left].value,
@@ -332,11 +336,13 @@ pub(super) fn pair(
                 }
             }
             // Twins, such as identical bodies, leave every record with
-            // several candidates. Pair the first such record with its first
-            // candidate; the references of that pair then single out the
-            // partners of its twin's other records.
+            // several candidates, or several records with one candidate.
+            // Pair the first such record, in the source order that puts
+            // required records first, with its first candidate; the
+            // references of that pair then single out the partners of its
+            // twin's other records.
             if !changed {
-                let Some((left, right)) = ambiguous else {
+                let Some((left, right)) = contested.or(ambiguous) else {
                     break;
                 };
                 pairs.insert(left, right);
