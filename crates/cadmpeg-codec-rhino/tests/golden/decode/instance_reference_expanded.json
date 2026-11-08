@@ -302,7 +302,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-582: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
