@@ -67,15 +67,14 @@ pub(super) struct ProductPrereqs {
     pub(super) design_body_members: Vec<DesignBodyMember>,
     /// Retained-byte allowance for ASM history binding, taken before phase 1.
     pub(super) history_retained_allowance: u64,
-    /// Container reference table. A parse failure that does not refuse the
-    /// document stays here for the product report.
-    pub(super) xref: Result<Option<XrefTable>, CodecError>,
+    /// Container reference table, when its entry decodes.
+    pub(super) xref: Option<XrefTable>,
 }
 
 impl ProductPrereqs {
     /// Container reference table, when it was decoded.
     pub(super) fn xref_table(&self) -> Option<&XrefTable> {
-        self.xref.as_ref().ok().and_then(Option::as_ref)
+        self.xref.as_ref()
     }
 
     /// Authored feature timelines, when they were decoded.
@@ -92,8 +91,8 @@ impl ProductPrereqs {
     }
 
     /// Move every Design record into native storage and return the container
-    /// reference outcome.
-    pub(super) fn store(self, native: &mut F3dNative) -> Result<Option<XrefTable>, CodecError> {
+    /// reference table.
+    pub(super) fn store(self, native: &mut F3dNative) -> Option<XrefTable> {
         let Self {
             modeling_length_unit: _,
             construction_recipes,
@@ -266,6 +265,17 @@ pub(super) fn decode(
     } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     crate::design::decode::body::decode_body_members(ctx, scan, &mut record_parts)?;
     let mut bulk_record_parts = crate::design::decode::meta::admit_damaged_bulk_records(ctx, scan)?;
+    let mut xref_parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+    let xref = crate::xref::decode_parts(ctx, &mut xref_parts, scan, &design_parameter_scopes)?;
+    let (_, mut xref_native, xref_fidelity, xref_losses) = xref_parts.into_parts();
+    bulk_record_parts.fidelity.append(xref_fidelity)?;
+    bulk_record_parts.losses.extend(xref_losses);
+    bulk_record_parts.stubs.extend(
+        xref_native
+            .namespace_mut("f3d")
+            .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?,
+    );
     let (_, mut scope_native, scope_fidelity, scope_losses) = scope_parts.into_parts();
     bulk_record_parts.fidelity.append(scope_fidelity)?;
     bulk_record_parts.losses.extend(scope_losses);
@@ -285,12 +295,6 @@ pub(super) fn decode(
             .namespace_mut("f3d")
             .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?,
     );
-    let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-            return Err(error)
-        }
-        other => other,
-    };
     Ok(ProductPrereqs {
         modeling_length_unit,
         construction_recipes,

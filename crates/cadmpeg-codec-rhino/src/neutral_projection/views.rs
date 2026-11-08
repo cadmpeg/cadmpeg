@@ -60,6 +60,16 @@ fn orientation(viewport: &CameraProjection) -> Option<NonzeroVector<4>> {
     {
         return None;
     }
+    frame_orientation(camera_x, camera_y, camera_z)
+}
+
+/// The axis-angle orientation of an orthonormal camera frame: a unit axis and
+/// an angle, with the z axis for the identity rotation.
+pub(crate) fn frame_orientation(
+    camera_x: [f64; 3],
+    camera_y: [f64; 3],
+    camera_z: [f64; 3],
+) -> Option<NonzeroVector<4>> {
     let matrix = [
         [camera_x[0], camera_y[0], camera_z[0]],
         [camera_x[1], camera_y[1], camera_z[1]],
@@ -156,11 +166,8 @@ pub(super) fn project(
         });
         if let Some(viewport) = source.camera {
             let camera =
-                FiniteVector::new(viewport.location.map(cadmpeg_ir::scalar::FiniteReal::get)).zip(
-                    source
-                        .camera_orientation_override
-                        .map_or_else(|| orientation(&viewport), |value| NonzeroVector::new(value)),
-                );
+                FiniteVector::new(viewport.location.map(cadmpeg_ir::scalar::FiniteReal::get))
+                    .zip(orientation(&viewport));
             if let Some((position, orientation)) = camera {
                 let camera_id = id("camera", ordinal)?;
                 let mut document = PresentationDocument::new(camera_id.clone());

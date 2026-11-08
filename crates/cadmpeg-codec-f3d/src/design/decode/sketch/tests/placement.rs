@@ -1244,7 +1244,6 @@ fn member_run_test_scope(
             )
             .unwrap(),
             payload: DesignFeatureKind::Skizze.try_into().unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: byte_offset + 200,
         }

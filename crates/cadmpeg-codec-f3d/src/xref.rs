@@ -20,6 +20,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
@@ -60,8 +61,9 @@ pub(crate) struct XrefTable {
     pub(crate) designs: Vec<XrefDesign>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
     pub(crate) references: Vec<XrefReference>,
-    /// Type-admitted placements that do not close under their generation grammar.
-    pub(crate) placement_failures: Vec<OccurrencePlacementFailure>,
+    /// Type-admitted placement records that do not close under their
+    /// generation grammar, with the Design `BulkStream` that holds each.
+    pub(crate) unreadable_placements: Vec<(String, UnreadablePlacement)>,
     pub(crate) unbound_legacy_placements: Vec<OccurrencePlacementFailure>,
     /// Placements named by two or more component-path carriers, as
     /// `(placement record, carrier records)`; they keep their placement matrix.
@@ -283,26 +285,117 @@ fn reference_data(
     parse(ctx, bytes).map(Some)
 }
 
-/// Parse the top-level `RedirectionsStream.dat` table, if present.
+/// Parse the top-level `RedirectionsStream.dat` table, if present, for an
+/// F3Z member's reference metadata.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Option<XrefTable>, CodecError> {
-    decode_with_scopes(ctx, scan, &[])
-}
-
-/// Parse the external-reference table and bind its occurrences to exact
-/// `Component Insert` constructions already decoded from the Design streams.
-pub(crate) fn decode_with_scopes(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    scopes: &[DesignParameterScope],
-) -> Result<Option<XrefTable>, CodecError> {
     let Some(mut table) = reference_data(ctx, scan)? else {
         return Ok(None);
     };
-    bind_occurrences(scan, &mut table, scopes)?;
+    bind_occurrences(scan, &mut table, &[])?;
     Ok(Some(table))
+}
+
+/// Decode the external-reference table with each source entry as a part.
+/// `ComponentReferenceData.json` and `RedirectionsStream.dat` are `zip.entry`
+/// parts; the table needs the second. Each placement record that does not
+/// close its generation grammar is given up as its `f3d.bulk_record` part.
+pub(crate) fn decode_parts(
+    ctx: &DecodeContext<'_>,
+    parts: &mut PartOutput,
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+) -> Result<Option<XrefTable>, CodecError> {
+    if let Some(view) = scan.entry_view(COMPONENT_REFERENCE_ENTRY) {
+        entry_part(ctx, parts, view, COMPONENT_REFERENCE_ENTRY, || {
+            parse_component_reference_data(ctx, view.window()).map(drop)
+        })?;
+    }
+    let Some(view) = scan.entry_view(REDIRECTIONS_ENTRY) else {
+        return Ok(None);
+    };
+    let Some(table) = entry_part(ctx, parts, view, REDIRECTIONS_ENTRY, || {
+        let mut table = parse(ctx, view.window())?;
+        bind_occurrences(scan, &mut table, scopes)?;
+        Ok(table)
+    })?
+    else {
+        return Ok(None);
+    };
+    for (stream, placement) in &table.unreadable_placements {
+        let target = table
+            .references
+            .iter()
+            .find(|reference| {
+                placement
+                    .link_names
+                    .iter()
+                    .any(|role| role == reference.neutron_role.as_str())
+            })
+            .map_or("an unresolved target", |reference| {
+                reference.relative_path.as_str()
+            });
+        give_up_placement(ctx, parts, scan, stream, target, placement)?;
+    }
+    Ok(Some(table))
+}
+
+fn entry_part<T>(
+    ctx: &DecodeContext<'_>,
+    parts: &mut PartOutput,
+    view: View<'_>,
+    name: &str,
+    decode: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    let mut spec = PartSpec::new("zip.entry").holding([cadmpeg_ir::document::ArenaClass::Model]);
+    if view.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(name.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    ctx.decode_part(parts, view, spec, |_| decode())
+}
+
+fn give_up_placement(
+    ctx: &DecodeContext<'_>,
+    parts: &mut PartOutput,
+    scan: &ContainerScan,
+    stream: &str,
+    target: &str,
+    placement: &UnreadablePlacement,
+) -> Result<(), CodecError> {
+    let source = scan
+        .entry_view(stream)
+        .ok_or_else(|| CodecError::malformed("occurrence placement has no source view"))?;
+    let begin = source
+        .start()
+        .checked_add(placement.start)
+        .ok_or_else(|| CodecError::malformed("occurrence placement start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(placement.end)
+        .ok_or_else(|| CodecError::malformed("occurrence placement end overflows"))?;
+    let extent = source
+        .child(begin, end)
+        .ok_or_else(|| CodecError::malformed("occurrence placement exceeds its stream"))?;
+    let mut spec = PartSpec::new("f3d.bulk_record").holding([
+        cadmpeg_ir::document::ArenaClass::Model,
+        cadmpeg_ir::document::ArenaClass::Design,
+    ]);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    ctx.decode_part(parts, extent, spec, |_| {
+        Err::<(), CodecError>(CodecError::malformed(format_args!(
+            "F3D occurrence placement record {:?} of external occurrence {target} for roles {:?} does not close under its generation grammar",
+            placement.carrier_record_index, placement.link_names
+        )))
+    })?;
+    Ok(())
 }
 
 /// The `u32` ordinal for an enumerated position, or a malformed-input error.
@@ -800,6 +893,10 @@ fn bind_occurrences(
             .filter_map(|body| owned_component_path_pose(body, serializer_magic))
             .collect::<Vec<_>>();
 
+        let failures = failures
+            .into_iter()
+            .map(|failure| (entry.name.clone(), failure))
+            .collect::<Vec<_>>();
         streams.push((
             placements,
             failures,
@@ -808,7 +905,7 @@ fn bind_occurrences(
         ));
     }
     let mut expanded = Vec::new();
-    let placement_failures = streams
+    let unreadable_placements = streams
         .iter()
         .flat_map(|(_, failures, _, _)| failures.iter().cloned())
         .collect();
@@ -941,7 +1038,7 @@ fn bind_occurrences(
         }
     }
     table.references = expanded;
-    table.placement_failures = placement_failures;
+    table.unreadable_placements = unreadable_placements;
     table.unbound_legacy_placements = unbound_legacy_placements;
     table.placement_overrides = placement_overrides;
     table.ambiguous_current_poses = ambiguous_current_poses;
@@ -1085,56 +1182,40 @@ fn typed_occurrence_placement_records(
 }
 
 /// Return the `BulkStream` record extents registered to one type-table
-/// identity, checking each primary header against its registration.
+/// identity, selected from the resolved primary frames.
 fn typed_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     module: &str,
     type_guid: &str,
 ) -> Result<Vec<IndexedRecord>, CodecError> {
-    let mut placement_entities = std::collections::HashMap::new();
-    for (ordinal, design_type) in meta.types.iter().enumerate().filter(|(_, design_type)| {
-        design_type.module == module
-            && design_type
-                .type_guid
-                .as_str()
-                .eq_ignore_ascii_case(type_guid)
-    }) {
-        for &entity in design_type.entities.values() {
-            placement_entities.insert(entity, ordinal);
-        }
-    }
-    let mut records = Vec::new();
-    for frame in crate::metastream::primary_record_frames(meta, bytes.len())? {
-        let Some(&ordinal) = placement_entities.get(&frame.entity_id) else {
-            continue;
-        };
-        let header = bytes.get(frame.start..frame.member_end).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D {module} record index is outside its BulkStream"
-            ))
-        })?;
-        let class_matches = lp_ascii_strict(header, 0, 3..=3)
-            .and_then(|(tag, _)| tag.parse::<usize>().ok())
-            .and_then(|tag| tag.checked_sub(256))
-            == Some(ordinal);
-        if !class_matches || View::u64_le_at(header, 7) != Some(frame.entity_id) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D {module} record header disagrees with its registered primary index"
-            )));
-        }
-        records.push(IndexedRecord {
-            offset: frame.start,
-            end: frame.member_end,
-        });
-    }
-    Ok(records)
+    Ok(
+        crate::design::decode::meta::design_primary_frames(bytes, meta)?
+            .into_iter()
+            .filter(|frame| {
+                frame.design_type.module == module
+                    && frame
+                        .design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(type_guid)
+            })
+            .map(|frame| IndexedRecord {
+                offset: frame.start,
+                end: frame.member_end,
+                record_end: frame.end,
+            })
+            .collect(),
+    )
 }
 
 #[derive(Debug)]
 struct IndexedRecord {
     offset: usize,
+    /// End of the primary class-member sequence.
     end: usize,
+    /// End of the complete primary record.
+    record_end: usize,
 }
 
 /// The transforms of every placement whose target path carries `role`, in
@@ -1171,11 +1252,13 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
         }
         if let Some(previous) = records.last_mut() {
             previous.end = at;
+            previous.record_end = at;
         }
 
         records.push(IndexedRecord {
             offset: at,
             end: bytes.len(),
+            record_end: bytes.len(),
         });
     }
     records
@@ -1196,6 +1279,18 @@ struct OccurrencePlacement {
     link_names: Vec<String>,
     /// `None` is the stored identity form, which carries no matrix.
     transform: Option<[[f64; 4]; 4]>,
+}
+
+/// A type-admitted occurrence-placement record whose target path reads but
+/// whose generation-specific payload does not close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnreadablePlacement {
+    pub(crate) carrier_record_index: Option<u64>,
+    /// Link names recovered from the valid target-path prefix.
+    pub(crate) link_names: Vec<String>,
+    /// The primary record extent in its `BulkStream`.
+    start: usize,
+    end: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1237,7 +1332,7 @@ fn occurrence_placements_with_failures(
     records: &[IndexedRecord],
     serializer_magic: Option<u32>,
     typed_offsets: Option<&HashSet<usize>>,
-) -> Result<(Vec<OccurrencePlacement>, Vec<OccurrencePlacementFailure>), CodecError> {
+) -> Result<(Vec<OccurrencePlacement>, Vec<UnreadablePlacement>), CodecError> {
     let mut placements = Vec::new();
     let mut failures = Vec::new();
     for record in records
@@ -1247,10 +1342,7 @@ fn occurrence_placements_with_failures(
         let Some(body) = bytes.get(record.offset..record.end) else {
             continue;
         };
-        if lp_ascii_strict(body, root_instance::INSTANCE_NAME_LENGTH, 0..=256)
-            .is_some_and(|(name, _)| name.as_bytes() == ROOT_INSTANCE_NAME)
-            || occurrence_path_elements(body).is_some_and(|(names, _, _)| names.is_empty())
-        {
+        if places_local_occurrence(body) {
             continue;
         }
         if let Some(placement) = occurrence_placement(body, serializer_magic)? {
@@ -1260,13 +1352,25 @@ fn occurrence_placements_with_failures(
                 .map(|(names, _)| names)
                 .or_else(|| legacy_occurrence_role(body).map(|role| vec![role.to_string()]))
                 .unwrap_or_default();
-            failures.push(OccurrencePlacementFailure {
+            failures.push(UnreadablePlacement {
                 carrier_record_index: View::u64_le_at(body, 7),
                 link_names,
+                start: record.offset,
+                end: record.record_end,
             });
         }
     }
     Ok((placements, failures))
+}
+
+/// Whether a typed occurrence-placement record body places a local
+/// occurrence: a `rootInstance` record, or one whose target path has no
+/// cross-document element. The external-reference table reads every other
+/// typed placement record.
+pub(crate) fn places_local_occurrence(body: &[u8]) -> bool {
+    lp_ascii_strict(body, root_instance::INSTANCE_NAME_LENGTH, 0..=256)
+        .is_some_and(|(name, _)| name.as_bytes() == ROOT_INSTANCE_NAME)
+        || occurrence_path_elements(body).is_some_and(|(names, _, _)| names.is_empty())
 }
 
 /// Parse one record body, header included, requiring the member sequence to end

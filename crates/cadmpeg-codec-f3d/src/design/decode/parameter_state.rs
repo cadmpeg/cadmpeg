@@ -99,8 +99,8 @@ fn supported_frames<'a>(
     source: View<'_>,
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<Option<DesignPrimaryFrame<'a>>>, CodecError> {
-    let primary = crate::metastream::primary_record_frames(meta, source.window().len())?;
-    let (resolved, _) = super::meta::partition_primary_frames(source.window(), meta)?;
+    let primary = crate::metastream::live_primary_record_frames(meta, source.window().len());
+    let resolved = super::meta::design_primary_frames(source.window(), meta)?;
     let mut frames = ctx.alloc_filled(primary.len(), None, "parameter state source frames")?;
     for (slot, physical) in frames.iter_mut().zip(primary) {
         if let Some(frame) = resolved
@@ -549,8 +549,8 @@ pub(crate) fn link_parameters(
         let source = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("parameter tail has no source View"))?;
-        let frames = supported_frames(ctx, source, &meta)?;
-        let primary = crate::metastream::primary_record_frames(&meta, source.window().len())?;
+        let frames = selected_frames(ctx, source, &meta)?;
+        let primary = crate::metastream::live_primary_record_frames(&meta, source.window().len());
         for parameter in parameters.iter_mut() {
             let Some(offset) = parameter.byte_offset() else {
                 continue;

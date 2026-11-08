@@ -165,7 +165,10 @@ fn general_and_wire_bodies_preserve_wire_geometry_style_and_placement() {
         assert_curve_style(&decoded, curve, &ir, ir.model.bodies[0].name.as_deref());
         assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
         assert_eq!(curve_position(curve, 4.0), Point3::new(14.0, 20.0, 30.0));
-        assert_grouping_loss(&losses);
+        assert_eq!(decoded.model.bodies[0].kind, BodyKind::Wire);
+        if kind == BodyKind::General {
+            assert_grouping_loss(&losses);
+        }
     }
 }
 
@@ -190,7 +193,7 @@ fn free_vertex_with_tolerance_keeps_its_point() {
 }
 
 #[test]
-fn wire_brep_retains_edge_and_endpoints_and_names_unrepresented_ownership() {
+fn wire_brep_retains_edge_endpoints_and_shell_ownership() {
     let ir = wire(BodyKind::Wire);
     let (decoded, losses) = roundtrip(&ir);
     assert_eq!(decoded.model.curves.len(), 1);
@@ -212,16 +215,20 @@ fn wire_brep_retains_edge_and_endpoints_and_names_unrepresented_ownership() {
     for point in source_positions {
         assert!(output_positions.contains(&point));
     }
-    let reduction = losses
+    let ([body], [region], [shell]) = (
+        decoded.model.bodies.as_slice(),
+        decoded.model.regions.as_slice(),
+        decoded.model.shells.as_slice(),
+    ) else {
+        panic!("one wire body, region and shell");
+    };
+    assert_eq!(body.kind, BodyKind::Wire);
+    assert_eq!(body.regions, std::slice::from_ref(&region.id));
+    assert_eq!(region.shells, std::slice::from_ref(&shell.id));
+    assert_eq!(shell.wire_edges(), [decoded.model.edges[0].id.clone()]);
+    assert!(!losses
         .iter()
-        .find(|loss| {
-            loss.code == RhinoLossCode::WriterEntityOmitted.kind()
-                && loss.message.contains("wire ownership")
-        })
-        .expect("wire reduction is reported");
-    assert!(reduction.message.contains(ir.model.bodies[0].id.as_str()));
-    assert!(reduction.message.contains(ir.model.regions[0].id.as_str()));
-    assert!(reduction.message.contains(ir.model.shells[0].id.as_str()));
+        .any(|loss| loss.code == RhinoLossCode::WriterEntityOmitted.kind()));
 }
 
 #[test]
@@ -454,7 +461,7 @@ fn single_free_vertex_uses_its_appearance_before_the_body_color() {
 
 #[test]
 fn single_free_point_keeps_distinct_body_and_point_colors() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, View};
     let source = RhinoCodec
         .decode(
             &mut Cursor::new(include_bytes!(
@@ -476,28 +483,41 @@ fn single_free_point_keeps_distinct_body_and_point_colors() {
         .expect("decode body color");
     let stored_color = cadmpeg_ir::topology::Color::new(26.0 / 255.0, 0.0, 0.0, 1.0).unwrap();
     assert_eq!(decoded.ir().model.bodies[0].color, Some(stored_color));
-    // A single free point is now written as a point object that keeps its
-    // binding; the distinct body color is preserved by its user string
-    // (#235, #209 §5.1).
-    assert_eq!(
-        decoded.ir().model.appearance_bindings[0].id.as_str(),
-        ir.model.appearance_bindings[0].id.as_str()
-    );
-    assert!(report.losses.iter().all(|loss| {
-        loss.code != RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
+            && loss
+                .message
+                .contains(ir.model.appearance_bindings[0].id.as_str())
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterPointCloudIdentityReduced.kind()
+            && loss.message.contains(ir.model.vertices[0].id.as_str())
+            && loss.message.contains(ir.model.points[0].id.as_str())
     }));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::desktop();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let scan = crate::container::scan(&ctx, &bytes).expect("scan archive");
-    assert!(
-        scan.objects
-            .iter()
-            .filter_map(|object| object.framed())
-            .all(|object| object.class_uuid
-                != crate::wire::Uuid::from_wire(super::super::POINT_CLOUD_CLASS)),
-        "single point is not a point cloud"
-    );
+    let cloud = scan
+        .objects
+        .iter()
+        .filter_map(|object| object.framed())
+        .find(|object| {
+            object.class_uuid == crate::wire::Uuid::from_wire(super::super::POINT_CLOUD_CLASS)
+        })
+        .expect("point cloud");
+    let mut view = View::over_retained(&bytes)
+        .child(cloud.class_data_range.start, cloud.class_data_range.end)
+        .expect("cloud payload");
+    assert_eq!(view.req_u8().unwrap(), 0x11);
+    assert_eq!(view.req_i32_le().unwrap(), 1);
+    for _ in 0..(3 + 16 + 6) {
+        view.req_f64_le().unwrap();
+    }
+    assert_eq!(view.req_i32_le().unwrap(), 0);
+    assert_eq!(view.req_i32_le().unwrap(), 0);
+    assert_eq!(view.req_i32_le().unwrap(), 1);
+    assert_eq!(view.req_take(4).unwrap(), &[0, 0, 0, 0]);
 }
 
 #[test]
