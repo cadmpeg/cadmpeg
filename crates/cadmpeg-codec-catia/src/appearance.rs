@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, FaceId};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 
@@ -137,8 +137,10 @@ pub(crate) fn transfer(
         Some(bytes) => standard_face_colors(ctx, bytes)?,
         None => None,
     };
-    let positional_colors = positional_colors.filter(|colors| colors.len() == ir.model.faces.len());
-    if let Some(colors) = positional_colors {
+    let positional_bindings = positional_colors
+        .filter(|colors| colors.len() == ir.model.faces.len())
+        .and_then(|colors| Some((standard_faces_in_row_order(ir)?, colors)));
+    if let Some((faces, colors)) = positional_bindings {
         let compatible = match all_faces.as_slice() {
             [] => body.len() > 1 && colors.as_slice() == body.as_slice(),
             [base] => {
@@ -150,7 +152,6 @@ pub(crate) fn transfer(
             }
             _ => false,
         };
-        let faces = copy_face_ids(ir);
         for (index, (face, rgba)) in faces.into_iter().zip(colors).enumerate() {
             let appearance = insert_appearance(ctx, ir, rgba)?;
             insert_binding(ctx, ir, &appearance, AppearanceTarget::Face(face), index)?;
@@ -200,7 +201,25 @@ pub(crate) fn transfer(
     Ok(result)
 }
 
-fn copy_face_ids(ir: &CadIr) -> Vec<cadmpeg_ir::ids::FaceId> {
+fn standard_faces_in_row_order(ir: &CadIr) -> Option<Vec<FaceId>> {
+    let mut faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| {
+            let row = face.id.as_str().strip_prefix("catia:standard:face#")?;
+            Some((row.parse::<usize>().ok()?, &face.id))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    faces.sort_unstable_by_key(|(row, _)| *row);
+    faces
+        .into_iter()
+        .enumerate()
+        .map(|(expected, (row, id))| (row == expected).then(|| id.clone()))
+        .collect()
+}
+
+fn copy_face_ids(ir: &CadIr) -> Vec<FaceId> {
     let mut faces = Vec::new();
     for face in &ir.model.faces {
         let id = face.id.clone();
@@ -404,8 +423,7 @@ mod tests {
         });
         for index in 0..face_count {
             ir.model.faces.push(Face {
-                id: FaceId::mint(format!("catia:test:face#face-{index}"))
-                    .expect("identity grammar"),
+                id: FaceId::mint(format!("catia:standard:face#{index}")).expect("identity grammar"),
                 shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
                 surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                     .expect("identity grammar"),
@@ -816,6 +834,36 @@ mod tests {
                 matches!(binding.target, AppearanceTarget::Face(_))
                     && binding.appearance.as_str().contains("d2d2ffff")
             }));
+        }
+    }
+
+    #[test]
+    fn positional_colors_follow_fbb_rows_after_face_arena_sorting() {
+        let mut ir = model(12);
+        ir.model.faces.sort_by(|a, b| a.id.cmp(&b.id));
+        let brep = (0..12)
+            .flat_map(|row| [0xb0, 4, 4, 0xff, 0xff, 0, 0, row])
+            .collect::<Vec<_>>();
+        let result = crate::test_support::with_service_context(|ctx| {
+            transfer(
+                ctx,
+                &mut ir,
+                &CatiaNative::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+                Some(&brep),
+            )
+        })
+        .expect("transfer the appearance");
+        assert_eq!(result.emitted_bindings, 12);
+        for (row, binding) in ir.model.appearance_bindings.iter().enumerate() {
+            let AppearanceTarget::Face(id) = &binding.target else {
+                panic!("FBB row binds to a standard face");
+            };
+            assert_eq!(id.as_str(), format!("catia:standard:face#{row}"));
+            assert!(binding
+                .appearance
+                .as_str()
+                .ends_with(&format!("{row:02x}0000ff")));
         }
     }
 
