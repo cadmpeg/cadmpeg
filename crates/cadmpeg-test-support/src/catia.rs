@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generated native records for two planar faces with one shared edge.
 
-/// Build a nested CATPart with two planar faces and one source-shared edge.
+/// Build a nested `CATPart` with two planar faces and one source-shared edge.
 /// The roster control and second loop tail allow targeted rejection tests.
 #[must_use]
 pub fn joined_planar_sheet(roster_control: u8, second_loop_tail: u8) -> Vec<u8> {

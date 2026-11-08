@@ -258,20 +258,29 @@ pub(super) fn a5_pcurve_stream_with_support_and_uv(
     u: [f64; 2],
     v: [f64; 2],
 ) -> Vec<u8> {
+    a5_pcurve_stream_with_jets(support_id, [u, v], [[1.0; 2], [0.0; 2]], [[0.0; 2]; 2])
+}
+
+pub(super) fn a5_pcurve_stream_with_jets(
+    support_id: u32,
+    positions: [[f64; 2]; 2],
+    first: [[f64; 2]; 2],
+    second: [[f64; 2]; 2],
+) -> Vec<u8> {
     let mut payload = compact_uint_bytes(support_id);
     payload.extend_from_slice(&[21, 9, 0x08, 9]);
     for value in [0.0f64, 1.0] {
         payload.extend_from_slice(&le_f64(value));
     }
     payload.extend_from_slice(&[9, 2]);
-    for values in [u, v, [1.0, 1.0], [0.0, 0.0]] {
+    for values in positions.into_iter().chain(first) {
         for value in values {
             payload.extend_from_slice(&le_f64(value));
         }
     }
     payload.push(0x05);
-    for _ in 0..4 {
-        payload.extend_from_slice(&le_f64(0.0));
+    for value in second.into_iter().flatten() {
+        payload.extend_from_slice(&le_f64(value));
     }
     payload.extend_from_slice(&le_f64(0.0));
     payload.extend_from_slice(&le_f64(1.0));
