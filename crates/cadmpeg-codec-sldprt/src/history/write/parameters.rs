@@ -58,15 +58,19 @@ pub(crate) fn is_pmi_parameter(
     parameter.native_ref.as_deref().is_some_and(|id| {
         native.is_some_and(|native| {
             native.pmi_dimensions.iter().any(|record| record.id == id)
-                || (parameter.pmi.is_some()
-                    && native
-                        .feature_histories
-                        .iter()
-                        .flat_map(|history| &history.features)
-                        .any(|feature| {
-                            feature.id == id
-                                && !feature.parameters.contains_key(parameter.name.as_str())
-                        }))
+                || native
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .any(|feature| {
+                        feature.id == id
+                            && !feature.parameters.contains_key(parameter.name.as_str())
+                            && (parameter.pmi.is_some()
+                                || native.pmi_dimensions.iter().any(|record| {
+                                    record.cad_text.split_once('@')
+                                        == Some((parameter.name.as_str(), feature.name.as_str()))
+                                }))
+                    })
         })
     })
 }

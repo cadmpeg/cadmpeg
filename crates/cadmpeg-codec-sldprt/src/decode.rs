@@ -402,10 +402,17 @@ fn decode_result(
     retention.apply(&mut source_fidelity)?;
     // Layout oracles describe the delivered neutral state, including an
     // explicit Container request and derived configuration snapshots.
-    let complete = !body
+    let give_up = body
         .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "record.unreadable");
+        .iter_mut()
+        .find(|loss| loss.code.local_code() == "record.unreadable");
+    let complete = give_up.is_none();
+    if let Some(loss) = give_up {
+        if !loss.dropped.iter().any(|id| id == DECODE_BASELINES_ID) {
+            loss.dropped.push(DECODE_BASELINES_ID.to_owned());
+            loss.dropped.sort();
+        }
+    }
     stamp_local_digests(ctx, &mut ir, complete)?;
     Ok(Decoded {
         ir,
@@ -5540,6 +5547,7 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 /// The document metadata aggregate the section attribute scanners feed. A
 /// truncated section voids its agreement, so its give-up names it (#215 §4.5).
 const DOCUMENT_METADATA_ID: &str = "sldprt:metadata:document#0";
+const DECODE_BASELINES_ID: &str = "sldprt:metadata:decode-baselines#0";
 
 fn give_up_truncated_blocks(
     ctx: &DecodeContext<'_>,
