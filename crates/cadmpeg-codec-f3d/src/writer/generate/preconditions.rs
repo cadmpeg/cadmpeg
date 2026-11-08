@@ -1257,9 +1257,17 @@ pub(super) fn validate_source_less_design_links(
     Ok(())
 }
 
-pub(super) fn validate_source_less_body_kinds(
+/// Bodies whose declared kind their incidence graph does not carry, with the
+/// declared and the derived kind. F3D stores no body kind: a reader derives
+/// it from the written topology.
+pub(super) fn body_kind_mismatches(
     model: &cadmpeg_ir::document::Model,
-) -> Result<(), CodecError> {
+) -> Vec<(
+    &cadmpeg_ir::ids::BodyId,
+    cadmpeg_ir::topology::BodyKind,
+    cadmpeg_ir::topology::BodyKind,
+)> {
+    let mut mismatches = Vec::new();
     let edges = model
         .edges
         .iter()
@@ -1330,13 +1338,10 @@ pub(super) fn validate_source_less_body_kinds(
             )
         };
         if body.kind != derived {
-            return Err(CodecError::InvalidInput(format!(
-                "body {} declares {:?} but its incidence graph is {:?}",
-                body.id, body.kind, derived
-            )));
+            mismatches.push((&body.id, body.kind, derived));
         }
     }
-    Ok(())
+    mismatches
 }
 
 /// Resolved wire-ownership ordinals of one body.
