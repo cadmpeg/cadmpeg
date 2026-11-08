@@ -8,11 +8,11 @@
       "attributes": [],
       "bodies": [
         {
-          "id": "rhino:object:body#record-000000-offset-177",
+          "id": "rhino:object:body#5268696e-6f49-4400-0000-000000000000",
           "kind": "general",
           "native_ref": "rhino:object:record#000000",
           "regions": [
-            "rhino:object:region#record-000000-offset-177"
+            "rhino:object:region#5268696e-6f49-4400-0000-000000000000"
           ],
           "visible": true
         }
@@ -31,7 +31,7 @@
       "pmi": [],
       "points": [
         {
-          "id": "rhino:object:point#record-000000-offset-177.0",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.0",
           "position": {
             "x": 4.0,
             "y": 5.0,
@@ -43,7 +43,7 @@
           }
         },
         {
-          "id": "rhino:object:point#record-000000-offset-177.1",
+          "id": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.1",
           "position": {
             "x": 7.0,
             "y": 8.0,
@@ -62,28 +62,28 @@
       "product_definitions": [],
       "regions": [
         {
-          "body": "rhino:object:body#record-000000-offset-177",
-          "id": "rhino:object:region#record-000000-offset-177",
+          "body": "rhino:object:body#5268696e-6f49-4400-0000-000000000000",
+          "id": "rhino:object:region#5268696e-6f49-4400-0000-000000000000",
           "shells": [
-            "rhino:object:shell#record-000000-offset-177"
+            "rhino:object:shell#5268696e-6f49-4400-0000-000000000000"
           ]
         }
       ],
       "semantic_annotations": [],
       "shells": [
         {
-          "id": "rhino:object:shell#record-000000-offset-177",
+          "id": "rhino:object:shell#5268696e-6f49-4400-0000-000000000000",
           "members": [
             {
-              "id": "rhino:object:vertex#record-000000-offset-177.0",
+              "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.0",
               "kind": "free_vertex"
             },
             {
-              "id": "rhino:object:vertex#record-000000-offset-177.1",
+              "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.1",
               "kind": "free_vertex"
             }
           ],
-          "region": "rhino:object:region#record-000000-offset-177"
+          "region": "rhino:object:region#5268696e-6f49-4400-0000-000000000000"
         }
       ],
       "sketch_constraints": [],
@@ -97,12 +97,12 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "rhino:object:vertex#record-000000-offset-177.0",
-          "point": "rhino:object:point#record-000000-offset-177.0"
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.0",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.0"
         },
         {
-          "id": "rhino:object:vertex#record-000000-offset-177.1",
-          "point": "rhino:object:point#record-000000-offset-177.1"
+          "id": "rhino:object:vertex#5268696e-6f49-4400-0000-000000000000.1",
+          "point": "rhino:object:point#5268696e-6f49-4400-0000-000000000000.1"
         }
       ],
       "view_presentations": []
@@ -243,7 +243,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "message": "rhino:object:record#5268696e-6f49-4400-0000-000000000000: layer index -1 is absent or ambiguous",
         "severity": "warning"
       },
       {
