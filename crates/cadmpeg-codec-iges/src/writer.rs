@@ -715,7 +715,7 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
-    native_records::attach_unowned_directions(&mut graph.entities)?;
+    native_records::attach_unowned_dependents(&mut graph.entities)?;
     graph
         .losses
         .extend(placement_entities::materialize(&mut graph.entities));
@@ -6138,13 +6138,11 @@ fn append_free_point_entity(
         return;
     }
     let owned = ownership.is_owned(point.source_object.as_ref());
-    let mut status = ownership.status(point.source_object.as_ref());
-    if status.is_physically_dependent() && !owned {
-        if !ownership.writes_standalone(point.id.as_str()) {
-            ownership::report_unowned_support(losses, point.id.as_str());
-            return;
-        }
-        status = ownership::without_physical_dependence(status);
+    let status = ownership.status(point.source_object.as_ref());
+    if status.is_physically_dependent() && !owned && !ownership.writes_standalone(point.id.as_str())
+    {
+        ownership::report_unowned_support(losses, point.id.as_str());
+        return;
     }
     // A carrier owned by annotation geometry writes as annotation-use
     // dependent so the re-decode admits it as annotation geometry.
