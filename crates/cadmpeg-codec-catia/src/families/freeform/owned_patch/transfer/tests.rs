@@ -60,7 +60,7 @@ fn two_face_sheet() -> Vec<Patch> {
         ),
         patch(
             30,
-            false,
+            true,
             vec![
                 edge(4, 1, 4, true),
                 edge(5, 4, 5, true),
@@ -91,8 +91,10 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(ir.model.faces.len(), 2);
-    assert_eq!(ir.model.faces[0].sense, Sense::Forward);
-    assert_eq!(ir.model.faces[1].sense, Sense::Reversed);
+    for face in &ir.model.faces {
+        assert_outer_winding(&ir, face);
+        assert_eq!(face.sense, Sense::Forward);
+    }
     assert_eq!(ir.model.edges.len(), 7);
     assert_eq!(ir.model.coedges.len(), 8);
     let shared: Vec<_> = ir
@@ -108,4 +110,77 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
     assert_eq!(shared[1].radial_next, shared[0].id);
     assert_eq!(shared[0].sense, Sense::Forward);
     assert_eq!(shared[1].sense, Sense::Reversed);
+}
+
+fn assert_outer_winding(ir: &CadIr, face: &Face) {
+    let FaceLoops::Classified { outer, .. } = &face.loops else {
+        panic!("fixture face must have an outer loop");
+    };
+    let boundary = ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| &loop_.id == outer)
+        .expect("emitted outer loop");
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .expect("emitted face carrier");
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
+        panic!("fixture carrier must be planar");
+    };
+    let normal = *plane.frame().axis().as_raw();
+    let oriented_normal = match face.sense {
+        Sense::Forward => normal,
+        Sense::Reversed => normal.scale(-1.0),
+    };
+    let point = |vertex_id: &VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == vertex_id)
+            .expect("emitted vertex");
+        ir.model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .expect("emitted point")
+            .position()
+            .get()
+    };
+    let origin = plane.origin().get();
+    let area_twice: f64 = boundary
+        .coedges()
+        .iter()
+        .map(|id| {
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| &coedge.id == id)
+                .expect("emitted coedge");
+            let edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .expect("emitted edge");
+            let (start, end) = match coedge.sense {
+                Sense::Forward => (&edge.start, &edge.end),
+                Sense::Reversed => (&edge.end, &edge.start),
+            };
+            point(start)
+                .vector_from(origin)
+                .cross(point(end).vector_from(origin))
+                .dot(oriented_normal)
+        })
+        .sum();
+    assert!(
+        area_twice > 0.0,
+        "outer loop on {} must run counterclockwise about its oriented normal",
+        face.id
+    );
 }
