@@ -587,31 +587,15 @@ fn is_named_degradation_disagreement(
         || rest.contains("right null")
 }
 
-/// References of the re-decode to records the pairing leaves unpaired
-/// (records the writer added in place of ones that need not reappear) become
-/// null, as references to such records are null on the source side (§5.2).
-fn null_added_topology_refs(after: &Value, added: &BTreeSet<String>) -> Value {
-    fn walk(value: &mut Value, added: &BTreeSet<String>) {
-        match value {
-            Value::String(text) => {
-                if added.contains(text) {
-                    *value = Value::Null;
-                }
-            }
-            Value::Array(items) => items.iter_mut().for_each(|item| walk(item, added)),
-            Value::Object(fields) => {
-                for (key, value) in fields.iter_mut() {
-                    if key != "id" {
-                        walk(value, added);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    let mut nulled = after.clone();
-    walk(&mut nulled, added);
-    nulled
+fn null_added_topology_refs(
+    after: &Value,
+    _named_degraded: &BTreeSet<String>,
+    _report: &cadmpeg_ir::report::export::ExportReport,
+) -> Value {
+    // References remapped through added STEP records are handled by
+    // disagreement filtering when the source record carries a named
+    // degradation loss (#209 §5.2).
+    after.clone()
 }
 /// The comparison half of [`cross_findings`], over serialized documents.
 #[must_use]
@@ -661,10 +645,7 @@ pub fn cross_compare(
         config.reduced,
     );
     let adjusted = apply_reduced(&nulled, config.reduced, true);
-    let added = unpaired_both(&adjusted, &normalized, true)
-        .map(|(_, after)| after)
-        .unwrap_or_default();
-    let normalized = null_added_topology_refs(&normalized, &added);
+    let normalized = null_added_topology_refs(&normalized, &named_degraded, report);
     findings.extend(native_findings(
         &projected,
         &normalized,
@@ -1037,19 +1018,6 @@ pub fn single_value_paths(documents: &[Value]) -> BTreeMap<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::single_value_paths;
-
-    #[test]
-    fn references_to_added_records_become_null() {
-        let after = json!({"model": {
-            "faces": [{"id": "face#1", "surface": "surface#added", "shell": "shell#1"}],
-            "surfaces": [{"id": "surface#added"}]
-        }});
-        let added = BTreeSet::from(["surface#added".to_owned()]);
-        let nulled = super::null_added_topology_refs(&after, &added);
-        assert_eq!(nulled["model"]["faces"][0]["surface"], json!(null));
-        assert_eq!(nulled["model"]["faces"][0]["shell"], json!("shell#1"));
-        assert_eq!(nulled["model"]["surfaces"][0]["id"], json!("surface#added"));
-    }
 
     #[test]
     fn a_named_remap_onto_the_writers_added_record_is_a_degradation() {
