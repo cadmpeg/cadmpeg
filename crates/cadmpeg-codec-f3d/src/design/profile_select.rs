@@ -145,7 +145,7 @@ impl<'a> SketchCurveSelectionResolution<'a> {
     }
 }
 
-/// Bind exact Sweep sketch-profile and sole-curve path carriers.
+/// Bind exact Sweep sketch-profile and ordered-curve path carriers.
 pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
@@ -310,7 +310,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                                     && native_stream(&group.id) == Some(stream)
                             });
                             let group = matching_groups.next()?;
-                            if matching_groups.next().is_some() || group.members().len() != 1 {
+                            if matching_groups.next().is_some() {
                                 return None;
                             }
                             resolve_entity_selection_path(group, &path_resolution)
