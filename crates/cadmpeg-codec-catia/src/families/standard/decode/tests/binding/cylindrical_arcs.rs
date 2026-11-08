@@ -189,6 +189,7 @@ fn emit_strip(tilt: f64, [first_strip, second_strip]: [bool; 2]) -> CadIr {
                 native_edge_supports: &[None; 7],
                 limit_curve_bindings: &[None; 7],
                 limit_curves: &[],
+                shell_plane_evidence: false,
                 refusal: &mut crate::nurbs::LaneRefusals::new(),
                 admission: &mut crate::families::FamilyEntityAdmission::new(ctx),
             },
