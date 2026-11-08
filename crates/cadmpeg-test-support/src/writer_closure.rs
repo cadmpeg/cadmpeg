@@ -178,9 +178,11 @@ fn compare_written(
     for id in unpaired.difference(allowances.removed_ids()) {
         findings.push(format!("required record {id} is missing"));
     }
-    let scope_expanded = written.report.losses.iter().any(|loss| {
-        loss.code.to_string() == "rhino/writer.scope-expanded"
-    });
+    let scope_expanded = written
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "rhino/writer.scope-expanded");
     let original = loss_codes(first.report());
     for code in after.loss_codes.difference(&original) {
         if scope_expanded && code == "rhino/object.record-census" {

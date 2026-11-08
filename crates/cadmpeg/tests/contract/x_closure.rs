@@ -645,7 +645,9 @@ fn observe_f3d() -> ObservedF3d {
             path: row.path,
             storage: row.storage,
             normalize: match row.path {
-                "model.bodies[].color.a" | "model.faces[].color.a" => Some(|_| serde_json::Value::from(1.0)),
+                "model.bodies[].color.a" | "model.faces[].color.a" => {
+                    Some(|_| serde_json::Value::from(1.0))
+                }
                 _ => None,
             },
         })

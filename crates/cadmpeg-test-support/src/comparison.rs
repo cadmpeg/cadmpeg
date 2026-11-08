@@ -344,7 +344,15 @@ fn agree_once_pruned(
         .intersection(permitted)
         .cloned()
         .collect::<BTreeSet<_>>();
-    agree_once(before, after, fields, &removed, Some(&removed), regenerated, cross)
+    agree_once(
+        before,
+        after,
+        fields,
+        &removed,
+        Some(&removed),
+        regenerated,
+        cross,
+    )
 }
 
 /// The records of `before` that `after` does not pair, with no pruning.
@@ -444,9 +452,11 @@ fn agree_pairing(
         if pairs.contains_key(&index) || !regenerated.contains(&record.id) {
             continue;
         }
-        if let Some(other) = after.records.iter().position(|candidate| {
-            candidate.id == record.id && candidate.arena == record.arena
-        }) {
+        if let Some(other) = after
+            .records
+            .iter()
+            .position(|candidate| candidate.id == record.id && candidate.arena == record.arena)
+        {
             pairs.insert(index, other);
         }
     }
