@@ -14,13 +14,13 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-fn group(members: &[String]) -> String {
+fn link_list(property: &str, members: &[String]) -> String {
     let content = members
         .iter()
         .map(|name| xml::element("Link", &[("value", name.clone())]))
         .collect::<String>();
     xml::property(
-        "Group",
+        property,
         "App::PropertyLinkList",
         &format!("<LinkList count=\"{}\">{content}</LinkList>", members.len()),
     )
@@ -100,14 +100,48 @@ fn fresh_name(proposed: &str, used: &mut HashSet<String>) -> String {
     candidate
 }
 
+/// Output Group members per container object, and the native object ids its
+/// source `Group` lists in order.
+#[derive(Default)]
+struct Groups {
+    members: BTreeMap<String, Vec<String>>,
+    listed: HashMap<String, Vec<String>>,
+}
+
+/// `members` with each occurrence child in a native `Group` slot. Native-only
+/// members keep their own slots; occurrence slots take the children in
+/// ordinal order, and children past the native slots follow.
+fn slotted(extras: &[String], children: &[String], listed: &[String]) -> Vec<String> {
+    let mut queue = children.iter();
+    let mut result: Vec<String> = Vec::new();
+    for name in listed {
+        if extras.contains(name) {
+            if !result.contains(name) {
+                result.push(name.clone());
+            }
+        } else if children.contains(name) {
+            if let Some(next) = queue.next() {
+                result.push(next.clone());
+            }
+        }
+    }
+    result.extend(queue.cloned());
+    for extra in extras {
+        if !result.contains(extra) {
+            result.push(extra.clone());
+        }
+    }
+    result
+}
+
 fn definitions(
     ir: &CadIr,
     objects: &mut Vec<Object>,
     names: &mut HashMap<String, String>,
     body_names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<BTreeMap<String, Vec<String>>, CodecError> {
-    let mut groups = BTreeMap::new();
+) -> Result<Groups, CodecError> {
+    let mut groups = Groups::default();
     let mut native_properties = ir
         .native
         .namespace("fcstd")
@@ -311,15 +345,16 @@ fn definitions(
                 let Some(target) = reference.object() else {
                     continue;
                 };
-                // Canonical occurrence parents own instance membership. Other
-                // typed members (features, sketches, workbench objects) have
-                // no neutral product-membership lane and remain native content.
-                if ir
-                    .model
-                    .occurrences
-                    .iter()
-                    .any(|occurrence| occurrence.native_ref.as_deref() == Some(target))
-                {
+                // Canonical occurrence parents own instance membership. A
+                // plain group parents no occurrence, so its native list keeps
+                // members whose occurrences stay at the root. Other typed
+                // members (features, sketches, workbench objects) have no
+                // neutral product-membership lane and remain native content.
+                if ir.model.occurrences.iter().any(|occurrence| {
+                    occurrence.native_ref.as_deref() == Some(target)
+                        && (definition.kind != ProductDefinitionKind::Group
+                            || matches!(occurrence.parent, OccurrenceParent::Occurrence { .. }))
+                }) {
                     continue;
                 }
                 if let Some(member) = names.get(target).filter(|member| **member != name) {
@@ -330,7 +365,20 @@ fn definitions(
             }
         }
         if definition.kind != ProductDefinitionKind::Object {
-            groups.insert(name.clone(), members);
+            groups.listed.insert(
+                name.clone(),
+                native_properties
+                    .iter()
+                    .filter(|property| {
+                        definition.native_ref.as_deref() == Some(property.owner.as_str())
+                            && property.name == "Group"
+                    })
+                    .flat_map(|property| property.links().iter().flatten())
+                    .filter(|reference| reference.document().is_none())
+                    .filter_map(|reference| reference.object().map(str::to_owned))
+                    .collect(),
+            );
+            groups.members.insert(name.clone(), members);
         }
         if let Some(native_ref) = &definition.native_ref {
             names.insert(native_ref.clone(), name);
@@ -450,22 +498,14 @@ fn link_state(
         bool_property(object, "LinkClaimChild", claim);
     }
     if let Some(component) = reference.element_component() {
-        let content = if let Some(name) = names.get(component.as_str()) {
-            format!(
-                "<LinkList count=\"1\">{}</LinkList>",
-                xml::element("Link", &[("value", name.clone())])
-            )
-        } else {
+        let elements: Vec<String> = names.get(component.as_str()).cloned().into_iter().collect();
+        if elements.is_empty() {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                 "link {} element component {component} is absent and is omitted",
                 object.name
             )));
-            "<LinkList count=\"0\"></LinkList>".to_owned()
-        };
-        object.set(
-            "ElementList",
-            xml::property("ElementList", "App::PropertyLinkList", &content),
-        );
+        }
+        object.set("ElementList", link_list("ElementList", &elements));
     }
     if let Some(copy) = reference.copy_on_change() {
         let policy = match &copy.policy {
@@ -583,7 +623,14 @@ pub(super) fn write(
     body_names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let mut groups = definitions(ir, objects, names, body_names, losses)?;
+    let Groups {
+        members: mut groups,
+        listed,
+    } = definitions(ir, objects, names, body_names, losses)?;
+    let extras: HashMap<String, usize> = groups
+        .iter()
+        .map(|(name, members)| (name.clone(), members.len()))
+        .collect();
     let mut used: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     // Root occurrence objects enter `<Objects>` in ascending occurrence
     // ordinal order, ties by arena order (#238 §5.5).
@@ -608,6 +655,7 @@ pub(super) fn write(
         }
     }
     let mut emitted_links = HashMap::<String, String>::new();
+    let mut array_elements = HashMap::<String, Vec<String>>::new();
     let native_types = ir
         .native
         .namespace("fcstd")
@@ -698,6 +746,24 @@ pub(super) fn write(
             continue;
         };
         if array {
+            let component = occurrence
+                .link
+                .as_ref()
+                .and_then(cadmpeg_ir::products::LinkState::element_component);
+            if let Some(component) = component {
+                match names.get(component.as_str()) {
+                    Some(element) => array_elements
+                        .entry(name.clone())
+                        .or_default()
+                        .push(element.clone()),
+                    None if !first_use => {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "link {name} element component {component} is absent and is omitted"
+                        )));
+                    }
+                    None => {}
+                }
+            }
             if first_use {
                 let (prototype, file) =
                     prototype(&occurrence.prototype, occurrence.id.as_str(), names, losses);
@@ -753,8 +819,14 @@ pub(super) fn write(
             // neutral element component already owns `ElementList` above.
             replay_list_properties(ir, occurrence, object, names, losses)?;
             // Links without a linked prototype placement never transform
-            // their prototype; linked uses resolve their policy below.
-            if occurrence.linked_prototype.is_none() || missing_prototype {
+            // their prototype; linked uses resolve their policy below. An
+            // external prototype's placement is unknown, so a transforming
+            // link to it has no transform of its own.
+            let external_transforming = occurrence.transform.is_none()
+                && matches!(occurrence.prototype, PrototypeReference::External { .. });
+            if external_transforming {
+                bool_property(object, "LinkTransform", true);
+            } else if occurrence.linked_prototype.is_none() || missing_prototype {
                 bool_property(object, "LinkTransform", false);
             }
             if let Some(linked) = occurrence.linked_prototype.filter(|_| !missing_prototype) {
@@ -804,6 +876,11 @@ pub(super) fn write(
             }
         }
     }
+    for (name, elements) in array_elements {
+        if let Some(object) = objects.iter_mut().find(|object| object.name == name) {
+            object.set("ElementList", link_list("ElementList", &elements));
+        }
+    }
     resolve_linked_transforms(ir, objects, &linked_uses, losses);
     let mut children: Vec<_> = ir.model.occurrences.iter().collect();
     children.sort_by_key(|occurrence| occurrence.ordinal);
@@ -825,6 +902,26 @@ pub(super) fn write(
                 members.push(child.clone());
             }
         }
+    }
+    for (name, members) in &mut groups {
+        let Some(listed) = listed.get(name) else {
+            continue;
+        };
+        let listed: Vec<String> = listed
+            .iter()
+            .filter_map(|target| {
+                names.get(target).or_else(|| {
+                    ir.model
+                        .occurrences
+                        .iter()
+                        .find(|occurrence| occurrence.native_ref.as_deref() == Some(target))
+                        .and_then(|occurrence| names.get(occurrence.id.as_str()))
+                })
+            })
+            .cloned()
+            .collect();
+        let (own, children) = members.split_at(extras.get(name).copied().unwrap_or(0));
+        *members = slotted(own, children, &listed);
     }
     let mut parents = HashMap::<String, String>::new();
     for (name, mut members) in groups {
@@ -883,7 +980,7 @@ pub(super) fn write(
             debug_assert!(false, "product group has no output object");
             continue;
         };
-        object.set("Group", group(&members));
+        object.set("Group", link_list("Group", &members));
     }
     joints::write(ir, objects, names, losses)?;
     order_siblings(ctx, ir, objects, names)?;

@@ -54,7 +54,7 @@ fn native_directed_dependencies_survive_without_group_members() {
         .find(|object| object.name == "RenamedPart")
         .expect("product");
     assert_eq!(part.dependencies, ["RenamedTarget"]);
-    assert_eq!(part.properties["Group"], group(&[]));
+    assert_eq!(part.properties["Group"], link_list("Group", &[]));
     assert!(!part.properties.contains_key("Placement"));
     assert_eq!(
         losses,
@@ -80,7 +80,7 @@ fn occurrence_without_transform_keeps_native_dependencies() {
         .find(|object| object.name == "RenamedPart")
         .expect("product");
     assert_eq!(part.dependencies, ["RenamedTarget"]);
-    assert_eq!(part.properties["Group"], group(&[]));
+    assert_eq!(part.properties["Group"], link_list("Group", &[]));
     assert!(!part.properties.contains_key("Placement"));
     let object = objects
         .iter()
@@ -112,7 +112,7 @@ fn current_occurrence_membership_does_not_replace_directed_dependencies() {
         .find(|object| object.name == "RenamedPart")
         .expect("product");
     assert_eq!(part.dependencies, ["RenamedTarget"]);
-    assert_eq!(part.properties["Group"], group(&["Member".into()]));
+    assert_eq!(part.properties["Group"], link_list("Group", &["Member".into()]));
 }
 
 #[test]
