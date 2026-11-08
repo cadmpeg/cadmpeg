@@ -4,11 +4,11 @@
 
 <!-- What this changes and why. -->
 
-## Release note
+## Breaking change
 
-<!-- One line for cadmpeg users, or leave empty. Start the line with "Breaking:"
-     when users must change a command, a script, or a stored file.
-     The release notes list it under Highlights or Compatibility. -->
+<!-- Leave empty unless users must change a command, a script, or a stored file.
+     Then write one line per change for cadmpeg users.
+     The release notes list each line under Compatibility. -->
 
 ## Checklist
 
