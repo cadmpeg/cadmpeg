@@ -61,6 +61,8 @@ pub(crate) struct ProfileGeometryWork {
     crossing_loop_skipped_selections: Cell<usize>,
     crossing_loop_assumed: Cell<bool>,
     crossing_loop_assumed_selections: Cell<usize>,
+    loop_flags_assumed: Cell<bool>,
+    loop_flags_assumed_selections: Cell<usize>,
     coincident_direction_assumed: Cell<bool>,
     coincident_direction_assumed_selections: Cell<usize>,
     cut_regions_assumed: Cell<bool>,
@@ -91,6 +93,8 @@ impl ProfileGeometryWork {
             crossing_loop_skipped_selections: Cell::new(0),
             crossing_loop_assumed: Cell::new(false),
             crossing_loop_assumed_selections: Cell::new(0),
+            loop_flags_assumed: Cell::new(false),
+            loop_flags_assumed_selections: Cell::new(0),
             coincident_direction_assumed: Cell::new(false),
             coincident_direction_assumed_selections: Cell::new(0),
             cut_regions_assumed: Cell::new(false),
@@ -131,6 +135,10 @@ impl ProfileGeometryWork {
                 &self.coincident_direction_assumed_selections,
             ),
             (
+                &self.loop_flags_assumed,
+                &self.loop_flags_assumed_selections,
+            ),
+            (
                 &self.cut_regions_assumed,
                 &self.cut_regions_assumed_selections,
             ),
@@ -165,6 +173,12 @@ impl ProfileGeometryWork {
 
     /// Record that the member flags of an edge of coincident curves decided
     /// a counted member ring of the open selection.
+    /// Record that the open selection joined stored loops to faces through
+    /// the assumed reading of each entry's first operand.
+    pub(crate) fn note_loop_flags_assumed(&self) {
+        self.loop_flags_assumed.set(true);
+    }
+
     pub(crate) fn note_coincident_direction_assumed(&self) {
         self.coincident_direction_assumed.set(true);
     }
@@ -231,6 +245,12 @@ impl ProfileGeometryWork {
         if crossing_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCrossingLoopAssumed.note(format!(
                 "{crossing_assumed} extrude profile selection(s) split a self-crossing stored loop into atomic regions by curve-use counts; the stored curve order of the loop was not checked, and atomic faces that enclose an island were assumed not to be selected."
+            )));
+        }
+        let flags = self.loop_flags_assumed_selections.get();
+        if flags != 0 {
+            losses.push(F3dLossCode::FeatureProfileLoopFlagsAssumed.note(format!(
+                "{flags} extrude profile selection(s) joined stored loops to atomic faces by reading each entry's first operand as a traversal flag; that reading is assumed (DR-124), and the listed entry order was not checked."
             )));
         }
         let coincident = self.coincident_direction_assumed_selections.get();

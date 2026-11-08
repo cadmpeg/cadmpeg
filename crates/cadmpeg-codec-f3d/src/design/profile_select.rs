@@ -3755,6 +3755,8 @@ fn resolve_profile_curve_arrangement_regions(
     let mut regions = Vec::new();
     let mut assumed = false;
     let mut island_absence = false;
+    let mut flags_read = false;
+    let mut coincident = false;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3770,28 +3772,55 @@ fn resolve_profile_curve_arrangement_regions(
             return Ok(None);
         }
         for loops in selection.regions() {
-            let [loop_] = loops.as_slice() else {
-                return Ok(None);
-            };
-            if !loop_.outer {
-                return Ok(None);
-            }
-            let Some(end) = cursor.checked_add(loop_.entries.len()) else {
+            let Some(end) = loops
+                .iter()
+                .try_fold(cursor, |end, loop_| end.checked_add(loop_.entries.len()))
+            else {
                 return Ok(None);
             };
             let Some(program) = curves.get(cursor..end) else {
                 return Ok(None);
             };
             cursor = end;
-            let Some(found) = crate::design::geometry::arrangement_region_matching_curve_program(
-                source,
-                resolution.sketch_entities,
-                program,
-                scoped.linear_tolerance,
-                scoped.profile_work,
-                scoped.ctx,
-            )?
-            else {
+            let single_exterior = matches!(loops.as_slice(), [loop_] if loop_.outer);
+            let found = if single_exterior {
+                crate::design::geometry::arrangement_region_matching_curve_program(
+                    source,
+                    resolution.sketch_entities,
+                    program,
+                    scoped.linear_tolerance,
+                    scoped.profile_work,
+                    scoped.ctx,
+                )?
+            } else {
+                None
+            };
+            let Some(found) = found else {
+                if let Some(rings) = stored_loop_rings(loops, program) {
+                    if let Some(selected) =
+                        crate::design::geometry::arrangement_regions_matching_member_rings(
+                            source,
+                            resolution.sketch_entities,
+                            &rings,
+                            scoped.linear_tolerance,
+                            scoped.profile_work,
+                            scoped.ctx,
+                        )?
+                    {
+                        if let [region] = selected.regions.as_slice() {
+                            flags_read = true;
+                            coincident |= selected.coincident;
+                            island_absence |= selected.island_absence;
+                            if !regions.contains(region) {
+                                regions.push(region.clone());
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if !single_exterior {
+                    return Ok(None);
+                }
                 let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
                     source,
                     resolution.sketch_entities,
@@ -3831,8 +3860,41 @@ fn resolve_profile_curve_arrangement_regions(
         if island_absence {
             scoped.profile_work.note_island_absence_assumed();
         }
+        if flags_read {
+            scoped.profile_work.note_loop_flags_assumed();
+        }
+        if coincident {
+            scoped.profile_work.note_coincident_direction_assumed();
+        }
     }
     Ok(profile)
+}
+
+/// The directed curve uses of the stored loops of one region. `None` when an
+/// entry's first operand is not a traversal flag of 0 or 1.
+fn stored_loop_rings(
+    loops: &[crate::records::topology::entity_selection::DesignProfileCurveLoop],
+    curves: &[cadmpeg_ir::sketches::SketchEntityId],
+) -> Option<Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>> {
+    let mut curves = curves.iter();
+    loops
+        .iter()
+        .map(|loop_| {
+            loop_
+                .entries
+                .iter()
+                .map(|entry| {
+                    let [direction @ (0 | 1), _, _] = entry.entry_fields else {
+                        return None;
+                    };
+                    Some(cadmpeg_ir::sketches::SketchEntityUse {
+                        entity: curves.next()?.clone(),
+                        reversed: direction == 1,
+                    })
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn resolve_profile_curve_path(

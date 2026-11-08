@@ -165,3 +165,126 @@ fn an_unresolved_self_crossing_loop_reports_no_assumption() {
     work.finish_selection();
     assert!(work.losses().is_empty());
 }
+
+fn square_with_island() -> (Sketch, Vec<SketchEntity>, Vec<SketchCurveIdentity>) {
+    let (sketch, _, _) = x_braced_square();
+    let ends = [
+        ((0.0, 0.0), (10.0, 0.0)),
+        ((10.0, 0.0), (10.0, 10.0)),
+        ((10.0, 10.0), (0.0, 10.0)),
+        ((0.0, 10.0), (0.0, 0.0)),
+        ((4.0, 4.0), (6.0, 4.0)),
+        ((6.0, 4.0), (6.0, 6.0)),
+        ((6.0, 6.0), (4.0, 6.0)),
+        ((4.0, 6.0), (4.0, 4.0)),
+    ];
+    let entities = ends
+        .iter()
+        .zip(1u64..)
+        .map(|((start, end), primary)| {
+            SketchEntity::new(
+                neutral_sketch_curve_id(&sketch.id, primary, 0),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(start.0, start.1),
+                    end: Point2::new(end.0, end.1),
+                })
+                .unwrap(),
+            )
+        })
+        .collect();
+    let identities = (1u32..=8)
+        .map(|primary| curve(30 + primary, u64::from(primary), 0))
+        .collect();
+    (sketch, entities, identities)
+}
+
+fn holed_selection(record_index: u32, ordinal: u32, hole_flag: u32) -> DesignProfileCurveSelection {
+    let mut selection = loop_selection(record_index, ordinal, &[1, 2, 3, 4]);
+    for entry in &mut selection.groups[0].region[0].entries {
+        entry.entry_fields = [0, 1, 1];
+    }
+    let entries = (5u64..=8)
+        .map(|primary| DesignProfileCurveEntry {
+            primary_id: primary,
+            primary_id_offset: 0,
+            secondary_id: 0,
+            entry_fields: [hole_flag, 1, 1],
+        })
+        .collect();
+    selection.groups[0].region.push(DesignProfileCurveLoop {
+        outer: false,
+        entries,
+    });
+    let mut offset = 588u64;
+    for loop_ in &mut selection.groups[0].region {
+        for entry in &mut loop_.entries {
+            entry.primary_id_offset = offset;
+            offset += 40;
+        }
+        offset += 5;
+    }
+    selection.identity_end_offset = selection.lists_end().unwrap();
+    selection
+}
+
+fn resolve_holed(
+    hole_flag: u32,
+    work: &ProfileGeometryWork,
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    let (sketch, entities, identities) = square_with_island();
+    let group = group();
+    let placements = [placement()];
+    let sketches = [sketch];
+    let selections = [
+        holed_selection(10, 0, hole_flag),
+        holed_selection(11, 1, hole_flag),
+    ];
+    let mut resolution =
+        planar_resolution(&[], &placements, &identities, &sketches, &entities).path_resolution();
+    resolution.profile_curves = &selections;
+    let scope_histories = HashMap::new();
+    crate::test_support::with_decode_context(|ctx| {
+        let scoped = ExtrudeProfileResolution {
+            entities: &[],
+            spatial_sketches: &[],
+            spatial_entities: &[],
+            histories: &[],
+            scope_histories: &scope_histories,
+            linear_tolerance: 1.0e-7,
+            angular_tolerance: 1.0e-9,
+            profile_work: work,
+            ctx,
+        }
+        .scoped(&[]);
+        super::super::resolve_profile_curve_arrangement_regions(&group, &resolution, scoped)
+    })
+    .unwrap()
+}
+
+#[test]
+fn a_region_joined_through_its_entry_operands_reports_the_assumed_reading() {
+    let work = ProfileGeometryWork::new();
+    // The hole walks clockwise, against its stored direction.
+    assert!(resolve_holed(1, &work).is_some());
+    work.finish_selection();
+    let losses = work.losses();
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureProfileLoopFlagsAssumed.kind()
+    );
+    assert!(loss.message.starts_with("1 extrude profile selection(s)"));
+    assert!(loss.message.contains("DR-124"));
+}
+
+#[test]
+fn entry_operands_that_differ_from_the_face_report_no_assumption() {
+    let work = ProfileGeometryWork::new();
+    // The hole's flags say it walks with its stored direction.
+    assert_eq!(resolve_holed(0, &work), None);
+    work.finish_selection();
+    assert!(work.losses().is_empty());
+}
