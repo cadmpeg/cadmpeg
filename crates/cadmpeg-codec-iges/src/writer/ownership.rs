@@ -310,9 +310,9 @@ pub(super) fn wrapped_surface_status(surface: &Surface, status: EntityStatus) ->
     }
 }
 
-/// `status` without physical dependence, for a carrier whose source parent is
-/// not written.
-pub(super) const fn without_physical_dependence(status: EntityStatus) -> EntityStatus {
+/// `status` without physical dependence, for a surface that no exported face
+/// uses.
+const fn without_physical_dependence(status: EntityStatus) -> EntityStatus {
     match status {
         EntityStatus::PhysicallyDependent
         | EntityStatus::PhysicallyDependentEdgeList
