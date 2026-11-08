@@ -71,8 +71,7 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
         if attribute.target != attribute_target {
             return None;
         }
-        let is_name = attribute.name == "name"
-            || attribute.id.as_str().contains(":object-name#");
+        let is_name = attribute.name == "name" || attribute.id.as_str().contains(":object-name#");
         if !is_name {
             return None;
         }

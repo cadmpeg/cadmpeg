@@ -1215,5 +1215,4 @@ pub(crate) fn table(
     super::table(&ctx, typecode, records)
 }
 
-mod debug_app;
 mod retained_bytes;

@@ -28,12 +28,21 @@ fn check_fixtures(
             depth: encoder.request(),
             ..DecodeOptions::default()
         };
-        let decoded = source.decode(&mut Cursor::new(bytes), &options).expect("fixture decode");
-        findings.extend(check(decoded.ir(), encoder.as_ref()).into_iter().map(|finding| {
-            format!("{}: {finding}", path.display())
-        }));
+        let decoded = source
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("fixture decode");
+        findings.extend(
+            check(decoded.ir(), encoder.as_ref())
+                .into_iter()
+                .map(|finding| format!("{}: {finding}", path.display())),
+        );
     }
-    assert!(findings.is_empty(), "{} finding(s):\n{}", findings.len(), findings.join("\n"));
+    assert!(
+        findings.is_empty(),
+        "{} finding(s):\n{}",
+        findings.len(),
+        findings.join("\n")
+    );
 }
 
 #[test]
@@ -43,7 +52,6 @@ fn f3d_injected_errors_name_the_record() {
         injected_error_findings(ir, encoder, cross_request(encoder), &injections)
     });
 }
-
 
 #[test]
 fn f3d_max_entities_refuses_below_brep_record_count() {
@@ -58,16 +66,31 @@ fn f3d_max_entities_refuses_below_brep_record_count() {
             return vec![format!("the control write refuses: {error}")];
         }
         let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).expect("generated ZIP");
-        let name = archive.file_names().map(|name| name.expect("ZIP entry name"))
-            .find(|name| name.ends_with(".smbh")).expect("generated BREP").into_owned();
+        let name = archive
+            .file_names()
+            .map(|name| name.expect("ZIP entry name"))
+            .find(|name| name.ends_with(".smbh"))
+            .expect("generated BREP")
+            .into_owned();
         let mut smbh = Vec::new();
-        archive.by_name(&name).expect("BREP entry").read_to_end(&mut smbh).expect("BREP bytes");
+        archive
+            .by_name(&name)
+            .expect("BREP entry")
+            .read_to_end(&mut smbh)
+            .expect("BREP bytes");
         let start = cadmpeg_asm::asm_header::record_stream_start(&smbh).expect("BREP header");
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-        let records = cadmpeg_asm::sab::frame(&ctx, &smbh, start, smbh.len(),
-            cadmpeg_asm::kernel_header::RefWidth::Eight, None).expect("BREP records");
+        let records = cadmpeg_asm::sab::frame(
+            &ctx,
+            &smbh,
+            start,
+            smbh.len(),
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+            None,
+        )
+        .expect("BREP records");
         let count = u64::try_from(records.len()).expect("record count") + 1;
         max_entities_findings(ir, encoder, request, count)
     });
