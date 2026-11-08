@@ -165,7 +165,7 @@ pub(crate) fn transfer(
     for body in &ir.model.bodies {
         body_ids.push(body.id.clone());
     }
-    let (feature_ordinals, mut cycle_affected) = feature_ordinals(
+    let (feature_ordinals, cycle_affected) = feature_ordinals(
         objects,
         &properties_by_owner,
         &parent_by_member,
@@ -525,14 +525,7 @@ pub(crate) fn transfer(
         properties,
     )?);
     losses.extend(crate::control_links::apply(ir, properties)?);
-    let cycle_owners = order_parameters_by_dependencies(&mut ir.model.parameters);
-    cycle_affected.extend(
-        ir.model
-            .features
-            .iter()
-            .filter(|feature| cycle_owners.contains(&feature.id))
-            .filter_map(|feature| feature.native_ref.clone()),
-    );
+    order_parameters_by_dependencies(&mut ir.model.parameters);
     dense_parameter_ordinals(&mut ir.model.parameters)?;
     dependencies::structural(ctx, ir, properties)?;
     Ok((cycle_affected, losses))
@@ -3267,9 +3260,8 @@ fn dense_parameter_ordinals(parameters: &mut [DesignParameter]) -> Result<(), Co
 ///
 /// The earliest ready parameter in the current order is emitted next. A
 /// dependency on an id is met once any parameter with that id is emitted.
-/// When none is ready, the rest keep their order after the emitted ones and
-/// their owners are returned as cycle-affected.
-fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
+/// When none is ready, the rest keep their order after the emitted ones.
+fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
     let mut dependents = BTreeMap::<&ParameterId, Vec<usize>>::new();
     for parameter in parameters.iter() {
         dependents.entry(&parameter.id).or_default();
@@ -3318,15 +3310,7 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
             }
         }
     }
-    let mut cycle_features = BTreeSet::new();
-    for (position, parameter) in parameters.iter().enumerate() {
-        if !emitted[position] {
-            order.push(position);
-            if let Some(owner) = &parameter.owner {
-                cycle_features.insert(owner.clone());
-            }
-        }
-    }
+    order.extend((0..parameters.len()).filter(|position| !emitted[*position]));
     let mut slots = std::mem::take(parameters)
         .into_iter()
         .map(Some)
@@ -3334,7 +3318,6 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BT
     for position in order {
         parameters.extend(slots[position].take());
     }
-    cycle_features
 }
 
 fn expression_identifiers(
