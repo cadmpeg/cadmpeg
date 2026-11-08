@@ -136,6 +136,16 @@
       },
       "message": "body rhino:object:body#5268696e-6f49-4400-0000-000000000001 free-vertex region/shell grouping is reduced to independent point objects; 3 member record(s): rhino:object:body#5268696e-6f49-4400-0000-000000000001, rhino:object:region#5268696e-6f49-4400-0000-000000000001, rhino:object:shell#5268696e-6f49-4400-0000-000000000001",
       "severity": "error"
+    },
+    {
+      "code": {
+        "code": "native.records-omitted",
+        "kind": "record_not_typed",
+        "namespace": "export",
+        "scope": "namespaced"
+      },
+      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
+      "severity": "info"
     }
   ],
   "native_dispositions": {
@@ -164,10 +174,7 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped",
-            "records": {
-              "rhino:document:settings#current": "written"
-            }
+            "disposition": "dropped"
           },
           "embedded_images": {
             "disposition": "dropped"

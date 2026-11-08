@@ -87,8 +87,7 @@ impl From<CodecError> for LinetypeError {
     fn from(error: CodecError) -> Self {
         match error {
             CodecError::Malformed(reason)
-            | CodecError::InvalidInput(reason)
-            | CodecError::UnsupportedContent(reason) => Self::Omit(reason),
+            | CodecError::InvalidInput(reason) => Self::Omit(reason),
             error => Self::Fail(error),
         }
     }

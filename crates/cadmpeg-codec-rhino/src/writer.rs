@@ -167,7 +167,7 @@ fn write<'budget>(
     match outcome {
         Ok(outcome) => Ok((staged, outcome)),
         Err(WriteError::Omit(message)) => Err(cadmpeg_ir::codec::write::transitional_from_codec(
-            CodecError::UnsupportedContent(message),
+            CodecError::InvalidInput(message),
         )),
         Err(WriteError::Fail(error)) => {
             Err(cadmpeg_ir::codec::write::transitional_from_codec(error))
@@ -4572,11 +4572,11 @@ fn object_attributes_for_target(
     } else if !layer_color
         && (material.is_some()
             || (ir.model.presentation_layers.is_empty()
-            && ir
-                .model
-                .bodies
-                .iter()
-                .any(|body| body.id.as_str() == identity)))
+                && ir
+                    .model
+                    .bodies
+                    .iter()
+                    .any(|body| body.id.as_str() == identity)))
     {
         payload.extend([13, 2]);
     }

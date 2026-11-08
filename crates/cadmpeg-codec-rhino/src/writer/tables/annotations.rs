@@ -600,6 +600,13 @@ pub(in crate::writer) fn records(
             .is_some_and(crate::wire::Uuid::is_nil)
         {
             attributes[1..17].fill(0);
+        } else if let Some(uuid) = annotation
+            .native_ref
+            .as_str()
+            .split_once('#')
+            .and_then(|(_, key)| crate::presentation::parse_uuid_text(key))
+        {
+            attributes[1..17].copy_from_slice(&uuid.to_wire());
         }
         output.push(framed_object_record(
             if is_dot { 0x2000 } else { 0x200 },

@@ -59,8 +59,9 @@ fn assert_scope(result: &DecodeResult, expected: ContentScope) {
         .expect("populated arena invariant");
 }
 
+/// An empty reached object table locates no model parts (#209 §1.1).
 #[test]
-fn an_empty_reached_object_table_holds_model_without_claiming_absent_design() {
+fn an_empty_reached_object_table_locates_no_model_parts() {
     let bytes = modern(&[], None);
     for depth in [
         DecodeDepth::Container,
@@ -68,16 +69,15 @@ fn an_empty_reached_object_table_holds_model_without_claiming_absent_design() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, delivered(depth, ContentScope::geometry()));
+        assert_scope(&result, delivered(depth, ContentScope::container()));
         assert!(result.ir().model.points.is_empty());
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
     }
 }
 
-/// An empty reached history table locates no design parts (§1.1): a table
-/// with no records holds no class, so a cut that removes the table agrees
-/// with the uncut scope.
+/// Empty reached tables locate no parts (#209 §1.1): a table with no records
+/// holds no class, so a cut that removes the table agrees with the uncut scope.
 #[test]
 fn an_empty_history_table_holds_no_design_part() {
     let bytes = modern(&[], Some(&[]));
@@ -87,7 +87,7 @@ fn an_empty_history_table_holds_no_design_part() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, delivered(depth, ContentScope::geometry()));
+        assert_scope(&result, delivered(depth, ContentScope::container()));
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
     }
@@ -99,7 +99,9 @@ fn a_failed_bounded_history_record_does_not_erase_the_reached_design_part() {
     let bytes = modern(&[], Some(&[failed]));
     for depth in [DecodeDepth::Container, DecodeDepth::Full] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, delivered(depth, ContentScope::full()));
+        // Empty object table locates no model parts; a failed bounded history
+        // record still locates the design part (#209 §1.1).
+        assert_scope(&result, delivered(depth, ContentScope { model: false, design: true }));
         assert!(result.ir().model.features.is_empty());
         assert!(result.report().losses.iter().any(
             |loss| loss.message.contains("history record") && loss.message.contains("degraded")
