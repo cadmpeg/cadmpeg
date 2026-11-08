@@ -50,10 +50,9 @@ pub(crate) fn non_placement_losses(
 }
 
 /// Assert a design-fragment decode holds design scope with the losses §1.1
-/// mandates: the wrapper charges `depth.not-delivered` for a requested
-/// class exactly when the decode delivers without it (#209 §1.1). A
-/// fragment that also retains model records (such as attributes) delivers
-/// full scope with no missing-class loss.
+/// mandates. At full depth FCStd reports requested model and design classes
+/// as delivered (#209 §1.1); fragments decoded at other depths may still
+/// omit a non-requested or undelivered class.
 pub(crate) fn assert_design_fragment_scope(result: &cadmpeg_ir::codec::DecodeResult) {
     assert!(
         result.ir().scope.design,
@@ -69,9 +68,7 @@ pub(crate) fn assert_design_fragment_scope(result: &cadmpeg_ir::codec::DecodeRes
     }
 }
 
-/// Assert a model-fragment decode delivers model scope with only the §1.1
-/// design not-delivered loss: the fragment locates model parts but no design
-/// part (#209 §1.1).
+/// Assert a model-fragment decode delivers model scope (#209 §1.1).
 pub(crate) fn assert_model_fragment_scope(result: &cadmpeg_ir::codec::DecodeResult) {
     assert!(result.ir().scope.model, "model fragment holds model scope");
     let losses = non_placement_losses(result.report());
