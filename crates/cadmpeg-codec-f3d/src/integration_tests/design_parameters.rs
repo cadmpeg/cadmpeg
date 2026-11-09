@@ -11,7 +11,7 @@ use crate::test_support::native_test::f3d_native;
 /// parameter without an owner binding, and its set trailer byte 3 reports the
 /// uninterpreted-flag loss.
 #[test]
-fn compact_null_owner_parameter_reports_its_trailer_flag() {
+fn compact_null_owner_parameter_reports_its_owner_and_trailer_flag() {
     const TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
     let target = 19u32;
     let mut frame = Vec::new();
@@ -59,6 +59,9 @@ fn compact_null_owner_parameter_reports_its_trailer_flag() {
     assert!(losses.iter().any(|loss| {
         loss.code == crate::loss::F3dLossCode::ParameterTrailerFlagUninterpreted.kind()
     }));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterOwnerUnstored.kind()));
     assert!(!losses
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));

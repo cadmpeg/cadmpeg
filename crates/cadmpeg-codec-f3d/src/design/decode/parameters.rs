@@ -72,10 +72,9 @@ pub(crate) struct UnparsedParameterRecords {
     pub(crate) count: usize,
 }
 
-/// Decoded parameters in one Design `BulkStream` whose compact expression
-/// trailer sets byte 3.
+/// A count of decoded parameters in one Design `BulkStream`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TrailerFlagParameters {
+pub(crate) struct StreamParameterCount {
     /// Design `BulkStream` entry name.
     pub(crate) stream: String,
     /// Number of decoded parameters.
@@ -90,7 +89,9 @@ pub(crate) struct DecodedParameters {
     /// Per-stream counts of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
     /// Per-stream counts of decoded parameters whose trailer byte 3 is set.
-    pub(crate) trailer_flags: Vec<TrailerFlagParameters>,
+    pub(crate) trailer_flags: Vec<StreamParameterCount>,
+    /// Per-stream counts of decoded compact null-owner parameters.
+    pub(crate) null_owners: Vec<StreamParameterCount>,
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
@@ -102,6 +103,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
     let mut out = Vec::new();
     let mut unparsed = Vec::new();
     let mut trailer_flags = Vec::new();
+    let mut null_owners = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -113,6 +115,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
         let mut trailer_flag_count = 0usize;
+        let mut null_owner_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
             let frame = &bytes[at..end];
@@ -130,11 +133,13 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
 
                 let record_index = parsed.record_index;
                 let compact_flag = parsed.compact_flag;
+                let compact_null_owner = parsed.compact_null_owner;
                 match locate_design_parameter(parsed, &entry.name, at) {
                     Some(parameter) => {
                         emitted_record_indices.insert(record_index);
                         out.push(parameter);
                         trailer_flag_count += usize::from(compact_flag);
+                        null_owner_count += usize::from(compact_null_owner);
                     }
                     None => unparsed_count = next_unparsed_count(unparsed_count)?,
                 }
@@ -156,9 +161,15 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
             });
         }
         if trailer_flag_count != 0 {
-            trailer_flags.push(TrailerFlagParameters {
+            trailer_flags.push(StreamParameterCount {
                 stream: entry.name.clone(),
                 count: trailer_flag_count,
+            });
+        }
+        if null_owner_count != 0 {
+            null_owners.push(StreamParameterCount {
+                stream: entry.name.clone(),
+                count: null_owner_count,
             });
         }
     }
@@ -167,6 +178,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         parameters: out,
         unparsed,
         trailer_flags,
+        null_owners,
     })
 }
 
@@ -194,6 +206,8 @@ pub(in crate::design) struct ParsedDesignParameter {
     text_value: Option<ParsedParameterUnit>,
     /// Whether byte 3 of the five-byte compact expression trailer is `1`.
     compact_flag: bool,
+    /// Whether the frame is the compact null-owner form.
+    compact_null_owner: bool,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -615,6 +629,7 @@ fn parse_header_form(
             offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
         }),
         compact_flag: false,
+        compact_null_owner: false,
     }))
 }
 
@@ -715,6 +730,7 @@ fn parse_comment_discriminated_parameter(
         flags,
         text_value: None,
         compact_flag: false,
+        compact_null_owner: false,
     }))
 }
 
@@ -860,6 +876,7 @@ fn compact_trailer_parameter(
         flags: crate::records::parameters::DesignParameterFlags::default(),
         text_value: None,
         compact_flag,
+        compact_null_owner: owner_record_index.is_none(),
     }))
 }
 
@@ -1082,6 +1099,7 @@ fn parse_typed_compact_design_parameter(
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
             compact_flag: false,
+            compact_null_owner: false,
         }))
     })();
     parsed.transpose()
@@ -1140,6 +1158,7 @@ fn parse_legacy_design_parameter(
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
             compact_flag: false,
+            compact_null_owner: false,
         }))
     })();
     parsed.transpose()

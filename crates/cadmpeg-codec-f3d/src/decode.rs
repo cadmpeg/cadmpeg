@@ -1934,7 +1934,7 @@ fn report_unparsed_parameter_records(
 
 fn report_parameter_trailer_flags(
     report: &mut DecodeBody,
-    flagged: &[crate::design::decode::parameters::TrailerFlagParameters],
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
 ) {
     for parameters in flagged {
         push_loss_vec(
@@ -1942,6 +1942,22 @@ fn report_parameter_trailer_flags(
             F3dLossCode::ParameterTrailerFlagUninterpreted,
             format_args!(
                 "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
+fn report_parameter_null_owners(
+    report: &mut DecodeBody,
+    null_owners: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in null_owners {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerUnstored,
+            format_args!(
+                "{} decoded parameter(s) in {} store the null owner in the compact null-owner form; they are read without an owner binding.",
                 parameters.count, parameters.stream
             ),
         );
@@ -2751,6 +2767,7 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
+        report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
         report_unparsed_parameter_owners(
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),

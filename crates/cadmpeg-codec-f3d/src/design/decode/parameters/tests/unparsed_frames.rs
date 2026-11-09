@@ -126,6 +126,10 @@ fn decode_reads_compact_null_owner_frames_and_reports_those_that_do_not_close() 
         panic!("expected one stream with a set trailer flag");
     };
     assert_eq!((flagged.stream.as_str(), flagged.count), (stream, 1));
+    let [unstored] = decoded.null_owners.as_slice() else {
+        panic!("expected one stream with a null-owner parameter");
+    };
+    assert_eq!((unstored.stream.as_str(), unstored.count), (stream, 1));
 }
 
 #[test]
@@ -163,6 +167,7 @@ fn decode_reports_a_compact_null_owner_frame_whose_tail_names_another_type() {
     let decoded = with_scan(&archive, decode_parameters).unwrap();
     assert!(decoded.parameters.is_empty());
     assert!(decoded.trailer_flags.is_empty());
+    assert!(decoded.null_owners.is_empty());
     let [unparsed] = decoded.unparsed.as_slice() else {
         panic!("expected one stream with an unparsed parameter frame");
     };
