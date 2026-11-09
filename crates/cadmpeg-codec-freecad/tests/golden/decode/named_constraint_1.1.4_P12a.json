@@ -713,7 +713,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Body",
-          "name": "Body line appearance",
           "native_ref": "fcstd:native:gui-property#Body:LineColor",
           "schema": "FCStd ViewProvider line style"
         },
@@ -725,7 +724,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Body:1",
-          "name": "Body Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#Body:LineColorArray",
           "schema": "FCStd LineColorArray"
         },
@@ -737,7 +735,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Pad",
-          "name": "Pad line appearance",
           "native_ref": "fcstd:native:gui-property#Pad:LineColor",
           "schema": "FCStd ViewProvider line style"
         },
@@ -749,7 +746,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Pad:1",
-          "name": "Pad Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#Pad:LineColorArray",
           "schema": "FCStd LineColorArray"
         },
@@ -761,7 +757,6 @@
             "r": 0.12941177189350128
           },
           "id": "fcstd:appearance:edge#Sketch:1",
-          "name": "Sketch Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:LineColorArray",
           "schema": "FCStd LineColorArray"
         },
@@ -773,7 +768,6 @@
             "r": 0.6784313917160034
           },
           "id": "fcstd:appearance:shape-material#Body:1",
-          "name": "Body face 1 material",
           "native_ref": "fcstd:native:gui-property#Body:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -792,7 +786,6 @@
             "r": 0.19607843458652496
           },
           "id": "fcstd:appearance:shape-material#Origin001:1",
-          "name": "Origin001 face 1 material",
           "native_ref": "fcstd:native:gui-property#Origin001:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -811,7 +804,6 @@
             "r": 0.6784313917160034
           },
           "id": "fcstd:appearance:shape-material#Pad:1",
-          "name": "Pad face 1 material",
           "native_ref": "fcstd:native:gui-property#Pad:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -830,7 +822,6 @@
             "r": 0.20000000298023224
           },
           "id": "fcstd:appearance:shape-material#XY_Plane:1",
-          "name": "XY_Plane face 1 material",
           "native_ref": "fcstd:native:gui-property#XY_Plane:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -849,7 +840,6 @@
             "r": 0.20000000298023224
           },
           "id": "fcstd:appearance:shape-material#XZ_Plane:1",
-          "name": "XZ_Plane face 1 material",
           "native_ref": "fcstd:native:gui-property#XZ_Plane:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -868,7 +858,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:shape-material#X_Axis:1",
-          "name": "X_Axis face 1 material",
           "native_ref": "fcstd:native:gui-property#X_Axis:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -887,7 +876,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:shape-material#YZ_Plane:1",
-          "name": "YZ_Plane face 1 material",
           "native_ref": "fcstd:native:gui-property#YZ_Plane:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -906,7 +894,6 @@
             "r": 0.20000000298023224
           },
           "id": "fcstd:appearance:shape-material#Y_Axis:1",
-          "name": "Y_Axis face 1 material",
           "native_ref": "fcstd:native:gui-property#Y_Axis:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -925,7 +912,6 @@
             "r": 0.20000000298023224
           },
           "id": "fcstd:appearance:shape-material#Z_Axis:1",
-          "name": "Z_Axis face 1 material",
           "native_ref": "fcstd:native:gui-property#Z_Axis:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -944,7 +930,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Body",
-          "name": "Body point appearance",
           "native_ref": "fcstd:native:gui-property#Body:PointColor",
           "schema": "FCStd ViewProvider point style"
         },
@@ -956,7 +941,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Body:1",
-          "name": "Body Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#Body:PointColorArray",
           "schema": "FCStd PointColorArray"
         },
@@ -968,7 +952,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Pad",
-          "name": "Pad point appearance",
           "native_ref": "fcstd:native:gui-property#Pad:PointColor",
           "schema": "FCStd ViewProvider point style"
         },
@@ -980,7 +963,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Pad:1",
-          "name": "Pad Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#Pad:PointColorArray",
           "schema": "FCStd PointColorArray"
         },
@@ -992,7 +974,6 @@
             "r": 0.12941177189350128
           },
           "id": "fcstd:appearance:vertex#Sketch:1",
-          "name": "Sketch Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:PointColorArray",
           "schema": "FCStd PointColorArray"
         }
@@ -5161,9 +5142,6 @@
               "order": 0
             },
             {
-              "attributes": {
-                "settings": ""
-              },
               "kind": {
                 "type": "Camera",
                 "value": {

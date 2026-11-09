@@ -1062,19 +1062,6 @@
             "MeasureType": "1",
             "ScaleType": "0"
           },
-          "relationships": {
-            "References2D": [
-              {
-                "subelements": [
-                  "Edge3"
-                ],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
-                }
-              }
-            ]
-          },
           "rotation_degrees": 0.0,
           "runtime_type": "TechDraw::DrawViewDimension",
           "scale": 1.0
@@ -2448,9 +2435,7 @@
           "order": 0,
           "parameters": {
             "AngleOverride": "false",
-            "Arbitrary": "false",
             "ArbitraryTolerances": "false",
-            "Caption": "",
             "EqualTolerance": "true",
             "ExpressionEngine": "[]",
             "ExtensionAngle": "0.0",
@@ -2460,17 +2445,9 @@
             "Label": "Length",
             "Label2": "",
             "LineAngle": "0.0",
-            "LockPosition": "false",
-            "MeasureType": "1",
-            "OverTolerance": "0.0",
             "References3D": "[]",
-            "Rotation": "0.0",
-            "Scale": "1.0",
-            "ScaleType": "0",
             "ShowUnits": "false",
             "TheoreticalExact": "false",
-            "Type": "1",
-            "UnderTolerance": "0.0",
             "UseActualArea": "true",
             "Visibility": "true"
           },
@@ -2515,17 +2492,12 @@
           "object": "fcstd:native:object#Note",
           "order": 1,
           "parameters": {
-            "Caption": "",
             "ExpressionEngine": "[]",
             "Font": "osifont",
             "Label": "Note",
             "Label2": "",
             "LineSpace": "100",
-            "LockPosition": "false",
             "MaxWidth": "-1.0",
-            "Rotation": "0.0",
-            "Scale": "1.0",
-            "ScaleType": "0",
             "TextColor": "255",
             "TextSize": "5.0",
             "TextStyle": "0",
