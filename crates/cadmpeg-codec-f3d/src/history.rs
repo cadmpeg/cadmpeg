@@ -29,6 +29,7 @@ pub(crate) mod fillet_blends;
 mod hole_support;
 mod loop_index;
 mod move_face;
+mod output_blob;
 mod output_chain;
 mod output_properties;
 pub(crate) mod pipe_section;
@@ -1083,6 +1084,7 @@ pub(crate) fn bind_feature_outputs(
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let mut inferred_histories = Vec::new();
     let mut datum_plane_frames = HashMap::<
         cadmpeg_ir::features::FeatureId,
         (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
@@ -1111,13 +1113,33 @@ pub(crate) fn bind_feature_outputs(
                     scope_histories,
                     histories,
                 )
-            } else {
+            } else if let Some(pair) =
                 unique_history_state_pair(histories, state_id, previous_state_id)
+            {
+                Some(pair)
+            } else {
+                let pair = output_blob::output_blob_history_pair(
+                    feature,
+                    state_id,
+                    previous_state_id,
+                    histories,
+                );
+                if let Some((history, _, _)) = pair {
+                    inferred_histories.push(crate::loss::F3dLossCode::HistoricalOutputBlobHistoryInferred.note(
+                        format!(
+                            "feature {}: its scope has no bound history and several histories hold its state pair; it reads {}, the one history of the BREP blob that holds its outputs.",
+                            feature.id.as_str(),
+                            history.id
+                        ),
+                    ));
+                }
+                pair
             }?;
             let (history_index, _) = history_state_indexes(histories, history, previous)?;
             Some(history_index)
         })
         .collect::<Vec<_>>();
+    losses.append(&mut inferred_histories);
     let output_chains = features
         .iter()
         .map(|feature| {
