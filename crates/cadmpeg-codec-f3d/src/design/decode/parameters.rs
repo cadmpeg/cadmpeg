@@ -13,6 +13,7 @@ use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_comment_discriminated_prefix as comment_prefix;
 use crate::layout::design_parameter_comment_expression_trailer as comment_trailer;
+use crate::layout::design_parameter_compact_null_owner_prefix as null_owner;
 use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
@@ -71,6 +72,15 @@ pub(crate) struct UnparsedParameterRecords {
     pub(crate) count: usize,
 }
 
+/// A count of decoded parameters in one Design `BulkStream`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StreamParameterCount {
+    /// Design `BulkStream` entry name.
+    pub(crate) stream: String,
+    /// Number of decoded parameters.
+    pub(crate) count: usize,
+}
+
 /// Decoded Design parameters and the parameter frames left unparsed.
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameters {
@@ -78,6 +88,10 @@ pub(crate) struct DecodedParameters {
     pub(crate) parameters: Vec<DesignParameter>,
     /// Per-stream counts of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
+    /// Per-stream counts of decoded parameters whose trailer byte 3 is set.
+    pub(crate) trailer_flags: Vec<StreamParameterCount>,
+    /// Per-stream counts of decoded compact null-owner parameters.
+    pub(crate) null_owners: Vec<StreamParameterCount>,
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
@@ -88,6 +102,8 @@ pub(crate) struct DecodedParameters {
 pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameters, CodecError> {
     let mut out = Vec::new();
     let mut unparsed = Vec::new();
+    let mut trailer_flags = Vec::new();
+    let mut null_owners = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -98,6 +114,8 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
+        let mut trailer_flag_count = 0usize;
+        let mut null_owner_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
             let frame = &bytes[at..end];
@@ -114,10 +132,14 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 }
 
                 let record_index = parsed.record_index;
+                let compact_flag = parsed.compact_flag;
+                let compact_null_owner = parsed.compact_null_owner;
                 match locate_design_parameter(parsed, &entry.name, at) {
                     Some(parameter) => {
                         emitted_record_indices.insert(record_index);
                         out.push(parameter);
+                        trailer_flag_count += usize::from(compact_flag);
+                        null_owner_count += usize::from(compact_null_owner);
                     }
                     None => unparsed_count = next_unparsed_count(unparsed_count)?,
                 }
@@ -138,11 +160,25 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 count: unparsed_count,
             });
         }
+        if trailer_flag_count != 0 {
+            trailer_flags.push(StreamParameterCount {
+                stream: entry.name.clone(),
+                count: trailer_flag_count,
+            });
+        }
+        if null_owner_count != 0 {
+            null_owners.push(StreamParameterCount {
+                stream: entry.name.clone(),
+                count: null_owner_count,
+            });
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(DecodedParameters {
         parameters: out,
         unparsed,
+        trailer_flags,
+        null_owners,
     })
 }
 
@@ -168,6 +204,10 @@ pub(in crate::design) struct ParsedDesignParameter {
     comment: Option<ParsedParameterUnit>,
     flags: crate::records::parameters::DesignParameterFlags,
     text_value: Option<ParsedParameterUnit>,
+    /// Whether byte 3 of the five-byte compact expression trailer is `1`.
+    compact_flag: bool,
+    /// Whether the frame is the compact null-owner form.
+    compact_null_owner: bool,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -332,7 +372,16 @@ pub(in crate::design) fn parse_design_parameter(
                 Err(error) => Some(Err(error)),
             }
         };
-        header.or_else(|| parse_comment_discriminated_parameter(payload, class_tag, record_index))
+        header
+            .or_else(|| {
+                parse_comment_discriminated_parameter(payload, class_tag.clone(), record_index)
+            })
+            .or_else(|| {
+                match parse_compact_null_owner_design_parameter(payload, class_tag, record_index) {
+                    Ok(value) => value.map(Ok),
+                    Err(error) => Some(Err(error)),
+                }
+            })
     })();
     parsed.transpose()
 }
@@ -579,6 +628,8 @@ fn parse_header_form(
             value: text_value,
             offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
         }),
+        compact_flag: false,
+        compact_null_owner: false,
     }))
 }
 
@@ -678,6 +729,8 @@ fn parse_comment_discriminated_parameter(
         }),
         flags,
         text_value: None,
+        compact_flag: false,
+        compact_null_owner: false,
     }))
 }
 
@@ -720,68 +773,117 @@ fn parse_legacy_287_design_parameter(
         }
         let source_ordinal = View::u32_le_at(payload, legacy_287::SOURCE_ORDINAL)?;
         let owner_record_index = View::u32_le_at(payload, legacy_287::OWNER_RECORD_INDEX)?;
-        let (expression, expression_end) =
-            parameter_text!(payload, legacy_287::EXPRESSION_LENGTH, 1..=256);
-        let expression_trailer_end =
-            expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
-        let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
-        if !matches!(expression_trailer, [0, 0, 0, 0 | 1, 0]) {
-            return None;
-        }
-        let source_kind_at = expression_trailer_end;
-        let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
-        let (unit, name, name_at, name_end) =
-            if View::u32_le_at(payload, source_kind_end) == Some(0) {
-                let name_at = source_kind_end.checked_add(4)?;
-                let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
-                (None, name, name_at, name_end)
-            } else {
-                let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
-                let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
-                let unit_offset = source_kind_end.checked_add(4)?;
-                (
-                    Some(ParsedParameterUnit {
-                        value: unit,
-                        offset: FrameRelative(i128::try_from(unit_offset).ok()?),
-                    }),
-                    name,
-                    unit_end,
-                    name_end,
-                )
-            };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail_start = name_end.checked_add(8)?;
-        if !is_parameter_tail(payload.get(tail_start..)?) || source_kind.is_empty() {
-            return None;
-        }
-        Some(Ok(ParsedDesignParameter {
+        compact_trailer_parameter(
+            payload,
             class_tag,
             record_index,
             source_ordinal,
-            source_kind,
-            document: None,
-            owner_record_index: Some(owner_record_index),
-            family_discriminator: None,
-            discriminator_offset: 0,
-            expression,
-            expression_offset: FrameRelative(
-                i128::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
-            ),
-            source_kind_offset: FrameRelative(i128::try_from(source_kind_at.checked_add(4)?).ok()?),
-            unit,
-            name,
-            name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
-            comment: None,
-            flags: crate::records::parameters::DesignParameterFlags::default(),
-            text_value: None,
-        }))
+            Some(owner_record_index),
+            legacy_287::EXPRESSION_LENGTH,
+        )
     })();
     parsed.transpose()
 }
 
+/// Read a class-372 frame in the compact prefix with the null owner.
+fn parse_compact_null_owner_design_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+) -> Result<Option<ParsedDesignParameter>, CodecError> {
+    let parsed = (|| {
+        if class_tag.as_str() != COMPACT_NULL_OWNER_CLASS_TAG
+            || payload.get(null_owner::ZERO_RUN_15..null_owner::SOURCE_ORDINAL) != Some(&[0; 15])
+            || payload.get(null_owner::OWNER_MARKER) != Some(&null_owner::OWNER_MARKER_VALUE)
+        {
+            return None;
+        }
+        let source_ordinal = View::u32_le_at(payload, null_owner::SOURCE_ORDINAL)?;
+        compact_trailer_parameter(
+            payload,
+            class_tag,
+            record_index,
+            source_ordinal,
+            None,
+            null_owner::EXPRESSION_LENGTH,
+        )
+    })();
+    parsed.transpose()
+}
+
+/// The remainder shared by the class-287 and compact null-owner forms: the
+/// LP-UTF16 expression at `expression_at`, the five-byte expression trailer,
+/// `source_kind`, the optional unit, the name, the f64 evaluated scalar, and
+/// the twelve-byte parameter tail at the frame end.
+fn compact_trailer_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+    source_ordinal: u32,
+    owner_record_index: Option<u32>,
+    expression_at: usize,
+) -> Option<Result<ParsedDesignParameter, CodecError>> {
+    let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
+    let expression_trailer_end = expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
+    let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
+    let compact_flag = match expression_trailer {
+        [0, 0, 0, flag @ (0 | 1), 0] => *flag == 1,
+        _ => return None,
+    };
+    let source_kind_at = expression_trailer_end;
+    let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
+        let name_at = source_kind_end.checked_add(4)?;
+        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+        (None, name, name_at, name_end)
+    } else {
+        let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
+        let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
+        let unit_offset = source_kind_end.checked_add(4)?;
+        (
+            Some(ParsedParameterUnit {
+                value: unit,
+                offset: FrameRelative(i128::try_from(unit_offset).ok()?),
+            }),
+            name,
+            unit_end,
+            name_end,
+        )
+    };
+    let evaluated_value = View::f64_le_at(payload, name_end)?;
+    let tail_start = name_end.checked_add(8)?;
+    if !is_parameter_tail(payload.get(tail_start..)?) || source_kind.is_empty() {
+        return None;
+    }
+    Some(Ok(ParsedDesignParameter {
+        class_tag,
+        record_index,
+        source_ordinal,
+        source_kind,
+        document: None,
+        owner_record_index,
+        family_discriminator: None,
+        discriminator_offset: 0,
+        expression,
+        expression_offset: FrameRelative(i128::try_from(expression_at.checked_add(4)?).ok()?),
+        source_kind_offset: FrameRelative(i128::try_from(source_kind_at.checked_add(4)?).ok()?),
+        unit,
+        name,
+        name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
+        comment: None,
+        flags: crate::records::parameters::DesignParameterFlags::default(),
+        text_value: None,
+        compact_flag,
+        compact_null_owner: owner_record_index.is_none(),
+    }))
+}
+
 const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
+
+/// Class tag of the compact null-owner parameter form.
+const COMPACT_NULL_OWNER_CLASS_TAG: &str = "372";
 
 /// Design type of a parameter collection, which every parameter tail names.
 const PARAMETER_TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
@@ -996,6 +1098,8 @@ fn parse_typed_compact_design_parameter(
             comment: None,
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
+            compact_flag: false,
+            compact_null_owner: false,
         }))
     })();
     parsed.transpose()
@@ -1053,6 +1157,8 @@ fn parse_legacy_design_parameter(
             comment: None,
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
+            compact_flag: false,
+            compact_null_owner: false,
         }))
     })();
     parsed.transpose()
