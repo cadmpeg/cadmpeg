@@ -655,7 +655,15 @@ pub fn cross_compare(
     let required = required_ids_with_source(&projected, before, config.carried, format);
     let full_unpaired =
         unpaired_before_ids(before, &after.ir, &Mode::Cross(CrossProjection::default())).ok();
-    prioritize_required(&mut projected, &required, full_unpaired.as_ref());
+    let named = |id: &str| report.losses.iter().any(|loss| loss.message.contains(id));
+    let named_required: BTreeSet<String> =
+        required.iter().filter(|id| named(id)).cloned().collect();
+    prioritize_required(
+        &mut projected,
+        &required,
+        &named_required,
+        full_unpaired.as_ref(),
+    );
     let nulled = null_dangling(&projected, &required);
     let adjusted = apply_reduced(&nulled, config.reduced, true);
     let projected_after = project_document(&after.ir, config.carried, config.fixed_paths, format);
@@ -665,7 +673,6 @@ pub fn cross_compare(
         Err(_) => BTreeSet::new(),
     };
     let normalized = normalize_synthetic_roots(&reduced_after, &synthetic);
-    let named = |id: &str| report.losses.iter().any(|loss| loss.message.contains(id));
     let unpaired_for_required = match unpaired_before_ids(
         &project_document(before, config.carried, config.fixed_paths, format),
         &normalized,
@@ -748,9 +755,12 @@ pub fn cross_compare(
     findings
 }
 
+/// Orders each arena so that a required record claims a structurally equal
+/// re-read before a record the export report names as degraded.
 fn prioritize_required(
     document: &mut Value,
     required: &BTreeSet<String>,
+    named: &BTreeSet<String>,
     full_unpaired: Option<&BTreeSet<String>>,
 ) {
     if let Some(model) = document.get_mut("model").and_then(Value::as_object_mut) {
@@ -759,6 +769,7 @@ fn prioritize_required(
                 let id = row.get("id").and_then(Value::as_str);
                 (
                     !id.is_some_and(|id| required.contains(id)),
+                    id.is_some_and(|id| named.contains(id)),
                     id.is_none_or(|id| full_unpaired.is_none_or(|ids| ids.contains(id))),
                 )
             });
@@ -1074,11 +1085,34 @@ mod tests {
         }});
         let degraded = std::collections::BTreeSet::from(["src:body#1".to_owned()]);
         let nulled = super::null_added_topology_refs(&before, &after, &degraded);
-        assert_eq!(nulled["model"]["regions"][0]["body"], serde_json::json!(null));
-        assert_eq!(nulled["model"]["bodies"][0]["id"], serde_json::json!("out:body#1"));
+        assert_eq!(
+            nulled["model"]["regions"][0]["body"],
+            serde_json::json!(null)
+        );
+        assert_eq!(
+            nulled["model"]["bodies"][0]["id"],
+            serde_json::json!("out:body#1")
+        );
         let unchanged =
             super::null_added_topology_refs(&before, &after, &std::collections::BTreeSet::new());
         assert_eq!(unchanged, after);
+    }
+
+    #[test]
+    fn a_named_degraded_record_claims_a_re_read_after_a_written_one() {
+        let mut document = serde_json::json!({"model": {
+            "loops": [{"id": "src:loop#omitted"}, {"id": "src:loop#written"}],
+        }});
+        let required = std::collections::BTreeSet::from([
+            "src:loop#omitted".to_owned(),
+            "src:loop#written".to_owned(),
+        ]);
+        let named = std::collections::BTreeSet::from(["src:loop#omitted".to_owned()]);
+        super::prioritize_required(&mut document, &required, &named, None);
+        assert_eq!(
+            document["model"]["loops"][0]["id"],
+            serde_json::json!("src:loop#written")
+        );
     }
 
     #[test]
