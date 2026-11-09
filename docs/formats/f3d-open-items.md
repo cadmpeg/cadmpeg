@@ -1418,9 +1418,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What does byte 29 state in a 262-byte `Base Feature` frame whose layout otherwise matches the 262-byte zero-body form?
 
-**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope. In the one-body result-body forms the same element, `u8 1`, eight zero bytes, and this byte, precedes the body count. Two controlled saves from one Fusion release store `1` in that byte: a one-body Base Feature whose body is built in place, and a one-body Base Feature whose body is a copy of a body in a referenced design. The byte has the same value for a local body and for a body copied from another document.
+**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope. Two controlled one-body `Base Feature` saves from the current Fusion release store `1` in the matching byte: a 331-byte class-260/258 frame whose body is built in place, and a 316-byte class-368/258 frame whose body is a copy of a body in a referenced design. In each frame the run `u8 1`, eight zero bytes, this byte, and `u8 0` precedes a u32 body count `1`; the byte is at offset 63 in the first frame and at offset 48 in the second. Neither frame length is a form in `f3d.md` §3.1.
 
-**Need.** Saves of one design from a Fusion release that writes `0` and from one that writes `1`, or a design option that changes the byte.
+**Need.** Saves of one design that differ only in this byte, for example across Fusion releases or design options.
 
 **Conflict.** None.
 
