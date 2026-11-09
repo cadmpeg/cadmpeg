@@ -187,7 +187,9 @@ impl From<NativeConvertError> for cadmpeg_core::CodecError {
 }
 
 impl NativeConvertError {
-    fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+    /// The caller resource limit this conversion ran out of, if any.
+    #[must_use]
+    pub fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
         match self {
             Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(*limit),
             Self::WriteRecord { source, .. } | Self::Arena { source, .. } => {
@@ -469,7 +471,7 @@ impl NativeRecord {
     /// The read holds one frame of the caller's depth account per container
     /// level of the stored text, the record's own object included. A refused
     /// field states the message without the text position the parser appends.
-    fn to_typed<T: DeserializeOwned>(
+    pub fn to_typed<T: DeserializeOwned>(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
