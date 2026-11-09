@@ -316,8 +316,8 @@ fn item_name(row: &mut View<'_>) -> Option<()> {
 
 /// Read the first segment string of a `value_string` array.
 ///
-/// The `f8 <count>` header is absent when the count repeats the preceding
-/// row's count; the strings then run to the `tol_text` array header.
+/// Without the `f8 <count>` header, the strings continue to the `tol_text`
+/// array header.
 fn positional_value_strings<'a>(row: &mut View<'a>) -> Option<&'a [u8]> {
     if row.unread().first() == Some(&ARRAY_OPEN) {
         row.skip(1)?;

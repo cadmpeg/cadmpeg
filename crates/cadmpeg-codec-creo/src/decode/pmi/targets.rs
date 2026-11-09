@@ -182,7 +182,7 @@ fn resolve_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<Dimension
                 from_edges: false,
             })
         }
-        [(EDGE_ATTACHMENT, first), (EDGE_ATTACHMENT, second)] if first != second => {
+        [(EDGE_ATTACHMENT, first), (EDGE_ATTACHMENT, second)] => {
             let first = edge_faces(ir, *first)?;
             let second = edge_faces(ir, *second)?;
             first.intersection(&second).next()?;
