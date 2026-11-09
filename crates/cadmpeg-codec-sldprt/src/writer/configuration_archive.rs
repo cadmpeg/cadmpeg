@@ -39,7 +39,10 @@ pub(super) fn authored(lane: &FeatureInputLane) -> Option<Vec<u8>> {
         };
         let name = lane.names.iter().find(|name| name.id == scalar.name)?;
         let index = class_tag_at(name.offset)?;
-        if classes.insert(index, class_name(class)).is_some_and(|known| known != class_name(class)) {
+        if classes
+            .insert(index, class_name(class))
+            .is_some_and(|known| known != class_name(class))
+        {
             return None;
         }
     }
@@ -49,7 +52,7 @@ pub(super) fn authored(lane: &FeatureInputLane) -> Option<Vec<u8>> {
     let name_class = View::u16_le_at(&payload, usize::try_from(lane.names.first()?.offset).ok()?)?;
     let name_class = name_class.checked_sub(CLASS_TAG_BIT)?;
     name_class.checked_sub(2).filter(|first| *first > 0)?;
-    let mut stream = vec![0; VERSION_OFFSET];
+    let mut stream = [0; VERSION_OFFSET].to_vec();
     stream.extend_from_slice(&AUTHORED_ARCHIVE_VERSION.to_le_bytes());
     declare(&mut stream, "moPart_c")?;
     stream.extend_from_slice(&[0, 0]);
