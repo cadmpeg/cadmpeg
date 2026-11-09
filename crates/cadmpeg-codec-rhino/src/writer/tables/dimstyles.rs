@@ -494,8 +494,7 @@ fn modern(
         index,
         text(fields, "name")?,
         fields.get("source_uuid"),
-    )
-    .map_err(WriteError::Fail)?;
+    )?;
     for name in [
         "extension_line_extension_mm",
         "extension_line_offset_mm",
@@ -519,7 +518,7 @@ fn modern(
     inner.extend(wide(fields, "alternate_length_format")?.to_le_bytes());
     inner.extend(narrow(fields, "alternate_length_resolution")?.to_le_bytes());
     for name in ["prefix", "suffix", "alternate_prefix", "alternate_suffix"] {
-        inner.extend(utf16(text(fields, name)?).map_err(WriteError::Fail)?);
+        inner.extend(utf16(text(fields, name)?)?);
     }
     inner.extend(finite(fields, "dimension_line_extension_mm")?.to_le_bytes());
     inner.push(u8::from(flag(fields, "suppress_extension_line_1")?));
@@ -530,7 +529,7 @@ fn modern(
         "parent_style_uuid",
     )?);
     minor0_controls(record.id(), controls, &mut inner)?;
-    anonymous(1, 0, &inner).map_err(WriteError::Fail)
+    anonymous(1, 0, &inner)
 }
 
 fn v5_version(controls: &Map<String, Value>, record: &str) -> Result<i32, WriteError> {
@@ -565,7 +564,7 @@ fn v5_scales(
     if minor >= 2 {
         payload.extend(control_finite(controls, record, "v5_length_factor")?.to_le_bytes());
         for name in ["prefix", "suffix"] {
-            payload.extend(utf16(text(fields, name)?).map_err(WriteError::Fail)?);
+            payload.extend(utf16(text(fields, name)?)?);
         }
         payload.push(u8::from(flag(fields, "alternate_enabled")?));
         payload.extend(finite(fields, "alternate_length_factor")?.to_le_bytes());
@@ -576,7 +575,7 @@ fn v5_scales(
             control_narrow(controls, record, "v5_alternate_angle_resolution")?.to_le_bytes(),
         );
         for name in ["alternate_prefix", "alternate_suffix"] {
-            payload.extend(utf16(text(fields, name)?).map_err(WriteError::Fail)?);
+            payload.extend(utf16(text(fields, name)?)?);
         }
         payload.extend(control_wide(controls, record, "v5_unused")?.to_le_bytes());
     }
@@ -619,7 +618,7 @@ fn v5(
     })?;
     let mut payload = vec![0x10 | minor_byte];
     payload.extend(index.to_le_bytes());
-    payload.extend(utf16(text(fields, "name")?).map_err(WriteError::Fail)?);
+    payload.extend(utf16(text(fields, "name")?)?);
     for name in [
         "extension_line_extension_mm",
         "extension_line_offset_mm",
@@ -649,12 +648,7 @@ fn wrapped(
     payload: &[u8],
     class: [u8; 16],
 ) -> Result<Vec<u8>, WriteError> {
-    crc_chunk_with_direct(
-        DIMSTYLE_RECORD,
-        &class_wrapper(class, payload).map_err(WriteError::Fail)?,
-        &[],
-    )
-    .map_err(WriteError::Fail)
+    crc_chunk_with_direct(DIMSTYLE_RECORD, &class_wrapper(class, payload)?, &[])
 }
 
 pub(in crate::writer) fn styles(
@@ -669,7 +663,7 @@ pub(in crate::writer) fn styles(
         losses: Vec::new(),
     };
     for record in records(ir, "dimension_styles") {
-        let index = wire_index(output.records.len()).map_err(WriteError::Fail)?;
+        let index = wire_index(output.records.len())?;
         let mut fields = record.fields()?;
         let mut reference_change = None;
         if let Some(source) = fields

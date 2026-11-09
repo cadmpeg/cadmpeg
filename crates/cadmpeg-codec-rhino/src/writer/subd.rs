@@ -409,7 +409,7 @@ fn incidence(
     ctx: &DecodeContext<'_>,
     count: usize,
     values: impl Iterator<Item = Incidence>,
-) -> Result<Vec<Incidence>, CodecError> {
+) -> Result<Vec<Incidence>, crate::writer::WriteError> {
     // Working scratch, not retained output: it never reaches the archive.
     let mut result = Vec::new();
     ctx.reserve_working(&mut result, count, "Rhino SubD incidence")?;
@@ -648,7 +648,10 @@ fn payload<'a>(
     Ok(Some(output))
 }
 
-fn pointer(output: &mut EncodeBuffer<'_>, pointer: Pointer) -> Result<(), CodecError> {
+fn pointer(
+    output: &mut EncodeBuffer<'_>,
+    pointer: Pointer,
+) -> Result<(), crate::writer::WriteError> {
     output.append(&pointer.id.to_le_bytes(), OPERATION)?;
     output.append(&[pointer.flags], OPERATION)?;
     Ok(())
@@ -667,7 +670,7 @@ fn base(
     archive_id: u32,
     component_id: u32,
     version: RhinoArchiveVersion,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     output.append(&archive_id.to_le_bytes(), OPERATION)?;
     output.append(&component_id.to_le_bytes(), OPERATION)?;
     output.append(&0_u16.to_le_bytes(), OPERATION)?;
@@ -685,19 +688,22 @@ fn base(
 fn record_end(
     output: &mut EncodeBuffer<'_>,
     version: RhinoArchiveVersion,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     output.append(&[if version.value() < 70 { 0 } else { 255 }], OPERATION)?;
     Ok(())
 }
 
-fn write_bounds(output: &mut EncodeBuffer<'_>, bounds: [f64; 6]) -> Result<(), CodecError> {
+fn write_bounds(
+    output: &mut EncodeBuffer<'_>,
+    bounds: [f64; 6],
+) -> Result<(), crate::writer::WriteError> {
     for value in bounds {
         output.append(&value.to_le_bytes(), OPERATION)?;
     }
     Ok(())
 }
 
-fn begin_chunk(output: &mut EncodeBuffer<'_>) -> Result<usize, CodecError> {
+fn begin_chunk(output: &mut EncodeBuffer<'_>) -> Result<usize, crate::writer::WriteError> {
     let start = output.len();
     output.append(&ANONYMOUS.to_le_bytes(), OPERATION)?;
     output.append(&0_i64.to_le_bytes(), OPERATION)?;

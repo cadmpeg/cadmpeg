@@ -1208,7 +1208,7 @@ mod conics;
 pub(crate) fn table(
     typecode: u32,
     records: &[Vec<u8>],
-) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &DecodePolicy::desktop(), DecodeDepth::Full);

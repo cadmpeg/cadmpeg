@@ -315,10 +315,8 @@ fn v5_mesh_cache_userdata(
         header_range_start..header_range_end,
         payload_range_start..payload_range_end,
     ];
-    let direct =
-        crate::chunks::direct_checksum_ranges(&(0..body.len()), &children).map_err(|error| {
-            WriteError::Fail(cadmpeg_core::CodecError::malformed(error.to_string()))
-        })?;
+    let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
+        .map_err(|error| WriteError::Omit(error.to_string()))?;
     let mut hasher = crc32fast::Hasher::new();
     for range in &direct {
         hasher.update(&body[range]);
@@ -482,7 +480,7 @@ fn decode_record(
     settings.extend(super::short_chunk(super::TCODE_ENDOFTABLE, 0));
     bytes.extend(super::long_chunk(super::TCODE_SETTINGS_TABLE, &settings)?);
     bytes.extend(super::long_chunk(super::TCODE_OBJECT_TABLE, &table)?);
-    let end = super::archive_final_size(cadmpeg_core::decode::u64_from_index(bytes.len()))?;
+    let end = super::archive_final_size(cadmpeg_core::decode::u64_from_index(bytes.len()));
     bytes.extend(super::long_chunk(
         crate::chunks::TCODE_ENDOFFILE,
         &end.to_le_bytes(),
