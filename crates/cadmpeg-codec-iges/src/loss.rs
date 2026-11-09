@@ -155,6 +155,12 @@ loss_codes! {
     WriterPcurveConverted => "writer.pcurve-converted",
     /// A body's local shape was written without its unsupported placement.
     WriterBodyTransformNotApplied => "writer.body-transform-not-applied",
+    /// A vertex, edge, or face tolerance has no IGES representation.
+    WriterToleranceNotRepresented => "writer.tolerance-not-represented",
+    /// A placed curve was written with its placement applied.
+    WriterPlacementApplied => "writer.placement-applied",
+    /// An attribute's record target reads back as the typed target of that record.
+    WriterAttributeTargetRestated => "writer.attribute-target-restated",
     /// No writable geometric entity remains in the document.
     NoExportableSolids => "export.no-exportable-solids",
 }
@@ -221,7 +227,10 @@ impl IgesLossCode {
             | Self::WriterBodyNameNotRepresented
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
-            | Self::WriterBodyVisibilityNotRepresented => Severity::Warning,
+            | Self::WriterBodyVisibilityNotRepresented
+            | Self::WriterToleranceNotRepresented
+            | Self::WriterPlacementApplied => Severity::Warning,
+            Self::WriterAttributeTargetRestated => Severity::Info,
         }
     }
 
@@ -230,7 +239,9 @@ impl IgesLossCode {
         match self {
             Self::NeutralProjectionUnavailable => LossTaxonomy::MetadataNotTransferred,
             Self::WriterArenaOmitted => LossTaxonomy::PassthroughRecordOmitted,
-            Self::WriterAttributeOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterAttributeOmitted | Self::WriterAttributeTargetRestated => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::DesignParametricRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEntityOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPcurveReparameterized | Self::WriterPcurveConverted => {
@@ -267,7 +278,9 @@ impl IgesLossCode {
             | Self::GeometryNotProjected
             | Self::WriterSupportGeometryNotRepresented
             | Self::WriterFreeGeometryOmitted
-            | Self::WriterDuplicateCarrierOmitted => LossTaxonomy::GeometryNotTransferred,
+            | Self::WriterDuplicateCarrierOmitted
+            | Self::WriterToleranceNotRepresented
+            | Self::WriterPlacementApplied => LossTaxonomy::GeometryNotTransferred,
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted

@@ -34,6 +34,10 @@ pub(super) fn materialize(entities: &mut Vec<Entity>) -> Vec<LossNote> {
             .map(|value| number(*value))
             .collect::<Vec<_>>()
             .join(",");
+        if let Some(existing) = equal_transformation(entities, placement) {
+            entities[index].transform_link = Some(existing);
+            continue;
+        }
         let transform = entities.len();
         entities[index].transform_link = Some(transform);
         entities.push(Entity {
@@ -53,6 +57,30 @@ pub(super) fn materialize(entities: &mut Vec<Entity>) -> Vec<LossNote> {
         });
     }
     losses
+}
+
+/// An unplaced Type 124 entity whose coefficients equal `placement`, so a
+/// re-emitted transformation also places the entity that names it.
+fn equal_transformation(entities: &[Entity], placement: Placement) -> Option<usize> {
+    entities.iter().position(|entity| {
+        entity.type_code == 124
+            && entity.transform.is_none()
+            && entity.transform_link.is_none()
+            && std::str::from_utf8(&entity.parameter_body)
+                .ok()
+                .and_then(|body| body.strip_suffix(';'))
+                .is_some_and(|body| {
+                    let values = body
+                        .split(',')
+                        .map(|token| token.replace(['D', 'd'], "E").parse::<f64>().ok())
+                        .collect::<Vec<_>>();
+                    values.len() == 12
+                        && values
+                            .iter()
+                            .zip(placement.rows.iter().flatten())
+                            .all(|(value, expected)| *value == Some(expected.get()))
+                })
+    })
 }
 
 // Apply the same declared 17-digit significance and outward rounding used to

@@ -39,7 +39,15 @@ pub(crate) fn lanes(
         } {
             continue;
         }
-        let mut lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
+        let parent = if explicit_lanes {
+            format!(
+                "sldprt:feature-input:resolved-features#{}",
+                lane_key(scan, source)
+            )
+        } else {
+            source_id(source, "resolved-features")
+        };
+        let mut lane = feature_input_lane(ctx, source, section, parent, annotations)?;
         if explicit_lanes {
             type_scalars_from_archive(
                 ctx,
@@ -171,7 +179,7 @@ pub(crate) fn supplemental_config_lanes(
                 ctx,
                 source,
                 section,
-                "config-objects",
+                source_id(source, "config-objects"),
                 annotations,
             )?);
         }
@@ -183,14 +191,42 @@ pub(super) fn source_id(source: crate::container::Section<'_>, family: &str) -> 
     format!("sldprt:feature-input:{family}#{}", source.ordinal())
 }
 
+/// The identity key of a `Contents/Config-N-ResolvedFeatures` section: its
+/// configuration slot, which a rewrite keeps, unless another section shares
+/// its name; else its position in the container.
+pub(crate) fn lane_key(scan: &ContainerScan<'_>, source: crate::container::Section<'_>) -> String {
+    let slot = source.name().and_then(|name| {
+        let name = name.replace('\\', "/").to_ascii_lowercase();
+        let slot = name
+            .strip_prefix("contents/config-")?
+            .strip_suffix("-resolvedfeatures")?
+            .to_owned();
+        (!slot.is_empty() && slot.bytes().all(|byte| byte.is_ascii_digit())).then_some(slot)
+    });
+    let unique = || {
+        scan.sections()
+            .filter(|other| {
+                other
+                    .name()
+                    .zip(source.name())
+                    .is_some_and(|(other, name)| other.eq_ignore_ascii_case(name))
+            })
+            .count()
+            == 1
+    };
+    match slot {
+        Some(slot) if unique() => format!("config-{slot}"),
+        _ => source.ordinal().to_string(),
+    }
+}
+
 fn feature_input_lane(
     ctx: &DecodeContext<'_>,
     source: crate::container::Section<'_>,
     section: &str,
-    family: &str,
+    parent: String,
     annotations: &mut Annotations,
 ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
-    let parent = source_id(source, family);
     let payload = source.payload();
     let classes = class_declarations(payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;
@@ -224,7 +260,7 @@ fn feature_input_lane(
         parent.as_str(),
         source.source_stream(),
         0,
-        if family == "config-objects" {
+        if parent.starts_with("sldprt:feature-input:config-objects#") {
             "ConfigObjects"
         } else {
             "ResolvedFeatures"

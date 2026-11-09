@@ -557,7 +557,7 @@ impl EncoderBackend for CadirEncoder {
                 return Err(limit.into());
             }
             Err(error @ crate::hash::finite_json::CanonicalJsonError::NonFinite { .. }) => {
-                if let Some(finding) = ValidatedFinding::for_cadir_encode(input.ir) {
+                if let Some(finding) = ValidatedFinding::non_finite(input.ir) {
                     return Err(EncodeError::InvalidInput(finding));
                 }
                 debug_assert!(

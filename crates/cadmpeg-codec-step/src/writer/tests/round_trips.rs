@@ -1828,13 +1828,10 @@ fn the_part21_real_formatter_refuses_a_non_finite_value() {
         let emitter = crate::writer::Emitter::new();
         assert_eq!(emitter.real(1.5), "1.5");
         assert_eq!(emitter.real(value), "", "{value}");
-        let Err(error) = emitter.into_lines() else {
+        let Err(refusal) = emitter.into_lines() else {
             panic!("a non-finite real refuses the section: {value}");
         };
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::InvalidInput(_)),
-            "{error}"
-        );
+        assert_eq!(refusal.value.to_bits(), value.to_bits());
     }
 }
 
@@ -1843,7 +1840,7 @@ fn the_part21_real_formatter_refuses_a_non_finite_value() {
 fn replica_written_with(
     records: &str,
     transform: Transform,
-) -> Result<String, cadmpeg_core::CodecError> {
+) -> Result<String, cadmpeg_ir::codec::write::EncodeError> {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
 
     let source = crate::test_support::exchange::decode_inline(records);

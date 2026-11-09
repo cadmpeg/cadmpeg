@@ -47,16 +47,7 @@ pub(crate) fn plan(
         schema,
         &codec.options,
         recovered.recovered_edges,
-    )
-    .map_err(|error| match error {
-        cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
-        cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
-        cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
-        error => {
-            debug_assert!(false, "unmapped STEP encode error: {error}");
-            panic!("unmapped STEP encode error: {error}");
-        }
-    })?;
+    )?;
     let coverage = coverage(schema, &outcome.losses);
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {

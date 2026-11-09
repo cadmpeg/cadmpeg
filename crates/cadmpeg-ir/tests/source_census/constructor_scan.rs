@@ -6,7 +6,7 @@
 //! callees, and unit paths used as values — not as comparison operands —
 //! resolving `Self::` and glob imports, mapping `XInput::V` to `X::V`, and
 //! reading `macro_rules!` bodies as tokens. Test files and encode-path
-//! functions are excluded: test items never load (`encode_paths::source`),
+//! functions are excluded: test items never load (`call_graph::source`),
 //! and functions reachable from an `EncoderBackend` method are dropped here.
 //!
 //! The scan resolves paths through the shared workspace graph, then
@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use super::encode_paths::{symbol_candidates, Call, CtorKind, Function, Graph, SelfReturn};
+use super::call_graph::{symbol_candidates, Call, CtorKind, Function, Graph, SelfReturn};
 
 const IR_PACKAGE: &str = "cadmpeg_ir";
 
@@ -1009,7 +1009,7 @@ fn carried_artifacts_are_fresh() {
         now.elapsed(),
         record_types.len()
     );
-    let graph = super::encode_paths::source::workspace(&root);
+    let graph = super::call_graph::source::workspace(&root);
     eprintln!("workspace: {:?}", now.elapsed());
     let table = constructor_table(&graph, IR_PACKAGE, &registry, &record_types);
     eprintln!("table: {:?} ({} rows)", now.elapsed(), table.len());
@@ -1037,7 +1037,7 @@ fn carried_artifacts_are_fresh() {
 
 #[cfg(test)]
 mod tests {
-    use super::super::encode_paths::source::fixture;
+    use super::super::call_graph::source::fixture;
     use super::*;
 
     #[test]

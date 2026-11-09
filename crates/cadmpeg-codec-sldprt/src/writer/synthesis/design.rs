@@ -45,8 +45,14 @@ pub(super) fn prepare(
             })?;
     synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
     sketches(ctx, ir, native.as_ref(), losses)?;
-    // A dropped sketch retains its feature and solved output, with an explicit loss.
-    synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
+    // A dropped sketch retains its feature and solved output, with an explicit
+    // loss; a feature whose operation no longer encodes keeps its solved result.
+    if let Err(WriteError::Decline(_)) =
+        synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)
+    {
+        super::reduce_design(ir, losses, repair)?;
+        synthesize_neutral_features_repairing(ir, &mut native, &orphaned, losses, repair)?;
+    }
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ctx, ir, &mut native)?;
     crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
     let all_bodies = ir

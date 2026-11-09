@@ -567,10 +567,7 @@ impl Object {
     }
 
     pub(crate) fn set_boolean(&mut self, name: &str, value: bool) {
-        self.set_metadata(
-            name,
-            scalar(name, "App::PropertyBool", "Bool", value),
-        );
+        self.set_metadata(name, scalar(name, "App::PropertyBool", "Bool", value));
     }
 
     fn set_metadata(&mut self, name: &str, property: String) {
