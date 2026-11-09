@@ -858,6 +858,29 @@ pub(crate) fn check_items<'a>(
     Ok(())
 }
 
+/// Whether an edge collection lists items and every item stores an empty
+/// index-reference list.
+pub(crate) fn all_items_empty<'a>(
+    collection: &PmDcFeatureProperty,
+    property: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> bool {
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &collection.kind
+    else {
+        return false;
+    };
+    !items.references().is_empty()
+        && items.references().iter().all(|reference| {
+            matches!(
+                property(*reference).map(|p| &p.kind),
+                Some(PmDcFeaturePropertyKind::EdgeItem { index_references, .. })
+                    if index_references.values().is_empty()
+            )
+        })
+}
+
 pub(crate) fn matches_selection(
     selection: &cadmpeg_ir::features::EdgeSelection,
     native: &str,
@@ -880,6 +903,7 @@ pub(crate) fn native_losses(
     features: &[cadmpeg_ir::features::Feature],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = empty_item_losses(inventory, features);
+    losses.extend(empty_set_losses(inventory, features));
     losses.extend(historical::native_losses(features));
     losses.extend(historical::ambiguous_owner_losses(inventory, features));
     losses.extend(historical::generator_losses(inventory, features));
@@ -1010,6 +1034,60 @@ fn empty_item_losses(
     } else {
         vec![crate::loss::InventorLossCode::FeatureEdgeSelectionEmptyItemsNative.note(format!(
             "Retained {count} edge-treatment feature(s) with empty edge-item index-reference lists; their input-edge naming joins are unresolved."
+        ))]
+    }
+}
+
+/// Reports the projected fillets that omit an edge set with only empty items.
+fn empty_set_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let projected: HashSet<&str> = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect();
+    if projected.is_empty() {
+        return Vec::new();
+    }
+    let properties = unique_index(inventory.properties.iter().map(|property| {
+        (
+            (
+                property.identity.segment_token.as_str(),
+                property.identity.record_ordinal,
+            ),
+            property,
+        )
+    }));
+    let count = inventory
+        .features
+        .iter()
+        .filter(|source| projected.contains(source.id().as_str()))
+        .filter(|source| {
+            super::fillet::empty_sets(source, |reference| {
+                properties
+                    .get(&(
+                        source.identity.segment_token.as_str(),
+                        reference.record_ordinal()?,
+                    ))?
+                    .as_ref()
+                    .copied()
+            }) > 0
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureFilletEmptyEdgeSetsOmitted.note(format!(
+            "{count} fillet feature(s) omit an edge set whose items all store empty index-reference lists; the set selects no edge."
         ))]
     }
 }

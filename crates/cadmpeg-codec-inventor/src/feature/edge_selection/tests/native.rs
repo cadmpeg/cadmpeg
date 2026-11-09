@@ -166,3 +166,92 @@ fn only_retained_native_edge_treatments_receive_the_empty_item_loss() {
     let losses = native_losses(&inventory, &[feature]);
     assert_eq!(losses.len(), 1);
 }
+
+/// A fillet that projects as an operation, with a second edge set whose items
+/// store `second` index-reference lists.
+fn projected_two_set_fillet(
+    ctx: &DecodeContext<'_>,
+    first: &[&[u32]],
+    second: &[&[u32]],
+) -> (FeatureInventory, Feature) {
+    use cadmpeg_ir::features::{
+        edge_treatments::{FilletGroup, RadiusSpec},
+        EdgeSelection, FeatureEvaluation, NonEmptyMembers,
+    };
+
+    let (mut inventory, mut feature) = fixture(ctx, FILLET_CLASS_ID, first);
+    inventory.properties[0] = test_property(
+        0,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::FilletEdgeSets,
+            items: reference_list(&[2, 20]),
+        },
+    );
+    let mut kind = inventory.properties[1].kind.clone();
+    if let PmDcFeaturePropertyKind::FilletEdgeSet { edges, .. } = &mut kind {
+        *edges = reference(21);
+    }
+    inventory.properties.push(test_property(19, kind));
+    let members = (0..second.len())
+        .map(|n| 22 + u32::try_from(n).expect("small fixture"))
+        .collect::<Vec<_>>();
+    inventory.properties.push(test_property(
+        20,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::EdgeCollection,
+            items: reference_list(&members),
+        },
+    ));
+    for (n, values) in second.iter().enumerate() {
+        inventory.properties.push(test_property(
+            21 + u32::try_from(n).expect("small fixture"),
+            PmDcFeaturePropertyKind::EdgeItem {
+                index_references: PmDcU32List::new(
+                    2,
+                    (!values.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                    values.to_vec(),
+                )
+                .expect("list metadata"),
+                index_reference_value: -1,
+                value: 0,
+            },
+        ));
+    }
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Fillet {
+            groups: NonEmptyMembers::one(FilletGroup {
+                edges: EdgeSelection::Native("test-collection".into()),
+                radius: RadiusSpec::Constant {
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+                },
+                tangency_weight: None,
+            }),
+        },
+    ));
+    (inventory, feature)
+}
+
+fn omission_notes(inventory: &FeatureInventory, feature: Feature) -> usize {
+    native_losses(inventory, &[feature])
+        .iter()
+        .filter(|note| note.code.local_code() == "feature.fillet-empty-edge-sets-omitted")
+        .count()
+}
+
+#[test]
+fn a_projected_fillet_with_one_empty_edge_set_reports_one_omission_note() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (inventory, feature) = projected_two_set_fillet(&ctx, &[&[7]], &[&[]]);
+    assert_eq!(omission_notes(&inventory, feature), 1);
+}
+
+#[test]
+fn a_projected_fillet_with_only_listed_edge_sets_reports_no_omission_note() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (inventory, feature) = projected_two_set_fillet(&ctx, &[&[7]], &[&[8]]);
+    assert_eq!(omission_notes(&inventory, feature), 0);
+}
