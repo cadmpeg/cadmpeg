@@ -66,6 +66,8 @@ const WRITTEN: &[&str] = &[
     "design_entity_headers",
     "design_record_headers",
     "design_mesh_features",
+    "design_parameter_scopes",
+    "design_construction_operand_groups",
     "body_native_keys",
     "body_visibilities",
     "edge_continuities",
@@ -1278,7 +1280,13 @@ pub(super) fn coverage(
                         .iter()
                         .find(|candidate| candidate.id() == record.id())
                 }) {
-                    let disposition = if arena.as_str() == "mesh_surface_sentinels" {
+                    // A record a Design, ACT or BREP stream position
+                    // identifies takes a new position, and with it new layout
+                    // fields, in the stream synthesis lays out.
+                    let laid_out = crate::ids::native_stream(record.id())
+                        .is_some_and(|stream| stream.ends_with(".dat") || stream.ends_with(".smbh"));
+                    let disposition = if arena.as_str() == "mesh_surface_sentinels" || laid_out
+                    {
                         NativeDisposition::Regenerated
                     } else if candidate == record {
                         NativeDisposition::Written

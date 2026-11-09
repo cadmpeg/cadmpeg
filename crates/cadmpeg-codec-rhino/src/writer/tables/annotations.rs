@@ -724,6 +724,21 @@ pub(in crate::writer) fn records(
         )?);
         written.insert(annotation.id.to_string());
     }
+    let renumbered = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .filter(|annotation| written.contains(annotation.id.as_str()))
+        .enumerate()
+        .filter(|(position, annotation)| usize::try_from(annotation.order) != Ok(*position))
+        .map(|(_, annotation)| annotation.id.as_str())
+        .collect::<Vec<_>>();
+    if !renumbered.is_empty() {
+        losses.push(RhinoLossCode::WriterAnnotationOmitted.note(format!(
+            "annotation order is stored as the object sequence; renumbered: {}",
+            renumbered.join(", ")
+        )));
+    }
     Ok(AnnotationExport {
         records: output,
         losses,

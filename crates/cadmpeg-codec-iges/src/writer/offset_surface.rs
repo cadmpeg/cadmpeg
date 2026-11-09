@@ -64,10 +64,8 @@ fn candidate<'a>(ir: &'a CadIr, surface: &Surface) -> Option<(&'a Surface, f64)>
 }
 
 pub(super) fn consumed_support(ir: &CadIr, surface: &Surface, version: crate::IgesVersion) -> bool {
-    let ownership = super::ownership::SourceOwnership::build(ir);
     ir.model.surfaces.iter().any(|owner| {
-        ownership.surface_status(owner).is_some()
-            && candidate(ir, owner).is_some_and(|(support, _)| support.id == surface.id)
+        candidate(ir, owner).is_some_and(|(support, _)| support.id == surface.id)
             && admitted(version)
     })
 }

@@ -335,6 +335,7 @@ fn equal_current_property_is_written_and_a_changed_counterpart_is_regenerated() 
         &equal.losses,
         &equal.regenerated,
         &equal.written,
+        &std::collections::BTreeSet::new(),
     );
     assert_eq!(
         declaration.record_disposition("iges", "properties", PROPERTY),
@@ -353,6 +354,7 @@ fn equal_current_property_is_written_and_a_changed_counterpart_is_regenerated() 
         &changed.losses,
         &changed.regenerated,
         &changed.written,
+        &std::collections::BTreeSet::new(),
     );
     assert_eq!(
         declaration.record_disposition("iges", "properties", PROPERTY),
