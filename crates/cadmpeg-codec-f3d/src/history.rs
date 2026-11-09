@@ -22,6 +22,7 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+pub(crate) mod edge_recipe_scope;
 pub(crate) mod face_admission;
 mod face_recipe;
 mod fallback_face;
@@ -5195,7 +5196,9 @@ pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    edge_recipes: edge_recipe_scope::Sources<'_>,
     histories: &[AsmHistory],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> HashMap<String, String> {
     let mut candidates = Vec::new();
     for scope in scopes {
@@ -5282,6 +5285,14 @@ pub(crate) fn bind_scope_histories(
                 insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
                 continue;
             }
+        }
+        if let Some(history) = edge_recipe_scope::select(scope, edge_recipes, candidates) {
+            insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+            losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                "scope {}: its state pair occurs in several histories; it reads {}, whose BREP blob agrees with every qualified edge-recipe face candidate.",
+                scope.id, history.id
+            )));
+            continue;
         }
         let Some(construction) = scope.base_feature_construction() else {
             continue;
