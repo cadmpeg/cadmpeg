@@ -2799,7 +2799,9 @@ fn append_resolved_consolidated_surface_curves(
                     (*pos, None),
                     crate::families::b2::records::b2_sphere_geometry(sphere),
                     None,
-                    ConsolidatedCarrierChart::Identity,
+                    ConsolidatedCarrierChart::Sphere {
+                        radius: sphere.radius.get(),
+                    },
                     "consolidated_b2_03_2a_sphere",
                     cadmpeg_ir::identity_namespace!("catia", "consolidated", "sphere"),
                 )
