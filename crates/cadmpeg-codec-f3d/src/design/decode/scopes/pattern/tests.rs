@@ -112,6 +112,7 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
     };
 
     let historical_only = [CircularPatternAxisCandidate {
+        separator_flag_offset: None,
         axis: historical.clone(),
         axis_record_index: 10,
         selection_record_index: 11,
@@ -128,11 +129,13 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
 
     let mixed = [
         CircularPatternAxisCandidate {
+            separator_flag_offset: None,
             axis: historical.clone(),
             axis_record_index: 10,
             selection_record_index: 11,
         },
         CircularPatternAxisCandidate {
+            separator_flag_offset: None,
             axis: inline.clone(),
             axis_record_index: 20,
             selection_record_index: 21,
@@ -150,11 +153,13 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
 
     let duplicate_inline = [
         CircularPatternAxisCandidate {
+            separator_flag_offset: None,
             axis: inline.clone(),
             axis_record_index: 20,
             selection_record_index: 21,
         },
         CircularPatternAxisCandidate {
+            separator_flag_offset: None,
             axis: inline,
             axis_record_index: 30,
             selection_record_index: 31,
@@ -164,11 +169,13 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
 
     let duplicate_historical = [
         CircularPatternAxisCandidate {
+            separator_flag_offset: None,
             axis: historical.clone(),
             axis_record_index: 10,
             selection_record_index: 11,
         },
         CircularPatternAxisCandidate {
+            separator_flag_offset: None,
             axis: historical,
             axis_record_index: 12,
             selection_record_index: 13,
@@ -353,6 +360,7 @@ fn run_pattern_constructions_fixture() {
             &[]
         ),
         Some(DesignCircularPatternConstruction {
+            axis_separator_flag_offset: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
             count_offset: u64_from_index(count_start + 40),
@@ -1338,55 +1346,69 @@ fn circular_pattern_historical_wrappers_resolve_an_edge_axis() {
         .with_fixture_layout(),
     )
     .unwrap();
-    let mut bytes = Vec::new();
-    indexed_header(&mut bytes, *b"308", 50);
-    bytes.resize(129, 0);
-    for at in [21, 36, 51] {
-        bytes[at..at + 4].copy_from_slice(&1u32.to_le_bytes());
+    for separator in [false, true] {
+        let mut bytes = Vec::new();
+        indexed_header(&mut bytes, *b"308", 50);
+        bytes.resize(129, 0);
+        for at in [21, 36, 51] {
+            bytes[at..at + 4].copy_from_slice(&1u32.to_le_bytes());
+        }
+        for (at, index) in [
+            (25, 80u32),
+            (40, 20),
+            (55, 80),
+            (66, 1),
+            (93, 52),
+            (106, 51),
+            (118, 1),
+        ] {
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+        }
+        for at in [77, 89] {
+            bytes[at..at + 4].copy_from_slice(&7u32.to_le_bytes());
+        }
+        bytes[81..89].copy_from_slice(&0.5f64.to_le_bytes());
+        // The 130-byte form stores `u8 1` and two zero bytes between the
+        // references to the axis-record indexes plus two and plus one.
+        if separator {
+            bytes.insert(104, 1);
+        }
+        indexed_header(&mut bytes, *b"258", 50);
+        indexed_header(&mut bytes, *b"308", 80);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&40u64.to_le_bytes());
+        lp_utf16(&mut bytes, "384d79a0-c23e-42aa-b993-74df1f8dfcae");
+        lp_utf16(&mut bytes, "352c47d7-42ba-443e-9de1-ae0e37cc129d");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        push_marked_reference(&mut bytes, 81);
+        indexed_header(&mut bytes, *b"305", 81);
+        bytes.extend_from_slice(&[0; 10]);
+        push_marked_reference(&mut bytes, 82);
+        indexed_header(&mut bytes, *b"300", 82);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&503u64.to_le_bytes());
+        indexed_header(&mut bytes, *b"308", 83);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let (axis, selection, separator_flag) = super::exact_legacy_circular_pattern_axis(
+            &bytes,
+            &records,
+            0,
+            if separator { 130 } else { 129 },
+            50,
+            &scope,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(selection, 20);
+        assert_eq!(separator_flag, separator.then_some(104));
+        assert!(
+            matches!(axis, crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
+            wrappers, persistent_identity: 503, resolved: None,
+        } if wrappers.len() == 2 && wrappers[0] == wrappers[1])
+        );
     }
-    for (at, index) in [
-        (25, 80u32),
-        (40, 20),
-        (55, 80),
-        (66, 1),
-        (93, 52),
-        (106, 51),
-        (118, 1),
-    ] {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
-    }
-    for at in [77, 89] {
-        bytes[at..at + 4].copy_from_slice(&7u32.to_le_bytes());
-    }
-    bytes[81..89].copy_from_slice(&0.5f64.to_le_bytes());
-    indexed_header(&mut bytes, *b"258", 50);
-    indexed_header(&mut bytes, *b"308", 80);
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&40u64.to_le_bytes());
-    lp_utf16(&mut bytes, "384d79a0-c23e-42aa-b993-74df1f8dfcae");
-    lp_utf16(&mut bytes, "352c47d7-42ba-443e-9de1-ae0e37cc129d");
-    bytes.extend_from_slice(&2u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 4]);
-    push_marked_reference(&mut bytes, 81);
-    indexed_header(&mut bytes, *b"305", 81);
-    bytes.extend_from_slice(&[0; 10]);
-    push_marked_reference(&mut bytes, 82);
-    indexed_header(&mut bytes, *b"300", 82);
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&503u64.to_le_bytes());
-    indexed_header(&mut bytes, *b"308", 83);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let (axis, selection) =
-        super::exact_legacy_circular_pattern_axis(&bytes, &records, 0, 129, 50, &scope)
-            .unwrap()
-            .unwrap();
-    assert_eq!(selection, 20);
-    assert!(
-        matches!(axis, crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
-        wrappers, persistent_identity: 503, resolved: None,
-    } if wrappers.len() == 2 && wrappers[0] == wrappers[1])
-    );
 }
 
 fn rectangular_instance_fixture() -> (

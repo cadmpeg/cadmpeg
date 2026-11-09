@@ -598,6 +598,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                         axis,
                         axis_record_index: *record_index,
                         selection_record_index: *selection_record_index,
+                        separator_flag_offset: None,
                     });
                 }
             }
@@ -615,11 +616,12 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     Ok(candidate) => candidate,
                     Err(error) => return Some(Err(error)),
                 };
-                if let Some((axis, selection_record_index)) = candidate {
+                if let Some((axis, selection_record_index, separator_flag_offset)) = candidate {
                     axis_candidates.push(CircularPatternAxisCandidate {
                         axis,
                         axis_record_index: *record_index,
                         selection_record_index,
+                        separator_flag_offset,
                     });
                 }
             }
@@ -629,6 +631,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             axis,
             axis_record_index,
             selection_record_index,
+            separator_flag_offset,
         } = axis_candidates.into_iter().nth(axis_index)?;
         let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
             if native_stream(owner.id()) != native_stream(&scope.id)
@@ -715,6 +718,10 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             axis,
             axis_record_index,
             selection_record_index,
+            axis_separator_flag_offset: match separator_flag_offset {
+                Some(offset) => Some(u64::try_from(offset).ok()?),
+                None => None,
+            },
         }))
     })();
     parsed.transpose()
@@ -725,6 +732,7 @@ struct CircularPatternAxisCandidate {
     axis: patterns::DesignCircularPatternAxis,
     axis_record_index: u32,
     selection_record_index: u32,
+    separator_flag_offset: Option<usize>,
 }
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
@@ -752,7 +760,7 @@ fn exact_legacy_circular_pattern_axis(
     paired_at: usize,
     record_index: u32,
     scope: &DesignParameterScope,
-) -> Result<Option<(patterns::DesignCircularPatternAxis, u32)>, CodecError> {
+) -> Result<Option<(patterns::DesignCircularPatternAxis, u32, Option<usize>)>, CodecError> {
     let parsed = (|| {
         use patterns::DesignCircularPatternAxis;
 
@@ -777,7 +785,7 @@ fn exact_legacy_circular_pattern_axis(
             paired_at.checked_sub(start),
             View::u32_le_at(bytes, start + 21),
         ) {
-            (Some(129), Some(1)) => (
+            (Some(129 | 130), Some(1)) => (
                 [Some(start + 26), Some(start + 56)],
                 start + 40,
                 start + 51,
@@ -821,18 +829,30 @@ fn exact_legacy_circular_pattern_axis(
         {
             return None;
         }
+        // The 130-byte two-wrapper form stores `u8 1` and two zero bytes
+        // between the references to the axis-record indexes plus two and plus
+        // one, where the other forms store two zero bytes.
+        let separator_flag_at = (paired_at.checked_sub(start) == Some(130)).then_some(tail_at + 27);
+        let shift = usize::from(separator_flag_at.is_some());
+        let separator_holds = match separator_flag_at {
+            Some(flag_at) => {
+                bytes.get(flag_at) == Some(&1)
+                    && bytes.get(flag_at + 1..flag_at + 3) == Some(&[0; 2])
+            }
+            None => bytes.get(tail_at + 27..tail_at + 29) == Some(&[0; 2]),
+        };
         let opaque_index = View::u32_le_at(bytes, tail_at)?;
         if opaque_index == 0
             || !View::f64_le_at(bytes, tail_at + 4)?.is_finite()
             || View::u32_le_at(bytes, tail_at + 12) != Some(opaque_index)
             || marked_record_reference(bytes, tail_at + 16) != record_index.checked_add(2)
             || bytes.get(tail_at + 21..tail_at + 27) != Some(&[0; 6])
-            || bytes.get(tail_at + 27..tail_at + 29) != Some(&[0; 2])
-            || marked_record_reference(bytes, tail_at + 29) != record_index.checked_add(1)
-            || bytes.get(tail_at + 34..tail_at + 40) != Some(&[0; 6])
-            || bytes.get(tail_at + 40) != Some(&0)
-            || marked_record_reference(bytes, tail_at + 41) != Some(scope.record_index)
-            || bytes.get(tail_at + 46..tail_at + 52) != Some(&[0; 6])
+            || !separator_holds
+            || marked_record_reference(bytes, tail_at + 29 + shift) != record_index.checked_add(1)
+            || bytes.get(tail_at + 34 + shift..tail_at + 40 + shift) != Some(&[0; 6])
+            || bytes.get(tail_at + 40 + shift) != Some(&0)
+            || marked_record_reference(bytes, tail_at + 41 + shift) != Some(scope.record_index)
+            || bytes.get(tail_at + 46 + shift..tail_at + 52 + shift) != Some(&[0; 6])
         {
             return None;
         }
@@ -881,6 +901,7 @@ fn exact_legacy_circular_pattern_axis(
                 resolved: None,
             },
             selection_record_index,
+            separator_flag_at,
         )))
     })();
     parsed.transpose()

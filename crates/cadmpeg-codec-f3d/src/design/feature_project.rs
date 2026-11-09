@@ -68,6 +68,9 @@ const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
 /// Millimetres of translation along its axis that a `MoveFace` rotation
 /// admits.
 const EPS_MOVE_FACE_SCREW_TRANSLATION: f64 = 1.0e-9;
+/// Largest difference, in radians, between a circular pattern's total angle
+/// and a full turn for which the pattern still spans the full turn.
+const EPS_CIRCULAR_PATTERN_FULL_TURN: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
 /// Largest `1 - cos` between a rectangular-pattern direction record and the
@@ -6988,6 +6991,14 @@ fn project_circular_pattern(
         FeatureDefinition, FeatureOperation,
     };
     let construction = scope.circular_pattern_construction()?;
+    // The separator byte of a 130-byte axis record has no settled meaning
+    // (DR-327); only a full turn, whose instances do not depend on the
+    // direction of travel, projects from it.
+    if construction.axis_separator_flag_offset.is_some()
+        && (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN
+    {
+        return None;
+    }
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
     let group = pattern_seed_group(scope, groups)?;
     let seeds = pattern_group_seeds(
