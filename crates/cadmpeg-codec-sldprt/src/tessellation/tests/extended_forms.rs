@@ -89,7 +89,7 @@ fn assert_opaque(record: Vec<u8>) {
     assert_eq!(summary.triangles, 1);
     assert_eq!(summary.extended_forms, [0; 4]);
     assert_eq!(summary.opaque_extended_tables, 1);
-    assert_eq!(faces[0].mesh.channels.len(), 6);
+    assert_eq!(faces[0].mesh.channels.len(), 3);
 }
 
 #[test]
@@ -106,8 +106,8 @@ fn four_extended_forms_require_matching_metadata_and_normal_bits() {
     assert_eq!(summary.opaque_extended_tables, 0);
     assert_eq!(summary.triangles, 4);
     for face in faces {
-        assert_eq!(face.mesh.channels.len(), 6);
-        assert_eq!(face.mesh.channels[2].data().len(), 36);
+        assert_eq!(face.mesh.channels.len(), 3);
+        assert_eq!(face.mesh.mesh.vertex_normals().len(), 3);
     }
 }
 
@@ -195,7 +195,7 @@ fn absent_normal_lane_preserves_unshaded_geometry_and_raw_channel() {
     assert_eq!(summary.triangles, 1);
     assert_eq!(summary.extended_forms, [0; 4]);
     assert_eq!(summary.opaque_extended_tables, 1);
-    assert!(faces[0].mesh.channels[2].data().is_empty());
+    assert!(faces[0].mesh.mesh.vertex_normals().is_empty());
 }
 
 #[test]
