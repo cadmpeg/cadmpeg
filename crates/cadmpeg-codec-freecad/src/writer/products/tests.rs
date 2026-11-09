@@ -25,7 +25,7 @@ fn missing_link_component_keeps_other_link_state() {
     let mut object = Object::new("Link".into(), "App::Link", "Link");
     let mut losses = Vec::new();
     link_state(&mut object, &state, &HashMap::new(), &mut losses);
-    assert!(object.properties["LinkClaimChild"].contains("value=\"1\""));
+    assert!(object.properties["LinkClaimChild"].contains("value=\"true\""));
     assert!(object.properties["ElementList"].contains("count=\"0\""));
     assert!(losses
         .iter()
@@ -73,7 +73,7 @@ fn overflowing_linked_placement_keeps_occurrence_placement() {
     resolve_linked_transforms(&ir, &mut objects, &uses, &mut losses);
     assert!(!objects[1].properties.contains_key("Placement"));
     assert!(!objects[1].properties.contains_key("ScaleVector"));
-    assert!(objects[1].properties["LinkTransform"].contains("value=\"0\""));
+    assert!(objects[1].properties["LinkTransform"].contains("value=\"false\""));
     let xml = roxmltree::Document::parse(&objects[0].properties["Placement"]).unwrap();
     let placement = xml
         .descendants()

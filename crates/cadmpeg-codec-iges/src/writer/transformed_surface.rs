@@ -2,8 +2,10 @@
 
 use super::{placement_entities, surface_entities, DecodeContext, Entity, Placement};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::analytic::PlaneSurface;
 use cadmpeg_ir::geometry::{PlacedSurface, SolvedSurfaceGeometry};
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::transform::Transform;
 
 pub(super) fn entities(
     ctx: &DecodeContext<'_>,
@@ -13,6 +15,15 @@ pub(super) fn entities(
 ) -> Result<Vec<Entity>, CodecError> {
     let unsupported =
         || CodecError::InvalidInput("IGES cannot preserve this surface placement".into());
+    if let SolvedSurfaceGeometry::Plane(plane) = placed.basis() {
+        let world = world_plane(*placed.transform(), plane).ok_or_else(unsupported)?;
+        return surface_entities(
+            ctx,
+            &SolvedSurfaceGeometry::Plane(world),
+            base_index,
+            version,
+        );
+    }
     if !matches!(
         placed.basis(),
         SolvedSurfaceGeometry::Plane(_)
@@ -40,4 +51,22 @@ pub(super) fn entities(
     }
     carrier.transform = Some(placement);
     Ok(entities)
+}
+
+/// `plane` under the proper-rigid `transform`: the placement applied to its
+/// origin and frame, with the frame re-orthonormalized after rounding.
+fn world_plane(transform: Transform, plane: &PlaneSurface) -> Option<PlaneSurface> {
+    if !transform.is_proper_rigid() {
+        return None;
+    }
+    let origin = transform.apply_point(plane.origin().get())?;
+    let normal = transform
+        .apply_vector(*plane.frame().axis().as_raw())?
+        .get()
+        .unit()?;
+    let reference = transform
+        .apply_vector(*plane.frame().reference().as_raw())?
+        .get();
+    let reference = (reference - normal.scale(reference.dot(normal))).unit()?;
+    PlaneSurface::try_new(origin.get(), normal, reference).ok()
 }
