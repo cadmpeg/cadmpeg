@@ -348,6 +348,20 @@ pub(crate) fn combine_matches(
     &expected == actual
 }
 
+/// Like [`matches`] for a Split, whose work-plane trim target that lacks a
+/// current-body join is a persistent input body when its wrapper is a result
+/// member of an earlier feature.
+pub(crate) fn split_matches(
+    mut expected: FeatureDefinition,
+    actual: &FeatureDefinition,
+    bodies: &HashMap<String, BodyId>,
+    earlier: &HashSet<String>,
+) -> bool {
+    definition(&mut expected, bodies, None);
+    plane_trim_local(&mut expected, earlier);
+    &expected == actual
+}
+
 /// Wrapper identities that features before `feature` in history order produce.
 /// Only a feature that history placed has a known suppression state. The set is
 /// empty unless `feature` is placed, and a producer counts only when it is
@@ -408,6 +422,25 @@ fn combine_local(
     local(&mut tools, tools_group);
     if let Ok(retained) = CombineOperands::new(target, tools) {
         *operands = retained;
+    }
+}
+
+/// Retain the persistent wrapper of a work-plane trim target that has no
+/// current-body join. The wrapper must be a result member of an earlier
+/// feature; otherwise the selection stays native.
+fn plane_trim_local(definition: &mut FeatureDefinition, earlier: &HashSet<String>) {
+    let FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) =
+        definition
+    else {
+        return;
+    };
+    let BodySelection::Native(wrapper) = targets else {
+        return;
+    };
+    if earlier.contains(wrapper.as_str()) {
+        if let Ok(local) = BodySelection::local(vec![wrapper.clone()], wrapper.clone()) {
+            *targets = local;
+        }
     }
 }
 
@@ -487,6 +520,7 @@ pub(crate) fn project(
         feature.evaluation.edit(|value, _| {
             definition(value, bodies, group.as_deref());
             combine_local(value, &earlier, group.as_deref());
+            plane_trim_local(value, &earlier);
         });
         if let Some(outputs) = outputs(&feature.id, &model.feature_result_topologies, bodies) {
             feature.evaluation.set_outputs(outputs);

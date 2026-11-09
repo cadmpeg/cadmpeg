@@ -1102,3 +1102,90 @@ fn unjoined_combine_operands_stay_local_only_when_every_wrapper_is_produced_earl
         BodySelection::Resolved { .. }
     ));
 }
+
+fn plane_trim(targets: BodySelection) -> FeatureDefinition {
+    FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
+        targets,
+        plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
+        keep: cadmpeg_ir::features::BodyTrimSide::Forward,
+    })
+}
+
+fn plane_trim_targets(definition: &FeatureDefinition) -> &BodySelection {
+    let FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) =
+        definition
+    else {
+        panic!("plane trim")
+    };
+    targets
+}
+
+#[test]
+fn unjoined_plane_trim_target_stays_local_only_when_its_wrapper_is_produced_earlier() {
+    let produced: HashSet<String> = ["target".to_owned()].into();
+    // An earlier producer makes the wrapper a persistent input body.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    plane_trim_local(&mut actual, &produced);
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::local(vec!["target".into()], "target".into()).expect("local")
+    );
+    assert!(split_matches(
+        plane_trim(BodySelection::Native("target".into())),
+        &actual,
+        &HashMap::new(),
+        &produced
+    ));
+    // The expected form of a Local selection is not accepted without a producer.
+    assert!(!split_matches(
+        plane_trim(BodySelection::Native("target".into())),
+        &actual,
+        &HashMap::new(),
+        &HashSet::new()
+    ));
+    // A wrapper that no earlier feature produces keeps its selection native.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    plane_trim_local(&mut actual, &["other".to_owned()].into());
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::Native("target".into())
+    );
+    plane_trim_local(&mut actual, &HashSet::new());
+    assert_eq!(
+        plane_trim_targets(&actual),
+        &BodySelection::Native("target".into())
+    );
+    // A complete current-body join wins over the local form.
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    definition(&mut actual, &joins(), None);
+    plane_trim_local(&mut actual, &produced);
+    assert!(matches!(
+        plane_trim_targets(&actual),
+        BodySelection::Resolved { .. }
+    ));
+}
+
+#[test]
+fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    let mut actual = plane_trim(BodySelection::Native("target".into()));
+    plane_trim_local(&mut actual, &["target".to_owned()].into());
+    let mut model = Model::default();
+    model.features.push(Feature {
+        id: FeatureId::mint("test:model:feature#trim").expect("feature"),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: Some("trim_bodies".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(actual),
+        native_ref: None,
+        product_definition: None,
+    });
+    let losses = native_losses(&model, &HashMap::new());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
+}
