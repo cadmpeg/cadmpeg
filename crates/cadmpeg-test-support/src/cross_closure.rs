@@ -326,6 +326,11 @@ fn required_ids_with_source(
     let mut arenas: BTreeMap<String, (String, BTreeSet<String>)> = BTreeMap::new();
     let mut identities = BTreeSet::new();
     let source_rows = before_rows(source);
+    let unheld: BTreeSet<String> = carried
+        .unheld
+        .iter()
+        .flat_map(|class| class.members(source))
+        .collect();
     if let Some(model) = before.get("model").and_then(Value::as_object) {
         for (arena, rows) in model {
             for row in rows.as_array().into_iter().flatten() {
@@ -338,12 +343,7 @@ fn required_ids_with_source(
                                 .and_then(super::carried::EdgeCarrierVariant::from_record)
                                 .is_some_and(|variant| variants.contains(&variant))
                         }))
-                        && !source_rows.get(id).is_some_and(|record| {
-                            carried
-                                .unheld
-                                .iter()
-                                .any(|class| class.contains(arena, record, source))
-                        });
+                        && !unheld.contains(id);
                     if supported {
                         let variants = source_rows.get(id).map_or_else(BTreeSet::new, |record| {
                             typed_variants::record(arena, record).variants
@@ -547,21 +547,54 @@ fn added_roots(after: &Value, unpaired_after: &BTreeSet<String>) -> BTreeSet<Str
     roots
 }
 
+/// Root occurrences of the re-decoded document that hold other occurrences.
+fn parent_roots(after: &Value) -> BTreeSet<String> {
+    let occurrences = after
+        .get("model")
+        .and_then(|model| model.get("occurrences"))
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let parents: BTreeSet<&str> = occurrences
+        .iter()
+        .filter_map(|row| row.get("parent")?.get("occurrence")?.as_str())
+        .collect();
+    occurrences
+        .iter()
+        .filter(|row| {
+            row.get("parent")
+                .and_then(|parent| parent.get("kind"))
+                .and_then(Value::as_str)
+                == Some("root")
+        })
+        .filter_map(|row| row.get("id")?.as_str())
+        .filter(|id| parents.contains(id))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Occurrence parents rewritten to root under an added assembly root.
 ///
 /// A former root nested directly under an added root compares with
 /// `parent: {kind: root}`. Every other occurrence keeps its parent, so a
-/// genuine move under a paired root still fails, as does the added root's
-/// own content.
+/// genuine move under a paired root still fails. The added root itself is
+/// an addition and leaves the comparison, so it takes no rank among the
+/// former roots.
 fn normalize_synthetic_roots(after: &Value, added: &BTreeSet<String>) -> Value {
     let mut normalized = after.clone();
     if added.is_empty() {
         return normalized;
     }
-    let occurrences = normalized
+    let mut occurrences = normalized
         .get_mut("model")
         .and_then(|model| model.get_mut("occurrences"))
         .and_then(Value::as_array_mut);
+    if let Some(rows) = occurrences.as_mut() {
+        rows.retain(|row| {
+            row.get("id")
+                .and_then(Value::as_str)
+                .is_none_or(|id| !added.contains(id))
+        });
+    }
     for row in occurrences.into_iter().flatten() {
         let parent = row
             .get("parent")
@@ -598,7 +631,27 @@ pub fn cross_compare(
     let projected_after = project_document(&after.ir, config.carried, config.fixed_paths, format);
     let reduced_after = apply_reduced(&projected_after, config.reduced, false);
     let synthetic = match unpaired_both(&adjusted, &reduced_after, true) {
-        Ok((_, unpaired_after)) => added_roots(&reduced_after, &unpaired_after),
+        Ok((unpaired_before, unpaired_after)) => {
+            let mut synthetic = added_roots(&reduced_after, &unpaired_after);
+            // An added root can pair with a former root it resembles; it is
+            // added when nesting its children as roots pairs more records.
+            let mut unpaired = unpaired_before.len();
+            for root in parent_roots(&reduced_after) {
+                if synthetic.contains(&root) {
+                    continue;
+                }
+                let mut trial = synthetic.clone();
+                trial.insert(root);
+                let normalized = normalize_synthetic_roots(&reduced_after, &trial);
+                if let Ok((before, _)) = unpaired_both(&adjusted, &normalized, true) {
+                    if before.len() < unpaired {
+                        unpaired = before.len();
+                        synthetic = trial;
+                    }
+                }
+            }
+            synthetic
+        }
         Err(_) => BTreeSet::new(),
     };
     let normalized = normalize_synthetic_roots(&reduced_after, &synthetic);
@@ -629,10 +682,30 @@ pub fn cross_compare(
             findings.push(format!("dropped record {id} is named by no export loss"));
         }
     }
+    // A record of a class the writer cannot hold may reappear degraded
+    // under a loss that names it (§5.2), so the agreement leaves it out.
+    let rows = before_rows(&adjusted);
+    let degraded: BTreeSet<String> = config
+        .carried
+        .unheld
+        .iter()
+        .flat_map(|class| class.members(before))
+        .filter(|id| rows.contains_key(id) && !unpaired.contains(id))
+        .collect();
+    for id in &degraded {
+        if !report.losses.iter().any(|loss| loss.message.contains(id.as_str())) {
+            findings.push(format!("degraded record {id} is named by no export loss"));
+        }
+    }
+    let kept: BTreeSet<String> = rows
+        .into_keys()
+        .filter(|id| !degraded.contains(id))
+        .collect();
+    let compared = without_rows(&null_dangling(&adjusted, &kept), &degraded);
     let permitted: BTreeSet<String> = unpaired;
     let allowances = Allowances::removed(permitted.clone());
     let agreed = agree(
-        &adjusted,
+        &compared,
         &normalized,
         &allowances,
         Mode::Cross(CrossProjection::new(BTreeSet::new())),
@@ -764,6 +837,24 @@ fn body_findings(
         }
     }
     findings
+}
+
+/// The document without the rows of `ids`.
+fn without_rows(document: &Value, ids: &BTreeSet<String>) -> Value {
+    let mut kept = document.clone();
+    let arenas = kept
+        .get_mut("model")
+        .and_then(Value::as_object_mut)
+        .into_iter()
+        .flat_map(|model| model.values_mut());
+    for rows in arenas.filter_map(Value::as_array_mut) {
+        rows.retain(|row| {
+            row.get("id")
+                .and_then(Value::as_str)
+                .is_none_or(|id| !ids.contains(id))
+        });
+    }
+    kept
 }
 
 /// Nulls references to records that need not reappear.
@@ -1439,6 +1530,65 @@ mod tests {
     }
 
     #[test]
+    fn an_added_root_that_resembles_a_former_root_still_nests_it() {
+        use crate::carried::Carried;
+        use crate::writer_closure::Redecoded;
+        use serde_json::Value;
+        use std::collections::BTreeMap;
+
+        let identity = json!([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]);
+        let moved = json!([[1.0, 0.0, 0.0, 5.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]);
+        let occurrence = |id: &str, parent: Value, ordinal: u64, product: &str, transform: &Value| {
+            json!({"id": id, "parent": parent, "ordinal": ordinal,
+                "prototype": {"scope": "local", "definition": product}, "transform": transform})
+        };
+        let root = json!({"kind": "root"});
+        let before = json!({"model": {
+            "product_definitions": [{"id": "test:product#part", "kind": "part"}],
+            "occurrences": [
+                occurrence("first", root.clone(), 0, "test:product#part", &identity),
+                occurrence("second", root.clone(), 1, "test:product#part", &moved)
+            ]
+        }, "native": {}});
+        let under = json!({"kind": "occurrence", "occurrence": "wrapper"});
+        let after = Redecoded {
+            ir: json!({"model": {
+                "product_definitions": [
+                    {"id": "test:product#written", "kind": "part"},
+                    {"id": "test:product#model", "kind": "part", "label": "model"}
+                ],
+                "occurrences": [
+                    occurrence("a", under.clone(), 0, "test:product#written", &identity),
+                    occurrence("b", under.clone(), 1, "test:product#written", &moved),
+                    occurrence("wrapper", root.clone(), 0, "test:product#model", &identity)
+                ]
+            }, "native": {}}),
+            loss_codes: BTreeSet::new(),
+            members: Vec::new(),
+        };
+        let carried = Carried::all();
+        let fixed = BTreeMap::new();
+        let known = BTreeSet::new();
+        let config = super::CrossConfig {
+            carried: &carried,
+            fixed_paths: &fixed,
+            known_losses: &known,
+            reduced: &[],
+            members: &[],
+        };
+        let report: cadmpeg_ir::report::export::ExportReport = serde_json::from_value(json!({
+            "identity": {"payload": "native", "target": "step:ap242-e3"},
+            "census": {"basis": "target_records", "counts": {}},
+            "write_path": {"path": "synthesized", "fidelity": {"status": "not_provided"}},
+            "coverage": {"coverage": "complete"}, "native_dispositions": {"namespaces": {}},
+            "losses": [], "notes": []
+        }))
+        .expect("report");
+        let findings = super::cross_compare(&before, &after, &report, "step", &config);
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    #[test]
     fn ordinary_text_does_not_add_unrelated_variants() {
         let source = json!({"model":{"attributes":[
             {"id":"document", "name":"dimension", "target":{"kind":"document"}, "values":[]},
@@ -1643,21 +1793,307 @@ mod tests {
                 {"id": "named", "source_name": "Part", "label": "Part"}
             ],
             "coedges": [
-                {"id": "two-pcurves", "pcurves": [{"pcurve": "p0"}, {"pcurve": "p1"}]},
-                {"id": "one-pcurve", "pcurves": [{"pcurve": "p0"}]}
+                {"id": "two-pcurves", "owner_loop": "l1", "pcurves": [{"pcurve": "p0"}, {"pcurve": "p1"}]},
+                {"id": "one-pcurve", "owner_loop": "l1", "pcurves": [{"pcurve": "p0"}]},
+                {"id": "other-cap", "owner_loop": "l2", "pcurves": [{"pcurve": "shared"}]},
+                {"id": "first-cap", "owner_loop": "l1", "pcurves": [{"pcurve": "shared"}]}
             ],
-            "pcurves": [{"id": "p0"}, {"id": "p1"}]
+            "loops": [{"id": "l1", "face": "f1"}, {"id": "l2", "face": "f2"}],
+            "faces": [{"id": "f1", "surface": "s1"}, {"id": "f2", "surface": "s2"}],
+            "pcurves": [{"id": "p0"}, {"id": "p1"}, {"id": "shared"}],
+            "curves": [
+                {"id": "solved", "geometry": {"kind": "line"}},
+                {"id": "constructed", "geometry": {"kind": "procedural", "construction": "built"}}
+            ],
+            "procedural_curves": [
+                {"id": "beside", "curve": "solved"},
+                {"id": "built", "curve": "constructed"}
+            ]
         }});
         carried.unheld.insert(UnheldClass::MultiRegionSolid);
         carried.unheld.insert(UnheldClass::DistinctProductNames);
         carried.unheld.insert(UnheldClass::MultiPcurveCoedge);
+        carried.unheld.insert(UnheldClass::ConstructionBesideSolvedCurve);
+        carried.unheld.insert(UnheldClass::PcurveOnSeveralSurfaces);
         let required = super::required_ids(&solids, &carried, "step");
-        for id in ["lumps", "a", "b", "renamed", "two-pcurves"] {
+        for id in ["lumps", "a", "b", "renamed", "two-pcurves", "beside", "shared"] {
             assert!(!required.contains(id));
         }
-        for id in ["lump", "c", "sheets", "d", "e", "named", "one-pcurve", "p1"] {
+        for id in [
+            "lump", "c", "sheets", "d", "e", "named", "one-pcurve", "p1", "built", "solved",
+        ] {
             assert!(required.contains(id));
         }
+    }
+
+    #[test]
+    fn an_edge_whose_range_ends_off_its_vertices_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let edge = ir.model.edges[0].clone();
+        let start = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == edge.start)
+            .expect("start vertex")
+            .point
+            .clone();
+        let point = ir
+            .model
+            .points
+            .iter_mut()
+            .find(|point| point.id == start)
+            .expect("start point");
+        let moved = point.position().get();
+        point.set_position(
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                moved.x + 3.0,
+                moved.y + 3.0,
+                moved.z + 3.0,
+            ))
+            .expect("finite position"),
+        );
+        let document = serde_json::to_value(&ir).expect("CADIR JSON");
+        let members = UnheldClass::RangeOffVertices.members(&document);
+        assert!(members.contains(edge.id.as_str()));
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::RangeOffVertices]);
+        assert!(!super::required_ids(&document, &carried, "step").contains(edge.id.as_str()));
+        let untouched = serde_json::to_value(cadmpeg_ir::examples::unit_cube().expect("cube"))
+            .expect("CADIR JSON");
+        assert!(UnheldClass::RangeOffVertices.members(&untouched).is_empty());
+    }
+
+    #[test]
+    fn a_pcurve_that_misses_its_edge_vertices_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+        use cadmpeg_ir::geometry::SurfaceGeometry;
+
+        let ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let coedge = &ir.model.coedges[0];
+        let edge = ir.model.edges.iter().find(|edge| edge.id == coedge.edge).expect("edge");
+        let face = ir
+            .model
+            .loops
+            .iter()
+            .find(|lp| lp.id == coedge.owner_loop)
+            .map(|lp| lp.face.clone())
+            .expect("loop");
+        let surface = ir
+            .model
+            .faces
+            .iter()
+            .find(|candidate| candidate.id == face)
+            .and_then(|face| ir.model.surfaces.iter().find(|surface| surface.id == face.surface))
+            .expect("surface");
+        let SurfaceGeometry::Solved(plane) = &surface.geometry else {
+            panic!("the cube faces are planes");
+        };
+        let uv = |vertex: &cadmpeg_ir::ids::VertexId| {
+            let point = ir.model.vertices.iter().find(|candidate| &candidate.id == vertex).expect("vertex").point.clone();
+            let position = ir.model.points.iter().find(|candidate| candidate.id == point).expect("point").position().get();
+            cadmpeg_ir::eval::analytic_surface_parameters_solved(plane, position).expect("plane chart").get()
+        };
+        let (start, end) = (uv(&edge.start), uv(&edge.end));
+        let length = (end.u - start.u).hypot(end.v - start.v);
+        let with_pcurve = |offset: f64| {
+            let mut document = serde_json::to_value(&ir).expect("CADIR JSON");
+            document["model"]["pcurves"] = json!([{
+                "id": "test:model:pcurve#p",
+                "geometry": {
+                    "kind": "line",
+                    "origin": {"u": start.u + offset, "v": start.v + offset},
+                    "direction": {"u": (end.u - start.u) / length, "v": (end.v - start.v) / length}
+                },
+                "metadata": {"source": "general"}
+            }]);
+            document["model"]["coedges"][0]["pcurves"] = json!([{"pcurve": "test:model:pcurve#p"}]);
+            document
+        };
+        assert!(UnheldClass::PcurveOffItsEdge.members(&with_pcurve(0.0)).is_empty());
+        let off = with_pcurve(5.0);
+        assert!(UnheldClass::PcurveOffItsEdge.members(&off).contains("test:model:pcurve#p"));
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::PcurveOffItsEdge]);
+        assert!(!super::required_ids(&off, &carried, "step").contains("test:model:pcurve#p"));
+    }
+
+    #[test]
+    fn a_loop_that_does_not_close_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+
+        let document = |last_end: &str| {
+            json!({"model": {
+                "faces": [{"id": "face", "surface": "plane", "loops": {"loops": ["ring"]}}],
+                "surfaces": [{"id": "plane", "geometry": {"kind": "plane"}}],
+                "loops": [{"id": "ring", "face": "face", "boundary": {"kind": "ring", "coedges": ["c0", "c1", "c2"]}}],
+                "coedges": [
+                    {"id": "c0", "edge": "e0", "owner_loop": "ring", "sense": "forward"},
+                    {"id": "c1", "edge": "e1", "owner_loop": "ring", "sense": "forward"},
+                    {"id": "c2", "edge": "e2", "owner_loop": "ring", "sense": "reversed"}
+                ],
+                "edges": [
+                    {"id": "e0", "start": "a", "end": "b"},
+                    {"id": "e1", "start": "b", "end": "c"},
+                    {"id": "e2", "start": last_end, "end": "c"}
+                ]
+            }})
+        };
+        assert!(UnheldClass::OpenRing.members(&document("a")).is_empty());
+        let open = document("b");
+        assert_eq!(UnheldClass::OpenRing.members(&open), BTreeSet::from(["ring".to_owned()]));
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::OpenRing]);
+        let required = super::required_ids(&open, &carried, "step");
+        assert!(!required.contains("ring"));
+        assert!(required.contains("face"));
+    }
+
+    #[test]
+    fn a_pcurve_of_only_curveless_edges_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+
+        let document = json!({"model": {
+            "edges": [
+                {"id": "bare", "carrier": {"param_range": [0.0, 1.0]}},
+                {"id": "curved", "carrier": {"curve": "line"}}
+            ],
+            "curves": [{"id": "line", "geometry": {"kind": "line"}}],
+            "coedges": [
+                {"id": "c0", "edge": "bare", "pcurves": [{"pcurve": "alone"}, {"pcurve": "shared"}]},
+                {"id": "c1", "edge": "curved", "pcurves": [{"pcurve": "shared"}]}
+            ],
+            "pcurves": [{"id": "alone"}, {"id": "shared"}]
+        }});
+        assert_eq!(
+            UnheldClass::CurvelessEdgePcurve.members(&document),
+            BTreeSet::from(["alone".to_owned()])
+        );
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::CurvelessEdgePcurve]);
+        let required = super::required_ids(&document, &carried, "step");
+        assert!(!required.contains("alone"));
+        assert!(required.contains("shared"));
+    }
+
+    #[test]
+    fn an_occurrence_of_a_document_identity_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+        use serde_json::Value;
+
+        let external = |id: &str, document: Value| {
+            json!({"id": id, "parent": {"kind": "root"}, "ordinal": 0,
+                "prototype": {"scope": "external", "document": document}})
+        };
+        let document = json!({"model": {"occurrences": [
+            external("by-identity", json!({"resolution": "document_id", "document_id": "a1"})),
+            external("by-path", json!({"resolution": "path", "path": "part.stp"}))
+        ]}});
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::DocumentIdentityReference]);
+        let required = super::required_ids(&document, &carried, "step");
+        assert!(!required.contains("by-identity"));
+        assert!(required.contains("by-path"));
+    }
+
+    #[test]
+    fn an_unplaced_presentation_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+
+        let document = json!({"model": {"pmi": [
+            {"id": "unplaced", "definition": {"kind": "presentation", "text": "25 mm"}},
+            {"id": "placed", "definition": {"kind": "presentation", "text": "25 mm",
+                "placement": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]}}
+        ]}});
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::UnplacedPresentation]);
+        let required = super::required_ids(&document, &carried, "step");
+        assert!(!required.contains("unplaced"));
+        assert!(required.contains("placed"));
+    }
+
+    #[test]
+    fn a_colourless_appearance_and_its_binding_need_not_reappear() {
+        use crate::carried::{Carried, UnheldClass};
+
+        let document = json!({"model": {
+            "bodies": [{"id": "body", "kind": "solid"}],
+            "appearances": [
+                {"id": "named", "name": "Preset"},
+                {"id": "red", "base_color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}}
+            ],
+            "appearance_bindings": [
+                {"id": "named-use", "target": {"kind": "body", "id": "body"}, "appearance": "named"},
+                {"id": "red-use", "target": {"kind": "body", "id": "body"}, "appearance": "red"}
+            ]
+        }});
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::ColourlessAppearance]);
+        let required = super::required_ids(&document, &carried, "step");
+        for id in ["named", "named-use"] {
+            assert!(!required.contains(id));
+        }
+        for id in ["red", "red-use", "body"] {
+            assert!(required.contains(id));
+        }
+    }
+
+    #[test]
+    fn a_degraded_unheld_record_needs_a_loss_that_names_it() {
+        use crate::carried::{Carried, UnheldClass};
+        use crate::writer_closure::Redecoded;
+        use std::collections::BTreeMap;
+
+        let colour = |alpha: f64| json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": alpha});
+        let before = json!({"model": {
+            "points": [{"id": "p", "position": {"x": 0.0, "y": 0.0, "z": 0.0}}],
+            "appearances": [{"id": "glass", "base_color": colour(0.5)}],
+            "appearance_bindings": [{"id": "tint", "target": {"kind": "point", "id": "p"}, "appearance": "glass"}]
+        }, "native": {}});
+        let after = Redecoded {
+            ir: json!({"model": {
+                "points": [{"id": "q", "position": {"x": 0.0, "y": 0.0, "z": 0.0}}],
+                "appearances": [
+                    {"id": "opaque", "base_color": colour(1.0)},
+                    {"id": "kept", "base_color": colour(0.5)}
+                ],
+                "appearance_bindings": [{"id": "shown", "target": {"kind": "point", "id": "q"}, "appearance": "opaque"}]
+            }, "native": {}}),
+            loss_codes: BTreeSet::new(),
+            members: Vec::new(),
+        };
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::TranslucentLineBinding]);
+        let fixed = BTreeMap::new();
+        let known = BTreeSet::new();
+        let config = super::CrossConfig {
+            carried: &carried,
+            fixed_paths: &fixed,
+            known_losses: &known,
+            reduced: &[],
+            members: &[],
+        };
+        let mut report: cadmpeg_ir::report::export::ExportReport = serde_json::from_value(json!({
+            "identity": {"payload": "native", "target": "step:ap242-e3"},
+            "census": {"basis": "target_records", "counts": {}},
+            "write_path": {"path": "synthesized", "fidelity": {"status": "not_provided"}},
+            "coverage": {"coverage": "complete"}, "native_dispositions": {"namespaces": {}},
+            "losses": [], "notes": []
+        }))
+        .expect("report");
+        let unnamed = super::cross_compare(&before, &after, &report, "step", &config);
+        assert!(
+            unnamed.iter().any(|finding| finding.contains("record tint is named by no export loss")),
+            "{unnamed:?}"
+        );
+        report.losses.push(
+            cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable
+                .note("binding tint was written without its transparency"),
+        );
+        let named = super::cross_compare(&before, &after, &report, "step", &config);
+        assert!(named.is_empty(), "{named:?}");
     }
 
     #[test]

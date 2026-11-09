@@ -108,14 +108,80 @@ pub enum UnheldClass {
     /// A coedge with more than one pcurve, where the format associates one
     /// pcurve with a coedge on its face's surface.
     MultiPcurveCoedge,
+    /// A curve construction beside the solved geometry of the curve it
+    /// constructs, where the format holds the solved carrier.
+    ConstructionBesideSolvedCurve,
+    /// An edge whose curve, at the ends of its stated parameter range, lies
+    /// off its vertices, where the format derives the range from the
+    /// vertices.
+    RangeOffVertices,
+    /// A pcurve that coedges use on more than one surface, where a pcurve
+    /// lies on one surface.
+    PcurveOnSeveralSurfaces,
+    /// A pcurve whose image on its coedge's face surface misses a vertex of
+    /// the coedge's edge, where the format's pcurve is the edge curve itself.
+    PcurveOffItsEdge,
+    /// A ring loop whose oriented coedges do not close into a path, where
+    /// the format's loop is a closed path of edges.
+    OpenRing,
+    /// A pcurve that only coedges of edges with no 3D curve use, where the
+    /// format attaches a pcurve to an edge through the edge's 3D curve.
+    CurvelessEdgePcurve,
+    /// An external occurrence that names its document by a persisted
+    /// document identity, where the format names an external source by one
+    /// identifier that a location also fills.
+    DocumentIdentityReference,
+    /// An appearance with no colour, where the format's surface and curve
+    /// styles state their colour.
+    ColourlessAppearance,
+    /// A presentation annotation with no placement, where the format places
+    /// the text of every annotation.
+    UnplacedPresentation,
 }
 
 impl UnheldClass {
+    /// The ids of the records of `document` in the class.
+    #[must_use]
+    pub fn members(self, document: &Value) -> BTreeSet<String> {
+        match self {
+            Self::RangeOffVertices => return edges_with_ranges_off_their_vertices(document),
+            Self::PcurveOnSeveralSurfaces => return pcurves_on_several_surfaces(document),
+            Self::PcurveOffItsEdge => return pcurves_off_their_edges(document),
+            Self::OpenRing => return open_rings(document),
+            Self::CurvelessEdgePcurve => return curveless_edge_pcurves(document),
+            _ => {}
+        }
+        let mut members = BTreeSet::new();
+        for (arena, rows) in document
+            .get("model")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            for row in rows.as_array().into_iter().flatten() {
+                if let Some(id) = row.get("id").and_then(Value::as_str) {
+                    if self.contains(arena, row, document) {
+                        members.insert(id.to_owned());
+                    }
+                }
+            }
+        }
+        members
+    }
+
     /// Whether a serialized record of `arena` in `document` belongs to the
     /// class.
     #[must_use]
     pub fn contains(self, arena: &str, record: &Value, document: &Value) -> bool {
         match self {
+            Self::RangeOffVertices
+            | Self::PcurveOnSeveralSurfaces
+            | Self::PcurveOffItsEdge
+            | Self::OpenRing
+            | Self::CurvelessEdgePcurve => record
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| self.members(document).contains(id)),
             Self::EllipticalCone => {
                 arena == "surfaces" && record.get("geometry").is_some_and(contains_elliptical_cone)
             }
@@ -133,12 +199,37 @@ impl UnheldClass {
                         .and_then(Value::as_str)
                         .is_some_and(|appearance| translucent(document, appearance))
             }
+            Self::ConstructionBesideSolvedCurve => {
+                arena == "procedural_curves"
+                    && record
+                        .get("curve")
+                        .and_then(Value::as_str)
+                        .is_some_and(|curve| solved_curve(document, curve))
+            }
             Self::MultiPcurveCoedge => {
                 arena == "coedges"
                     && record
                         .get("pcurves")
                         .and_then(Value::as_array)
                         .is_some_and(|uses| uses.len() > 1)
+            }
+            Self::UnplacedPresentation => {
+                arena == "pmi"
+                    && record.pointer("/definition/kind").and_then(Value::as_str)
+                        == Some("presentation")
+                    && record
+                        .pointer("/definition/placement")
+                        .is_none_or(Value::is_null)
+            }
+            Self::ColourlessAppearance => {
+                arena == "appearances" && record.get("base_color").is_none_or(Value::is_null)
+            }
+            Self::DocumentIdentityReference => {
+                arena == "occurrences"
+                    && record
+                        .pointer("/prototype/document/resolution")
+                        .and_then(Value::as_str)
+                        == Some("document_id")
             }
             Self::DistinctProductNames => {
                 let name = |key| record.get(key).and_then(Value::as_str);
@@ -157,6 +248,295 @@ impl UnheldClass {
             }
         }
     }
+}
+
+fn edges_with_ranges_off_their_vertices(document: &Value) -> BTreeSet<String> {
+    let Ok(ir) = serde_json::from_value::<cadmpeg_ir::CadIr>(document.clone()) else {
+        return BTreeSet::new();
+    };
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir);
+    let tolerance = ir.tolerances.linear_or_default().get();
+    let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let vertex = index.vertices(vertex.as_str(), cadmpeg_ir::index::StandardIndex)?;
+        let point = index.points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)?;
+        Some(point.position().get())
+    };
+    let off = |curve: &cadmpeg_ir::ids::CurveId, parameter: f64, vertex| {
+        let Some(vertex) = position(vertex) else {
+            return false;
+        };
+        cadmpeg_ir::eval::model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            curve,
+            parameter,
+        )
+        .is_ok_and(|point| point.get().distance(vertex) > tolerance)
+    };
+    ir.model
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.curve().zip(edge.param_range()).is_some_and(|(curve, range)| {
+                off(curve, range[0], &edge.start) || off(curve, range[1], &edge.end)
+            })
+        })
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect()
+}
+
+fn curveless_edge_pcurves(document: &Value) -> BTreeSet<String> {
+    let rows = |arena: &str| {
+        document
+            .get("model")
+            .and_then(|model| model.get(arena))
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+    };
+    let curveless: BTreeSet<&str> = rows("edges")
+        .iter()
+        .filter(|edge| {
+            edge.get("carrier")
+                .and_then(|carrier| carrier.get("curve"))
+                .is_none_or(Value::is_null)
+        })
+        .filter_map(|edge| edge.get("id")?.as_str())
+        .collect();
+    let mut carried_by = BTreeMap::<&str, bool>::new();
+    for coedge in rows("coedges") {
+        let on_curveless = coedge
+            .get("edge")
+            .and_then(Value::as_str)
+            .is_some_and(|edge| curveless.contains(edge));
+        for use_ in coedge
+            .get("pcurves")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(pcurve) = use_.get("pcurve").and_then(Value::as_str) {
+                *carried_by.entry(pcurve).or_insert(true) &= on_curveless;
+            }
+        }
+    }
+    carried_by
+        .into_iter()
+        .filter(|(_, only_curveless)| *only_curveless)
+        .map(|(pcurve, _)| pcurve.to_owned())
+        .collect()
+}
+
+fn open_rings(document: &Value) -> BTreeSet<String> {
+    let rows = |arena: &str| {
+        document
+            .get("model")
+            .and_then(|model| model.get(arena))
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+    };
+    let by_id = |arena: &str| -> BTreeMap<&str, &Value> {
+        rows(arena)
+            .iter()
+            .filter_map(|row| Some((row.get("id")?.as_str()?, row)))
+            .collect()
+    };
+    let coedges = by_id("coedges");
+    let edges = by_id("edges");
+    let text = |row: &Value, key: &str| row.get(key).and_then(Value::as_str).map(str::to_owned);
+    let mut members = BTreeSet::new();
+    for lp in rows("loops") {
+        let Some(boundary) = lp.get("boundary").filter(|boundary| {
+            boundary.get("kind").and_then(Value::as_str) == Some("ring")
+        }) else {
+            continue;
+        };
+        let mut balance = BTreeMap::<String, i64>::new();
+        let mut complete = true;
+        for coedge in boundary
+            .get("coedges")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let ends = coedge
+                .as_str()
+                .and_then(|id| coedges.get(id))
+                .and_then(|coedge| {
+                    let edge = edges.get(text(coedge, "edge")?.as_str())?;
+                    let (start, end) = (text(edge, "start")?, text(edge, "end")?);
+                    Some(match coedge.get("sense").and_then(Value::as_str) {
+                        Some("reversed") => (end, start),
+                        _ => (start, end),
+                    })
+                });
+            let Some((start, end)) = ends else {
+                complete = false;
+                break;
+            };
+            *balance.entry(start).or_default() += 1;
+            *balance.entry(end).or_default() -= 1;
+        }
+        if complete && balance.values().any(|count| *count != 0) {
+            if let Some(id) = text(lp, "id") {
+                members.insert(id);
+            }
+        }
+    }
+    members
+}
+
+fn pcurves_off_their_edges(document: &Value) -> BTreeSet<String> {
+    use cadmpeg_ir::eval::admission::EvaluationAdmission;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::index::StandardIndex;
+    let Ok(ir) = serde_json::from_value::<cadmpeg_ir::CadIr>(document.clone()) else {
+        return BTreeSet::new();
+    };
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir);
+    let tolerance = ir.tolerances.linear_or_default().get();
+    let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let vertex = index.vertices(vertex.as_str(), StandardIndex)?;
+        let point = index.points(vertex.point.as_str(), StandardIndex)?;
+        Some(point.position().get())
+    };
+    let lifted = |surface: &SurfaceGeometry, pcurve: &PcurveGeometry, parameter: f64| {
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(EvaluationAdmission::Standard, pcurve, parameter)
+            .ok()?
+            .get();
+        cadmpeg_ir::eval::model_surface_point(EvaluationAdmission::Standard, &ir, surface, uv.u, uv.v)
+            .ok()
+            .map(|point| point.get())
+    };
+    // The nearest point of a line pcurve to a vertex, found in the surface
+    // chart where the analytic surface inverts the vertex.
+    let line_foot = |solved: &SolvedSurfaceGeometry, pcurve: &PcurveGeometry, vertex| {
+        let mut basis = pcurve;
+        let mut transforms = Vec::new();
+        while let PcurveGeometry::Transformed(placed) = basis {
+            transforms.push(*placed.transform());
+            basis = placed.basis();
+        }
+        let PcurveGeometry::Line(line) = basis else {
+            return None;
+        };
+        let mut origin = line.origin().get();
+        let mut direction = *line.direction().as_raw();
+        for transform in transforms.into_iter().rev() {
+            origin = transform.apply_point(origin);
+            direction = transform.apply_vector(direction);
+        }
+        let length_squared = direction.u * direction.u + direction.v * direction.v;
+        let uv = cadmpeg_ir::eval::analytic_surface_parameters_solved(solved, vertex)?.get();
+        let parameter =
+            ((uv.u - origin.u) * direction.u + (uv.v - origin.v) * direction.v) / length_squared;
+        parameter.is_finite().then_some(parameter)
+    };
+    let mut members = BTreeSet::new();
+    for coedge in &ir.model.coedges {
+        let Some(edge) = index
+            .edges(coedge.edge.as_str(), StandardIndex)
+            .filter(|edge| edge.curve().is_some())
+        else {
+            continue;
+        };
+        let Some(surface) = index
+            .loops(coedge.owner_loop.as_str(), StandardIndex)
+            .and_then(|lp| index.faces(lp.face.as_str(), StandardIndex))
+            .and_then(|face| index.surfaces(face.surface.as_str(), StandardIndex))
+        else {
+            continue;
+        };
+        let SurfaceGeometry::Solved(
+            solved @ (SolvedSurfaceGeometry::Plane(_)
+            | SolvedSurfaceGeometry::Cylinder(_)
+            | SolvedSurfaceGeometry::Cone(_)
+            | SolvedSurfaceGeometry::Sphere(_)
+            | SolvedSurfaceGeometry::Torus(_)),
+        ) = &surface.geometry
+        else {
+            continue;
+        };
+        let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+            continue;
+        };
+        for use_ in &coedge.pcurves {
+            let Some(pcurve) = index.pcurves(use_.pcurve.as_str(), StandardIndex) else {
+                continue;
+            };
+            let geometry = &pcurve.geometry;
+            let misses = |vertex: cadmpeg_ir::math::Point3| {
+                let feet = match use_.parameter_range {
+                    Some(range) => range.endpoints().to_vec(),
+                    None => line_foot(solved, geometry, vertex).into_iter().collect(),
+                };
+                !feet.is_empty()
+                    && feet.into_iter().all(|parameter| {
+                        lifted(&surface.geometry, geometry, parameter)
+                            .is_some_and(|point| point.distance(vertex) > tolerance)
+                    })
+            };
+            if misses(start) || misses(end) {
+                members.insert(use_.pcurve.as_str().to_owned());
+            }
+        }
+    }
+    members
+}
+
+fn pcurves_on_several_surfaces(document: &Value) -> BTreeSet<String> {
+    let rows = |arena: &str| {
+        document
+            .get("model")
+            .and_then(|model| model.get(arena))
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+    };
+    let field = |row: &Value, key: &str| row.get(key).and_then(Value::as_str).map(str::to_owned);
+    let index = |arena: &str, key: &str| -> BTreeMap<String, String> {
+        rows(arena)
+            .iter()
+            .filter_map(|row| Some((field(row, "id")?, field(row, key)?)))
+            .collect()
+    };
+    let loop_faces = index("loops", "face");
+    let face_surfaces = index("faces", "surface");
+    let mut surfaces = BTreeMap::<String, BTreeSet<String>>::new();
+    for coedge in rows("coedges") {
+        let Some(surface) = field(coedge, "owner_loop")
+            .and_then(|lp| loop_faces.get(&lp))
+            .and_then(|face| face_surfaces.get(face))
+        else {
+            continue;
+        };
+        for use_ in coedge
+            .get("pcurves")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(pcurve) = field(use_, "pcurve") {
+                surfaces.entry(pcurve).or_default().insert(surface.clone());
+            }
+        }
+    }
+    surfaces
+        .into_iter()
+        .filter(|(_, surfaces)| surfaces.len() > 1)
+        .map(|(pcurve, _)| pcurve)
+        .collect()
+}
+
+fn solved_curve(document: &Value, curve: &str) -> bool {
+    document
+        .get("model")
+        .and_then(|model| model.get("curves"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|row| row.get("id").and_then(Value::as_str) == Some(curve))
+        .filter_map(|row| row.get("geometry")?.get("kind")?.as_str())
+        .any(|kind| kind != "procedural")
 }
 
 fn translucent(document: &Value, appearance: &str) -> bool {
