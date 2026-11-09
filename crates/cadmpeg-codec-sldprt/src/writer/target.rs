@@ -20,10 +20,6 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, super::write_error::WriteError> {
-    debug_assert!(
-        super::REDUCED_FIELDS.len() == 4,
-        "SolidWorks stores tessellation scalars and base colours in reduced form"
-    );
     if !resolved.preserves_source() || input.fidelity.is_none() {
         let cause = if resolved.preserves_source() && input.fidelity.is_none() {
             super::synthesis::SynthesisCause::SourceImageUnavailable
@@ -67,6 +63,31 @@ pub(crate) fn plan(
             resolved,
             super::synthesis::SynthesisCause::PatchDeclined {
                 reason: "the current attributes require omission from scalar SLDPRT fields".into(),
+            },
+        );
+    }
+    if !input.ir.model.configurations.is_empty()
+        && !input
+            .ir
+            .model
+            .configurations
+            .iter()
+            .any(|configuration| configuration.active)
+    {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "every SLDPRT document selects one active configuration".into(),
+            },
+        );
+    }
+    if super::synthesis::sketch_axes_need_normalization(input.ir) {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "SLDPRT stores sketch-plane axes as unit directions".into(),
             },
         );
     }
@@ -152,11 +173,6 @@ fn write(
     input: EncodeInput<'_>,
     replay_eligible: bool,
 ) -> Result<(Written, Vec<u8>), super::write_error::WriteError> {
-    debug_assert_eq!(
-        super::REDUCED_FIELDS.len(),
-        4,
-        "SLDPRT reduced rows name their storage"
-    );
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {

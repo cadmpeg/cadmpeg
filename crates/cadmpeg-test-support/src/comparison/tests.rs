@@ -623,3 +623,29 @@ fn a_removed_record_and_its_cross_replacement_both_leave_their_lists() {
     )
     .is_err());
 }
+
+#[test]
+fn an_unreferenced_nested_identity_is_a_writer_choice() {
+    let input = |operand: &str| {
+        json!({"model": {"feature_input_topologies": [
+            {"id": "input#1", "operands": [{"id": operand, "kind": "native"}]}
+        ]}, "native": {}})
+    };
+    assert!(accepts(&input("operand#source"), &input("operand#written")));
+    let named = |operand: &str, named: &str| {
+        json!({"model": {
+            "feature_input_topologies": [
+                {"id": "input#1", "operands": [{"id": operand, "kind": "native"}]}
+            ],
+            "points": [{"id": "point#1", "operand": named}]
+        }, "native": {}})
+    };
+    assert!(accepts(
+        &named("operand#source", "operand#source"),
+        &named("operand#source", "operand#source")
+    ));
+    assert!(!accepts(
+        &named("operand#source", "operand#source"),
+        &named("operand#written", "operand#other")
+    ));
+}

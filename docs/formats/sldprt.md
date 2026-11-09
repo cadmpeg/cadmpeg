@@ -2958,7 +2958,7 @@ The neutral curve carries a solved cache: a cubic model-space B-curve in the SP_
 
 ## 8. Auxiliary lanes
 
-- **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. Each descriptor is `item_size u32 LE`, `kind u32 LE`, `flags u32 LE`, `count u32 LE`, then `item_size * count` data bytes. All six descriptors have `flags = 2`. Their `(item_size, kind)` pairs are `(4, 8)`, `(12, 100)`, `(12, 100)`, `(4, 8)`, `(4, 8)`, and `(1, 8)`. Let `N = len(ListA)`, `C = sum(ListA)`, and `E = sum(2*ListA[i] - 2)`. The Positions count is `C`; the Normals count is zero or `C`; `ListC[i] = 2*ListA[i] - 2`; and `TriCount = C - 2*N`. Lists B and D are both empty or both have `E` entries. List B contains finite f32 values. List D contains byte values.
+- **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. Each descriptor is `item_size u32 LE`, `kind u32 LE`, `flags u32 LE`, `count u32 LE`, then `item_size * count` data bytes. All six descriptors have `flags = 2`. Their `(item_size, kind)` pairs are `(4, 8)`, `(12, 100)`, `(12, 100)`, `(4, 8)`, `(4, 8)`, and `(1, 8)`. Let `N = len(ListA)`, `C = sum(ListA)`, and `E = sum(2*ListA[i] - 2)`. The Positions count is `C`; the Normals count is zero or `C`; `ListC[i] = 2*ListA[i] - 2`; and `TriCount = C - 2*N`. Lists B and D are both empty or both have `E` entries. List B contains finite f32 values. List D contains byte values. A Positions f32 value denotes the shortest decimal number of metres that rounds to it.
 
   A table ends at the end of its sixth descriptor payload. The following framed metadata belongs to that table until the next validated table starts.
 

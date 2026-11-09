@@ -475,7 +475,6 @@
             "r": 0.10196078568696976
           },
           "id": "fcstd:appearance:edge#ColoredModel",
-          "name": "ColoredModel line appearance",
           "native_ref": "fcstd:native:gui-property#ColoredModel:LineColor",
           "schema": "FCStd ViewProvider line style"
         },
@@ -487,7 +486,6 @@
             "r": 0.10196078568696976
           },
           "id": "fcstd:appearance:edge#ColoredModel:1",
-          "name": "ColoredModel Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "schema": "FCStd LineColorArray"
         },
@@ -499,7 +497,6 @@
             "r": 0.250980406999588
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:1",
-          "name": "ColoredModel face 1 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -518,7 +515,6 @@
             "r": 0.3019607961177826
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:2",
-          "name": "ColoredModel face 2 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -537,7 +533,6 @@
             "r": 0.3490196168422699
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:3",
-          "name": "ColoredModel face 3 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -556,7 +551,6 @@
             "r": 0.4000000059604645
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:4",
-          "name": "ColoredModel face 4 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -575,7 +569,6 @@
             "r": 0.250980406999588
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:5",
-          "name": "ColoredModel face 5 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -594,7 +587,6 @@
             "r": 0.3019607961177826
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:6",
-          "name": "ColoredModel face 6 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -613,7 +605,6 @@
             "r": 0.3490196168422699
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:7",
-          "name": "ColoredModel face 7 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -632,7 +623,6 @@
             "r": 0.4000000059604645
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:8",
-          "name": "ColoredModel face 8 material",
           "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
@@ -651,7 +641,6 @@
             "r": 0.9490196108818054
           },
           "id": "fcstd:appearance:vertex#ColoredModel",
-          "name": "ColoredModel point appearance",
           "native_ref": "fcstd:native:gui-property#ColoredModel:PointColor",
           "schema": "FCStd ViewProvider point style"
         },
@@ -663,7 +652,6 @@
             "r": 0.9490196108818054
           },
           "id": "fcstd:appearance:vertex#ColoredModel:1",
-          "name": "ColoredModel Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "schema": "FCStd PointColorArray"
         }
@@ -3034,9 +3022,6 @@
               "order": 0
             },
             {
-              "attributes": {
-                "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
-              },
               "kind": {
                 "type": "Camera",
                 "value": {

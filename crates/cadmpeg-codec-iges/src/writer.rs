@@ -163,6 +163,7 @@ mod pcurve_admission;
 mod placement_entities;
 mod polynomial_curve;
 mod ruled_surface;
+mod subset_surfaces;
 pub(crate) mod target;
 mod transformed_surface;
 mod units;
@@ -647,7 +648,8 @@ fn synthesize_with_admission(
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     });
-    let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
+    let (subsets, subset_losses) = subset_surfaces::lower(lowered.as_ref());
+    let (poles, pole_losses) = admission::pole_edges(subsets.as_ref())?;
     let (opened, open_losses) = admission::open_incomplete_solids(poles.as_ref());
     let (pcurves, pcurve_losses) = pcurve_admission::admit(opened.as_ref());
     let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
@@ -665,6 +667,7 @@ fn synthesize_with_admission(
         }
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
+    graph.losses.extend(subset_losses);
     graph.losses.extend(pole_losses);
     graph.losses.extend(open_losses);
     graph.losses.extend(pcurve_losses);
@@ -5224,7 +5227,61 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     if let Some(entity) = copious_curve::parameter_curve(ir, &pcurve, &curve, range) {
         return Ok(entity);
     }
-    encode_nurbs(&curve, range, "PCURVE")
+    let Some(source) = parameter_image_curve(ir, &curve, range) else {
+        return encode_nurbs(&curve, range, "PCURVE");
+    };
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone()));
+    let mut entity =
+        match copious_curve::regenerate(ir, &source.id, &geometry, None, Sense::Forward) {
+            Some(entity) => entity,
+            None => {
+                let mut entity = encode_nurbs(&curve, range, "PCURVE")?;
+                native_records::numeric::retain_nurbs(ir, &source.id, &mut entity);
+                entity
+            }
+        };
+    entity.status = EntityStatus::ParameterCurve;
+    entity.source_targets.push(source.id.to_string());
+    Ok(entity)
+}
+
+/// The model curve record that holds `curve` over `range` as a parameter-space
+/// carrier: the decoder reads each parameter-space entity also as a model
+/// curve, so the entity written for a parameter curve is that record's entity.
+/// Among equal carriers, the one the source states as a parameter curve is it.
+fn parameter_image_curve<'ir>(
+    ir: &'ir CadIr,
+    curve: &NurbsCurve,
+    range: FiniteVector<2>,
+) -> Option<&'ir cadmpeg_ir::geometry::Curve> {
+    let images = ir
+        .model
+        .curves
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.geometry.solved(),
+                Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs == curve
+            ) && candidate
+                .parameter_range
+                .is_some_and(|candidate_range| same_range(candidate_range.endpoints(), range.get()))
+        })
+        .collect::<Vec<_>>();
+    let ownership = ownership::SourceOwnership::build(ir);
+    let parameter = images
+        .iter()
+        .copied()
+        .filter(|image| {
+            matches!(
+                ownership.status(image.source_object.as_ref()),
+                EntityStatus::ParameterCurve
+            )
+        })
+        .collect::<Vec<_>>();
+    match (images.as_slice(), parameter.as_slice()) {
+        (_, [image]) | ([image], []) => Some(*image),
+        _ => None,
+    }
 }
 
 fn reference_marker(index: usize) -> String {
