@@ -117,7 +117,7 @@ Cross-checked against code:
 
 Spec §3.1 · layout: byte offsets · size: 75 B
 
-Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow.
+Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes or none, and the owning sketch container reference follow.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -134,6 +134,37 @@ Offsets are relative to the group's primary indexed header. The member reference
 | 66 | 4 | `scale_b` | `f32` | little | spec | f32 `1.0` at offsets 62 and 66 |
 | 70 | 1 | `zero_byte_2` | `u8` | little | spec | a zero byte at offset 70 · value `0` |
 | 71 | 4 | `member_count` | `u32` | little | spec | A u32 member count `N` at offset 71 |
+
+## `sketch_geometry_group_tail`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+Offsets are relative to the end of the member reference run of a 90 + 11N byte sketch geometry group. The tail ends the frame.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_run` | `bytes[4]` | little | spec | `00` when the four zero bytes are present |
+| 4 | 1 | `owner_marker` | `u8` | little | spec | a same-segment marked reference to the owning sketch container · value `1` |
+| 5 | 8 | `owner_record_index` | `u64` | little | spec | a same-segment marked reference to the owning sketch container |
+| 13 | 2 | `owner_flags` | `bytes[2]` | little | spec | a same-segment marked reference to the owning sketch container |
+
+## `sketch_geometry_group_short_tail`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+Offsets are relative to the end of the member reference run of an 86 + 11N byte sketch geometry group. The tail ends the frame.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `owner_marker` | `u8` | little | spec | `01` when the four zero bytes are absent · value `1` |
+| 1 | 8 | `owner_record_index` | `u64` | little | spec | a same-segment marked reference to the owning sketch container |
+| 9 | 2 | `owner_flags` | `bytes[2]` | little | spec | a same-segment marked reference to the owning sketch container |
 
 ## `design_decal_scope_prefix`
 
