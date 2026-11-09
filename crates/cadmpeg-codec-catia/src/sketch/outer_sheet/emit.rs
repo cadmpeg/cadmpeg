@@ -308,6 +308,7 @@ fn prepare_component(
         annotation(prepared, existing, id, plan.source_offset, tag, fields)?;
     }
     prepared.model.bodies.push(Body {
+        removed_by: None,
         id: body.clone(),
         kind: BodyKind::Sheet,
         regions: vec![region.clone()],

@@ -422,6 +422,7 @@ pub(crate) fn display_geometry(
         None => {
             let body = crate::ids::body(member);
             ir.model.bodies.push(Body {
+                removed_by: None,
                 id: body.clone(),
                 kind: BodyKind::General,
                 regions: Vec::new(),

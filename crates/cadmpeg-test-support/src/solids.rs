@@ -207,6 +207,7 @@ pub fn cylinder_with_curve_sources(
         shells: vec![id(ShellId::mint, "shell", "cylinder")],
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: id(BodyId::mint, "body", "cylinder"),
         kind: BodyKind::Solid,
         regions: vec![id(RegionId::mint, "region", "cylinder")],

@@ -1839,6 +1839,7 @@ fn plane_face_draft(
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().bodies.push(Body {
+        removed_by: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: body_regions,

@@ -599,6 +599,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.1").expect("identity grammar"),
     ];
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        removed_by: None,
         id: body_id.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
         regions: vec![region_id.clone()],

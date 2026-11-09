@@ -2576,6 +2576,18 @@ fn check_feature_references(
             add(identity, value);
         }
     });
+    for body in &ir.model.bodies {
+        if let Some(removed_by) = &body.removed_by {
+            if features.get(removed_by.as_str()).is_none() {
+                ref_error(
+                    findings,
+                    body.id.as_str(),
+                    "removing feature",
+                    removed_by.as_str(),
+                );
+            }
+        }
+    }
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {

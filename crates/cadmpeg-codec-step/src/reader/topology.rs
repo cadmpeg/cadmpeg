@@ -1253,6 +1253,7 @@ fn build_wire_set(
             shells: vec![shell],
         },
         body: Body {
+            removed_by: None,
             id: body.clone(),
             kind: BodyKind::Wire,
             regions: vec![region],
@@ -1535,6 +1536,7 @@ fn build_shell_wire_set(
             shells: vec![shell],
         },
         body: Body {
+            removed_by: None,
             id: body.clone(),
             kind: BodyKind::Wire,
             regions: vec![region],
@@ -1690,6 +1692,7 @@ fn build_geometric_set(
             shells: vec![shell_id],
         },
         body: Body {
+            removed_by: None,
             id: body,
             kind: BodyKind::Sheet,
             regions: vec![region],
@@ -2610,6 +2613,7 @@ fn build_one(
         shells: Vec::new(),
     };
     let body = Body {
+        removed_by: None,
         id: bid,
         kind: if solid {
             BodyKind::Solid

@@ -272,6 +272,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
 
     let body = Body {
+        removed_by: None,
         id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
         kind: BodyKind::default(),
         regions: Vec::new(),

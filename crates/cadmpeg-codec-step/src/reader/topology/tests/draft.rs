@@ -738,6 +738,7 @@ fn shared_surface_carrier_is_staged_once() {
             shells: Vec::new(),
         },
         body: Body {
+            removed_by: None,
             id: body_id,
             kind: BodyKind::Sheet,
             regions: vec![region_id],

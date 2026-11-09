@@ -6,6 +6,7 @@ use cadmpeg_ir::topology::{Body, BodyKind};
 
 fn body(id: &str) -> Body {
     Body {
+        removed_by: None,
         id: BodyId::mint(id).unwrap(),
         kind: BodyKind::Wire,
         regions: Vec::new(),

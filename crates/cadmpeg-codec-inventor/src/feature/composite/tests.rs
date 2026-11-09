@@ -236,6 +236,7 @@ impl Fixture {
         let mut model = cadmpeg_ir::document::Model::default();
         for id in &self.bodies {
             model.bodies.push(cadmpeg_ir::topology::Body {
+                removed_by: None,
                 id: id.clone(),
                 kind: cadmpeg_ir::topology::BodyKind::default(),
                 regions: vec![],

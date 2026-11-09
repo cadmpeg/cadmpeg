@@ -468,6 +468,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         source_carriers.admit_body(
             ir,
             Body {
+                removed_by: None,
                 id: body_id,
                 kind: BodyKind::Solid,
                 regions: body_regions,

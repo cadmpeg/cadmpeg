@@ -293,3 +293,17 @@ fn spring_support_reference_findings_name_the_construction() {
             && finding.message == format!("references missing surface `{missing}`")
     }));
 }
+
+#[test]
+fn a_body_removed_by_a_missing_feature_is_flagged() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.bodies[0].removed_by = Some(
+        crate::features::FeatureId::mint("test:model:feature#missing").expect("valid identity"),
+    );
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(ir.model.bodies[0].id.as_str())
+            && finding.message.contains("removing feature")
+    }));
+}

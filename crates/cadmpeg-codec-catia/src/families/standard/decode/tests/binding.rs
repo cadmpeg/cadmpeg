@@ -1398,6 +1398,7 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
         source_object: None,
     });
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: BodyId::mint("catia:test:body#0").expect("fixture body id"),
         kind: BodyKind::Solid,
         regions: Vec::new(),

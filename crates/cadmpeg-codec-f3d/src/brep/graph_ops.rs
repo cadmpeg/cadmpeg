@@ -363,6 +363,7 @@ mod tests {
         Brep {
             asm: AsmBrep {
                 bodies: vec![Body {
+                    removed_by: None,
                     id: BodyId::mint("f3d:brep:entity#1").unwrap(),
                     kind: BodyKind::default(),
                     regions: vec![],

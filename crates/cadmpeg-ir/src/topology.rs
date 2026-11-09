@@ -189,6 +189,15 @@ pub struct Body {
         deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
+    /// The feature that removes the body from the final model, when the source
+    /// states one. A removed body stays in the arena so that references to it
+    /// remain valid; it is not part of the final model.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_removed_by"
+    )]
+    pub removed_by: Option<crate::features::FeatureId>,
 }
 
 /// A connected region of a body.
@@ -2474,6 +2483,11 @@ cadmpeg_core::named_optional_field!(deserialize_transform, Transform, "transform
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(
+    deserialize_removed_by,
+    crate::features::FeatureId,
+    "removed_by"
+);
 cadmpeg_core::named_optional_field!(deserialize_isoparametric, bool, "isoparametric");
 cadmpeg_core::named_optional_field!(
     deserialize_parameter_range,

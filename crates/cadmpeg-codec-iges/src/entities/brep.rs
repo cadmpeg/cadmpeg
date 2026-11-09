@@ -1689,6 +1689,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
+            removed_by: None,
             id: body_id,
             kind: definition.kind,
             regions: body_regions,

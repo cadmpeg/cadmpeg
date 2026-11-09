@@ -146,6 +146,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         }
         member.bodies = (0..2)
             .map(|index| Body {
+                removed_by: None,
                 id: BodyId::mint(format!("f3d:brep:saved-edge-body#{index}")).unwrap(),
                 kind: BodyKind::Wire,
                 regions: Vec::new(),
@@ -267,6 +268,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     let mut merged = Model::default();
     let mut component = Model::default();
     component.bodies = vec![Body {
+        removed_by: None,
         id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
@@ -348,6 +350,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let source_id = "f3d:model:body#source";
     let body = Body {
+        removed_by: None,
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:model:region#source").unwrap()],

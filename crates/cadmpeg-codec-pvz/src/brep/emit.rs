@@ -1123,6 +1123,7 @@ impl Writer<'_, '_, '_, '_> {
             }
             self.ctx.charge_entities(1, "pvz exact body")?;
             self.sink.model.bodies.push(Body {
+                removed_by: None,
                 id: id.clone(),
                 kind,
                 regions,

@@ -10,6 +10,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
     let body = |slot| Body {
+        removed_by: None,
         id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![

@@ -10,6 +10,7 @@ use crate::report::check::Finding;
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.bodies.push(crate::topology::Body {
+        removed_by: None,
         id: "test:model:body#result".try_into().unwrap(),
         kind: crate::topology::BodyKind::Solid,
         regions: Vec::new(),

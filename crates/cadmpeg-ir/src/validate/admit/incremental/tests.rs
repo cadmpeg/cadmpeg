@@ -108,6 +108,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
             shells: vec![shell_id],
         });
         candidate.model.bodies.push(crate::topology::Body {
+            removed_by: None,
             id: body_id,
             kind: crate::topology::BodyKind::General,
             regions: vec![region_id],

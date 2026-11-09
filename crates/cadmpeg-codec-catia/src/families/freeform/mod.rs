@@ -1264,6 +1264,7 @@ fn attach_standalone_wires(
     let body_region_id = region_id.clone();
     let body_regions = vec![body_region_id];
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id,
         kind: BodyKind::Wire,
         regions: body_regions,
@@ -2104,6 +2105,7 @@ fn attach_closed_two_edge_face(
     });
     admission.charge()?;
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: vec![region_id],

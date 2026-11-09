@@ -791,6 +791,7 @@ impl Builder {
             shells: vec![shell],
         });
         self.ir.model.bodies.push(Body {
+            removed_by: None,
             id: body,
             kind,
             regions: vec![region],

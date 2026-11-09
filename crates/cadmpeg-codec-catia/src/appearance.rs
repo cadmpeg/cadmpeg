@@ -413,6 +413,7 @@ mod tests {
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: BodyId::mint("catia:test:body#body").expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: vec![],

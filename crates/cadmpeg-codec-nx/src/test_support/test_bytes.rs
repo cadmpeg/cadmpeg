@@ -45,6 +45,7 @@ pub(crate) fn attach_test_body_surface(
     let shell_id = ShellId::mint(format!("{body_id}:shell")).expect("identity grammar");
     if !ir.model.bodies.iter().any(|body| body.id == *body_id) {
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: body_id.clone(),
             kind: BodyKind::Solid,
             regions: vec![region_id.clone()],

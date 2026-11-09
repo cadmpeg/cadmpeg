@@ -322,6 +322,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
     };
     let mut model = Model::default();
     model.bodies.push(cadmpeg_ir::topology::Body {
+        removed_by: None,
         id: key.body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::default(),
         regions: vec![],
@@ -731,6 +732,7 @@ fn model_with_bodies(names: &[(&str, Option<&str>)]) -> Model {
     let mut model = Model::default();
     for (id, name) in names {
         model.bodies.push(cadmpeg_ir::topology::Body {
+            removed_by: None,
             id: body(id),
             kind: cadmpeg_ir::topology::BodyKind::default(),
             regions: vec![],

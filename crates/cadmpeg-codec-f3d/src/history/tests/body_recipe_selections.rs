@@ -135,6 +135,7 @@ fn face_geometry() -> (
     use cadmpeg_ir::ids::{BodyId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
     let body = Body {
+        removed_by: None,
         id: BodyId::mint("f3d:brep:body#1").unwrap(),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:model:region#1").unwrap()],
@@ -231,6 +232,7 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     };
     let (_, _, operands, _) = selection_fixture();
     let body = cadmpeg_ir::topology::Body {
+        removed_by: None,
         id: cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#1").unwrap(),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: Vec::new(),

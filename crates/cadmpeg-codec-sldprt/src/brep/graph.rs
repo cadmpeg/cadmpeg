@@ -4732,6 +4732,7 @@ fn decode_graph(
         }
         admit_brep_entity(ctx)?;
         out.bodies.push(Body {
+            removed_by: None,
             id: body_id,
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
             regions: body_regions,

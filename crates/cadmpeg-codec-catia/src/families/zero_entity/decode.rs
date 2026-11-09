@@ -615,6 +615,7 @@ fn transfer_closed_wire_loops(
                 let regions = vec![region_id.clone()];
                 admission.charge()?;
                 ir.model.bodies.push(Body {
+                    removed_by: None,
                     id: body_id.clone(),
                     kind: BodyKind::Wire,
                     regions,
@@ -692,6 +693,7 @@ fn transfer_closed_wire_loops(
         let regions = vec![region_id.clone()];
         admission.charge()?;
         ir.model.bodies.push(Body {
+            removed_by: None,
             id: body_id.clone(),
             kind: BodyKind::Wire,
             regions,

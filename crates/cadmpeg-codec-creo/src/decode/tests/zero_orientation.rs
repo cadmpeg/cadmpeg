@@ -850,6 +850,7 @@ fn named_revolve_transfers_profile_axis() {
         });
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -889,6 +890,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -923,6 +925,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),

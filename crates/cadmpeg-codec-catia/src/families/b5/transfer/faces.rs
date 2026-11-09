@@ -385,6 +385,7 @@ pub(super) fn emit_faces(
     let body_record_id = body_id.clone();
     admission.charge()?;
     ir.model.bodies.push(Body {
+        removed_by: None,
         id: body_record_id,
         kind: ownership.body_kind,
         regions: body_regions,

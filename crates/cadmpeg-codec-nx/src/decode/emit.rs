@@ -205,6 +205,7 @@ pub(super) fn emit_topology(
         bodies.insert(body_xmt, id.clone());
 
         ir.model.bodies.push(Body {
+            removed_by: None,
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
