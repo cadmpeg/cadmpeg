@@ -1840,3 +1840,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** `f3d.md` §3.1 names the sole member of a 143-byte direct construction-group frame a persistent entity-selection operand. In this group it is a bounded-face recipe operand, and the decoder reads it as a face operand.
 
 **Note.** None.
+
+### DR-327. Separator byte of a 130-byte circular-pattern axis record
+
+**Question.** Does the `u8 1` that a 130-byte two-wrapper circular-pattern axis record stores between its references to the axis-record indexes plus two and plus one encode the direction of travel?
+
+**Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The 130-byte form is observed with a full-turn total angle, where the instance set does not depend on the direction of travel. The decoder projects such a pattern only when its total angle is a full turn.
+
+**Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Each save needs the axis record frame and the parameter owners.
+
+**Conflict.** None.
+
+**Note.** None.

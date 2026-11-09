@@ -114,6 +114,7 @@ fn circular_scope() -> DesignParameterScope {
         scope.payload_mut()
     {
         *slot = Some(DesignCircularPatternConstruction {
+            axis_separator_flag_offset: None,
             count: std::num::NonZeroU32::new(3).unwrap(),
             count_record_index: 11,
             count_offset: 0,
@@ -165,6 +166,28 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             PatternTransform::Circular { .. }
         ));
     }
+}
+
+#[test]
+fn a_separator_axis_projects_only_a_full_turn() {
+    let with = |angle: f64| {
+        let mut scope = circular_scope();
+        if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(construction)) =
+            scope.payload_mut()
+        {
+            construction.axis_separator_flag_offset = Some(104);
+            construction.angle = cadmpeg_ir::scalar::PositiveAngle::new(angle).unwrap();
+        }
+        project_circular_pattern(
+            &scope,
+            &[group(10, 20, DesignOperandRole::BODIES_B)],
+            &[],
+            &[],
+            &[],
+        )
+    };
+    assert!(with(std::f64::consts::TAU).is_some());
+    assert!(with(std::f64::consts::FRAC_PI_2).is_none());
 }
 
 fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed) {
