@@ -49,10 +49,10 @@ const CONTEXT_TYPE: [u8; 16] = [
 /// Qualifier of the matching attribute that identifies a selected face.
 const FACE_QUALIFIER: i64 = 1;
 
-/// The `state` word of a face naming selector whose face the selecting
-/// feature itself modified. A Thicken operand takes it under the rule of
-/// `project`.
-const NAMING_STATE_MODIFIED: i32 = 2;
+/// The second stored `state` word of a face naming selector. A Thicken
+/// operand joins it through the feature tag of the owner under the rule of
+/// `project`; other operands refuse it.
+pub(crate) const NAMING_STATE_MODIFIED: i32 = 2;
 
 #[derive(Debug)]
 pub(super) struct FaceSelector {
