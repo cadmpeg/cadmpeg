@@ -5,7 +5,8 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::super::decode_parameters;
-use super::{compact_null_owner_parameter_record, typed_parameter_record};
+use super::compact_null_owner::compact_null_owner_parameter_record;
+use super::typed_parameter_record;
 use crate::design::test_support::parameter_record;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
