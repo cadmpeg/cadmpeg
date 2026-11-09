@@ -517,6 +517,7 @@ pub(crate) struct Builder<'a> {
     drawn_pmi_occurrences: BTreeSet<String>,
     geometry_emission_depth: usize,
     construction_supports: BTreeSet<String>,
+    ranges_off_vertices: BTreeSet<&'a str>,
     approximations: approximation::Approximator<'a>,
 }
 
@@ -767,6 +768,7 @@ impl<'a> Builder<'a> {
         recovered_edges: HashSet<EdgeId>,
     ) -> Result<Self, cadmpeg_core::decode::ResourceLimit> {
         let construction_supports = ownership::construction_supports(ir, ctx)?;
+        let ranges_off_vertices = edges_with_ranges_off_their_vertices(ir)?;
         let loop_faces = ir
             .model
             .faces
@@ -970,6 +972,7 @@ impl<'a> Builder<'a> {
             drawn_pmi_occurrences: BTreeSet::new(),
             geometry_emission_depth: 0,
             construction_supports,
+            ranges_off_vertices,
         };
         builder
             .consumed_attribute_ids
@@ -1162,10 +1165,7 @@ impl<'a> Builder<'a> {
             StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
         ) && self.ir.model.occurrences.iter().any(|occurrence| {
             matches!(occurrence.parent, OccurrenceParent::Root {})
-                && matches!(
-                    &occurrence.prototype,
-                    PrototypeReference::External { .. }
-                )
+                && matches!(&occurrence.prototype, PrototypeReference::External { .. })
                 && occurrence
                     .effective_transform()
                     .is_ok_and(|transform| transform.is_none())
@@ -1558,6 +1558,15 @@ impl<'a> Builder<'a> {
                     self.point_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
                 }
             };
+            if !matches!(style_kind, StyleKind::Surface) && color.a() < 1.0 {
+                self.loss(
+                    StepLossCode::LineStyleTransparencyOmitted,
+                    format!(
+                        "appearance binding '{}' was written without its transparency: a curve or point style holds none",
+                        binding.id
+                    ),
+                );
+            }
             self.written_appearance_bindings.insert(binding.id.clone());
             styled.push(self.emit_styled_item(
                 style,
@@ -2743,10 +2752,7 @@ impl<'a> Builder<'a> {
         );
         let writable_external = |occurrence: &cadmpeg_ir::products::Occurrence| {
             supports_external_reference
-                && matches!(
-                    &occurrence.prototype,
-                    PrototypeReference::External { .. }
-                )
+                && matches!(&occurrence.prototype, PrototypeReference::External { .. })
                 && occurrence
                     .effective_transform()
                     .is_ok_and(|transform| transform.is_none())
@@ -8192,7 +8198,7 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
-        let off = edges_with_ranges_off_their_vertices(self.ir);
+        let off = &self.ranges_off_vertices;
         if !off.is_empty() {
             self.loss(
                 StepLossCode::EdgeRangeOffVertices,
@@ -9843,7 +9849,9 @@ fn region_order(ir: &CadIr) -> Vec<&cadmpeg_ir::topology::Region> {
     order
 }
 
-fn edges_with_ranges_off_their_vertices(ir: &CadIr) -> BTreeSet<&str> {
+fn edges_with_ranges_off_their_vertices(
+    ir: &CadIr,
+) -> Result<BTreeSet<&str>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::build(ir);
     let tolerance = ir.tolerances.linear_or_default().get();
     let position = |vertex: &cadmpeg_ir::ids::VertexId| {
@@ -9852,28 +9860,37 @@ fn edges_with_ranges_off_their_vertices(ir: &CadIr) -> BTreeSet<&str> {
         Some(point.position().get())
     };
     let off = |curve: &cadmpeg_ir::ids::CurveId, parameter: f64, vertex| {
-        position(vertex).is_some_and(|vertex| {
-            cadmpeg_ir::eval::model_curve_point_by_id(
+        let Some(vertex) = position(vertex) else {
+            return Ok(false);
+        };
+        let point =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::model_curve_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &index,
                 curve,
                 parameter,
-            )
-            .is_ok_and(|point| point.get().distance(vertex) > tolerance)
+            ))?;
+        // A solved carrier with no point at a range end holds that range
+        // outside its domain.
+        let solved = index
+            .curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)
+            .and_then(|curve| curve.geometry.solved())
+            .is_some_and(|geometry| !matches!(geometry, SolvedCurveGeometry::Unknown { .. }));
+        Ok(match point {
+            Some(point) => point.get().distance(vertex) > tolerance,
+            None => solved,
         })
     };
-    ir.model
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.curve()
-                .zip(edge.param_range())
-                .is_some_and(|(curve, range)| {
-                    off(curve, range[0], &edge.start) || off(curve, range[1], &edge.end)
-                })
-        })
-        .map(|edge| edge.id.as_str())
-        .collect()
+    let mut edges = BTreeSet::new();
+    for edge in &ir.model.edges {
+        let Some((curve, range)) = edge.curve().zip(edge.param_range()) else {
+            continue;
+        };
+        if off(curve, range[0], &edge.start)? || off(curve, range[1], &edge.end)? {
+            edges.insert(edge.id.as_str());
+        }
+    }
+    Ok(edges)
 }
 
 fn datum_target_form_text(form: &DatumTargetForm) -> &str {
