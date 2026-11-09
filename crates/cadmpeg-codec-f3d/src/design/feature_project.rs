@@ -410,7 +410,9 @@ impl<'a> ScopeHistoryGraph<'a> {
                 scopes,
                 body_bindings,
                 body_recipe_operands,
+                crate::history::edge_recipe_scope::Sources::default(),
                 histories,
+                &mut Vec::new(),
             ))
         };
         let mut component_namespaces = HashMap::new();

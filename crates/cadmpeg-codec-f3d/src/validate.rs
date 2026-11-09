@@ -1033,7 +1033,13 @@ fn validate_loaded(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &native.design_edge_operands,
+            recipes: &native.construction_recipes,
+            tags: &native.persistent_subentity_tags,
+        },
         &native.asm_histories,
+        &mut Vec::new(),
     );
     // discarded-value: the decoder reported these losses when it bound the operands.
     let _ = history::bind_face_operand_history_candidates(
@@ -6356,7 +6362,13 @@ fn validate_edge_identity_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &native.design_edge_operands,
+            recipes: &native.construction_recipes,
+            tags: &native.persistent_subentity_tags,
+        },
         &native.asm_histories,
+        &mut Vec::new(),
     );
     history::selection::bind_edge_identity_history(
         &mut expected_edge_identity_operands,
@@ -7037,7 +7049,13 @@ fn validate_edge_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &native.design_edge_operands,
+            recipes: &native.construction_recipes,
+            tags: &native.persistent_subentity_tags,
+        },
         &native.asm_histories,
+        &mut Vec::new(),
     );
     let expected_face_boundaries = history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
@@ -7310,7 +7328,13 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &native.design_edge_operands,
+            recipes: &native.construction_recipes,
+            tags: &native.persistent_subentity_tags,
+        },
         &native.asm_histories,
+        &mut Vec::new(),
     );
     history::bind_edge_treatment_vertex_history(
         &mut expected,
