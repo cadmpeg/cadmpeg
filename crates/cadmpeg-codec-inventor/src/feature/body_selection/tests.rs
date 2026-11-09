@@ -893,6 +893,7 @@ fn a_composite_member_link_join_does_not_count_as_a_second_wrapper() {
 fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_without_them() {
     use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
     use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
     use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3};
     use cadmpeg_ir::math::{Point3, Vector3};
     let plane_normal = FeatureDirection3::from(
@@ -929,4 +930,37 @@ fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_witho
     let mut unresolved = source.clone();
     definition(&mut unresolved, &missing, None);
     assert_eq!(unresolved, source);
+    let feature_seed = FeatureDefinition::Operation(FeatureOperation::Pattern {
+        seeds: vec![PatternSeed::Feature(
+            FeatureId::mint("test:model:feature#seed").expect("feature"),
+        )],
+        pattern: PatternKind::new(PatternTransform::Mirror {
+            plane_origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("origin"),
+            plane_normal,
+        })
+        .expect("mirror"),
+    });
+    let model_of = |definition: FeatureDefinition| {
+        let mut model = Model::default();
+        model.features.push(Feature {
+            id: FeatureId::mint("test:model:feature#pattern").expect("feature"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: Some("pattern".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+            product_definition: None,
+        });
+        model
+    };
+    assert!(native_losses(&model_of(actual), &joins()).is_empty());
+    let losses = native_losses(&model_of(unresolved), &missing);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
+    assert!(native_losses(&model_of(feature_seed), &joins()).is_empty());
 }
