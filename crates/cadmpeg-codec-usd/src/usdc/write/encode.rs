@@ -5,8 +5,8 @@
 //! before the end of its block and the last 5 bytes of a block are
 //! literals, so that every LZ4 decoder expands it to its input.
 
+use super::Unstatable;
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::CodecError;
 
 use crate::usdc::integers::Width;
 
@@ -25,8 +25,8 @@ const MAX_OFFSET: usize = 0xFFFF;
 /// The multiplier of the match-finder hash.
 const HASH_FACTOR: u64 = 2_654_435_761;
 
-fn too_large() -> CodecError {
-    CodecError::NotImplemented("a USDC section above the format's size limits".to_owned())
+fn too_large() -> Unstatable {
+    super::unsupported("a USDC section above the format's size limits")
 }
 
 /// `length` as a length extension after a nibble of 15.
@@ -103,7 +103,7 @@ fn block(data: &[u8], out: &mut Vec<u8>) {
 }
 
 /// `data` as a compressed buffer.
-pub(super) fn compress(data: &[u8]) -> Result<Vec<u8>, CodecError> {
+pub(super) fn compress(data: &[u8]) -> Result<Vec<u8>, Unstatable> {
     let mut out = Vec::with_capacity(data.len() + data.len() / 255 + 16);
     if data.len() <= MAX_CHUNK {
         out.push(0);
@@ -181,7 +181,7 @@ fn coded(differences: &[i64], width: Width) -> Vec<u8> {
 
 /// `coded` as a compressed integer sequence: its `uint64` byte size, then
 /// the compressed buffer.
-fn sequence_of(coded: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError> {
+fn sequence_of(coded: &[u8], out: &mut Vec<u8>) -> Result<(), Unstatable> {
     let buffer = compress(coded)?;
     out.extend_from_slice(&u64_from_index(buffer.len()).to_le_bytes());
     out.extend_from_slice(&buffer);
@@ -189,7 +189,7 @@ fn sequence_of(coded: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError> {
 }
 
 /// `values` as a compressed 32-bit integer sequence.
-pub(super) fn integers(values: &[i32], out: &mut Vec<u8>) -> Result<(), CodecError> {
+pub(super) fn integers(values: &[i32], out: &mut Vec<u8>) -> Result<(), Unstatable> {
     if values.is_empty() {
         return sequence_of(&[], out);
     }
@@ -207,7 +207,7 @@ pub(super) fn integers(values: &[i32], out: &mut Vec<u8>) -> Result<(), CodecErr
 }
 
 /// `values` as a compressed 64-bit integer sequence.
-pub(super) fn wide_integers(values: &[i64], out: &mut Vec<u8>) -> Result<(), CodecError> {
+pub(super) fn wide_integers(values: &[i64], out: &mut Vec<u8>) -> Result<(), Unstatable> {
     if values.is_empty() {
         return sequence_of(&[], out);
     }
@@ -225,7 +225,7 @@ pub(super) fn wide_integers(values: &[i64], out: &mut Vec<u8>) -> Result<(), Cod
 }
 
 /// `values` as indices of a compressed 32-bit sequence.
-pub(super) fn indices(values: &[u32], out: &mut Vec<u8>) -> Result<(), CodecError> {
+pub(super) fn indices(values: &[u32], out: &mut Vec<u8>) -> Result<(), Unstatable> {
     let signed: Vec<i32> = values.iter().map(|value| value.cast_signed()).collect();
     integers(&signed, out)
 }

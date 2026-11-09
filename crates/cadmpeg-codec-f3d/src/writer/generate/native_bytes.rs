@@ -3,7 +3,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
 
@@ -11,15 +10,24 @@ use crate::native::F3dNative;
 use crate::writer::generate::index::NativeGenerationIndex;
 use crate::writer::primitives::native_bool;
 
-pub(super) fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_ident(
+    bytes: &mut Vec<u8>,
+    value: &str,
+) -> Result<(), crate::writer::WriteError> {
     native_text(bytes, 0x0d, value)
 }
 
-pub(super) fn native_subident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_subident(
+    bytes: &mut Vec<u8>,
+    value: &str,
+) -> Result<(), crate::writer::WriteError> {
     native_text(bytes, 0x0e, value)
 }
 
-pub(super) fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
+pub(super) fn native_curve_base(
+    bytes: &mut Vec<u8>,
+    kind: &str,
+) -> Result<(), crate::writer::WriteError> {
     native_subident(bytes, kind)?;
     native_ident(bytes, "curve")?;
     native_ref(bytes, -1);
@@ -31,7 +39,10 @@ pub(super) fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), C
     Ok(())
 }
 
-pub(super) fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
+pub(super) fn native_surface_base(
+    bytes: &mut Vec<u8>,
+    kind: &str,
+) -> Result<(), crate::writer::WriteError> {
     native_subident(bytes, kind)?;
     native_ident(bytes, "surface")?;
     native_ref(bytes, -1);
@@ -73,9 +84,10 @@ pub(super) fn native_string(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(value.as_bytes());
 }
 
-fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecError> {
-    let length = u8::try_from(value.len())
-        .map_err(|_| CodecError::InvalidInput("F3D native text exceeds 255 bytes".into()))?;
+fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), crate::writer::WriteError> {
+    let length = u8::try_from(value.len()).map_err(|_| {
+        crate::writer::WriteError::Unwritable("F3D native text exceeds 255 bytes".into())
+    })?;
     bytes.extend_from_slice(&[tag, length]);
     bytes.extend_from_slice(value.as_bytes());
     Ok(())
@@ -86,11 +98,15 @@ pub(super) fn native_ref(bytes: &mut Vec<u8>, value: i64) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-pub(super) fn native_record_index(base: i64, ordinal: usize) -> Result<i64, CodecError> {
-    let ordinal = i64::try_from(ordinal)
-        .map_err(|_| CodecError::InvalidInput("F3D record ordinal exceeds i64".into()))?;
+pub(super) fn native_record_index(
+    base: i64,
+    ordinal: usize,
+) -> Result<i64, crate::writer::WriteError> {
+    let ordinal = i64::try_from(ordinal).map_err(|_| {
+        crate::writer::WriteError::Unwritable("F3D record ordinal exceeds i64".into())
+    })?;
     base.checked_add(ordinal)
-        .ok_or_else(|| CodecError::InvalidInput("F3D record index exceeds i64".into()))
+        .ok_or_else(|| crate::writer::WriteError::Unwritable("F3D record index exceeds i64".into()))
 }
 
 pub(super) fn native_i64(bytes: &mut Vec<u8>, value: i64) {
@@ -127,7 +143,7 @@ pub(super) fn native_transform(
     topology: &NativeGenerationIndex<'_>,
     body: &Body,
     transform: Transform,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_ident(bytes, "transform")?;
     for vector in [
         [
@@ -207,7 +223,7 @@ pub(super) fn native_history_tail(
     bytes: &mut Vec<u8>,
     native: &F3dNative,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     // Framing and reference signatures do not type the historical payload.
     // Copying it would make retained bytes a content source.
     if native
@@ -217,7 +233,7 @@ pub(super) fn native_history_tail(
         .flat_map(|state| &state.records)
         .any(|record| !record.raw_bytes.is_empty())
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D historical payloads have no typed serializer".into(),
         ));
     }
@@ -228,7 +244,7 @@ pub(super) fn native_history_tail(
         return Ok(());
     }
     if histories.len() != 1 {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D generation supports one ASM history stream".into(),
         ));
     }
@@ -240,7 +256,7 @@ pub(super) fn native_history_tail(
             .is_none_or(|state| state.state_id != preamble.stream_size)
             || preamble.history_entry_count < 0
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                 history.id
             )));

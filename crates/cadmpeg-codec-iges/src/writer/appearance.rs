@@ -5,14 +5,13 @@ use super::{
     display_color, finite, number, BodyColor, BodyPresentation, CadIr, Entity, EntityStatus,
     FiniteReal, IgesLossCode, LossNote,
 };
-use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn append_color_definitions(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
     presentations: &mut BTreeMap<usize, BodyPresentation>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut written = BTreeMap::new();
     let mut definition_presentations = Vec::new();
     for (owner, presentation) in presentations.iter_mut() {

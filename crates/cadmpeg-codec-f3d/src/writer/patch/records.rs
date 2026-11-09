@@ -11,7 +11,6 @@ use crate::records::{
     sketch_geometry::SketchCurveGeometry,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 
 use super::edits::{
     BodyMemberEdit, ByteEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
@@ -25,18 +24,24 @@ const EPS_RECORDS_LINE_SCALAR_COUNT_E9: f64 = 1.0e-9;
 pub(super) fn patch_material_assignments(
     bytes: &mut [u8],
     edits: &[DesignMaterialAssignment],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for assignment in edits {
         let suffix_start = usize::try_from(source_position(
             assignment.entity_suffix_offset,
             "material-assignment suffix offset",
         )?)
         .map_err(|_| {
-            CodecError::Malformed("material-assignment suffix offset exceeds address space".into())
+            crate::writer::WriteError::Unwritable(
+                "material-assignment suffix offset exceeds address space".into(),
+            )
         })?;
         bytes
             .get_mut(suffix_start..suffix_start + 8)
-            .ok_or_else(|| CodecError::Malformed("material-assignment suffix is truncated".into()))?
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(
+                    "material-assignment suffix is truncated".into(),
+                )
+            })?
             .copy_from_slice(&assignment.entity_id.suffix().to_le_bytes());
         patch_utf16_if_changed(
             bytes,
@@ -79,7 +84,7 @@ pub(super) fn patch_material_assignments(
 pub(super) fn patch_lost_edge_references(
     bytes: &mut [u8],
     edits: &[LostEdgeReference],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for reference in edits {
         patch_bytes_at(
             bytes,
@@ -100,7 +105,10 @@ pub(super) fn patch_lost_edge_references(
     Ok(())
 }
 
-pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Result<(), CodecError> {
+pub(super) fn patch_act_entities(
+    bytes: &mut [u8],
+    edits: &[ActEntity],
+) -> Result<(), crate::writer::WriteError> {
     for entity in edits {
         let encoded_id = entity
             .entity_id()
@@ -124,7 +132,9 @@ pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
             let offset = guid.offset.ok_or_else(|| {
-                CodecError::NotImplemented("ACT channel source location is unavailable".into())
+                crate::writer::WriteError::Unsupported(
+                    "ACT channel source location is unavailable".into(),
+                )
             })?;
             patch_bytes_at(bytes, offset, &encoded, "ACT channel GUID")?;
         }
@@ -132,23 +142,28 @@ pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
     Ok(())
 }
 
-pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[ByteEdit]) -> Result<(), CodecError> {
+pub(super) fn patch_act_guids(
+    bytes: &mut [u8],
+    edits: &[ByteEdit],
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
     Ok(())
 }
 
-fn source_position(value: Option<u64>, field: &str) -> Result<u64, CodecError> {
+fn source_position(value: Option<u64>, field: &str) -> Result<u64, crate::writer::WriteError> {
     value.ok_or_else(|| {
-        CodecError::NotImplemented(format!("F3D patch requires an actual source {field}"))
+        crate::writer::WriteError::Unsupported(format!(
+            "F3D patch requires an actual source {field}"
+        ))
     })
 }
 
 pub(super) fn patch_act_links(
     bytes: &mut [u8],
     edits: &[ActComponentLink],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for root in edits {
         for (offset, value, field) in [
             (
@@ -201,7 +216,7 @@ fn patch_utf16_if_changed(
     offset: u64,
     value: &str,
     field: &str,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let encoded = value
         .encode_utf16()
         .flat_map(u16::to_le_bytes)
@@ -209,17 +224,21 @@ fn patch_utf16_if_changed(
     patch_bytes_at(bytes, offset, &encoded, field)
 }
 
-pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {
+pub(crate) fn native_stream(
+    id: &str,
+    delimiter: &str,
+) -> Result<String, crate::writer::WriteError> {
     let Some((stream, _)) = id
         .strip_prefix(crate::ids::SCHEME_PREFIX)
         .and_then(|id| id.rsplit_once(delimiter))
     else {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "invalid native record id {id}"
         )));
     };
-    crate::ids::decode_identity_key_component(stream)
-        .ok_or_else(|| CodecError::malformed(format_args!("invalid native record id {id}")))
+    crate::ids::decode_identity_key_component(stream).ok_or_else(|| {
+        crate::writer::WriteError::Unwritable(format!("invalid native record id {id}"))
+    })
 }
 
 fn patch_bytes_at(
@@ -227,12 +246,13 @@ fn patch_bytes_at(
     offset: u64,
     encoded: &[u8],
     field: &str,
-) -> Result<(), CodecError> {
-    let start = usize::try_from(offset)
-        .map_err(|_| CodecError::malformed(format_args!("{field} offset exceeds address space")))?;
+) -> Result<(), crate::writer::WriteError> {
+    let start = usize::try_from(offset).map_err(|_| {
+        crate::writer::WriteError::Unwritable(format!("{field} offset exceeds address space"))
+    })?;
     bytes
         .get_mut(start..start + encoded.len())
-        .ok_or_else(|| CodecError::malformed(format_args!("{field} is truncated")))?
+        .ok_or_else(|| crate::writer::WriteError::Unwritable(format!("{field} is truncated")))?
         .copy_from_slice(encoded);
     Ok(())
 }
@@ -240,15 +260,19 @@ fn patch_bytes_at(
 pub(super) fn patch_design_types(
     bytes: &mut [u8],
     edits: &[DesignTypeEdit],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         for (offset, encoded) in edit.integers.iter().chain(&edit.strings) {
             let start = usize::try_from(*offset).map_err(|_| {
-                CodecError::Malformed("design-type offset exceeds address space".into())
+                crate::writer::WriteError::Unwritable(
+                    "design-type offset exceeds address space".into(),
+                )
             })?;
             bytes
                 .get_mut(start..start + encoded.len())
-                .ok_or_else(|| CodecError::Malformed("design-type field is truncated".into()))?
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable("design-type field is truncated".into())
+                })?
                 .copy_from_slice(encoded);
         }
     }
@@ -258,7 +282,7 @@ pub(super) fn patch_design_types(
 pub(super) fn patch_entity_headers(
     bytes: &mut [u8],
     edits: &[EntityHeaderEdit],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         if let Some(reference) = &edit.record_reference {
             patch_u32_at(
@@ -280,12 +304,18 @@ pub(super) fn patch_entity_headers(
     Ok(())
 }
 
-fn patch_u32_at(bytes: &mut [u8], offset: u64, value: u32, field: &str) -> Result<(), CodecError> {
-    let start = usize::try_from(offset)
-        .map_err(|_| CodecError::malformed(format_args!("{field} offset exceeds address space")))?;
+fn patch_u32_at(
+    bytes: &mut [u8],
+    offset: u64,
+    value: u32,
+    field: &str,
+) -> Result<(), crate::writer::WriteError> {
+    let start = usize::try_from(offset).map_err(|_| {
+        crate::writer::WriteError::Unwritable(format!("{field} offset exceeds address space"))
+    })?;
     bytes
         .get_mut(start..start + 4)
-        .ok_or_else(|| CodecError::malformed(format_args!("{field} is truncated")))?
+        .ok_or_else(|| crate::writer::WriteError::Unwritable(format!("{field} is truncated")))?
         .copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
@@ -293,26 +323,34 @@ fn patch_u32_at(bytes: &mut [u8], offset: u64, value: u32, field: &str) -> Resul
 pub(super) fn patch_body_members(
     bytes: &mut [u8],
     edits: &[BodyMemberEdit],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         let offset = edit.offset;
         let entity_suffix = edit.entity_suffix;
         let flags = edit.flags;
         let start = usize::try_from(offset).map_err(|_| {
-            CodecError::Malformed("design-body-member offset exceeds address space".into())
+            crate::writer::WriteError::Unwritable(
+                "design-body-member offset exceeds address space".into(),
+            )
         })?;
         if bytes.get(start) != Some(&1) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "design-body-member at byte {start} has no presence marker"
             )));
         }
         bytes
             .get_mut(start + 1..start + 9)
-            .ok_or_else(|| CodecError::Malformed("design-body-member id is truncated".into()))?
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("design-body-member id is truncated".into())
+            })?
             .copy_from_slice(&entity_suffix.to_le_bytes());
         bytes
             .get_mut(start + 9..start + 11)
-            .ok_or_else(|| CodecError::Malformed("design-body-member flags are truncated".into()))?
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(
+                    "design-body-member flags are truncated".into(),
+                )
+            })?
             .copy_from_slice(&flags.to_le_bytes());
     }
     Ok(())
@@ -321,16 +359,20 @@ pub(super) fn patch_body_members(
 pub(super) fn patch_body_visibilities(
     bytes: &mut [u8],
     edits: &[(u64, bool)],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for &(offset, visible) in edits {
         let at = usize::try_from(offset).map_err(|_| {
-            CodecError::Malformed("body-visibility offset exceeds address space".into())
+            crate::writer::WriteError::Unwritable(
+                "body-visibility offset exceeds address space".into(),
+            )
         })?;
         let flag = bytes
             .get_mut(at)
             .filter(|flag| **flag <= 1)
             .ok_or_else(|| {
-                CodecError::Malformed("body-visibility flag is missing or invalid".into())
+                crate::writer::WriteError::Unwritable(
+                    "body-visibility flag is missing or invalid".into(),
+                )
             })?;
         *flag = u8::from(!visible);
     }
@@ -340,14 +382,18 @@ pub(super) fn patch_body_visibilities(
 pub(super) fn patch_design_body_keys(
     bytes: &mut [u8],
     edits: &BTreeSet<(u64, u64)>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for &(offset, key) in edits {
         let at = usize::try_from(offset).map_err(|_| {
-            CodecError::Malformed("Design body-key offset exceeds address space".into())
+            crate::writer::WriteError::Unwritable(
+                "Design body-key offset exceeds address space".into(),
+            )
         })?;
         bytes
             .get_mut(at..at + 8)
-            .ok_or_else(|| CodecError::Malformed("Design body-map key is truncated".into()))?
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("Design body-map key is truncated".into())
+            })?
             .copy_from_slice(&key.to_le_bytes());
     }
     Ok(())
@@ -356,19 +402,19 @@ pub(super) fn patch_design_body_keys(
 pub(super) fn patch_body_native_keys(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, i64>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if edits.is_empty() {
         return Ok(());
     }
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, key) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D body-key record {record_index} is missing"
                 ))
             })?;
             if record.head() != "body" {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D body-key record {record_index} is not a body"
                 )));
             }
@@ -381,19 +427,19 @@ pub(super) fn patch_body_native_keys(
 pub(super) fn patch_transform_hints(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, [bool; 3]>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if edits.is_empty() {
         return Ok(());
     }
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, flags) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D transform-hint record {record_index} is missing"
                 ))
             })?;
             if !record.name.ends_with("transform") {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D transform-hint record {record_index} is {}, not a transform",
                     record.head()
                 )));
@@ -409,19 +455,19 @@ pub(super) fn patch_transform_hints(
 pub(super) fn patch_tolerant_coedge_parameters(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, [f64; 2]>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if edits.is_empty() {
         return Ok(());
     }
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, range) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D tolerant-coedge record {record_index} is missing"
                 ))
             })?;
             if record.head() != "tcoedge" {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D tolerant-coedge record {record_index} is {}",
                     record.head()
                 )));
@@ -438,17 +484,19 @@ pub(super) fn patch_tolerant_coedge_parameters(
 pub(super) fn patch_wire_topologies(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if edits.is_empty() {
         return Ok(());
     }
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, side) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::malformed(format_args!("F3D wire record {record_index} is missing"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "F3D wire record {record_index} is missing"
+                ))
             })?;
             if record.head() != "wire" {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D wire record {record_index} is {}",
                     record.head()
                 )));
@@ -463,19 +511,19 @@ pub(super) fn patch_wire_topologies(
 pub(super) fn patch_edge_ownerships(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, i64>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if edits.is_empty() {
         return Ok(());
     }
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, owner) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D edge-ownership record {record_index} is missing"
                 ))
             })?;
             if !matches!(record.head(), "edge" | "tedge") {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D edge-ownership record {record_index} is {}",
                     record.head()
                 )));
@@ -489,18 +537,22 @@ pub(super) fn patch_edge_ownerships(
 pub(super) fn patch_construction_recipes(
     bytes: &mut [u8],
     edits: &[ConstructionRecipeEdit],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         if let Some(record_index) = &edit.record_index {
             let offset = record_index.offset;
             let record_index = record_index.value;
             let start = usize::try_from(offset).map_err(|_| {
-                CodecError::Malformed("construction-recipe offset exceeds address space".into())
+                crate::writer::WriteError::Unwritable(
+                    "construction-recipe offset exceeds address space".into(),
+                )
             })?;
             bytes
                 .get_mut(start..start + 4)
                 .ok_or_else(|| {
-                    CodecError::Malformed("construction-recipe record index is truncated".into())
+                    crate::writer::WriteError::Unwritable(
+                        "construction-recipe record index is truncated".into(),
+                    )
                 })?
                 .copy_from_slice(&record_index.to_le_bytes());
         }
@@ -508,14 +560,16 @@ pub(super) fn patch_construction_recipes(
             let offset = design_id.offset;
             let encoded = &design_id.value;
             let start = usize::try_from(offset).map_err(|_| {
-                CodecError::Malformed(
+                crate::writer::WriteError::Unwritable(
                     "construction-recipe design-id offset exceeds address space".into(),
                 )
             })?;
             bytes
                 .get_mut(start..start + encoded.len())
                 .ok_or_else(|| {
-                    CodecError::Malformed("construction-recipe design id is truncated".into())
+                    crate::writer::WriteError::Unwritable(
+                        "construction-recipe design id is truncated".into(),
+                    )
                 })?
                 .copy_from_slice(encoded);
         }
@@ -526,7 +580,7 @@ pub(super) fn patch_construction_recipes(
 pub(super) fn patch_persistent_references(
     bytes: &mut [u8],
     edits: &[PersistentReferenceEdit],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         let record_offset = edit.offset;
         let value_offset = edit.identity_offset;
@@ -535,11 +589,17 @@ pub(super) fn patch_persistent_references(
             .ok()
             .and_then(|offset| offset.checked_add(index_from_u32(value_offset)))
             .ok_or_else(|| {
-                CodecError::Malformed("persistent-reference offset exceeds address space".into())
+                crate::writer::WriteError::Unwritable(
+                    "persistent-reference offset exceeds address space".into(),
+                )
             })?;
         bytes
             .get_mut(start..start + 8)
-            .ok_or_else(|| CodecError::Malformed("persistent-reference value is truncated".into()))?
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(
+                    "persistent-reference value is truncated".into(),
+                )
+            })?
             .copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
@@ -548,7 +608,7 @@ pub(super) fn patch_persistent_references(
 pub(super) fn patch_history_states(
     bytes: &mut [u8],
     edits: &HistoryEdits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     const DELTA_HEADER_LEN: usize = b"\x11\x0d\x0bdelta_state".len();
     const PREAMBLE_LEN: usize = b"\x0d\x0ehistory_stream".len();
     if let Some(history) = &edits.preamble {
@@ -556,7 +616,9 @@ pub(super) fn patch_history_states(
             .byte_offset
             .checked_add(u64_from_index(PREAMBLE_LEN))
             .ok_or_else(|| {
-                CodecError::Malformed("ASM preamble offset exceeds address space".into())
+                crate::writer::WriteError::Unwritable(
+                    "ASM preamble offset exceeds address space".into(),
+                )
             })?;
         let size = history.stream_size;
         let entry_count = history.history_entry_count;
@@ -568,7 +630,9 @@ pub(super) fn patch_history_states(
         let first_tag = source_position(state.byte_offset, "ASM state byte offset")?
             .checked_add(u64_from_index(DELTA_HEADER_LEN))
             .ok_or_else(|| {
-                CodecError::Malformed("ASM history offset exceeds address space".into())
+                crate::writer::WriteError::Unwritable(
+                    "ASM history offset exceeds address space".into(),
+                )
             })?;
         let values = [
             (0, 0x04, state.state_id),
@@ -622,7 +686,7 @@ pub(super) fn patch_history_states(
 pub(super) fn patch_sketch_points(
     bytes: &mut [u8],
     edits: &[SketchPointEdit],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         let record_offset = edit.offset;
         let coordinate_offset = edit.coordinate_offset;
@@ -631,10 +695,14 @@ pub(super) fn patch_sketch_points(
             .ok()
             .and_then(|record| record.checked_add(index_from_u32(coordinate_offset)))
             .ok_or_else(|| {
-                CodecError::Malformed("sketch-point offset exceeds address space".into())
+                crate::writer::WriteError::Unwritable(
+                    "sketch-point offset exceeds address space".into(),
+                )
             })?;
         let payload = bytes.get_mut(start..start + 16).ok_or_else(|| {
-            CodecError::Malformed("sketch-point coordinate payload is outside BulkStream".into())
+            crate::writer::WriteError::Unwritable(
+                "sketch-point coordinate payload is outside BulkStream".into(),
+            )
         })?;
         payload[..8].copy_from_slice(&(coordinates.u / LEN_TO_MM).to_le_bytes());
         payload[8..].copy_from_slice(&(coordinates.v / LEN_TO_MM).to_le_bytes());
@@ -645,7 +713,7 @@ pub(super) fn patch_sketch_points(
 pub(crate) fn patch_sketch_curves(
     bytes: &mut [u8],
     edits: &[SketchCurveEdit],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         let record_offset = edit.offset;
         let geometry_offset = edit.geometry_offset;
@@ -654,7 +722,9 @@ pub(crate) fn patch_sketch_curves(
             .ok()
             .and_then(|record| record.checked_add(index_from_u32(geometry_offset)))
             .ok_or_else(|| {
-                CodecError::Malformed("sketch-curve offset exceeds address space".into())
+                crate::writer::WriteError::Unwritable(
+                    "sketch-curve offset exceeds address space".into(),
+                )
             })?;
         let (values, scalar_count) = match geometry {
             SketchCurveGeometry::Line {
@@ -669,7 +739,7 @@ pub(crate) fn patch_sketch_curves(
                 let normal = normal.as_raw();
                 let scalar_count = line_scalar_count(bytes, start)?;
                 if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::WriteError::Unsupported(
                         "F3D compact planar-line edits require the implicit +Z normal".into(),
                     ));
                 }
@@ -735,7 +805,9 @@ pub(crate) fn patch_sketch_curves(
         let payload = bytes
             .get_mut(start..start + scalar_count * 8)
             .ok_or_else(|| {
-                CodecError::Malformed("sketch-curve analytic payload is outside BulkStream".into())
+                crate::writer::WriteError::Unwritable(
+                    "sketch-curve analytic payload is outside BulkStream".into(),
+                )
             })?;
         for (ordinal, value) in values.into_iter().take(scalar_count).enumerate() {
             payload[ordinal * 8..ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
@@ -744,9 +816,9 @@ pub(crate) fn patch_sketch_curves(
     Ok(())
 }
 
-fn line_scalar_count(bytes: &[u8], values_at: usize) -> Result<usize, CodecError> {
+fn line_scalar_count(bytes: &[u8], values_at: usize) -> Result<usize, crate::writer::WriteError> {
     let Some(marker_at) = values_at.checked_add(9 * 8) else {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::WriteError::Unwritable(
             "sketch-line scalar offset exceeds address space".into(),
         ));
     };
@@ -766,7 +838,7 @@ fn line_scalar_count(bytes: &[u8], values_at: usize) -> Result<usize, CodecError
     {
         return Ok(9);
     }
-    Err(CodecError::Malformed(
+    Err(crate::writer::WriteError::Unwritable(
         "sketch-line payload matches neither full nor compact planar layout".into(),
     ))
 }
@@ -777,7 +849,7 @@ fn patch_sketch_nurbs(
     fit_tolerance: f64,
     knots: &[f64],
     poles: &crate::records::sketch_geometry::SketchNurbsPoles,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let fit_at = start + 94;
     let knots_at = start + 114;
     let weights_header = knots_at + knots.len() * 8;
@@ -786,7 +858,7 @@ fn patch_sketch_nurbs(
     let points_at = points_header + 12;
     let end = points_at + poles.point_count() * 24;
     if end > bytes.len() {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::WriteError::Unwritable(
             "sketch NURBS arrays extend beyond BulkStream".into(),
         ));
     }
@@ -813,7 +885,7 @@ fn patch_sketch_nurbs(
 pub(super) fn patch_sketch_relations(
     bytes: &mut [u8],
     edits: &[Vec<ByteEdit>],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for edit in edits {
         for member in edit {
             patch_bytes_at(bytes, member.offset, &member.value, "sketch-relation value")?;
@@ -862,7 +934,7 @@ mod tests {
         let error = patch_material_assignments(&mut [0u8; 128], std::slice::from_ref(&unlocated))
             .expect_err("a token without a source position declines the patch");
         assert!(
-            matches!(&error, cadmpeg_core::CodecError::NotImplemented(message)
+            matches!(&error, crate::writer::WriteError::Unsupported(message)
                 if message.contains("material-assignment string offset")),
             "{error}"
         );

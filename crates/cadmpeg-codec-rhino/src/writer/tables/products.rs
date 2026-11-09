@@ -4,7 +4,7 @@
 use super::{
     anonymous, anonymous_with_children, attributed_object_record, class_wrapper_with_direct,
     crc_chunk_with_direct, framed_object_record, neutral_object_uuid, records, utf16, uuid,
-    wire_index, CadIr, CodecError, Value,
+    wire_index, CadIr, Value,
 };
 use cadmpeg_ir::products::{
     AssemblyGraph, AssemblyGraphError, ExternalDocument, Occurrence, OccurrenceParent,
@@ -363,7 +363,7 @@ pub(in crate::writer) fn definition_metadata_losses(
 
 fn definition_units(
     native: Option<&serde_json::Map<String, Value>>,
-) -> Result<(u32, f64, Vec<u8>), CodecError> {
+) -> Result<(u32, f64, Vec<u8>), crate::writer::WriteError> {
     let units = native
         .and_then(|fields| fields.get("unit_system"))
         .and_then(Value::as_u64)
@@ -387,7 +387,7 @@ pub(in crate::writer) fn definitions(
     ir: &CadIr,
     written_bodies: &std::collections::BTreeSet<String>,
     version: crate::RhinoArchiveVersion,
-) -> Result<Vec<Vec<u8>>, CodecError> {
+) -> Result<Vec<Vec<u8>>, crate::writer::WriteError> {
     with_occurrence_graph(ir, |graph| {
         let referenced = referenced_definitions(ir);
         let mut result = Vec::new();
@@ -502,7 +502,7 @@ fn modern_definition(
     index: i32,
     members: &[[u8; 16]],
     native: Option<&serde_json::Map<String, Value>>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let mut attributes = 1_i32.to_le_bytes().to_vec();
     attributes.extend(0_i32.to_le_bytes());
     attributes.extend([0, 1]);
@@ -556,7 +556,7 @@ fn linked_definition(
     external: ExternalDefinition<'_>,
     index: i32,
     version: crate::RhinoArchiveVersion,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let path = external.path;
     let absolute =
         path.starts_with('/') || path.starts_with("\\\\") || path.as_bytes().get(1) == Some(&b':');
@@ -623,7 +623,7 @@ fn linked_definition(
     )
 }
 
-fn file_reference(path: &str, absolute: bool) -> Result<Vec<u8>, CodecError> {
+fn file_reference(path: &str, absolute: bool) -> Result<Vec<u8>, crate::writer::WriteError> {
     let digest = anonymous(1, 0, &[0; 20])?;
     let mut hash = vec![0; 24];
     let first = hash.len();
@@ -653,7 +653,7 @@ pub(in crate::writer) struct ReferenceExport {
 pub(in crate::writer) fn references(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
-) -> Result<ReferenceExport, CodecError> {
+) -> Result<ReferenceExport, crate::writer::WriteError> {
     with_occurrence_graph(ir, |graph| {
         let mut losses = ir
         .model

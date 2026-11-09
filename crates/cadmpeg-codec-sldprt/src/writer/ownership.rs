@@ -3,18 +3,19 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, VertexId};
 
-fn missing() -> CodecError {
-    CodecError::Malformed("SLDPRT vertex ownership references missing topology".into())
+fn missing() -> crate::writer::write_error::WriteError {
+    crate::writer::write_error::WriteError::Unwritable(
+        "SLDPRT vertex ownership references missing topology".into(),
+    )
 }
 
 pub(super) fn vertex_body_owners(
     ir: &CadIr,
     body_attrs: &HashMap<BodyId, u32>,
-) -> Result<HashMap<VertexId, u32>, CodecError> {
+) -> Result<HashMap<VertexId, u32>, crate::writer::write_error::WriteError> {
     let regions = ir
         .model
         .regions
@@ -46,17 +47,18 @@ pub(super) fn vertex_body_owners(
         .map(|v| (&v.id, v))
         .collect::<HashMap<_, _>>();
     let mut owners = HashMap::new();
-    let mut assign = |vertex: &VertexId, owner| -> Result<(), CodecError> {
-        if owners
-            .insert(vertex.clone(), owner)
-            .is_some_and(|old| old != owner)
-        {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT vertex belongs to more than one BODY".into(),
-            ));
-        }
-        Ok(())
-    };
+    let mut assign =
+        |vertex: &VertexId, owner| -> Result<(), crate::writer::write_error::WriteError> {
+            if owners
+                .insert(vertex.clone(), owner)
+                .is_some_and(|old| old != owner)
+            {
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    "SLDPRT vertex belongs to more than one BODY".into(),
+                ));
+            }
+            Ok(())
+        };
     for boundary in &ir.model.loops {
         let face = faces.get(&boundary.face).ok_or_else(missing)?;
         let shell = shells.get(&face.shell).ok_or_else(missing)?;
@@ -78,7 +80,7 @@ pub(super) fn vertex_body_owners(
         .iter()
         .any(|vertex| !owners.contains_key(&vertex.id))
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "SLDPRT vertex has no unique incident BODY".into(),
         ));
     }

@@ -8,7 +8,6 @@ mod container;
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -67,7 +66,10 @@ pub(in crate::writer) struct MeshImport<'a> {
 
 /// Neutral mesh imports the writer can author, with the reason for each it
 /// cannot.
-pub(in crate::writer) fn select<'a>(target: &'a CadIr, native: &'a F3dNative) -> Vec<MeshImport<'a>> {
+pub(in crate::writer) fn select<'a>(
+    target: &'a CadIr,
+    native: &'a F3dNative,
+) -> Vec<MeshImport<'a>> {
     let mut features: Vec<_> = target
         .model
         .features
@@ -110,7 +112,10 @@ pub(in crate::writer) fn select<'a>(target: &'a CadIr, native: &'a F3dNative) ->
         else {
             continue;
         };
-        if !tessellations.iter().all(|tessellation| storable(tessellation)) {
+        if !tessellations
+            .iter()
+            .all(|tessellation| storable(tessellation))
+        {
             continue;
         }
         let native = native_mesh(feature, &tessellations, native);
@@ -201,7 +206,10 @@ fn native_mesh<'a>(
             })?;
             let kind = native.design_types.iter().find(|kind| {
                 crate::ids::design_segment(kind.id()) == Some(segment)
-                    && kind.entities.values().any(|entity| *entity == u64::from(member))
+                    && kind
+                        .entities
+                        .values()
+                        .any(|entity| *entity == u64::from(member))
             })?;
             Some((member, kind))
         })
@@ -280,13 +288,13 @@ fn native_indices(native: &NativeMesh<'_>) -> GraphIndices {
     }
 }
 
-fn fresh_indices(bodies: usize) -> Result<GraphIndices, CodecError> {
+fn fresh_indices(bodies: usize) -> Result<GraphIndices, crate::writer::WriteError> {
     let mut next = 0u32;
     let mut take = || {
-        next = next
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("F3D mesh record index exceeds u32".into()))?;
-        Ok::<_, CodecError>(next)
+        next = next.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D mesh record index exceeds u32".into())
+        })?;
+        Ok::<_, crate::writer::WriteError>(next)
     };
     let scope = take()?;
     let scope_owner = take()?;
@@ -343,7 +351,7 @@ fn derived_guid(seed: &str, uppercase: bool) -> String {
     text
 }
 
-fn header(out: &mut Vec<u8>, tag: u32, index: u32) -> Result<(), CodecError> {
+fn header(out: &mut Vec<u8>, tag: u32, index: u32) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, &tag.to_string())?;
     out.extend_from_slice(&index.to_le_bytes());
     Ok(())
@@ -538,7 +546,7 @@ struct Segment {
 }
 
 impl Segment {
-    fn record(&mut self, tag: u32, index: u32) -> Result<(), CodecError> {
+    fn record(&mut self, tag: u32, index: u32) -> Result<(), crate::writer::WriteError> {
         self.primary.push(crate::metastream::RecordIndexEntry {
             entity_id: u64::from(index),
             bulk_offset: cadmpeg_core::decode::u64_from_index(self.bulk.len()),
@@ -552,7 +560,7 @@ impl Segment {
 pub(super) fn encode(
     imports: Vec<MeshImport<'_>>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Vec<EncodedMesh>, CodecError> {
+) -> Result<Vec<EncodedMesh>, crate::writer::WriteError> {
     let mut encoded = Vec::new();
     for import in imports {
         if let Some(mesh) = encode_import(&import, ctx)? {
@@ -565,7 +573,7 @@ pub(super) fn encode(
 fn encode_import(
     import: &MeshImport<'_>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Option<EncodedMesh>, CodecError> {
+) -> Result<Option<EncodedMesh>, crate::writer::WriteError> {
     let indices = match &import.native {
         Some(native) => native_indices(native),
         None => fresh_indices(import.tessellations.len())?,
@@ -631,8 +639,9 @@ fn encode_import(
     }
     let indices_scope_owner = indices.scope_owner;
     let mut segment = Segment::default();
-    let body_count = u32::try_from(indices.bodies.len())
-        .map_err(|_| CodecError::InvalidInput("F3D mesh body count exceeds u32".into()))?;
+    let body_count = u32::try_from(indices.bodies.len()).map_err(|_| {
+        crate::writer::WriteError::Unwritable("F3D mesh body count exceeds u32".into())
+    })?;
     ctx.charge_entities(
         6 + 7 * u64::from(body_count),
         "F3D Design mesh graph records",
@@ -706,9 +715,10 @@ fn encode_import(
         segment.bulk.extend_from_slice(&[0; 8]);
         let start = segment.bulk.len();
         segment.record(Class::Body.tag(), body.body)?;
-        segment
-            .bulk
-            .resize(start + mesh_body::LEN + kinds::SAME_SEGMENT_REFERENCE_BYTES, 0);
+        segment.bulk.resize(
+            start + mesh_body::LEN + kinds::SAME_SEGMENT_REFERENCE_BYTES,
+            0,
+        );
         let record = &mut segment.bulk[start..];
         put_matrix(record, mesh_body::FIRST_TRANSFORM, placements[ordinal]);
         put_matrix(record, mesh_body::SECOND_TRANSFORM, placements[ordinal]);
@@ -735,7 +745,9 @@ fn encode_import(
     };
     segment.bulk.extend_from_slice(
         &u32::try_from(members.len())
-            .map_err(|_| CodecError::InvalidInput("F3D mesh scope member count".into()))?
+            .map_err(|_| {
+                crate::writer::WriteError::Unwritable("F3D mesh scope member count".into())
+            })?
             .to_le_bytes(),
     );
     for member in &members {
@@ -779,18 +791,27 @@ fn encode_import(
         .map(|class| {
             let (guid, base, version, module) = class.registration();
             Ok(GeneratedDesignType {
-                type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
-                base_type_guid: Some(base.to_owned().try_into().map_err(CodecError::Malformed)?),
+                type_guid: guid
+                    .to_owned()
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?,
+                base_type_guid: Some(
+                    base.to_owned()
+                        .try_into()
+                        .map_err(crate::writer::WriteError::Unwritable)?,
+                ),
                 version,
                 module: module.to_owned(),
                 entity_ids: segment.entities.remove(&class.tag()).unwrap_or_default(),
             })
         })
-        .collect::<Result<_, CodecError>>()?;
+        .collect::<Result<_, crate::writer::WriteError>>()?;
     if let Some(native) = &import.native {
         for (member, kind) in &native.members {
-            let tag = 256 + u32::try_from(types.len())
-                .map_err(|_| CodecError::InvalidInput("F3D mesh type count".into()))?;
+            let tag = 256
+                + u32::try_from(types.len()).map_err(|_| {
+                    crate::writer::WriteError::Unwritable("F3D mesh type count".into())
+                })?;
             ctx.charge_entities(1, "F3D Design mesh member record")?;
             segment.record(tag, *member)?;
             let mut generated = GeneratedDesignType::from(*kind);
@@ -804,7 +825,9 @@ fn encode_import(
         browser_nodes: None,
     };
     let meta = encode_design_metastream(&registry, &segment.primary, &segment.secondary)?
-        .ok_or_else(|| CodecError::malformed("F3D mesh segment has no type table"))?;
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D mesh segment has no type table".into())
+        })?;
     let native_records = import
         .native
         .as_ref()
@@ -875,7 +898,10 @@ fn reads_back(tessellation: &Tessellation, placement: [f64; 16], vertices: &[[f3
             let model = model.get();
             let [x, y, z] = container.map(f64::from);
             let row = |at: usize| {
-                (placement[at] * x + placement[at + 1] * y + placement[at + 2] * z + placement[at + 3])
+                (placement[at] * x
+                    + placement[at + 1] * y
+                    + placement[at + 2] * z
+                    + placement[at + 3])
                     * cadmpeg_asm::nurbs::reader::LEN_TO_MM
             };
             row(0) == model.x && row(4) == model.y && row(8) == model.z
@@ -912,8 +938,9 @@ fn container_vertices(tessellation: &Tessellation, placement: [f64; 16]) -> Opti
             -minor
         }
     };
-    let inverse: [[f64; 3]; 3] =
-        std::array::from_fn(|row| std::array::from_fn(|column| cofactor(column, row) / determinant));
+    let inverse: [[f64; 3]; 3] = std::array::from_fn(|row| {
+        std::array::from_fn(|column| cofactor(column, row) / determinant)
+    });
     let translation = [placement[3], placement[7], placement[11]];
     vertices
         .iter()
@@ -967,8 +994,9 @@ fn corner_normal_bytes(tessellation: &Tessellation, placement: [f64; 16]) -> Vec
         .map(|normal| {
             let n = normal.get();
             let n = [n.x, n.y, n.z];
-            let container: [f64; 3] =
-                std::array::from_fn(|column| m[0][column] * n[0] + m[1][column] * n[1] + m[2][column] * n[2]);
+            let container: [f64; 3] = std::array::from_fn(|column| {
+                m[0][column] * n[0] + m[1][column] * n[1] + m[2][column] * n[2]
+            });
             octahedral(container)
                 .unwrap_or([0.0, 0.0])
                 .into_iter()
@@ -1041,12 +1069,13 @@ fn channels(
     tessellation: &Tessellation,
     placement: [f64; 16],
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<Channel>, CodecError> {
+) -> Result<Vec<Channel>, crate::writer::WriteError> {
     let triangles = tessellation.triangles();
     let flat: Vec<u32> = triangles.iter().flatten().copied().collect();
     let vertex_count = tessellation.vertex_count();
-    let vertex_count_u32 = u32::try_from(vertex_count)
-        .map_err(|_| CodecError::InvalidInput("F3D mesh vertex count exceeds u32".into()))?;
+    let vertex_count_u32 = u32::try_from(vertex_count).map_err(|_| {
+        crate::writer::WriteError::Unwritable("F3D mesh vertex count exceeds u32".into())
+    })?;
     let normals = corner_normal_bytes(tessellation, placement);
     let mut written_normals = normals.is_empty();
     let mut written_groups = tessellation.triangle_groups().is_empty();
@@ -1064,9 +1093,11 @@ fn channels(
             continue;
         };
         match (role, code, channel.addressing()) {
-            (0, crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE, ChannelAddressing::Corner { indices })
-                if !written_normals =>
-            {
+            (
+                0,
+                crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE,
+                ChannelAddressing::Corner { indices },
+            ) if !written_normals => {
                 written_normals = true;
                 channels.extend(normal_channel(
                     channel.data(),
@@ -1077,13 +1108,19 @@ fn channels(
                     item_size,
                 ));
             }
-            (0, crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE, ChannelAddressing::Triangle { .. })
-                if !written_groups =>
-            {
+            (
+                0,
+                crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE,
+                ChannelAddressing::Triangle { .. },
+            ) if !written_groups => {
                 written_groups = true;
                 channels.push(group_channel(tessellation, Some(channel.data()))?);
             }
-            (1, crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE, ChannelAddressing::Triangle { .. }) => {}
+            (
+                1,
+                crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE,
+                ChannelAddressing::Triangle { .. },
+            ) => {}
             (_, _, ChannelAddressing::Vertex {}) => channels.push(Channel {
                 domain: ChannelDomain::Vertex,
                 role,
@@ -1208,7 +1245,10 @@ fn normal_channel(
 /// The role-0 face-group partition. A stored value stream whose keys still
 /// partition the triangles as the neutral groups do keeps its keys; otherwise
 /// each group takes its ordinal as key.
-fn group_channel(tessellation: &Tessellation, stored: Option<&[u8]>) -> Result<Channel, CodecError> {
+fn group_channel(
+    tessellation: &Tessellation,
+    stored: Option<&[u8]>,
+) -> Result<Channel, crate::writer::WriteError> {
     let groups = tessellation.triangle_groups();
     let guid = |ordinal: usize, source: Option<&String>| {
         source
@@ -1229,11 +1269,12 @@ fn group_channel(tessellation: &Tessellation, stored: Option<&[u8]>) -> Result<C
                 consistent = false;
                 break;
             };
-            consistent &= group
-                .triangles
-                .iter()
-                .all(|triangle| usize::try_from(*triangle).ok().and_then(|index| keys.get(index)) == Some(&key))
-                && records.iter().all(|(other, _)| *other != key);
+            consistent &= group.triangles.iter().all(|triangle| {
+                usize::try_from(*triangle)
+                    .ok()
+                    .and_then(|index| keys.get(index))
+                    == Some(&key)
+            }) && records.iter().all(|(other, _)| *other != key);
             records.push((key, guid(ordinal, group.source_id.as_ref())));
         }
         if consistent {
@@ -1251,8 +1292,9 @@ fn group_channel(tessellation: &Tessellation, stored: Option<&[u8]>) -> Result<C
     let mut keys = vec![0_u32; triangles.len()];
     let mut records = Vec::new();
     for (ordinal, group) in groups.iter().enumerate() {
-        let key = u32::try_from(ordinal)
-            .map_err(|_| CodecError::InvalidInput("F3D mesh group count exceeds u32".into()))?;
+        let key = u32::try_from(ordinal).map_err(|_| {
+            crate::writer::WriteError::Unwritable("F3D mesh group count exceeds u32".into())
+        })?;
         for triangle in &group.triangles {
             if let Some(slot) = usize::try_from(*triangle)
                 .ok()
@@ -1264,7 +1306,7 @@ fn group_channel(tessellation: &Tessellation, stored: Option<&[u8]>) -> Result<C
         records.push((key, guid(ordinal, group.source_id.as_ref())));
     }
     let values = container::terminal_delta(&keys).ok_or_else(|| {
-        CodecError::NotImplemented("F3D mesh group keys leave the i32 range".into())
+        crate::writer::WriteError::Unsupported("F3D mesh group keys leave the i32 range".into())
     })?;
     Ok(Channel {
         domain: ChannelDomain::Triangle,

@@ -147,17 +147,15 @@ pub(in crate::writer) fn mappings(
                         .unwrap_or(false),
                 ));
             }
-            let anonymous = anonymous(1, minor, &body).map_err(WriteError::Fail)?;
+            let anonymous = anonymous(1, minor, &body)?;
             crc_chunk_with_direct(
                 TEXTURE_MAPPING_RECORD,
                 &class_wrapper(
                     crate::wire::Uuid::to_wire(crate::presentation::TEXTURE_MAPPING),
                     &anonymous,
-                )
-                .map_err(WriteError::Fail)?,
+                )?,
                 &[],
             )
-            .map_err(WriteError::Fail)
         })();
         match encoded {
             Ok(record_bytes) => {

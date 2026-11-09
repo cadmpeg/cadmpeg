@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Author a Canvas and its embedded image from the neutral model.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{AssetContent, AssetId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureId, FeatureOperation};
@@ -210,7 +209,7 @@ pub(super) struct EncodedCanvas<'a> {
     pub(super) asset: AssetId,
 }
 
-fn header(out: &mut Vec<u8>, tag: u32, index: u32) -> Result<(), CodecError> {
+fn header(out: &mut Vec<u8>, tag: u32, index: u32) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, &tag.to_string())?;
     out.extend_from_slice(&index.to_le_bytes());
     Ok(())
@@ -224,7 +223,7 @@ fn reference(out: &mut Vec<u8>, index: u32) {
 pub(super) fn encode<'a>(
     canvas: Canvas<'a>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<EncodedCanvas<'a>, CodecError> {
+) -> Result<EncodedCanvas<'a>, crate::writer::WriteError> {
     use crate::layout::{
         canvas_geometry_prefix as geometry_layout, canvas_scope_tail_98 as scope_layout,
     };
@@ -355,7 +354,7 @@ pub(super) fn encode<'a>(
         browser_nodes: None,
     };
     let meta = encode_design_metastream(&registry, &primary, &secondary)?
-        .ok_or_else(|| CodecError::Malformed("missing Canvas metadata".into()))?;
+        .ok_or_else(|| crate::writer::WriteError::Unwritable("missing Canvas metadata".into()))?;
     Ok(EncodedCanvas {
         bulk: out,
         meta,

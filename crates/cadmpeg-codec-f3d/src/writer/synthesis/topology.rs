@@ -3,7 +3,6 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -14,7 +13,7 @@ pub(super) fn repair_body_regions(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let regions = &target.model.regions;
     let mut dropped_body = false;
     for body in &mut target.model.bodies {
@@ -73,7 +72,7 @@ pub(super) fn repair_body_regions(
 pub(super) fn omit_ambiguous_points(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut seen = BTreeSet::new();
     let duplicates = target
         .model
@@ -163,7 +162,7 @@ pub(super) fn omit_ambiguous_points(
             wire_edges,
             free_vertices,
         )
-        .map_err(CodecError::malformed)?;
+        .map_err(crate::writer::WriteError::unwritable)?;
         rebuilt.native_ref.clone_from(&shell.native_ref);
         shells.push(rebuilt);
     }
@@ -204,7 +203,7 @@ pub(super) fn omit_unresolved_coedge_faces(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let edges: BTreeSet<_> = target.model.edges.iter().map(|edge| &edge.id).collect();
     let loops: BTreeSet<_> = target
         .model
@@ -267,7 +266,8 @@ pub(super) fn admit_bodies(
     source: &CadIr,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<CadIr, CodecError> {
+    reduction: super::Reduction,
+) -> Result<CadIr, crate::writer::WriteError> {
     let mut admitted = BTreeSet::new();
     for body in &source.model.bodies {
         let mut candidate_ids = admitted.clone();
@@ -275,10 +275,10 @@ pub(super) fn admit_bodies(
         let candidate = body_graph(source, &candidate_ids, limits)?;
         match super::super::generate::write_with_limits(&candidate, &mut Vec::new(), limits) {
             Ok(_) => admitted = candidate_ids,
-            Err(error) if super::declines(&error) => {
+            Err(error) if reduction.reduces(&error) => {
                 // F3D can encode an open shell. Admit independently encodable
                 // faces before considering omission of their containing body.
-                let reduced = admit_faces(&candidate, &body.id, losses, limits)?;
+                let reduced = admit_faces(&candidate, &body.id, losses, limits, reduction)?;
                 if reduced
                     .model
                     .bodies
@@ -293,10 +293,10 @@ pub(super) fn admit_bodies(
                         Ok(_) => {
                             admitted = candidate_ids;
                             return admit_bodies_after_reduction(
-                                source, reduced, &admitted, losses, limits,
+                                source, reduced, &admitted, losses, limits, reduction,
                             );
                         }
-                        Err(error) if super::declines(&error) => {}
+                        Err(error) if reduction.reduces(&error) => {}
                         Err(error) => return Err(error),
                     }
                 }
@@ -317,7 +317,8 @@ fn admit_bodies_after_reduction(
     admitted: &BTreeSet<BodyId>,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<CadIr, CodecError> {
+    reduction: super::Reduction,
+) -> Result<CadIr, crate::writer::WriteError> {
     let remaining = source
         .model
         .bodies
@@ -325,7 +326,12 @@ fn admit_bodies_after_reduction(
         .filter(|body| !admitted.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    let tail = admit_bodies(&body_graph(source, &remaining, limits)?, losses, limits)?;
+    let tail = admit_bodies(
+        &body_graph(source, &remaining, limits)?,
+        losses,
+        limits,
+        reduction,
+    )?;
     // Merge only geometry arenas: auxiliary and design content were already
     // prepared once and are shared by all admitted body candidates.
     macro_rules! append { ($($field:ident),*) => {$({
@@ -359,7 +365,8 @@ fn admit_faces(
     body: &BodyId,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<CadIr, CodecError> {
+    reduction: super::Reduction,
+) -> Result<CadIr, crate::writer::WriteError> {
     let shells: BTreeSet<_> = source
         .model
         .shells
@@ -385,7 +392,7 @@ fn admit_faces(
         let candidate = face_graph(source, &shells, &candidate_ids, limits)?;
         match super::super::generate::write_with_limits(&candidate, &mut Vec::new(), limits) {
             Ok(_) => admitted = candidate_ids,
-            Err(error) if super::declines(&error) => {
+            Err(error) if reduction.reduces(&error) => {
                 losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
                     "face {} is omitted from its open shell: {error}",
                     face.id
@@ -402,7 +409,7 @@ fn face_graph(
     shells: &BTreeSet<cadmpeg_ir::ids::ShellId>,
     faces: &BTreeSet<cadmpeg_ir::ids::FaceId>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<CadIr, CodecError> {
+) -> Result<CadIr, crate::writer::WriteError> {
     let mut result = source.clone();
     result
         .model
@@ -492,7 +499,7 @@ fn body_graph(
     source: &CadIr,
     bodies: &BTreeSet<BodyId>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<CadIr, CodecError> {
+) -> Result<CadIr, crate::writer::WriteError> {
     let mut result = source.clone();
     let model = &mut result.model;
     model.bodies.retain(|body| bodies.contains(&body.id));
@@ -530,7 +537,7 @@ fn body_graph(
                         shell.wire_edges().to_vec(),
                         shell.free_vertices().to_vec(),
                     )
-                    .map_err(|error| CodecError::Malformed(error.to_string())),
+                    .map_err(crate::writer::WriteError::unwritable),
                 )
             }
         })
@@ -574,7 +581,7 @@ fn body_graph(
         let mut visited = BTreeSet::new();
         while !surviving.contains(&next) {
             if !visited.insert(next.clone()) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "coedge {} has an unclosed radial ring",
                     coedge.id
                 )));
@@ -584,7 +591,9 @@ fn body_graph(
                 .coedges
                 .iter()
                 .find(|candidate| candidate.id == next)
-                .ok_or_else(|| CodecError::malformed(format_args!("missing radial coedge {next}")))?
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(format!("missing radial coedge {next}"))
+                })?
                 .radial_next
                 .clone();
         }
@@ -705,7 +714,7 @@ fn geometry_closure(
     source: &CadIr,
     ids: &mut BTreeSet<String>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
     super::design::with_context(limits, |ctx| {
         let mut visited = BTreeSet::new();

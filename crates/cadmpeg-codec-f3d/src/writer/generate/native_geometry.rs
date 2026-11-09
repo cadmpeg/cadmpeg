@@ -3,7 +3,6 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
@@ -53,7 +52,7 @@ pub(super) fn native_smbh_header(target: &CadIr) -> Vec<u8> {
 pub(super) fn native_nurbs_surface(
     bytes: &mut Vec<u8>,
     surface: &NurbsSurface,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let poles = surface.pole_grid();
     native_ident(
         bytes,
@@ -103,13 +102,38 @@ pub(crate) fn native_procedural_surface(
     target: &CadIr,
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
-) -> Result<bool, CodecError> {
-    let written =
-        native_procedural_surface_definition(bytes, target, solved_surface, solved_cache)?;
+) -> Result<bool, crate::writer::WriteError> {
+    let written = native_procedural_surface_definition(bytes, target, solved_surface, solved_cache)
+        .map_err(|error| naming_procedural(target, &solved_surface.id, error))?;
     if written {
         native_record_bounds(bytes, target, &solved_surface.id);
     }
     Ok(written)
+}
+
+/// `error` with the id of the procedural construction of `surface` in front
+/// of its message, so the loss that reports it names the record.
+fn naming_procedural(
+    target: &CadIr,
+    surface: &cadmpeg_ir::ids::SurfaceId,
+    error: crate::writer::WriteError,
+) -> crate::writer::WriteError {
+    let Some(procedural) =
+        target.model.procedural_surfaces.iter().find(|procedural| {
+            target.model.procedural_surface_owner(&procedural.id) == Some(surface)
+        })
+    else {
+        return error;
+    };
+    match error {
+        crate::writer::WriteError::Unsupported(message) => {
+            crate::writer::WriteError::Unsupported(format!("{}: {message}", procedural.id))
+        }
+        crate::writer::WriteError::Unwritable(message) => {
+            crate::writer::WriteError::Unwritable(format!("{}: {message}", procedural.id))
+        }
+        error @ crate::writer::WriteError::Codec(_) => error,
+    }
 }
 
 /// Emit the four optional record-level U/V bound fields retained on the
@@ -133,7 +157,7 @@ fn native_procedural_surface_definition(
     target: &CadIr,
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     let mut definitions = target
         .model
         .procedural_surfaces
@@ -145,7 +169,7 @@ fn native_procedural_surface_definition(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "surface {} has multiple procedural constructions",
             solved_surface.id
         )));
@@ -155,7 +179,7 @@ fn native_procedural_surface_definition(
             use cadmpeg_ir::geometry::DeformableSurfaceData;
             let construction = definition_payload.construction().to_raw();
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "deformable surface requires a native cache-fit tolerance".into(),
                 )
             })?;
@@ -164,10 +188,12 @@ fn native_procedural_surface_definition(
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == construction.support)
-                .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable("deformable support is missing".into())
+                })?;
             if let Some(form) = &construction.cache.form() {
                 if form.revision.get() != 22_506 {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::WriteError::Unsupported(
                         "unsupported revision-gated deformable surface revision".into(),
                     ));
                 }
@@ -185,7 +211,7 @@ fn native_procedural_surface_definition(
                     trailing_value,
                 } = &construction.data
                 else {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::WriteError::Unsupported(
                         "revision-gated deformable surface requires mode-3 data".into(),
                     ));
                 };
@@ -301,7 +327,9 @@ fn native_procedural_surface_definition(
                         .iter()
                         .find(|candidate| candidate.id == *surface)
                         .ok_or_else(|| {
-                            CodecError::Malformed("deformable secondary surface is missing".into())
+                            crate::writer::WriteError::Unwritable(
+                                "deformable secondary surface is missing".into(),
+                            )
                         })?;
                     native_embedded_surface(bytes, &secondary.geometry)?;
                     native_i64(bytes, *native_id);
@@ -348,7 +376,9 @@ fn native_procedural_surface_definition(
                         .iter()
                         .find(|candidate| candidate.id == *surface)
                         .ok_or_else(|| {
-                            CodecError::Malformed("deformable secondary surface is missing".into())
+                            crate::writer::WriteError::Unwritable(
+                                "deformable secondary surface is missing".into(),
+                            )
                         })?;
                     native_embedded_surface(bytes, &secondary.geometry)?;
                     native_i64(bytes, *native_id);
@@ -372,7 +402,9 @@ fn native_procedural_surface_definition(
                     native_i64(
                         bytes,
                         i64::try_from(parameter_triples.len()).map_err(|_| {
-                            CodecError::InvalidInput("deformable triple count exceeds i64".into())
+                            crate::writer::WriteError::Unwritable(
+                                "deformable triple count exceeds i64".into(),
+                            )
                         })?,
                     );
                     for triple in parameter_triples {
@@ -390,7 +422,9 @@ fn native_procedural_surface_definition(
                     native_i64(
                         bytes,
                         i64::try_from(parameter_triples.len()).map_err(|_| {
-                            CodecError::InvalidInput("deformable triple count exceeds i64".into())
+                            crate::writer::WriteError::Unwritable(
+                                "deformable triple count exceeds i64".into(),
+                            )
                         })?,
                     );
                     for triple in parameter_triples {
@@ -417,7 +451,7 @@ fn native_procedural_surface_definition(
                     native_i64(bytes, *selector);
                 }
                 DeformableSurfaceData::RevisionMode3 { .. } => {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::WriteError::Unsupported(
                         "revision mode-3 deformable data requires its revision form".into(),
                     ));
                 }
@@ -538,7 +572,9 @@ fn native_procedural_surface_definition(
             native_i64(
                 bytes,
                 i64::try_from(components.len()).map_err(|_| {
-                    CodecError::InvalidInput("compound surface count exceeds i64".into())
+                    crate::writer::WriteError::Unwritable(
+                        "compound surface count exceeds i64".into(),
+                    )
                 })?,
             );
             for component in components {
@@ -552,7 +588,7 @@ fn native_procedural_surface_definition(
                     .iter()
                     .find(|surface| surface.id == *component)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "compound surface {} references missing component {component}",
                             procedural.id
                         ))
@@ -562,7 +598,7 @@ fn native_procedural_surface_definition(
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::SubSurface(_) => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "sub-surface {} must use its exact cacheless carrier",
                 procedural.id
             )));
@@ -583,7 +619,9 @@ fn native_procedural_surface_definition(
                     .iter()
                     .find(|surface| surface.id == *support)
                     .ok_or_else(|| {
-                        CodecError::Malformed("taper support surface is missing".into())
+                        crate::writer::WriteError::Unwritable(
+                            "taper support surface is missing".into(),
+                        )
                     })?;
                 let reference = target
                     .model
@@ -591,11 +629,13 @@ fn native_procedural_surface_definition(
                     .iter()
                     .find(|curve| curve.id == *reference)
                     .ok_or_else(|| {
-                        CodecError::Malformed("taper reference curve is missing".into())
+                        crate::writer::WriteError::Unwritable(
+                            "taper reference curve is missing".into(),
+                        )
                     })?;
                 let reference = native_spline_field_curve(
                     reference.geometry.solved().ok_or_else(|| {
-                        cadmpeg_core::CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "carrier has no solved geometry".into(),
                         )
                     })?,
@@ -614,7 +654,7 @@ fn native_procedural_surface_definition(
                         taper,
                         cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
                     ) {
-                        return Err(CodecError::NotImplemented(
+                        return Err(crate::writer::WriteError::Unsupported(
                             "revision-gated taper generation requires the orthogonal subtype"
                                 .into(),
                         ));
@@ -800,7 +840,7 @@ fn native_procedural_surface_definition(
                     },
                 )?,
                 _ => {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "source-less F3D sweep surface {} lacks its native construction graph",
                         procedural.id
                     )))
@@ -836,7 +876,7 @@ fn native_procedural_surface_definition(
             )?;
         }
         ProceduralSurfaceDefinition::VertexBlend(..) => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D vertex blend {} must use its procedural carrier because VBL_SURF has no solved-cache field",
                 procedural.id
             )));
@@ -850,7 +890,7 @@ fn native_procedural_surface_definition(
                         .iter()
                         .find(|curve| curve.id == *id)
                         .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
+                            crate::writer::WriteError::Unwritable(format!(
                                 "ruled surface {} references missing profile {id}",
                                 procedural.id
                             ))
@@ -863,16 +903,20 @@ fn native_procedural_surface_definition(
             native_ident(bytes, "rule_sur")?;
             let profile_range = [
                 solved_cache.u_knots().first().copied().ok_or_else(|| {
-                    CodecError::Malformed("ruled solved surface has no U knot domain".into())
+                    crate::writer::WriteError::Unwritable(
+                        "ruled solved surface has no U knot domain".into(),
+                    )
                 })?,
                 solved_cache.u_knots().last().copied().ok_or_else(|| {
-                    CodecError::Malformed("ruled solved surface has no U knot domain".into())
+                    crate::writer::WriteError::Unwritable(
+                        "ruled solved surface has no U knot domain".into(),
+                    )
                 })?,
             ];
             for profile in profiles {
                 let profile = native_interval_curve(
                     profile.geometry.solved().ok_or_else(|| {
-                        CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -932,7 +976,7 @@ fn native_procedural_surface_definition(
                         .iter()
                         .find(|curve| curve.id == *id)
                         .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
+                            crate::writer::WriteError::Unwritable(format!(
                                 "sum surface {} references missing curve {id}",
                                 procedural.id
                             ))
@@ -946,14 +990,14 @@ fn native_procedural_surface_definition(
             let ranges = [solved_cache.u_knots(), solved_cache.v_knots()]
                 .into_iter()
                 .map(|knots| {
-                    Ok::<_, CodecError>([
+                    Ok::<_, crate::writer::WriteError>([
                         knots.first().copied().ok_or_else(|| {
-                            CodecError::Malformed(
+                            crate::writer::WriteError::Unwritable(
                                 "sum solved surface has an empty knot domain".into(),
                             )
                         })?,
                         knots.last().copied().ok_or_else(|| {
-                            CodecError::Malformed(
+                            crate::writer::WriteError::Unwritable(
                                 "sum solved surface has an empty knot domain".into(),
                             )
                         })?,
@@ -963,7 +1007,7 @@ fn native_procedural_surface_definition(
             for (curve, range) in curves.into_iter().zip(ranges) {
                 let curve = native_interval_curve(
                     curve.geometry.solved().ok_or_else(|| {
-                        CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -1002,7 +1046,7 @@ fn native_procedural_surface_definition(
                 if angular_parameter_interval
                     .is_some_and(|parameter_interval| parameter_interval != angular_interval)
                 {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::WriteError::Unsupported(
                         "F3D rot_spl_sur cannot encode a distinct angular parameter interval"
                             .into(),
                     ));
@@ -1043,7 +1087,7 @@ fn native_procedural_surface_definition(
                     return Ok(true);
                 }
                 let parameter_interval = (parameter_interval).ok_or_else(|| {
-                    CodecError::NotImplemented(
+                    crate::writer::WriteError::Unsupported(
                         "source-less F3D rot_spl_sur requires a directrix parameter interval"
                             .into(),
                     )
@@ -1054,14 +1098,14 @@ fn native_procedural_surface_definition(
                     .iter()
                     .find(|curve| curve.id == *directrix)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "revolution surface {} references a missing directrix",
                             procedural.id
                         ))
                     })?;
                 let directrix = native_increasing_interval_curve(
                     directrix.geometry.solved().ok_or_else(|| {
-                        CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -1080,7 +1124,7 @@ fn native_procedural_surface_definition(
                     || parameter_interval != native_parameter_interval
                     || angular_interval != native_angular_interval
                 {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::WriteError::Unsupported(
                     "source-less F3D rot_spl_sur intervals must match its profile and solved cache and cannot be transposed".into(),
                 ));
                 }
@@ -1120,7 +1164,7 @@ fn native_procedural_surface_definition(
                     .iter()
                     .find(|surface| surface.id == *support)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "offset surface {} references a missing support",
                             procedural.id
                         ))
@@ -1155,12 +1199,12 @@ fn native_procedural_surface_definition(
                     }
                 };
                 let u_sense = (*u_sense).ok_or_else(|| {
-                    CodecError::NotImplemented(
+                    crate::writer::WriteError::Unsupported(
                         "source-less F3D offset surface requires a U sense".into(),
                     )
                 })?;
                 let v_sense = (*v_sense).ok_or_else(|| {
-                    CodecError::NotImplemented(
+                    crate::writer::WriteError::Unsupported(
                         "source-less F3D offset surface requires a V sense".into(),
                     )
                 })?;
@@ -1204,7 +1248,7 @@ fn native_procedural_surface_definition(
                     directrix,
                     parameter_interval: parameter_interval
                         .ok_or_else(|| {
-                            CodecError::NotImplemented(
+                            crate::writer::WriteError::Unsupported(
                                 "source-less F3D extrusion lacks its native interval".into(),
                             )
                         })?
@@ -1212,7 +1256,7 @@ fn native_procedural_surface_definition(
                     direction: direction.get(),
                     native_position: native_position
                         .ok_or_else(|| {
-                            CodecError::NotImplemented(
+                            crate::writer::WriteError::Unsupported(
                                 "source-less F3D extrusion lacks its native position".into(),
                             )
                         })?
@@ -1252,61 +1296,61 @@ fn native_procedural_surface_definition(
             }
         }
         ProceduralSurfaceDefinition::Helix { .. } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D helix surface {} must use its cacheless native carrier",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::LinearSweep { .. } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::AxisRevolution { .. } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::ParallelOffset(_) => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::DegenerateTorus { .. } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::CurveBounded { .. } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::Subset(_) => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::Replica { .. } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
         ProceduralSurfaceDefinition::Unknown { .. } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
@@ -1331,7 +1375,7 @@ fn native_g2_side(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     side: &cadmpeg_ir::geometry::G2BlendSide,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_string(bytes, &side.label);
     let surface = target
         .model
@@ -1339,7 +1383,7 @@ fn native_g2_side(
         .iter()
         .find(|surface| surface.id == side.surface)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("G2 support {} is missing", side.surface))
+            crate::writer::WriteError::Unwritable(format!("G2 support {} is missing", side.surface))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     let curve = target
@@ -1348,7 +1392,10 @@ fn native_g2_side(
         .iter()
         .find(|curve| curve.id == side.curve)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("G2 side curve {} is missing", side.curve))
+            crate::writer::WriteError::Unwritable(format!(
+                "G2 side curve {} is missing",
+                side.curve
+            ))
         })?;
     let pcurve = side
         .pcurves
@@ -1357,7 +1404,7 @@ fn native_g2_side(
         .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
     let curve = native_spline_field_curve(
         curve.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+            crate::writer::WriteError::Unsupported("carrier has no solved geometry".into())
         })?,
         native_pcurve_knot_domain(pcurve)?,
     )?;
@@ -1377,7 +1424,7 @@ fn encode_native_g2_blend(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::G2BlendConstruction,
     solved_cache: &NurbsSurface,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "g2_blend_spl_sur")?;
@@ -1393,10 +1440,12 @@ fn encode_native_g2_blend(
                     .iter()
                     .find(|candidate| candidate.id == support.surface)
                     .ok_or_else(|| {
-                        CodecError::Malformed("G2 first exact surface is missing".into())
+                        crate::writer::WriteError::Unwritable(
+                            "G2 first exact surface is missing".into(),
+                        )
                     })?;
                 let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::WriteError::Unsupported(
                         "source-less G2 full branch requires a NURBS exact surface".into(),
                     ));
                 };
@@ -1426,9 +1475,11 @@ fn encode_native_g2_blend(
         .surfaces
         .iter()
         .find(|surface| surface.id == construction.second_exact_surface)
-        .ok_or_else(|| CodecError::Malformed("G2 second exact surface is missing".into()))?;
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("G2 second exact surface is missing".into())
+        })?;
     let Some(SolvedSurfaceGeometry::Nurbs(second_exact)) = second_exact.geometry.solved() else {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less G2 second exact surface must be NURBS".into(),
         ));
     };
@@ -1458,7 +1509,7 @@ fn encode_native_g2_blend(
         native_i64(
             bytes,
             i64::try_from(discontinuities.len()).map_err(|_| {
-                CodecError::InvalidInput("G2 discontinuity count exceeds i64".into())
+                crate::writer::WriteError::Unwritable("G2 discontinuity count exceeds i64".into())
             })?,
         );
         for value in discontinuities {
@@ -1532,18 +1583,20 @@ fn native_loft_section(
     target: &CadIr,
     section: &cadmpeg_ir::geometry::LoftSection,
     parameter_range: Option<[f64; 2]>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_i64(
         bytes,
-        i64::try_from(section.entries.len())
-            .map_err(|_| CodecError::InvalidInput("loft section count exceeds i64".into()))?,
+        i64::try_from(section.entries.len()).map_err(|_| {
+            crate::writer::WriteError::Unwritable("loft section count exceeds i64".into())
+        })?,
     );
     for entry in &section.entries {
         native_f64(bytes, entry.parameter);
         native_i64(
             bytes,
-            i64::try_from(entry.profile.len())
-                .map_err(|_| CodecError::InvalidInput("loft profile count exceeds i64".into()))?,
+            i64::try_from(entry.profile.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("loft profile count exceeds i64".into())
+            })?,
         );
         for member in &entry.profile {
             native_i64(bytes, member.form.type_code());
@@ -1569,7 +1622,7 @@ fn native_loft_section(
                             .iter()
                             .find(|surface| surface.id == *surface_id)
                             .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
+                                crate::writer::WriteError::Unwritable(format!(
                                     "loft references missing surface {surface_id}"
                                 ))
                             })?;
@@ -1613,8 +1666,9 @@ fn native_loft_section(
         }
         native_i64(
             bytes,
-            i64::try_from(entry.path.auxiliaries.len())
-                .map_err(|_| CodecError::InvalidInput("loft auxiliary count exceeds i64".into()))?,
+            i64::try_from(entry.path.auxiliaries.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("loft auxiliary count exceeds i64".into())
+            })?,
         );
         for auxiliary in &entry.path.auxiliaries {
             let auxiliary = native_loft_curve(target, auxiliary, parameter_range)?;
@@ -1629,16 +1683,18 @@ fn native_loft_curve(
     target: &CadIr,
     id: &cadmpeg_ir::ids::CurveId,
     parameter_range: Option<[f64; 2]>,
-) -> Result<NurbsCurve, CodecError> {
+) -> Result<NurbsCurve, crate::writer::WriteError> {
     let curve = target
         .model
         .curves
         .iter()
         .find(|curve| curve.id == *id)
-        .ok_or_else(|| CodecError::malformed(format_args!("loft references missing curve {id}")))?;
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable(format!("loft references missing curve {id}"))
+        })?;
     native_spline_field_curve(
         curve.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+            crate::writer::WriteError::Unsupported("carrier has no solved geometry".into())
         })?,
         parameter_range,
     )
@@ -1648,11 +1704,11 @@ fn native_compound_loft_scale(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     scale: &cadmpeg_ir::geometry::CompoundLoftScale,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_i64(
         bytes,
         i64::try_from(scale.members.len()).map_err(|_| {
-            CodecError::InvalidInput("compound-loft member count exceeds i64".into())
+            crate::writer::WriteError::Unwritable("compound-loft member count exceeds i64".into())
         })?,
     );
     for member in &scale.members {
@@ -1663,14 +1719,14 @@ fn native_compound_loft_scale(
             .iter()
             .find(|curve| curve.id == member.curve)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "compound loft references missing member curve {}",
                     member.curve
                 ))
             })?;
         let curve = native_spline_field_curve(
             curve.geometry.solved().ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+                crate::writer::WriteError::Unsupported("carrier has no solved geometry".into())
             })?,
             native_pcurve_knot_domain(member.data.pcurve.as_ref())?,
         )?;
@@ -1682,7 +1738,7 @@ fn native_compound_loft_scale(
             .iter()
             .find(|surface| surface.id == *surface_id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "compound loft references missing surface {surface_id}"
                 ))
             })?;
@@ -1695,7 +1751,9 @@ fn native_compound_loft_scale(
     native_i64(
         bytes,
         i64::try_from(scale.auxiliaries.len()).map_err(|_| {
-            CodecError::InvalidInput("compound-loft auxiliary count exceeds i64".into())
+            crate::writer::WriteError::Unwritable(
+                "compound-loft auxiliary count exceeds i64".into(),
+            )
         })?,
     );
     for auxiliary in &scale.auxiliaries {
@@ -1713,11 +1771,11 @@ fn encode_native_compound_loft(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::CompoundLoftConstruction,
     solved_cache: &NurbsSurface,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::{CompoundLoftDirection, CompoundLoftTail};
 
     let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-        CodecError::NotImplemented(
+        crate::writer::WriteError::Unsupported(
             "compound-loft surface requires a native cache-fit tolerance".into(),
         )
     })?;
@@ -1804,11 +1862,16 @@ fn encode_native_compound_loft(
     Ok(())
 }
 
-fn native_compound_loft_float_array(bytes: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecError> {
+fn native_compound_loft_float_array(
+    bytes: &mut Vec<u8>,
+    values: &[f64],
+) -> Result<(), crate::writer::WriteError> {
     native_i64(
         bytes,
         i64::try_from(values.len()).map_err(|_| {
-            CodecError::InvalidInput("compound-loft float-array count exceeds i64".into())
+            crate::writer::WriteError::Unwritable(
+                "compound-loft float-array count exceeds i64".into(),
+            )
         })?,
     );
     for value in values {
@@ -1823,7 +1886,7 @@ fn encode_native_scaled_compound_loft(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::ScaledCompoundLoftConstruction,
     solved_cache: Option<&NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::{
         CompoundLoftDirection, ScaledCompoundLoftBranch, ScaledCompoundLoftShape,
     };
@@ -1835,12 +1898,12 @@ fn encode_native_scaled_compound_loft(
     match &construction.shape {
         ScaledCompoundLoftShape::Full {} => {
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "scaled compound-loft full shape requires a solved NURBS cache".into(),
                 )
             })?;
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "scaled compound-loft full shape requires a native cache-fit tolerance".into(),
                 )
             })?;
@@ -1852,7 +1915,7 @@ fn encode_native_scaled_compound_loft(
             parameters,
         } => {
             if procedural.cache_fit_tolerance().is_some() {
-                return Err(CodecError::Malformed(
+                return Err(crate::writer::WriteError::Unwritable(
                     "scaled compound-loft none shape cannot carry a cache-fit tolerance".into(),
                 ));
             }
@@ -1942,8 +2005,9 @@ pub(super) fn native_cacheless_procedural_surface(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     surface: &Surface,
-) -> Result<bool, CodecError> {
-    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)?;
+) -> Result<bool, crate::writer::WriteError> {
+    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)
+        .map_err(|error| naming_procedural(target, &surface.id, error))?;
     if written {
         native_record_bounds(bytes, target, &surface.id);
     }
@@ -1954,7 +2018,7 @@ fn native_cacheless_procedural_surface_definition(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     surface: &Surface,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     let mut definitions = target
         .model
         .procedural_surfaces
@@ -1966,7 +2030,7 @@ fn native_cacheless_procedural_surface_definition(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "surface {} has multiple procedural constructions",
             surface.id
         )));
@@ -1987,7 +2051,7 @@ fn native_cacheless_procedural_surface_definition(
                 directrix,
                 parameter_interval: parameter_interval
                     .ok_or_else(|| {
-                        CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "source-less F3D extrusion lacks its native interval".into(),
                         )
                     })?
@@ -1995,7 +2059,7 @@ fn native_cacheless_procedural_surface_definition(
                 direction: direction.get(),
                 native_position: native_position
                     .ok_or_else(|| {
-                        CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "source-less F3D extrusion lacks its native position".into(),
                         )
                     })?
@@ -2079,7 +2143,7 @@ fn native_cacheless_procedural_surface_definition(
     }
     if let ProceduralSurfaceDefinition::Ruled { first, second, .. } = procedural.definition() {
         if procedural.cache_fit_tolerance().is_some() {
-            return Err(CodecError::Malformed(
+            return Err(crate::writer::WriteError::Unwritable(
                 "cacheless ruled surface cannot carry a cache-fit tolerance".into(),
             ));
         }
@@ -2094,7 +2158,7 @@ fn native_cacheless_procedural_surface_definition(
     if let ProceduralSurfaceDefinition::Sum(definition_payload) = procedural.definition() {
         if definition_payload.revision_form().is_none() {
             if procedural.cache_fit_tolerance().is_some() {
-                return Err(CodecError::Malformed(
+                return Err(crate::writer::WriteError::Unwritable(
                     "cacheless sum surface cannot carry a cache-fit tolerance".into(),
                 ));
             }
@@ -2160,7 +2224,9 @@ fn native_cacheless_procedural_surface_definition(
             .surfaces
             .iter()
             .find(|surface| surface.id == *support)
-            .ok_or_else(|| CodecError::Malformed("sub-surface support is missing".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("sub-surface support is missing".into())
+            })?;
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "sub_spl_sur")?;
@@ -2283,17 +2349,17 @@ fn native_law_expression(
     target: &CadIr,
     expression: &cadmpeg_ir::geometry::LawExpression,
     depth: usize,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::LawExpression;
     if depth > 64 {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "native law expression exceeds 64 recursive levels".into(),
         ));
     }
     match expression {
         LawExpression::Null {} => native_string(bytes, NULL_LAW_TOKEN),
         LawExpression::Text { value } => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "law expression text {value:?} has no recursive native law spelling"
             )));
         }
@@ -2343,11 +2409,14 @@ fn native_law_expression(
                 .iter()
                 .find(|candidate| candidate.id == curve.id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("law edge curve {} is missing", curve.id))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "law edge curve {} is missing",
+                        curve.id
+                    ))
                 })?;
             let native_curve = native_interval_curve(
                 carrier.geometry.solved().ok_or_else(|| {
-                    CodecError::NotImplemented(
+                    crate::writer::WriteError::Unsupported(
                         "source-less F3D carrier has no solved geometry".into(),
                     )
                 })?,
@@ -2392,18 +2461,18 @@ fn native_law_expression(
                 "CROSS" | "DOT" | "DCUR" | "O" | "ROTATE" | "TERM" => 2,
                 "VEC" | "DSURF" => 3,
                 "MIN" | "MAX" | "STEP" => {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "source-less F3D law operator {operator} has unresolved variable arity"
                     )));
                 }
                 _ => {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "source-less F3D law operator {operator} has no defined byte grammar"
                     )));
                 }
             };
             if operands.len() != arity {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D law operator {operator} requires {arity} operands, got {}",
                     operands.len()
                 )));
@@ -2428,7 +2497,7 @@ fn native_sweep_law(
     bytes: &mut Vec<u8>,
     expression: &cadmpeg_ir::geometry::LawExpression,
     slot: SweepLawSlot,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::LawExpression;
     use SweepLawSlot::{LegacyFirst, RevisionFirst, Second};
 
@@ -2451,12 +2520,12 @@ fn native_sweep_law(
             native_vector(bytes, [value.x, value.y, value.z]);
         }
         (RevisionFirst, _) => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "revision sweep first law requires a text expression".into(),
             ));
         }
         (slot, _) => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "sweep {slot:?} law has no native spelling for this expression variant"
             )));
         }
@@ -2468,7 +2537,7 @@ fn native_law_formula(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     formula: &cadmpeg_ir::geometry::LawFormula,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     // The native stream spells the null law with its own token; the IR states
     // the variant and knows no such text. The match is exhaustive so a third
     // variant is a compile error here, not a silently written token.
@@ -2480,7 +2549,7 @@ fn native_law_formula(
         cadmpeg_ir::geometry::LawFormula::Named { name, variables } => (name, variables),
     };
     if name.as_str() == NULL_LAW_TOKEN {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "law formula named {NULL_LAW_TOKEN} reads back as the native null law; \
              the null law is stated by the variant, not by a name"
         )));
@@ -2488,8 +2557,9 @@ fn native_law_formula(
     native_string(bytes, name.as_str());
     native_i64(
         bytes,
-        i64::try_from(variables.len())
-            .map_err(|_| CodecError::InvalidInput("law variable count exceeds i64".into()))?,
+        i64::try_from(variables.len()).map_err(|_| {
+            crate::writer::WriteError::Unwritable("law variable count exceeds i64".into())
+        })?,
     );
     for variable in variables {
         native_law_expression(bytes, target, variable, 0)?;
@@ -2503,7 +2573,7 @@ fn encode_native_law_surface(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::LawSurfaceConstruction,
     solved_cache: Option<&NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "law_spl_sur")?;
@@ -2518,7 +2588,7 @@ fn encode_native_law_surface(
     native_i64(
         bytes,
         i64::try_from(construction.additional.len()).map_err(|_| {
-            CodecError::InvalidInput("law surface formula count exceeds i64".into())
+            crate::writer::WriteError::Unwritable("law surface formula count exceeds i64".into())
         })?,
     );
     for formula in &construction.additional {
@@ -2527,7 +2597,9 @@ fn encode_native_law_surface(
     match &construction.tail {
         cadmpeg_ir::geometry::LawSurfaceTail::Full { .. } => {
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::NotImplemented("full law surface requires a cache-fit tolerance".into())
+                crate::writer::WriteError::Unsupported(
+                    "full law surface requires a cache-fit tolerance".into(),
+                )
             })?;
             if construction.parameter_ranges.is_none() {
                 native_enum(bytes, 0);
@@ -2535,7 +2607,9 @@ fn encode_native_law_surface(
             native_nurbs_surface(
                 bytes,
                 solved_cache.ok_or_else(|| {
-                    CodecError::NotImplemented("full law surface requires a solved cache".into())
+                    crate::writer::WriteError::Unsupported(
+                        "full law surface requires a solved cache".into(),
+                    )
                 })?,
             )?;
             native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
@@ -2582,7 +2656,7 @@ fn native_skin_profile_data(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     data: &cadmpeg_ir::geometry::ClassicLoftProfileData,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let surface_id = &data.surface;
     let surface = target
         .model
@@ -2590,7 +2664,9 @@ fn native_skin_profile_data(
         .iter()
         .find(|surface| surface.id == *surface_id)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("skin references missing surface {surface_id}"))
+            crate::writer::WriteError::Unwritable(format!(
+                "skin references missing surface {surface_id}"
+            ))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     native_optional_support_pcurve(bytes, &surface.geometry, data.pcurve.as_ref())?;
@@ -2605,10 +2681,12 @@ fn encode_native_skin_surface(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::SkinSurfaceConstruction,
     solved_cache: &NurbsSurface,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::SkinSurfaceLayout;
     let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-        CodecError::NotImplemented("skin surface requires a native cache-fit tolerance".into())
+        crate::writer::WriteError::Unsupported(
+            "skin surface requires a native cache-fit tolerance".into(),
+        )
     })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
@@ -2633,14 +2711,14 @@ fn encode_native_skin_surface(
                     .iter()
                     .find(|curve| curve.id == profile.curve)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "skin references missing profile curve {}",
                             profile.curve
                         ))
                     })?;
                 let curve = native_spline_field_curve(
                     curve.geometry.solved().ok_or_else(|| {
-                        cadmpeg_core::CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "carrier has no solved geometry".into(),
                         )
                     })?,
@@ -2699,9 +2777,11 @@ fn encode_native_net_surface(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::NetSurfaceConstruction,
     solved_cache: &NurbsSurface,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
-        CodecError::NotImplemented("net surface requires a native cache-fit tolerance".into())
+        crate::writer::WriteError::Unsupported(
+            "net surface requires a native cache-fit tolerance".into(),
+        )
     })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
@@ -2742,7 +2822,7 @@ fn encode_native_sweep_surface(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     input: SweepSurfaceRecord<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::SweepSurfaceLayout;
     let SweepSurfaceRecord {
         profile,
@@ -2853,7 +2933,7 @@ fn encode_native_sweep_surface(
             trailing_flag,
         } = &construction.layout
         else {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "revision-gated sweep generation requires the explicit formula layout".into(),
             ));
         };
@@ -3135,7 +3215,7 @@ fn encode_native_sweep_surface(
                 .iter()
                 .find(|surface| surface.id == *support_surface)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "sweep references missing support surface {support_surface}"
                     ))
                 })?;
@@ -3222,14 +3302,16 @@ fn encode_native_sweep_surface(
     native_nurbs_surface(
         bytes,
         solved_cache.ok_or_else(|| {
-            CodecError::NotImplemented("sweep surface requires a solved native cache".into())
+            crate::writer::WriteError::Unsupported(
+                "sweep surface requires a solved native cache".into(),
+            )
         })?,
     )?;
     native_f64(
         bytes,
         cache_fit_tolerance
             .ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "sweep surface requires a native cache-fit tolerance".into(),
                 )
             })?
@@ -3261,7 +3343,7 @@ fn encode_native_loft(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     input: LoftSurfaceRecord<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let LoftSurfaceRecord {
         sections,
         revision_form,
@@ -3276,7 +3358,7 @@ fn encode_native_loft(
         let cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals } =
             parameters
         else {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "revision-gated loft requires revision-native parameter ranges".into(),
             ));
         };
@@ -3306,7 +3388,7 @@ fn encode_native_loft(
     }
     native_surface_base(bytes, "spline")?;
     let cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges } = parameters else {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "legacy loft requires ordered parameter ranges".into(),
         ));
     };
@@ -3338,7 +3420,7 @@ fn encode_native_loft(
         }
     }
     let solved_cache = solved_cache.ok_or_else(|| {
-        CodecError::NotImplemented("legacy loft requires a solved NURBS cache".into())
+        crate::writer::WriteError::Unsupported("legacy loft requires a solved NURBS cache".into())
     })?;
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
@@ -3363,7 +3445,7 @@ fn encode_native_extrusion(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     input: ExtrusionSurfaceRecord<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let ExtrusionSurfaceRecord {
         directrix,
         parameter_interval,
@@ -3378,14 +3460,16 @@ fn encode_native_extrusion(
         .iter()
         .find(|curve| curve.id == *directrix)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "procedural surface {} references missing directrix {directrix}",
                 procedural.id
             ))
         })?;
     let directrix_cache = native_interval_curve(
         directrix.geometry.solved().ok_or_else(|| {
-            CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
+            crate::writer::WriteError::Unsupported(
+                "source-less F3D carrier has no solved geometry".into(),
+            )
         })?,
         parameter_interval,
     )?;
@@ -3405,7 +3489,7 @@ fn encode_native_extrusion(
         // interval in the optional bool-gated encoding, the sweep direction and
         // model-space position, then the shared surface tail.
         if form.flags.len() != 1 {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "revision-gated cyl_spl_sur requires one directrix sense flag".into(),
             ));
         }
@@ -3441,7 +3525,7 @@ fn encode_native_extrusion(
             native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
         }
     } else if procedural.cache_fit_tolerance().is_some() {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::WriteError::Unwritable(
             "cache-less F3D extrusion cannot carry a cache-fit tolerance".into(),
         ));
     }
@@ -3452,7 +3536,7 @@ fn encode_native_extrusion(
 fn native_optional_pcurve(
     bytes: &mut Vec<u8>,
     pcurve: Option<&PcurveGeometry>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if let Some(pcurve) = pcurve {
         native_nurbs_pcurve_block(bytes, pcurve)
     } else {
@@ -3466,7 +3550,7 @@ fn native_optional_support_pcurve(
     bytes: &mut Vec<u8>,
     support: &SurfaceGeometry,
     pcurve: Option<&PcurveGeometry>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if let Some(pcurve) = pcurve {
         native_nurbs_pcurve_payload(bytes, &native_support_pcurve(support, pcurve)?)
     } else {
@@ -3477,9 +3561,9 @@ fn native_optional_support_pcurve(
 fn native_radius_function_pcurve_block(
     bytes: &mut Vec<u8>,
     function: &PcurveGeometry,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let PcurveGeometry::Nurbs { nurbs } = function else {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "variable-blend radius function must be a NURBS pcurve".into(),
         ));
     };
@@ -3495,7 +3579,7 @@ fn native_radius_function_pcurve_block(
             nurbs.weights(),
             nurbs.periodic(),
         )
-        .map_err(|error| CodecError::NotImplemented(error.to_string()))?,
+        .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))?,
     };
     native_nurbs_pcurve_block(bytes, &native)
 }
@@ -3504,10 +3588,10 @@ fn native_variable_blend_value(
     bytes: &mut Vec<u8>,
     value: &cadmpeg_ir::geometry::VariableBlendValue,
     depth: usize,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::{VariableBlendTerminal, VariableBlendValuePayload};
     if depth > 32 {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "variable blend-value recursion exceeds 32 levels".into(),
         ));
     }
@@ -3596,7 +3680,9 @@ fn native_variable_blend_value(
             native_i64(
                 bytes,
                 i64::try_from(points.len()).map_err(|_| {
-                    CodecError::InvalidInput("variable blend point count exceeds i64".into())
+                    crate::writer::WriteError::Unwritable(
+                        "variable blend point count exceeds i64".into(),
+                    )
                 })?,
             );
             for point in points {
@@ -3625,7 +3711,7 @@ fn native_vertex_blend_boundary(
     target: &CadIr,
     boundary: &cadmpeg_ir::geometry::VertexBlendBoundary,
     revision: bool,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::VertexBlendBoundaryGeometry;
     let kind = match &boundary.geometry {
         VertexBlendBoundaryGeometry::Circle { .. } => "circle",
@@ -3723,7 +3809,9 @@ fn native_vertex_blend_boundary(
                 .iter()
                 .find(|candidate| candidate.id == *surface)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("vertex-blend support {surface} is missing"))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "vertex-blend support {surface} is missing"
+                    ))
                 })?;
             if revision {
                 native_embedded_surface_with_bounds(bytes, &surface.geometry, support_bounds)?;
@@ -3760,7 +3848,7 @@ fn encode_native_vertex_blend(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     construction: &cadmpeg_ir::geometry::VertexBlendConstruction,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "VBL_SURF")?;
@@ -3770,7 +3858,7 @@ fn encode_native_vertex_blend(
     native_i64(
         bytes,
         i64::try_from(construction.boundaries.len()).map_err(|_| {
-            CodecError::InvalidInput("vertex-blend boundary count exceeds i64".into())
+            crate::writer::WriteError::Unwritable("vertex-blend boundary count exceeds i64".into())
         })?,
     );
     for boundary in &construction.boundaries {
@@ -3790,11 +3878,11 @@ fn native_revision_cl_scale(
     target: &CadIr,
     profile: &[cadmpeg_ir::geometry::LoftProfileMember],
     path: &cadmpeg_ir::geometry::LoftPath,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_i64(
         bytes,
         i64::try_from(profile.len()).map_err(|_| {
-            CodecError::InvalidInput("compound-loft member count exceeds i64".into())
+            crate::writer::WriteError::Unwritable("compound-loft member count exceeds i64".into())
         })?,
     );
     for member in profile {
@@ -3802,7 +3890,7 @@ fn native_revision_cl_scale(
         let curve = native_loft_curve(target, &member.profile.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
         let endpoints = member.profile.endpoints.ok_or_else(|| {
-            CodecError::NotImplemented(
+            crate::writer::WriteError::Unsupported(
                 "revision compound-loft members require optional endpoints".into(),
             )
         })?;
@@ -3824,7 +3912,7 @@ fn native_revision_cl_scale(
                         .iter()
                         .find(|surface| surface.id == *surface_id)
                         .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
+                            crate::writer::WriteError::Unwritable(format!(
                                 "compound loft references missing surface {surface_id}"
                             ))
                         })?;
@@ -3861,7 +3949,9 @@ fn native_revision_cl_scale(
     native_i64(
         bytes,
         i64::try_from(path.auxiliaries.len()).map_err(|_| {
-            CodecError::InvalidInput("compound-loft auxiliary count exceeds i64".into())
+            crate::writer::WriteError::Unwritable(
+                "compound-loft auxiliary count exceeds i64".into(),
+            )
         })?,
     );
     for auxiliary in &path.auxiliaries {
@@ -3877,7 +3967,7 @@ fn encode_native_revision_compound_loft(
     target: &CadIr,
     construction: &cadmpeg_ir::geometry::RevisionCompoundLoftConstruction,
     solved_cache: Option<&NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
@@ -3906,7 +3996,7 @@ fn encode_native_revision_compound_loft(
     native_i64(
         bytes,
         i64::try_from(construction.entries().len()).map_err(|_| {
-            CodecError::InvalidInput("compound-loft entry count exceeds i64".into())
+            crate::writer::WriteError::Unwritable("compound-loft entry count exceeds i64".into())
         })?,
     );
     for entry in construction.entries() {
@@ -3947,7 +4037,7 @@ fn encode_native_revision_g2_blend(
     target: &CadIr,
     construction: &cadmpeg_ir::geometry::RevisionG2BlendConstruction,
     solved_cache: Option<&NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "g2_blend_spl_sur")?;
@@ -4008,7 +4098,7 @@ fn encode_native_variable_blend(
     target: &CadIr,
     construction: &cadmpeg_ir::geometry::VariableBlendConstruction,
     solved_cache: Option<&NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(
@@ -4152,7 +4242,7 @@ fn native_rolling_ball_side(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     side: &cadmpeg_ir::geometry::RollingBallSide,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     native_string(
         bytes,
@@ -4172,7 +4262,9 @@ fn native_rolling_ball_side(
             .iter()
             .find(|surface| surface.id == *id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("rolling-ball support {id} is missing"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "rolling-ball support {id} is missing"
+                ))
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
         if matches!(
@@ -4207,11 +4299,13 @@ fn native_rolling_ball_side(
             .iter()
             .find(|curve| curve.id == *id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("rolling-ball side curve {id} is missing"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "rolling-ball side curve {id} is missing"
+                ))
             })?;
         let curve = native_spline_field_curve(
             curve.geometry.solved().ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+                crate::writer::WriteError::Unsupported("carrier has no solved geometry".into())
             })?,
             match support.parameter_range {
                 [Some(lower), Some(upper)] => Some([lower, upper]),
@@ -4252,7 +4346,7 @@ fn native_rolling_ball_third_side(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     side: &cadmpeg_ir::geometry::RollingBallThirdSide,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_string(bytes, &side.label);
     let surface = target
         .model
@@ -4260,7 +4354,7 @@ fn native_rolling_ball_third_side(
         .iter()
         .find(|surface| surface.id == side.surface)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "rolling-ball third support {} is missing",
                 side.surface
             ))
@@ -4272,7 +4366,7 @@ fn native_rolling_ball_third_side(
         .iter()
         .find(|curve| curve.id == side.curve)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "rolling-ball third-side curve {} is missing",
                 side.curve
             ))
@@ -4287,7 +4381,7 @@ fn native_rolling_ball_third_side(
     .find(|pcurve| matches!(pcurve, PcurveGeometry::Nurbs { .. }));
     let curve = native_spline_field_curve(
         curve.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+            crate::writer::WriteError::Unsupported("carrier has no solved geometry".into())
         })?,
         native_pcurve_knot_domain(pcurve)?,
     )?;
@@ -4309,7 +4403,7 @@ fn encode_complete_native_rolling_ball(
     target: &CadIr,
     construction: &cadmpeg_ir::geometry::RollingBallConstruction,
     solved_cache: Option<&NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(
@@ -4393,7 +4487,7 @@ fn encode_native_rolling_ball(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     input: RollingBallSurfaceRecord<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let RollingBallSurfaceRecord {
         supports,
         spine,
@@ -4402,7 +4496,7 @@ fn encode_native_rolling_ball(
         solved_cache,
     } = input;
     if *cross_section != cadmpeg_ir::geometry::BlendCrossSection::Circular {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less rb_blend_spl_sur requires a circular cross-section".into(),
         ));
     }
@@ -4412,7 +4506,7 @@ fn encode_native_rolling_ball(
     for (side, support) in supports.iter().enumerate() {
         let Some(support) = support else { continue };
         if support.reversed {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "source-less rb_blend_spl_sur reversed support is not defined".into(),
             ));
         }
@@ -4422,7 +4516,7 @@ fn encode_native_rolling_ball(
             .iter()
             .find(|surface| surface.id == support.surface)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "procedural surface {} references missing support {}",
                     procedural.id, support.surface
                 ))
@@ -4432,7 +4526,7 @@ fn encode_native_rolling_ball(
         native_embedded_surface(bytes, &carrier.geometry)?;
     }
     let spine = spine.ok_or_else(|| {
-        CodecError::NotImplemented("source-less rb_blend_spl_sur lacks a spine".into())
+        crate::writer::WriteError::Unsupported("source-less rb_blend_spl_sur lacks a spine".into())
     })?;
     let spine = target
         .model
@@ -4440,19 +4534,25 @@ fn encode_native_rolling_ball(
         .iter()
         .find(|curve| curve.id == *spine)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("blend references missing spine {spine}"))
+            crate::writer::WriteError::Unwritable(format!("blend references missing spine {spine}"))
         })?;
     let spine_range = [
         solved_cache.u_knots().first().copied().ok_or_else(|| {
-            CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
+            crate::writer::WriteError::Unwritable(
+                "rolling-ball solved surface has no U knot domain".into(),
+            )
         })?,
         solved_cache.u_knots().last().copied().ok_or_else(|| {
-            CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
+            crate::writer::WriteError::Unwritable(
+                "rolling-ball solved surface has no U knot domain".into(),
+            )
         })?,
     ];
     let spine = native_interval_curve(
         spine.geometry.solved().ok_or_else(|| {
-            CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
+            crate::writer::WriteError::Unsupported(
+                "source-less F3D carrier has no solved geometry".into(),
+            )
         })?,
         spine_range,
     )?;
@@ -4461,7 +4561,7 @@ fn encode_native_rolling_ball(
         BlendRadiusLaw::Constant { signed_radius } => (signed_radius.get(), signed_radius.get()),
         BlendRadiusLaw::Linear { start, end } => (start.get(), end.get()),
         BlendRadiusLaw::Law { .. } => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "source-less rb_blend_spl_sur explicit radius law is not defined".into(),
             ))
         }
@@ -4480,7 +4580,7 @@ fn encode_native_rolling_ball(
 pub(super) fn native_nurbs_curve(
     bytes: &mut Vec<u8>,
     curve: &NurbsCurve,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let poles = curve.pole_rows();
     native_ident(
         bytes,
@@ -4494,8 +4594,9 @@ pub(super) fn native_nurbs_curve(
     native_enum(bytes, if curve.periodic() { 2 } else { 0 });
     native_i64(
         bytes,
-        i64::try_from(unique_knot_count(curve.knots()))
-            .map_err(|_| CodecError::InvalidInput("F3D unique-knot count exceeds i64".into()))?,
+        i64::try_from(unique_knot_count(curve.knots())).map_err(|_| {
+            crate::writer::WriteError::Unwritable("F3D unique-knot count exceeds i64".into())
+        })?,
     );
     native_nurbs_knots(bytes, curve.knots())?;
     match poles {
@@ -4521,7 +4622,7 @@ pub(super) fn native_nurbs_curve(
 fn native_spline_field_curve(
     geometry: &SolvedCurveGeometry,
     parameter_range: Option<[f64; 2]>,
-) -> Result<NurbsCurve, CodecError> {
+) -> Result<NurbsCurve, crate::writer::WriteError> {
     match (geometry, parameter_range) {
         (SolvedCurveGeometry::Nurbs(curve), _) => Ok(curve.clone()),
         (_, Some(range)) => native_interval_curve(geometry, range),
@@ -4531,7 +4632,7 @@ fn native_spline_field_curve(
         (SolvedCurveGeometry::Ellipse(_), None) => {
             native_interval_curve(geometry, [0.0, std::f64::consts::TAU])
         }
-        _ => Err(CodecError::NotImplemented(
+        _ => Err(crate::writer::WriteError::Unsupported(
             "source-less F3D spline field lacks a finite curve domain".into(),
         )),
     }
@@ -4539,28 +4640,26 @@ fn native_spline_field_curve(
 
 fn native_pcurve_knot_domain(
     pcurve: Option<&PcurveGeometry>,
-) -> Result<Option<[f64; 2]>, CodecError> {
+) -> Result<Option<[f64; 2]>, crate::writer::WriteError> {
     let Some(PcurveGeometry::Nurbs { nurbs }) = pcurve else {
         return Ok(None);
     };
     Ok(Some([
-        *nurbs
-            .knots()
-            .first()
-            .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
-        *nurbs
-            .knots()
-            .last()
-            .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
+        *nurbs.knots().first().ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("pcurve has no knot domain".into())
+        })?,
+        *nurbs.knots().last().ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("pcurve has no knot domain".into())
+        })?,
     ]))
 }
 
 fn native_interval_curve(
     geometry: &SolvedCurveGeometry,
     parameter_range: [f64; 2],
-) -> Result<NurbsCurve, CodecError> {
+) -> Result<NurbsCurve, crate::writer::WriteError> {
     let parameter_range = IncreasingParameterInterval::new(parameter_range).ok_or_else(|| {
-        CodecError::NotImplemented(
+        crate::writer::WriteError::Unsupported(
             "source-less F3D interval curve requires a finite ordered range".into(),
         )
     })?;
@@ -4570,7 +4669,7 @@ fn native_interval_curve(
 fn native_increasing_interval_curve(
     geometry: &SolvedCurveGeometry,
     parameter_range: IncreasingParameterInterval,
-) -> Result<NurbsCurve, CodecError> {
+) -> Result<NurbsCurve, crate::writer::WriteError> {
     let parameter_range = parameter_range.endpoints();
     match geometry {
         SolvedCurveGeometry::Nurbs(curve) => Ok(curve.clone()),
@@ -4596,7 +4695,7 @@ fn native_increasing_interval_curve(
                 None,
                 false,
             )
-            .map_err(|error| CodecError::NotImplemented(error.to_string()))
+            .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
@@ -4627,7 +4726,7 @@ fn native_increasing_interval_curve(
                 parameter_range,
             )
         }
-        _ => Err(CodecError::NotImplemented(
+        _ => Err(crate::writer::WriteError::Unsupported(
             "source-less F3D interval construction requires a NURBS, line, circle, or ellipse source curve".into(),
         )),
     }
@@ -4653,7 +4752,7 @@ fn native_conic_interval_curve(
     major_radius: f64,
     minor_radius: f64,
     parameter_range: [f64; 2],
-) -> Result<NurbsCurve, CodecError> {
+) -> Result<NurbsCurve, crate::writer::WriteError> {
     let axis_norm = axis.norm();
     let axis = axis.scale(1.0 / axis_norm);
     let major_norm = major_direction.norm();
@@ -4661,7 +4760,7 @@ fn native_conic_interval_curve(
     let minor_direction = axis.cross(major_direction);
     let minor_norm = minor_direction.norm();
     if !minor_norm.is_finite() || minor_norm == 0.0 {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::WriteError::Unwritable(
             "source-less F3D conic axis and major direction must not be parallel".into(),
         ));
     }
@@ -4673,7 +4772,7 @@ fn native_conic_interval_curve(
     let delta = parameter_range[1] - parameter_range[0];
     let span_count = (delta / std::f64::consts::FRAC_PI_2).ceil();
     let too_large = || {
-        CodecError::NotImplemented(
+        crate::writer::WriteError::Unsupported(
             "source-less F3D conic interval exceeds the local generated-span bound".into(),
         )
     };
@@ -4715,7 +4814,7 @@ fn native_conic_interval_curve(
         let middle = (start + end) * 0.5;
         let weight = (step * 0.5).cos();
         if !weight.is_finite() || weight <= 0.0 {
-            return Err(CodecError::Malformed(
+            return Err(crate::writer::WriteError::Unwritable(
                 "source-less F3D conic interval has an invalid rational span".into(),
             ));
         }
@@ -4735,13 +4834,12 @@ fn native_conic_interval_curve(
         }
     }
     NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false)
-        .map_err(|error| CodecError::NotImplemented(error.to_string()))
+        .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))
 }
 
 #[cfg(test)]
 mod native_interval_curve_tests {
     use super::{native_interval_curve, native_spline_field_curve};
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -4768,7 +4866,10 @@ mod native_interval_curve_tests {
             1.0,
             [0.0, spans * std::f64::consts::FRAC_PI_2],
         );
-        assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+        assert!(matches!(
+            result,
+            Err(crate::writer::WriteError::Unsupported(_))
+        ));
     }
 
     #[test]
@@ -4820,7 +4921,10 @@ mod native_interval_curve_tests {
 
         let error =
             native_interval_curve(&circle, [1.0, 1.0]).expect_err("a range that states no span");
-        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(
+            matches!(error, crate::writer::WriteError::Unsupported(_)),
+            "{error}"
+        );
         assert!(
             error.to_string().contains("finite ordered range"),
             "{error}"
@@ -5028,7 +5132,7 @@ fn native_spring_pcurve(
     target: &CadIr,
     support: &cadmpeg_ir::geometry::SpringSupport,
     pcurve: &PcurveGeometry,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     match support {
         cadmpeg_ir::geometry::SpringSupport::Surface(surface_id) => {
             let surface = target
@@ -5037,7 +5141,7 @@ fn native_spring_pcurve(
                 .iter()
                 .find(|surface| surface.id == *surface_id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "spring references missing support {surface_id}"
                     ))
                 })?;
@@ -5053,7 +5157,7 @@ pub(crate) fn native_procedural_curve(
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
     solved_cache: &NurbsCurve,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     let mut definitions =
         target.model.procedural_curves.iter().filter(|procedural| {
             target.model.procedural_curve_owner(&procedural.id) == Some(curve_id)
@@ -5062,7 +5166,7 @@ pub(crate) fn native_procedural_curve(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "curve {curve_id} has multiple procedural constructions"
         )));
     }
@@ -5070,7 +5174,7 @@ pub(crate) fn native_procedural_curve(
         procedural.definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
     ) {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D unknown procedural curve {} cannot be regenerated losslessly",
             procedural.id
         )));
@@ -5119,8 +5223,9 @@ pub(crate) fn native_procedural_curve(
         native_law_formula(bytes, target, &primary.formula().to_raw())?;
         native_i64(
             bytes,
-            i64::try_from(additional.len())
-                .map_err(|_| CodecError::InvalidInput("law formula count exceeds i64".into()))?,
+            i64::try_from(additional.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("law formula count exceeds i64".into())
+            })?,
         );
         for formula in additional {
             native_law_formula(bytes, target, &formula.formula().to_raw())?;
@@ -5148,7 +5253,9 @@ pub(crate) fn native_procedural_curve(
                     .iter()
                     .find(|candidate| candidate.id == *curve)
                     .ok_or_else(|| {
-                        CodecError::Malformed("deformable source curve is missing".into())
+                        crate::writer::WriteError::Unwritable(
+                            "deformable source curve is missing".into(),
+                        )
                     })?;
                 let source_range = [
                     source_parameter_range[0].map_or(
@@ -5162,7 +5269,7 @@ pub(crate) fn native_procedural_curve(
                 ];
                 let source_curve = native_interval_curve(
                     source.geometry.solved().ok_or_else(|| {
-                        CodecError::NotImplemented(
+                        crate::writer::WriteError::Unsupported(
                             "source-less F3D carrier has no solved geometry".into(),
                         )
                     })?,
@@ -5194,7 +5301,7 @@ pub(crate) fn native_procedural_curve(
                 native_i64(
                     bytes,
                     i64::try_from(parameter_pairs.len()).map_err(|_| {
-                        CodecError::InvalidInput(
+                        crate::writer::WriteError::Unwritable(
                             "deformable parameter-pair count exceeds i64".into(),
                         )
                     })?,
@@ -5266,10 +5373,14 @@ pub(crate) fn native_procedural_curve(
             .curves
             .iter()
             .find(|curve| curve.id == *source)
-            .ok_or_else(|| CodecError::Malformed("projection source curve is missing".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("projection source curve is missing".into())
+            })?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
+                crate::writer::WriteError::Unsupported(
+                    "source-less F3D carrier has no solved geometry".into(),
+                )
             })?,
             context.parameter_range().endpoints(),
         )?;
@@ -5315,7 +5426,7 @@ pub(crate) fn native_procedural_curve(
         native_i64(
             bytes,
             i64::try_from(parameters.len()).map_err(|_| {
-                CodecError::InvalidInput("compound parameter count exceeds i64".into())
+                crate::writer::WriteError::Unwritable("compound parameter count exceeds i64".into())
             })?,
         );
         for value in parameters {
@@ -5324,7 +5435,7 @@ pub(crate) fn native_procedural_curve(
         native_i64(
             bytes,
             i64::try_from(components.len()).map_err(|_| {
-                CodecError::InvalidInput("compound component count exceeds i64".into())
+                crate::writer::WriteError::Unwritable("compound component count exceeds i64".into())
             })?,
         );
         for item in components {
@@ -5339,7 +5450,7 @@ pub(crate) fn native_procedural_curve(
                 .iter()
                 .find(|curve| curve.id == *component)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "compound curve references missing component {component}"
                     ))
                 })?;
@@ -5350,7 +5461,7 @@ pub(crate) fn native_procedural_curve(
                 None
             } else {
                 let range = parameters.get(ordinal..ordinal + 2).ok_or_else(|| {
-                    CodecError::NotImplemented(
+                    crate::writer::WriteError::Unsupported(
                         "compound component has no construction interval".into(),
                     )
                 })?;
@@ -5358,9 +5469,7 @@ pub(crate) fn native_procedural_curve(
             };
             let component = native_spline_field_curve(
                 component.geometry.solved().ok_or_else(|| {
-                    cadmpeg_core::CodecError::NotImplemented(
-                        "carrier has no solved geometry".into(),
-                    )
+                    crate::writer::WriteError::Unsupported("carrier has no solved geometry".into())
                 })?,
                 parameter_range,
             )?;
@@ -5464,7 +5573,9 @@ pub(crate) fn native_procedural_curve(
             .surfaces
             .iter()
             .find(|surface| surface.id == *cast_surface)
-            .ok_or_else(|| CodecError::Malformed("silhouette cast surface is missing".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("silhouette cast surface is missing".into())
+            })?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, name)?;
@@ -5503,10 +5614,14 @@ pub(crate) fn native_procedural_curve(
             .curves
             .iter()
             .find(|curve| curve.id == *base)
-            .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("surface-offset base curve is missing".into())
+            })?;
         let base = native_interval_curve(
             base.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
+                crate::writer::WriteError::Unsupported(
+                    "source-less F3D carrier has no solved geometry".into(),
+                )
             })?,
             base_range.endpoints(),
         )?;
@@ -5600,7 +5715,7 @@ pub(crate) fn native_procedural_curve(
                         .iter()
                         .find(|surface| surface.id == *surface_id)
                         .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
+                            crate::writer::WriteError::Unwritable(format!(
                                 "spring references missing support {surface_id}"
                             ))
                         })?;
@@ -5639,7 +5754,7 @@ pub(crate) fn native_procedural_curve(
             native_i64(
                 bytes,
                 i64::try_from(discontinuities.len()).map_err(|_| {
-                    CodecError::InvalidInput("discontinuity count exceeds i64".into())
+                    crate::writer::WriteError::Unwritable("discontinuity count exceeds i64".into())
                 })?,
             );
             for value in discontinuities {
@@ -5662,7 +5777,7 @@ pub(crate) fn native_procedural_curve(
         let third = definition_payload.third();
 
         let surface_id = third.surface.as_ref().ok_or_else(|| {
-            CodecError::NotImplemented(
+            crate::writer::WriteError::Unsupported(
                 "source-less F3D sss_int_cur requires a third support surface".into(),
             )
         })?;
@@ -5672,12 +5787,12 @@ pub(crate) fn native_procedural_curve(
             .iter()
             .find(|surface| surface.id == *surface_id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "three-surface intersection references missing support {surface_id}"
                 ))
             })?;
         let pcurve = third.pcurve.as_ref().ok_or_else(|| {
-            CodecError::NotImplemented(
+            crate::writer::WriteError::Unsupported(
                 "source-less F3D sss_int_cur requires a third support pcurve".into(),
             )
         })?;
@@ -5725,10 +5840,16 @@ pub(crate) fn native_procedural_curve(
             .curves
             .iter()
             .find(|curve| curve.id == *source)
-            .ok_or_else(|| CodecError::Malformed("vector offset source curve is missing".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(
+                    "vector offset source curve is missing".into(),
+                )
+            })?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
+                crate::writer::WriteError::Unsupported(
+                    "source-less F3D carrier has no solved geometry".into(),
+                )
             })?,
             parameter_range.endpoints(),
         )?;
@@ -5766,10 +5887,14 @@ pub(crate) fn native_procedural_curve(
             .curves
             .iter()
             .find(|curve| curve.id == *source)
-            .ok_or_else(|| CodecError::Malformed("subset source curve is missing".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("subset source curve is missing".into())
+            })?;
         let source = native_interval_curve(
             source.geometry.solved().ok_or_else(|| {
-                CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
+                crate::writer::WriteError::Unsupported(
+                    "source-less F3D carrier has no solved geometry".into(),
+                )
             })?,
             parameter_range.endpoints(),
         )?;
@@ -5797,13 +5922,13 @@ pub(crate) fn native_procedural_curve(
             ),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(_)
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(_) => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                     procedural.id
                 )))
             }
             cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D blend-spine curve {} lacks its native blend construction",
                     procedural.id
                 )))
@@ -5825,7 +5950,7 @@ pub(crate) fn native_procedural_curve(
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. }
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D procedural curve {} has no native helix grammar",
                     procedural.id
                 )))
@@ -5868,7 +5993,7 @@ pub(super) fn native_cacheless_procedural_curve(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     let mut definitions =
         target.model.procedural_curves.iter().filter(|procedural| {
             target.model.procedural_curve_owner(&procedural.id) == Some(curve_id)
@@ -5877,12 +6002,12 @@ pub(super) fn native_cacheless_procedural_curve(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "curve {curve_id} has multiple procedural constructions"
         )));
     }
     if procedural.cache_fit_tolerance().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "cacheless procedural curve {} carries a cache-fit tolerance",
             procedural.id
         )));
@@ -5890,7 +6015,7 @@ pub(super) fn native_cacheless_procedural_curve(
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
         procedural.definition()
     else {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D cannot serialize cacheless procedural curve {}",
             procedural.id
         )));
@@ -5937,9 +6062,9 @@ pub(super) fn native_cacheless_procedural_curve(
 fn native_embedded_surface(
     bytes: &mut Vec<u8>,
     geometry: &SurfaceGeometry,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let Some(geometry) = geometry.solved() else {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D carrier has no solved geometry".into(),
         ));
     };
@@ -6030,18 +6155,18 @@ fn native_embedded_surface(
             native_nurbs_surface(bytes, surface)?;
         }
         SolvedSurfaceGeometry::Unknown { .. } => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "source-less F3D embedded procedural or unknown support surfaces are unsupported"
                     .into(),
             ));
         }
         SolvedSurfaceGeometry::Polygonal(_) => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "source-less F3D embedded polygonal support surfaces are unsupported".into(),
             ));
         }
         SolvedSurfaceGeometry::Transformed(_) => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "source-less F3D embedded transformed support surfaces are unsupported".into(),
             ));
         }
@@ -6052,7 +6177,7 @@ fn native_embedded_surface(
 pub(in crate::writer) fn native_support_pcurve(
     geometry: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
-) -> Result<PcurveNurbs, CodecError> {
+) -> Result<PcurveNurbs, crate::writer::WriteError> {
     native_support_pcurve_for_range(geometry, pcurve, [0.0, 1.0])
 }
 
@@ -6061,12 +6186,16 @@ fn native_support_pcurve_with_offset(
     geometry: &PcurveGeometry,
     offset: [f64; 2],
     range: [f64; 2],
-) -> Result<PcurveNurbs, CodecError> {
+) -> Result<PcurveNurbs, crate::writer::WriteError> {
     let mut native = native_support_pcurve_for_range(support, geometry, range)?;
     native.try_map_control_points(|_, point| {
         let point = point.get();
         cadmpeg_ir::units::FinitePoint2::new(Point2::new(point.u - offset[0], point.v - offset[1]))
-            .ok_or_else(|| CodecError::malformed("pcurve UV offset subtraction overflows"))
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(
+                    "pcurve UV offset subtraction overflows".into(),
+                )
+            })
     })?;
     Ok(native)
 }
@@ -6075,7 +6204,7 @@ fn native_support_pcurve_for_range(
     geometry: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
-) -> Result<PcurveNurbs, CodecError> {
+) -> Result<PcurveNurbs, crate::writer::WriteError> {
     let native = native_pcurve_geometry(pcurve, range)?;
     // The chart of the native support fields `native_embedded_surface` writes:
     // the neutral frame with a unit plane reference vector, forward senses,
@@ -6099,7 +6228,7 @@ fn native_support_pcurve_for_range(
         _ => return Ok(native.into_owned()),
     };
     let chart = chart.ok_or_else(|| {
-        CodecError::NotImplemented(
+        crate::writer::WriteError::Unsupported(
             "intcurve support has an invalid cone axial parameter scale".into(),
         )
     })?;
@@ -6127,13 +6256,12 @@ fn native_support_pcurve_for_range(
         poles,
         native.periodic(),
     )
-    .map_err(|error| CodecError::NotImplemented(error.to_string()))
+    .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))
 }
 
 #[cfg(test)]
 mod pcurve_chart_tests {
     use super::native_support_pcurve;
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -6186,7 +6314,10 @@ mod pcurve_chart_tests {
                     .expect("finite pcurve output decodes");
             } else {
                 let error = result.expect_err("pcurve evaluation overflows a pole coordinate");
-                assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+                assert!(
+                    matches!(error, crate::writer::WriteError::Unsupported(_)),
+                    "{error}"
+                );
                 assert!(error.to_string().contains("control_points"), "{error}");
                 assert_eq!(output, [0x93, 0x2a]);
             }
@@ -6279,7 +6410,7 @@ mod pcurve_chart_tests {
 pub(in crate::writer) fn pcurve_support_geometry<'a>(
     model: &'a Model,
     pcurve_id: &PcurveId,
-) -> Result<&'a SurfaceGeometry, CodecError> {
+) -> Result<&'a SurfaceGeometry, crate::writer::WriteError> {
     let surface_id = pcurve_support_surface(model, pcurve_id)?;
     model
         .surfaces
@@ -6287,7 +6418,7 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
         .find(|surface| surface.id == *surface_id)
         .map(|surface| &surface.geometry)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "F3D pcurve {pcurve_id} references missing support {surface_id}"
             ))
         })
@@ -6297,18 +6428,18 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
 pub(in crate::writer) fn pcurve_support_surface<'a>(
     model: &'a Model,
     pcurve_id: &PcurveId,
-) -> Result<&'a SurfaceId, CodecError> {
+) -> Result<&'a SurfaceId, crate::writer::WriteError> {
     fn surface_for_loop<'a>(
         model: &'a Model,
         loop_: &cadmpeg_ir::topology::Loop,
         pcurve_id: &PcurveId,
-    ) -> Result<&'a SurfaceId, CodecError> {
+    ) -> Result<&'a SurfaceId, crate::writer::WriteError> {
         let face = model
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "pcurve {pcurve_id} is used by loop {} with missing face {}",
                     loop_.id, loop_.face
                 ))
@@ -6320,9 +6451,9 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
         selected: &mut Option<&'a SurfaceId>,
         surface: &'a SurfaceId,
         pcurve_id: &PcurveId,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), crate::writer::WriteError> {
         if selected.is_some_and(|selected| selected != surface) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D pcurve {pcurve_id} is shared by faces with different support surfaces"
             )));
         }
@@ -6338,7 +6469,7 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
                 .iter()
                 .find(|loop_| loop_.id == coedge.owner_loop)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "pcurve {pcurve_id} is used by missing loop {}",
                         coedge.owner_loop
                     ))
@@ -6354,7 +6485,7 @@ pub(in crate::writer) fn pcurve_support_surface<'a>(
         }
     }
     surface_id.ok_or_else(|| {
-        CodecError::NotImplemented(format!(
+        crate::writer::WriteError::Unsupported(format!(
             "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
         ))
     })
@@ -6364,13 +6495,13 @@ fn native_intcurve_support_context(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if context
         .sides()
         .iter()
         .any(|side| side.pcurve_parameter_range().is_some())
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
                 .into(),
         ));
@@ -6383,7 +6514,7 @@ fn native_intcurve_support_context(
                 .iter()
                 .find(|surface| surface.id == *surface_id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "intcurve references missing support {surface_id}"
                     ))
                 })?;
@@ -6401,7 +6532,7 @@ fn native_intcurve_support_context(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "intcurve references missing support {surface_id}"
                         ))
                     })?;
@@ -6420,8 +6551,9 @@ fn native_intcurve_support_context(
     for discontinuities in context.discontinuities() {
         native_i64(
             bytes,
-            i64::try_from(discontinuities.len())
-                .map_err(|_| CodecError::InvalidInput("discontinuity count exceeds i64".into()))?,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("discontinuity count exceeds i64".into())
+            })?,
         );
         for value in discontinuities {
             native_f64(bytes, value.get());
@@ -6438,13 +6570,13 @@ fn native_law_version_context(
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
     parameter_range: [Option<cadmpeg_ir::scalar::FiniteReal>; 2],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if context
         .sides()
         .iter()
         .any(|side| side.pcurve_parameter_range().is_some())
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
                 .into(),
         ));
@@ -6457,7 +6589,7 @@ fn native_law_version_context(
                 .iter()
                 .find(|surface| surface.id == *surface_id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "intcurve references missing support {surface_id}"
                     ))
                 })?;
@@ -6475,7 +6607,7 @@ fn native_law_version_context(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "law intcurve references missing support {surface_id}"
                         ))
                     })?;
@@ -6494,8 +6626,9 @@ fn native_law_version_context(
     for discontinuities in context.discontinuities() {
         native_i64(
             bytes,
-            i64::try_from(discontinuities.len())
-                .map_err(|_| CodecError::InvalidInput("discontinuity count exceeds i64".into()))?,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("discontinuity count exceeds i64".into())
+            })?,
         );
         for value in discontinuities {
             native_f64(bytes, value.get());
@@ -6520,7 +6653,7 @@ fn native_embedded_surface_with_bounds(
     bytes: &mut Vec<u8>,
     geometry: &SurfaceGeometry,
     bounds: &[Option<f64>; 4],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
             native_embedded_cone_with_bounds(bytes, geometry, bounds)?;
@@ -6592,7 +6725,7 @@ fn native_embedded_surface_with_bounds(
             | SolvedSurfaceGeometry::Polygonal(_)
             | SolvedSurfaceGeometry::Transformed(_),
         ) => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "support bounds require an embeddable analytic or spline support".into(),
             ));
         }
@@ -6604,7 +6737,7 @@ fn native_embedded_cone_with_bounds(
     bytes: &mut Vec<u8>,
     geometry: &SurfaceGeometry,
     bounds: &[Option<f64>; 4],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let (origin, axis, ref_direction, radius, ratio, half_angle) = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
@@ -6623,7 +6756,7 @@ fn native_embedded_cone_with_bounds(
             (origin, *axis, *ref_direction, radius, ratio, half_angle)
         }
         _ => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "cone bounds helper requires an analytic cone support".into(),
             ));
         }
@@ -6668,7 +6801,7 @@ fn native_revision_surface_tail<F: Default>(
     carrier: &str,
     form: &cadmpeg_ir::geometry::RevisionSurfaceForm<F>,
     solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_revision_tail_head(bytes, carrier, &form.cache, solved_cache)?;
     native_revision_tail_discontinuities(bytes, &form.discontinuities)?;
     bytes.push(native_bool(form.tail_flag));
@@ -6685,9 +6818,11 @@ fn native_solved_cache_fit_tolerance(
     bytes: &mut Vec<u8>,
     carrier: &str,
     cache_fit_tolerance: Option<f64>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let cache_fit_tolerance = cache_fit_tolerance.ok_or_else(|| {
-        CodecError::NotImplemented(format!("{carrier} requires a native cache-fit tolerance"))
+        crate::writer::WriteError::Unsupported(format!(
+            "{carrier} requires a native cache-fit tolerance"
+        ))
     })?;
     native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     Ok(())
@@ -6704,12 +6839,12 @@ fn native_revision_tail_head(
     carrier: &str,
     cache: &cadmpeg_ir::geometry::RevisionCacheForm,
     solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     match cache {
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "{carrier} tail form `0` requires a solved cache"
                 ))
             })?;
@@ -6742,12 +6877,12 @@ fn native_variable_blend_revision_tail_head(
     bytes: &mut Vec<u8>,
     cache: &cadmpeg_ir::geometry::VariableBlendCache,
     solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     match cache {
         cadmpeg_ir::geometry::VariableBlendCache::Current { fit_tolerance, .. } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "variable blend tail form `0` requires a solved cache".into(),
                 )
             })?;
@@ -6755,7 +6890,7 @@ fn native_variable_blend_revision_tail_head(
             native_f64(bytes, fit_tolerance.get() / LEN_TO_MM);
         }
         cadmpeg_ir::geometry::VariableBlendCache::Stale {} => {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "variable blend requires a native cache-fit tolerance".into(),
             ));
         }
@@ -6788,12 +6923,13 @@ fn native_variable_blend_revision_tail_head(
 fn native_revision_tail_discontinuities(
     bytes: &mut Vec<u8>,
     discontinuities: &[Vec<f64>; 6],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for values in discontinuities {
         native_i64(
             bytes,
-            i64::try_from(values.len())
-                .map_err(|_| CodecError::InvalidInput("discontinuity count exceeds i64".into()))?,
+            i64::try_from(values.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("discontinuity count exceeds i64".into())
+            })?,
         );
         for value in values {
             native_f64(bytes, *value);
@@ -6813,13 +6949,13 @@ fn native_cache_first_curve_context(
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
     form: &cadmpeg_ir::geometry::CacheFirstCurveForm,
     solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsCurve>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_i64(bytes, form.revision.get());
     match &form.cache {
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);
             let solved_cache = solved_cache.ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "cache-first intcurve context form `0` requires a solved cache".into(),
                 )
             })?;
@@ -6842,7 +6978,7 @@ fn native_cache_first_curve_context(
                 .iter()
                 .find(|surface| surface.id == *surface_id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "cache-first intcurve references missing support {surface_id}"
                     ))
                 })?;
@@ -6857,14 +6993,14 @@ fn native_cache_first_curve_context(
                     native_optional_f64(bytes, *bound);
                 }
             } else if bounds.iter().any(Option::is_some) {
-                return Err(CodecError::NotImplemented(
+                return Err(crate::writer::WriteError::Unsupported(
                     "cache-first support bounds require a spline or plane support".into(),
                 ));
             }
         } else {
             native_ident(bytes, "null_surface")?;
             if bounds.iter().any(Option::is_some) {
-                return Err(CodecError::NotImplemented(
+                return Err(crate::writer::WriteError::Unsupported(
                     "cache-first support bounds require a non-null support".into(),
                 ));
             }
@@ -6879,7 +7015,7 @@ fn native_cache_first_curve_context(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "cache-first intcurve references missing support {surface_id}"
                         ))
                     })?;
@@ -6898,8 +7034,9 @@ fn native_cache_first_curve_context(
     for discontinuities in context.discontinuities() {
         native_i64(
             bytes,
-            i64::try_from(discontinuities.len())
-                .map_err(|_| CodecError::InvalidInput("discontinuity count exceeds i64".into()))?,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("discontinuity count exceeds i64".into())
+            })?,
         );
         for value in discontinuities {
             native_f64(bytes, value.get());
@@ -6917,7 +7054,7 @@ fn native_embedded_cone(
     radius: f64,
     ratio: f64,
     half_angle: f64,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_ident(bytes, "cone")?;
     native_point(
         bytes,
@@ -6960,7 +7097,7 @@ pub(super) fn native_pcurve(
     form: &NativePcurveForm<'_>,
     support: &SurfaceGeometry,
     range: [f64; 2],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let inline = match form {
         NativePcurveForm::Reference {
             uv_offset,
@@ -7006,11 +7143,11 @@ pub(super) fn native_ref_pcurve_companion(
     uv_offset: [f64; 2],
     support: &SurfaceGeometry,
     range: [f64; 2],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset, range)?;
     let lifted = native_geometry
         .lift(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
-        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+        .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))?;
     native_curve_base(bytes, "intcurve")?;
     native_nurbs_curve(bytes, &lifted)?;
     native_nurbs_pcurve_payload(bytes, &native_geometry)?;
@@ -7025,13 +7162,13 @@ pub(super) fn native_ref_pcurve_companion(
 fn native_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
-) -> Result<Cow<'_, PcurveNurbs>, CodecError> {
+) -> Result<Cow<'_, PcurveNurbs>, crate::writer::WriteError> {
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
             if !range.iter().all(|value| value.is_finite()) || range[0] >= range[1] {
-                return Err(CodecError::NotImplemented(
+                return Err(crate::writer::WriteError::Unsupported(
                     "source-less F3D line pcurve requires an ordered finite range".into(),
                 ));
             }
@@ -7052,27 +7189,27 @@ fn native_pcurve_geometry(
                 false,
             )
             .map(Cow::Owned)
-            .map_err(|error| CodecError::NotImplemented(error.to_string()))
+            .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))
         }
-        PcurveGeometry::Circle(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Circle(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::Ellipse(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Ellipse(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::Harmonic(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Harmonic(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::Hyperbolic(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Hyperbolic(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::PolarHarmonic(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::PolarHarmonic(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::PolarNurbs { .. } => Err(CodecError::NotImplemented(
+        PcurveGeometry::PolarNurbs { .. } => Err(crate::writer::WriteError::Unsupported(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::SphericalGreatCircle(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::SphericalGreatCircle(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D analytic pcurve writing is not supported".into(),
         )),
         PcurveGeometry::Nurbs { nurbs } => Ok(Cow::Borrowed(nurbs)),
@@ -7081,16 +7218,16 @@ fn native_pcurve_geometry(
             let basis = trimmed_pcurve.basis();
             native_pcurve_geometry(basis, parameter_range.endpoints())
         }
-        PcurveGeometry::Parabola(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Parabola(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
-        PcurveGeometry::Hyperbola(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Hyperbola(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
-        PcurveGeometry::Offset(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Offset(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
-        PcurveGeometry::Transformed(_) => Err(CodecError::NotImplemented(
+        PcurveGeometry::Transformed(_) => Err(crate::writer::WriteError::Unsupported(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
     }
@@ -7099,12 +7236,15 @@ fn native_pcurve_geometry(
 fn native_nurbs_pcurve_block(
     bytes: &mut Vec<u8>,
     geometry: &PcurveGeometry,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let native = native_pcurve_geometry(geometry, [0.0, 1.0])?;
     native_nurbs_pcurve_payload(bytes, &native)
 }
 
-fn native_nurbs_pcurve_payload(bytes: &mut Vec<u8>, nurbs: &PcurveNurbs) -> Result<(), CodecError> {
+fn native_nurbs_pcurve_payload(
+    bytes: &mut Vec<u8>,
+    nurbs: &PcurveNurbs,
+) -> Result<(), crate::writer::WriteError> {
     let poles = nurbs.pole_rows();
     native_ident(
         bytes,
@@ -7118,7 +7258,7 @@ fn native_nurbs_pcurve_payload(bytes: &mut Vec<u8>, nurbs: &PcurveNurbs) -> Resu
     native_i64(
         bytes,
         i64::try_from(unique_knot_count(nurbs.knots())).map_err(|_| {
-            CodecError::InvalidInput("F3D pcurve unique-knot count exceeds i64".into())
+            crate::writer::WriteError::Unwritable("F3D pcurve unique-knot count exceeds i64".into())
         })?,
     );
     native_nurbs_knots(bytes, nurbs.knots())?;
@@ -7140,19 +7280,22 @@ fn native_nurbs_pcurve_payload(bytes: &mut Vec<u8>, nurbs: &PcurveNurbs) -> Resu
     Ok(())
 }
 
-fn native_nurbs_knot_counts(bytes: &mut Vec<u8>, knots: [&[f64]; 2]) -> Result<(), CodecError> {
+fn native_nurbs_knot_counts(
+    bytes: &mut Vec<u8>,
+    knots: [&[f64]; 2],
+) -> Result<(), crate::writer::WriteError> {
     for knots in knots {
         native_i64(
             bytes,
             i64::try_from(unique_knot_count(knots)).map_err(|_| {
-                CodecError::InvalidInput("F3D unique-knot count exceeds i64".into())
+                crate::writer::WriteError::Unwritable("F3D unique-knot count exceeds i64".into())
             })?,
         );
     }
     Ok(())
 }
 
-fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecError> {
+fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), crate::writer::WriteError> {
     let mut runs = Vec::<(f64, usize)>::new();
     for knot in knots {
         if let Some((value, count)) = runs.last_mut() {
@@ -7170,13 +7313,15 @@ fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecErr
             .checked_sub(endpoint_extra)
             .filter(|value| *value > 0)
             .ok_or_else(|| {
-                CodecError::NotImplemented("F3D NURBS endpoint multiplicity is not storable".into())
+                crate::writer::WriteError::Unsupported(
+                    "F3D NURBS endpoint multiplicity is not storable".into(),
+                )
             })?;
         native_f64(bytes, value);
         native_i64(
             bytes,
             i64::try_from(stored).map_err(|_| {
-                CodecError::InvalidInput("F3D knot multiplicity exceeds i64".into())
+                crate::writer::WriteError::Unwritable("F3D knot multiplicity exceeds i64".into())
             })?,
         );
     }

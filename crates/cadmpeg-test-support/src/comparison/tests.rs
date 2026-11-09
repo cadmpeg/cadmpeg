@@ -623,6 +623,17 @@ fn a_nulled_reference_matches_an_omitted_or_a_replaced_list_item() {
         .expect("coedges")
         .push(json!({"id":"k1","x":1.0}));
     assert!(agree(&before, &replaced, &Allowances::default(), cross(&[])).is_ok());
+    let mut uses = before.clone();
+    uses["model"]["loops"][0]["coedges"] = json!(["c0", {"id": null, "kind": "coedge"}, "c2"]);
+    assert!(agree(&uses, &omitted, &Allowances::default(), cross(&[])).is_ok());
+    let mut unbounded = before.clone();
+    unbounded["model"]["faces"][0]["loops"] = json!([null]);
+    let mut boundless = omitted.clone();
+    boundless["model"]["faces"][0]
+        .as_object_mut()
+        .expect("face")
+        .remove("loops");
+    assert!(agree(&unbounded, &boundless, &Allowances::default(), cross(&[])).is_ok());
     let mut shortened = omitted;
     shortened["model"]["loops"][0]["coedges"] = json!(["k0"]);
     assert!(agree(&before, &shortened, &Allowances::default(), cross(&[])).is_err());
@@ -679,4 +690,15 @@ fn an_unreferenced_nested_identity_is_a_writer_choice() {
         &named("operand#source", "operand#source"),
         &named("operand#written", "operand#other")
     ));
+}
+
+#[test]
+fn twins_after_a_nulled_list_item_pair_by_their_place_in_the_list() {
+    let before = json!({"model":{
+        "loops":[{"id":"l","coedges":[null, "c1", "c2"]}],
+        "coedges":[{"id":"c1","loop":"l"},{"id":"c2","loop":"l"}]}});
+    let after = json!({"model":{
+        "loops":[{"id":"m","coedges":["k0", "k1", "k2"]}],
+        "coedges":[{"id":"k0","loop":"m"},{"id":"k1","loop":"m"},{"id":"k2","loop":"m"}]}});
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
 }

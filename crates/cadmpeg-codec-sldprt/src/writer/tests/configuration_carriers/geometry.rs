@@ -492,7 +492,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     ] {
         assert!(matches!(
             crate::writer::curve_values(&geometry, 0.001),
-            Err(cadmpeg_core::CodecError::InvalidInput(_))
+            Err(crate::writer::write_error::WriteError::Decline(_))
         ));
     }
 }

@@ -168,7 +168,7 @@ fn uuid_anon(uuids: &[[u8; 16]]) -> Result<Vec<u8>, WriteError> {
     for uuid in uuids {
         body.extend(uuid);
     }
-    anonymous(1, 0, &body).map_err(WriteError::Fail)
+    anonymous(1, 0, &body)
 }
 
 struct ParsedEvaluation {
@@ -290,9 +290,9 @@ fn encode_instance(instance: &ParsedInstance) -> Result<(Vec<u8>, i32), WriteErr
         }
         let mut nested = Vec::new();
         encode_evaluation(&mut nested, evaluation, 3);
-        body.extend(anonymous(1, 0, &nested).map_err(WriteError::Fail)?);
+        body.extend(anonymous(1, 0, &nested)?);
     }
-    Ok((anonymous(1, minor, &body).map_err(WriteError::Fail)?, minor))
+    Ok((anonymous(1, minor, &body)?, minor))
 }
 
 struct ParsedReference {
@@ -423,7 +423,7 @@ fn encode_reference(reference: &ParsedReference) -> Result<Vec<u8>, WriteError> 
     if minor >= 3 {
         body.extend(reference.osnap_mode.to_le_bytes());
     }
-    anonymous(1, minor, &body).map_err(WriteError::Fail)
+    anonymous(1, minor, &body)
 }
 
 /// Contiguous sub-record indices below a value group, or empty when the
@@ -561,7 +561,7 @@ fn encode_polyedges(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<
                 Some(Err(error)) => return Err(error),
                 None => {}
             }
-            segments.push(anonymous(1, minor, &proxy).map_err(WriteError::Fail)?);
+            segments.push(anonymous(1, minor, &proxy)?);
             segment_index += 1;
         }
         if segments.is_empty() {
@@ -593,7 +593,7 @@ fn encode_polyedges(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<
             edge_body.extend(value.to_le_bytes());
         }
         edge_body.extend(integer(props, record, &format!("{edge}.evaluation_mode"))?.to_le_bytes());
-        body.extend(anonymous(1, 0, &edge_body).map_err(WriteError::Fail)?);
+        body.extend(anonymous(1, 0, &edge_body)?);
     }
     Ok(body)
 }
@@ -645,9 +645,9 @@ fn encode_chains(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<u8>
             chain_body.extend(id.to_le_bytes());
         }
         chain_body.extend(orientations);
-        body.extend(anonymous(1, 1, &chain_body).map_err(WriteError::Fail)?);
+        body.extend(anonymous(1, 1, &chain_body)?);
     }
-    anonymous(1, 1, &body).map_err(WriteError::Fail)
+    anonymous(1, 1, &body)
 }
 
 /// Value groups of one history feature: `(id, occurrence, kind)` where kind
@@ -736,7 +736,7 @@ fn encode_value(
     let mut body = kind.to_le_bytes().to_vec();
     body.extend(id.to_le_bytes());
     body.extend(payload);
-    anonymous(1, 0, &body).map_err(WriteError::Fail)
+    anonymous(1, 0, &body)
 }
 
 fn command_uuid(feature: &Feature, record: &str) -> Result<[u8; 16], WriteError> {
@@ -863,7 +863,7 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
     for value in &values {
         values_body.extend(value);
     }
-    body.extend(anonymous(1, 0, &values_body).map_err(WriteError::Fail)?);
+    body.extend(anonymous(1, 0, &values_body)?);
     if minor >= 1 {
         body.extend(record_type.to_le_bytes());
     }
@@ -872,10 +872,9 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
     }
     let classed = class_wrapper(
         crate::wire::Uuid::to_wire(crate::history::HISTORY_CLASS),
-        &anonymous(1, minor, &body).map_err(WriteError::Fail)?,
-    )
-    .map_err(WriteError::Fail)?;
-    crc_chunk_with_direct(HISTORY_RECORD, &classed, &[]).map_err(WriteError::Fail)
+        &anonymous(1, minor, &body)?,
+    )?;
+    crc_chunk_with_direct(HISTORY_RECORD, &classed, &[])
 }
 
 pub(in crate::writer) fn records(ir: &CadIr) -> Result<HistoryExport, WriteError> {

@@ -8,7 +8,7 @@ use super::{has_brep_topology, BodyKind, CadIr, IgesLossCode, LossNote};
 
 pub(super) fn edge_carriers(
     ir: &CadIr,
-) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), cadmpeg_core::CodecError> {
+) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), crate::writer::WriteError> {
     let curves = ir
         .model
         .curves
@@ -43,9 +43,14 @@ pub(super) fn edge_carriers(
                     "has endpoints that disagree with its curve parameter range",
                 );
             }
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                return Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            }
+            Err(
+                error @ (crate::writer::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                    _,
+                ))
+                | crate::writer::WriteError::Encode(
+                    cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_),
+                )),
+            ) => return Err(error),
             _ => {}
         }
     }
@@ -383,7 +388,7 @@ fn spherical_pole(
 /// Lower a carrierless closed edge use to the IGES vertex-use form.
 pub(super) fn pole_edges(
     ir: &CadIr,
-) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), cadmpeg_core::CodecError> {
+) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), crate::writer::WriteError> {
     use cadmpeg_ir::topology::{AnchoredVertexUse, LoopBoundary, LoopRing};
     let wire_edges = ir
         .model
@@ -474,7 +479,8 @@ pub(super) fn pole_edges(
             );
         }
         boundary.boundary = LoopBoundary::Ring(
-            LoopRing::new(kept, uses).map_err(cadmpeg_core::CodecError::malformed)?,
+            LoopRing::new(kept, uses)
+                .map_err(|error| crate::writer::WriteError::Unwritable(error.to_string()))?,
         );
     }
     let removed_coedges = removed

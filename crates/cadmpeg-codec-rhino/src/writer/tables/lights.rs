@@ -149,9 +149,7 @@ fn light(
         if fields.get(name).is_none_or(Value::is_null) {
             return Err(WriteError::Omit(format!("Rhino light {name} is missing")));
         }
-        payload.extend(
-            color(Some(&fields), name).map_err(|error| WriteError::Omit(error.to_string()))?,
-        );
+        payload.extend(color(Some(&fields), name)?);
     }
     for name in ["direction", "location"] {
         vector(&fields, name, &mut payload)?;

@@ -3,6 +3,7 @@
 
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::math::Point3;
@@ -355,7 +356,8 @@ fn incidence_scratch_is_not_retained_and_payload_bytes_keep_the_actual_session_b
     let error = payload(&ctx, &session, &triangle(), RhinoArchiveVersion::V8)
         .err()
         .unwrap();
-    let WriteError::Fail(CodecError::ResourceLimit(limit)) = error else {
+    let WriteError::Encode(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)) = error
+    else {
         panic!("actual budget refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);

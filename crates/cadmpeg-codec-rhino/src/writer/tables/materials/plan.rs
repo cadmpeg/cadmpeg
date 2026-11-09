@@ -3,7 +3,7 @@
 
 use super::{
     binding_targets, encode_material, native_base_complete, own_material, records, wire_index,
-    CadIr, CodecError, Value,
+    CadIr, Value,
 };
 use crate::loss::RhinoLossCode;
 use cadmpeg_ir::report::loss::LossNote;
@@ -43,7 +43,7 @@ fn increment(uuid: &mut [u8; 16]) {
 }
 
 impl MaterialPlan {
-    pub(in crate::writer) fn new(ir: &CadIr) -> Result<Self, CodecError> {
+    pub(in crate::writer) fn new(ir: &CadIr) -> Result<Self, crate::writer::WriteError> {
         let mut plan = Self {
             entries: Vec::new(),
             appearances: BTreeMap::new(),

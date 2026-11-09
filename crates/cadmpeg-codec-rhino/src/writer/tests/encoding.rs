@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::writer::{
-    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, native_i32_count, utf16,
-    wire_index, writable_i32_count,
+    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, utf16, wire_index,
+    writable_i32_count,
 };
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
@@ -43,16 +43,16 @@ fn admitted_angular_tolerance_above_pi_is_reduced_with_a_loss() {
 #[test]
 fn admitted_native_counts_outside_i32_lanes_are_writer_limits() {
     let count = usize::try_from(i32::MAX).expect("i32 fits usize") + 1;
-    let count_error = native_i32_count(count, "NURBS count exceeds native lane".into())
+    let count_error = writable_i32_count(count, "NURBS count exceeds native lane".into())
         .expect_err("the native lane is signed 32-bit");
     let index_error = wire_index(count).expect_err("the native index lane is signed 32-bit");
-    assert!(matches!(
-        count_error,
-        cadmpeg_core::CodecError::InvalidInput(_)
-    ));
+    assert!(matches!(count_error, crate::writer::WriteError::Omit(_)));
     assert!(matches!(
         index_error,
-        cadmpeg_core::CodecError::InvalidInput(_)
+        cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit, value }
+            if field.field == "archive.i32_index"
+                && limit == 2_147_483_647
+                && value == cadmpeg_core::decode::u64_from_index(count)
     ));
 }
 
@@ -81,17 +81,12 @@ fn admitted_archive_sizes_outside_native_lanes_are_writer_limits() {
         i64::MAX
     );
     let body_error = archive_body_len(limit + 1).expect_err("the body lane is signed 64-bit");
-    let size_error =
-        archive_final_size(u64::MAX).expect_err("the final size must include a footer");
     assert!(matches!(
         body_error,
         cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: actual, value }
             if field.field == "chunk.declared_length" && actual == limit && value == limit + 1
     ));
-    assert!(matches!(
-        size_error,
-        cadmpeg_core::CodecError::InvalidInput(_)
-    ));
+    assert_eq!(archive_final_size(limit), limit + 20);
 }
 
 #[test]
@@ -342,7 +337,7 @@ fn object_attributes_payload(
     name: Option<&str>,
     color: Option<Color>,
     visible: Option<bool>,
-) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let materials = crate::writer::tables::materials::MaterialPlan::new(ir)?;
     crate::writer::object_attributes_payload(ir, identity, name, color, visible, &materials)
 }

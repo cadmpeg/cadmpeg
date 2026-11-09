@@ -41,12 +41,25 @@ pub(super) fn placement_applied_loss(curve: &cadmpeg_ir::geometry::Curve) -> Opt
         curve.geometry.solved(),
         Some(SolvedCurveGeometry::Transformed(_))
     )
-    .then(|| {
-        IgesLossCode::WriterPlacementApplied.note(format!(
-            "IGES curve {} is written with its placement applied; the placed carrier is not preserved",
-            curve.id
-        ))
-    })
+    .then(|| placement_loss("curve", curve.id.as_str()))
+}
+
+/// The loss for a placed surface: IGES surfaces read back in model space,
+/// whether the writer applies the placement or states it as a Type 124.
+pub(super) fn surface_placement_applied_loss(
+    surface: &cadmpeg_ir::geometry::Surface,
+) -> Option<LossNote> {
+    matches!(
+        surface.geometry.solved(),
+        Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(_))
+    )
+    .then(|| placement_loss("surface", surface.id.as_str()))
+}
+
+fn placement_loss(kind: &str, id: &str) -> LossNote {
+    IgesLossCode::WriterPlacementApplied.note(format!(
+        "IGES {kind} {id} is written with its placement applied; the placed carrier is not preserved"
+    ))
 }
 
 /// The model curve record that holds `curve` over `range` as a parameter-space

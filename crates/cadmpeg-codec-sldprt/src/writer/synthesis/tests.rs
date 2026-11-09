@@ -2,6 +2,7 @@
 //! Export planning owns patch fallback and per-body degradation.
 
 mod carriers;
+mod encode_errors;
 mod procedural;
 
 use crate::SldprtCodec;

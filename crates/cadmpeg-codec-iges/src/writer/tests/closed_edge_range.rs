@@ -2,7 +2,6 @@
 //! The writer's span for an edge that stores no parameter range.
 
 use super::super::edge_span;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -79,7 +78,7 @@ fn square_path(periodic: bool, last: Point3) -> CurveGeometry {
 
 fn refusal(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> String {
     match edge_span(ir, edge, geometry) {
-        Err(CodecError::InvalidInput(message)) => message,
+        Err(crate::writer::WriteError::Unwritable(message)) => message,
         _ => panic!("expected an unsupported-content refusal"),
     }
 }

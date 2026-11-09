@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -129,10 +128,12 @@ const SPLINE_SUBTYPE: (&str, &str, u32, &str) = (
 /// curves name it where the source type table carries no registration: a
 /// regenerated NURBS curve writes the subtype record, and its type must be
 /// in the generated table.
-fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
+fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), crate::writer::WriteError> {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     let registered = native.design_types.iter().any(|kind| {
-        kind.type_guid.as_str().eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
+        kind.type_guid
+            .as_str()
+            .eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
             && kind.version == SPLINE_SUBTYPE.2
             && kind.module == SPLINE_SUBTYPE.3
     });
@@ -159,7 +160,9 @@ fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
         .filter_map(|kind| kind.byte_offset)
         .max()
         .map_or(Some(0), |offset| offset.checked_add(1))
-        .ok_or_else(|| CodecError::InvalidInput("F3D type-table offset exceeds u64".into()))?;
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D type-table offset exceeds u64".into())
+        })?;
     let class_tag = native
         .design_types
         .iter()
@@ -176,20 +179,20 @@ fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
             class_tag: class_tag
                 .to_string()
                 .try_into()
-                .map_err(CodecError::Malformed)?,
+                .map_err(crate::writer::WriteError::Unwritable)?,
             byte_offset: Some(byte_offset),
             type_guid: SPLINE_SUBTYPE
                 .0
                 .to_owned()
                 .try_into()
-                .map_err(CodecError::Malformed)?,
+                .map_err(crate::writer::WriteError::Unwritable)?,
             type_guid_offset: None,
             base_type_guid: BaseTypeGuid::Guid {
                 value: SPLINE_SUBTYPE
                     .1
                     .to_owned()
                     .try_into()
-                    .map_err(CodecError::Malformed)?,
+                    .map_err(crate::writer::WriteError::Unwritable)?,
                 offset: None,
             },
             version: SPLINE_SUBTYPE.2,
@@ -198,7 +201,7 @@ fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
             entities: crate::records::identity::ReferenceRun::unlocated(Vec::new()),
         },
     )
-    .map_err(CodecError::Malformed)?;
+    .map_err(crate::writer::WriteError::Unwritable)?;
     native.design_types.push(kind);
     Ok(())
 }
@@ -217,22 +220,24 @@ fn regenerate_planar_curve(
     match (&mut record.geometry, entity.geometry.definition()) {
         (
             Some(SketchCurveGeometry::Line {
-                start, end, direction, ..
+                start,
+                end,
+                direction,
+                ..
             }),
-            SketchGeometryDefinition::Line { start: from, end: to },
+            SketchGeometryDefinition::Line {
+                start: from,
+                end: to,
+            },
         ) => {
-            let (Some(a), Some(b), Some(d)) = (
-                point(from.u, from.v),
-                point(to.u, to.v),
-                {
-                    let length = Vector3::new(to.u - from.u, to.v - from.v, 0.0).norm();
-                    cadmpeg_ir::units::UnitVector3::new(Vector3::new(
-                        (to.u - from.u) / length,
-                        (to.v - from.v) / length,
-                        0.0,
-                    ))
-                },
-            ) else {
+            let (Some(a), Some(b), Some(d)) = (point(from.u, from.v), point(to.u, to.v), {
+                let length = Vector3::new(to.u - from.u, to.v - from.v, 0.0).norm();
+                cadmpeg_ir::units::UnitVector3::new(Vector3::new(
+                    (to.u - from.u) / length,
+                    (to.v - from.v) / length,
+                    0.0,
+                ))
+            }) else {
                 return;
             };
             *start = a;
@@ -280,7 +285,7 @@ pub(super) fn reconcile(
     mut original: F3dNative,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     // W2: chain links are source layout, not content. Rebuild them from the
     // retained state order instead of refusing an edited chain.
     relink_history_chains(&mut original.asm_histories);
@@ -544,8 +549,10 @@ pub(super) fn reconcile(
                     .filter(|code| *code <= 999);
                 match tag {
                     Some(code) => {
-                        record.class_tag =
-                            code.to_string().try_into().map_err(CodecError::Malformed)?;
+                        record.class_tag = code
+                            .to_string()
+                            .try_into()
+                            .map_err(crate::writer::WriteError::Unwritable)?;
                         kept.push(record);
                     }
                     None => {}
@@ -574,7 +581,10 @@ pub(super) fn reconcile(
                 .and_then(|ordinal| ordinal.checked_add(256))
                 .filter(|code| *code <= 999)
             {
-                *tag = code.to_string().try_into().map_err(CodecError::Malformed)?;
+                *tag = code
+                    .to_string()
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?;
             }
         }
     }
@@ -596,8 +606,10 @@ pub(super) fn reconcile(
                 .filter(|code| *code <= 999);
             match tag {
                 Some(code) => {
-                    header.class_tag =
-                        code.to_string().try_into().map_err(CodecError::Malformed)?;
+                    header.class_tag = code
+                        .to_string()
+                        .try_into()
+                        .map_err(crate::writer::WriteError::Unwritable)?;
                     kept.push(header);
                 }
                 None => losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
@@ -668,7 +680,9 @@ pub(super) fn reconcile(
             .design_types
             .iter()
             .position(|kind| {
-                kind.type_guid.as_str().eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
+                kind.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
                     && kind.version == SPLINE_SUBTYPE.2
                     && kind.module == SPLINE_SUBTYPE.3
             })
@@ -889,11 +903,14 @@ pub(super) fn reconcile(
                 .checked_add(256)
                 .filter(|code| *code <= 999)
                 .ok_or_else(|| {
-                    CodecError::InvalidInput(
+                    crate::writer::WriteError::Unwritable(
                         "F3D Design registry exceeds three-digit class tags".into(),
                     )
                 })?;
-            header.class_tag = code.to_string().try_into().map_err(CodecError::Malformed)?;
+            header.class_tag = code
+                .to_string()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?;
         }
     }
     let reachable = native
@@ -1091,7 +1108,7 @@ pub(super) fn reconcile(
 pub(super) fn repair_keys(
     target: &mut CadIr,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     super::body_keys::reconcile(target, &mut native)?;
     super::design::with_context(limits, |ctx| {
@@ -1106,7 +1123,7 @@ pub(super) fn repair_keys(
 pub(super) fn shed_design(
     target: &mut CadIr,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     let kept = F3dNative {
         body_native_keys: native.body_native_keys,
@@ -1153,7 +1170,7 @@ fn retain_mesh_sentinels(target: &CadIr, native: &mut F3dNative) {
 pub(super) fn prune(
     target: &mut CadIr,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     retain_mesh_sentinels(target, &mut native);
     native.body_native_keys.retain(|record| {
@@ -1365,8 +1382,7 @@ pub(super) fn coverage(
                                 extension.eq_ignore_ascii_case("dat")
                                     || extension.eq_ignore_ascii_case("smbh")
                             });
-                    let disposition = if arena.as_str() == "mesh_surface_sentinels" || laid_out
-                    {
+                    let disposition = if arena.as_str() == "mesh_surface_sentinels" || laid_out {
                         NativeDisposition::Regenerated
                     } else if candidate == record {
                         NativeDisposition::Written
@@ -1414,7 +1430,7 @@ pub(super) fn coverage(
 /// (C) checks concern relationships inside the typed native document. A
 /// generation limitation is handled later by omission; contradictory graph
 /// identities are invalid before any neutral/native reconciliation.
-fn validate_input(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> {
+fn validate_input(target: &CadIr, native: &F3dNative) -> Result<(), crate::writer::WriteError> {
     use super::super::generate::preconditions::validate_source_less_history_graph;
     let mut link_groups = BTreeMap::<_, Vec<u32>>::new();
     for link in &native.persistent_design_links {
@@ -1434,7 +1450,7 @@ fn validate_input(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> 
             .enumerate()
             .any(|(i, ordinal)| usize::try_from(*ordinal) != Ok(i))
         {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::WriteError::Unwritable(
                 "F3D persistent design links and subentity tags require contiguous ordinals".into(),
             ));
         }

@@ -519,15 +519,20 @@ pub(super) fn decode(
         )
         .map_err(|error| error.to_string())
         .and_then(|rows| {
-            Tessellation::from_parts(ids::tessellation(kind!("mesh"), id).into(), rows, Vec::new())
-                .map_err(|error| error.to_string())
+            Tessellation::from_parts(
+                ids::tessellation(kind!("mesh"), id).into(),
+                rows,
+                Vec::new(),
+            )
+            .map_err(|error| error.to_string())
         });
         let mesh = match mesh {
             Ok(mesh) => mesh,
             Err(error) => {
-                losses.push(StepLossCode::TessellationInvalidPayload.note(format!(
-                    "TESSELLATED_POINT_SET #{id}: {error}"
-                )));
+                losses.push(
+                    StepLossCode::TessellationInvalidPayload
+                        .note(format!("TESSELLATED_POINT_SET #{id}: {error}")),
+                );
                 continue;
             }
         };

@@ -36,7 +36,7 @@ fn sketch_records_share_the_existing_output_allowance() {
         panic!("the third record must exceed the shared allowance");
     };
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        matches!(error, crate::writer::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
             && (limit.limit, limit.used, limit.additional) == (4, 4, 1))
     );
