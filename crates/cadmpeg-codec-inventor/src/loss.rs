@@ -83,6 +83,8 @@ pub(crate) enum InventorLossCode {
     /// A polygon control relation names two different vertex references; the
     /// repeated-vertex reading does not apply and both references stay native.
     SketchPolygonControlVerticesDiffer,
+    /// A circle parameter record binds a parameter to a circle with an unresolved role.
+    SketchCircleParameterNative,
     /// A spline-point relation retains unresolved locus and parameter roles.
     SketchSplinePointNative,
     /// A spline entity retains its source curve pending exact operands.
@@ -332,6 +334,7 @@ impl InventorLossCode {
         Self::SketchBoxRoleMismatch,
         Self::SketchMemberCurveNative,
         Self::SketchPolygonControlVerticesDiffer,
+        Self::SketchCircleParameterNative,
         Self::SketchSplinePointNative,
         Self::SketchSplineCurveNative,
         Self::SketchEllipseCurveNative,
@@ -472,6 +475,7 @@ impl InventorLossCode {
             Self::SketchBoxRoleMismatch => "sketch.box-role-mismatch",
             Self::SketchMemberCurveNative => "sketch.member-curve-native",
             Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
+            Self::SketchCircleParameterNative => "sketch.circle-parameter-native",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
             Self::SketchSplineCurveNative => "sketch.spline-curve-native",
             Self::SketchEllipseCurveNative => "sketch.ellipse-curve-native",
@@ -714,6 +718,7 @@ impl InventorLossCode {
             | Self::SketchBoxRoleMismatch
             | Self::SketchMemberCurveNative
             | Self::SketchPolygonControlVerticesDiffer
+            | Self::SketchCircleParameterNative
             | Self::SketchSplinePointNative
             | Self::SketchSplineCurveNative
             | Self::SketchEllipseCurveNative
@@ -815,6 +820,7 @@ mod tests {
                 "sketch.box-role-mismatch",
                 "sketch.member-curve-native",
                 "sketch.polygon-control-vertices-differ",
+                "sketch.circle-parameter-native",
                 "sketch.spline-point-native",
                 "sketch.spline-curve-native",
                 "sketch.ellipse-curve-native",

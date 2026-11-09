@@ -29,6 +29,7 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 pub(crate) mod box_member;
+pub(crate) mod circle_parameter;
 pub(crate) mod curve;
 pub(crate) mod point_tail;
 pub(crate) mod text;
@@ -221,6 +222,7 @@ const VERTICAL_DISTANCE_TYPE: [u8; 16] = [
 const RADIUS_TYPE: [u8; 16] = [
     0x00, 0xb7, 0x1b, 0x67, 0xd1, 0x11, 0x68, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
+const CIRCLE_PARAMETER_TYPE: [u8; 16] = circle_parameter::TYPE;
 const DIAMETER_TYPE: [u8; 16] = [
     0xe0, 0x96, 0xdf, 0x74, 0xd1, 0x11, 0x69, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
@@ -378,6 +380,13 @@ pub(crate) enum PmDcSketchConstraintKind {
     },
     Diameter {
         reference: PmDcReference,
+        entity: PmDcReference,
+        values: [u32; 4],
+    },
+    /// A parameter bound to one circular entity. The record uses the radius
+    /// layout, and its parameter role is unresolved.
+    CircleParameter {
+        state: u32,
         entity: PmDcReference,
         values: [u32; 4],
     },
@@ -1018,6 +1027,7 @@ enum SketchConstraintTag {
     VerticalDistance,
     Radius,
     Diameter,
+    CircleParameter,
     CircleCenter,
     EqualRadius,
     EqualLength,
@@ -1050,6 +1060,7 @@ impl SketchConstraintTag {
             VERTICAL_DISTANCE_TYPE => Some(Self::VerticalDistance),
             RADIUS_TYPE => Some(Self::Radius),
             DIAMETER_TYPE => Some(Self::Diameter),
+            CIRCLE_PARAMETER_TYPE => Some(Self::CircleParameter),
             CIRCLE_CENTER_TYPE => Some(Self::CircleCenter),
             EQUAL_RADIUS_TYPE => Some(Self::EqualRadius),
             EQUAL_LENGTH_TYPE => Some(Self::EqualLength),
@@ -1507,6 +1518,11 @@ fn parse_constraint(
             entity: cursor.reference("diameter constraint entity reference")?,
             values: cursor.u32_array::<4>("diameter constraint values")?,
         },
+        SketchConstraintTag::CircleParameter => PmDcSketchConstraintKind::CircleParameter {
+            state: cursor.u32("circle parameter state")?,
+            entity: cursor.reference("circle parameter entity reference")?,
+            values: cursor.u32_array::<4>("circle parameter values")?,
+        },
         SketchConstraintTag::CircleCenter => PmDcSketchConstraintKind::CircleCenter {
             entity: cursor.reference("circle-center constraint entity reference")?,
             center: cursor.reference("circle-center constraint center reference")?,
@@ -1743,6 +1759,7 @@ pub(crate) fn project(
             .then_some(*key)
         })
         .collect::<HashSet<_>>();
+    let circle_parameter_keys = circle_parameter::admitted_keys(inventory);
     let text_keys = inventory
         .text_members
         .iter()
@@ -2054,6 +2071,7 @@ pub(crate) fn project(
                     .is_some_and(|source| curve::is_non_geometric(source))
                 || native_lines.contains(&key)
                 || native_constraint_keys.contains(&key)
+                || circle_parameter_keys.contains(&key)
                 || text_keys.contains(&key)
         })
     });
@@ -2644,6 +2662,7 @@ fn project_constraint(
             )
         }
         PmDcSketchConstraintKind::BlockGroup { .. }
+        | PmDcSketchConstraintKind::CircleParameter { .. }
         | PmDcSketchConstraintKind::PolygonControl { .. }
         | PmDcSketchConstraintKind::PolygonRelation { .. } => return None,
         PmDcSketchConstraintKind::Symmetric {
@@ -5490,6 +5509,7 @@ mod tests {
     mod axis_distance;
     mod box_member;
     mod carrier_conflict;
+    mod circle_parameter;
     mod construction_flags;
     mod degenerate_line;
     mod member_curve;
