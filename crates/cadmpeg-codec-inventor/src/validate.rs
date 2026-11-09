@@ -4032,7 +4032,8 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
             parameter,
             ..
         } => references.extend([first.index(), second.index(), parameter.index()]),
-        PmDcSketchConstraintKind::Radius { entity, .. } => {
+        PmDcSketchConstraintKind::Radius { entity, .. }
+        | PmDcSketchConstraintKind::CircleParameter { entity, .. } => {
             references.push(entity.index());
         }
         PmDcSketchConstraintKind::Diameter {
