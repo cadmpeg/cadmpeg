@@ -6,6 +6,7 @@ use crate::native::CatiaNative;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiTarget};
+use cadmpeg_ir::Exactness;
 
 const VALUE_TOLERANCE: f64 = 1.0e-12;
 const CATALOG: &[&str] = &[
@@ -732,6 +733,31 @@ fn characteristic_domain_is_scoped_and_does_not_use_instance_names() {
 }
 
 #[test]
+fn every_characteristic_row_of_the_tolerance_table_is_admitted() {
+    use GeometricToleranceKind::{
+        Angularity, Flatness, Parallelism, Perpendicularity, Position, SurfaceProfile,
+    };
+    for (kind, value, expected) in [
+        ("CATTPSToleranceWithDRF", 0, Angularity),
+        ("CATTPSToleranceWithDRF", 3, Perpendicularity),
+        ("CATTPSToleranceWithDRF", 6, Parallelism),
+        ("CATTPSToleranceWithDRF", 9, Position),
+        ("CATTPSToleranceWithDRF", 11, Position),
+        ("CATTPSToleranceWithDRF", 12, Position),
+        ("CATTPSToleranceWithDRF", 21, SurfaceProfile),
+        ("CATTPSToleranceWithDRF", 22, SurfaceProfile),
+        ("CATTPSToleranceWithoutDRF", 6, Flatness),
+        ("CATTPSToleranceWithoutDRF", 16, SurfaceProfile),
+    ] {
+        assert_eq!(
+            characteristic(kind, value),
+            Some(expected),
+            "{kind} {value}"
+        );
+    }
+}
+
+#[test]
 fn no_tolerance_does_not_allocate_under_zero_resource_limits() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -996,6 +1022,17 @@ fn admitted_8193_trailer_and_unsupported_trailer_are_distinct() {
 }
 
 #[test]
+fn every_admitted_magnitude_trailer_transfers_the_tolerance() {
+    for trailer in [0x92, 0x93, 0x9b, 0xdb] {
+        let (_, stats) = decode(&fixture(Options {
+            trailer,
+            ..Options::default()
+        }));
+        assert_eq!(stats.main_tolerances, 1, "trailer 81 {trailer:02x}");
+    }
+}
+
+#[test]
 fn source_closed_length_tolerances_decode_one_and_zero_control_values() {
     for (literal, expected) in [(0xe7, 1.0), (0xe8, 0.0)] {
         let (ir, stats) = decode(&fixture(Options {
@@ -1015,6 +1052,49 @@ fn source_closed_length_tolerances_decode_one_and_zero_control_values() {
             })
             .expect("control-valued magnitude");
         assert!((magnitude - expected).abs() < VALUE_TOLERANCE);
+    }
+}
+
+#[test]
+fn control_valued_magnitudes_are_derived_and_binary64_magnitudes_are_byte_exact() {
+    for (literal, expected) in [
+        (None, Exactness::ByteExact),
+        (Some(0xe7), Exactness::Derived),
+        (Some(0xe8), Exactness::Derived),
+    ] {
+        let bytes = fixture(Options {
+            main_literal: literal,
+            ..Options::default()
+        });
+        let native = CatiaNative::decode_with_record_ranges(&bytes, &[]);
+        let mut ir = CadIr::empty();
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::test_support::with_service_context(|ctx| {
+            transfer(
+                ctx,
+                View::over_retained(&bytes),
+                &mut ir,
+                &mut annotations,
+                &native,
+                &ModelingGraphScope::Unscoped,
+            )
+            .expect("source-bound PMI")
+        });
+        let tolerance = ir
+            .model
+            .pmi
+            .iter()
+            .find(|p| matches!(p.definition, PmiDefinition::GeometricTolerance { .. }))
+            .expect("geometric tolerance");
+        let annotations = annotations.build();
+        let note = annotations
+            .exactness()
+            .get(tolerance.id.as_str())
+            .expect("tolerance exactness");
+        assert_eq!(
+            note.fields().get("definition.magnitude").copied(),
+            Some(expected)
+        );
     }
 }
 

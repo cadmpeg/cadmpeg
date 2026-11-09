@@ -481,7 +481,9 @@ impl<'a> Graph<'a, '_> {
         (classes == 1).then_some(entity)
     }
 
-    fn magnitude(&self, id: u32, owner: u32, role: &str) -> Option<PmiMagnitude> {
+    /// A `LENGTH` magnitude and the exactness of its encoding: a stored
+    /// binary64 is byte-exact, and an `E7` or `E8` control is derived.
+    fn magnitude(&self, id: u32, owner: u32, role: &str) -> Option<(PmiMagnitude, Exactness)> {
         let entity = self.parameter(id, owner, role)?;
         let CatiaEntityRecordBody::Nested {
             definition_prefix,
@@ -504,16 +506,19 @@ impl<'a> Graph<'a, '_> {
         if schema(&mut suffix)? != kind {
             return None;
         }
-        let value = match suffix.u8()? {
-            0xe6 => suffix.f64_le()?,
-            0xe7 => 1.0,
-            0xe8 => 0.0,
+        let (value, exactness) = match suffix.u8()? {
+            0xe6 => (suffix.f64_le()?, Exactness::ByteExact),
+            0xe7 => (1.0, Exactness::Derived),
+            0xe8 => (0.0, Exactness::Derived),
             _ => return None,
         };
         if !matches!(suffix.unread(), [0x81, 0x92 | 0x93 | 0x9b | 0xdb]) {
             return None;
         }
-        PmiMagnitude::new(PmiValue::new(value, PmiQuantity::Length)?)
+        Some((
+            PmiMagnitude::new(PmiValue::new(value, PmiQuantity::Length)?)?,
+            exactness,
+        ))
     }
 
     fn tabulation(&self, id: u32, owner: u32, role: &str) -> Option<()> {
@@ -758,6 +763,7 @@ pub(super) fn identifier(offset: u64, role: &str, count: usize) -> Result<PmiId,
 struct Staged {
     annotation: PmiAnnotation,
     offset: u64,
+    magnitude_exactness: Exactness,
 }
 
 struct Prepared<'a> {
@@ -780,6 +786,7 @@ impl Prepared<'_> {
         ctx: &DecodeContext<'_>,
         annotation: PmiAnnotation,
         offset: u64,
+        magnitude_exactness: Exactness,
         stats: &mut Transfer,
     ) -> Result<Option<bool>, CodecError> {
         let staged = self.records[..self.used]
@@ -816,7 +823,11 @@ impl Prepared<'_> {
             }
             self.records = records;
         }
-        self.records[self.used] = Some(Staged { annotation, offset });
+        self.records[self.used] = Some(Staged {
+            annotation,
+            offset,
+            magnitude_exactness,
+        });
         self.used += 1;
         stats.annotations += 1;
         Ok(Some(true))
@@ -868,6 +879,7 @@ fn emit_frame(
                 },
             },
             datum.entity.byte_offset,
+            Exactness::ByteExact,
             stats,
         )?;
         let Some(admitted) = admitted else {
@@ -901,6 +913,7 @@ fn emit_frame(
                 },
             },
             frame.entity.byte_offset,
+            Exactness::ByteExact,
             stats,
         )?
         .is_none()
@@ -914,7 +927,7 @@ struct Tolerance<'a> {
     entity: &'a CatiaEntityRecord,
     target_owner: &'a CatiaEntityRecord,
     kind: GeometricToleranceKind,
-    magnitude: PmiMagnitude,
+    magnitude: (PmiMagnitude, Exactness),
     frame: Option<(&'a Frame<'a>, usize)>,
     datum_system_unresolved: bool,
 }
@@ -955,7 +968,7 @@ fn emit_tolerance(
             targets,
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: tolerance.kind,
-                magnitude: tolerance.magnitude,
+                magnitude: tolerance.magnitude.0,
                 defined_unit: None,
                 defined_area_unit: None,
                 defined_area_second_unit: None,
@@ -965,6 +978,7 @@ fn emit_tolerance(
             },
         },
         tolerance.entity.byte_offset,
+        tolerance.magnitude.1,
         stats,
     )?;
     let Some(emitted) = emitted else {
@@ -1090,7 +1104,12 @@ fn commit(
             Exactness::Derived,
         )?;
         for (field, exactness) in exact_fields(&annotation) {
-            annotations.field_exactness(&annotation.id, *field, *exactness)?;
+            let exactness = if *field == "definition.magnitude" {
+                record.magnitude_exactness
+            } else {
+                *exactness
+            };
+            annotations.field_exactness(&annotation.id, *field, exactness)?;
         }
         ir.model.pmi.push(annotation);
     }

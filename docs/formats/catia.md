@@ -1606,6 +1606,36 @@ The payload prefix can bind this suffix to a source-schema ordinal in either of 
 
 The following `7C02` schema catalog stores UTF-8 strings. A nonzero first byte is the inclusive one-byte-header-plus-string length. A zero first byte selects a following `u32le` string-byte length after the five-byte header. It either immediately follows the `7C08` graph or follows the graph's intervening `7C0B` value block. Preserve the graph's exact catalog link and the catalog's framing offset. String values may contain line feeds and non-ASCII unit symbols. For a head class slot whose value is in range, retain the associated catalog entry identity and string value on the field record. An out-of-range value remains unresolved. The second head slot in compact lead-`12` and lead-`52` forms is not universally a catalog selector. A resolved catalog lookup does not change the separate entity namespace of an inline incidence.
 
+#### 7.3.1 Geometric tolerance records
+
+A tolerance-family entity has an inline body `03 <schema0> <schema1> EA <entity_id:u32le> <declarations>`. Schemas use the compact form `34..FF`, which selects ordinal `byte − 0x34`, or the fixed form `32 <ordinal+1:u32le>`. The catalog entry of `schema1` is the entity type: `CATTPSToleranceWithDRF`, `CATTPSToleranceWithoutDRF`, `CATTPSReferenceFrame`, `CATTPSDatum`, or `CATMmrTTRS`.
+
+The entity's paired object record has the inline field body `10 <identity> <field_count:identity> <field>{field_count}`. A field is `<schema0> <schema1> <references> <parameters> <roles:u8>`. Each group is `<0x81+count:u8>` followed by `count` items. An item is `FE` for a null slot, `E5 <length:u32le> <bytes[length]> 81` for an opaque slot, or one identity. `roles` is `0`, `2`, `4`, or `6`; bit `2` admits a nonempty reference group and bit `4` admits a nonempty parameter group. The field count equals the number of fields, and one schema pair names at most one field. The named fields are `TolBloc`/`CATTPSToleranceData`, `TolWiDRF`/`CATTPSToleranceWiDRFData`, `FrameBloc`/`CATTPSFrameData`, `LabelBloc`/`CATTPSCkeData`, and `TTRSBloc`/`CATTPSTTRSData`.
+
+The entity's declarations hold one scalar declaration for a selected field: `<schema0> <schema1> <0x81+n> <identity>{n} 81 81 <0x81+a> <identity>{a} 81 81 <02|12> D5 00 82 82 <key>`, where the schema pair equals the field's pair and `key` is `81` for no key or `80 <key:u32le>`. The declaration ends the body or precedes the schema pair of the next field. A body with zero or several such declarations for one field has no declaration.
+
+A `TolBloc` declaration has five scalars. Its first scalar and the entity type give the characteristic:
+
+| Entity type | First scalar | Characteristic |
+| --- | --- | --- |
+| `CATTPSToleranceWithDRF` | `0` | angularity |
+| `CATTPSToleranceWithDRF` | `3` | perpendicularity |
+| `CATTPSToleranceWithDRF` | `6` | parallelism |
+| `CATTPSToleranceWithDRF` | `9`, `11`, `12` | position |
+| `CATTPSToleranceWithDRF` | `21`, `22` | surface profile |
+| `CATTPSToleranceWithoutDRF` | `6` | flatness |
+| `CATTPSToleranceWithoutDRF` | `16` | surface profile |
+
+The `TolBloc` parameter group holds a `TolNumValue` magnitude and a `TolTabValue` tabulation. A parameter entity has lead `2`, a definition prefix of two lead bytes (`00`/`10` then `00`, `04`, `08`, or `0C`; or `01 04`; or `08 08`) and two selectors that name the value type (`LENGTH` for a magnitude, `String` for a tabulation or label) and the role, and a paired object frame `14 01 <class:compact> <owner:identity> 7C 0A 07 00 00 00 FE` whose owner is the tolerance entity. Its definition suffix ends with `03 <class:compact>` exactly once. When the declaration stores a key, the magnitude's definition suffix holds `80 <key:u32le> 80 <u32le> 81` or `80 <key:u32le> 80 <u32le> 80 <u32le>` immediately before that ending, exactly once.
+
+A magnitude record suffix is `<atom>{3} <schema=LENGTH> <value> 81 <trailer>`, with `trailer` in `92`, `93`, `9B`, and `DB`. `E6 <bits:u64le>` is a finite length in millimetres. An unset magnitude, `E7`, is `1` mm, and the control `E8` is `0` mm. A tabulation has the value payload `FE` and the suffix `<atom>{3} <schema=String> <37 | 32 <entry:u32le>> 81 <trailer>`.
+
+A `TolWiDRF` field selects the datum frame with a one-item reference group naming a `CATTPSReferenceFrame` entity. The frame's `FrameBloc` references are distinct `CATTPSDatum` entities in precedence order, and its parameter group is empty. Its declaration has one scalar fewer than the datum count. Scalar `i` relates datums `i` and `i+1`: `1` starts the next precedence and `2` places both in one common compartment. Each datum's `LabelBloc` has one parameter, a `Label` `String` entity whose suffix is `84 93 82 <schema=String> <label-entry> 81 <trailer>`. The label is the nonblank catalog entry.
+
+A `TolWiDRF` declaration has four scalars. Scalar `1` is the number of leading frame datums that a secondary tolerance uses; `0` leaves the secondary values inactive. The `TolWiDRF` parameter group holds a `RefTolNumValue` magnitude and a `RefTolTabValue` tabulation with the productions above, and the secondary takes the characteristic of its owner.
+
+A `TTRSBloc` field references the `CATMmrTTRS` roots of a tolerance or datum. Each root is a source shape aspect. Open item DI-28 records its face and edge relation.
+
 ### 7.4 `7C0B` visualization value blocks
 
 ```text
