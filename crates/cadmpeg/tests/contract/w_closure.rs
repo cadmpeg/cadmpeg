@@ -152,6 +152,24 @@ fn camera_frame_orientation(value: &serde_json::Value) -> serde_json::Value {
     serde_json::json!([x / length, y / length, z / length, angle])
 }
 
+/// The SolidWorks display-list auxiliary descriptors hold four-byte lists
+/// and one byte list; an item size takes the largest of them it reaches.
+fn auxiliary_item_size(value: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!(if value.as_u64().is_some_and(|size| size >= 4) {
+        4
+    } else {
+        1
+    })
+}
+
+/// The unit direction of an `{x, y, z}` vector.
+fn unit_direction(value: &serde_json::Value) -> serde_json::Value {
+    let component = |key| value.get(key).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+    let (x, y, z) = (component("x"), component("y"), component("z"));
+    let length = (x * x + y * y + z * z).sqrt();
+    serde_json::json!({"x": x / length, "y": y / length, "z": z / length})
+}
+
 /// §5.1(c) over the fixtures of one writer's format, in path order.
 fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Vec<String> {
     let encoder = cadmpeg_registry::build_encoder(output);
@@ -159,13 +177,50 @@ fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Ve
     let mut covered = std::collections::BTreeSet::new();
     let mut findings = Vec::new();
     let reduced = if output == Format::Sldprt {
-        vec![ReducedProbe {
-            path: "model.tessellations[].channels[].flags",
-            storage: ReducedStorage::Normalized {
-                loss: "sldprt/writer.fields-omitted",
+        vec![
+            ReducedProbe {
+                path: "model.tessellations[].channels[].flags",
+                storage: ReducedStorage::Normalized {
+                    loss: "sldprt/writer.fields-omitted",
+                },
+                normalize: Some(|_| serde_json::json!(2)),
             },
-            normalize: Some(|_| serde_json::json!(2)),
-        }]
+            ReducedProbe {
+                path: "model.tessellations[].channels[].item_size",
+                storage: ReducedStorage::Normalized {
+                    loss: "sldprt/writer.fields-omitted",
+                },
+                normalize: Some(auxiliary_item_size),
+            },
+            ReducedProbe {
+                path: "model.tessellations[].channels[].kind",
+                storage: ReducedStorage::Normalized {
+                    loss: "sldprt/writer.fields-omitted",
+                },
+                normalize: Some(|_| serde_json::json!(8)),
+            },
+            ReducedProbe {
+                path: "model.configurations[].active",
+                storage: ReducedStorage::Normalized {
+                    loss: "sldprt/writer.design-reduced",
+                },
+                normalize: Some(|_| serde_json::json!(true)),
+            },
+            ReducedProbe {
+                path: "model.sketches[].placement.frame.normal.{}",
+                storage: ReducedStorage::Normalized {
+                    loss: "sldprt/writer.fields-omitted",
+                },
+                normalize: Some(unit_direction),
+            },
+            ReducedProbe {
+                path: "model.sketches[].placement.frame.u_axis.{}",
+                storage: ReducedStorage::Normalized {
+                    loss: "sldprt/writer.fields-omitted",
+                },
+                normalize: Some(unit_direction),
+            },
+        ]
     } else if output == Format::Rhino {
         vec![
             ReducedProbe {

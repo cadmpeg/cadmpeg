@@ -80,6 +80,7 @@ impl Document {
                 return Err(format!("duplicate record identity {}", record.id));
             }
         }
+        unreferenced_nested_identities(&mut records);
         Ok(Self { records, ids })
     }
 
@@ -517,5 +518,56 @@ pub(super) fn colours(
             return (left, right);
         }
         previous = next;
+    }
+}
+
+/// Value an unreferenced nested identity compares as.
+const NESTED_IDENTITY: &str = "nested-identity";
+
+/// A writer chooses identities (#209 principle). A nested object's `id` that
+/// nothing else in the document names is an identity with no referent, so
+/// both sides compare it as one placeholder; a nested identity some value
+/// names keeps its text, and the references to it stay comparable.
+fn unreferenced_nested_identities(records: &mut [Record]) {
+    fn count(value: &Value, counts: &mut BTreeMap<String, usize>) {
+        match value {
+            Value::String(text) => *counts.entry(text.clone()).or_default() += 1,
+            Value::Array(values) => values.iter().for_each(|value| count(value, counts)),
+            Value::Object(fields) => {
+                for (key, value) in fields {
+                    *counts.entry(key.clone()).or_default() += 1;
+                    count(value, counts);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn blank(value: &mut Value, counts: &BTreeMap<String, usize>, nested: bool) {
+        match value {
+            Value::Array(values) => values
+                .iter_mut()
+                .for_each(|value| blank(value, counts, true)),
+            Value::Object(fields) => {
+                if nested {
+                    if let Some(Value::String(id)) = fields.get_mut("id") {
+                        if counts.get(id.as_str()) == Some(&1) {
+                            *id = NESTED_IDENTITY.to_owned();
+                        }
+                    }
+                }
+                for value in fields.values_mut() {
+                    blank(value, counts, true);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut counts = BTreeMap::new();
+    for record in records.iter() {
+        *counts.entry(record.id.clone()).or_default() += 1;
+        count(&record.value, &mut counts);
+    }
+    for record in records.iter_mut() {
+        blank(&mut record.value, &counts, false);
     }
 }

@@ -78,14 +78,39 @@ pub(super) fn reduce(
             + mesh.triangle_groups().len()
             + mesh.texture_assignments().len()
             + usize::from(mesh.source_object.is_some());
+        let auxiliary_start =
+            usize::from(matches!(mesh.channels(), [strips, positions, normals, ..]
+                if (strips.item_size(), strips.kind()) == (4, 8)
+                    && (positions.item_size(), positions.kind()) == (12, 100)
+                    && (normals.item_size(), normals.kind()) == (12, 100)))
+                * 3;
+        let mut normalized = Vec::new();
         let channels = mesh
             .channels()
             .iter()
-            .map(|channel| {
+            .enumerate()
+            .map(|(index, channel)| {
+                let fixed = index
+                    .checked_sub(auxiliary_start)
+                    .and_then(|position| crate::tessellation::AUXILIARY_DESCRIPTORS.get(position))
+                    .filter(|(item_size, _)| {
+                        usize::try_from(*item_size)
+                            .is_ok_and(|size| channel.data().len() % size == 0)
+                    });
+                let (item_size, kind) =
+                    fixed.map_or((channel.item_size(), channel.kind()), |fixed| *fixed);
+                for (field, from, to) in [
+                    ("item_size", channel.item_size(), item_size),
+                    ("kind", channel.kind(), kind),
+                ] {
+                    if from != to {
+                        normalized.push((index, field, from, to));
+                    }
+                }
                 TessellationChannel::new(
                     channel.addressing().clone(),
-                    channel.item_size(),
-                    channel.kind(),
+                    item_size,
+                    kind,
                     2,
                     channel.data().to_vec(),
                 )
@@ -94,12 +119,6 @@ pub(super) fn reduce(
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid tessellation channel: {error}"))
             })?;
-        let auxiliary_start =
-            usize::from(matches!(mesh.channels(), [strips, positions, normals, ..]
-                if (strips.item_size(), strips.kind()) == (4, 8)
-                    && (positions.item_size(), positions.kind()) == (12, 100)
-                    && (normals.item_size(), normals.kind()) == (12, 100)))
-                * 3;
         let strip_lengths = mesh
             .strip_lengths()
             .iter()
@@ -132,6 +151,12 @@ pub(super) fn reduce(
                                 mesh.id, channel.flags()
                             )));
                         }
+                    }
+                    for (index, field, from, to) in &normalized {
+                        losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                            "tessellation {} channel {index}: model.tessellations[].channels[].{field} normalized from {from} to {to}",
+                            mesh.id
+                        )));
                     }
                 }
                 let omitted = if keep_channels {
