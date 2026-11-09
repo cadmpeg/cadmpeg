@@ -260,6 +260,11 @@ pub(super) fn write_with_limits(
         }
     }
     let smbh = encode_smbh(target, &native, &attributes, limits, &output_ctx)?;
+    for (body, declared, derived) in preconditions::body_kind_mismatches(&target.model) {
+        residual_losses.push(crate::loss::F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+            "body {body} kind {declared:?} is not encoded; its written topology reads back as {derived:?}"
+        )));
+    }
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);

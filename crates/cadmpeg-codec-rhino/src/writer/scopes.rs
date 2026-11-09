@@ -194,13 +194,16 @@ fn drop_dangling_owner<T>(
 /// would otherwise drop it silently when no object claims it.
 /// The curves a procedural surface construction references; the solved
 /// carrier that replaces the construction holds none of them.
-fn construction_curves(model: &cadmpeg_ir::document::Model, construction: &str) -> Vec<String> {
+pub(super) fn construction_curves(
+    model: &cadmpeg_ir::document::Model,
+    construction: &str,
+) -> Vec<String> {
     fn strings(value: &serde_json::Value, out: &mut Vec<String>) {
         match value {
             serde_json::Value::String(text) => out.push(text.clone()),
             serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
             serde_json::Value::Object(fields) => {
-                fields.values().for_each(|item| strings(item, out))
+                fields.values().for_each(|item| strings(item, out));
             }
             _ => {}
         }
@@ -462,12 +465,27 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), sup
             .filter(|entity| shells.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scoped.model.faces = model
+        let member_order = scoped
+            .model
+            .shells
+            .iter()
+            .flat_map(cadmpeg_ir::topology::Shell::faces)
+            .enumerate()
+            .map(|(position, id)| (id.as_str(), position))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut scoped_faces = model
             .faces
             .iter()
             .filter(|entity| faces.contains(entity.id.as_str()))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
+        scoped_faces.sort_by_key(|face| {
+            member_order
+                .get(face.id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX)
+        });
+        scoped.model.faces = scoped_faces;
         scoped.model.loops = model
             .loops
             .iter()

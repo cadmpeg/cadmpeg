@@ -20,8 +20,8 @@ pub(super) struct UnownedCurves<'a, 'ir> {
 /// Writes each curve that no written entity has consumed, in identity order,
 /// and returns the identities of `ignored` curves skipped. A physically
 /// dependent curve that no written entity consumes has no written parent: it
-/// writes last, as standalone geometry when no other writer can write it, and
-/// is otherwise withheld with a loss.
+/// writes last, with its source status under a group parent, when no other
+/// writer can write it, and is otherwise withheld with a loss.
 pub(super) fn append(
     request: UnownedCurves<'_, '_>,
     entities: &mut Vec<Entity>,
@@ -102,7 +102,7 @@ pub(super) fn append(
         } else if !ownership.writes_standalone(curve.id.as_str()) {
             ownership::report_unowned_support(output.losses, curve.id.as_str());
         } else {
-            output.append(curve, ownership::without_physical_dependence(status))?;
+            output.append(curve, status)?;
         }
     }
     Ok(ignored_curves)

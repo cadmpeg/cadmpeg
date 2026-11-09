@@ -234,17 +234,6 @@ impl<'ir> SourceOwnership<'ir> {
         }
     }
 
-    /// The status of `surface`. A physically dependent surface that no
-    /// exported face uses writes as standalone geometry.
-    pub(super) fn surface_status(&self, surface: &Surface) -> EntityStatus {
-        let status = self.status(surface.source_object.as_ref());
-        if self.is_unowned_support(surface) {
-            without_physical_dependence(status)
-        } else {
-            status
-        }
-    }
-
     /// Whether `surface` is physically dependent in the source and no exported
     /// face uses it.
     pub(super) fn is_unowned_support(&self, surface: &Surface) -> bool {
@@ -307,19 +296,6 @@ pub(super) fn wrapped_surface_status(surface: &Surface, status: EntityStatus) ->
         status
     } else {
         EntityStatus::PhysicallyDependent
-    }
-}
-
-/// `status` without physical dependence, for a carrier whose source parent is
-/// not written.
-pub(super) const fn without_physical_dependence(status: EntityStatus) -> EntityStatus {
-    match status {
-        EntityStatus::PhysicallyDependent
-        | EntityStatus::PhysicallyDependentEdgeList
-        | EntityStatus::ParameterCurve => EntityStatus::Independent,
-        EntityStatus::BothDependent => EntityStatus::LogicallyDependent,
-        EntityStatus::AnnotationDependent => EntityStatus::Annotation,
-        status => status,
     }
 }
 

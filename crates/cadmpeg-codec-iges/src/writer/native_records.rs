@@ -313,7 +313,10 @@ fn count(fields: &Map<String, Value>, name: &str, length: usize) -> Result<Strin
     }
     Ok(length.to_string())
 }
-pub(super) fn attach_unowned_directions(entities: &mut Vec<Entity>) -> Result<(), CodecError> {
+/// Gives each physically dependent entity that no written entity references a
+/// Type 402 Form 7 group parent: a dependent entity is valid only under a
+/// parent (IGES 5.3 §2.2.4.4.9), and the group adds no geometry.
+pub(super) fn attach_unowned_dependents(entities: &mut Vec<Entity>) -> Result<(), CodecError> {
     let mut referenced = BTreeSet::new();
     for record in entities.iter() {
         map_parameter_references(&record.parameter_body, |index| {
@@ -322,21 +325,27 @@ pub(super) fn attach_unowned_directions(entities: &mut Vec<Entity>) -> Result<()
         })?;
         referenced.extend(record.association_links.iter().copied());
         referenced.extend(record.property_links.iter().copied());
+        referenced.extend(record.structure);
+        referenced.extend(record.transform_link);
+        if let Some(super::DirectoryLineFont::Definition(index)) = record.line_font {
+            referenced.insert(index);
+        }
     }
-    let directions = entities
+    let dependents = entities
         .iter()
         .enumerate()
         .filter(|(index, record)| {
-            record.type_code == 123
-                && record.status.is_physically_dependent()
-                && !referenced.contains(index)
+            record.status.is_physically_dependent() && !referenced.contains(index)
         })
         .map(|(index, _)| reference_marker(index))
         .collect::<Vec<_>>();
-    if !directions.is_empty() {
-        let mut parameters = vec![directions.len().to_string()];
-        parameters.extend(directions);
-        entities.push(entity(402, 7, parameters));
+    if !dependents.is_empty() {
+        let mut parameters = vec![dependents.len().to_string()];
+        parameters.extend(dependents);
+        let mut group = entity(402, 7, parameters);
+        // A group has no geometry to display.
+        group.status = EntityStatus::Blanked;
+        entities.push(group);
     }
     Ok(())
 }
