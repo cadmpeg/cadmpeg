@@ -720,7 +720,7 @@ fn covering_edge_note(at: &str, shared: &[SharedEdge]) -> LossNote {
         .collect::<Vec<_>>()
         .join(", ");
     F3dLossCode::HistoricalFilletEdgeCovering.note(format!(
-        "{at} is the shared edge whose span between its end points covers the blend's axial extent. The blend's supports share {} edges along its axis. The reading assumes that the rounded edge is this edge and that the blend consumes the other shared edges that the transition deletes. Shared edges in slot order: {status}.",
+        "{at} is inferred from the blend geometry, because the blend's supports share {} edges along its axis. The reading assumes the following about the rounded edge. It is the one shared edge whose span between its end points covers the blend's axial extent within 1e-6 mm at each end. Its interior sample point lies farther than the radius from the axis line. The transition deletes it. The reading also assumes that the blend consumes the other shared edges that the transition deletes. Shared edges in slot order: {status}.",
         shared.len()
     ))
 }

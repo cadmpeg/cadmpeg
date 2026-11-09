@@ -417,7 +417,7 @@ fn a_covering_blend_edge_binds_with_a_note_that_names_the_shared_edges() {
     );
     assert_eq!(
         notes[0].message,
-        "Fillet group 0 of feature f3d:test:feature#42: the edge at slot 17 of history state 1 is the shared edge whose span between its end points covers the blend's axial extent. The blend's supports share 2 edges along its axis. The reading assumes that the rounded edge is this edge and that the blend consumes the other shared edges that the transition deletes. Shared edges in slot order: slot 17 (deleted, covers the extent, selected), slot 18 (deleted)."
+        "Fillet group 0 of feature f3d:test:feature#42: the edge at slot 17 of history state 1 is inferred from the blend geometry, because the blend's supports share 2 edges along its axis. The reading assumes the following about the rounded edge. It is the one shared edge whose span between its end points covers the blend's axial extent within 1e-6 mm at each end. Its interior sample point lies farther than the radius from the axis line. The transition deletes it. The reading also assumes that the blend consumes the other shared edges that the transition deletes. Shared edges in slot order: slot 17 (deleted, covers the extent, selected), slot 18 (deleted)."
     );
     let (_, notes) = bind(native(), &[17, 19]);
     assert!(
