@@ -377,9 +377,32 @@ fn sketch_geometry_group_validates_the_complete_member_sequence() {
             "{partial} zero byte(s) removed"
         );
     }
+    for extra in [1, 4] {
+        let mut invalid = bytes.clone();
+        invalid.splice(97..97, std::iter::repeat_n(0, extra));
+        assert!(
+            parse_sketch_geometry_group(&invalid).is_none(),
+            "{} zero bytes",
+            4 + extra
+        );
+    }
     let mut short_extended = missing_zeros.clone();
     short_extended.push(0);
     assert!(parse_sketch_geometry_group(&short_extended).is_none());
+    for selector in [2, 0xff] {
+        let mut long = bytes.clone();
+        long[97] = selector;
+        assert!(
+            parse_sketch_geometry_group(&long).is_none(),
+            "long tail selector {selector}"
+        );
+        let mut short = missing_zeros.clone();
+        short[97] = selector;
+        assert!(
+            parse_sketch_geometry_group(&short).is_none(),
+            "short tail selector {selector}"
+        );
+    }
     let mut empty_short = geometry_group(&[], OWNER);
     empty_short.drain(75..79);
     assert_eq!(empty_short.len(), 86);
