@@ -171,10 +171,9 @@ pub(crate) fn transfer_neutral(
         let drawing_view = drawing_ids.contains_key(record.object.as_str());
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
-            if !schema.owns_dedicated(name)
-                && !(drawing_view
-                    && crate::drawing::DRAWING_PROPERTY_NAMES.contains(&name.as_str()))
-            {
+            let drawing_owned =
+                drawing_view && crate::drawing::DRAWING_PROPERTY_NAMES.contains(&name.as_str());
+            if !schema.owns_dedicated(name) && !drawing_owned {
                 parameters.insert(name.to_owned(), value.to_owned());
             }
         }
