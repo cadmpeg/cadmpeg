@@ -245,8 +245,9 @@ struct Scope<'s, 'a, 'm> {
     joins: &'s Joins,
     parameters: &'s HashMap<u32, f64>,
     selections: &'s Selections,
-    /// The tolerance feature whose label lists each annotation owner.
-    features: &'s HashMap<u32, u32>,
+    /// The tolerance feature whose label lists each annotation owner, or
+    /// `None` when the labels of two tolerance features list the owner.
+    features: &'s HashMap<u32, Option<u32>>,
     names: &'s BodyNames<'m>,
 }
 
@@ -396,7 +397,14 @@ fn project_segment(
             continue;
         }
         for participant in &label.participants {
-            features.insert(*participant, label.owner);
+            features
+                .entry(*participant)
+                .and_modify(|feature: &mut Option<u32>| {
+                    if *feature != Some(label.owner) {
+                        *feature = None;
+                    }
+                })
+                .or_insert(Some(label.owner));
         }
     }
     let scope = Scope {
@@ -626,8 +634,10 @@ fn owner_targets(
     let mut intent_outcome = Outcome::default();
     let found = targets(scope, intents, &mut intent_outcome);
     if found.is_empty() {
-        if let Some(feature) = scope.features.get(&owner) {
-            return feature_faces(ctx, scope, *feature, 0, outcome);
+        match scope.features.get(&owner) {
+            Some(Some(feature)) => return feature_faces(ctx, scope, *feature, 0, outcome),
+            Some(None) => outcome.unresolved_targets += 1,
+            None => {}
         }
     }
     outcome.unresolved_targets += intent_outcome.unresolved_targets;
@@ -646,6 +656,7 @@ fn feature_faces(
     let Some(parsed) = segment
         .record(feature, TOLERANCE_FEATURE)
         .and_then(|payload| tolerance_feature(ctx, segment, payload).ok())
+        .filter(|parsed| (parsed.attachments == 0) == (depth > 0))
     else {
         outcome.malformed += 1;
         return Vec::new();

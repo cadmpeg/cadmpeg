@@ -72,6 +72,11 @@ impl FaceSelector {
         self.key
     }
 
+    /// The `topology` word.
+    pub(crate) const fn topology(&self) -> u32 {
+        self.body_source
+    }
+
     pub(crate) const fn body(&self) -> PmDcReference {
         self.body
     }

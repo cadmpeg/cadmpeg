@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 use crate::layout::{
     pm_dc_751ade_label_owner_body_v25 as diameter_v25,
     pm_dc_751ade_label_owner_body_v28 as diameter_v28, pm_dc_annotation_value_block as value_block,
+    pm_dc_content_header as content_header_v25, pm_dc_content_header_v28 as content_header_v28,
     pm_dc_frame_row_v25 as row_v25, pm_dc_frame_row_v28 as row_v28,
     pm_dc_hole_note_flags as hole_flags, pm_dc_naming_table_header as table_header,
 };
@@ -146,10 +147,18 @@ impl<'a> Segment<'a> {
     /// The byte length of a state content header in this segment.
     pub(super) const fn state_header_len(&self) -> usize {
         if self.version >= 28 {
-            26
+            content_header_v28::LEN
         } else {
-            22
+            content_header_v25::LEN
         }
+    }
+
+    /// The content-header source index of a record.
+    pub(super) fn source_index(&self, ordinal: u32) -> Option<u32> {
+        let payload = self.records.get(&ordinal)?.payload;
+        state_content_header(&mut Cursor::new(payload), self.version)
+            .ok()
+            .map(|header| header.source_index)
     }
 }
 
@@ -650,8 +659,12 @@ pub(super) fn frame_row(segment: &Segment<'_>, payload: View<'_>) -> Result<Fram
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct ToleranceFeature {
     pub(super) members: Vec<u32>,
+    pub(super) attachments: usize,
     pub(super) face_collection: Option<u32>,
 }
+
+/// Header flags of a tolerance feature.
+const TOLERANCE_FEATURE_FLAGS: u32 = 0x200;
 
 pub(super) fn tolerance_feature(
     ctx: &DecodeContext<'_>,
@@ -659,9 +672,27 @@ pub(super) fn tolerance_feature(
     payload: View<'_>,
 ) -> Result<ToleranceFeature, CodecError> {
     let mut cursor = Cursor::new(payload);
-    header(&mut cursor, segment.version)?;
+    let content = header(&mut cursor, segment.version)?;
+    if content.flags != TOLERANCE_FEATURE_FLAGS {
+        return Err(CodecError::malformed(
+            "Inventor tolerance-feature flags differ",
+        ));
+    }
+    expect_type(
+        segment,
+        content.next,
+        &[crate::feature::FEATURE_LABEL_TYPE],
+        "tolerance-feature label",
+    )?;
+    expect_type(
+        segment,
+        content.context,
+        &[crate::design::scope::PARAMETER_TABLE_TYPE],
+        "tolerance-feature parameter table",
+    )?;
     let list = crate::pmdc::reference_list(&mut cursor, 2, "tolerance-feature members")?;
     let mut members = Vec::new();
+    let mut attachments = 0usize;
     for reference in list.references() {
         let member = expect_type(
             segment,
@@ -671,6 +702,8 @@ pub(super) fn tolerance_feature(
         )?;
         if segment.target_type(*reference) == Some(TOLERANCE_FEATURE) {
             members.push(member);
+        } else {
+            attachments += 1;
         }
     }
     cursor.u32_array::<2>("tolerance-feature values")?;
@@ -688,6 +721,7 @@ pub(super) fn tolerance_feature(
     cursor.finish("tolerance feature")?;
     Ok(ToleranceFeature {
         members,
+        attachments,
         face_collection,
     })
 }
@@ -765,7 +799,12 @@ pub(super) fn face_selector(
         &ANNOTATION_STATES,
     )?
     .ok_or_else(|| CodecError::malformed("Inventor face selector is outside its grammar"))?;
-    expect_type(segment, parsed.body(), &[BODY], "selector body")?;
+    let body = expect_type(segment, parsed.body(), &[BODY], "selector body")?;
+    if segment.source_index(body) != Some(parsed.topology()) {
+        return Err(CodecError::malformed(
+            "Inventor face selector topology differs from its body source index",
+        ));
+    }
     Ok(Selector {
         face: true,
         source: parsed.source_index(),
@@ -797,9 +836,12 @@ pub(super) fn edge_selector(
             "Inventor edge selector prefix differs",
         ));
     };
-    expect_type(segment, body, &[BODY], "selector body")?;
+    let body = expect_type(segment, body, &[BODY], "selector body")?;
     let topology = cursor.u32("selector topology")?;
-    if cursor.u32("selector qualifier")? != 0 || cursor.u32("selector naming form")? != topology {
+    if cursor.u32("selector qualifier")? != 0
+        || cursor.u32("selector naming form")? != topology
+        || segment.source_index(body) != Some(topology)
+    {
         return Err(CodecError::malformed(
             "Inventor edge selector naming words differ",
         ));

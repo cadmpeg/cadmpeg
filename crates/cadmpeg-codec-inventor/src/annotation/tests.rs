@@ -11,10 +11,11 @@ use cadmpeg_ir::pmi::{
 use super::names::HOLE_NAME;
 use super::names::{edge_name, generated_name, AttributeName, BodyNames, EntityKind, NameFamily};
 use super::records::{
-    frame_row, naming_table, trailing_reference, Record, Segment, Value, BODY, DATUM_FEATURE,
-    DATUM_FRAME, DATUM_OWNER, DIAMETER_LAYOUT, DIAMETER_OWNER, EDGE_ITEM, FACE_SELECTOR,
-    FRAME_OWNER, FRAME_ROW, GEOMETRY, GEOMETRY_LINK, HOLE_NOTE_OWNER, HOLE_VALUE, INTENT,
-    LINEAR_OWNER, NAMING_TABLE, PARAMETER, PLANE, SIZE_RELATION, STYLE, VALUE,
+    edge_selector, frame_row, naming_table, tolerance_feature, trailing_reference, Record, Segment,
+    Value, ATTACHMENT, BODY, DATUM_DEFINITION, DATUM_FEATURE, DATUM_FRAME, DATUM_OWNER,
+    DIAMETER_LAYOUT, DIAMETER_OWNER, EDGE_ITEM, FACE_SELECTOR, FEATURE_FACE_SELECTOR, FRAME_OWNER,
+    FRAME_ROW, GEOMETRY, GEOMETRY_LINK, HOLE_NOTE_OWNER, HOLE_VALUE, INTENT, LINEAR_OWNER,
+    NAMING_TABLE, PARAMETER, PLANE, SIZE_RELATION, STYLE, TOLERANCE_FEATURE, VALUE,
 };
 use super::{fit, losses, project_segment, tolerance, Label, Outcome, Selections};
 use crate::loss::InventorLossCode;
@@ -318,7 +319,7 @@ impl Fixture {
                 NAMING_TABLE,
                 naming_table_record(&[(KEY, NAME_AT), (SECOND_KEY, SECOND_NAME_AT)]),
             )
-            .put(BODY_AT, BODY, Vec::new())
+            .put(BODY_AT, BODY, state_header(77))
             .put(NAME_AT, HOLE_NAME, hole_name(&[(945, -1)], 1, 7))
             .put(SECOND_NAME_AT, HOLE_NAME, hole_name(&[(818, -1)], 1, 7));
         fixture.parameters.insert(NOMINAL_AT, 3.5);
@@ -367,21 +368,29 @@ fn body_names<'m>() -> BodyNames<'m> {
 }
 
 fn run(fixture: &Fixture, owner: u32) -> (Vec<PmiAnnotation>, Outcome) {
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    let segment = fixture.segment();
     let labels = [Label {
         owner,
         name: Some("Dimension".to_owned()),
         participants: Vec::new(),
     }];
+    run_with(fixture, &labels, &Selections::default())
+}
+
+fn run_with(
+    fixture: &Fixture,
+    labels: &[Label],
+    selections: &Selections,
+) -> (Vec<PmiAnnotation>, Outcome) {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let segment = fixture.segment();
     let mut outcome = Outcome::default();
     let annotations = project_segment(
         &ctx,
         &segment,
-        &labels,
-        (&fixture.parameters, &Selections::default()),
+        labels,
+        (&fixture.parameters, selections),
         &body_names(),
         &mut outcome,
     )
@@ -1013,4 +1022,367 @@ fn every_loss_variant_has_its_note() {
         assert_eq!(notes.len(), 1, "{code:?}");
         assert_eq!(notes[0].code.local_code(), code.code());
     }
+}
+
+#[test]
+fn face_selector_topology_must_match_its_body_source_index() {
+    let mut fixture = Fixture::dimension(6, 0, 0.015, -0.015);
+    fixture.put(BODY_AT, BODY, state_header(78));
+    let (annotations, outcome) = run(&fixture, OWNER_AT);
+    assert!(annotations[0].targets.is_empty());
+    assert!(has_note(&outcome, InventorLossCode::PmiTargetUnresolved));
+    assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+}
+
+/// An edge selector in the edge-naming grammar of section 13 that names
+/// topology `77` of the body.
+fn edge_selector_record() -> Vec<u8> {
+    let mut bytes = state_header(3811);
+    push_i32(&mut bytes, -1);
+    bytes.push(1);
+    bytes.push(5);
+    push_u32(&mut bytes, qref(BODY_AT));
+    push_u32(&mut bytes, 77);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 77);
+    for _ in 0..2 {
+        push_u16(&mut bytes, 8);
+        push_u16(&mut bytes, 0x3000);
+        push_u32(&mut bytes, 0);
+    }
+    bytes.push(0);
+    push_u32(&mut bytes, qref(ITEM_AT));
+    push_u32(&mut bytes, qref(TABLE_AT));
+    push_u32(&mut bytes, KEY);
+    bytes.push(0);
+    bytes
+}
+
+#[test]
+fn edge_selector_topology_must_match_its_body_source_index() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let payload = edge_selector_record();
+    let mut fixture = Fixture::dimension(6, 0, 0.015, -0.015);
+    let selector = edge_selector(&ctx, &fixture.segment(), View::over_retained(&payload))
+        .expect("edge selector");
+    assert_eq!(
+        (selector.source, selector.item, selector.key),
+        (3811, ITEM_AT, KEY)
+    );
+    fixture.put(BODY_AT, BODY, state_header(78));
+    assert!(edge_selector(&ctx, &fixture.segment(), View::over_retained(&payload)).is_err());
+}
+
+const FEATURE_AT: u32 = 50;
+const FEATURE_LABEL_AT: u32 = 51;
+const PARAMETER_TABLE_AT: u32 = 52;
+const ATTACHMENT_AT: u32 = 53;
+const COLLECTION_AT: u32 = 54;
+const FACE_ITEM_AT: u32 = 55;
+const FEATURE_SELECTOR_AT: u32 = 56;
+const MEMBER_AT: u32 = 57;
+const SECOND_FEATURE_AT: u32 = 58;
+const DEFINITION_AT: u32 = 59;
+const SECOND_ATTACHMENT_AT: u32 = 60;
+const FEATURE_SOURCE: u32 = 4000;
+
+/// The fields of a tolerance feature of section 13.11.
+#[derive(Clone)]
+struct FeatureRecord {
+    flags: u32,
+    next: u32,
+    context: u32,
+    members: Vec<u32>,
+    collection: u32,
+    definition: u32,
+}
+
+impl FeatureRecord {
+    fn new(members: &[u32], collection: Option<u32>) -> Self {
+        Self {
+            flags: 0x200,
+            next: qref(FEATURE_LABEL_AT),
+            context: qref(PARAMETER_TABLE_AT),
+            members: members.iter().map(|member| qref(*member)).collect(),
+            collection: collection.map_or(0, qref),
+            definition: 0,
+        }
+    }
+
+    fn bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 3);
+        push_u16(&mut bytes, 0x1234);
+        push_u32(&mut bytes, self.next);
+        push_u32(&mut bytes, self.flags);
+        push_u32(&mut bytes, self.context);
+        push_u32(&mut bytes, 905);
+        push_i32(&mut bytes, -1);
+        type_2_list(&mut bytes, &self.members);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_text(&mut bytes, "Feature");
+        push_u32(&mut bytes, self.collection);
+        push_u32(&mut bytes, self.definition);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        bytes
+    }
+}
+
+/// A face selector of a tolerance feature whose face item is `FACE_ITEM_AT`.
+fn feature_face_selector() -> Vec<u8> {
+    let mut bytes = face_selector(FEATURE_SOURCE, 2, KEY);
+    let item_at = bytes.len() - 4;
+    bytes[item_at..].copy_from_slice(&qref(FACE_ITEM_AT).to_le_bytes());
+    bytes
+}
+
+/// The frame of `frame_fixture`, the records that a tolerance feature at
+/// `FEATURE_AT` references, and the naming records of its face selector.
+fn feature_fixture(top: &FeatureRecord) -> Fixture {
+    let mut fixture = frame_fixture(9, 0);
+    fixture
+        .put(FEATURE_AT, TOLERANCE_FEATURE, top.bytes())
+        .put(
+            FEATURE_LABEL_AT,
+            crate::feature::FEATURE_LABEL_TYPE,
+            Vec::new(),
+        )
+        .put(
+            PARAMETER_TABLE_AT,
+            crate::design::scope::PARAMETER_TABLE_TYPE,
+            Vec::new(),
+        )
+        .put(ATTACHMENT_AT, ATTACHMENT, Vec::new())
+        .put(
+            COLLECTION_AT,
+            crate::feature::FACE_COLLECTION_TYPE,
+            Vec::new(),
+        )
+        .put(FACE_ITEM_AT, crate::feature::FACE_ITEM_TYPE, Vec::new())
+        .put(
+            FEATURE_SELECTOR_AT,
+            FEATURE_FACE_SELECTOR,
+            feature_face_selector(),
+        )
+        .put(DEFINITION_AT, DATUM_DEFINITION, Vec::new())
+        .put(
+            TABLE_AT,
+            NAMING_TABLE,
+            naming_table_record(&[(KEY, NAME_AT)]),
+        )
+        .put(BODY_AT, BODY, state_header(77))
+        .put(NAME_AT, HOLE_NAME, hole_name(&[(945, -1)], 1, 7));
+    fixture
+}
+
+fn feature_selections() -> Selections {
+    Selections {
+        collections: HashMap::from([(COLLECTION_AT, vec![FACE_ITEM_AT])]),
+        face_items: HashMap::from([(FACE_ITEM_AT, vec![FEATURE_SOURCE])]),
+    }
+}
+
+/// The frame label and one label per tolerance feature that lists the frame
+/// owner as a participant.
+fn feature_labels(features: &[u32]) -> Vec<Label> {
+    let mut labels = vec![Label {
+        owner: FRAME_OWNER_AT,
+        name: Some("Frame".to_owned()),
+        participants: Vec::new(),
+    }];
+    for feature in features {
+        labels.push(Label {
+            owner: *feature,
+            name: Some("Feature".to_owned()),
+            participants: vec![FRAME_OWNER_AT],
+        });
+    }
+    labels
+}
+
+/// The targets of the frame and the outcome of projecting `fixture` with
+/// the labels of `features`.
+fn run_features(fixture: &Fixture, features: &[u32]) -> (Vec<PmiTarget>, Outcome) {
+    let (annotations, outcome) =
+        run_with(fixture, &feature_labels(features), &feature_selections());
+    let targets = annotations
+        .into_iter()
+        .find(|annotation| {
+            matches!(
+                annotation.definition,
+                PmiDefinition::GeometricTolerance { .. }
+            )
+        })
+        .expect("geometric tolerance")
+        .targets;
+    (targets, outcome)
+}
+
+fn face_target() -> PmiTarget {
+    PmiTarget::Face {
+        face: cadmpeg_ir::ids::FaceId::mint(FACE).expect("face id"),
+    }
+}
+
+/// The outcome of a frame whose single tolerance feature targets `FACE`.
+fn resolved_feature_outcome() -> Outcome {
+    let fixture = feature_fixture(&FeatureRecord::new(&[ATTACHMENT_AT], Some(COLLECTION_AT)));
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
+    assert_eq!(targets, [face_target()]);
+    outcome
+}
+
+#[test]
+fn tolerance_feature_faces_target_an_owner_without_intent_targets() {
+    let outcome = resolved_feature_outcome();
+    assert_eq!(outcome.malformed, 0);
+}
+
+#[test]
+fn member_tolerance_feature_faces_target_the_owner() {
+    let mut fixture = feature_fixture(&FeatureRecord::new(&[ATTACHMENT_AT, MEMBER_AT], None));
+    fixture.put(
+        MEMBER_AT,
+        TOLERANCE_FEATURE,
+        FeatureRecord::new(&[], Some(COLLECTION_AT)).bytes(),
+    );
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
+    assert_eq!(targets, [face_target()]);
+    assert_eq!(outcome.malformed, 0);
+}
+
+#[test]
+fn top_tolerance_feature_without_attachments_gives_no_target() {
+    let fixture = feature_fixture(&FeatureRecord::new(&[], Some(COLLECTION_AT)));
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
+    assert!(targets.is_empty());
+    assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+}
+
+#[test]
+fn top_tolerance_feature_with_two_attachments_targets_its_faces() {
+    let mut fixture = feature_fixture(&FeatureRecord::new(
+        &[ATTACHMENT_AT, SECOND_ATTACHMENT_AT],
+        Some(COLLECTION_AT),
+    ));
+    fixture.put(SECOND_ATTACHMENT_AT, ATTACHMENT, Vec::new());
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
+    assert_eq!(targets, [face_target()]);
+    assert_eq!(outcome.malformed, 0);
+}
+
+#[test]
+fn member_tolerance_feature_with_an_attachment_gives_no_target() {
+    let mut fixture = feature_fixture(&FeatureRecord::new(&[ATTACHMENT_AT, MEMBER_AT], None));
+    fixture.put(
+        MEMBER_AT,
+        TOLERANCE_FEATURE,
+        FeatureRecord::new(&[ATTACHMENT_AT], Some(COLLECTION_AT)).bytes(),
+    );
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
+    assert!(targets.is_empty());
+    assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+}
+
+#[test]
+fn owner_listed_by_two_tolerance_features_gives_no_target() {
+    let top = FeatureRecord::new(&[ATTACHMENT_AT], Some(COLLECTION_AT));
+    let mut fixture = feature_fixture(&top);
+    fixture.put(SECOND_FEATURE_AT, TOLERANCE_FEATURE, top.bytes());
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT, SECOND_FEATURE_AT]);
+    assert!(targets.is_empty());
+    assert_eq!(
+        outcome.unresolved_targets,
+        resolved_feature_outcome().unresolved_targets + 1
+    );
+    assert!(has_note(&outcome, InventorLossCode::PmiTargetUnresolved));
+}
+
+#[test]
+fn tolerance_feature_refuses_each_departure_from_its_grammar() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let base = FeatureRecord {
+        definition: qref(DEFINITION_AT),
+        ..FeatureRecord::new(&[ATTACHMENT_AT, MEMBER_AT], Some(COLLECTION_AT))
+    };
+    let mut fixture = feature_fixture(&base);
+    fixture.put(
+        MEMBER_AT,
+        TOLERANCE_FEATURE,
+        FeatureRecord::new(&[], None).bytes(),
+    );
+    let segment = fixture.segment();
+    let parse = |bytes: &[u8]| tolerance_feature(&ctx, &segment, View::over_retained(bytes));
+    let parsed = parse(&base.bytes()).expect("tolerance feature");
+    assert_eq!(parsed.members, [MEMBER_AT]);
+    assert_eq!(parsed.attachments, 1);
+    assert_eq!(parsed.face_collection, Some(COLLECTION_AT));
+    let departures = [
+        (
+            "flags",
+            FeatureRecord {
+                flags: 0x201,
+                ..base.clone()
+            },
+        ),
+        (
+            "next type",
+            FeatureRecord {
+                next: qref(PARAMETER_TABLE_AT),
+                ..base.clone()
+            },
+        ),
+        (
+            "next unqualified",
+            FeatureRecord {
+                next: FEATURE_LABEL_AT + 1,
+                ..base.clone()
+            },
+        ),
+        (
+            "context type",
+            FeatureRecord {
+                context: qref(FEATURE_LABEL_AT),
+                ..base.clone()
+            },
+        ),
+        (
+            "member type",
+            FeatureRecord {
+                members: vec![qref(COLLECTION_AT)],
+                ..base.clone()
+            },
+        ),
+        (
+            "collection type",
+            FeatureRecord {
+                collection: qref(FACE_ITEM_AT),
+                ..base.clone()
+            },
+        ),
+        (
+            "definition type",
+            FeatureRecord {
+                definition: qref(COLLECTION_AT),
+                ..base.clone()
+            },
+        ),
+    ];
+    for (departure, record) in departures {
+        assert!(parse(&record.bytes()).is_err(), "{departure}");
+    }
+    let bytes = base.bytes();
+    assert!(
+        parse(&bytes[..bytes.len() - 1]).is_err(),
+        "truncated controls"
+    );
+    let mut trailing = bytes.clone();
+    trailing.push(0);
+    assert!(parse(&trailing).is_err(), "trailing bytes");
 }

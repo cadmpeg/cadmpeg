@@ -59,13 +59,13 @@ Offsets start after the versioned state content header in segment major version 
 
 ## `pm_dc_cf2b17_state`
 
-Spec §13 · layout: byte offsets · size: 4 B
+Spec §13.11 · layout: byte offsets · size: 4 B
 
 Offset starts after the versioned state content header in segment major versions 25 and 28.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `state` | `i32` | little | spec | `state:i32 = -1` and a sequence of u32 values · value `-1` |
+| 0 | 4 | `state` | `i32` | little | spec | tolerance state i32 = -1 · value `-1` |
 
 ## `pm_dc_c6b25a_body`
 

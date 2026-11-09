@@ -609,8 +609,6 @@ references u32[5]
 
 The first reference is null or selects type `1f96e5bede4c9ce1cfa35a9bdfda0947`. The work-plane reference selects type `42df52ced011d0d20008ccbc0663dc09`. The five references select types `303e4a7fd211d65e6000b3856c2387b0`, `1f02e78b324548a6bd6d4c90711db6d0`, `b431796169449384e3ad409bdebf7e05`, and `ae38b999d211c35b6000b3856c2387b0` twice, in order. Each non-null reference is qualified. The record ends after the references.
 
-In PmDc segment major versions 25 and 28, type `cf2b17de9c46a894e06459a70546aa94` has a state content header with flags `0x200`. Its `next` reference selects a feature label and its context selects a parameter table. The header is followed by `state:i32 = -1` and a sequence of u32 values.
-
 In PmDc segment major versions 25 and 28, type `c6b25a40954bd1c3e7ca9ca365917af4` has a state content header with a null `next` reference and a context that selects a parameter table. Its body after the header contains:
 
 ```text
@@ -1449,10 +1447,11 @@ members type-2 list        version 28
 
 The record ends after the last field.
 
-A tolerance feature of type `cf2b17de9c46a894e06459a70546aa94` has the annotation header. Its body contains:
+In PmDc segment major versions 25 and 28, a tolerance feature of type `cf2b17de9c46a894e06459a70546aa94` has a state content header with flags `0x200`. Its `next` reference is a qualified reference to a feature label, and its context is a qualified reference to a parameter table. Its body contains:
 
 ```text
-members type-2 list        member tolerance features and one attachment record
+tolerance state i32 = -1
+members type-2 list        member tolerance features and attachment records
 values u32[2]
 identifier counted UTF-16LE
 face_collection reference  null or f1b2bc24d01121dd0008d0bc0663dc09
@@ -1460,7 +1459,7 @@ definition reference       null or 7a8f42a5…
 controls u32[2]
 ```
 
-A member is a tolerance feature or the attachment record of type `1f96e5bede4c9ce1cfa35a9bdfda0947`. A frame or datum owner without a resolved intent takes the faces of the tolerance feature whose label lists the owner as a participant. Those faces are the faces of the face items of its face collection, together with those of its member tolerance features. A face item lists face naming selectors by `source_index` (section 13). An item gives the face that each of its listed selectors selects. An item with a malformed listed selector is an unresolved item.
+A member is a tolerance feature or an attachment record of type `1f96e5bede4c9ce1cfa35a9bdfda0947`. A member tolerance feature lists zero attachment records. A tolerance feature that no tolerance feature lists as a member lists one or more attachment records. A participant that the labels of two tolerance features list is an unresolved owner. A frame or datum owner without a resolved intent takes the faces of the tolerance feature whose label lists the owner as a participant. Those faces are the faces of the face items of its face collection, together with those of its member tolerance features. A face item lists face naming selectors by `source_index` (section 13). An item gives the face that each of its listed selectors selects. An item with a malformed listed selector is an unresolved item.
 
 A relation joins an intent to selection items. A relation has the annotation header, `link:u32 = 0`, the intent reference, and further references. The relation types are `3c31133b474a986bd1ea9ba730c7e57c`, `c4f81a38294bd8ee18e90eb91df9b376`, and `8e92d96f62489db9a2b24da66e312298`. Its further references to records of type `6a71439ed211a50f600084b7b035c3b0` or to work axes (`896cf08ed1113c0460007cb801f31bb0`, section 13) are its selection items, in order. A geometry link of type `9711327c5a4b08dd9a4421b65200c25e` has the annotation header and three references: stored geometry (`a4260cf13b48840aa3af85aaadaff65d`), a work plane, and a selection item. It ends the record. It joins the selection item to the stored geometry that a face selector names.
 

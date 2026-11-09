@@ -176,7 +176,7 @@ pub(crate) const WORK_AXIS_TYPE: [u8; 16] = [
 ];
 /// Revolve extent value of a full revolution.
 const REVOLVE_EXTENT_FULL: u16 = 3;
-const FEATURE_LABEL_TYPE: [u8; 16] = [
+pub(crate) const FEATURE_LABEL_TYPE: [u8; 16] = [
     0x2b, 0xa4, 0x48, 0x2b, 0xd2, 0x11, 0x58, 0x64, 0x60, 0x00, 0x74, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
 ];
 

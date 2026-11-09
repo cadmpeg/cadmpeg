@@ -202,8 +202,8 @@ anchor = "references u32[5]"
 [[record]]
 name = "pm_dc_cf2b17_state"
 kind = "byte"
-section = "13"
-anchor = "type `cf2b17de9c46a894e06459a70546aa94` has a state content header"
+section = "13.11"
+anchor = "a tolerance feature of type `cf2b17de9c46a894e06459a70546aa94` has a state content header"
 size = 4
 note = "Offset starts after the versioned state content header in segment major versions 25 and 28."
 
@@ -212,7 +212,7 @@ name = "state"
 offset = 0
 type = "i32"
 source = "spec"
-anchor = "`state:i32 = -1` and a sequence of u32 values"
+anchor = "tolerance state i32 = -1"
 value = -1
 
 [[record]]
