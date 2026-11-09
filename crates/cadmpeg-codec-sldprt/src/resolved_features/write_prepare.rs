@@ -2702,7 +2702,8 @@ mod source_less_lane_tests {
         let error: cadmpeg_ir::codec::write::EncodeError =
             append_coordinate_marker_link(&mut payload, 1, 4)
                 .expect_err("expected error")
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field, limit: 2, value: 3

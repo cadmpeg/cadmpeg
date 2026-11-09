@@ -215,7 +215,7 @@ fn native_validation_rejects_orphan_history_records() {
 }
 
 #[test]
-fn native_validation_rejects_edited_relation_binding() {
+fn native_validation_omits_edited_relation_binding() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
@@ -256,32 +256,19 @@ fn native_validation_rejects_edited_relation_binding() {
     .any(|finding| finding
         .message
         .contains("inconsistent relation class or scalar")));
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("expected rejection"),
-    };
-    assert!(
-        message.contains("inconsistent relation class or scalar"),
-        "{message}"
-    );
+    let record = decoded
+        .ir()
+        .native
+        .namespace("sldprt")
+        .expect("SLDPRT namespace")
+        .arenas()["feature_input_relation_bindings"][0]
+        .id()
+        .to_owned();
+    crate::test_support::assert_written_naming(decoded.ir(), decoded.source_fidelity(), &record);
 }
 
 #[test]
-fn native_validation_rejects_edited_relation_instance() {
+fn native_validation_omits_edited_relation_instance() {
     let mut source = sldprt_with_compact_relation_pair(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -309,28 +296,15 @@ fn native_validation_rejects_edited_relation_instance() {
             .message
             .contains("relation instances do not match the native payload")
     }));
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("expected rejection"),
-    };
-    assert!(
-        message.contains("relation instances do not match the native payload"),
-        "{message}"
-    );
+    let record = decoded
+        .ir()
+        .native
+        .namespace("sldprt")
+        .expect("SLDPRT namespace")
+        .arenas()["feature_input_lanes"][0]
+        .id()
+        .to_owned();
+    crate::test_support::assert_written_naming(decoded.ir(), decoded.source_fidelity(), &record);
 }
 
 #[test]

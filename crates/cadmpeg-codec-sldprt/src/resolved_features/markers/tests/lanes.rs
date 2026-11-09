@@ -118,7 +118,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
 }
 
 #[test]
-fn semantic_writer_rejects_edited_sketch_marker_local_id() {
+fn semantic_writer_omits_edited_sketch_marker_local_id() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -139,32 +139,19 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     .iter()
     .any(|finding| finding.message.contains("local object id does not match")));
 
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("expected rejection"),
-    };
-    assert!(
-        message.contains("local object id does not match"),
-        "{message}"
-    );
+    let record = decoded
+        .ir()
+        .native
+        .namespace("sldprt")
+        .expect("SLDPRT namespace")
+        .arenas()["feature_input_lanes"][0]
+        .id()
+        .to_owned();
+    crate::test_support::assert_written_naming(decoded.ir(), decoded.source_fidelity(), &record);
 }
 
 #[test]
-fn semantic_writer_rejects_edited_sketch_marker_object_index() {
+fn semantic_writer_omits_edited_sketch_marker_object_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -185,29 +172,19 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     .iter()
     .any(|finding| finding.message.contains("object index does not match")));
 
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("expected rejection"),
-    };
-    assert!(message.contains("object index does not match"), "{message}");
+    let record = decoded
+        .ir()
+        .native
+        .namespace("sldprt")
+        .expect("SLDPRT namespace")
+        .arenas()["feature_input_lanes"][0]
+        .id()
+        .to_owned();
+    crate::test_support::assert_written_naming(decoded.ir(), decoded.source_fidelity(), &record);
 }
 
 #[test]
-fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
+fn semantic_writer_omits_incomplete_sketch_marker_lanes() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
@@ -223,26 +200,13 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     });
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
 
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("expected rejection"),
-    };
-    assert!(
-        message.contains("expects entity ordinal 1, found 2"),
-        "{message}"
-    );
+    let record = decoded
+        .ir()
+        .native
+        .namespace("sldprt")
+        .expect("SLDPRT namespace")
+        .arenas()["feature_input_lanes"][0]
+        .id()
+        .to_owned();
+    crate::test_support::assert_written_naming(decoded.ir(), decoded.source_fidelity(), &record);
 }
