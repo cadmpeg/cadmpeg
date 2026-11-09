@@ -2154,6 +2154,9 @@ pub(crate) struct ProjectionIndex<'a> {
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
+    /// Surface-body wrappers that a new-body solid extrusion stores as its
+    /// result.
+    solid_wrappers: HashSet<(&'a str, u32)>,
     profiles: profile::ProfileIndex<'a>,
     /// Profile sketch ordinal of each sheet-metal plate, from the face label
     /// whose participants are that sketch and that plate.
@@ -2363,6 +2366,7 @@ pub(crate) fn project(
             links
         },
         work_planes: unique_work_planes,
+        solid_wrappers: HashSet::new(),
         profiles: profile::ProfileIndex::new(
             profile_bodies,
             &inventory.kernel_entity_links,
@@ -2398,6 +2402,18 @@ pub(crate) fn project(
                 .copied()
         })
     };
+    index.solid_wrappers = extrusion::solid_result_wrappers(
+        &inventory.features,
+        |feature| {
+            label_of(feature.identity.record_ordinal).is_some_and(|label| {
+                matches!(
+                    FeatureFamily::from_class_id(label.class_id()),
+                    Some(FeatureFamily::Extrusion)
+                )
+            })
+        },
+        &index.properties,
+    );
     let mut projected = Vec::new();
     let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
@@ -3323,9 +3339,9 @@ fn project_extrusion(
     Some(Ok((feature, result)))
 }
 
-/// Slots of a surface extrusion that hold no operand. Slot 14 holds a surface
-/// body whose role is open; slot 26 is the solid result collection.
-const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 7] = [8, 9, 10, 12, 14, 17, 26];
+/// Slots of a surface extrusion that hold no operand. Slot 14 is null or
+/// selects the solid body wrapper; slot 26 is the solid result collection.
+const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 6] = [8, 9, 10, 12, 17, 26];
 
 /// The profile of a surface extrusion: the native selection of the boundary
 /// patch, or the native patch record when no neutral sketch exists.
@@ -3340,6 +3356,7 @@ fn surface_extrusion_profile(
         || SURFACE_EXTRUSION_NULL_SLOTS
             .iter()
             .any(|slot| slots[*slot].index() != 0)
+        || !extrusion::surface_input_is_solid(source, index)
     {
         return None;
     }
@@ -5400,6 +5417,7 @@ pub(crate) mod tests {
                 })
                 .collect(),
             work_planes: std::collections::HashMap::new(),
+            solid_wrappers: std::collections::HashSet::new(),
             profiles: super::profile::ProfileIndex::new(&[], &[], entity_style_links, &[], &[]),
             plate_sketches: std::collections::HashMap::new(),
         }

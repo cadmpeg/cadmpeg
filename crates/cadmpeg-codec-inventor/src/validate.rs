@@ -1832,6 +1832,8 @@ fn validate_features(
         }));
     let extrusion_index = crate::feature::extrusion::ValidationIndex::new(
         &crate::feature::extrusion::ValidationRecords {
+            features: &data.pm_dc_features,
+            labels: &data.pm_dc_feature_labels,
             properties: &data.pm_dc_feature_properties,
             parameters: &data.pm_dc_parameters,
             sketches: &data.pm_dc_sketches,
