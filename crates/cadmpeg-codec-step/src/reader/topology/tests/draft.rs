@@ -768,3 +768,29 @@ fn shared_surface_carrier_is_staged_once() {
 
     assert_eq!(built.draft.model().surfaces.len(), 1);
 }
+
+/// The trimmed arcs start at a vertex that inverts to a circle parameter
+/// just below the trim start. The vertex lies within tolerance of the trim
+/// end, so each arc coedge keeps its pcurve.
+#[test]
+fn a_vertex_just_outside_an_arc_trim_keeps_the_arc_pcurve() {
+    let decoded = crate::StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp13_trim_end_inversion.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode trim-end inversion witness");
+
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PcurveLocusDiscontinuous.kind()));
+    assert_eq!(decoded.ir().model.coedges.len(), 4);
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.len() == 1));
+}

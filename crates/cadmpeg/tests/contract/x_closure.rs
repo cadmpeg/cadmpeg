@@ -302,6 +302,22 @@ fn step_observe() -> StepObserved {
         EdgeCarrierVariant::Curve,
         EdgeCarrierVariant::Bounded,
     ]));
+    carried.unheld = std::collections::BTreeSet::from([
+        cadmpeg_test_support::carried::UnheldClass::EllipticalCone,
+        cadmpeg_test_support::carried::UnheldClass::TranslucentLineBinding,
+        cadmpeg_test_support::carried::UnheldClass::MultiRegionSolid,
+        cadmpeg_test_support::carried::UnheldClass::DistinctProductNames,
+        cadmpeg_test_support::carried::UnheldClass::MultiPcurveCoedge,
+        cadmpeg_test_support::carried::UnheldClass::ConstructionBesideSolvedCurve,
+        cadmpeg_test_support::carried::UnheldClass::RangeOffVertices,
+        cadmpeg_test_support::carried::UnheldClass::PcurveOnSeveralSurfaces,
+        cadmpeg_test_support::carried::UnheldClass::PcurveOffItsEdge,
+        cadmpeg_test_support::carried::UnheldClass::OpenRing,
+        cadmpeg_test_support::carried::UnheldClass::CurvelessEdgePcurve,
+        cadmpeg_test_support::carried::UnheldClass::DocumentIdentityReference,
+        cadmpeg_test_support::carried::UnheldClass::ColourlessAppearance,
+        cadmpeg_test_support::carried::UnheldClass::UnplacedPresentation,
+    ]);
     StepObserved {
         carried,
         fixed_paths,
@@ -652,6 +668,7 @@ fn observe_f3d() -> ObservedF3d {
                 "model.bodies[].color.a" | "model.faces[].color.a" => {
                     Some(|_| serde_json::Value::from(1.0))
                 }
+                "model.features[].needs_recompute" => Some(|_| serde_json::Value::from(false)),
                 _ => None,
             },
         })

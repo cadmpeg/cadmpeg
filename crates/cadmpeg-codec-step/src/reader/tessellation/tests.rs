@@ -1073,3 +1073,23 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
             && finding.entity.as_deref() == Some("step:data:surface#79")
     }));
 }
+
+#[test]
+fn a_tessellated_point_set_decodes_as_a_mesh_of_its_points() {
+    let decoded = decode_inline(
+        "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(2.,0.,0.)));
+#2=TESSELLATED_POINT_SET('',#1,(3,1));",
+    );
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#2")
+        .expect("point-set tessellation");
+    assert!(mesh.triangles().is_empty());
+    let points = mesh.vertices();
+    assert_eq!(points.len(), 2);
+    assert_point3_close(points[0].get(), Point3::new(2.0, 0.0, 0.0));
+    assert_point3_close(points[1].get(), Point3::new(0.0, 0.0, 0.0));
+}

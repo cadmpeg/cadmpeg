@@ -247,7 +247,9 @@ fn a_closed_edge_spans_one_period_of_a_periodic_carrier() {
     let at = |value: f64| FiniteReal::new(value).expect("finite parameter");
     let range = edge_parameter_range(&circle, at(1.0), at(1.0), true).expect("one period");
     assert!((range[0] - 1.0).abs() < 1.0e-12 && (range[1] - (1.0 + tau)).abs() < 1.0e-12);
-    assert_eq!(edge_parameter_range(&circle, at(1.0), at(1.0), false), None);
+    let coincident =
+        edge_parameter_range(&circle, at(1.0), at(1.0), false).expect("distinct coincident ends");
+    assert!((coincident[0] - 1.0).abs() < 1.0e-12 && (coincident[1] - (1.0 + tau)).abs() < 1.0e-12);
     let arc = edge_parameter_range(&circle, at(1.0), at(2.0), true).expect("an arc");
     assert!((arc[0] - 1.0).abs() < 1.0e-12 && (arc[1] - 2.0).abs() < 1.0e-12);
     let line = SolvedCurveGeometry::Line(

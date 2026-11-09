@@ -561,7 +561,7 @@ pub fn edit_findings(
                 let outcome = redecode(&bytes).and_then(|after| {
                     let propagated = propagated_native(&expected, namespace, record);
                     Allowances::export(&expected, &report_json).and_then(|mut allowances| {
-                        allowances.permit_removed(propagated);
+                        allowances.permit_propagated(propagated);
                         crate::comparison::agree(&expected, &after.ir, &allowances, Mode::Same)
                     })
                 });
