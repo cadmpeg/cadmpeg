@@ -483,7 +483,6 @@ pub(super) fn write(
         .collect();
     let contradicted =
         super::drawings::contradicted_measurements(ir, &native_properties, &retained, &mut losses);
-    native_properties.retain(|property| !contradicted.contains(&property.id));
     let mut property_order: Vec<&PropertyRecord> = native_properties.iter().collect();
     property_order.sort_by_key(|property| {
         (
@@ -495,6 +494,24 @@ pub(super) fn write(
         )
     });
     for property in property_order {
+        // A contradicted measurement cache is written empty, so the
+        // re-decode measures no value.
+        if contradicted.contains(&property.id) {
+            if let Some(object) = names
+                .get(&property.owner)
+                .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
+            {
+                object.set(
+                    &property.name,
+                    xml::property(
+                        &property.name,
+                        &property.type_name,
+                        "<ShapeList count=\"0\"></ShapeList>",
+                    ),
+                );
+            }
+            continue;
+        }
         if crate::attributes::projection_held(ir)
             && !crate::attributes::consumed(ir, property, &native_objects)
             && crate::attributes::values(property).is_some()
@@ -1916,6 +1933,14 @@ pub(super) fn write(
         &entries,
         &mut native_dispositions,
     )?;
+    for id in &contradicted {
+        super::dispositions::record(
+            &mut native_dispositions,
+            "properties",
+            id,
+            cadmpeg_ir::codec::write::NativeDisposition::Regenerated,
+        );
+    }
     topology_join.record_emitted(ctx, &objects, &entries, &mut native_dispositions)?;
     for id in duplicate_entries {
         super::dispositions::record(

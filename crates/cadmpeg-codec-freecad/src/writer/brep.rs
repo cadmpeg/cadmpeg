@@ -1009,7 +1009,17 @@ fn serialize_geometry_inner(
             .model
             .coedges
             .iter()
-            .filter(|coedge| coedge.edge == edge.id)
+            .filter(|coedge| {
+                coedge.edge == edge.id
+                    && coedges.contains(coedge.id.as_str())
+                    && ir
+                        .model
+                        .loops
+                        .iter()
+                        .find(|wire| wire.id == coedge.owner_loop)
+                        .and_then(|wire| ir.model.faces.iter().find(|face| face.id == wire.face))
+                        .is_some_and(|face| surface_ids.contains_key(face.surface.as_str()))
+            })
             .collect();
         if ring
             .iter()
@@ -1062,11 +1072,12 @@ fn serialize_geometry_inner(
                         let derived = composite_line_range(ir, edge, curve)
                             .filter(|derived| range.is_none_or(|stored| stored == *derived));
                         if range.is_none() && derived.is_some() {
-                            losses
-                                .push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
                                 "edge {} is stored with the parameter range of its composite curve",
                                 edge.id
-                            )));
+                            ),
+                            ));
                         }
                         derived
                     } else {
