@@ -888,3 +888,45 @@ fn a_composite_member_link_join_does_not_count_as_a_second_wrapper() {
     project(&mut model, &joins, &inventory);
     assert_eq!(names(&model), [Some("Feature 3")]);
 }
+
+#[test]
+fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_without_them() {
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let plane_normal = FeatureDirection3::from(
+        cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
+            .expect("unit normal"),
+    );
+    let source = FeatureDefinition::Operation(FeatureOperation::Pattern {
+        seeds: vec![PatternSeed::Bodies(
+            BodySelection::local(vec!["target".into(), "tool".into()], "group".into())
+                .expect("local selection"),
+        )],
+        pattern: PatternKind::new(PatternTransform::Mirror {
+            plane_origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("origin"),
+            plane_normal,
+        })
+        .expect("mirror"),
+    });
+    let mut actual = source.clone();
+    definition(&mut actual, &joins(), None);
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &actual else {
+        panic!("pattern")
+    };
+    assert_eq!(
+        seeds,
+        &vec![PatternSeed::Bodies(BodySelection::Resolved {
+            bodies: vec![body("body:target"), body("body:tool")]
+                .try_into()
+                .expect("two bodies"),
+            native: "group".into()
+        })]
+    );
+    let mut missing = joins();
+    missing.remove("tool");
+    let mut unresolved = source.clone();
+    definition(&mut unresolved, &missing, None);
+    assert_eq!(unresolved, source);
+}
