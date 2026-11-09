@@ -34,6 +34,35 @@ fn specimen(name: &str) -> DecodeResult {
         .unwrap_or_else(|error| panic!("decode {}: {error}", path.display()))
 }
 
+/// Each presentation's text and the sorted names of the annotations it depicts.
+fn depicted_names(ir: &CadIr) -> Vec<(Option<String>, Vec<String>)> {
+    ir.model
+        .pmi
+        .iter()
+        .filter_map(|annotation| {
+            let PmiDefinition::Presentation {
+                text, semantics, ..
+            } = &annotation.definition
+            else {
+                return None;
+            };
+            let mut names = semantics
+                .iter()
+                .map(|id| {
+                    ir.model
+                        .pmi
+                        .iter()
+                        .find(|semantic| &semantic.id == id)
+                        .and_then(|semantic| semantic.name.clone())
+                        .expect("depicted annotation name")
+                })
+                .collect::<Vec<_>>();
+            names.sort();
+            Some((text.clone(), names))
+        })
+        .collect()
+}
+
 fn assert_dimension(ir: &CadIr, kind: &DimensionKind, nominal: f64, deviation: f64) {
     assert!(
         ir.model.pmi.iter().any(|annotation| {

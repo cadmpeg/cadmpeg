@@ -1525,6 +1525,88 @@ millimetre value in `MaxTolerance`. `PerUnitAreaType` value `0` defines a
 rectangular unit from `PerUnitAreaLength` and `PerUnitAreaWidth`; value `1`
 defines a circular unit from `PerUnitAreaDiameter`.
 
+The bytes before the GDT-analysis part object hold the presentation archive: a
+u32 LE schema version and an MFC `CArchive` serialization (§2.2) of one
+`moSwiftSchema_c` object. The archive head declares `moSwiftSchema_c`,
+`moNodeName_c`, and `moDetailFolder_c` in that order and writes the folder's
+name object, so these classes take map indices 1, 3, and 5, and a name object
+opens with tag `0x8003`. The folder writes its display lists. A display list
+is a u16 LE item count and that many display objects. The first list holds the
+geometric-tolerance displays: its first item declares `moDisplayGtol_c` at map
+index 8, and each later item opens with that class's tag. The u16 LE count of
+the second list ends the last geometric-tolerance display; the second list
+holds the datum-tag displays, and the first item of a non-empty second list
+declares `moDisplayDatumTag_c`.
+
+| Offset | Field                                                         |
+| ------ | ------------------------------------------------------------- |
+| +0     | u16 LE geometric-tolerance display tag `0x8008`               |
+| +2     | u16 LE display word                                           |
+| +4     | u32 LE display body word `6`                                  |
+| +8     | u16 LE compound geometric-tolerance tag `0x800a`              |
+
+A named presentation object carries the named-object header of §2.3. A
+positive semantic `UserAttribute` equals the object identifier of the
+presentation object whose name equals the entity's `ObjectName`.
+
+A `moSwiftFR_c` object references one presentation object. Every
+`moSwiftFR_c` object after the class declaration uses one class tag. One object
+identifier has one timestamp.
+
+| Offset | Field                                            |
+| ------ | ------------------------------------------------ |
+| +0     | u16 LE `moSwiftFR_c` class tag                   |
+| +2     | u32 LE referenced presentation object identifier |
+| +6     | u32 LE reference timestamp                       |
+
+A feature path is a u16 LE count *n* from 1 through 8 and *n* `moSwiftFR_c`
+objects. The first object names the outermost feature, such as a pattern; each
+later object names a member of the feature before it. The feature paths of one
+geometric-tolerance display are suffixes of its longest path. A path object
+identifier selects the semantic feature whose `UserAttribute` equals it, or
+else the one semantic feature whose `ObjectName` equals the presentation
+object's name.
+
+A frame row stores its characteristic as the framed string `<GTOL-name>`:
+`POSI` position, `PERP` perpendicularity, `PARA` parallelism, `ANGULAR`
+angularity, `FLAT` flatness, `STRAIGHT` straightness, `CIRC` roundness, `CYL`
+cylindricity, `SPROF` surface profile, `LPROF` line profile, `CONC`
+concentricity, `SYMMETRY` symmetry, `SRUN` circular runout, and `TRUN` total
+runout. The display's `moGtolData_c` object writes four adjacent framed
+strings: the two between-extent labels, the frame template, which contains
+`<Gtol>`, and the note below the frame. A display depicts the semantic
+geometric-tolerance annotations that directly reference a feature on its
+longest path when their characteristics equal the characteristics of its rows
+as a multiset. A composite surface profile with a lower tier supplies two
+`SPROF` rows, the upper tier first.
+
+The strings after a row's tolerance literal and before the next row or the
+four-string block are its compartments. A compartment string that equals the
+`DatumIdentifier` of a semantic `GdtDatum` names a datum reference; datum
+references take precedence in row order, and a `<MOD-` token after one
+modifies it.
+
+A geometric-tolerance display without a feature path attaches to faces through
+`moFaceRef_c` objects (§2.3). A first hop of class `moSimpleSurfIdRep_c`,
+`moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`,
+`moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`,
+`moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`,
+`moFromSktEnt3IntSurfIdRep_c`, or `moEndFace3IntSurfIdRep_c` names the faces
+whose `FACE_ID_2001` identity (§5) is its `moFR_c` feature identifier, its
+first own u32 as the feature-local face identity, and its remaining own u32
+values as the ordered path fields. Such a display
+depicts the semantic geometric tolerances of its rows' characteristics that
+target a face its references select, when their characteristics equal those
+of its rows as a multiset.
+
+Class map indices rise in declaration order (§2.2). When the archive declares
+as many identity-representation classes as there are class tags that open a
+hop, the sorted tags name those classes in declaration order. The tags that
+open `moFaceRef_c` and `moEdgeRef_c` objects name the declared reference
+classes in the same way. A reference tag otherwise names the one reference
+class whose declaration lies between the identity classes with the next lower
+and next higher indices.
+
 ### 2.2 Object stream class map
 
 `Contents/Config-N` and `Contents/Config-N-ResolvedFeatures` are MFC `CArchive` serializations. The other SW Objects streams (`Contents/CnfgObjs`, `Contents/CMgr`, `Contents/Config-N-ModelHeader`, `Contents/Definition`) use the same class declaration. An object is written as a class tag followed by the object's body; the body's layout belongs to its class and carries no length, so a body cannot be skipped without knowing its class.
@@ -1707,7 +1789,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | Class | Bytes after the `moFR_c` object |
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
-| `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
+| `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
 | `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
@@ -1715,9 +1797,9 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 
 The hop a pattern or mirror hop points to is written in place inside it, and so is not a separate entry of the list.
 
-A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC.
+A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC. The u32 is the object identifier of the producing history feature, the identifier that `FACE_ID_2001` value 1 carries (§5).
 
-A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, three Unicode `CString` values, 18 bytes, a Unicode `CString` holding a configuration name, and 16 bytes. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
+A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, three Unicode `CString` values, 17 or 18 bytes, and a Unicode `CString` holding a configuration name; in a file whose `swVersion` is below 17000, 12 bytes follow the configuration name. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
 
 After the feature-object block, a `Fillet_c` fillet and a `Chamfer_c` chamfer write these bytes of their own, or one of the forms of open item EV-12:
 

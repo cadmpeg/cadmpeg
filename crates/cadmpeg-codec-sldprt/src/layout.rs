@@ -2825,6 +2825,87 @@ pub(crate) mod wide_spatial_marker_coordinate_prefix {
     pub(crate) const COORDINATES: usize = 66;
 }
 
+/// Byte offsets for the `swift_gtol_display_head` record.
+///
+/// Spec §2.1. Record length 10 B.
+///
+/// ```text
+/// Opening bytes of each SWIFT geometric-tolerance display after the first, which declares moDisplayGtol_c.
+/// ```
+pub(crate) mod swift_gtol_display_head {
+    /// Stated value of `display_tag` (`u16`). Spec §2.1.
+    pub(crate) const DISPLAY_TAG_VALUE: u16 = 0x8008;
+    /// Offset of `body_word` (`u32`, little-endian). Spec §2.1.
+    pub(crate) const BODY_WORD: usize = 4;
+    /// Stated value of `body_word` (`u32`). Spec §2.1.
+    pub(crate) const BODY_WORD_VALUE: u32 = 0x0000_0006;
+    /// Offset of `compound_tag` (`u16`, little-endian). Spec §2.1.
+    pub(crate) const COMPOUND_TAG: usize = 8;
+    /// Stated value of `compound_tag` (`u16`). Spec §2.1.
+    pub(crate) const COMPOUND_TAG_VALUE: u16 = 0x800a;
+}
+
+/// Byte offsets for the `swift_feature_reference` record.
+///
+/// Spec §2.1. Record length 10 B.
+///
+/// ```text
+/// A tagged moSwiftFR_c object; the declared form writes the class declaration in place of the tag.
+/// ```
+pub(crate) mod swift_feature_reference {
+    /// Record length in bytes. Spec §2.1.
+    pub(crate) const LEN: usize = 10;
+    /// Offset of `object_id` (`u32`, little-endian). Spec §2.1.
+    pub(crate) const OBJECT_ID: usize = 2;
+    /// Offset of `stamp` (`u32`, little-endian). Spec §2.1.
+    pub(crate) const STAMP: usize = 6;
+}
+
+/// Byte offsets for the `identity_reference_header` record.
+///
+/// Spec §2.3. Record length 38 B.
+///
+/// ```text
+/// Header of a face or edge identity reference; the hop entries follow at +38.
+/// ```
+pub(crate) mod identity_reference_header {
+    /// Record length in bytes. Spec §2.3.
+    pub(crate) const LEN: usize = 38;
+    /// Offset of `form` (`u32`, little-endian). Spec §2.3.
+    pub(crate) const FORM: usize = 0;
+    /// Stated value of `form` (`u32`). Spec §2.3.
+    pub(crate) const FORM_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_word` (`u32`, little-endian). Spec §2.3.
+    pub(crate) const ZERO_WORD: usize = 4;
+    /// Stated value of `zero_word` (`u32`). Spec §2.3.
+    pub(crate) const ZERO_WORD_VALUE: u32 = 0x0000_0000;
+    /// Offset of `hop_count` (`u32`, little-endian). Spec §2.3.
+    pub(crate) const HOP_COUNT: usize = 8;
+    /// Offset of `marker` (`bytes[16]`). Spec §2.3.
+    pub(crate) const MARKER: usize = 20;
+    /// Stated value of `marker` (`bytes[16]`). Spec §2.3.
+    pub(crate) const MARKER_VALUE: [u8; 16] = [
+        0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2,
+        0x54,
+    ];
+    /// Offset of `zero_tail` (`u16`, little-endian). Spec §2.3.
+    pub(crate) const ZERO_TAIL: usize = 36;
+    /// Stated value of `zero_tail` (`u16`). Spec §2.3.
+    pub(crate) const ZERO_TAIL_VALUE: u16 = 0x0000;
+}
+
+/// Byte offsets for the `named_object_header` record.
+///
+/// Spec §2.3. Record length 16 B.
+///
+/// ```text
+/// Offsets from the end of the name object's string. A Unicode CString follows at +16.
+/// ```
+pub(crate) mod named_object_header {
+    /// Offset of `object_id` (`u32`, little-endian). Spec §2.3.
+    pub(crate) const OBJECT_ID: usize = 8;
+}
+
 /// Byte offsets for the `attribute_definition_short_refs` record.
 ///
 /// Spec §5. Record length 38 B.
