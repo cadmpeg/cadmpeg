@@ -137,15 +137,24 @@ impl EncoderBackend for UsdCodec {
         let ctx = DecodeContext::for_encode(&arena, &policy);
         let (mut body, members) = writer::plan(input, &target, packaged, &ctx)?;
         if binary {
-            body.bytes = crate_layer(&ctx, &body.bytes).map_err(|error| match error {
-                cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
-                cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
-                cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
-                error => {
-                    debug_assert!(false, "unmapped USD encode error: {error}");
-                    panic!("unmapped USD encode error: {error}");
+            body.bytes = match crate_layer(&ctx, &body.bytes)? {
+                Ok(bytes) => bytes,
+                Err(reason) => {
+                    body.losses.push(
+                        cadmpeg_ir::codec::write::ExportLossCode::OutputEmpty.note(format!(
+                            "the USDC writer cannot state the generated layer ({reason}); wrote an empty layer"
+                        )),
+                    );
+                    body.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Declared(
+                        cadmpeg_ir::codec::write::ArenaDispositions::uniform(
+                            cadmpeg_ir::codec::write::ArenaDisposition::Omitted,
+                        ),
+                    );
+                    body.native_dispositions =
+                        cadmpeg_ir::codec::write::NativeDispositions::default();
+                    usdc::write::write(&text::syntax::Layer::default()).unwrap_or_default()
                 }
-            })?;
+            };
             body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
         }
         if packaged {
@@ -163,11 +172,34 @@ impl EncoderBackend for UsdCodec {
     }
 }
 
-/// The USDC form of the written text layer `text`.
-fn crate_layer(ctx: &DecodeContext<'_>, text: &[u8]) -> Result<Vec<u8>, CodecError> {
-    let layer = text::grammar::parse_generated_layer(ctx, text)?;
+/// The USDC form of the written text layer `text`. The inner error names
+/// what the USDC writer cannot state.
+///
+/// The text writer emits only layers its grammar parses and the USDC writer
+/// states (#217 §5.0).
+fn crate_layer(
+    ctx: &DecodeContext<'_>,
+    text: &[u8],
+) -> Result<Result<Vec<u8>, String>, EncodeError> {
+    let layer = match text::grammar::parse_generated_layer(ctx, text) {
+        Ok(layer) => layer,
+        Err(CodecError::ResourceLimit(limit)) => return Err(limit.into()),
+        Err(error) => {
+            debug_assert!(
+                false,
+                "the USD text writer emits layers its grammar parses: {error}"
+            );
+            return Ok(Err(error.to_string()));
+        }
+    };
     cadmpeg_core::encode::EncodeSession::from_context(ctx)?.finish()?;
-    usdc::write::write(&layer)
+    Ok(usdc::write::write(&layer).map_err(|error| {
+        debug_assert!(
+            false,
+            "the USDC writer states every generated layer: {error}"
+        );
+        error.to_string()
+    }))
 }
 
 #[cfg(test)]
