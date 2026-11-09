@@ -3468,6 +3468,16 @@ fn check_feature_references(
                 body_selections.push(operands.targets());
                 body_selections.push(operands.tools());
             }
+            FeatureOperation::TrimBodiesAtPlane { targets, plane, .. } => {
+                body_selections.push(targets);
+                check_plane_feature_reference(
+                    findings,
+                    feature,
+                    plane,
+                    &feature_records,
+                    "trim-bodies tool plane",
+                );
+            }
             FeatureOperation::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);
             }

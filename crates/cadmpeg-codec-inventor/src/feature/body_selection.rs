@@ -312,6 +312,9 @@ pub(crate) fn definition(
             }
             | FeatureOperation::SplitBody {
                 targets: selected, ..
+            }
+            | FeatureOperation::TrimBodiesAtPlane {
+                targets: selected, ..
             },
         ) => {
             selection(selected, bodies, None);
@@ -492,6 +495,9 @@ pub(crate) fn native_losses(
                 FeatureDefinition::Operation(
                     FeatureOperation::MoveBody { bodies, .. }
                     | FeatureOperation::SplitBody {
+                        targets: bodies, ..
+                    }
+                    | FeatureOperation::TrimBodiesAtPlane {
                         targets: bodies, ..
                     },
                 ) => native(bodies),

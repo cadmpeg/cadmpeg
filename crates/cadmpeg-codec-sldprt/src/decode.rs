@@ -1732,6 +1732,10 @@ fn append_design_losses(
                         || incomplete_body_selection(tools)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
+                FeatureOperation::TrimBodiesAtPlane { targets, keep, .. } => {
+                    incomplete_body_selection(targets)
+                        || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+                }
                 FeatureOperation::SplitBody { targets, tool } => {
                     incomplete_body_selection(targets)
                         || match tool {
