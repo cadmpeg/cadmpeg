@@ -115,7 +115,7 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         pillow_history(&history_id("bbbb"), 10.0),
         pillow_history(&history_id("aaaa"), 0.0),
     ];
-    bind_feature_outputs(
+    let losses = bind_feature_outputs(
         &mut features,
         &[first_scope, second_scope],
         &mut histories,
@@ -124,6 +124,17 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         None,
     )
     .unwrap();
+    // Each feature's history is inferred from its output blob, so each one
+    // reports the inference.
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|note| {
+                note.code == crate::loss::F3dLossCode::HistoricalOutputBlobHistoryInferred.kind()
+            })
+            .count(),
+        2
+    );
     for (feature, expected) in features.iter().zip(["100:1,0,1", "100:11,0,1"]) {
         assert_eq!(
             feature
