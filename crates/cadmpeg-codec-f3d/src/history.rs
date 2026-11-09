@@ -7878,6 +7878,7 @@ pub(crate) fn bind_edge_operand_history_candidates_with_notes(
         operand.terminal_boundary_edge_slots.clear();
         operand.changed_boundary_edge_slots.clear();
         operand.deleted_boundary_edge_slots.clear();
+        operand.transition_deleted_edge_slots.clear();
         operand.updated_boundary_edge_slots.clear();
         operand.treatment_radius_candidates.clear();
         operand.changed_boundary_edge_contexts.clear();
