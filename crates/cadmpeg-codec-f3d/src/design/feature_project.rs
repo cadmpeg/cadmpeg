@@ -126,11 +126,10 @@ pub(crate) struct ProjectInputs<'a> {
         &'a [crate::records::sheet_metal_settings::DesignSheetMetalSettings],
 }
 
-/// Authored construction ordinal of every parameter scope represented by a
-/// neutral top-level feature. All input scopes must share one Design stream.
 /// The derived base group that `scope` leads when the group took its
-/// owner's timeline position: the scope holds an ordinal, is no timeline
-/// item itself, and no other scope of the group holds an ordinal.
+/// owner's timeline position: the owner is a timeline item of the stream,
+/// the scope holds an ordinal and is no timeline item itself, and no other
+/// scope of the group holds an ordinal.
 fn projected_derived_base_group<'a>(
     scope: &DesignParameterScope,
     scopes: &'a [DesignParameterScope],
@@ -140,7 +139,9 @@ fn projected_derived_base_group<'a>(
     let group = crate::records::feature::derived_base::derived_base_group(scope, scopes)?;
     let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
     let (first, rest) = group.split_first()?;
+    let owner = scope.derived_base_owner?.record_index.value;
     (first.record_index == scope.record_index
+        && timeline_items.contains(&(stream, u64::from(owner)))
         && source_ordinals.contains_key(&(stream, scope.record_index))
         && !timeline_items.contains(&(stream, u64::from(scope.record_index)))
         && rest
@@ -149,6 +150,8 @@ fn projected_derived_base_group<'a>(
     .then_some(group)
 }
 
+/// Authored construction ordinal of every parameter scope represented by a
+/// neutral top-level feature. All input scopes must share one Design stream.
 fn authored_scope_ordinals<'a>(
     scopes: &'a [DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
