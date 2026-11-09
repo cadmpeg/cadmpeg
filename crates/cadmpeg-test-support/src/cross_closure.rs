@@ -903,21 +903,58 @@ fn null_dangling(before: &Value, required: &BTreeSet<String>) -> Value {
                 }
             }
             Value::Object(fields) => {
-                for (key, value) in fields.iter_mut() {
-                    // An `id` field declares the record's identity; only other
-                    // fields name references that can dangle (§5.2).
-                    if key == "id" {
-                        continue;
-                    }
+                for value in fields.values_mut() {
                     walk(value, required, ids);
                 }
             }
             _ => {}
         }
     }
+    // A record's own `id` declares its identity; every other field, a
+    // nested `id` among them, names references that can dangle (§5.2).
+    fn walk_rows(rows: &mut Value, required: &BTreeSet<String>, ids: &BTreeSet<String>) {
+        for row in rows.as_array_mut().into_iter().flatten() {
+            match row.as_object_mut() {
+                Some(fields) => {
+                    for (key, value) in fields.iter_mut() {
+                        if key != "id" {
+                            walk(value, required, ids);
+                        }
+                    }
+                }
+                None => walk(row, required, ids),
+            }
+        }
+    }
     let mut nulled = before.clone();
     let ids: BTreeSet<String> = before_rows(before).keys().cloned().collect();
-    walk(&mut nulled, required, &ids);
+    if let Some(fields) = nulled.as_object_mut() {
+        for (key, value) in fields.iter_mut() {
+            match key.as_str() {
+                "model" => {
+                    for rows in value
+                        .as_object_mut()
+                        .into_iter()
+                        .flat_map(|m| m.values_mut())
+                    {
+                        walk_rows(rows, required, &ids);
+                    }
+                }
+                "native" => {
+                    let arenas = value
+                        .as_object_mut()
+                        .into_iter()
+                        .flat_map(|namespaces| namespaces.values_mut())
+                        .filter_map(Value::as_object_mut)
+                        .flat_map(|arenas| arenas.values_mut());
+                    for rows in arenas {
+                        walk_rows(rows, required, &ids);
+                    }
+                }
+                _ => walk(value, required, &ids),
+            }
+        }
+    }
     nulled
 }
 
@@ -2241,6 +2278,67 @@ mod tests {
         );
         let named = super::cross_compare(&before, &after, &report, "step", &config);
         assert!(named.is_empty(), "{named:?}");
+    }
+
+    #[test]
+    fn a_shell_pairs_without_its_face_on_an_unheld_surface() {
+        use crate::carried::{Carried, UnheldClass};
+        use crate::writer_closure::Redecoded;
+        use std::collections::BTreeMap;
+
+        let plane = json!({"kind": "plane", "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}});
+        let before = json!({"model": {
+            "bodies": [{"id": "src:body#1", "kind": "sheet", "regions": ["src:region#1"]}],
+            "regions": [{"id": "src:region#1", "body": "src:body#1", "shells": ["src:shell#1"]}],
+            "shells": [{"id": "src:shell#1", "region": "src:region#1", "members": [
+                {"id": "src:face#flat", "kind": "face"}, {"id": "src:face#cone", "kind": "face"}]}],
+            "faces": [
+                {"id": "src:face#flat", "shell": "src:shell#1", "surface": "src:surface#plane", "sense": "forward"},
+                {"id": "src:face#cone", "shell": "src:shell#1", "surface": "src:surface#cone", "sense": "forward"}
+            ],
+            "surfaces": [
+                {"id": "src:surface#plane", "geometry": plane},
+                {"id": "src:surface#cone", "geometry": {"kind": "cone", "ratio": 0.5, "half_angle": 0.5}}
+            ]
+        }, "native": {}});
+        let after = Redecoded {
+            ir: json!({"model": {
+                "bodies": [{"id": "out:body#1", "kind": "sheet", "regions": ["out:region#1"]}],
+                "regions": [{"id": "out:region#1", "body": "out:body#1", "shells": ["out:shell#1"]}],
+                "shells": [{"id": "out:shell#1", "region": "out:region#1", "members": [
+                    {"id": "out:face#1", "kind": "face"}]}],
+                "faces": [{"id": "out:face#1", "shell": "out:shell#1", "surface": "out:surface#1", "sense": "forward"}],
+                "surfaces": [{"id": "out:surface#1", "geometry": plane}]
+            }, "native": {}}),
+            loss_codes: BTreeSet::new(),
+            members: Vec::new(),
+        };
+        let mut carried = Carried::all();
+        carried.unheld = BTreeSet::from([UnheldClass::EllipticalCone]);
+        let fixed = BTreeMap::new();
+        let known = BTreeSet::new();
+        let config = super::CrossConfig {
+            carried: &carried,
+            fixed_paths: &fixed,
+            known_losses: &known,
+            reduced: &[],
+            members: &[],
+        };
+        let mut report: cadmpeg_ir::report::export::ExportReport = serde_json::from_value(json!({
+            "identity": {"payload": "native", "target": "step:ap242-e3"},
+            "census": {"basis": "target_records", "counts": {}},
+            "write_path": {"path": "synthesized", "fidelity": {"status": "not_provided"}},
+            "coverage": {"coverage": "complete"}, "native_dispositions": {"namespaces": {}},
+            "losses": [], "notes": []
+        }))
+        .expect("report");
+        report.losses.push(
+            cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable
+                .note("face src:face#cone on surface src:surface#cone was omitted"),
+        );
+        let findings = super::cross_compare(&before, &after, &report, "step", &config);
+        assert!(findings.is_empty(), "{findings:?}");
     }
 
     #[test]
