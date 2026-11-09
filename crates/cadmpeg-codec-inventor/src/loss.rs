@@ -103,6 +103,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionEmptyItemsNative,
     /// An edge treatment retains an unresolved input-edge selection.
     FeatureEdgeSelectionNative,
+    /// A fillet omits an edge set whose items all store empty index-reference lists.
+    FeatureFilletEmptyEdgeSetsOmitted,
     /// An edge-treatment input edge has several matched owners of identical geometry.
     FeatureEdgeOwnerIdenticalGeometry,
     /// An input edge rests on the assumption that extra selector generators do not change it.
@@ -326,6 +328,7 @@ impl InventorLossCode {
         Self::FeatureOperationGraphOpen,
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
+        Self::FeatureFilletEmptyEdgeSetsOmitted,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureEdgeSelectorGeneratorsAssumed,
         Self::FeatureMoveFaceSelectionNative,
@@ -470,6 +473,7 @@ impl InventorLossCode {
                 "feature.edge-selection-empty-items-native"
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
+            Self::FeatureFilletEmptyEdgeSetsOmitted => "feature.fillet-empty-edge-sets-omitted",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureEdgeSelectorGeneratorsAssumed => {
                 "feature.edge-selector-generators-assumed"
@@ -612,6 +616,7 @@ impl InventorLossCode {
             Self::FeatureOperationGraphOpen
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
+            | Self::FeatureFilletEmptyEdgeSetsOmitted
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureEdgeSelectorGeneratorsAssumed
             | Self::FeatureMoveFaceSelectionNative
@@ -786,6 +791,7 @@ mod tests {
                 "feature.operation-graph-open",
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
+                "feature.fillet-empty-edge-sets-omitted",
                 "feature.edge-owner-identical-geometry",
                 "feature.edge-selector-generators-assumed",
                 "feature.move-face-selection-native",
