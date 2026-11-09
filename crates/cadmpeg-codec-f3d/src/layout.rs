@@ -266,6 +266,26 @@ pub(crate) mod design_parameter_legacy_287_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 41;
 }
 
+/// Byte offsets for the `design_parameter_compact_null_owner_prefix` record.
+///
+/// Spec §3.1. Record length 35 B.
+///
+/// ```text
+/// Offsets are relative to the class-372 parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder.
+/// ```
+pub(crate) mod design_parameter_compact_null_owner_prefix {
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 11;
+    /// Offset of `source_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_ORDINAL: usize = 26;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 30;
+    /// Stated value of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 0;
+    /// Offset of `expression_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXPRESSION_LENGTH: usize = 31;
+}
+
 /// Byte offsets for the `design_parameter_typed_compact_owned_prefix` record.
 ///
 /// Spec §3.1. Record length 85 B.

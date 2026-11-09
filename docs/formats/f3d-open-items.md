@@ -1426,17 +1426,15 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Two other public frames of this form store zero at offset 29.
 
-### DR-251. Compact parameter frame with a null owner and trailer byte 3
+### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
-**Question.** Which grammar admits a compact parameter frame with a null owner, and what does byte 3 of its compact expression trailer state?
+**Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of the five-byte compact expression trailer state when it is `1`?
 
-**Known.** Five Linear Dimension parameter frames store the compact header with `u8 0` at offset 30 and the LP-UTF16 expression at offset 31, followed by the five-byte trailer `00 00 00 01 00`, the source kind, the unit, the name, the evaluated scalar, and the parameter tail. Their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. The class-`287` grammar admits the same trailer `00 00 00 01 00`.
+**Known.** The specification states the compact null-owner parameter form and the class-`287` form, which both admit the trailers `00 00 00 00 00` and `00 00 00 01 00`. Five Linear Dimension parameters in the compact null-owner form store `00 00 00 01 00`; their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. These frames store the null owner `u8 0` at offset 30 while their source kind names a Linear Dimension. The decoder reads them without an owner binding and reports `parameter.owner-unstored` for each stream with such a parameter. It keeps the parameter flags at their defaults and reports `parameter.trailer-flag-uninterpreted` for each stream with a decoded parameter whose byte 3 is `1`.
 
-**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form.
+**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form or a compact trailer that sets byte 3.
 
 **Conflict.** None.
-
-**Note.** The five frames match no grammar.
 
 ### DR-175. Ownerless fixed Fillet lanes across several operand groups
 
