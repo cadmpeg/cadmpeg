@@ -496,7 +496,7 @@ fn two_covering_blends_that_consume_one_edge_conflict() {
 }
 
 #[test]
-fn an_unbound_fillet_takes_a_covering_history_only_when_it_alone_binds() {
+fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_binds() {
     let proven = || history_between("f3d:proven", input(z()), output());
     // History rows are kept in slot order.
     let covering = |id: &str| {
@@ -516,12 +516,21 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_it_alone_binds() {
     };
 
     // One history binds by a shared edge and the other through the covering
-    // reading: more than one history binds every group, so the native
-    // selection stays.
+    // reading: the shared-edge history ranks first and binds.
     let (edges, bindings) = bind_unbound(&mut [proven(), covering("f3d:covering")]);
-    assert_eq!(edges, native());
-    assert!(bindings.inferred_scope_histories.is_empty());
-    assert!(bindings.notes.is_empty(), "{:?}", bindings.notes);
+    assert_eq!(slots(&edges), ["17"]);
+    assert_eq!(
+        bindings.inferred_scope_histories,
+        [(SCOPE_ID.to_owned(), "f3d:proven".to_owned())]
+    );
+    assert_eq!(
+        history_notes(&bindings),
+        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve without the covering reading only in f3d:proven, and through it in 1 other history."]
+    );
+    assert!(bindings
+        .notes
+        .iter()
+        .all(|note| note.code != F3dLossCode::HistoricalFilletEdgeCovering.kind()));
 
     let (edges, bindings) = bind_unbound(&mut [unresolved(), covering("f3d:covering")]);
     assert_eq!(slots(&edges), ["17"]);
@@ -531,7 +540,7 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_it_alone_binds() {
     );
     assert_eq!(
         history_notes(&bindings),
-        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve only in f3d:covering."]
+        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve only in f3d:covering, through the covering reading."]
     );
     assert!(bindings
         .notes
