@@ -380,7 +380,10 @@ fn edges_with_ranges_off_their_vertices(
                 .curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)
                 .and_then(|curve| curve.geometry.solved())
                 .is_some_and(|geometry| {
-                    !matches!(geometry, cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { .. })
+                    !matches!(
+                        geometry,
+                        cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { .. }
+                    )
                 })),
         }
     };
