@@ -27,10 +27,7 @@ fn link_list(property: &str, members: &[String]) -> String {
 }
 
 fn bool_property(object: &mut Object, name: &str, value: bool) {
-    object.set(
-        name,
-        xml::scalar(name, "App::PropertyBool", "Bool", value),
-    );
+    object.set(name, xml::scalar(name, "App::PropertyBool", "Bool", value));
 }
 
 pub(super) fn xlink(name: &str, file: &str, subelements: &[String]) -> String {
@@ -68,22 +65,28 @@ fn prototype(
         ),
         PrototypeReference::External { document, object } => (
             object.clone().unwrap_or_default(),
-            external(document, losses),
+            external(document, &format!("occurrence {occurrence}"), losses),
         ),
         PrototypeReference::Unresolved {} => (String::new(), String::new()),
     }
 }
 
-fn external(document: &ExternalDocument, losses: &mut Vec<LossNote>) -> String {
+/// The file token of `document`, which `owner` names in losses.
+fn external(document: &ExternalDocument, owner: &str, losses: &mut Vec<LossNote>) -> String {
     match document {
         ExternalDocument::Path { path } => path.as_str().to_owned(),
         ExternalDocument::DocumentId { document_id } => {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "external document identity {document_id} is written as a file token"
+                "external document identity {document_id} of {owner} is written as a file token"
             )));
             document_id.as_str().to_owned()
         }
-        ExternalDocument::Missing {} => String::new(),
+        ExternalDocument::Missing {} => {
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "{owner} has no external document and is written as an unresolved link"
+            )));
+            String::new()
+        }
     }
 }
 
@@ -746,11 +749,16 @@ pub(super) fn write(
                 .cloned()
                 .unwrap_or_else(|| format!("Instance{}", objects.len()));
             let name = fresh_name(&proposed, &mut used);
-            objects.push(Object::new(
+            let mut object = Object::new(
                 name.clone(),
                 "App::Link",
-                occurrence.name.as_deref().unwrap_or(occurrence.id.as_str()),
-            ));
+                occurrence.name.as_deref().unwrap_or_default(),
+            );
+            // FreeCAD restores an absent Label as the object name.
+            if occurrence.name.is_none() {
+                object.properties.shift_remove("Label");
+            }
+            objects.push(object);
             name
         };
         names.insert(occurrence.id.as_str().to_owned(), name.clone());

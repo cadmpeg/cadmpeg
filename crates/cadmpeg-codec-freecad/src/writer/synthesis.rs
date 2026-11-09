@@ -449,11 +449,7 @@ pub(super) fn write(
             if let Some(native_ref) = &feature.native_ref {
                 names.insert(native_ref.clone(), name.clone());
             }
-            let mut object = Object::new(
-                name,
-                "PartDesign::Feature",
-                feature.name.as_deref().unwrap_or(feature.id.as_str()),
-            );
+            let mut object = Object::new(name, "PartDesign::Feature", "");
             match design::features::write(ir, feature, &mut object, &names, schema) {
                 Ok(output) => {
                     losses.extend(output.losses);
@@ -485,6 +481,8 @@ pub(super) fn write(
         .iter()
         .map(|object| (object.id().as_str(), object.order))
         .collect();
+    let contradicted =
+        super::drawings::contradicted_measurements(ir, &native_properties, &retained, &mut losses);
     let mut property_order: Vec<&PropertyRecord> = native_properties.iter().collect();
     property_order.sort_by_key(|property| {
         (
@@ -496,6 +494,24 @@ pub(super) fn write(
         )
     });
     for property in property_order {
+        // A contradicted measurement cache is written empty, so the
+        // re-decode measures no value.
+        if contradicted.contains(&property.id) {
+            if let Some(object) = names
+                .get(&property.owner)
+                .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
+            {
+                object.set(
+                    &property.name,
+                    xml::property(
+                        &property.name,
+                        &property.type_name,
+                        "<ShapeList count=\"0\"></ShapeList>",
+                    ),
+                );
+            }
+            continue;
+        }
         if crate::attributes::projection_held(ir)
             && !crate::attributes::consumed(ir, property, &native_objects)
             && crate::attributes::values(property).is_some()
@@ -620,7 +636,10 @@ pub(super) fn write(
                 name.push('_');
             }
             names.insert(annotation.object.clone(), name.clone());
-            objects.push(Object::new(name, default_kind, "Annotation"));
+            // FreeCAD restores an absent Label as the object name.
+            let mut object = Object::new(name, default_kind, "");
+            object.properties.shift_remove("Label");
+            objects.push(object);
         }
     }
     super::drawings::write(ir, &mut objects, &mut names, &mut losses);
@@ -1067,6 +1086,16 @@ pub(super) fn write(
         if let (Some(payload), Some(_)) = (reused, &reemitted) {
             exact_shapes.insert(payload.property.clone());
         }
+        // FreeCAD reads a `.bin` entry in the binary grammar and any other
+        // entry in the text grammar.
+        let extension = if reemitted.is_some()
+            && reused.is_some_and(|payload| {
+                matches!(payload.payload, crate::brep::ShapePayload::Binary { .. })
+            }) {
+            ".bin"
+        } else {
+            ".brp"
+        };
         let serialized = match reemitted {
             Some(serialized) => Some(serialized),
             None => brep::serialize_with_uses(
@@ -1090,11 +1119,16 @@ pub(super) fn write(
         };
         let created = !objects.iter().any(|object| object.name == name);
         if created {
-            objects.push(Object::new(
+            let mut object = Object::new(
                 name.clone(),
                 "App::FeaturePython",
-                bodies[0].name.as_deref().unwrap_or(bodies[0].id.as_str()),
-            ));
+                bodies[0].name.as_deref().unwrap_or_default(),
+            );
+            // FreeCAD restores an absent Label as the object name.
+            if bodies[0].name.is_none() {
+                object.properties.shift_remove("Label");
+            }
+            objects.push(object);
         }
         let original_file = native_properties
             .iter()
@@ -1103,7 +1137,7 @@ pub(super) fn write(
                 let file = property
                     .side_entries()
                     .iter()
-                    .find(|entry| entry.to_ascii_lowercase().ends_with(".brp"))?;
+                    .find(|entry| entry.to_ascii_lowercase().ends_with(extension))?;
                 (owner_matches
                     && property.name == property_name
                     && property.type_name == "Part::PropertyPartShape"
@@ -1126,7 +1160,7 @@ pub(super) fn write(
                         .find(|payload| payload.id == selector.owner)?;
                     Some(payload.entry.clone())
                 })?;
-                if !entry.to_ascii_lowercase().ends_with(".brp")
+                if !entry.to_ascii_lowercase().ends_with(extension)
                     || !entry_names.contains(&entry)
                     || entries.contains_key(&entry)
                     || native_properties
@@ -1147,10 +1181,10 @@ pub(super) fn write(
             });
         let file = original_file.as_ref().map_or_else(
             || {
-                let mut file = format!("{name}.brp");
+                let mut file = format!("{name}{extension}");
                 let mut suffix = 1;
                 while entries.contains_key(&file) || entry_names.contains(&file) {
-                    file = format!("{name}_{suffix}.brp");
+                    file = format!("{name}_{suffix}{extension}");
                     suffix += 1;
                 }
                 file
@@ -1899,6 +1933,14 @@ pub(super) fn write(
         &entries,
         &mut native_dispositions,
     )?;
+    for id in &contradicted {
+        super::dispositions::record(
+            &mut native_dispositions,
+            "properties",
+            id,
+            cadmpeg_ir::codec::write::NativeDisposition::Regenerated,
+        );
+    }
     topology_join.record_emitted(ctx, &objects, &entries, &mut native_dispositions)?;
     for id in duplicate_entries {
         super::dispositions::record(
@@ -2025,15 +2067,31 @@ pub(super) fn write(
         }
     }
     for record in &ir.model.procedural_curves {
+        let carriers: Vec<&str> = ir
+            .model
+            .curves
+            .iter()
+            .filter(|curve| curve.geometry.procedural_construction() == Some(&record.id))
+            .map(|curve| curve.id.as_str())
+            .collect();
         losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
-            "procedural curve record {} is omitted from FCStd synthesis",
-            record.id
+            "procedural curve record {} of curves {} is omitted from FCStd synthesis",
+            record.id,
+            carriers.join(", ")
         )));
     }
     for record in &ir.model.procedural_surfaces {
+        let carriers: Vec<&str> = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.geometry.procedural_construction() == Some(&record.id))
+            .map(|surface| surface.id.as_str())
+            .collect();
         losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
-            "procedural surface record {} is omitted from FCStd synthesis",
-            record.id
+            "procedural surface record {} of surfaces {} is omitted from FCStd synthesis",
+            record.id,
+            carriers.join(", ")
         )));
     }
     let mut dispositions = super::coverage::complete(ir, &mut losses);

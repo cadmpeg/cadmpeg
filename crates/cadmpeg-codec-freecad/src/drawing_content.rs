@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical page content from persisted `TechDraw` properties and SVG assets.
 
-mod dimension;
+pub(crate) mod dimension;
 mod reference;
 mod svg;
 

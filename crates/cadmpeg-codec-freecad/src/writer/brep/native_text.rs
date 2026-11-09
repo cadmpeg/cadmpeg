@@ -405,7 +405,7 @@ fn frame(origin: FinitePoint3, axis: FiniteVector3, x: FiniteVector3, y_reversed
     )
 }
 
-fn curve2d(value: &TextCurve2d) -> Option<String> {
+pub(super) fn curve2d(value: &TextCurve2d) -> Option<String> {
     Some(match value {
         TextCurve2d::Line { origin, direction } => {
             format!("1 {} {}", point2(*origin), point2(*direction))
@@ -518,7 +518,7 @@ fn nurbs_curve2d(value: &NurbsCurve2d) -> Option<String> {
     Some(output)
 }
 
-fn curve(value: &TextCurve) -> Option<String> {
+pub(super) fn curve(value: &TextCurve) -> Option<String> {
     Some(match value {
         TextCurve::Line { origin, direction } => {
             format!("1 {} {}", point3(*origin), vector3(*direction))
@@ -590,7 +590,7 @@ fn curve(value: &TextCurve) -> Option<String> {
     })
 }
 
-fn surface(value: &TextSurface) -> Option<String> {
+pub(super) fn surface(value: &TextSurface) -> Option<String> {
     Some(match value {
         TextSurface::Plane {
             origin,

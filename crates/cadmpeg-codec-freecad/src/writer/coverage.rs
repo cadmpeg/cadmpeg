@@ -157,8 +157,38 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
     if charged(&[FreecadLossCode::PresentationViewModeNotTransferred]) {
         dispositions.view_presentations = ArenaDisposition::Reported;
     }
-    if charged(&[FreecadLossCode::ProductPlacementNotRigid]) {
+    if charged(&[
+        FreecadLossCode::ProductPlacementNotRigid,
+        FreecadLossCode::ProductLinkedPlacementFolded,
+    ]) {
         dispositions.occurrences = ArenaDisposition::Reported;
+    }
+    if charged(&[
+        FreecadLossCode::ProductLabelNotTransferred,
+        FreecadLossCode::ProductSourceNameNotTransferred,
+    ]) {
+        dispositions.product_definitions = ArenaDisposition::Reported;
+    }
+    if charged(&[
+        FreecadLossCode::ParameterNameNotTransferred,
+        FreecadLossCode::ParameterDrivingNotTransferred,
+    ]) {
+        dispositions.parameters = ArenaDisposition::Reported;
+    }
+    if charged(&[
+        FreecadLossCode::BodyNameNotTransferred,
+        FreecadLossCode::AppearanceBodyStyleNotTransferred,
+    ]) {
+        dispositions.bodies = ArenaDisposition::Reported;
+    }
+    if charged(&[
+        FreecadLossCode::FeatureSourceTagNotTransferred,
+        FreecadLossCode::FeatureDimensionParameterized,
+    ]) {
+        dispositions.features = ArenaDisposition::Reported;
+    }
+    if charged(&[FreecadLossCode::TopologyRadialOrderNotStored]) {
+        dispositions.coedges = ArenaDisposition::Reported;
     }
     if charged(&[FreecadLossCode::JointFrameNotRigid]) {
         dispositions.assembly_joints = ArenaDisposition::Reported;
@@ -380,6 +410,7 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
                     || annotation.lower_tolerance.is_some()))
             || !annotation.parameters.is_empty()
             || !annotation.assets.is_empty()
+            || !annotation.runtime_type.contains("::")
         {
             losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
                 "annotation {} contains fields the FCStd writer cannot regenerate",
