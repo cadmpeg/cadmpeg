@@ -245,6 +245,14 @@ fn edits(output: Format, format: &str, namespace: &str, fidelity: &[bool]) -> Ve
         ]
     } else if output == Format::Fcstd {
         super::freecad_storage::probes()
+    } else if output == Format::F3d {
+        vec![ReducedProbe {
+            path: "model.features[].needs_recompute",
+            storage: ReducedStorage::Normalized {
+                loss: "export/evaluation.stale",
+            },
+            normalize: Some(|_| serde_json::json!(false)),
+        }]
     } else {
         Vec::new()
     };
