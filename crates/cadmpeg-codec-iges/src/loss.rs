@@ -398,6 +398,9 @@ mod tests {
                 "writer.pcurve-reparameterized",
                 "writer.pcurve-converted",
                 "writer.body-transform-not-applied",
+                "writer.tolerance-not-represented",
+                "writer.placement-applied",
+                "writer.attribute-target-restated",
                 "export.no-exportable-solids",
             ]
         );
