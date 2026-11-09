@@ -548,7 +548,7 @@ fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
 /// whose span covers the blend's axial extent, with a note that states the
 /// status of every shared edge; a stated slot keeps this note, because the
 /// edges that the blend consumes stay assumed. Returns whether a group binds
-/// from a transition in which a blend takes the covering reading.
+/// and whether a blend of its transition takes the covering reading.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -561,16 +561,16 @@ pub(super) fn bind_fillet_groups(
         &AsmHistoricalTopology,
     ),
     notes: &mut Vec<LossNote>,
-) -> bool {
+) -> GroupBinding {
     let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: fillet_groups,
     }) = definition
     else {
-        return false;
+        return GroupBinding::Unbound;
     };
     let (transition, input, output) = states;
     let Some(blends) = transition_blends(transition, input, output) else {
-        return false;
+        return GroupBinding::Unbound;
     };
     let covering = blends
         .iter()
@@ -584,14 +584,14 @@ pub(super) fn bind_fillet_groups(
         })
         .collect::<Vec<_>>();
     let Some(edges) = group_edges(&radii, &blends) else {
-        return false;
+        return GroupBinding::Unbound;
     };
     if !fillet_groups
         .iter()
         .zip(&edges)
         .all(|(group, slots)| agrees(&group.edges, feature_id, previous_state_id, slots))
     {
-        return false;
+        return GroupBinding::Unbound;
     }
     let found = blends
         .iter()
@@ -654,7 +654,24 @@ pub(super) fn bind_fillet_groups(
             rebound = true;
         }
     }
-    covering && rebound
+    match (rebound, covering) {
+        (false, _) => GroupBinding::Unbound,
+        (true, false) => GroupBinding::Bound,
+        (true, true) => GroupBinding::BoundCovering,
+    }
+}
+
+/// What `bind_fillet_groups` bound from one transition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GroupBinding {
+    /// No group binds.
+    Unbound,
+    /// A group binds, and no blend of the transition takes the covering
+    /// reading.
+    Bound,
+    /// A group binds, and a blend of the transition takes the covering
+    /// reading.
+    BoundCovering,
 }
 
 /// The notes of an edge that a blend reading infers from `candidates`, in
@@ -840,8 +857,9 @@ pub(crate) fn bind_fillet_blend_edges(
             continue;
         }
         // An unbound scope whose state pair several histories hold takes the
-        // one history in which every edge group resolves without the covering
-        // reading, else the one history in which every edge group resolves.
+        // one history whose blends bind a group and leave every group a
+        // complete selection, ranking histories without the covering reading
+        // first.
         let mut resolved = Vec::new();
         for (candidate, state) in candidates.iter().enumerate() {
             if !available.contains(&(position, Some(candidate))) {
@@ -852,7 +870,7 @@ pub(crate) fn bind_fillet_blend_edges(
             };
             let mut definition = feature.evaluation.definition().clone();
             let mut candidate_notes = Vec::new();
-            let covering = bind_fillet_groups(
+            let binding = bind_fillet_groups(
                 &mut definition,
                 &feature_id,
                 state.scope,
@@ -861,13 +879,13 @@ pub(crate) fn bind_fillet_blend_edges(
                 states,
                 &mut candidate_notes,
             );
-            if every_fillet_group_historical(&definition) {
+            if binding != GroupBinding::Unbound && every_fillet_group_complete(&definition) {
                 resolved.push((
                     state.history,
                     state.scope,
                     definition,
                     candidate_notes,
-                    covering,
+                    binding == GroupBinding::BoundCovering,
                 ));
             }
         }
@@ -933,16 +951,14 @@ fn fillet_states<'a>(
 }
 
 /// Whether every group of a Fillet definition names historical edges.
-fn every_fillet_group_historical(definition: &FeatureDefinition) -> bool {
+/// Whether every group of a fillet has a complete historical selection.
+fn every_fillet_group_complete(definition: &FeatureDefinition) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         return false;
     };
-    groups.iter().all(|group| {
-        matches!(
-            group.edges,
-            EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. }
-        )
-    })
+    groups
+        .iter()
+        .all(|group| matches!(group.edges, EdgeSelection::Historical { .. }))
 }
 
 #[cfg(test)]

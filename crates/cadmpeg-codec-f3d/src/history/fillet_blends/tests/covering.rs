@@ -569,3 +569,26 @@ fn a_covering_transition_that_binds_no_group_does_not_rank_its_history() {
     assert!(bindings.inferred_scope_histories.is_empty());
     assert!(bindings.notes.is_empty(), "{:?}", bindings.notes);
 }
+
+#[test]
+fn a_history_whose_blends_bind_no_group_does_not_resolve() {
+    let mut input = two_along([0.0, 4.0], [2.0, 4.0]);
+    input.curve_axes.sort_by_key(|axis| axis.curve);
+    input.edge_samples.sort_by_key(|sample| sample.edge);
+    // The covering history rebinds the partial selection; the unresolved
+    // history binds no group, so its unchanged partial selection does not
+    // make it a resolving history.
+    let (edges, bindings) = bind_unbound_fillet(
+        fillet(partial(&[17]), three_mm()),
+        &mut [
+            history_between("f3d:covering", input, spanned_output()),
+            history_between("f3d:unresolved", super::input(z()), super::input(z())),
+        ],
+    );
+    assert_eq!(slots(&edges), ["17"]);
+    assert!(matches!(edges, EdgeSelection::Historical { .. }));
+    assert_eq!(
+        bindings.inferred_scope_histories,
+        [(SCOPE_ID.to_owned(), "f3d:covering".to_owned())]
+    );
+}
