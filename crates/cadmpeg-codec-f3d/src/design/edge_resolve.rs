@@ -986,6 +986,9 @@ fn resolved_edge_group_with_transition_chain(
         if slots.is_none() && allow_edge_treatment_transition_chain {
             slots = deleted_boundary_edge_group_candidates(&matched_operands);
         }
+        if slots.is_none() && allow_edge_treatment_transition_chain {
+            slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
+        }
         if slots.is_none() {
             slots = scope_partition_edge_group_candidates(group, groups, operands, members);
         }
@@ -2091,6 +2094,73 @@ fn contextual_deleted_edge_group_candidates(
     };
     assignment.sort_unstable_by(Ord::cmp);
     Ok(Some(assignment))
+}
+
+/// Resolve a two-side treatment group from the edges its transition deletes.
+///
+/// Each member names the edge that the faces of its two side references
+/// share, so its candidates are the changed edges that both references hold.
+/// The transition deletes every treated edge. When it deletes exactly as many
+/// edges as the group has members, every member's candidates are deleted
+/// edges, the candidates together cover the deleted set, and a perfect
+/// assignment of members to deleted edges exists, the group's edges are the
+/// deleted set. Members that share both references may stay interchangeable;
+/// the set is the same under every assignment.
+fn shared_reference_deleted_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let Some(first) = operands.first() else {
+        return Ok(None);
+    };
+    let deleted = &first.transition_deleted_edge_slots;
+    if deleted.len() != operands.len()
+        || operands
+            .iter()
+            .any(|operand| operand.transition_deleted_edge_slots != *deleted)
+    {
+        return Ok(None);
+    }
+    let mut candidate_sets = Vec::new();
+    let mut covered = HashSet::new();
+    for operand in operands {
+        let two_sides = operand
+            .recipe_structure
+            .as_ref()
+            .is_some_and(|structure| structure.sides.len() == 2);
+        let [first_side, second_side] = operand.recipe_reference_contexts.as_slice() else {
+            return Ok(None);
+        };
+        if !two_sides
+            || first_side.preceding_faces.len() != 1
+            || second_side.preceding_faces.len() != 1
+            || first_side.preceding_faces == second_side.preceding_faces
+        {
+            return Ok(None);
+        }
+        let mut candidates = first_side
+            .changed_reference_edge_slots
+            .iter()
+            .copied()
+            .filter(|edge| second_side.changed_reference_edge_slots.contains(edge))
+            .collect::<Vec<_>>();
+        candidates.sort_unstable();
+        candidates.dedup();
+        if candidates.is_empty()
+            || candidates
+                .iter()
+                .any(|edge| deleted.binary_search(edge).is_err())
+        {
+            return Ok(None);
+        }
+        covered.extend(candidates.iter().copied());
+        candidate_sets.push(candidates);
+    }
+    if covered.len() != deleted.len() || bipartite_assignment(&candidate_sets, None, ctx)?.is_none()
+    {
+        return Ok(None);
+    }
+    Ok(Some(deleted.clone()))
 }
 
 /// Resolve a legacy single-member treatment whose selected edge persists in
