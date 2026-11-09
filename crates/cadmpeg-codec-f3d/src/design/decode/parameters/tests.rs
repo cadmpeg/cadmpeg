@@ -169,6 +169,62 @@ fn class_287_parameter_requires_its_marker_and_tail() {
     assert!(parse_design_parameter_record(&frame).is_none());
 }
 
+/// A compact null-owner parameter frame with class tag `372`, record index
+/// 901, and the twelve-byte tail naming collection 19.
+fn compact_null_owner_parameter_record(expression: &str, expression_trailer: [u8; 5]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"372");
+    out.extend_from_slice(&901u32.to_le_bytes());
+    out.extend_from_slice(&[0; 15]);
+    out.extend_from_slice(&87u32.to_le_bytes());
+    out.push(0);
+    lp_utf16(&mut out, expression);
+    out.extend_from_slice(&expression_trailer);
+    lp_utf16(&mut out, "Linear Dimension-2");
+    lp_utf16(&mut out, "mm");
+    lp_utf16(&mut out, "d87");
+    out.extend_from_slice(&0.635f64.to_le_bytes());
+    out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    out
+}
+
+#[test]
+fn compact_null_owner_parameter_has_no_owner_binding() {
+    for trailer in [[0, 0, 0, 1, 0], [0; 5]] {
+        let parameter =
+            parse_design_parameter_record(&compact_null_owner_parameter_record("6.35 mm", trailer))
+                .expect("compact null-owner parameter");
+        assert_eq!(parameter.class_tag.as_str(), "372");
+        assert_eq!(parameter.record_index, 901);
+        assert_eq!(parameter.source_ordinal, 87);
+        assert_eq!(parameter.owner_record_index(), None);
+        assert_eq!(parameter.expression(), "6.35 mm");
+        assert_eq!(parameter.expression_offset(), 35);
+        assert_eq!(parameter.source_kind(), "Linear Dimension-2");
+        assert_eq!(
+            parameter.unit().map(|field| field.value.as_str()),
+            Some("mm")
+        );
+        assert_eq!(parameter.name(), "d87");
+        assert_eq!(parameter.evaluated_value().get(), 0.635);
+    }
+}
+
+#[test]
+fn compact_null_owner_parameter_requires_its_zero_run_trailer_and_tail() {
+    let malformed = compact_null_owner_parameter_record("6.35 mm", [0, 0, 0, 2, 0]);
+    assert!(parse_design_parameter_record(&malformed).is_none());
+
+    let mut frame = compact_null_owner_parameter_record("6.35 mm", [0, 0, 0, 1, 0]);
+    frame[20] = 1;
+    assert!(parse_design_parameter_record(&frame).is_none());
+
+    let mut frame = compact_null_owner_parameter_record("6.35 mm", [0, 0, 0, 1, 0]);
+    frame.push(0);
+    assert!(parse_design_parameter_record(&frame).is_none());
+}
+
 #[test]
 fn compact_owned_design_parameter_has_no_family_discriminator() {
     let bytes =

@@ -13,6 +13,7 @@ use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_comment_discriminated_prefix as comment_prefix;
 use crate::layout::design_parameter_comment_expression_trailer as comment_trailer;
+use crate::layout::design_parameter_compact_null_owner_prefix as null_owner;
 use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
@@ -332,7 +333,16 @@ pub(in crate::design) fn parse_design_parameter(
                 Err(error) => Some(Err(error)),
             }
         };
-        header.or_else(|| parse_comment_discriminated_parameter(payload, class_tag, record_index))
+        header
+            .or_else(|| {
+                parse_comment_discriminated_parameter(payload, class_tag.clone(), record_index)
+            })
+            .or_else(|| {
+                match parse_compact_null_owner_design_parameter(payload, class_tag, record_index) {
+                    Ok(value) => value.map(Ok),
+                    Err(error) => Some(Err(error)),
+                }
+            })
     })();
     parsed.transpose()
 }
@@ -720,65 +730,107 @@ fn parse_legacy_287_design_parameter(
         }
         let source_ordinal = View::u32_le_at(payload, legacy_287::SOURCE_ORDINAL)?;
         let owner_record_index = View::u32_le_at(payload, legacy_287::OWNER_RECORD_INDEX)?;
-        let (expression, expression_end) =
-            parameter_text!(payload, legacy_287::EXPRESSION_LENGTH, 1..=256);
-        let expression_trailer_end =
-            expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
-        let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
-        if !matches!(expression_trailer, [0, 0, 0, 0 | 1, 0]) {
-            return None;
-        }
-        let source_kind_at = expression_trailer_end;
-        let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
-        let (unit, name, name_at, name_end) =
-            if View::u32_le_at(payload, source_kind_end) == Some(0) {
-                let name_at = source_kind_end.checked_add(4)?;
-                let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
-                (None, name, name_at, name_end)
-            } else {
-                let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
-                let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
-                let unit_offset = source_kind_end.checked_add(4)?;
-                (
-                    Some(ParsedParameterUnit {
-                        value: unit,
-                        offset: FrameRelative(i128::try_from(unit_offset).ok()?),
-                    }),
-                    name,
-                    unit_end,
-                    name_end,
-                )
-            };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail_start = name_end.checked_add(8)?;
-        if !is_parameter_tail(payload.get(tail_start..)?) || source_kind.is_empty() {
-            return None;
-        }
-        Some(Ok(ParsedDesignParameter {
+        compact_trailer_parameter(
+            payload,
             class_tag,
             record_index,
             source_ordinal,
-            source_kind,
-            document: None,
-            owner_record_index: Some(owner_record_index),
-            family_discriminator: None,
-            discriminator_offset: 0,
-            expression,
-            expression_offset: FrameRelative(
-                i128::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
-            ),
-            source_kind_offset: FrameRelative(i128::try_from(source_kind_at.checked_add(4)?).ok()?),
-            unit,
-            name,
-            name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
-            comment: None,
-            flags: crate::records::parameters::DesignParameterFlags::default(),
-            text_value: None,
-        }))
+            Some(owner_record_index),
+            legacy_287::EXPRESSION_LENGTH,
+        )
     })();
     parsed.transpose()
+}
+
+/// Read a frame of any class tag in the compact prefix with the null owner.
+fn parse_compact_null_owner_design_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+) -> Result<Option<ParsedDesignParameter>, CodecError> {
+    let parsed = (|| {
+        if payload.get(null_owner::ZERO_RUN_15..null_owner::SOURCE_ORDINAL) != Some(&[0; 15])
+            || payload.get(null_owner::OWNER_MARKER) != Some(&null_owner::OWNER_MARKER_VALUE)
+        {
+            return None;
+        }
+        let source_ordinal = View::u32_le_at(payload, null_owner::SOURCE_ORDINAL)?;
+        compact_trailer_parameter(
+            payload,
+            class_tag,
+            record_index,
+            source_ordinal,
+            None,
+            null_owner::EXPRESSION_LENGTH,
+        )
+    })();
+    parsed.transpose()
+}
+
+/// The remainder shared by the class-287 and compact null-owner forms: the
+/// LP-UTF16 expression at `expression_at`, the five-byte expression trailer,
+/// `source_kind`, the optional unit, the name, the f64 evaluated scalar, and
+/// the twelve-byte parameter tail at the frame end.
+fn compact_trailer_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+    source_ordinal: u32,
+    owner_record_index: Option<u32>,
+    expression_at: usize,
+) -> Option<Result<ParsedDesignParameter, CodecError>> {
+    let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
+    let expression_trailer_end = expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
+    let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
+    if !matches!(expression_trailer, [0, 0, 0, 0 | 1, 0]) {
+        return None;
+    }
+    let source_kind_at = expression_trailer_end;
+    let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
+        let name_at = source_kind_end.checked_add(4)?;
+        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+        (None, name, name_at, name_end)
+    } else {
+        let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
+        let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
+        let unit_offset = source_kind_end.checked_add(4)?;
+        (
+            Some(ParsedParameterUnit {
+                value: unit,
+                offset: FrameRelative(i128::try_from(unit_offset).ok()?),
+            }),
+            name,
+            unit_end,
+            name_end,
+        )
+    };
+    let evaluated_value = View::f64_le_at(payload, name_end)?;
+    let tail_start = name_end.checked_add(8)?;
+    if !is_parameter_tail(payload.get(tail_start..)?) || source_kind.is_empty() {
+        return None;
+    }
+    Some(Ok(ParsedDesignParameter {
+        class_tag,
+        record_index,
+        source_ordinal,
+        source_kind,
+        document: None,
+        owner_record_index,
+        family_discriminator: None,
+        discriminator_offset: 0,
+        expression,
+        expression_offset: FrameRelative(i128::try_from(expression_at.checked_add(4)?).ok()?),
+        source_kind_offset: FrameRelative(i128::try_from(source_kind_at.checked_add(4)?).ok()?),
+        unit,
+        name,
+        name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
+        comment: None,
+        flags: crate::records::parameters::DesignParameterFlags::default(),
+        text_value: None,
+    }))
 }
 
 const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;

@@ -204,6 +204,23 @@ Parsed by:
 | 35 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes at offsets 35 through 40 |
 | 41 | 4 | `expression_length` | `u32` | little | spec | the expression at offset 41 |
 
+## `design_parameter_compact_null_owner_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 35 B
+
+Offsets are relative to the parameter header through the expression length. The variable expression is followed by the class-287 expression trailer and remainder.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by fifteen zero bytes |
+| 11 | 15 | `zero_run_15` | `bytes[15]` | little | spec | fifteen zero bytes |
+| 26 | 4 | `source_ordinal` | `u32` | little | spec | `u32 source_ordinal` at offset 26 |
+| 30 | 1 | `owner_marker` | `u8` | little | spec | the null owner `u8 0` at offset 30 · value `0` |
+| 31 | 4 | `expression_length` | `u32` | little | spec | the expression at offset 31 |
+
 ## `design_parameter_typed_compact_owned_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 85 B
