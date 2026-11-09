@@ -161,11 +161,15 @@ fn declared_rows_cover_normals_vertices_and_colors() {
 #[test]
 fn capacity_row_names_the_chunk_length_field_and_its_helper() {
     use super::super::target::CAPACITY_FIELDS;
-    assert_eq!(CAPACITY_FIELDS.len(), 1);
+    assert_eq!(CAPACITY_FIELDS.len(), 2);
     let row = &CAPACITY_FIELDS[0];
     assert_eq!(row.field, "chunk.declared_length");
     assert_eq!(row.limit, 9_223_372_036_854_775_807);
     assert_eq!(row.helper, "archive_body_len");
+    let row = &CAPACITY_FIELDS[1];
+    assert_eq!(row.field, "archive.i32_index");
+    assert_eq!(row.limit, 2_147_483_647);
+    assert_eq!(row.helper, "wire_index");
 }
 
 #[test]
