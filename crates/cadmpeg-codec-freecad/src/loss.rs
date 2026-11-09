@@ -159,6 +159,28 @@ pub(crate) enum FreecadLossCode {
     ParameterDrivingNotTransferred,
     /// An expression is stored using the native scalar or cell spelling.
     ParameterExpressionNormalized,
+    /// An occurrence placement is not a rigid motion `FreeCAD` stores.
+    ProductPlacementNotRigid,
+    /// A joint connector frame is not a rigid motion `FreeCAD` stores.
+    JointFrameNotRigid,
+    /// A sketch frame direction is stored as a unit vector.
+    SketchPlacementNormalized,
+    /// A one-entity profile orientation is derived from its geometry.
+    SketchProfileOrientationDerived,
+    /// A GUI document is stored in GUI schema 1.
+    PresentationSchemaNormalized,
+    /// GUI states are stored at consecutive positions.
+    PresentationStateOrderNormalized,
+    /// A view display or selection mode is not an enumeration index.
+    PresentationViewModeNotTransferred,
+    /// An appearance name has no `FreeCAD` GUI home.
+    AppearanceNameNotTransferred,
+    /// An appearance binding channel is derived from its element kind.
+    AppearanceChannelDerived,
+    /// A drawing parameter text does not parse as its property type.
+    DrawingParameterNotTransferred,
+    /// A `TechDraw` annotation position is stored on the page plane.
+    AnnotationPositionPlanar,
     /// Persistence version metadata used a lowercase alias.
     FileVersionNoncanonical,
     /// Persistence file-version declaration cannot select a legacy map encoding.
@@ -238,6 +260,17 @@ impl FreecadLossCode {
         Self::ParameterNameNotTransferred,
         Self::ParameterDrivingNotTransferred,
         Self::ParameterExpressionNormalized,
+        Self::ProductPlacementNotRigid,
+        Self::JointFrameNotRigid,
+        Self::SketchPlacementNormalized,
+        Self::SketchProfileOrientationDerived,
+        Self::PresentationSchemaNormalized,
+        Self::PresentationStateOrderNormalized,
+        Self::PresentationViewModeNotTransferred,
+        Self::AppearanceNameNotTransferred,
+        Self::AppearanceChannelDerived,
+        Self::DrawingParameterNotTransferred,
+        Self::AnnotationPositionPlanar,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
         Self::ElementMapVersionUnresolved,
@@ -245,7 +278,7 @@ impl FreecadLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ExpressionReferenceUnresolved => "expression.reference-unresolved",
             Self::ExportAttributeNotTransferred => "attribute.not-transferred",
@@ -322,6 +355,17 @@ impl FreecadLossCode {
             Self::ParameterNameNotTransferred => "parameter.name-not-transferred",
             Self::ParameterDrivingNotTransferred => "parameter.driving-not-transferred",
             Self::ParameterExpressionNormalized => "parameter.expression-normalized",
+            Self::ProductPlacementNotRigid => "product.placement-not-rigid",
+            Self::JointFrameNotRigid => "joint.frame-not-rigid",
+            Self::SketchPlacementNormalized => "sketch.placement-normalized",
+            Self::SketchProfileOrientationDerived => "sketch.profile-orientation-derived",
+            Self::PresentationSchemaNormalized => "presentation.schema-normalized",
+            Self::PresentationStateOrderNormalized => "presentation.state-order-normalized",
+            Self::PresentationViewModeNotTransferred => "presentation.view-mode-not-transferred",
+            Self::AppearanceNameNotTransferred => "appearance.name-not-transferred",
+            Self::AppearanceChannelDerived => "appearance.channel-derived",
+            Self::DrawingParameterNotTransferred => "drawing.parameter-not-transferred",
+            Self::AnnotationPositionPlanar => "annotation.position-planar",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
             Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
@@ -399,6 +443,17 @@ impl FreecadLossCode {
             | Self::ParameterNameNotTransferred
             | Self::ParameterDrivingNotTransferred
             | Self::ParameterExpressionNormalized
+            | Self::ProductPlacementNotRigid
+            | Self::JointFrameNotRigid
+            | Self::SketchPlacementNormalized
+            | Self::SketchProfileOrientationDerived
+            | Self::PresentationSchemaNormalized
+            | Self::PresentationStateOrderNormalized
+            | Self::PresentationViewModeNotTransferred
+            | Self::AppearanceNameNotTransferred
+            | Self::AppearanceChannelDerived
+            | Self::DrawingParameterNotTransferred
+            | Self::AnnotationPositionPlanar
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
             | Self::ElementMapVersionUnresolved
@@ -472,7 +527,19 @@ impl FreecadLossCode {
             | Self::ParameterNameNotTransferred
             | Self::FeatureLengthNotTransferred
             | Self::ParameterDrivingNotTransferred
-            | Self::ParameterExpressionNormalized => LossTaxonomy::MetadataNotTransferred,
+            | Self::ParameterExpressionNormalized
+            | Self::ProductPlacementNotRigid
+            | Self::JointFrameNotRigid
+            | Self::SketchPlacementNormalized
+            | Self::SketchProfileOrientationDerived
+            | Self::PresentationSchemaNormalized
+            | Self::PresentationStateOrderNormalized
+            | Self::PresentationViewModeNotTransferred
+            | Self::DrawingParameterNotTransferred
+            | Self::AnnotationPositionPlanar => LossTaxonomy::MetadataNotTransferred,
+            Self::AppearanceNameNotTransferred | Self::AppearanceChannelDerived => {
+                LossTaxonomy::MaterialNotTransferred
+            }
             Self::PersistenceCountNoncanonical
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
@@ -594,6 +661,17 @@ mod tests {
                 "parameter.name-not-transferred",
                 "parameter.driving-not-transferred",
                 "parameter.expression-normalized",
+                "product.placement-not-rigid",
+                "joint.frame-not-rigid",
+                "sketch.placement-normalized",
+                "sketch.profile-orientation-derived",
+                "presentation.schema-normalized",
+                "presentation.state-order-normalized",
+                "presentation.view-mode-not-transferred",
+                "appearance.name-not-transferred",
+                "appearance.channel-derived",
+                "drawing.parameter-not-transferred",
+                "annotation.position-planar",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",

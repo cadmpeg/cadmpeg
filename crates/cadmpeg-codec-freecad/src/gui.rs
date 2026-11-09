@@ -805,7 +805,7 @@ fn transfer_schema_one(
         plan.appearances.push(Appearance {
             native_ref: projection_native_ref(ctx, Some(appearance_source))?,
             id: appearance_id.clone(),
-            name: Some(format!("{name} shape appearance")),
+            name: None,
             asset_guid: None,
             library_id: None,
             visual_guid: None,
@@ -1115,9 +1115,14 @@ fn transfer_neutral_presentation(
                     .map(|(name, value)| (name.as_str(), value.as_str())),
             );
             note_refused_gui_keys(&mut state_losses, &refused);
+            let mut attributes = attributes;
             let kind = if state.kind == "Camera" && camera_count == 1 {
                 match camera_state_value(state, &mut state_losses) {
-                    Ok(camera) => PresentationStateKind::Camera(camera),
+                    // The typed camera owns the state's attributes.
+                    Ok(camera) => {
+                        attributes.clear();
+                        PresentationStateKind::Camera(camera)
+                    }
                     Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
                         state_losses.push(
                             FreecadLossCode::SourceGuiMetadataUnresolved
@@ -1495,7 +1500,7 @@ fn transfer_primitive_appearance(
     plan.appearances.push(Appearance {
         native_ref: projection_native_ref(ctx, native_origin)?,
         id: appearance_id.clone(),
-        name: Some(format!("{provider_name} {label} appearance")),
+        name: None,
         asset_guid: None,
         library_id: None,
         visual_guid: None,
@@ -4656,8 +4661,6 @@ fn transfer_shape_appearances(
                 ctx,
                 native_origin,
                 appearance_id.clone(),
-                &provider.name,
-                index,
                 material,
             )?);
             if materials.declared == 1 {
@@ -4915,8 +4918,6 @@ fn material_appearance(
     ctx: &DecodeContext<'_>,
     origin: GuiPropertyOrigin<'_>,
     id: AppearanceId,
-    provider_name: &str,
-    index: usize,
     material: &GuiMaterial,
 ) -> Result<Appearance, CodecError> {
     let scalar = |name: &str, value: f64| {
@@ -4926,7 +4927,7 @@ fn material_appearance(
     Ok(Appearance {
         native_ref: projection_native_ref(ctx, Some(origin))?,
         id,
-        name: Some(format!("{provider_name} face {} material", index + 1)),
+        name: None,
         asset_guid: material
             .uuid
             .as_ref()
@@ -5134,11 +5135,7 @@ fn transfer_topology_colors(
         plan.appearances.push(Appearance {
             native_ref: projection_native_ref(ctx, Some(native_origin))?,
             id: appearance_id.clone(),
-            name: Some(format!(
-                "{provider_name} {}{} appearance",
-                kind.name(),
-                index + 1
-            )),
+            name: None,
             asset_guid: None,
             library_id: None,
             visual_guid: None,
