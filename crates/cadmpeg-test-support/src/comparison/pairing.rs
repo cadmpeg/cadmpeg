@@ -97,8 +97,8 @@ fn references_agree_with_pairs(
                 })
         }),
         (Value::Array(source), Value::Array(target)) => {
-            let aligned = super::cross::aligned(source, target)
-                .unwrap_or_else(|| source.iter().collect());
+            let aligned =
+                super::cross::aligned(source, target).unwrap_or_else(|| source.iter().collect());
             aligned
                 .into_iter()
                 .zip(target)
@@ -109,7 +109,7 @@ fn references_agree_with_pairs(
 }
 
 /// A reference into a record: its owner, its path, and its path with the
-/// array indices counted over the non-null items only.
+/// array indices counted over the items that are not nulled.
 type Incoming = (usize, Vec<String>, Vec<String>);
 
 fn incoming_references(document: &Document) -> Vec<Vec<Incoming>> {
@@ -143,7 +143,7 @@ fn incoming_references(document: &Document) -> Vec<Vec<Incoming>> {
                     visit(child, owner, paths, ids, incoming);
                     paths.0.pop();
                     paths.1.pop();
-                    compact += usize::from(!child.is_null());
+                    compact += usize::from(!super::cross::nulled(child));
                 }
             }
             _ => {}
