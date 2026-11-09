@@ -8438,6 +8438,26 @@ pub(crate) mod sketch_typed_compact_member_head {
     pub(crate) const REFERENCE: usize = 23;
 }
 
+/// Byte offsets for the `derived_base_owner_reference` record.
+///
+/// Spec §3.1. Record length 70 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header of a derived base scope. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
+/// ```
+pub(crate) mod derived_base_owner_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 70;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 59;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const RECORD_INDEX: usize = 60;
+    /// Offset of `zero_run_2` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_2: usize = 68;
+}
+
 /// Byte offsets for the `local_component_occurrence_empty_attributes_prefix` record.
 ///
 /// Spec §3.1. Record length 213 B.

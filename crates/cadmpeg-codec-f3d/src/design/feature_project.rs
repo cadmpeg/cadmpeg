@@ -327,6 +327,19 @@ fn authored_scope_ordinals_for_stream<'a>(
             let _ = out.insert((stream, scope.record_index), ordinal);
         }
     }
+    for ((_, owner), group) in
+        crate::records::feature::derived_base::derived_base_groups(scopes.iter().copied())
+    {
+        if scopes_by_record.contains_key(&owner) {
+            continue;
+        }
+        if let (Some(ordinal), Some(first)) =
+            (item_ordinals.get(&u64::from(owner)).copied(), group.first())
+        {
+            // discarded-value: each derived base group is visited once in this stream.
+            let _ = out.insert((stream, first.record_index), ordinal);
+        }
+    }
     for scope in scopes {
         let Some(target_record_index) = scope
             .assembly_alignment()

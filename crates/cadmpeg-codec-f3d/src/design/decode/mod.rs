@@ -11,6 +11,7 @@ pub(crate) mod components;
 pub(crate) mod configuration_root;
 pub(crate) mod decal;
 pub(crate) mod deleted_members;
+pub(crate) mod derived_base;
 pub(crate) mod dimension_frames;
 mod image;
 pub(crate) mod joint_motion;

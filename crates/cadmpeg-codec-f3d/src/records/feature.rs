@@ -9,6 +9,7 @@ pub(crate) mod body_ops;
 pub(crate) mod coil;
 pub(crate) mod combine;
 pub(crate) mod deleted_members;
+pub(crate) mod derived_base;
 pub(crate) mod direct_face;
 pub(crate) mod emboss;
 pub(crate) mod extrude;
