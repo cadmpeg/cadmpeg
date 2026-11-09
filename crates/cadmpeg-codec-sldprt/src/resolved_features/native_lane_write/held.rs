@@ -173,14 +173,22 @@ fn project(
     lane: &FeatureInputLane,
 ) -> Result<Option<crate::resolved_features::sketch_projection::ProjectedSketches>, WriteError>
 {
-    let Some(ordinal) = lane
+    let Some(key) = lane
         .id
         .strip_prefix("sldprt:feature-input:resolved-features#")
-        .and_then(|key| key.parse::<usize>().ok())
     else {
         return Ok(None);
     };
     let Some(configuration) = lane.configuration.as_deref() else {
+        return Ok(None);
+    };
+    // A configuration-keyed lane projects from a section of that name; an
+    // offset-keyed one from a section at that offset.
+    let ordinal = if key == format!("config-{configuration}") {
+        0
+    } else if let Ok(ordinal) = key.parse::<usize>() {
+        ordinal
+    } else {
         return Ok(None);
     };
     let Ok(section) = cadmpeg_ir::StreamName::try_from(format!(

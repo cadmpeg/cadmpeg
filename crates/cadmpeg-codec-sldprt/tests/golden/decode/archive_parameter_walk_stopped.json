@@ -65,7 +65,7 @@
             "configuration": "0",
             "edge_selections": [],
             "generated_surface_identities": [],
-            "id": "sldprt:feature-input:resolved-features#128",
+            "id": "sldprt:feature-input:resolved-features#config-0",
             "names": [],
             "native_payload": "09000000000007800480fffeff0141000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000000000000000000000000000ffff0000030078797a",
             "references": [],
@@ -78,11 +78,11 @@
         ],
         "feature_input_names": [
           {
-            "id": "sldprt:feature-input:name#128:8",
+            "id": "sldprt:feature-input:name#config-0:8",
             "object_id": 4294967295,
             "offset": 8,
             "ordinal": 0,
-            "parent": "sldprt:feature-input:resolved-features#128",
+            "parent": "sldprt:feature-input:resolved-features#config-0",
             "sequence": 0,
             "value": "A"
           }
@@ -92,12 +92,12 @@
         "feature_input_relation_instances": [],
         "feature_input_scalars": [
           {
-            "id": "sldprt:feature-input:scalar#128:38",
-            "name": "sldprt:feature-input:name#128:8",
+            "id": "sldprt:feature-input:scalar#config-0:38",
+            "name": "sldprt:feature-input:name#config-0:8",
             "object_id": 1,
             "offset": 38,
             "ordinal": 0,
-            "parent": "sldprt:feature-input:resolved-features#128",
+            "parent": "sldprt:feature-input:resolved-features#config-0",
             "role": "native",
             "sequence": 1,
             "value": 0.025
@@ -255,7 +255,7 @@
   "source_fidelity": {
     "annotations": {
       "provenance": {
-        "sldprt:feature-input:resolved-features#128": {
+        "sldprt:feature-input:resolved-features#config-0": {
           "offset": 0,
           "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "ResolvedFeatures"
@@ -265,7 +265,7 @@
           "stream": "source",
           "tag": "source_image"
         },
-        "sldprt:source:feature-input#b5a4569519155406f19633dc20259ad21692e021b2398a66df29069b503e0344": {
+        "sldprt:source:feature-input#da4e041918ad805387d13c0c70fc3328a30fe43bcd2708eb86f3a1d87d99371c": {
           "offset": 0,
           "stream": "ResolvedFeatures",
           "tag": "feature_input_layout"
@@ -283,7 +283,7 @@
         "stream": "source",
         "untyped": []
       },
-      "sldprt:source:feature-input#b5a4569519155406f19633dc20259ad21692e021b2398a66df29069b503e0344": {
+      "sldprt:source:feature-input#da4e041918ad805387d13c0c70fc3328a30fe43bcd2708eb86f3a1d87d99371c": {
         "bytes": {
           "data": "CQAAAAAAB4AEgP/+/wFBAAAAAAAAAABA/////wAAAAD//v8AAACamZmZmZmZPwAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//8AAAMAeHl6",
           "retention": "inline"

@@ -47,10 +47,8 @@ pub(crate) fn sketches(
             continue;
         }
         let source_stream = source.source_stream();
-        let native_ref = format!(
-            "sldprt:feature-input:resolved-features#{}",
-            source.ordinal()
-        );
+        let lane_key = super::assembly::lane_key(scan, source);
+        let native_ref = format!("sldprt:feature-input:resolved-features#{lane_key}");
         let mut carriers = crate::native::NestedSketchCarriers {
             parent: native_ref.clone(),
             ..Default::default()
@@ -88,7 +86,7 @@ pub(crate) fn sketches(
                 ctx,
                 &brep,
                 &BrepSketchSource {
-                    block_offset: source.ordinal(),
+                    lane_key: &lane_key,
                     stream_ordinal,
                     stream_offset: stream.offset,
                     source_stream,
@@ -120,7 +118,7 @@ pub(crate) fn sketches(
 
 /// Where one decoded B-rep stream sits in its section and how its sketch is named.
 struct BrepSketchSource<'a> {
-    block_offset: usize,
+    lane_key: &'a str,
     stream_ordinal: usize,
     stream_offset: usize,
     source_stream: &'a cadmpeg_ir::StreamName,
@@ -150,7 +148,7 @@ fn project_brep(
         carriers,
     } = output;
     let BrepSketchSource {
-        block_offset,
+        lane_key,
         stream_ordinal,
         stream_offset,
         source_stream,
@@ -228,7 +226,7 @@ fn project_brep(
         let normal = plane_surface.frame().axis().as_raw();
         let u_axis = plane_surface.frame().reference().as_raw();
         let Ok(sketch_id) = SketchId::mint(format!(
-            "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
+            "sldprt:model:sketch#{lane_key}:{stream_ordinal}:{face_ordinal}"
         )) else {
             continue;
         };
@@ -269,7 +267,7 @@ fn project_brep(
                     )
                 } else {
                     let Ok(id) = SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
+                        "sldprt:model:sketch-entity#{lane_key}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
                     )) else { continue };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
@@ -322,7 +320,7 @@ fn project_brep(
                             Some(id.clone())
                         } else if let Some(&index) = curve_indices.get(curve_id) {
                             let curve = &brep.curves[index];
-                            let id = format!("sldprt:feature-input:sketch-curve#{block_offset}:{stream_ordinal}:{face_ordinal}:{index}");
+                            let id = format!("sldprt:feature-input:sketch-curve#{lane_key}:{stream_ordinal}:{face_ordinal}:{index}");
                             let mut curve = curve.clone();
                             curve.id = cadmpeg_ir::ids::CurveId::mint(id.clone())
                                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -348,7 +346,7 @@ fn project_brep(
                             endpoint_refs.push(id.clone());
                         } else if let Some(&index) = point_indices.get(*point_id) {
                             let point = &brep.points[index];
-                            let id = format!("sldprt:feature-input:sketch-point#{block_offset}:{stream_ordinal}:{face_ordinal}:{index}");
+                            let id = format!("sldprt:feature-input:sketch-point#{lane_key}:{stream_ordinal}:{face_ordinal}:{index}");
                             let mut point = point.clone();
                             point.id = cadmpeg_ir::ids::PointId::mint(id.clone())
                                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -388,7 +386,7 @@ fn project_brep(
                 continue;
             };
             let Ok(id) = SketchEntityId::mint(format!(
-                "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
+                "sldprt:model:sketch-entity#{lane_key}:{stream_ordinal}:{face_ordinal}:{}",
                 edge_entities.len() + (entities.len() - first_entity)
             )) else {
                 continue;
@@ -414,7 +412,7 @@ fn project_brep(
                     continue;
                 };
                 let point = &brep.points[index];
-                let id = format!("sldprt:feature-input:sketch-point#{block_offset}:{stream_ordinal}:{face_ordinal}:{index}");
+                let id = format!("sldprt:feature-input:sketch-point#{lane_key}:{stream_ordinal}:{face_ordinal}:{index}");
                 let mut point = point.clone();
                 point.id = cadmpeg_ir::ids::PointId::mint(id.clone())
                     .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -445,7 +443,7 @@ fn project_brep(
             EndpointConstraintSource {
                 sketch: &sketch_id,
                 entities: &entities[first_entity..],
-                block_offset,
+                lane_key,
                 stream_ordinal,
                 face_ordinal,
                 stream: source_stream,
@@ -708,7 +706,7 @@ mod projected_brep_output_tests {
             &cadmpeg_test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
-                block_offset: 7,
+                lane_key: "7",
                 stream_ordinal: 2,
                 stream_offset: 0,
                 source_stream: &stream,
@@ -752,7 +750,7 @@ mod projected_brep_output_tests {
             &cadmpeg_test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
-                block_offset: 0,
+                lane_key: "0",
                 stream_ordinal: 0,
                 stream_offset: 0,
                 source_stream: &stream,
@@ -839,7 +837,7 @@ mod projected_brep_output_tests {
             &ctx,
             &brep,
             &BrepSketchSource {
-                block_offset: 0,
+                lane_key: "0",
                 stream_ordinal: 0,
                 stream_offset: 0,
                 source_stream: &stream,
@@ -884,7 +882,7 @@ mod projected_brep_output_tests {
             &cadmpeg_test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
-                block_offset: 0,
+                lane_key: "0",
                 stream_ordinal: 0,
                 stream_offset: 0,
                 source_stream: &stream,
