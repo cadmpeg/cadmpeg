@@ -8,7 +8,7 @@ use crate::{
         split, tests::reference, PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind,
         PmDcFeatureReferenceFamily,
     },
-    pmdc::PmDcReference,
+    pmdc::{PmDcListMetadata, PmDcReference, PmDcReferenceList},
     record_identity::RecordTypeId,
     test_support::split::{
         boolean, plane_trim_fixture, set_kind, set_marker, set_slot, set_version,
@@ -168,5 +168,68 @@ fn plane_trim_refuses_unresolved_planes_controls_and_bodies() {
         let (source, mut properties) = plane_trim_fixture(false);
         set_marker(&mut properties, position);
         assert!(admit(&source, &properties).is_err());
+    }
+}
+
+#[test]
+fn plane_trim_requires_unqualified_nonnull_references_in_null_slots() {
+    for slot in [2, 8, 9] {
+        let (mut source, properties) = plane_trim_fixture(false);
+        assert_eq!(source.properties.references()[slot].index(), 0);
+        set_slot(
+            &mut source,
+            slot,
+            PmDcReference::new(62, false).expect("reference"),
+        );
+        assert!(admit(&source, &properties).is_err(), "slot {slot}");
+    }
+}
+
+#[test]
+fn plane_trim_requires_a_zero_name_value_in_the_control_boolean() {
+    let (source, mut properties) = plane_trim_fixture(false);
+    set_kind(
+        &mut properties,
+        1,
+        PmDcFeaturePropertyKind::Boolean {
+            name: String::new(),
+            name_value: 1,
+            value: false,
+        },
+    );
+    assert!(admit(&source, &properties).is_err());
+}
+
+#[test]
+fn plane_trim_requires_one_qualified_body_selection_member() {
+    let (_, properties) = plane_trim_fixture(false);
+    let member = match &properties[5].kind {
+        PmDcFeaturePropertyKind::References { items, .. } => items.references()[0],
+        _ => panic!("body selection"),
+    };
+    let unqualified = PmDcReference::new(member.index(), false).expect("reference");
+    for members in [vec![], vec![member, member], vec![unqualified]] {
+        let (source, mut properties) = plane_trim_fixture(false);
+        set_kind(
+            &mut properties,
+            5,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::BodySelection,
+                items: PmDcReferenceList::new(
+                    2,
+                    (!members.is_empty()).then_some(PmDcListMetadata::U32([
+                        u32::try_from(members.len()).expect("small list"),
+                        0,
+                    ])),
+                    members.clone(),
+                )
+                .expect("list"),
+            },
+        );
+        assert!(
+            admit(&source, &properties).is_err(),
+            "{} members",
+            members.len()
+        );
     }
 }
