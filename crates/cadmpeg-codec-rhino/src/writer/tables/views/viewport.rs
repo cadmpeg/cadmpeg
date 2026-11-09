@@ -132,13 +132,13 @@ pub(super) fn encode(
         // Minor 2 is sufficient when the source has no target/frame/scale.
         // Preserve absence rather than invent an aim point.
         body[0] = 0x12;
-        return Ok(crc_chunk_with_direct(0x2000_823b, &body, &body)?);
+        return crc_chunk_with_direct(0x2000_823b, &body, &body);
     }
     if let Some(valid) = fields.get("camera_frame_valid").and_then(Value::as_bool) {
         body.push(u8::from(valid));
     } else {
         body[0] = 0x13;
-        return Ok(crc_chunk_with_direct(0x2000_823b, &body, &body)?);
+        return crc_chunk_with_direct(0x2000_823b, &body, &body);
     }
     if fields
         .get("view_scale")
@@ -148,7 +148,7 @@ pub(super) fn encode(
     } else {
         body[0] = 0x14;
     }
-    Ok(crc_chunk_with_direct(0x2000_823b, &body, &body)?)
+    crc_chunk_with_direct(0x2000_823b, &body, &body)
 }
 
 pub(super) fn reduced_state_order(document: Option<&PresentationDocument>) -> Option<LossNote> {

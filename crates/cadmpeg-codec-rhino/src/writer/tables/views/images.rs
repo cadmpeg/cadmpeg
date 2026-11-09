@@ -45,12 +45,7 @@ fn reference(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     if let Some(embedded) = embedded {
         body.extend(embedded.to_wire());
     }
-    Ok(anonymous_with_children(
-        1,
-        i32::from(embedded.is_some()),
-        &body,
-        &[child],
-    )?)
+    anonymous_with_children(1, i32::from(embedded.is_some()), &body, &[child])
 }
 
 fn with_reference(
@@ -70,7 +65,7 @@ fn with_reference(
         .into_iter()
         .flat_map(|range| body[range].to_vec())
         .collect::<Vec<_>>();
-    Ok(crc_chunk_with_direct(typecode, &body, &direct)?)
+    crc_chunk_with_direct(typecode, &body, &direct)
 }
 
 pub(super) fn append(

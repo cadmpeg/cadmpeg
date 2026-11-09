@@ -261,8 +261,7 @@ pub(super) fn write_semantic_at(
                     return Err(crate::writer::write_error::WriteError::Decline(format!(
                         "feature-input lane {} sketch entities do not match their native payload",
                         lane.id
-                    ))
-                    .into());
+                    )));
                 }
             }
         }
@@ -286,9 +285,9 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(&normalized, finding)
     });
     if let Some(finding) = blocking {
-        return Err(
-            crate::writer::write_error::WriteError::Unwritable(finding.message.clone()).into(),
-        );
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            finding.message.clone(),
+        ));
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -336,9 +335,9 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(ir, finding)
     });
     if let Some(finding) = blocking {
-        return Err(
-            crate::writer::write_error::WriteError::Unwritable(finding.message.clone()).into(),
-        );
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            finding.message.clone(),
+        ));
     }
     check_semantic_support(ir)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
@@ -356,7 +355,7 @@ pub(super) fn write_semantic_at(
     if !retain_native_brep && requires_native_partition(ir) {
         return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
-        ).into());
+        ));
     }
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
@@ -432,7 +431,7 @@ pub(super) fn write_semantic_at(
                 return Err(crate::writer::write_error::WriteError::Decline(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
                         .into(),
-                ).into());
+                ));
             }
             patch_retained_swobjects_metadata(
                 ir,
@@ -823,27 +822,23 @@ fn assign_configuration_indices(
         let Some(name) = configuration.name.as_deref() else {
             return Err(crate::writer::write_error::WriteError::Unwritable(
                 "SLDPRT configuration has no resolved name".into(),
-            )
-            .into());
+            ));
         };
         if name.trim().is_empty() {
             return Err(crate::writer::write_error::WriteError::Unwritable(
                 "SLDPRT configuration has an empty name".into(),
-            )
-            .into());
+            ));
         }
         if !names.insert(name) {
             return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT repeats configuration name {name:?}"
-            ))
-            .into());
+            )));
         }
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
                 return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "duplicate SLDPRT configuration source index {index}"
-                ))
-                .into());
+                )));
             }
         }
     }
@@ -1779,8 +1774,7 @@ fn configuration_partitions(
         return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT body {} belongs to no configuration",
             body.id.as_str()
-        ))
-        .into());
+        )));
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
@@ -2388,8 +2382,7 @@ fn patch_retained_swobjects_metadata(
                 let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
                     return Err(crate::writer::write_error::WriteError::Unwritable(
                         "invalid retained bounding envelope".into(),
-                    )
-                    .into());
+                    ));
                 };
                 let current = current.iter().map(|value| value.get()).collect::<Vec<_>>();
                 patch_retained_metadata_reals(
@@ -2407,8 +2400,7 @@ fn patch_retained_swobjects_metadata(
                 else {
                     return Err(crate::writer::write_error::WriteError::Unwritable(
                         "invalid retained default plane".into(),
-                    )
-                    .into());
+                    ));
                 };
                 let current = current_origin
                     .iter()
@@ -2434,16 +2426,14 @@ fn patch_retained_swobjects_metadata(
                 let Some(resident) = crate::metadata::transformed_enclosure(payload, offset) else {
                     return Err(crate::writer::write_error::WriteError::Unwritable(
                         "SLDPRT enclosure edit requires a retained complete present record".into(),
-                    )
-                    .into());
+                    ));
                 };
                 let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
                     attribute.values.as_slice()
                 else {
                     return Err(crate::writer::write_error::WriteError::Unwritable(
                         "SLDPRT enclosure attribute has an invalid value shape".into(),
-                    )
-                    .into());
+                    ));
                 };
                 let ir_values = ir_center
                     .iter()
@@ -2490,8 +2480,7 @@ fn patch_retained_swobjects_metadata(
                 if usize::from(byte_len) != old_len {
                     return Err(crate::writer::write_error::WriteError::Decline(
                         "SLDPRT writer cannot resize a retained source linear unit name".into(),
-                    )
-                    .into());
+                    ));
                 }
                 let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
                 replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
@@ -2503,8 +2492,7 @@ fn patch_retained_swobjects_metadata(
                 if end > payload.len() {
                     return Err(crate::writer::write_error::WriteError::Unwritable(
                         "truncated retained SLDPRT unit name".into(),
-                    )
-                    .into());
+                    ));
                 }
                 payload.splice(marker..end, replacement);
             }
@@ -2512,8 +2500,7 @@ fn patch_retained_swobjects_metadata(
                 return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "unsupported retained SLDPRT metadata attribute {}",
                     attribute.name
-                ))
-                .into());
+                )));
             }
         }
     }
@@ -2740,8 +2727,7 @@ fn resolved_feature_payload(
         return Err(crate::writer::write_error::WriteError::Decline(format!(
             "feature-input lane {} has no source layout positions",
             lane.id
-        ))
-        .into());
+        )));
     }
     crate::resolved_features::write_prepare::validate_lane_against_payload(
         histories,
@@ -2773,8 +2759,7 @@ fn resolved_feature_payload(
             return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "feature-input lane {} has inconsistent marker identity or ownership",
                 lane.id
-            ))
-            .into());
+            )));
         }
     }
     let mut payload = lane.native_payload.clone();
@@ -2809,8 +2794,7 @@ fn resolved_feature_payload(
         if payload.get(offset..marker_end) != Some(MARKER) {
             return Err(crate::writer::write_error::WriteError::Decline(
                 "editing this feature-input marker layout is not implemented".into(),
-            )
-            .into());
+            ));
         }
         let field_start = offset.checked_add(17).ok_or_else(|| {
             crate::writer::write_error::WriteError::Decline("feature-input offset overflow".into())
@@ -2875,8 +2859,7 @@ fn resolved_feature_payload(
             else {
                 return Err(crate::writer::write_error::WriteError::Decline(
                     "feature-input marker does not carry editable coordinate fields".into(),
-                )
-                .into());
+                ));
             };
             if stored == coordinates {
                 continue;
@@ -2911,7 +2894,7 @@ fn resolved_feature_payload(
                     "feature-input lane {} edits the coordinates of sketch marker {}, whose layout keeps them elsewhere",
                     lane.id,
                     entity.id()
-                )).into());
+                )));
             };
             for (relative, value) in [(0usize, coordinates[0]), (8, coordinates[1])] {
                 let start = coordinate_start + relative;
@@ -3051,9 +3034,7 @@ impl MetadataRecord {
         use cadmpeg_ir::attributes::AttributeValue;
 
         let invalid = |kind: &str| {
-            write_error::WriteError::from(crate::writer::write_error::WriteError::Unwritable(
-                format!("invalid {kind}"),
-            ))
+            crate::writer::write_error::WriteError::Unwritable(format!("invalid {kind}"))
         };
         let values = attribute.values.as_slice();
         Ok(Some(match attribute.name.as_str() {
@@ -3154,8 +3135,7 @@ impl MetadataRecord {
                 if units.is_empty() {
                     return Err(crate::writer::write_error::WriteError::Unwritable(
                         "source linear unit name is empty".into(),
-                    )
-                    .into());
+                    ));
                 }
                 Self::SourceLinearUnitName { units, byte_len }
             }
@@ -3253,8 +3233,7 @@ fn metadata_payloads(
         if attribute.target != AttributeTarget::Document {
             return Err(crate::writer::write_error::WriteError::Decline(
                 "SLDPRT semantic writer does not support entity attributes".into(),
-            )
-            .into());
+            ));
         }
         match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
@@ -3320,8 +3299,7 @@ fn metadata_payloads(
                 return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "unsupported SLDPRT attribute {}",
                     attribute.name
-                ))
-                .into())
+                )))
             }
         }
     }
@@ -3824,8 +3802,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, write_
                 "tessellation channels: the SLDPRT display-list table carries exactly three \
                  auxiliary channels after the strip, position and normal channels"
                     .into(),
-            )
-            .into());
+            ));
         }
         for channel in auxiliary {
             descriptor(
@@ -4168,8 +4145,7 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::Wr
     if name.is_empty() {
         return Err(crate::writer::write_error::WriteError::Unwritable(
             "SLDPRT material name is empty".into(),
-        )
-        .into());
+        ));
     }
     let mut out = b"moVisualProperties_c".to_vec();
     // Every `Color` construction path admits components in [0, 1], so the
@@ -4226,8 +4202,7 @@ pub(crate) fn brep_body(
         return Err(crate::writer::write_error::WriteError::Decline(format!(
             "SLDPRT cannot write {:?} body {} as a solid lump",
             body.kind, body.id
-        ))
-        .into());
+        )));
     }
     let mut next = 2u32;
     let derived_sphere_seam_curves = ir
@@ -4441,8 +4416,7 @@ pub(crate) fn brep_body(
             if !value.is_finite() || value <= 0.0 {
                 return Err(crate::writer::write_error::WriteError::Unwritable(
                     "SLDPRT vertex tolerance is outside the finite positive source range".into(),
-                )
-                .into());
+                ));
             }
             bef64(&mut out, value);
         } else {
@@ -4459,8 +4433,7 @@ pub(crate) fn brep_body(
         if vertex_owners.get(&edge.end) != Some(owner) {
             return Err(crate::writer::write_error::WriteError::Unwritable(
                 "SLDPRT EDGE endpoints do not have one BODY owner".into(),
-            )
-            .into());
+            ));
         }
         tag(&mut out, 0x10);
         typed_ref(&mut out, edges[&edge.id])?;
@@ -4611,8 +4584,7 @@ pub(crate) fn brep_body(
                 return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "face {} has no supported loopless surface",
                     face.id
-                ))
-                .into())
+                )))
             }
         };
         for value in [0, 0, first, 0, surfaces[&face.surface]] {
@@ -4711,14 +4683,12 @@ fn write_body_hierarchy(
                         if !faces.contains_key(face) {
                             return Err(crate::writer::write_error::WriteError::Unwritable(
                                 "shell references missing face".into(),
-                            )
-                            .into());
+                            ));
                         }
                         if !assigned.insert(face.clone()) {
                             return Err(crate::writer::write_error::WriteError::Unwritable(
                                 "face belongs to multiple bodies".into(),
-                            )
-                            .into());
+                            ));
                         }
                     }
                 }
@@ -4750,14 +4720,12 @@ fn write_body_hierarchy(
                     if !faces.contains_key(face) {
                         return Err(crate::writer::write_error::WriteError::Unwritable(
                             "shell references missing face".into(),
-                        )
-                        .into());
+                        ));
                     }
                     if !assigned.insert(face.clone()) {
                         return Err(crate::writer::write_error::WriteError::Unwritable(
                             "face belongs to multiple bodies".into(),
-                        )
-                        .into());
+                        ));
                     }
                     owned.push(face_owners[face]);
                 }
@@ -4812,16 +4780,14 @@ fn write_body_hierarchy(
         if native_regions.is_empty() {
             return Err(crate::writer::write_error::WriteError::Unwritable(
                 "SLDPRT body has no regions".into(),
-            )
-            .into());
+            ));
         }
         write_attribute_list(out, &native_regions, next, 0x0017, root)?;
     }
     if assigned.len() != ir.model.faces.len() {
         return Err(crate::writer::write_error::WriteError::Unwritable(
             "face is not assigned to a body".into(),
-        )
-        .into());
+        ));
     }
     write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
@@ -4902,8 +4868,7 @@ fn write_typed_body_hierarchy(
             if face_shells.insert(face.clone(), shell_attr).is_some() {
                 return Err(crate::writer::write_error::WriteError::Unwritable(
                     "face belongs to multiple typed shells".into(),
-                )
-                .into());
+                ));
             }
         }
     }
@@ -5413,8 +5378,7 @@ fn write_nurbs_surface(
     if u_degree == 0 || v_degree == 0 {
         return Err(crate::writer::write_error::WriteError::Unwritable(
             "NURBS surface degree must be positive".into(),
-        )
-        .into());
+        ));
     }
     let u_count = field_u32(&CAPACITY_FIELDS[22], nurbs.u_count())?;
     let v_count = field_u32(&CAPACITY_FIELDS[23], nurbs.v_count())?;

@@ -95,8 +95,7 @@ fn sync_neutral_parameters(
     if parameters_with_incoherent_dependencies(parameters, &feature_names, &global_owners) > 0 {
         return Err(crate::writer::write_error::WriteError::Unwritable(
             "SLDPRT parameter expressions reference missing canonical identities".into(),
-        )
-        .into());
+        ));
     }
     let aliases = parameters
         .iter()
@@ -240,8 +239,7 @@ fn sync_neutral_parameters(
             return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT parameter {} references a missing feature",
                 parameter.id
-            ))
-            .into());
+            )));
         }
         let owner_parameters = desired.entry(owner_id.clone()).or_default();
         if owner_parameters
@@ -251,8 +249,7 @@ fn sync_neutral_parameters(
             return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "duplicate SLDPRT parameter {} on feature {}",
                 parameter.name, owner_id
-            ))
-            .into());
+            )));
         }
         if owner_parameters
             .iter()
@@ -261,8 +258,7 @@ fn sync_neutral_parameters(
             return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "duplicate SLDPRT parameter ordinal {} on feature {}",
                 parameter.ordinal, owner_id
-            ))
-            .into());
+            )));
         }
         owner_parameters.push(parameter);
     }
@@ -401,8 +397,7 @@ fn sync_neutral_parameters(
             return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT parameter {} references missing scalar {native_ref}",
                 parameter.id.as_str()
-            ))
-            .into());
+            )));
         };
         let lane = &mut native.feature_input_lanes[lane_index];
         let scalar_name = lane

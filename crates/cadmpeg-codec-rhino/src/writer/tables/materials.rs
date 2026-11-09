@@ -245,7 +245,7 @@ fn encode_material(
             .and_then(Value::as_bool)
             .unwrap_or(false),
     ));
-    Ok(crc_chunk_with_direct(
+    crc_chunk_with_direct(
         0x2000_8040,
         &class_wrapper_with_direct(
             MATERIAL_CLASS,
@@ -258,7 +258,7 @@ fn encode_material(
             &[],
         )?,
         &[],
-    )?)
+    )
 }
 
 fn legacy_material_minor(fields: Option<&Map<String, Value>>) -> Option<i32> {
@@ -444,11 +444,11 @@ fn encode_legacy_material(
     )?;
     let mut payload = vec![0x20];
     payload.extend(inner);
-    Ok(crc_chunk_with_direct(
+    crc_chunk_with_direct(
         0x2000_8040,
         &class_wrapper_with_direct(MATERIAL_CLASS, &payload, &[0x20])?,
         &[],
-    )?)
+    )
 }
 
 pub(in crate::writer) fn bound_appearance<'a>(
@@ -831,7 +831,7 @@ fn texture_array(textures: &[Value], identity: &str) -> Result<Vec<u8>, WriteErr
         )?);
         children.push(start..body.len());
     }
-    Ok(anonymous_with_children(1, 0, &body, &children)?)
+    anonymous_with_children(1, 0, &body, &children)
 }
 
 #[cfg(test)]

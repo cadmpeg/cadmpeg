@@ -323,7 +323,7 @@ fn v5_mesh_cache_userdata(
     }
     let mut payload = body;
     payload.extend(hasher.finalize().to_le_bytes());
-    Ok(super::long_chunk(0x0002_7ffd, &payload)?)
+    super::long_chunk(0x0002_7ffd, &payload)
 }
 
 fn geometry_agrees(input: &CadIr, output: &CadIr) -> bool {

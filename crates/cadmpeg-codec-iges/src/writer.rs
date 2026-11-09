@@ -672,7 +672,7 @@ fn synthesize_with_admission(
                 WriteError::Unwritable(reason)
                 | WriteError::Codec(CodecError::InvalidInput(reason) | CodecError::Malformed(reason)),
             ) => degrade::graph(ctx, ir, version, &reason)?,
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error),
         }
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
@@ -9393,8 +9393,7 @@ fn encode_file(
         let Some(parent_expanded) = expanded_index_by_entity.get(parent).copied() else {
             return Err(WriteError::Unwritable(
                 "IGES transformation link targets no emitted entity".into(),
-            )
-            .into());
+            ));
         };
         let parent_sequence = u32::try_from(parent_expanded)
             .ok()
@@ -9407,8 +9406,7 @@ fn encode_file(
         else {
             return Err(WriteError::Unwritable(
                 "IGES transformation link targets no emitted entity".into(),
-            )
-            .into());
+            ));
         };
         *slot = parent_sequence;
     }
@@ -9438,9 +9436,9 @@ fn encode_file(
             None | Some(BodyColor::Standard(0)) => 0,
             Some(BodyColor::Standard(number)) => number,
             Some(BodyColor::Custom(_)) => {
-                return Err(
-                    WriteError::Unwritable("IGES color definition was not emitted".into()).into(),
-                );
+                return Err(WriteError::Unwritable(
+                    "IGES color definition was not emitted".into(),
+                ));
             }
             Some(BodyColor::Definition(entity_index)) => {
                 let expanded_index =
@@ -9923,9 +9921,9 @@ fn parameter_card(
     sequence: u32,
 ) -> Result<Vec<u8>, WriteError> {
     if data.len() > 64 {
-        return Err(
-            WriteError::Unwritable("IGES Parameter Data payload exceeds 64 bytes".into()).into(),
-        );
+        return Err(WriteError::Unwritable(
+            "IGES Parameter Data payload exceeds 64 bytes".into(),
+        ));
     }
     let directory_sequence = capacity::card_sequence(directory_sequence)?;
     let mut payload = vec![b' '; 72];

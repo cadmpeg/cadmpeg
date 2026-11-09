@@ -677,8 +677,7 @@ pub(super) fn append_scalar_fields(
     if length == 0 {
         return Err(crate::writer::write_error::WriteError::Unwritable(
             "SLDPRT generated parameter name must not be empty".into(),
-        )
-        .into());
+        ));
     }
     payload.extend_from_slice(NAME_MARKER);
     super::names::append_name_length(payload, length);
@@ -782,10 +781,10 @@ fn generated_operand_address(
             ))
         })?;
     u16::try_from(ordinal).map_err(|_| {
-        WriteError::from(crate::writer::write_error::WriteError::Unwritable(format!(
+        crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT sketch {} exceeds the dimension operand space",
             sketch.id.as_str()
-        )))
+        ))
     })
 }
 
@@ -870,8 +869,7 @@ pub(super) fn append_coordinate_marker_link(
     if count > 0 && payload.get(*offset + 86..*offset + 88) != Some(&SELECTOR.to_le_bytes()) {
         return Err(crate::writer::write_error::WriteError::Unwritable(
             "source-less SLDPRT coordinate marker changed reverse-relation selector".into(),
-        )
-        .into());
+        ));
     }
     let cell = offset + 86 + count * 12;
     let end = cell + 18;

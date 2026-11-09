@@ -121,8 +121,7 @@ pub(crate) fn prepare_sketches_for_write(
         // its input lane. Author the current document through synthesis.
         return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT canonical sketch regeneration requires synthesized input lanes".into(),
-        )
-        .into());
+        ));
     }
     native
         .feature_input_lanes
@@ -1605,8 +1604,7 @@ fn source_less_lanes(
             return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "source-less SLDPRT spatial sketch {} requires at least one line",
                 sketch.id.as_str()
-            ))
-            .into());
+            )));
         }
         let constraints = ir
             .model
@@ -1630,8 +1628,7 @@ fn source_less_lanes(
                 return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "spatial sketch constraint {} has no native serializer",
                     constraint.id
-                ))
-                .into());
+                )));
             };
             if !points.contains(&point) {
                 points.push(point);
@@ -1654,8 +1651,7 @@ fn source_less_lanes(
                     return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT spatial sketch {} supports point and line geometry only",
                     sketch.id
-                ))
-                    .into())
+                )))
                 }
             }
         }
@@ -1693,8 +1689,7 @@ fn source_less_lanes(
             else {
                 return Err(crate::writer::write_error::WriteError::Decline(
                     "spatial relation point has no point geometry".into(),
-                )
-                .into());
+                ));
             };
             append_spatial_relation_marker(
                 &mut payload,
@@ -1718,8 +1713,7 @@ fn source_less_lanes(
             else {
                 return Err(crate::writer::write_error::WriteError::Decline(
                     "spatial relation line has no line geometry".into(),
-                )
-                .into());
+                ));
             };
             let first = marker_id(points.len() + index * 2)?;
             let second = marker_id(points.len() + index * 2 + 1)?;
@@ -1766,8 +1760,7 @@ fn source_less_lanes(
                     return Err(crate::writer::write_error::WriteError::Decline(format!(
                         "spatial sketch constraint {} has no native serializer",
                         constraint.id
-                    ))
-                    .into());
+                    )));
                 }
                 let parameter = ir
                     .model
@@ -1838,8 +1831,7 @@ fn source_less_lanes(
                 return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "spatial sketch constraint {} has no native serializer",
                     constraint.id
-                ))
-                .into());
+                )));
             };
             let parameter = parameter
                 .parameter()
@@ -1859,8 +1851,7 @@ fn source_less_lanes(
             else {
                 return Err(crate::writer::write_error::WriteError::Decline(
                     "spatial point-line relation requires an evaluated length".into(),
-                )
-                .into());
+                ));
             };
             let point_index = points.iter().position(|id| *id == point).ok_or_else(|| {
                 crate::writer::write_error::WriteError::Unwritable(
