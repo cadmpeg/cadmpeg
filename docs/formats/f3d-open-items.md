@@ -1852,3 +1852,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-333. Edge recipes whose prefix record index names no tagged face
+
+**Question.** Which faces does a standard Fillet or Chamfer edge recipe select as candidate faces when the i32 record index at `name−16` of its prefix frame is `1`?
+
+**Known.** An edge operand's candidate faces are the faces of the bound ASM history whose persistent subentity tags name the recipe's prefix record index. One public printer assembly stores 1,235 edge operands. 86 of them store record index `1`, and in each of these the bound history holds no persistent subentity tag that names design reference `1`, so the operand has no candidate faces. Four of the 86 store no prefix references. For the other 82, the prefix references resolve to between 4 and 44 faces. Of the 1,149 operands with another record index, 1,039 have candidate faces, but no fixed relation joins those faces to the faces of the prefix references. In 820 of the 1,039, the candidate faces are equal to neither the union of the reference faces nor the union of the faces tagged by the positive references, and are not a subset of the reference faces. The decoder keeps the edges of the 86 operands native.
+
+**Need.** A single-body part whose `Fillet` rounds one edge of a box, saved once. Then the same `Fillet` with a second edge added, and the same `Fillet` after an earlier feature that changes one face next to the edge. Save each design in the top-level component and once in a component placed in another design. Each save needs the edge-recipe operand records, the parameter scope, and the ASM history.
+
+**Conflict.** None.
+
+**Note.** None.
