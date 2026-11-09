@@ -1841,13 +1841,13 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
-### DR-327. Separator byte of a 130-byte circular-pattern axis record
+### DR-327. Separator byte and wrapper identity of a 130-byte circular-pattern axis record
 
-**Question.** Does the `u8 1` that a 130-byte two-wrapper circular-pattern axis record stores between its references to the axis-record indexes plus two and plus one encode the direction of travel?
+**Question.** Does the `u8 1` that a 130-byte two-wrapper circular-pattern axis record stores between its references to the axis-record indexes plus two and plus one encode the direction of travel? Which topology does the persistent identity of its wrappers name?
 
-**Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The 130-byte form is observed with a full-turn total angle, where the instance set does not depend on the direction of travel. The decoder projects such a pattern only when its total angle is a full turn.
+**Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The decoder projects a pattern whose axis comes from the 130-byte form only when its total angle is a full turn, where the instance set does not depend on the direction of travel. In a 130-byte record whose pattern repeats an Extrude twenty times over a full turn, both wrappers carry the same persistent identity. No ASM history topology holds that identity. The design type table lists it among the entity identities of the body-visibility browser-node member type `D26351F0-5940-4D23-AA20-2C35475A6D9E`. It is one less than the record index of the seed Extrude's scope. The axis stays unresolved.
 
-**Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Each save needs the axis record frame and the parameter owners.
+**Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Save the full-turn pattern once about a linear edge, once about a circular edge, and once about a construction axis. Each save needs the axis record frame, its wrapper records, the parameter owners, and the ASM history.
 
 **Conflict.** None.
 
