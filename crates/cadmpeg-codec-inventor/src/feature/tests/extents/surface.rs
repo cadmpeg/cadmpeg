@@ -15,7 +15,7 @@ fn surface_extrusion(
             operation,
             extent,
             symmetric: false,
-            solid_input: false,
+            solid_input: SolidInput::None,
         },
         slots,
         extra,
@@ -32,13 +32,22 @@ fn surface_extrusion_over_solid(
     slots: &[(usize, u32)],
     extra: Vec<PmDcFeatureProperty>,
 ) -> Option<Feature> {
+    surface_extrusion_with_input(SolidInput::Earlier, extent, slots, extra)
+}
+
+fn surface_extrusion_with_input(
+    solid_input: SolidInput,
+    extent: u16,
+    slots: &[(usize, u32)],
+    extra: Vec<PmDcFeatureProperty>,
+) -> Option<Feature> {
     build_extent_extrusion(
         ExtentCase {
             output: Output::Surface,
             operation: 5,
             extent,
             symmetric: false,
-            solid_input: true,
+            solid_input,
         },
         slots,
         extra,
@@ -179,7 +188,7 @@ fn the_solid_decoder_refuses_the_surface_operation() {
             operation: 5,
             extent: 5,
             symmetric: false,
-            solid_input: false,
+            solid_input: SolidInput::None,
         },
         &[],
         Vec::new(),
@@ -251,6 +260,15 @@ fn surface_extrusion_over_a_solid_body_refuses_other_slot_14_forms() {
             plane_surface(21),
             surface_body(22),
         ],
+    )
+    .is_none());
+    // The solid extrusion that stores the wrapper precedes the surface
+    // extrusion in the history.
+    assert!(surface_extrusion_with_input(
+        SolidInput::Later,
+        5,
+        &[(14, 22)],
+        vec![surface_body(22)]
     )
     .is_none());
     // The input wrapper differs from the result wrapper of slot 16.

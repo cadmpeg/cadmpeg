@@ -1830,6 +1830,7 @@ fn validate_features(
                 record,
             )
         }));
+    let extrusion_positions = data.feature_positions(ctx)?;
     let extrusion_index = crate::feature::extrusion::ValidationIndex::new(
         &crate::feature::extrusion::ValidationRecords {
             features: &data.pm_dc_features,
@@ -1843,6 +1844,7 @@ fn validate_features(
             entity_links: &data.pm_dc_entity_style_links,
             kernel_links: &data.pm_dc_kernel_entity_links,
             model: &ir.model,
+            positions: &extrusion_positions,
         },
     );
     let loft_index = ir
@@ -3094,6 +3096,59 @@ struct NativeData {
 }
 
 impl NativeData {
+    /// The B-rep segments of the metadata, with their roles.
+    fn brep_segment_names(&self) -> Vec<crate::design::scope::BrepSegmentName> {
+        use crate::design::scope::{BrepSegmentName, BrepSegmentRole};
+        self.metadata
+            .iter()
+            .filter_map(|segment| {
+                let role = match segment.kind.as_str() {
+                    "pm_brep" => BrepSegmentRole::Document,
+                    "mb_brep" => BrepSegmentRole::FlatPattern,
+                    _ => return None,
+                };
+                Some(BrepSegmentName {
+                    display_name: segment.display_name.clone(),
+                    role,
+                })
+            })
+            .collect()
+    }
+
+    /// The history position of each feature record, by segment token and
+    /// record ordinal.
+    fn feature_positions(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<HashMap<(&str, u32), u64>, CodecError> {
+        let segments = self.brep_segment_names();
+        let records = crate::feature::history::HistoryRecords {
+            features: &self.pm_dc_features,
+            patterns: &self.pm_dc_pattern_features,
+            labels: &self.pm_dc_feature_labels,
+            terminators: &self.pm_dc_feature_terminators,
+            sketches: &self.pm_dc_sketches,
+            work_planes: &self.pm_dc_work_planes,
+            roots: &self.pm_dc_model_roots,
+            segments: &segments,
+        };
+        let tokens = self
+            .pm_dc_features
+            .iter()
+            .map(|feature| feature.identity.segment_token.as_str())
+            .collect::<HashSet<_>>();
+        let mut positions = HashMap::new();
+        for token in tokens {
+            let history = crate::feature::history::build_records(ctx, token, &records)?;
+            positions.extend(
+                history
+                    .placements()
+                    .map(|(ordinal, placement)| ((token, ordinal), placement.ordinal)),
+            );
+        }
+        Ok(positions)
+    }
+
     fn load(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::native::NativeNamespace,

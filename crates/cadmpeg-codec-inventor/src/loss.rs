@@ -129,6 +129,8 @@ pub(crate) enum InventorLossCode {
     FeatureExtrusionProfileNative,
     /// A surface extrusion direction rests on the assumed polarity of Boolean slot 3.
     FeatureSurfaceExtrusionPolarityAssumed,
+    /// A through-all surface extrusion reads its neutral extent as bounded by the selected solid body.
+    FeatureSurfaceExtrusionSolidBoundAssumed,
     /// A planar extrusion target retains its unresolved body-face identity.
     FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
@@ -341,6 +343,7 @@ impl InventorLossCode {
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureSurfaceExtrusionPolarityAssumed,
+        Self::FeatureSurfaceExtrusionSolidBoundAssumed,
         Self::FeatureExtrusionTargetFaceNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
@@ -466,6 +469,9 @@ impl InventorLossCode {
             Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
             Self::FeatureSurfaceExtrusionPolarityAssumed => {
                 "feature.surface-extrusion-polarity-assumed"
+            }
+            Self::FeatureSurfaceExtrusionSolidBoundAssumed => {
+                "feature.surface-extrusion-solid-bound-assumed"
             }
             Self::FeatureExtrusionTargetFaceNative => "feature.extrusion-target-face-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
@@ -629,6 +635,7 @@ impl InventorLossCode {
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureSurfaceExtrusionPolarityAssumed
+            | Self::FeatureSurfaceExtrusionSolidBoundAssumed
             | Self::FeatureExtrusionTargetFaceNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
@@ -804,6 +811,7 @@ mod tests {
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.surface-extrusion-polarity-assumed",
+                "feature.surface-extrusion-solid-bound-assumed",
                 "feature.extrusion-target-face-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",

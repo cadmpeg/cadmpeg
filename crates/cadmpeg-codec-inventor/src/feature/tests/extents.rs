@@ -123,7 +123,7 @@ fn placed_extent_extrusion(
             operation: 3,
             extent,
             symmetric,
-            solid_input: false,
+            solid_input: SolidInput::None,
         },
         slots,
         extra,
@@ -141,9 +141,38 @@ struct ExtentCase {
     operation: u16,
     extent: u16,
     symmetric: bool,
-    /// An earlier new-body solid extrusion stores the slot-14 wrapper as its
-    /// result.
-    solid_input: bool,
+    /// A new-body solid extrusion stores the slot-14 wrapper as its result.
+    solid_input: SolidInput,
+}
+
+/// Where the solid extrusion that stores the slot-14 wrapper stands in the
+/// history relative to the extrusion under test.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SolidInput {
+    None,
+    Earlier,
+    Later,
+}
+
+/// History positions of the extrusion under test and of the solid extrusion
+/// that precedes or follows it.
+fn test_positions<'a>(
+    feature: &'a PmDcFeature,
+    prior: Option<&'a PmDcFeature>,
+    input: SolidInput,
+) -> std::collections::HashMap<(&'a str, u32), u64> {
+    let key = |feature: &'a PmDcFeature| {
+        (
+            feature.identity.segment_token.as_str(),
+            feature.identity.record_ordinal,
+        )
+    };
+    let mut positions = std::collections::HashMap::new();
+    positions.insert(key(feature), 1);
+    if let Some(prior) = prior {
+        positions.insert(key(prior), if input == SolidInput::Later { 2 } else { 0 });
+    }
+    positions
 }
 
 /// The extent fixture of either body kind. A surface extrusion has the
@@ -421,7 +450,7 @@ fn build_extent_extrusion(
     let wrapper = all_slots
         .iter()
         .find_map(|(slot, ordinal)| (*slot == 14).then_some(*ordinal));
-    let prior = solid_input.then(|| {
+    let prior = (solid_input != SolidInput::None).then(|| {
         let wrapper = wrapper.expect("solid input names slot 14");
         let mut operation = test_property(
             80,
@@ -471,10 +500,12 @@ fn build_extent_extrusion(
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("projection context");
     if let Some((prior_feature, _)) = &prior {
+        index.positions = test_positions(&feature, Some(prior_feature), solid_input);
         index.solid_wrappers = crate::feature::extrusion::solid_result_wrappers(
             std::slice::from_ref(prior_feature),
             |_| true,
             &index.properties,
+            &index.positions,
         );
     }
     configure(&mut index);
@@ -542,7 +573,22 @@ fn build_extent_extrusion(
                     == crate::loss::InventorLossCode::FeatureSurfaceExtrusionPolarityAssumed.code()
             })
             .count();
-        assert_eq!(losses.len(), profile_losses + polarity_losses);
+        let bound_losses = losses
+            .iter()
+            .filter(|note| {
+                note.code.local_code()
+                    == crate::loss::InventorLossCode::FeatureSurfaceExtrusionSolidBoundAssumed
+                        .code()
+            })
+            .count();
+        assert_eq!(
+            losses.len(),
+            profile_losses + polarity_losses + bound_losses
+        );
+        assert_eq!(
+            bound_losses,
+            usize::from(projected.is_some() && solid_input != SolidInput::None)
+        );
         assert_eq!(profile_losses, usize::from(projected.is_some()));
         assert_eq!(polarity_losses, usize::from(projected.is_some()));
     } else if projected.as_ref().is_some_and(|feature| {
@@ -583,6 +629,7 @@ fn build_extent_extrusion(
                 entity_links: std::slice::from_ref(&link),
                 kernel_links: &[],
                 model: &model,
+                positions: &index.positions,
             },
         );
         assert!(validation.matches(&feature, &label, projected.evaluation.definition()));

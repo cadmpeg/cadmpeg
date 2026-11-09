@@ -2156,7 +2156,9 @@ pub(crate) struct ProjectionIndex<'a> {
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
     /// Surface-body wrappers that a new-body solid extrusion stores as its
     /// result.
-    solid_wrappers: HashSet<(&'a str, u32)>,
+    solid_wrappers: HashMap<(&'a str, u32), u64>,
+    /// History position of each feature record.
+    positions: HashMap<(&'a str, u32), u64>,
     profiles: profile::ProfileIndex<'a>,
     /// Profile sketch ordinal of each sheet-metal plate, from the face label
     /// whose participants are that sketch and that plate.
@@ -2366,7 +2368,8 @@ pub(crate) fn project(
             links
         },
         work_planes: unique_work_planes,
-        solid_wrappers: HashSet::new(),
+        solid_wrappers: HashMap::new(),
+        positions: HashMap::new(),
         profiles: profile::ProfileIndex::new(
             profile_bodies,
             &inventory.kernel_entity_links,
@@ -2402,6 +2405,13 @@ pub(crate) fn project(
                 .copied()
         })
     };
+    if let Some(token) = token {
+        index.positions = history
+            .placements
+            .iter()
+            .map(|(ordinal, placement)| ((token, *ordinal), placement.ordinal))
+            .collect();
+    }
     index.solid_wrappers = extrusion::solid_result_wrappers(
         &inventory.features,
         |feature| {
@@ -2413,6 +2423,7 @@ pub(crate) fn project(
             })
         },
         &index.properties,
+        &index.positions,
     );
     let mut projected = Vec::new();
     let mut extrusion_losses = Vec::new();
@@ -5417,7 +5428,8 @@ pub(crate) mod tests {
                 })
                 .collect(),
             work_planes: std::collections::HashMap::new(),
-            solid_wrappers: std::collections::HashSet::new(),
+            solid_wrappers: std::collections::HashMap::new(),
+            positions: std::collections::HashMap::new(),
             profiles: super::profile::ProfileIndex::new(&[], &[], entity_style_links, &[], &[]),
             plate_sketches: std::collections::HashMap::new(),
         }

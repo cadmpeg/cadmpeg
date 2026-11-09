@@ -78,6 +78,16 @@ pub(super) fn project_surface(
         losses.push(crate::loss::InventorLossCode::FeatureSurfaceExtrusionPolarityAssumed.note(
             "Surface extrusion direction assumes the Boolean slot 3 polarity of the solid extrusion form: true reverses the stored direction, and false keeps it.",
         ));
+        if source
+            .properties
+            .references()
+            .get(14)
+            .is_some_and(|slot| slot.index() != 0)
+        {
+            losses.push(crate::loss::InventorLossCode::FeatureSurfaceExtrusionSolidBoundAssumed.note(
+                "Surface extrusion reads its neutral through-all extent as bounded by the selected solid body; the neutral extent names no body.",
+            ));
+        }
     }
     projected
 }
@@ -183,15 +193,19 @@ pub(super) fn work_point_plane(
 }
 
 /// The wrapper records that new-body solid extrusions store in their result
-/// collections.
+/// collections, each with the history position of its extrusion.
 pub(super) fn solid_result_wrappers<'a>(
     features: &'a [PmDcFeature],
     is_extrusion: impl Fn(&PmDcFeature) -> bool,
     properties: &std::collections::HashMap<(&'a str, u32), Option<&'a super::PmDcFeatureProperty>>,
-) -> HashSet<(&'a str, u32)> {
-    let mut wrappers = HashSet::new();
+    positions: &std::collections::HashMap<(&'a str, u32), u64>,
+) -> std::collections::HashMap<(&'a str, u32), u64> {
+    let mut wrappers = std::collections::HashMap::new();
     for feature in features.iter().filter(|feature| is_extrusion(feature)) {
         let token = feature.identity.segment_token.as_str();
+        let Some(&position) = positions.get(&(token, feature.identity.record_ordinal)) else {
+            continue;
+        };
         let property = |slot: usize| {
             let ordinal = feature
                 .properties
@@ -224,7 +238,7 @@ pub(super) fn solid_result_wrappers<'a>(
                 items
                     .references()
                     .iter()
-                    .filter_map(|reference| Some((token, reference.record_ordinal()?))),
+                    .filter_map(|reference| Some(((token, reference.record_ordinal()?), position))),
             );
         }
     }
@@ -232,8 +246,9 @@ pub(super) fn solid_result_wrappers<'a>(
 }
 
 /// Whether slot 14 of a surface extrusion is null or selects the surface-body
-/// wrapper of a solid body that an earlier new-body solid extrusion created.
-/// The wrapper differs from the slot-16 result wrapper.
+/// wrapper of a solid body that a new-body solid extrusion at an earlier
+/// history position created. The wrapper differs from the slot-16 result
+/// wrapper.
 pub(super) fn surface_input_is_solid(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> bool {
     let slots = source.properties.references();
     let Some(input) = slots.get(14).filter(|slot| slot.index() != 0) else {
@@ -246,8 +261,17 @@ pub(super) fn surface_input_is_solid(source: &PmDcFeature, index: &ProjectionInd
     ) else {
         return false;
     };
+    let Some(&position) = index
+        .positions
+        .get(&(token, source.identity.record_ordinal))
+    else {
+        return false;
+    };
     ordinal != result
-        && index.solid_wrappers.contains(&(token, ordinal))
+        && index
+            .solid_wrappers
+            .get(&(token, ordinal))
+            .is_some_and(|&created| created < position)
         && super::resolve_property(token, input.index(), index).is_some_and(|wrapper| {
             matches!(wrapper.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
         })
@@ -489,6 +513,8 @@ pub(crate) struct ValidationRecords<'a> {
     pub(crate) entity_links: &'a [super::PmDcEntityStyleLink],
     pub(crate) kernel_links: &'a [super::PmDcKernelEntityLink],
     pub(crate) model: &'a cadmpeg_ir::document::Model,
+    /// History position of each feature record.
+    pub(crate) positions: &'a std::collections::HashMap<(&'a str, u32), u64>,
 }
 
 pub(crate) struct ValidationIndex<'a>(ProjectionIndex<'a>);
@@ -525,9 +551,11 @@ impl<'a> ValidationIndex<'a> {
                 ))
             },
             &properties,
+            records.positions,
         );
         Self(ProjectionIndex {
             solid_wrappers,
+            positions: records.positions.clone(),
             properties,
             parameters: unique_index(records.parameters.iter().map(|r| (key(&r.identity), r))),
             parameter_values: unique_index(
