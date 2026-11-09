@@ -347,19 +347,20 @@ impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
     }
 }
 
-impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
-    fn from(error: WriteError) -> Self {
+/// The encode failure a write error is; content the writer cannot write stays
+/// a write error (#217 §5.0).
+impl TryFrom<WriteError> for cadmpeg_ir::codec::write::EncodeError {
+    type Error = WriteError;
+
+    fn try_from(error: WriteError) -> Result<Self, WriteError> {
         match error {
-            WriteError::Codec(error) => match error {
-                CodecError::UnsupportedTarget(r) => Self::UnsupportedTarget(r),
-                CodecError::ResourceLimit(l) => Self::ResourceLimit(l),
-                CodecError::Io(e) => Self::from(e),
-                error => {
-                    debug_assert!(false, "unmapped IGES encode error: {error}");
-                    panic!("unmapped IGES encode error: {error}");
-                }
-            },
-            WriteError::Encode(error) => error,
+            WriteError::Codec(CodecError::UnsupportedTarget(refusal)) => {
+                Ok(Self::UnsupportedTarget(refusal))
+            }
+            WriteError::Codec(CodecError::ResourceLimit(limit)) => Ok(Self::ResourceLimit(limit)),
+            WriteError::Codec(CodecError::Io(error)) => Ok(Self::Io(error)),
+            WriteError::Encode(error) => Ok(error),
+            error @ WriteError::Codec(_) => Err(error),
         }
     }
 }
