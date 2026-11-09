@@ -346,12 +346,12 @@ pub fn structural_name_findings(document: &Value, members: &[String]) -> Vec<Str
 }
 
 /// Record keys §5.1(c) does not edit: ordinals (`ordinal`, and the source
-/// `order` among sibling records), identity, and the paths §5.2 projects out
-/// before pairing.
-const EDIT_SKIPPED: [&str; 15] = [
-    "id",
-    "ordinal",
-    "order",
+/// `order` among sibling records) and identity.
+const EDIT_SKIPPED: [&str; 3] = ["id", "ordinal", "order"];
+
+/// Keys §5.2 projects out at any depth before pairing; §5.1(c) does not edit
+/// them.
+const PROJECTED_KEYS: [&str; 12] = [
     "native_ref",
     "source_object",
     "source_entity_id",
@@ -410,9 +410,10 @@ pub fn scalar_edits(record: &Value, arena: &str) -> Vec<(String, Value)> {
         match value {
             Value::Object(fields) => {
                 for (key, child) in fields {
-                    if top
-                        && (EDIT_SKIPPED.contains(&key.as_str())
-                            || (arena == "drawings" && key == "parameters"))
+                    if PROJECTED_KEYS.contains(&key.as_str())
+                        || (top
+                            && (EDIT_SKIPPED.contains(&key.as_str())
+                                || (arena == "drawings" && key == "parameters")))
                     {
                         continue;
                     }
@@ -479,6 +480,7 @@ pub fn edit_findings(
     };
     let request = same_request(encoder, first);
     let mut findings = Vec::new();
+    let identities = record_identities(&document);
     for (arena, index) in edit_targets(&document, namespace) {
         if !covered.insert(arena.clone()) {
             continue;
@@ -487,6 +489,15 @@ pub fn edit_findings(
         for (pointer, value) in scalar_edits(record, &arena) {
             let mut edited = document.clone();
             let at = format!("/model/{arena}/{index}{pointer}");
+            // A string that names a record of the document is a reference,
+            // not a scalar leaf; reference integrity belongs to validation.
+            if document
+                .pointer(&at)
+                .and_then(Value::as_str)
+                .is_some_and(|text| identities.contains(text))
+            {
+                continue;
+            }
             let Some(slot) = edited.pointer_mut(&at) else {
                 continue;
             };
@@ -514,7 +525,15 @@ pub fn edit_findings(
                 };
                 let mut expected = expected.clone();
                 let path = collapsed_pointer(&at);
-                if let Some(row) = reduced.iter().find(|row| row.path == path) {
+                let row = reduced
+                    .iter()
+                    .find(|row| row_covers(row.path, &path))
+                    .or_else(|| {
+                        reduced
+                            .iter()
+                            .find(|row| row_pointer(&at, row.path).is_some())
+                    });
+                if let Some(row) = row {
                     if !encoder.reduced_fields().iter().any(|declared| {
                         declared.path == row.path && declared.storage == row.storage
                     }) {
@@ -567,8 +586,60 @@ pub fn edit_findings(
     findings
 }
 
+/// The prefix of `pointer` whose collapsed path is `row_path`, when the row
+/// names the edited leaf or a field or record that contains it.
+fn row_pointer(pointer: &str, row_path: &str) -> Option<String> {
+    let mut prefix = String::new();
+    for part in pointer.split('/').filter(|part| !part.is_empty()) {
+        prefix.push('/');
+        prefix.push_str(part);
+        if collapsed_pointer(&prefix) == row_path {
+            return Some(prefix);
+        }
+    }
+    None
+}
+
+/// The identity of every record of a document, neutral and native.
+fn record_identities(document: &Value) -> BTreeSet<String> {
+    let model = document
+        .get("model")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|arenas| arenas.values());
+    let native = document
+        .get("native")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|namespaces| namespaces.values())
+        .filter_map(Value::as_object)
+        .flat_map(|arenas| arenas.values());
+    model
+        .chain(native)
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter_map(|row| row.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The suffix of a row that normalizes an object-valued vector as a whole.
+const OBJECT_ROW: &str = ".{}";
+
+/// Whether a reduced row covers an edited path. A row ending in
+/// [`OBJECT_ROW`] covers every member of the object its path names.
+fn row_covers(row: &str, path: &str) -> bool {
+    row == path
+        || row.strip_suffix(OBJECT_ROW).is_some_and(|object| {
+            path.rsplit_once('.')
+                .is_some_and(|(parent, _)| parent == object)
+        })
+}
+
 /// Applies a normalization row to the edited value. A row whose path ends in
-/// `[]` normalizes a vector as a whole, so it receives the containing array.
+/// `[]` or [`OBJECT_ROW`] and covers the edited leaf normalizes a vector as a
+/// whole, so it receives the containing array or object. A row that names a
+/// field or record containing the edited leaf normalizes that whole value.
 fn normalize_edit(
     expected: &mut Value,
     pointer: &str,
@@ -582,13 +653,30 @@ fn normalize_edit(
     let normalize = row
         .normalize
         .ok_or("normalization has no comparison rule")?;
-    let pointer = if row.path.ends_with("[]") {
-        pointer
-            .rsplit_once('/')
-            .map_or(pointer, |(parent, _)| parent)
+    let target = if row_covers(row.path, &collapsed_pointer(pointer)) {
+        None
     } else {
-        pointer
+        Some(row_pointer(pointer, row.path).ok_or("the row names no prefix of the edit")?)
     };
+    let pointer = match &target {
+        Some(target) => target.as_str(),
+        None if row.path.ends_with("[]") || row.path.ends_with(OBJECT_ROW) => pointer
+            .rsplit_once('/')
+            .map_or(pointer, |(parent, _)| parent),
+        None => pointer,
+    };
+    // An edit to a default value serializes as an absent key; the
+    // normalization then lands on that key of the containing record.
+    if expected.pointer(pointer).is_none() {
+        let (parent, key) = pointer
+            .rsplit_once('/')
+            .ok_or("normalized value is absent")?;
+        let record = expected
+            .pointer_mut(parent)
+            .and_then(Value::as_object_mut)
+            .ok_or("normalized value is absent")?;
+        record.insert(key.replace("~1", "/").replace("~0", "~"), Value::Null);
+    }
     let value = expected
         .pointer_mut(pointer)
         .ok_or("normalized value is absent")?;

@@ -15,14 +15,21 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use std::collections::{HashMap, HashSet};
 
-fn frame(object: &mut Object, name: &str, transform: Transform, losses: &mut Vec<LossNote>) {
+fn frame(
+    object: &mut Object,
+    name: &str,
+    (transform, joint): (Transform, &str),
+    losses: &mut Vec<LossNote>,
+) {
     object.set(
         name,
-        super::placement(transform, &object.name, losses).replacen(
-            "name=\"Placement\"",
-            &format!("name=\"{name}\""),
-            1,
-        ),
+        super::placement(
+            transform,
+            joint,
+            FreecadLossCode::JointFrameNotRigid,
+            losses,
+        )
+        .replacen("name=\"Placement\"", &format!("name=\"{name}\""), 1),
     );
 }
 
@@ -353,7 +360,7 @@ pub(super) fn write(
                 } else {
                     connector.frame
                 };
-                frame(object, "Placement", placement, losses);
+                frame(object, "Placement", (placement, joint.id.as_str()), losses);
                 bool_property(object, "Detach1", connector.detached);
             }
             JointOperands::Pair {
@@ -386,13 +393,16 @@ pub(super) fn write(
                     frame(
                         object,
                         &format!("Placement{suffix}"),
-                        connector.frame,
+                        (connector.frame, joint.id.as_str()),
                         losses,
                     );
                     frame(
                         object,
                         &format!("Offset{suffix}"),
-                        offset_frames.map_or(Transform::identity(), |frames| frames[index]),
+                        (
+                            offset_frames.map_or(Transform::identity(), |frames| frames[index]),
+                            joint.id.as_str(),
+                        ),
                         losses,
                     );
                     bool_property(object, &format!("Detach{suffix}"), connector.detached);

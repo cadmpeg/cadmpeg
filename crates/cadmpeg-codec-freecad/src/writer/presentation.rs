@@ -35,7 +35,7 @@ impl Provider {
             .insert(name.to_owned(), xml::scalar(name, kind, tag, value));
     }
     fn visible(&mut self, value: bool) {
-        self.set("Visibility", "App::PropertyBool", "Bool", u8::from(value));
+        self.set("Visibility", "App::PropertyBool", "Bool", value);
     }
     fn scalar_override(&mut self, name: &str, value: &str) -> bool {
         if let Some(original) = self.native.get(name) {
@@ -153,12 +153,14 @@ fn native(
             .iter()
             .filter(|property| property.owner == record.id)
         {
+            // A side-payload property keeps its native slot, entry name and
+            // status for a neutral list that regenerates it.
+            provider
+                .native
+                .insert(property.name.clone(), property.clone());
             match xml::native_gui(property) {
                 Some(value) => {
                     provider.properties.insert(property.name.clone(), value);
-                    provider
-                        .native
-                        .insert(property.name.clone(), property.clone());
                 }
                 None => losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(
                     format!(
@@ -252,8 +254,19 @@ fn neutral_views(
             ("DisplayMode", view.display_mode.as_ref()),
             ("SelectionStyle", view.selection_style.as_ref()),
         ] {
-            if let Some(value) = value {
+            let Some(value) = value else {
+                continue;
+            };
+            // An enumeration stores its selected index.
+            if value.parse::<i64>().is_ok() {
                 provider.set(key, "App::PropertyEnumeration", "Integer", value);
+            } else {
+                losses.push(
+                    FreecadLossCode::PresentationViewModeNotTransferred.note(format!(
+                        "view {} {key} {value:?} is not an enumeration index and is omitted",
+                        view.id
+                    )),
+                );
             }
         }
         if let Some(value) = view.line_width {
@@ -286,6 +299,22 @@ fn neutral_views(
     }
     for occurrence in &ir.model.occurrences {
         if let Some(value) = occurrence.visible {
+            // Only a link array element keeps its own visibility; any other
+            // link's visibility is its view provider's.
+            let element = occurrence.native_ref.as_ref().is_some_and(|native| {
+                ir.model
+                    .occurrences
+                    .iter()
+                    .filter(|other| other.native_ref.as_ref() == Some(native))
+                    .nth(1)
+                    .is_some()
+            });
+            if !element {
+                losses.push(FreecadLossCode::ExportPresentationNotTransferred.note(format!(
+                    "occurrence {} visibility is written as its link view provider's",
+                    occurrence.id
+                )));
+            }
             if let Some(name) = names
                 .get(occurrence.id.as_str())
                 .filter(|name| live.contains(name.as_str()))

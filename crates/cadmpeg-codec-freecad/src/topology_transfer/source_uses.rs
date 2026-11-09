@@ -423,6 +423,8 @@ fn validation_location_error(error: LocationIdentityError) -> CodecError {
 
 struct NativeUse {
     root: usize,
+    /// Whether the use is placed by a source Location.
+    located: bool,
     owner: String,
     shape: usize,
     property: String,
@@ -472,6 +474,7 @@ fn current_native_topology(
             row.id,
             NativeUse {
                 root: row.key.root,
+                located: row.key.location != 0,
                 owner: working_text(ctx, &row.owner)?,
                 shape: row.key.shape,
                 property: working_text(ctx, &payload.property)?,
@@ -606,6 +609,13 @@ impl CurrentTopologyBindings {
     }
     pub(crate) fn source_kind(&self, native: &str) -> Option<crate::brep::TextShapeKind> {
         self.topology.get(native).map(|source| source.kind)
+    }
+
+    /// Whether a source Location places the native use.
+    pub(crate) fn source_located(&self, native: &str) -> bool {
+        self.topology
+            .get(native)
+            .is_some_and(|source| source.located)
     }
 
     pub(crate) fn selected_records<'a>(

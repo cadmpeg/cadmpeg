@@ -42,6 +42,41 @@ pub(crate) fn write(
         names.insert(sketch.id.as_str().to_owned(), name);
         let object = &mut objects[index];
         object.kind = "Sketcher::SketchObject".into();
+        // A Placement stores unit frame directions.
+        if sketch
+            .placement
+            .resolved()
+            .is_some_and(|(_, normal, x_axis)| {
+                [normal, x_axis].into_iter().any(|vector| {
+                    let length = vector
+                        .components()
+                        .iter()
+                        .map(|component| component.get() * component.get())
+                        .sum::<f64>()
+                        .sqrt();
+                    !cadmpeg_ir::compare::floats_agree(length, 1.0)
+                })
+            })
+        {
+            losses.push(FreecadLossCode::SketchPlacementNormalized.note(format!(
+                "sketch {} frame directions are stored as unit vectors",
+                sketch.id
+            )));
+        }
+        // FreeCAD derives a one-entity profile's orientation from its geometry.
+        if sketch
+            .profiles
+            .as_slice()
+            .iter()
+            .any(|profile| matches!(profile.as_slice(), [only] if only.reversed))
+        {
+            losses.push(
+                FreecadLossCode::SketchProfileOrientationDerived.note(format!(
+                    "sketch {} one-entity profiles take the orientation of their geometry",
+                    sketch.id
+                )),
+            );
+        }
         let transform = sketch
             .placement
             .resolved()

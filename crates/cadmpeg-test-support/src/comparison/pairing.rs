@@ -176,15 +176,43 @@ pub(super) fn pair(
         graph::colours(before, refined.as_ref().unwrap_or(after), include_incoming);
     let mut pairs = BTreeMap::new();
     let mut used = BTreeSet::new();
+    let mut first_owners = BTreeMap::new();
+    let incoming_before = incoming_references(before);
+    let incoming_after = incoming_references(after);
 
     for (index, record) in before.records.iter().enumerate() {
-        if let Some((other, _)) = after.records.iter().enumerate().find(|(other, row)| {
-            !used.contains(other)
-                && record.arena == row.arena
-                && before_colours[index] == after_colours[*other]
-        }) {
+        let equal = after
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(other, row)| {
+                !used.contains(other)
+                    && record.arena == row.arena
+                    && before_colours[index] == after_colours[*other]
+            })
+            .map(|(other, _)| other)
+            .collect::<Vec<_>>();
+        // Structurally identical records tie on colour; the one the already
+        // paired referrers and referents select keeps duplicates apart.
+        let chosen = equal
+            .iter()
+            .copied()
+            .find(|other| {
+                incoming_agrees_with_pairs(index, *other, &incoming_before, &incoming_after, &pairs)
+                    && references_agree_with_pairs(
+                        &record.value,
+                        &after.records[*other].value,
+                        before,
+                        after,
+                        &pairs,
+                        &first_owners,
+                    )
+            })
+            .or_else(|| equal.first().copied());
+        if let Some(other) = chosen {
             pairs.insert(index, other);
             used.insert(other);
+            first_owners.insert(other, index);
         }
     }
     if pairs.len() == before.records.len() {
@@ -203,8 +231,6 @@ pub(super) fn pair(
         .iter()
         .map(|record| unranked_shape(&record.value, &after.ids))
         .collect();
-    let incoming_before = incoming_references(before);
-    let incoming_after = incoming_references(after);
     let candidates: Vec<Vec<usize>> = before
         .records
         .iter()

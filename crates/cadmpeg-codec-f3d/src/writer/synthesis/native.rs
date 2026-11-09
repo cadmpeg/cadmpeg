@@ -1280,11 +1280,17 @@ pub(super) fn coverage(
                         .iter()
                         .find(|candidate| candidate.id() == record.id())
                 }) {
-                    // A record a Design, ACT or BREP stream position
-                    // identifies takes a new position, and with it new layout
-                    // fields, in the stream synthesis lays out.
-                    let laid_out = crate::ids::native_stream(record.id())
-                        .is_some_and(|stream| stream.ends_with(".dat") || stream.ends_with(".smbh"));
+                    // A record a Design, ACT or BREP stream position or a
+                    // BREP record index identifies takes a new position, and
+                    // with it new layout fields, in the stream synthesis lays
+                    // out.
+                    let laid_out = record.id().starts_with("f3d:asm:")
+                        || crate::ids::native_stream(record.id())
+                            .and_then(|stream| std::path::Path::new(stream).extension())
+                            .is_some_and(|extension| {
+                                extension.eq_ignore_ascii_case("dat")
+                                    || extension.eq_ignore_ascii_case("smbh")
+                            });
                     let disposition = if arena.as_str() == "mesh_surface_sentinels" || laid_out
                     {
                         NativeDisposition::Regenerated

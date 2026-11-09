@@ -126,6 +126,72 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
             loss: "fcstd/parameter.expression-normalized",
         },
     },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.occurrences[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/product.placement-not-rigid",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.assembly_joints[].operands",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/joint.frame-not-rigid",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.sketches[].placement",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/sketch.placement-normalized",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.sketches[].profiles",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/sketch.profile-orientation-derived",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.presentation_documents[].schema_version",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/presentation.schema-normalized",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.presentation_documents[].states",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/presentation.state-order-normalized",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.view_presentations[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/presentation.view-mode-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearances[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/appearance.name-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearance_bindings[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/appearance.channel-derived",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.semantic_annotations[].parameters",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/drawing.parameter-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.semantic_annotations[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/annotation.position-planar",
+        },
+    },
 ];
 
 #[derive(Debug)]
