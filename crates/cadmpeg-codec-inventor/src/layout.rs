@@ -544,6 +544,24 @@ pub(crate) mod pm_dc_mirror_instance_map_single_tail_v19 {
     pub(crate) const OWNER: usize = 52;
 }
 
+/// Byte offsets for the `pm_dc_mirror_plane_reference_tail_v19` record.
+///
+/// Spec §13. Record length 18 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 content header.
+/// ```
+pub(crate) mod pm_dc_mirror_plane_reference_tail_v19 {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 18;
+    /// Stated value of `state` (`i32`). Spec §13.
+    pub(crate) const STATE_VALUE: i32 = -1;
+    /// Stated value of `marker0` (`u8`). Spec §13.
+    pub(crate) const MARKER0_VALUE: u8 = 1;
+    /// Stated value of `marker1` (`u8`). Spec §13.
+    pub(crate) const MARKER1_VALUE: u8 = 5;
+}
+
 /// Byte offsets for the `pm_dc_mirror_generated_body_feature_v19` record.
 ///
 /// Spec §13. Record length 66 B.
