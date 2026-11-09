@@ -4241,6 +4241,60 @@ source = "spec"
 anchor = "the single-entry Mirror instance map has type"
 
 [[record]]
+name = "pm_dc_mirror_plane_reference_tail_v19"
+kind = "byte"
+section = "13"
+anchor = "In segment major version 19, a plane-reference record of type"
+size = 18
+note = "Offsets start after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/plane_reference.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+value = -1
+
+[[record.field]]
+name = "owner"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+
+[[record.field]]
+name = "marker0"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+value = 1
+
+[[record.field]]
+name = "marker1"
+offset = 9
+type = "u8"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+value = 5
+
+[[record.field]]
+name = "target"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+
+[[record.field]]
+name = "role"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "In segment major version 19, a plane-reference record of type"
+
+[[record]]
 name = "pm_dc_mirror_generated_body_feature_v19"
 kind = "byte"
 section = "13"
