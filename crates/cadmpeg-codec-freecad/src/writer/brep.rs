@@ -2226,7 +2226,7 @@ fn rechartered(
             | PcurveGeometry::Parabola(_)
             | PcurveGeometry::Hyperbola(_)
     );
-    !identity && !matches!(geometry, PcurveGeometry::Transformed(_)) && !(isometric && foldable)
+    !identity && !matches!(geometry, PcurveGeometry::Transformed(_)) && (!isometric || !foldable)
 }
 
 /// The loss text naming the boundary records of the omitted face `face`:
