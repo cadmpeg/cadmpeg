@@ -1946,7 +1946,7 @@ fn an_unbound_fillet_takes_the_one_history_in_which_its_edges_resolve() {
             )),
             native_ref: Some(SCOPE_ID.to_owned()),
         };
-        let notes = super::bind_fillet_blend_edges(
+        let bindings = super::bind_fillet_blend_edges(
             std::slice::from_mut(&mut feature),
             super::FilletBlendInputs {
                 scopes: &[scope(42)],
@@ -1960,24 +1960,29 @@ fn an_unbound_fillet_takes_the_one_history_in_which_its_edges_resolve() {
         else {
             panic!("expected a fillet");
         };
-        (groups[0].edges.clone(), notes)
+        (groups[0].edges.clone(), bindings)
     };
     // The second history holds the same state pair, but its transition adds
     // no blend, so only the first resolves the fillet's edges.
-    let (edges, notes) = bind(&mut [
+    let (edges, bindings) = bind(&mut [
         named_history("f3d:history", output()),
         named_history("f3d:other-history", input(z())),
     ]);
     assert_eq!(slots(&edges), ["17"]);
-    assert!(notes.iter().any(|note| {
+    assert_eq!(
+        bindings.inferred_scope_histories,
+        [(SCOPE_ID.to_owned(), "f3d:history".to_owned())]
+    );
+    assert!(bindings.notes.iter().any(|note| {
         note.code == crate::loss::F3dLossCode::HistoricalEdgeHistoryInferred.kind()
     }));
     // When both histories resolve the edges, neither is taken.
-    let (edges, _) = bind(&mut [
+    let (edges, bindings) = bind(&mut [
         named_history("f3d:history", output()),
         named_history("f3d:other-history", output()),
     ]);
     assert_eq!(edges, native());
+    assert!(bindings.inferred_scope_histories.is_empty());
 }
 
 #[test]

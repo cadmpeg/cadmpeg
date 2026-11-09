@@ -628,12 +628,20 @@ pub(crate) struct FilletBlendInputs<'a> {
     pub(crate) scope_histories: &'a std::collections::HashMap<String, String>,
 }
 
+/// Loss notes and inferred history bindings of `bind_fillet_blend_edges`.
+pub(crate) struct FilletBlendBindings {
+    pub(crate) notes: Vec<LossNote>,
+    /// Each unbound scope that took the one history in which its edges
+    /// resolve, with that history's id.
+    pub(crate) inferred_scope_histories: Vec<(String, String)>,
+}
+
 /// Bind the edges of each `Fillet` feature from the blend faces of its
 /// transition, with a note for each edge that the binding infers.
 pub(crate) fn bind_fillet_blend_edges(
     features: &mut [cadmpeg_ir::features::Feature],
     input: FilletBlendInputs<'_>,
-) -> Vec<LossNote> {
+) -> FilletBlendBindings {
     let FilletBlendInputs {
         scopes,
         groups,
@@ -690,6 +698,7 @@ pub(crate) fn bind_fillet_blend_edges(
     });
     let histories = &*histories;
     let mut notes = Vec::new();
+    let mut inferred_scope_histories = Vec::new();
     for (position, ((feature, state), candidates)) in
         features.iter_mut().zip(states).zip(candidates).enumerate()
     {
@@ -733,10 +742,10 @@ pub(crate) fn bind_fillet_blend_edges(
                 &mut candidate_notes,
             );
             if every_fillet_group_historical(&definition) {
-                resolved.push((state.history, definition, candidate_notes));
+                resolved.push((state.history, state.scope, definition, candidate_notes));
             }
         }
-        if let [(history, definition, candidate_notes)] = resolved.as_mut_slice() {
+        if let [(history, scope, definition, candidate_notes)] = resolved.as_mut_slice() {
             let definition = definition.clone();
             feature
                 .evaluation
@@ -748,9 +757,15 @@ pub(crate) fn bind_fillet_blend_edges(
                 candidates.len(),
                 histories.get(*history).map_or("", |history| history.id.as_str())
             )));
+            if let Some(history) = histories.get(*history) {
+                inferred_scope_histories.push((scope.id.clone(), history.id.clone()));
+            }
         }
     }
-    notes
+    FilletBlendBindings {
+        notes,
+        inferred_scope_histories,
+    }
 }
 
 /// The transition, input topology and output topology of a fillet state.
