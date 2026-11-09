@@ -9,7 +9,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
     DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiDimension, PmiQuantity,
-    PmiValue,
+    PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -43,12 +43,19 @@ struct ProjectedDimension {
     owner_type: u32,
     offset: usize,
     definition: PmiDimension,
+    targets: Vec<PmiTarget>,
+}
+
+/// Annotation elements by section and the targets of their dimension slots.
+pub(super) struct AnnotationIndex<'a> {
+    pub(super) elements: &'a [(&'a str, Vec<Option<Element>>)],
+    pub(super) dimension_targets: &'a BTreeMap<(&'a str, u32), super::targets::DimensionTarget>,
 }
 
 pub(super) fn transfer(
     ctx: &DecodeContext<'_>,
     attributes: &[Option<Attribute<'_>>],
-    element_groups: &[Vec<Option<Element>>],
+    index: &AnnotationIndex<'_>,
     length_scale_mm: Option<f64>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -70,14 +77,14 @@ pub(super) fn transfer(
         );
     }
 
-    let mut elements_by_owner = BTreeMap::<(u32, u32), Vec<Element>>::new();
-    for elements in element_groups {
+    let mut elements_by_owner = BTreeMap::<(u32, u32), Vec<(&str, Element)>>::new();
+    for (section, elements) in index.elements {
         for element in elements.iter().flatten() {
             if element.annotation_type == Some(8) {
                 elements_by_owner
                     .entry((element.owner, element.owner_type))
                     .or_default()
-                    .push(*element);
+                    .push((section, *element));
             }
         }
     }
@@ -86,6 +93,8 @@ pub(super) fn transfer(
     let mut length_dimensions = 0usize;
     let mut inferred_linear_kinds = 0usize;
     let mut assumed_length_kinds = 0usize;
+    let mut surface_targets = 0usize;
+    let mut edge_targets = 0usize;
     let mut conflicting = 0usize;
     let mut assumed_angular_units = 0usize;
     for (owner, fields) in fields_by_owner {
@@ -107,7 +116,7 @@ pub(super) fn transfer(
         if fields.invalid {
             unresolved += 1;
         }
-        let element = candidates[0];
+        let (section, element) = candidates[0];
         let Some(kind_text) = std::str::from_utf8(kind)
             .ok()
             .filter(|text| !text.is_empty())
@@ -162,11 +171,20 @@ pub(super) fn transfer(
             unresolved += 1;
             continue;
         };
+        let target = element
+            .annotation
+            .and_then(|slot| index.dimension_targets.get(&(section, slot)));
+        surface_targets += usize::from(target.is_some_and(|target| !target.from_edges));
+        edge_targets += usize::from(target.is_some_and(|target| target.from_edges));
+        let targets = target
+            .map(|target| target.faces.clone())
+            .unwrap_or_default();
         projected.push(ProjectedDimension {
             owner: element.owner,
             owner_type: element.owner_type,
             offset,
             definition,
+            targets,
         });
         if is_linear_kind_inference {
             inferred_linear_kinds += 1;
@@ -195,7 +213,7 @@ pub(super) fn transfer(
             id,
             name: None,
             visible: None,
-            targets: Vec::new(),
+            targets: dimension.targets.clone(),
             definition: PmiDefinition::Dimension(dimension.definition.clone()),
         });
     }
@@ -210,14 +228,33 @@ pub(super) fn transfer(
             "{conflicting} dimension(s) use the first value of conflicting attributes."
         )));
     }
+    let untargeted = projected
+        .iter()
+        .filter(|dimension| dimension.targets.is_empty())
+        .count();
+    if untargeted != 0 {
+        losses.push(CreoLossCode::PmiAssociationsUnresolved.note(format!(
+            "{untargeted} dimensional annotation(s) have unresolved geometric targets."
+        )));
+    }
     if !projected.is_empty() {
         losses.push(CreoLossCode::PmiAssociationsUnresolved.note(format!(
-            "{} dimensional annotation(s) have unresolved geometric targets and display state.",
+            "{} dimensional annotation(s) have unresolved display state.",
             projected.len()
         )));
         losses.push(CreoLossCode::PmiModifiersUnresolved.note(format!(
             "{} dimensional annotation(s) have unresolved modifiers.",
             projected.len()
+        )));
+    }
+    if surface_targets != 0 {
+        losses.push(CreoLossCode::PmiDimensionTargetInferred.note(format!(
+            "{surface_targets} dimension(s) use the faces of their referenced surfaces, or the visible faces on a referenced datum cylinder, as targets."
+        )));
+    }
+    if edge_targets != 0 {
+        losses.push(CreoLossCode::PmiDimensionTargetInferred.note(format!(
+            "{edge_targets} dimension(s) referencing two edges use, for each edge, its face that the other edge does not bound."
         )));
     }
     if inferred_linear_kinds != 0 {

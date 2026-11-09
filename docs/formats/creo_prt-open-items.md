@@ -1510,24 +1510,35 @@ transfer the rest of legacy persistence.
 **Question.** Which serialized length or terminator bounds each binary
 `geom_tol_array` element and its nested fields?
 
-**Known.** The array header has an `f8` slot count and a class reference. A
-populated element contains type-`00` `dtl_named_item`, `dtl_item`, and
-`tol_text` fields. The first two can start with `e2`; `tol_text` can start with
-`f8 01 f7 0a fb`, followed by `e3` and a named `db_type` field. The named
-binary text row's `owner_id` can equal the first occupied slot. A depth-bounded
-ASCII text row can carry its enclosing slot index in `owner_id`. The binary
-window from the first `dtl_named_item` to the next `dim_array` marker contains
-`value_string`, `datum_refs`, and `frame_datum_refs`.
-Depth-bounded ASCII elements can instead contain direct `value` and
-`datum_refs_array` fields. The ASCII object-array depth grammar has separate
-row boundaries. A typed positional prefix can carry the tolerance type, value,
-nested text owner, and placement pointer. A named row can carry null
-`drfs_data`, leaving the following positional scan without a `drf_id` anchor.
+**Known.** `creo_prt.md` §8.9 defines the array header, the named prototype,
+the leading positional fields, the `value_string` and `tol_text` arrays, the
+placement, and the attachment prefix. A typed positional row is located by
+its complete leading fields and its unique annotation slot. The bytes after
+the attachment's `att_offsets` array contain `view_id`, `point`, `vec`,
+`private_attribute`, `datum_refs`, `frame_datum_refs`, and `drfs_data` fields
+before the next row. A named row can carry `prim_dtm_string`,
+`sec_dtm_string`, `ter_dtm_string`, and `frame_level_datum_refs`.
 
-**Need.** Establish the complete binary element and array extent from their
-serialized productions. Consume nested fields and distinguish later slots to
-transfer their datum and target references.
+**Need.** Establish the production that ends a row after its attachment.
+Consume the datum fields of each row to transfer its datum and target
+references. Establish the rule that omits the `value_string` count: the
+observed rows without a count follow a row with the same count. Establish the
+named-prototype `tol_text` form with more than one element.
 
+**Note.** Boundary tests gave these results:
+
+1. A dimension-style `symbol` field marks the end: the binary windows contain no such field.
+2. `owner_id` ends the text row: six text fields follow it.
+3. The `dtl_named_item` or `dtl_item` `e2` ends the element: tolerance fields follow both.
+4. The `tol_text` array count bounds the element: parent fields follow the counted text.
+5. The placement compound opener ends the element: pointer and datum fields follow it.
+6. ASCII `profile_ends` ends the binary element: further binary fields follow it.
+7. The `datum_refs` count ends the element: sibling datum arrays follow it.
+8. The `f8` count is the number of occupied rows: null slots occur in the array.
+9. A `drf_id` frame is required to locate subsequent prefixes: typed prefixes with matching annotation owners and neutral values also occur after null `drfs_data`.
+10. The `dtl_item` `name` is always `e1`: empty NUL-terminated names occur in named and positional rows.
+11. A positional `value_string` stores one bare string: composite rows store `f8 02` and two strings, and the next row omits the repeated count.
+12. A positional `tol_text` array has one element: composite rows store one element per frame line with one owner slot.
 ### PP-23. Geometric-tolerance datum identities
 
 **Question.** Which native records bind tolerance datum labels and frame
@@ -1542,49 +1553,82 @@ group can occur on tolerances with different feature owners. A group can
 include identifiers both present and absent in the vertex arena. An ASCII
 `Sld_FullData` root can also own a `gtol_datum_def` array with `datum_type`,
 `datum_id`, `feat_id`, and `dim_id` fields. A reference's `datum_type` and
-`ref_info.ref_id` can match a row's `datum_type` and `datum_id`. A binary
-`gtol_datum_def_xar` prototype can carry `datum_type` 1 and null `datum_id`,
-`feat_id`, and `gtol_id` fields, followed by a `p_ldr` compound. The window
-before `set_datum_tag_xar` can contain one `e3 01 f6 f6 f6 e3` candidate per
-remaining slot after the leading nulls and prototype. The `p_ldr` data also
-contains nested `e3` markers. The first datum-tag prototype's `dtm_def_id`
-selects the first populated `gtol_datum_def_xar` slot. A class-qualified
-prototype-boundary candidate precedes the positional rows.
-Positional tag rows carry a definition-slot value before `p_sld_info` and a
-datum label in the text fields. The typed one-byte slot form is `01` followed
-by a compact value; extended slot-value encodings remain unresolved. The
-candidate positional datum-definition row is `e3 01 f6 f6 f6 e3`. Counting
-these typed rows after the first prototype provides a candidate ordinal-to-slot
-mapping. An `ext_ref` continuation under a `frame_datum_refs` candidate can carry
-identifier sequences that differ from the tag definition slots. The enclosing
-row production is unresolved.
+`ref_info.ref_id` can match a row's `datum_type` and `datum_id`.
+`creo_prt.md` §8.9 defines the leading fields of the datum-definition and
+datum-tag rows. The decoder assigns the later definition rows to the slots
+after the prototype in order when their count equals the number of those
+slots, and joins each tag to its definition through `dtm_def_id`. A type-`5`
+leader uses the targets of the annotation dimension in that slot. Tolerance
+datum labels join datum identities by equal label.
 
-**Need.** Connect the ordered labels in neutral tolerance attributes to the
-owned reference tables and their datum-feature targets. Confirm that the
-candidate datum-definition terminator yields one row per occupied slot in
-ordinal order before using its row count to assert slot identity.
+**Need.** Establish the end of a datum-definition row to assign slots when
+null slots occur between rows. Establish the namespace of `note_att` type
+`64`. Establish the section that owns a type-`5` slot. Connect the
+`ref_info` references of a tolerance to the datum tags.
 
-**Conflict.** The class-boundary search can encounter bytes in nested `p_ldr`
-data, and the count of typed `e3` row candidates does not establish a
-one-to-one row boundary and slot ordinal.
+**Conflict.** The definition-row prefix search can encounter bytes in nested
+`p_ldr` data; the row count is the only check of the slot assignment.
 
+**Note.** Identity tests gave these results:
+
+1. Each `ref_info.ref_id` selects a vertex: a reference group contains vertex hits and misses.
+2. Each `ref_info.ref_id` selects a feature directly: tested identifiers do not join the feature arena.
+3. `ref_info.type` selects the namespace: the observed references share one type value.
+4. Binary datum-definition keys join reference identifiers: the prototype and positional candidates carry null key fields.
+5. Reference identifiers select tag slots: candidate identifiers differ from tag definition slots.
+6. `dtm_def_id` selects the tag's own slot: the two ordinals can differ.
+7. The first prototype's `dtm_def_id` selects the first populated definition slot: the values agree.
+8. A count of `e3 01 f6 f6 f6 e3` candidates proves their slot ordinals: nested leader data can contain the same markers.
+9. Only the prototype definition carries a leader: every later definition row replays `p_ldr.note_att`.
+10. A later tag row's `attributes` is the one-byte `01`: two-byte values such as `a0 81` occur.
+11. Every definition leader selects a surface: leaders of types `5` and `64` occur.
+12. A type-`25` definition leader selects the datum feature: every attached surface whose carrier decodes equals the STEP-twin datum face carrier.
+13. A type-`5` definition leader selects a `dim_array` slot: the slot's dimension references cylinders coaxial with the STEP-twin datum face.
 ### PP-24. Geometric-tolerance attachment targets
 
 **Question.** Which pointer and nested attachment types select dimension,
 curve, surface, and bounded-face targets for a geometric tolerance?
 
 **Known.** A type-1 `gtol_place_ptr` selects a dimension slot that names
-the tolerance in `gtol_ids`. A type-2 placement can carry a nested attachment
-whose identifier equals the outer identifier. Dimension and geometry
-identifiers can overlap. A surface reference can resolve without a bounded
-face. A type-2 placement can contain a type-`25` attachment to a surface;
-the decoder uses its unique bounded face when one is present and records the
-inference.
-Some positional placement identifiers start with `c0` and remain unresolved.
+the tolerance in `gtol_ids`. Dimension and geometry identifiers can overlap.
+A surface reference can resolve without a bounded face. A type-2 placement and
+its type-`25` attachment store the same surface identifier; the decoder uses
+the surface's unique bounded face and records the inference. `creo_prt.md`
+§8.9 defines the two attachment links of an annotation dimension. The decoder
+uses the faces of two surface links, the visible faces on the carrier of an
+`ActDatums` cylinder link, or for two distinct edge links each
+edge's face that the other edge does not bound, and a type-1 tolerance uses
+the targets of its dimension; it records both inferences. A dimension link
+whose identifier names a `VisibGeom` surface with faces and also an
+`ActDatums` surface selects no target, as in the plane-lookup rule of
+`creo_prt.md` §6. A tolerance link with such an identifier uses the unique
+`VisibGeom` face. The decoder records each such link with
+`pmi.target-namespace-ambiguous`. Attachments of type
+`16`, tolerance attachments of type `1`, a dimension whose two links name one
+edge, and placements of type `5` remain unresolved.
 
-**Need.** Establish each pointer's namespace and its complete owned target
-join before transferring a face or curve attachment.
+**Need.** Establish the native record that states a dimension's measured
+features before transferring an edge reference as a face target, and the
+target semantics of the unresolved attachment and placement types. Establish
+which section a type-`25` identifier selects when both sections define it.
 
+**Note.** Attachment tests gave these results:
+
+1. A type-1 pointer selects a zero-based dimension slot: the selected dimensions link back to their tolerances.
+2. A type-1 pointer selects a one-based dimension slot: the preceding slots lack those backlinks.
+3. A feature identifier uniquely selects the dimension: feature identifiers repeat.
+4. A dimension selects at most one tolerance: one dimension has two reciprocal links.
+5. A type-2 pointer selects a dimension slot: tested identifiers exceed the dimension array bounds.
+6. A type-4 pointer selects a reciprocal dimension: the tested in-range slots lack backlinks.
+7. A class reference states an inline attachment type: the byte after a positional `e3` is the replayed `type` field, and a class reference uses `f7`.
+8. A `c0`-prefixed placement identifier is a separate lane: it is a three-byte compact integer.
+9. A dimension feature identifier selects the position target faces: the 85 mm dimension has a null `feat_id`.
+10. The dimension distance selects the position target faces: four native face pairs match each of the 85 mm and 50 mm distances.
+11. Only a flatness tolerance's type-`25` attachment selects its target: perpendicularity, profile, runout, and position attachments select the STEP-twin target surface.
+12. A dimension's edge links name its target faces directly: each edge bounds the face shared by both links and one STEP-twin target face.
+13. A dimension's `p_sld_info` always starts with its owner fields: a class reference can precede them.
+14. A type-`25` link always names a `VisibGeom` surface: size dimensions link `ActDatums` cylinders, and the visible faces on those carriers are the STEP-twin dimension targets.
+15. One surface identifier space spans `VisibGeom` and `ActDatums`: `creo_prt.md` states that an `ActDatums` cylinder number and a plane number do not join the other namespace by number.
 ### PP-25. PMI attribute units
 
 **Question.** How does a nonempty neutral attribute `unit` field affect its

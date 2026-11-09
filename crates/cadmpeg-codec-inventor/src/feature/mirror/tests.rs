@@ -51,7 +51,7 @@ fn mirrors_keep_ordered_feature_seeds_and_reflect_about_the_offset_plane() {
 }
 
 #[test]
-fn body_mirrors_select_the_native_input_collection() {
+fn body_mirrors_select_the_listed_body_wrappers_under_the_input_collection() {
     let fixture = Fixture::new(true);
     let source = pattern(19, true, &[], &[]);
     let resolved = fixture
@@ -64,9 +64,10 @@ fn body_mirrors_select_the_native_input_collection() {
     };
     assert_eq!(
         seeds,
-        vec![PatternSeed::Bodies(BodySelection::Native(
-            fixture.properties[2].id()
-        ))]
+        vec![PatternSeed::Bodies(
+            BodySelection::local(vec![fixture.properties[3].id()], fixture.properties[2].id())
+                .expect("local selection")
+        )]
     );
     assert_eq!(resolved.result_native, fixture.properties[2].id());
 }

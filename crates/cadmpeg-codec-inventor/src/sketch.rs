@@ -2692,20 +2692,21 @@ fn project_constraint(
     }))
 }
 
-/// Largest unqualified reference-map value of a tangent relation's solver
-/// hint: 0, 1, or 2.
-const TANGENT_HINT_MAX_CODE: u32 = 2;
+/// Largest unqualified reference-map value of a tangent or perpendicular
+/// relation's solver hint: 0, 1, or 2.
+const CURVE_END_HINT_MAX_CODE: u32 = 2;
 
 /// Whether the constraint maps hold only the relation's solver hint: in each
 /// map, at most one entry for each of its two operands. Reference-map values
-/// are null; a tangent relation's values can also be the unqualified codes 1
-/// and 2.
+/// are null; a tangent or perpendicular relation's values can also be the
+/// unqualified codes 1 and 2.
 fn solver_hint(constraint: &PmDcSketchConstraint) -> bool {
     let (operands, max_code) = match constraint.kind {
         PmDcSketchConstraintKind::Coincident { first, second }
         | PmDcSketchConstraintKind::Distance { first, second, .. } => ([first, second], 0),
-        PmDcSketchConstraintKind::Tangent { first, second, .. } => {
-            ([first, second], TANGENT_HINT_MAX_CODE)
+        PmDcSketchConstraintKind::Tangent { first, second, .. }
+        | PmDcSketchConstraintKind::Perpendicular { first, second, .. } => {
+            ([first, second], CURVE_END_HINT_MAX_CODE)
         }
         PmDcSketchConstraintKind::CircleCenter { entity, center } => ([entity, center], 0),
         PmDcSketchConstraintKind::Midpoint { entity, point, .. } => ([entity, point], 0),
@@ -5495,5 +5496,6 @@ mod tests {
     mod non_geometric;
     mod point_tail_projection;
     mod serialization;
+    mod solver_hint;
     mod text_member;
 }
