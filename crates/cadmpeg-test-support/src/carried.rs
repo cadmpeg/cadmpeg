@@ -406,7 +406,7 @@ fn pcurves_off_their_edges(document: &Value) -> BTreeSet<String> {
             .get();
         cadmpeg_ir::eval::model_surface_point(EvaluationAdmission::Standard, &ir, surface, uv.u, uv.v)
             .ok()
-            .map(|point| point.get())
+            .map(cadmpeg_ir::features::FinitePoint3::get)
     };
     // The nearest point of a line pcurve to a vertex, found in the surface
     // chart where the analytic surface inverts the vertex.

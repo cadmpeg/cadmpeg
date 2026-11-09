@@ -5776,10 +5776,8 @@ impl<'a> Builder<'a> {
                     );
                     continue;
                 }
-            } else {
-                if has_extent && self.collapsed_curveless_coedges.contains(coedge_key) {
-                    continue;
-                }
+            } else if has_extent && self.collapsed_curveless_coedges.contains(coedge_key) {
+                continue;
             }
             let (start_vertex, end_vertex) = match coedge.sense {
                 Sense::Forward => (&edge.start, &edge.end),
