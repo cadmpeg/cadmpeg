@@ -468,7 +468,7 @@ fn fragment_fallback_keeps_partial_edges_and_resolves_only_unresolved_members() 
     assert!(operands.iter().all(|o| o.resolved_edge_slot.is_none()));
 }
 
-/// A two-side member whose side faces hold the changed edges listed.
+/// A member whose two referenced faces hold the changed edges listed.
 fn two_side_operand(
     record_index: u32,
     sides: [(&str, &[i64]); 2],
@@ -508,7 +508,7 @@ fn two_side_operand(
 }
 
 #[test]
-fn a_two_side_group_selects_the_edges_its_transition_deletes() {
+fn a_two_reference_group_selects_the_edges_its_transition_deletes() {
     use crate::design::edge_resolve::shared_reference_deleted_edge_group_candidates;
     let deleted = [10, 11, 12];
     // Two members share the faces of edges 10 and 12; the third names edge 11.
