@@ -206,6 +206,9 @@ pub enum UnheldClass {
     /// A pcurve that a coedge uses after its first, where the format holds
     /// one pcurve of a coedge on its face's surface.
     SecondCoedgePcurve,
+    /// A curve construction whose source curve another construction also
+    /// constructs from, where the format inlines a construction's basis.
+    SharedConstructionSource,
     /// A parameter whose literal expression differs from the canonical
     /// spelling of its value, where the format stores a literal as its
     /// value.
@@ -399,6 +402,22 @@ impl UnheldClass {
             }
             Self::UncanonicalLiteralExpression => {
                 arena == "parameters" && uncanonical_literal(record)
+            }
+            Self::SharedConstructionSource => {
+                arena == "procedural_curves"
+                    && record
+                        .pointer("/definition/source")
+                        .and_then(Value::as_str)
+                        .is_some_and(|source| {
+                            model_rows(document, "procedural_curves")
+                                .into_iter()
+                                .filter(|row| {
+                                    row.pointer("/definition/source").and_then(Value::as_str)
+                                        == Some(source)
+                                })
+                                .count()
+                                > 1
+                        })
             }
             Self::ReinterpretedConstructionSurface => {
                 arena == "surfaces"
@@ -1999,6 +2018,15 @@ mod tests {
         assert_eq!(
             members(UnheldClass::UnencodedAttribute),
             ["vector4".to_owned()].into()
+        );
+        let shared = json!({"model": {"procedural_curves": [
+            {"id": "first", "definition": {"kind": "subset", "source": "circle"}},
+            {"id": "second", "definition": {"kind": "subset", "source": "circle"}},
+            {"id": "alone", "definition": {"kind": "subset", "source": "line"}}
+        ]}});
+        assert_eq!(
+            UnheldClass::SharedConstructionSource.members(&shared),
+            ["first".to_owned(), "second".to_owned()].into()
         );
     }
 
