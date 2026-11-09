@@ -2,7 +2,6 @@
 
 use std::f64::consts::TAU;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
@@ -64,7 +63,7 @@ fn assert_refused(edge: &Edge, carrier: &CurveGeometry, vertex: Point3) {
     assert!(
         matches!(
             closed_edge_traversal(edge, carrier, vertex, 0.0),
-            Err(CodecError::NotImplemented(_))
+            Err(crate::writer::WriteError::Unsupported(_))
         ),
         "an edge with no closed traversal is refused"
     );

@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeError, EncodeInput, ExportBody,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -99,7 +99,7 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     if target.preserves_source() {
         return match preserve(input)? {
             Preservation::Written {
@@ -172,7 +172,11 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, cadmpeg_core::decode
             write_path: path,
             notes,
         }),
-        Err(CodecError::ResourceLimit(limit)) if caller_ceiling(limit, input.limits) => Err(limit),
+        Err(crate::writer::WriteError::Codec(CodecError::ResourceLimit(limit)))
+            if caller_ceiling(limit, input.limits) =>
+        {
+            Err(limit)
+        }
         Err(error) => Ok(Preservation::PatchDeclined {
             reason: error.to_string(),
         }),
@@ -253,7 +257,7 @@ impl SynthesisCause {
 fn synthesized_body(
     input: EncodeInput<'_>,
     cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     let super::synthesis::Synthesized {
         bytes,
         coverage,

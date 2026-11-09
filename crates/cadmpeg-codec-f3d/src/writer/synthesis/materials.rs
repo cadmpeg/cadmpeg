@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Create the Design identities needed by a neutral body material.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -14,7 +13,7 @@ pub(super) fn author_neutral(
     target: &mut CadIr,
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut used = native
         .body_visibilities
         .iter()
@@ -115,16 +114,18 @@ pub(super) fn author_neutral(
                     "f3d:generated/Design1/BulkStream.dat:design-body-binding#{ordinal}"
                 )
                 .try_into()
-                .map_err(CodecError::Malformed)?,
+                .map_err(crate::writer::WriteError::Unwritable)?,
                 asm_body_key: visibility.asm_body_key(),
                 asm_body_key_offset: None,
                 entity_suffix_offset: None,
-                entity_id: entity_id.try_into().map_err(CodecError::Malformed)?,
+                entity_id: entity_id
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?,
                 entity_id_offset: None,
                 visual_guid: visual
                     .to_owned()
                     .try_into()
-                    .map_err(CodecError::malformed)?,
+                    .map_err(crate::writer::WriteError::unwritable)?,
                 visual_guid_offset: None,
                 physical_token: Some(RecordedValue {
                     value: physical.to_owned(),
@@ -194,7 +195,8 @@ pub(super) fn author_neutral(
             existing.set_entities(ReferenceRun::unlocated(combined));
             continue;
         }
-        let ordinal = u32::try_from(native.design_types.len()).map_err(CodecError::malformed)?;
+        let ordinal = u32::try_from(native.design_types.len())
+            .map_err(crate::writer::WriteError::unwritable)?;
         native.design_types.push(
             SegmentType::try_new(
                 format!("f3d:generated/Design1/MetaStream.dat:design-type#{ordinal}"),
@@ -202,12 +204,18 @@ pub(super) fn author_neutral(
                     class_tag: (256 + ordinal)
                         .to_string()
                         .try_into()
-                        .map_err(CodecError::Malformed)?,
+                        .map_err(crate::writer::WriteError::Unwritable)?,
                     byte_offset: Some(u64::from(ordinal)),
-                    type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
+                    type_guid: guid
+                        .to_owned()
+                        .try_into()
+                        .map_err(crate::writer::WriteError::Unwritable)?,
                     type_guid_offset: None,
                     base_type_guid: BaseTypeGuid::Guid {
-                        value: base.to_owned().try_into().map_err(CodecError::Malformed)?,
+                        value: base
+                            .to_owned()
+                            .try_into()
+                            .map_err(crate::writer::WriteError::Unwritable)?,
                         offset: None,
                     },
                     version,
@@ -216,7 +224,7 @@ pub(super) fn author_neutral(
                     entities: ReferenceRun::unlocated(entities),
                 },
             )
-            .map_err(CodecError::Malformed)?,
+            .map_err(crate::writer::WriteError::Unwritable)?,
         );
     }
     Ok(())

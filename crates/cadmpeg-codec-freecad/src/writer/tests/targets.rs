@@ -513,7 +513,7 @@ fn every_emitted_target_redecodes_as_the_reported_target() {
 }
 
 #[test]
-fn malformed_typed_native_records_are_input_preconditions() {
+fn a_malformed_typed_native_record_is_omitted_with_a_named_loss() {
     let decoded = decode(CORE_DESIGN_PRODUCT);
     let mut ir = decoded.ir().clone();
     let records = ir
@@ -523,6 +523,7 @@ fn malformed_typed_native_records_are_input_preconditions() {
         .get_mut("properties")
         .expect("typed properties");
     let record = records.first_mut().expect("fixture property");
+    let omitted = record.id().to_owned();
     let mut fields = record.fields().expect("typed field map");
     fields.insert("type_name".into(), serde_json::json!(false));
     *record = cadmpeg_ir::native::NativeRecord::new(
@@ -530,12 +531,11 @@ fn malformed_typed_native_records_are_input_preconditions() {
         fields,
     )
     .expect("generic native record");
-    // #239 §5.0: malformed writer input is an encode-path invariant violation.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        plan(&ir, None, TargetRequest::Explicit("fcstd:schema-4"))
-    }));
-    assert!(
-        result.is_err() || matches!(result, Ok(Err(_))),
-        "invalid own typed schema cannot supply synthesis content"
-    );
+    let output = plan(&ir, None, TargetRequest::Explicit("fcstd:schema-4"))
+        .expect("a malformed native record does not refuse the write");
+    assert!(output.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred
+            .note("")
+            .code
+        && loss.message.contains(omitted.as_str())));
 }

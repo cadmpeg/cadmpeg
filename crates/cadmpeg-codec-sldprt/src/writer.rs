@@ -258,11 +258,10 @@ pub(super) fn write_semantic_at(
                     &entities,
                     &expected_entities,
                 ) {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
                         "feature-input lane {} sketch entities do not match their native payload",
                         lane.id
-                    ))
-                    .into());
+                    )));
                 }
             }
         }
@@ -286,7 +285,9 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(&normalized, finding)
     });
     if let Some(finding) = blocking {
-        return Err(CodecError::Malformed(finding.message.clone()).into());
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            finding.message.clone(),
+        ));
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -334,11 +335,13 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(ir, finding)
     });
     if let Some(finding) = blocking {
-        return Err(CodecError::Malformed(finding.message.clone()).into());
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            finding.message.clone(),
+        ));
     }
     check_semantic_support(ir)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
-    let length_scale = 0.001;
+    let length_scale = TESSELLATION_LENGTH_SCALE;
     let patched_partition = if let (None, Some((ctx, _)), Some(scan)) =
         (&retained_partition, &source_context, &source_scan)
     {
@@ -350,9 +353,9 @@ pub(super) fn write_semantic_at(
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
     let mut consumed_source_layout = source_scan.is_some() || retain_native_brep;
     if !retain_native_brep && requires_native_partition(ir) {
-        return Err(CodecError::InvalidInput(
+        return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
-        ).into());
+        ));
     }
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
@@ -425,10 +428,10 @@ pub(super) fn write_semantic_at(
                 || identity_baseline
                     != Some(&swobjects_metadata_identity_local_sha256(digest_ctx, ir)?)
             {
-                return Err(CodecError::InvalidInput(
+                return Err(crate::writer::write_error::WriteError::Decline(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
                         .into(),
-                ).into());
+                ));
             }
             patch_retained_swobjects_metadata(
                 ir,
@@ -817,27 +820,25 @@ fn assign_configuration_indices(
     let mut names = HashSet::new();
     for configuration in configurations.iter() {
         let Some(name) = configuration.name.as_deref() else {
-            return Err(
-                CodecError::Malformed("SLDPRT configuration has no resolved name".into()).into(),
-            );
+            return Err(crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT configuration has no resolved name".into(),
+            ));
         };
         if name.trim().is_empty() {
-            return Err(
-                CodecError::Malformed("SLDPRT configuration has an empty name".into()).into(),
-            );
+            return Err(crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT configuration has an empty name".into(),
+            ));
         }
         if !names.insert(name) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT repeats configuration name {name:?}"
-            ))
-            .into());
+            )));
         }
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "duplicate SLDPRT configuration source index {index}"
-                ))
-                .into());
+                )));
             }
         }
     }
@@ -1004,7 +1005,9 @@ fn section_directory_entries(
                     .offset
                     .checked_add(46 + entry.name.len())
                     .ok_or_else(|| {
-                        CodecError::Malformed("SLDPRT directory entry extent overflow".into())
+                        crate::writer::write_error::WriteError::Unwritable(
+                            "SLDPRT directory entry extent overflow".into(),
+                        )
                     })?;
                 if let Some(retained) = source.get(entry.offset..end) {
                     return Ok(retained.to_vec());
@@ -1058,7 +1061,7 @@ fn retained_partition(
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
-) -> Result<Option<(String, Vec<u8>)>, CodecError> {
+) -> Result<Option<(String, Vec<u8>)>, crate::writer::write_error::WriteError> {
     let Some(expected) = native
         .and_then(|native| native.decode_baselines.first())
         .map(|baselines| baselines.brep.as_str())
@@ -1462,7 +1465,7 @@ pub(crate) fn section_type_id_at(index: usize) -> Result<u32, write_error::Write
         })
 }
 
-fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
+fn check_semantic_support(ir: &CadIr) -> Result<(), crate::writer::write_error::WriteError> {
     if !ir.model.configurations.is_empty()
         && ir
             .model
@@ -1472,12 +1475,12 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             .count()
             != 1
     {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "SLDPRT writing requires exactly one active configuration".into(),
         ));
     }
     if !ir.model.subds.is_empty() {
-        return Err(CodecError::InvalidInput(
+        return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
@@ -1487,13 +1490,13 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
                 let ratio = cone_surface.ratio().get();
                 let half_angle = cone_surface.half_angle().get();
                 if ratio != 1.0 {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
                         surface.id.as_str(), ratio
                     )));
                 }
                 if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
                         "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
                         surface.id.as_str(), half_angle
                     )));
@@ -1506,7 +1509,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
                 } =>
             {
                 let radius = sphere_surface.radius().get();
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
                     surface.id.as_str(), radius
                 )));
@@ -1520,7 +1523,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             {
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
                     surface.id.as_str(), major_radius, minor_radius
                 )));
@@ -1534,13 +1537,13 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
                 .effective_display_color(&AppearanceTarget::Body(body.id.clone()))
                 .is_none()
         {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "SLDPRT semantic writer cannot encode a body name without a material".into(),
             ));
         }
     }
     if ir.model.faces.iter().any(|face| face.name.is_some()) {
-        return Err(CodecError::InvalidInput(
+        return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT semantic writer does not encode face names".into(),
         ));
     }
@@ -1551,7 +1554,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             || appearance.category.is_some()
             || !appearance.properties.is_empty()
         {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "SLDPRT semantic writer supports appearance names and base colors only".into(),
             ));
         }
@@ -1593,12 +1596,14 @@ fn remap_written_geometry_references(
         macro_rules! map_arena {
             ($arena:ident) => {{
                 if emitted.$arena.len() != subset.model.$arena.len() {
-                    return Err(CodecError::malformed(concat!(
-                        "generated SLDPRT ",
-                        stringify!($arena),
-                        " identity census disagrees with its document"
-                    ))
-                    .into());
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
+                        concat!(
+                            "generated SLDPRT ",
+                            stringify!($arena),
+                            " identity census disagrees with its document"
+                        )
+                        .into(),
+                    ));
                 }
                 for (record, emitted) in subset.model.$arena.iter().zip(&emitted.$arena) {
                     let mut target = emitted.as_str().to_owned();
@@ -1617,7 +1622,9 @@ fn remap_written_geometry_references(
         offset = offset
             .checked_add(block(payload, section, 0)?.len())
             .ok_or_else(|| {
-                CodecError::malformed("generated SLDPRT block extent exceeds the address space")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "generated SLDPRT block extent exceeds the address space".into(),
+                )
             })?;
     }
     let mut model = ir.model.clone();
@@ -1646,12 +1653,13 @@ fn remap_written_geometry_references(
     // Resolved neutral members supply their new native selection spelling.
     // This walk visits only the codec's typed neutral feature definitions.
     for feature in &mut model.features {
-        let mut value =
-            serde_json::to_value(feature.evaluation.definition()).map_err(CodecError::malformed)?;
+        let mut value = serde_json::to_value(feature.evaluation.definition())
+            .map_err(crate::writer::write_error::WriteError::unwritable)?;
         canonicalize_resolved_selection_spelling(&mut value);
-        feature
-            .evaluation
-            .set_definition(serde_json::from_value(value).map_err(CodecError::malformed)?);
+        feature.evaluation.set_definition(
+            serde_json::from_value(value)
+                .map_err(crate::writer::write_error::WriteError::unwritable)?,
+        );
     }
     let lane_owned_operations = native.as_ref().map_or_else(HashMap::new, |native| {
         native
@@ -1763,11 +1771,10 @@ fn configuration_partitions(
         .iter()
         .find(|body| !configured.contains(&body.id))
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT body {} belongs to no configuration",
             body.id.as_str()
-        ))
-        .into());
+        )));
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
@@ -1779,7 +1786,7 @@ fn configuration_partitions(
         })
         .map(|(configuration, bodies)| {
             let index = configuration.source_index.ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "SLDPRT configuration {} has no assigned source index",
                     configuration.id.as_str()
                 ))
@@ -1833,7 +1840,10 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
-fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
+fn body_subset(
+    ir: &CadIr,
+    selected: &[cadmpeg_ir::ids::BodyId],
+) -> Result<CadIr, crate::writer::write_error::WriteError> {
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
     let retain_detached = selected.is_empty()
         || ir
@@ -1846,7 +1856,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .iter()
         .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "configuration references missing body {}",
             id.as_str()
         )));
@@ -2040,13 +2050,17 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         let mut visited = HashSet::new();
         while !retained.contains(&next) {
             if !visited.insert(next.clone()) {
-                return Err(CodecError::malformed(
-                    "projected radial ring does not close",
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    "projected radial ring does not close".into(),
                 ));
             }
             next = original
                 .get(&next)
-                .ok_or_else(|| CodecError::malformed("radial ring references a missing coedge"))?
+                .ok_or_else(|| {
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "radial ring references a missing coedge".into(),
+                    )
+                })?
                 .radial_next
                 .clone();
         }
@@ -2064,7 +2078,7 @@ fn opaque_blocks(
     retain_native_brep: bool,
     patch_active_configuration: bool,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<(String, Vec<u8>)>, crate::writer::write_error::WriteError> {
     let (generated_partitions, emitted_sections) = sections;
     let native = ir
         .native
@@ -2120,9 +2134,9 @@ fn opaque_blocks(
                     .count()
                     != 1
                 {
-                    return Some(Err(CodecError::NotImplemented(format!(
-                        "SLDPRT generated member {section} has ambiguous retained owners"
-                    ))));
+                    return Some(Err(crate::writer::write_error::WriteError::Unwritable(
+                        format!("SLDPRT generated member {section} has ambiguous retained owners"),
+                    )));
                 }
                 return None;
             }
@@ -2140,7 +2154,7 @@ fn opaque_blocks(
                 .find(|value| value.active && patch_active_configuration)
             {
                 let Some(active_name) = active.name.as_deref() else {
-                    return Some(Err(CodecError::Malformed(
+                    return Some(Err(crate::writer::write_error::WriteError::Unwritable(
                         "active SLDPRT configuration has no resolved name".into(),
                     )));
                 };
@@ -2163,7 +2177,7 @@ fn opaque_blocks(
                 }
             }
             if !seen.insert(record.id.as_str()) {
-                return Some(Err(CodecError::Malformed(
+                return Some(Err(crate::writer::write_error::WriteError::Unwritable(
                     "duplicate retained SLDPRT source record identity".into(),
                 )));
             }
@@ -2185,7 +2199,7 @@ fn retained_swobjects_sections(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<(String, Vec<u8>)>, crate::writer::write_error::WriteError> {
     let metadata_streams = metadata_attributes(ir)
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
@@ -2214,18 +2228,20 @@ fn retained_swobjects_sections(
             if previous == &record.id {
                 continue;
             }
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT metadata owner {section} has ambiguous retained members"
             )));
         }
         let data = record.data.ok_or_else(|| {
-            CodecError::Malformed("retained SLDPRT SWObjects section has no bytes".into())
+            crate::writer::write_error::WriteError::Unwritable(
+                "retained SLDPRT SWObjects section has no bytes".into(),
+            )
         })?;
         retained.push((section.to_string(), data.to_vec()));
     }
     for stream in metadata_streams {
         if !seen.contains_key(stream) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT metadata owner {stream} has no retained source member"
             )));
         }
@@ -2236,11 +2252,11 @@ fn retained_swobjects_sections(
 fn require_named_metadata_members(
     members: &[(String, Vec<u8>)],
     source: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if members.is_empty() {
         return Ok(());
     }
-    let source = source.ok_or_else(|| CodecError::NotImplemented(
+    let source = source.ok_or_else(|| crate::writer::write_error::WriteError::Unwritable(
         "SLDPRT retained metadata editing requires the original native envelope and named members".into(),
     ))?;
     for (name, payload) in members {
@@ -2248,22 +2264,22 @@ fn require_named_metadata_members(
             .sections()
             .filter(|section| section.source_stream().as_str() == name);
         let Some(member) = candidates.next() else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT metadata owner {name} is absent from the retained source envelope"
             )));
         };
         if candidates.next().is_some() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT metadata owner {name} has ambiguous source envelope members"
             )));
         }
         if member.name() != Some(name.as_str()) {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::write_error::WriteError::Unwritable(
                 "SLDPRT anonymous metadata owner has no supported output member identity".into(),
             ));
         }
         if member.payload() != payload.as_slice() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT metadata owner {name} bytes do not match the retained source envelope"
             )));
         }
@@ -2276,14 +2292,14 @@ fn push_generated_metadata_member(
     originals: &[(String, Vec<u8>)],
     name: String,
     generated: Vec<u8>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let mut candidates = originals.iter().filter(|(candidate, _)| *candidate == name);
     let Some((_, original)) = candidates.next() else {
         sections.push((name, generated));
         return Ok(());
     };
     if candidates.next().is_some() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT metadata owner {name} has ambiguous retained members"
         )));
     }
@@ -2295,7 +2311,7 @@ fn push_generated_metadata_member(
         return Ok(());
     };
     if outputs.next().is_some() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT metadata owner {name} has ambiguous output members"
         )));
     }
@@ -2306,7 +2322,7 @@ fn push_generated_metadata_member(
         *patched = generated;
         return Ok(());
     }
-    Err(CodecError::NotImplemented(format!(
+    Err(crate::writer::write_error::WriteError::Unwritable(format!(
         "SLDPRT metadata owner {name} has conflicting metadata and generated payload edits"
     )))
 }
@@ -2327,14 +2343,14 @@ fn patch_retained_swobjects_metadata(
                 .provenance
                 .get(attribute.id.as_str())
                 .ok_or_else(|| {
-                    CodecError::InvalidInput(format!(
+                    crate::writer::write_error::WriteError::Decline(format!(
                         "SLDPRT metadata attribute {} has no retained record provenance",
                         attribute.id
                     ))
                 })?;
             Ok((provenance.stream().to_owned(), provenance.offset, attribute))
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, crate::writer::write_error::WriteError>>()?;
     attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
 
     for (stream, offset, attribute) in attributes {
@@ -2342,13 +2358,15 @@ fn patch_retained_swobjects_metadata(
             .iter_mut()
             .find_map(|(candidate, payload)| (*candidate == stream).then_some(payload))
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "SLDPRT metadata attribute {} references a missing SWObjects section",
                     attribute.id
                 ))
             })?;
         let offset = usize::try_from(offset).map_err(|_| {
-            CodecError::Malformed("SLDPRT metadata offset exceeds address space".into())
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT metadata offset exceeds address space".into(),
+            )
         })?;
         // The retained record's token and unit-name marker are checked once
         // the values have the record's shape and before they are admitted.
@@ -2362,9 +2380,9 @@ fn patch_retained_swobjects_metadata(
         match MetadataRecord::project(attribute, length_scale, retained)? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
                 let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
-                    return Err(
-                        CodecError::Malformed("invalid retained bounding envelope".into()).into(),
-                    );
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
+                        "invalid retained bounding envelope".into(),
+                    ));
                 };
                 let current = current.iter().map(|value| value.get()).collect::<Vec<_>>();
                 patch_retained_metadata_reals(
@@ -2380,9 +2398,9 @@ fn patch_retained_swobjects_metadata(
                 let [Some(AttributeValue::Vector(current_origin)), Some(AttributeValue::Vector(current_frame))] =
                     attribute.values.as_slice()
                 else {
-                    return Err(
-                        CodecError::Malformed("invalid retained default plane".into()).into(),
-                    );
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
+                        "invalid retained default plane".into(),
+                    ));
                 };
                 let current = current_origin
                     .iter()
@@ -2406,18 +2424,16 @@ fn patch_retained_swobjects_metadata(
                 radius,
             }) => {
                 let Some(resident) = crate::metadata::transformed_enclosure(payload, offset) else {
-                    return Err(CodecError::NotImplemented(
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
                         "SLDPRT enclosure edit requires a retained complete present record".into(),
-                    )
-                    .into());
+                    ));
                 };
                 let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
                     attribute.values.as_slice()
                 else {
-                    return Err(CodecError::Malformed(
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
                         "SLDPRT enclosure attribute has an invalid value shape".into(),
-                    )
-                    .into());
+                    ));
                 };
                 let ir_values = ir_center
                     .iter()
@@ -2462,30 +2478,29 @@ fn patch_retained_swobjects_metadata(
                 let marker = offset + UNIT_NAME_TOKEN.len();
                 let old_len = resident_unit_name_len(payload, marker)?;
                 if usize::from(byte_len) != old_len {
-                    return Err(CodecError::InvalidInput(
+                    return Err(crate::writer::write_error::WriteError::Decline(
                         "SLDPRT writer cannot resize a retained source linear unit name".into(),
-                    )
-                    .into());
+                    ));
                 }
                 let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
                 replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
                 let end = marker.checked_add(4 + old_len).ok_or_else(|| {
-                    CodecError::Malformed("retained SLDPRT unit-name range overflow".into())
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "retained SLDPRT unit-name range overflow".into(),
+                    )
                 })?;
                 if end > payload.len() {
-                    return Err(CodecError::Malformed(
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
                         "truncated retained SLDPRT unit name".into(),
-                    )
-                    .into());
+                    ));
                 }
                 payload.splice(marker..end, replacement);
             }
             Some(MetadataRecord::SourceLinearUnitCode(_)) | None => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "unsupported retained SLDPRT metadata attribute {}",
                     attribute.name
-                ))
-                .into());
+                )));
             }
         }
     }
@@ -2499,9 +2514,9 @@ fn patch_retained_metadata_reals(
     current: &[f64],
     scaled: usize,
     length_scale: f64,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if values.len() != current.len() || scaled > values.len() {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "invalid retained metadata real fields".into(),
         ));
     }
@@ -2509,10 +2524,18 @@ fn patch_retained_metadata_reals(
         let offset = index
             .checked_mul(8)
             .and_then(|relative| start.checked_add(relative))
-            .ok_or_else(|| CodecError::Malformed("retained metadata offset overflow".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "retained metadata offset overflow".into(),
+                )
+            })?;
         let original = cadmpeg_core::decode::View::f64_le_at(payload, offset)
             .filter(|value| value.is_finite())
-            .ok_or_else(|| CodecError::Malformed("invalid retained metadata real".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "invalid retained metadata real".into(),
+                )
+            })?;
         let projected = if index < scaled {
             original * (1.0 / length_scale)
         } else {
@@ -2526,32 +2549,47 @@ fn patch_retained_metadata_reals(
 }
 
 /// The byte length of the retained unit name after its marker at `marker`.
-fn resident_unit_name_len(payload: &[u8], marker: usize) -> Result<usize, CodecError> {
+fn resident_unit_name_len(
+    payload: &[u8],
+    marker: usize,
+) -> Result<usize, crate::writer::write_error::WriteError> {
     if payload.get(marker..marker + 3) != Some(&[0xff, 0xfe, 0xff]) {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "retained SLDPRT unit-name marker does not match its provenance".into(),
         ));
     }
     Ok(usize::from(*payload.get(marker + 3).ok_or_else(|| {
-        CodecError::Malformed("truncated retained SLDPRT unit name".into())
+        crate::writer::write_error::WriteError::Unwritable(
+            "truncated retained SLDPRT unit name".into(),
+        )
     })?))
 }
 
-fn require_token(payload: &[u8], offset: usize, token: &[u8]) -> Result<(), CodecError> {
+fn require_token(
+    payload: &[u8],
+    offset: usize,
+    token: &[u8],
+) -> Result<(), crate::writer::write_error::WriteError> {
     if payload.get(offset..offset + token.len()) == Some(token) {
         Ok(())
     } else {
-        Err(CodecError::Malformed(
+        Err(crate::writer::write_error::WriteError::Unwritable(
             "retained SLDPRT metadata token does not match its provenance".into(),
         ))
     }
 }
 
-fn overwrite_bytes(payload: &mut [u8], offset: usize, bytes: &[u8]) -> Result<(), CodecError> {
+fn overwrite_bytes(
+    payload: &mut [u8],
+    offset: usize,
+    bytes: &[u8],
+) -> Result<(), crate::writer::write_error::WriteError> {
     let target = payload
         .get_mut(offset..offset + bytes.len())
         .ok_or_else(|| {
-            CodecError::Malformed("retained SLDPRT metadata field is truncated".into())
+            crate::writer::write_error::WriteError::Unwritable(
+                "retained SLDPRT metadata field is truncated".into(),
+            )
         })?;
     target.copy_from_slice(bytes);
     Ok(())
@@ -2562,7 +2600,7 @@ fn patch_active_configuration_xml(
     name: &str,
     needs_recompute: bool,
     slot: u32,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<Vec<u8>>, crate::writer::write_error::WriteError> {
     let Some(text) = crate::container::xml_text(payload) else {
         return Ok(None);
     };
@@ -2575,11 +2613,17 @@ fn patch_active_configuration_xml(
     let attribute = document
         .descendants()
         .find(|node| node.has_tag_name("swModel"))
-        .ok_or_else(|| CodecError::Malformed("SolidWorks XML has no model record".into()))?
+        .ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable(
+                "SolidWorks XML has no model record".into(),
+            )
+        })?
         .attributes()
         .find(|attribute| attribute.name() == "swConfigurationName")
         .ok_or_else(|| {
-            CodecError::Malformed("SolidWorks XML has no active configuration".into())
+            crate::writer::write_error::WriteError::Unwritable(
+                "SolidWorks XML has no active configuration".into(),
+            )
         })?;
     let mut name_attribute = String::from("swConfigurationName=\"");
     push_xml_attribute_value(&mut name_attribute, name);
@@ -2623,7 +2667,7 @@ fn patch_active_configuration_xml(
             .get(offset..)
             .is_some_and(|tail| tail.starts_with("</swSolidWorks>"))
         {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "SLDPRT model envelope cannot add a configuration rebuild flag".into(),
             ));
         }
@@ -2680,11 +2724,10 @@ fn resolved_feature_payload(
     if missing_class_layout {
         // (P): without source fidelity the lane bytes are absent. Synthesis
         // authors a new layout from the typed content and its semantic order.
-        return Err(CodecError::InvalidInput(format!(
+        return Err(crate::writer::write_error::WriteError::Decline(format!(
             "feature-input lane {} has no source layout positions",
             lane.id
-        ))
-        .into());
+        )));
     }
     crate::resolved_features::write_prepare::validate_lane_against_payload(
         histories,
@@ -2692,7 +2735,7 @@ fn resolved_feature_payload(
         true,
         source_trust,
     )
-    .map_err(CodecError::InvalidInput)?;
+    .map_err(crate::writer::write_error::WriteError::Decline)?;
     let expected_lane = crate::resolved_features::write_prepare::generated_native_lane(
         histories,
         &lane.id,
@@ -2713,11 +2756,10 @@ fn resolved_feature_payload(
             || entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "feature-input lane {} has inconsistent marker identity or ownership",
                 lane.id
-            ))
-            .into());
+            )));
         }
     }
     let mut payload = lane.native_payload.clone();
@@ -2735,32 +2777,35 @@ fn resolved_feature_payload(
         entity
             .validate_against_payload(&lane.native_payload)
             .map_err(|error| {
-                CodecError::InvalidInput(format!(
+                crate::writer::write_error::WriteError::Decline(format!(
                     "feature-input lane {} entity {}: {error}",
                     lane.id,
                     entity.id()
                 ))
             })?;
         let offset = usize::try_from(entity.offset()).map_err(|_| {
-            CodecError::InvalidInput("feature-input offset exceeds address space".into())
-        })?;
-        let marker_end = offset
-            .checked_add(MARKER.len())
-            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
-        if payload.get(offset..marker_end) != Some(MARKER) {
-            return Err(CodecError::InvalidInput(
-                "editing this feature-input marker layout is not implemented".into(),
+            crate::writer::write_error::WriteError::Decline(
+                "feature-input offset exceeds address space".into(),
             )
-            .into());
+        })?;
+        let marker_end = offset.checked_add(MARKER.len()).ok_or_else(|| {
+            crate::writer::write_error::WriteError::Decline("feature-input offset overflow".into())
+        })?;
+        if payload.get(offset..marker_end) != Some(MARKER) {
+            return Err(crate::writer::write_error::WriteError::Decline(
+                "editing this feature-input marker layout is not implemented".into(),
+            ));
         }
-        let field_start = offset
-            .checked_add(17)
-            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
-        let field_end = offset
-            .checked_add(21)
-            .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
+        let field_start = offset.checked_add(17).ok_or_else(|| {
+            crate::writer::write_error::WriteError::Decline("feature-input offset overflow".into())
+        })?;
+        let field_end = offset.checked_add(21).ok_or_else(|| {
+            crate::writer::write_error::WriteError::Decline("feature-input offset overflow".into())
+        })?;
         let field = payload.get_mut(field_start..field_end).ok_or_else(|| {
-            CodecError::InvalidInput("feature-input type field exceeds retained payload".into())
+            crate::writer::write_error::WriteError::Decline(
+                "feature-input type field exceeds retained payload".into(),
+            )
         })?;
         let code = entity.kind().native_code().to_le_bytes();
         // The scanned kind of a marker is not always the kind whose code is
@@ -2791,14 +2836,18 @@ fn resolved_feature_payload(
             }
         }
         if let Some(value) = entity.state_value {
-            let state_start = offset
-                .checked_add(48)
-                .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
-            let state_end = state_start
-                .checked_add(8)
-                .ok_or_else(|| CodecError::InvalidInput("feature-input offset overflow".into()))?;
+            let state_start = offset.checked_add(48).ok_or_else(|| {
+                crate::writer::write_error::WriteError::Decline(
+                    "feature-input offset overflow".into(),
+                )
+            })?;
+            let state_end = state_start.checked_add(8).ok_or_else(|| {
+                crate::writer::write_error::WriteError::Decline(
+                    "feature-input offset overflow".into(),
+                )
+            })?;
             let state = payload.get_mut(state_start..state_end).ok_or_else(|| {
-                CodecError::InvalidInput(
+                crate::writer::write_error::WriteError::Decline(
                     "feature-input state field exceeds retained payload".into(),
                 )
             })?;
@@ -2808,10 +2857,9 @@ fn resolved_feature_payload(
             let Some(stored) =
                 crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
             else {
-                return Err(CodecError::InvalidInput(
+                return Err(crate::writer::write_error::WriteError::Decline(
                     "feature-input marker does not carry editable coordinate fields".into(),
-                )
-                .into());
+                ));
             };
             if stored == coordinates {
                 continue;
@@ -2842,21 +2890,23 @@ fn resolved_feature_payload(
                 }
             });
             let Some(coordinate_start) = coordinate_start else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "feature-input lane {} edits the coordinates of sketch marker {}, whose layout keeps them elsewhere",
                     lane.id,
                     entity.id()
-                )).into());
+                )));
             };
             for (relative, value) in [(0usize, coordinates[0]), (8, coordinates[1])] {
                 let start = coordinate_start + relative;
                 let end = start.checked_add(8).ok_or_else(|| {
-                    CodecError::InvalidInput("feature-input coordinate offset overflow".into())
+                    crate::writer::write_error::WriteError::Decline(
+                        "feature-input coordinate offset overflow".into(),
+                    )
                 })?;
                 payload
                     .get_mut(start..end)
                     .ok_or_else(|| {
-                        CodecError::InvalidInput(
+                        crate::writer::write_error::WriteError::Decline(
                             "feature-input coordinate field exceeds retained payload".into(),
                         )
                     })?
@@ -2869,14 +2919,14 @@ fn resolved_feature_payload(
         .filter(|rename| rename.lane == lane.id)
         .map(|rename| {
             let name = lane.names.get(rename.name_index).ok_or_else(|| {
-                CodecError::InvalidInput(format!(
+                crate::writer::write_error::WriteError::Decline(format!(
                     "feature-input lane {} has no object name {}",
                     lane.id, rename.name_index
                 ))
             })?;
             Ok((name, rename))
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, crate::writer::write_error::WriteError>>()?;
     // Descending offset order: a spliced name changes the length of the payload
     // after it, and every remaining name sits before the one just written.
     lane_renames.sort_by_key(|(name, _)| std::cmp::Reverse(name.offset));
@@ -2884,15 +2934,19 @@ fn resolved_feature_payload(
         let utf16 = rename.value.as_str().encode_utf16().collect::<Vec<_>>();
         let length = feature_input_name_len(utf16.len())?;
         let start = usize::try_from(name.offset).map_err(|_| {
-            CodecError::InvalidInput("feature-input name offset exceeds address space".into())
+            crate::writer::write_error::WriteError::Decline(
+                "feature-input name offset exceeds address space".into(),
+            )
         })?;
         let (_, end) =
             crate::resolved_features::names::name_span(&payload, start).ok_or_else(|| {
-                CodecError::InvalidInput("feature-input name range is invalid".into())
+                crate::writer::write_error::WriteError::Decline(
+                    "feature-input name range is invalid".into(),
+                )
             })?;
         let length_at = crate::resolved_features::names::name_length_at(&payload, start)
             .ok_or_else(|| {
-                CodecError::InvalidInput(
+                crate::writer::write_error::WriteError::Decline(
                     "feature-input name marker does not match retained payload".into(),
                 )
             })?;
@@ -2975,12 +3029,12 @@ impl MetadataRecord {
     fn project(
         attribute: &cadmpeg_ir::attributes::SourceAttribute,
         length_scale: f64,
-        retained: impl FnOnce(&'static [u8]) -> Result<(), CodecError>,
+        retained: impl FnOnce(&'static [u8]) -> Result<(), crate::writer::write_error::WriteError>,
     ) -> Result<Option<Self>, write_error::WriteError> {
         use cadmpeg_ir::attributes::AttributeValue;
 
         let invalid = |kind: &str| {
-            write_error::WriteError::from(CodecError::malformed(format_args!("invalid {kind}")))
+            crate::writer::write_error::WriteError::Unwritable(format!("invalid {kind}"))
         };
         let values = attribute.values.as_slice();
         Ok(Some(match attribute.name.as_str() {
@@ -3079,9 +3133,9 @@ impl MetadataRecord {
                 let units = name.encode_utf16().collect::<Vec<_>>();
                 let byte_len = unit_name_byte_len(units.len())?;
                 if units.is_empty() {
-                    return Err(
-                        CodecError::Malformed("source linear unit name is empty".into()).into(),
-                    );
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
+                        "source linear unit name is empty".into(),
+                    ));
                 }
                 Self::SourceLinearUnitName { units, byte_len }
             }
@@ -3093,7 +3147,11 @@ impl MetadataRecord {
 fn unit_name_byte_len(units: usize) -> Result<u8, write_error::WriteError> {
     let value = cadmpeg_core::decode::u64_from_index(units)
         .checked_mul(2)
-        .ok_or_else(|| CodecError::malformed("unit name byte length exceeds u64"))?;
+        .ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable(
+                "unit name byte length exceeds u64".into(),
+            )
+        })?;
     u8::try_from(value).map_err(|_| write_error::WriteError::Capacity {
         field: &CAPACITY_FIELDS[12],
         value,
@@ -3173,10 +3231,9 @@ fn metadata_payloads(
     };
     for attribute in attributes {
         if attribute.target != AttributeTarget::Document {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "SLDPRT semantic writer does not support entity attributes".into(),
-            )
-            .into());
+            ));
         }
         match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
@@ -3239,11 +3296,10 @@ fn metadata_payloads(
                 objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }
             None => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "unsupported SLDPRT attribute {}",
                     attribute.name
-                ))
-                .into())
+                )))
             }
         }
     }
@@ -3257,7 +3313,7 @@ fn metadata_payloads(
 pub(crate) fn swobjects_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-) -> Result<String, CodecError> {
+) -> Result<String, crate::writer::write_error::WriteError> {
     let mut attributes = metadata_attributes(ir);
     attributes.retain(|attribute| attribute.name != "source_linear_unit_code");
     let views = (attributes, swobjects_materials(ir)?);
@@ -3267,7 +3323,7 @@ pub(crate) fn swobjects_local_sha256(
 pub(crate) fn swobjects_material_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-) -> Result<String, CodecError> {
+) -> Result<String, crate::writer::write_error::WriteError> {
     let materials = swobjects_materials(ir)?;
     Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &materials)?)
 }
@@ -3275,7 +3331,7 @@ pub(crate) fn swobjects_material_local_sha256(
 pub(crate) fn swobjects_metadata_identity_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-) -> Result<String, CodecError> {
+) -> Result<String, crate::writer::write_error::WriteError> {
     let identities = metadata_attributes(ir)
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
@@ -3304,7 +3360,7 @@ fn active_configuration_intent(ir: &CadIr) -> Option<ActiveConfigurationIntent<'
 fn retained_source_baseline<'a>(
     baseline: &'a mut Option<cadmpeg_ir::codec::Decoded>,
     source: Option<&(DecodeContext<'_>, cadmpeg_core::decode::View<'_>)>,
-) -> Result<Option<&'a cadmpeg_ir::codec::Decoded>, CodecError> {
+) -> Result<Option<&'a cadmpeg_ir::codec::Decoded>, crate::writer::write_error::WriteError> {
     if baseline.is_none() {
         let Some((ctx, root)) = source else {
             return Ok(None);
@@ -3361,7 +3417,10 @@ fn retained_display_sections(
 fn retained_history_sections(
     baseline: &cadmpeg_ir::codec::Decoded,
     scan: &crate::container::ContainerScan<'_>,
-) -> Result<Vec<(crate::records::FeatureHistory, String, Vec<u8>)>, CodecError> {
+) -> Result<
+    Vec<(crate::records::FeatureHistory, String, Vec<u8>)>,
+    crate::writer::write_error::WriteError,
+> {
     // Compare the same source-only decode stage that supplied the caller's
     // native records. In particular, decoding infers configuration source
     // indices from the active partition after parsing the Keywords XML.
@@ -3406,7 +3465,7 @@ fn retained_history_payload(
     history: &crate::records::FeatureHistory,
     section: &str,
     retained: &[(crate::records::FeatureHistory, String, Vec<u8>)],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::write_error::WriteError> {
     let mut originals = retained
         .iter()
         .filter(|(original, name, _)| original.id == history.id && name == section);
@@ -3422,7 +3481,9 @@ fn retained_history_payload(
     history_payload(history)
 }
 
-fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
+fn history_payload(
+    history: &crate::records::FeatureHistory,
+) -> Result<Vec<u8>, crate::writer::write_error::WriteError> {
     validate_feature_graph(&history.features)?;
     let mut out = String::from("<Keywords");
     if let Some(name) = &history.part_name {
@@ -3491,12 +3552,12 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
 
 pub(crate) fn validate_feature_graph(
     features: &[crate::records::Feature],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if features
         .iter()
         .any(|feature| !valid_xml_name(&feature.xml_tag))
     {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "invalid feature XML element name".into(),
         ));
     }
@@ -3512,35 +3573,47 @@ pub(crate) fn validate_feature_graph(
             .filter(|feature| feature.source_id.is_some())
             .count()
     {
-        return Err(CodecError::Malformed("duplicate feature source id".into()));
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            "duplicate feature source id".into(),
+        ));
     }
     let mut by_record = HashMap::new();
     for feature in features {
         by_record.insert(feature.id.as_str(), feature);
     }
     if by_record.len() != features.len() {
-        return Err(CodecError::Malformed("duplicate feature record id".into()));
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            "duplicate feature record id".into(),
+        ));
     }
     for feature in features {
         let mut seen = HashSet::new();
         let mut parent = feature.parent_source_id();
         while let Some(id) = parent {
             if !seen.insert(id) {
-                return Err(CodecError::Malformed("feature parent cycle".into()));
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    "feature parent cycle".into(),
+                ));
             }
-            let node = by_id
-                .get(&id)
-                .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
+            let node = by_id.get(&id).ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "feature references missing parent".into(),
+                )
+            })?;
             parent = node.parent_source_id();
         }
         let mut seen = HashSet::new();
         let mut parent = feature.tree_parent_record_id();
         while let Some(id) = parent {
             if !seen.insert(id) {
-                return Err(CodecError::Malformed("feature tree cycle".into()));
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    "feature tree cycle".into(),
+                ));
             }
             let node = by_record.get(id).ok_or_else(|| {
-                CodecError::Malformed("feature references missing tree parent".into())
+                crate::writer::write_error::WriteError::Unwritable(
+                    "feature references missing tree parent".into(),
+                )
             })?;
             parent = node.tree_parent_record_id();
         }
@@ -3717,16 +3790,19 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, write_
             .iter()
             .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
+            .map_err(|_| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "tessellation strip length overflow".into(),
+                )
+            })?;
         if !auxiliary.is_empty()
             && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
         {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "tessellation channels: the SLDPRT display-list table carries exactly three \
                  auxiliary channels after the strip, position and normal channels"
                     .into(),
-            )
-            .into());
+            ));
         }
         for channel in auxiliary {
             descriptor(
@@ -3767,7 +3843,11 @@ fn display_list_c_value(run: u32) -> Result<u32, write_error::WriteError> {
     let value = u64::from(run)
         .checked_mul(2)
         .and_then(|value| value.checked_sub(2))
-        .ok_or_else(|| CodecError::malformed("tessellation strip has no vertices"))?;
+        .ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable(
+                "tessellation strip has no vertices".into(),
+            )
+        })?;
     u32::try_from(value).map_err(|_| write_error::WriteError::Capacity {
         field: &CAPACITY_FIELDS[16],
         value,
@@ -3785,15 +3865,15 @@ fn has_core_tessellation_channels(
 
 fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
-) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
+) -> Result<cadmpeg_ir::tessellation::Tessellation, crate::writer::write_error::WriteError> {
     if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
-        return Err(CodecError::InvalidInput(
+        return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT display tessellation triangle groups and texture assignments are not writable"
                 .into(),
         ));
     }
     if !mesh.feature_edges().is_empty() {
-        return Err(CodecError::InvalidInput(
+        return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));
     }
@@ -3812,8 +3892,11 @@ fn sequential_tessellation(
         .iter()
         .flat_map(|triangle| triangle.iter().copied())
         .map(|index| {
-            usize::try_from(index)
-                .map_err(|_| CodecError::Malformed("tessellation index is out of bounds".into()))
+            usize::try_from(index).map_err(|_| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "tessellation index is out of bounds".into(),
+                )
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     let positions = indices
@@ -3838,8 +3921,11 @@ fn sequential_tessellation(
             channels.push(channel.clone());
             continue;
         }
-        let item_size = usize::try_from(channel.item_size())
-            .map_err(|_| CodecError::Malformed("tessellation channel item size overflow".into()))?;
+        let item_size = usize::try_from(channel.item_size()).map_err(|_| {
+            crate::writer::write_error::WriteError::Unwritable(
+                "tessellation channel item size overflow".into(),
+            )
+        })?;
         let data = indices
             .iter()
             .flat_map(|index| {
@@ -3855,7 +3941,7 @@ fn sequential_tessellation(
                 channel.flags(),
                 data,
             )
-            .map_err(|err| CodecError::Malformed(err.to_string()))?,
+            .map_err(|err| crate::writer::write_error::WriteError::Unwritable(err.to_string()))?,
         );
     }
     // One triangle per strip: the SLDPRT display list states strips, so a
@@ -3884,32 +3970,39 @@ fn sequential_tessellation(
     };
     mesh.clone()
         .with_mesh(rows, channels)
-        .map_err(|err| CodecError::Malformed(err.to_string()))
+        .map_err(|err| crate::writer::write_error::WriteError::Unwritable(err.to_string()))
 }
 
 /// Cut a corner-expanded vertex run into one three-vertex strip per triangle.
 fn strip_rows<V: Clone>(
     vertices: &[V],
-) -> Result<Option<cadmpeg_ir::tessellation::Strips<V>>, CodecError> {
+) -> Result<Option<cadmpeg_ir::tessellation::Strips<V>>, crate::writer::write_error::WriteError> {
     let mut strips = Vec::with_capacity(vertices.len() / 3);
     for corners in vertices.chunks(3) {
         strips.push(
             cadmpeg_ir::tessellation::Strip::new(corners.to_vec()).ok_or_else(|| {
-                CodecError::Malformed("tessellation triangle spans fewer than three corners".into())
+                crate::writer::write_error::WriteError::Unwritable(
+                    "tessellation triangle spans fewer than three corners".into(),
+                )
             })?,
         );
     }
     Ok(cadmpeg_ir::tessellation::Strips::new(strips))
 }
 
-fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
+/// Metres per document length unit in display-list positions.
+pub(super) const TESSELLATION_LENGTH_SCALE: f64 = 0.001;
+
+fn tessellation_f32(value: f64, role: &str) -> Result<f32, crate::writer::write_error::WriteError> {
     debug_assert!(
         REDUCED_FIELDS[0].storage == cadmpeg_ir::codec::write::ReducedStorage::F32
             && REDUCED_FIELDS[1].storage == cadmpeg_ir::codec::write::ReducedStorage::F32,
         "tessellation vertices and normals reduce through the declared F32 rows"
     );
     f32_from_f64(value).ok_or_else(|| {
-        CodecError::malformed(format_args!("SLDPRT tessellation {role} exceeds f32 range"))
+        crate::writer::write_error::WriteError::Unwritable(format!(
+            "SLDPRT tessellation {role} exceeds f32 range"
+        ))
     })
 }
 
@@ -3950,9 +4043,9 @@ impl From<MaterialError> for CodecError {
 impl From<MaterialError> for write_error::WriteError {
     fn from(error: MaterialError) -> Self {
         match error {
-            MaterialError::MissingAppearance => Self::Fatal(CodecError::Malformed(
-                "body binding references missing appearance".into(),
-            )),
+            MaterialError::MissingAppearance => {
+                Self::Unwritable("body binding references missing appearance".into())
+            }
             MaterialError::Decline(reason) => Self::Decline(reason.into()),
         }
     }
@@ -4050,7 +4143,9 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::Wr
     let length = material_name_len(name)?;
     let name = name.encode_utf16().collect::<Vec<_>>();
     if name.is_empty() {
-        return Err(CodecError::Malformed("SLDPRT material name is empty".into()).into());
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            "SLDPRT material name is empty".into(),
+        ));
     }
     let mut out = b"moVisualProperties_c".to_vec();
     // Every `Color` construction path admits components in [0, 1], so the
@@ -4061,7 +4156,9 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::Wr
             "material base colours reduce through the declared U8Channel row"
         );
         truncate_f64_to_u8(f64::from((value * 255.0).round())).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT material color component is out of range".into())
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT material color component is out of range".into(),
+            )
         })
     };
     out.extend_from_slice(&[
@@ -4102,11 +4199,10 @@ pub(crate) fn brep_body(
         .iter()
         .find(|body| matches!(body.kind, BodyKind::Wire | BodyKind::General))
     {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(crate::writer::write_error::WriteError::Decline(format!(
             "SLDPRT cannot write {:?} body {} as a solid lump",
             body.kind, body.id
-        ))
-        .into());
+        )));
     }
     let mut next = 2u32;
     let derived_sphere_seam_curves = ir
@@ -4218,7 +4314,7 @@ pub(crate) fn brep_body(
             continue;
         }
         let reference = surface_reference(surface.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::InvalidInput("carrier has no solved geometry".into())
+            crate::writer::write_error::WriteError::Decline("carrier has no solved geometry".into())
         })?);
         let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
         compact(
@@ -4318,10 +4414,9 @@ pub(crate) fn brep_body(
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
             if !value.is_finite() || value <= 0.0 {
-                return Err(CodecError::NotImplemented(
+                return Err(crate::writer::write_error::WriteError::Unwritable(
                     "SLDPRT vertex tolerance is outside the finite positive source range".into(),
-                )
-                .into());
+                ));
             }
             bef64(&mut out, value);
         } else {
@@ -4330,14 +4425,15 @@ pub(crate) fn brep_body(
         typed_ref(&mut out, vertex_owners[&vertex.id])?;
     }
     for edge in &ir.model.edges {
-        let owner = vertex_owners
-            .get(&edge.start)
-            .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
-        if vertex_owners.get(&edge.end) != Some(owner) {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT EDGE endpoints do not have one BODY owner".into(),
+        let owner = vertex_owners.get(&edge.start).ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT EDGE start has no BODY owner".into(),
             )
-            .into());
+        })?;
+        if vertex_owners.get(&edge.end) != Some(owner) {
+            return Err(crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT EDGE endpoints do not have one BODY owner".into(),
+            ));
         }
         tag(&mut out, 0x10);
         typed_ref(&mut out, edges[&edge.id])?;
@@ -4389,7 +4485,11 @@ pub(crate) fn brep_body(
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
-            .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "coedge references missing edge".into(),
+                )
+            })?;
         let forward_vertex = if coedge.sense == Sense::Forward {
             &edge.end
         } else {
@@ -4397,7 +4497,7 @@ pub(crate) fn brep_body(
         };
         let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "coedge {} is absent from its owning loop ring",
                     coedge.id
                 ))
@@ -4426,12 +4526,20 @@ pub(crate) fn brep_body(
             .faces
             .iter()
             .find(|face| face.id == lp.face)
-            .ok_or_else(|| CodecError::Malformed("loop references missing face".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "loop references missing face".into(),
+                )
+            })?;
         let position = face
             .loops
             .iter()
             .position(|id| id == &lp.id)
-            .ok_or_else(|| CodecError::Malformed("face does not own referenced loop".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "face does not own referenced loop".into(),
+                )
+            })?;
         let next_loop = face
             .loops
             .iter()
@@ -4443,7 +4551,10 @@ pub(crate) fn brep_body(
         for value in [
             0,
             coedges[lp.coedges().first().ok_or_else(|| {
-                CodecError::InvalidInput(format!("loop {} has no coedges", lp.id))
+                crate::writer::write_error::WriteError::Decline(format!(
+                    "loop {} has no coedges",
+                    lp.id
+                ))
             })?],
             faces[&lp.face],
             next_loop,
@@ -4470,11 +4581,10 @@ pub(crate) fn brep_body(
                 0
             }
             None => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "face {} has no supported loopless surface",
                     face.id
-                ))
-                .into())
+                )))
             }
         };
         for value in [0, 0, first, 0, surfaces[&face.surface]] {
@@ -4559,24 +4669,26 @@ fn write_body_hierarchy(
         if typed_only {
             for region_id in &body.regions {
                 let region = regions.get(region_id).ok_or_else(|| {
-                    CodecError::Malformed("body references missing region".into())
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "body references missing region".into(),
+                    )
                 })?;
                 for shell_id in &region.shells {
                     let shell = shells.get(shell_id).ok_or_else(|| {
-                        CodecError::Malformed("region references missing shell".into())
+                        crate::writer::write_error::WriteError::Unwritable(
+                            "region references missing shell".into(),
+                        )
                     })?;
                     for face in shell.faces() {
                         if !faces.contains_key(face) {
-                            return Err(CodecError::Malformed(
+                            return Err(crate::writer::write_error::WriteError::Unwritable(
                                 "shell references missing face".into(),
-                            )
-                            .into());
+                            ));
                         }
                         if !assigned.insert(face.clone()) {
-                            return Err(CodecError::Malformed(
+                            return Err(crate::writer::write_error::WriteError::Unwritable(
                                 "face belongs to multiple bodies".into(),
-                            )
-                            .into());
+                            ));
                         }
                     }
                 }
@@ -4586,9 +4698,11 @@ fn write_body_hierarchy(
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
         for region_id in &body.regions {
-            let region = regions
-                .get(region_id)
-                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+            let region = regions.get(region_id).ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "body references missing region".into(),
+                )
+            })?;
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
@@ -4597,20 +4711,21 @@ fn write_body_hierarchy(
             }
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
-                    CodecError::Malformed("region references missing shell".into())
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "region references missing shell".into(),
+                    )
                 })?;
                 let mut owned = Vec::new();
                 for face in shell.faces() {
                     if !faces.contains_key(face) {
-                        return Err(
-                            CodecError::Malformed("shell references missing face".into()).into(),
-                        );
+                        return Err(crate::writer::write_error::WriteError::Unwritable(
+                            "shell references missing face".into(),
+                        ));
                     }
                     if !assigned.insert(face.clone()) {
-                        return Err(CodecError::Malformed(
+                        return Err(crate::writer::write_error::WriteError::Unwritable(
                             "face belongs to multiple bodies".into(),
-                        )
-                        .into());
+                        ));
                     }
                     owned.push(face_owners[face]);
                 }
@@ -4663,12 +4778,16 @@ fn write_body_hierarchy(
             }
         }
         if native_regions.is_empty() {
-            return Err(CodecError::Malformed("SLDPRT body has no regions".into()).into());
+            return Err(crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT body has no regions".into(),
+            ));
         }
         write_attribute_list(out, &native_regions, next, 0x0017, root)?;
     }
     if assigned.len() != ir.model.faces.len() {
-        return Err(CodecError::Malformed("face is not assigned to a body".into()).into());
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            "face is not assigned to a body".into(),
+        ));
     }
     write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
@@ -4683,7 +4802,9 @@ fn write_body_hierarchy(
             face_color_definition
                 .map(|(_, definition_node)| definition_node)
                 .ok_or_else(|| {
-                    CodecError::Malformed("colored face has no color attribute definition".into())
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "colored face has no color attribute definition".into(),
+                    )
                 })?
         } else if schema_32001 {
             0x001f
@@ -4745,19 +4866,18 @@ fn write_typed_body_hierarchy(
         let shell_attr = shell_attrs[&shell.id];
         for face in shell.faces() {
             if face_shells.insert(face.clone(), shell_attr).is_some() {
-                return Err(
-                    CodecError::Malformed("face belongs to multiple typed shells".into()).into(),
-                );
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    "face belongs to multiple typed shells".into(),
+                ));
             }
         }
     }
 
     for body in &ir.model.bodies {
         let body_attr = body_attrs[&body.id];
-        let first_region = body
-            .regions
-            .first()
-            .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
+        let first_region = body.regions.first().ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable("body has no typed region".into())
+        })?;
         let first_region = region_attrs[first_region];
         let first_shell = body
             .regions
@@ -4797,13 +4917,19 @@ fn write_typed_body_hierarchy(
             .regions
             .iter()
             .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
-            .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "typed shell has no region".into(),
+                )
+            })?;
         let position = region
             .shells
             .iter()
             .position(|candidate| candidate == &shell.id)
             .ok_or_else(|| {
-                CodecError::Malformed("typed region does not reference its shell".into())
+                crate::writer::write_error::WriteError::Unwritable(
+                    "typed region does not reference its shell".into(),
+                )
             })?;
         let next_shell = region
             .shells
@@ -4836,12 +4962,20 @@ fn write_typed_body_hierarchy(
             .bodies
             .iter()
             .find(|candidate| candidate.id == region.body)
-            .ok_or_else(|| CodecError::Malformed("typed region has no body".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "typed region has no body".into(),
+                )
+            })?;
         let position = body_regions
             .regions
             .iter()
             .position(|candidate| candidate == &region.id)
-            .ok_or_else(|| CodecError::Malformed("body does not reference typed region".into()))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "body does not reference typed region".into(),
+                )
+            })?;
         let next_region = body_regions
             .regions
             .get(position + 1)
@@ -4864,10 +4998,9 @@ fn write_typed_body_hierarchy(
     }
 
     for face in &ir.model.faces {
-        let shell = face_shells
-            .get(&face.id)
-            .copied()
-            .ok_or_else(|| CodecError::Malformed("typed face has no shell".into()))?;
+        let shell = face_shells.get(&face.id).copied().ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable("typed face has no shell".into())
+        })?;
         typed_prefix(
             out,
             0x0e,
@@ -5243,7 +5376,9 @@ fn write_nurbs_surface(
     let u_degree = field_u16(&CAPACITY_FIELDS[20], u64::from(nurbs.u_degree()))?;
     let v_degree = field_u16(&CAPACITY_FIELDS[21], u64::from(nurbs.v_degree()))?;
     if u_degree == 0 || v_degree == 0 {
-        return Err(CodecError::Malformed("NURBS surface degree must be positive".into()).into());
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            "NURBS surface degree must be positive".into(),
+        ));
     }
     let u_count = field_u32(&CAPACITY_FIELDS[22], nurbs.u_count())?;
     let v_count = field_u32(&CAPACITY_FIELDS[23], nurbs.v_count())?;
@@ -5318,12 +5453,12 @@ fn append_homogeneous_pole(
     weight: Option<f64>,
     length_scale: f64,
     index: usize,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let point = point.get();
     let homogeneous =
         [point.x, point.y, point.z].map(|value| value * length_scale * weight.unwrap_or(1.0));
     if !homogeneous.iter().all(|value| value.is_finite()) {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(crate::writer::write_error::WriteError::Decline(format!(
             "SLDPRT NURBS pole {index} scaled by its weight has no finite coordinate"
         )));
     }
@@ -5337,7 +5472,7 @@ fn append_homogeneous_pole(
 fn homogeneous_poles(
     poles: &NurbsPoles3<FinitePoint3>,
     length_scale: f64,
-) -> Result<Vec<f64>, CodecError> {
+) -> Result<Vec<f64>, crate::writer::write_error::WriteError> {
     let mut out = Vec::with_capacity(
         poles.count()
             * if matches!(poles, NurbsPoles3::Rational { .. }) {
@@ -5370,7 +5505,7 @@ fn homogeneous_poles(
 fn homogeneous_grid_poles(
     poles: &NurbsPoleGrid<FinitePoint3>,
     length_scale: f64,
-) -> Result<Vec<f64>, CodecError> {
+) -> Result<Vec<f64>, crate::writer::write_error::WriteError> {
     let mut out = Vec::new();
     match poles {
         NurbsPoleGrid::Polynomial { rows } => {
@@ -5449,7 +5584,7 @@ fn u16_array(
 pub(super) fn curve_values(
     geometry: &CurveGeometry,
     length_scale: f64,
-) -> Result<(u8, Vec<f64>), CodecError> {
+) -> Result<(u8, Vec<f64>), crate::writer::write_error::WriteError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
@@ -5513,43 +5648,43 @@ pub(super) fn curve_values(
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_)) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support degenerate curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support composite curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
         }
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_)) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
-            return Err(CodecError::InvalidInput(
+            return Err(crate::writer::write_error::WriteError::Decline(
                 "semantic SLDPRT writer cannot regenerate an opaque curve".into(),
             ))
         }
@@ -5934,8 +6069,10 @@ mod nurbs_write_tests {
     fn generated_node_identity_uses_the_full_pointer_range() {
         let mut next = 0x7fff_ffff;
         assert_eq!(super::take_attr(&mut next).unwrap(), 0x7fff_ffff);
-        let error: cadmpeg_ir::codec::write::EncodeError =
-            super::take_attr(&mut next).unwrap_err().into();
+        let error: cadmpeg_ir::codec::write::EncodeError = super::take_attr(&mut next)
+            .unwrap_err()
+            .try_into()
+            .expect("an encode failure");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
                 field, limit: 0x7fff_ffff, value: 0x8000_0000,
@@ -5959,7 +6096,8 @@ mod nurbs_write_tests {
         let error: cadmpeg_ir::codec::write::EncodeError =
             typed_ref(&mut Vec::new(), 0x8000_0000_u32)
                 .unwrap_err()
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
                 field, limit: 0x7fff_ffff, value: 0x8000_0000,
@@ -5972,7 +6110,8 @@ mod nurbs_write_tests {
         let multiplicity_error: cadmpeg_ir::codec::write::EncodeError =
             unique_knots(&vec![0.0; usize::from(u16::MAX) + 1])
                 .expect_err("expected error")
-                .into();
+                .try_into()
+                .expect("an encode failure");
 
         assert!(matches!(
             multiplicity_error,

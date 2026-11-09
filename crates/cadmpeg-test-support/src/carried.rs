@@ -146,6 +146,82 @@ pub enum UnheldClass {
     /// A solid body whose faces use an edge of extent once, where the
     /// format bounds a solid by closed shells.
     OpenSolid,
+    /// A body whose kind differs from the kind its shapes state, where the
+    /// format derives a body's kind from its shapes: a solid from closed
+    /// shells, a sheet from faces, a wire from edges and a general body from
+    /// vertices or mixed members.
+    DerivedBodyKind,
+    /// A primitive feature with a literal dimension, where the format holds
+    /// each primitive dimension as a property parameter.
+    LiteralPrimitiveDimension,
+    /// A part definition that holds bodies itself, where the format holds a
+    /// body in an object inside the part.
+    PartOwnedBodies,
+    /// A product definition with no source name or one that is no
+    /// identifier, where the format names each product object by an
+    /// identifier.
+    NonIdentifierProductName,
+    /// A surface whose solved geometry a construction also states, where
+    /// the format holds the construction alone.
+    SolvedSurfaceBesideConstruction,
+    /// A feature of a native kind that is no `Module::Class` type name, with
+    /// the parameters it owns, where the format holds a feature by its type.
+    ForeignNativeFeature,
+    /// A parameter with a text value, where the format holds text in no
+    /// parameter.
+    TextParameter,
+    /// A surface of unknown geometry with no construction, or stated only by
+    /// a construction other than an extrusion, revolution, offset or
+    /// parameter subset, with the faces on it and the shells and bodies that
+    /// hold those faces, where the format writes a surface from its geometry
+    /// or one of those constructions.
+    UnencodedSurface,
+    /// A shell with faces beside wire edges or free vertices, with its
+    /// region and body, where the format's shell holds faces only.
+    MixedShell,
+    /// An appearance that binds no body, face, edge, vertex or occurrence,
+    /// where the format holds an appearance on the view provider of the
+    /// object it colours.
+    UnboundAppearance,
+    /// A pcurve that no coedge uses, where the format holds a pcurve on the
+    /// edge whose coedge uses it.
+    OrphanPcurve,
+    /// A pcurve whose stated parameter range descends, where the format's
+    /// pcurve range ascends.
+    DescendingPcurveRange,
+    /// A feature whose definition references a record outside the
+    /// document's model, where the format's features reference objects it
+    /// writes.
+    FeatureOutsideModel,
+    /// A feature whose definition leaves a value unresolved, where the
+    /// format's features state each operand.
+    UnresolvedFeature,
+    /// A pcurve on a face bounded by an edge with a curve and no parameter
+    /// range, where the format holds an edge's range with its curve and so
+    /// writes neither the edge nor the face.
+    RangelessEdgePcurve,
+    /// A surface constructed by a construction kind the format re-reads as
+    /// an extrusion, revolution or offset of another kind.
+    ReinterpretedConstructionSurface,
+    /// A pcurve that a coedge uses after its first, where the format holds
+    /// one pcurve of a coedge on its face's surface.
+    SecondCoedgePcurve,
+    /// A parameter whose literal expression differs from the canonical
+    /// spelling of its value, where the format stores a literal as its
+    /// value.
+    UncanonicalLiteralExpression,
+    /// A sketch feature whose name differs from its sketch's name, where the
+    /// format holds one label for both.
+    DistinctSketchFeatureName,
+    /// A sketch constraint of a native kind of another format, where the
+    /// format holds its own constraint kinds.
+    ForeignNativeConstraint,
+    /// A parameter that a sketch constraint binds, where the format names a
+    /// constraint's parameter by its position.
+    ConstraintParameter,
+    /// An attribute whose values no single property type holds, where the
+    /// format stores an attribute as one typed property.
+    UnencodedAttribute,
 }
 
 impl UnheldClass {
@@ -162,6 +238,17 @@ impl UnheldClass {
             Self::CurvelessEdgePcurve => return curveless_edge_pcurves(document),
             Self::UnstatedTolerance => return unstated_tolerances(document),
             Self::OpenSolid => return open_solids(document),
+            Self::DerivedBodyKind => return bodies_off_their_shapes(document),
+            Self::UnencodedSurface => return unencoded_surfaces(document),
+            Self::MixedShell => return mixed_shells(document),
+            Self::UnboundAppearance => return unbound_appearances(document),
+            Self::OrphanPcurve => return orphan_pcurves(document),
+            Self::DescendingPcurveRange => return descending_pcurves(document),
+            Self::FeatureOutsideModel => return features_outside_model(document),
+            Self::DistinctSketchFeatureName => return distinct_sketch_feature_names(document),
+            Self::ConstraintParameter => return constraint_parameters(document),
+            Self::RangelessEdgePcurve => return rangeless_edge_pcurves(document),
+            Self::SecondCoedgePcurve => return second_coedge_pcurves(document),
             _ => {}
         }
         let mut members = BTreeSet::new();
@@ -193,7 +280,18 @@ impl UnheldClass {
             | Self::OpenRing
             | Self::CurvelessEdgePcurve
             | Self::UnstatedTolerance
-            | Self::OpenSolid => record
+            | Self::OpenSolid
+            | Self::DerivedBodyKind
+            | Self::UnencodedSurface
+            | Self::MixedShell
+            | Self::UnboundAppearance
+            | Self::OrphanPcurve
+            | Self::DescendingPcurveRange
+            | Self::FeatureOutsideModel
+            | Self::DistinctSketchFeatureName
+            | Self::ConstraintParameter
+            | Self::RangelessEdgePcurve
+            | Self::SecondCoedgePcurve => record
                 .get("id")
                 .and_then(Value::as_str)
                 .is_some_and(|id| self.members(document).contains(id)),
@@ -253,6 +351,92 @@ impl UnheldClass {
                         .zip(name("label"))
                         .is_some_and(|(source, label)| source != label)
             }
+            Self::LiteralPrimitiveDimension => {
+                arena == "features"
+                    && matches!(
+                        record
+                            .pointer("/definition/definition")
+                            .and_then(Value::as_str),
+                        Some("primitive" | "block")
+                    )
+                    && record.get("definition").is_some_and(holds_literal)
+            }
+            Self::PartOwnedBodies => {
+                arena == "product_definitions"
+                    && record.get("kind").and_then(Value::as_str) == Some("part")
+                    && record
+                        .get("bodies")
+                        .and_then(Value::as_array)
+                        .is_some_and(|bodies| !bodies.is_empty())
+            }
+            Self::SolvedSurfaceBesideConstruction => {
+                arena == "surfaces"
+                    && record
+                        .pointer("/geometry/kind")
+                        .and_then(Value::as_str)
+                        .is_some_and(|kind| !matches!(kind, "procedural" | "unknown"))
+                    && record
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| constructed_surface(document, id))
+            }
+            Self::ForeignNativeFeature => match arena {
+                "features" => foreign_native_feature(record),
+                "parameters" => record
+                    .get("owner")
+                    .and_then(Value::as_str)
+                    .is_some_and(|owner| {
+                        model_rows(document, "features").into_iter().any(|feature| {
+                            feature.get("id").and_then(Value::as_str) == Some(owner)
+                                && foreign_native_feature(feature)
+                        })
+                    }),
+                _ => false,
+            },
+            Self::TextParameter => {
+                arena == "parameters"
+                    && record.pointer("/value/kind").and_then(Value::as_str) == Some("string")
+            }
+            Self::UncanonicalLiteralExpression => {
+                arena == "parameters" && uncanonical_literal(record)
+            }
+            Self::ReinterpretedConstructionSurface => {
+                arena == "surfaces"
+                    && record.get("id").and_then(Value::as_str).is_some_and(|id| {
+                        model_rows(document, "procedural_surfaces")
+                            .into_iter()
+                            .any(|row| {
+                                row.get("surface").and_then(Value::as_str) == Some(id)
+                                    && matches!(
+                                        row.pointer("/definition/kind").and_then(Value::as_str),
+                                        Some(
+                                            "parallel_offset" | "axis_revolution" | "linear_sweep"
+                                        )
+                                    )
+                            })
+                    })
+            }
+            Self::UnresolvedFeature => {
+                arena == "features" && record.get("definition").is_some_and(holds_unresolved)
+            }
+            Self::ForeignNativeConstraint => {
+                arena == "sketch_constraints"
+                    && record.pointer("/definition/kind").and_then(Value::as_str) == Some("native")
+            }
+            Self::UnencodedAttribute => {
+                arena == "attributes"
+                    && !record
+                        .get("values")
+                        .and_then(Value::as_array)
+                        .is_some_and(|values| encodable_attribute(values))
+            }
+            Self::NonIdentifierProductName => {
+                arena == "product_definitions"
+                    && !record
+                        .get("source_name")
+                        .and_then(Value::as_str)
+                        .is_some_and(is_identifier)
+            }
             Self::MultiRegionSolid => {
                 arena == "bodies"
                     && record.get("kind").and_then(Value::as_str) == Some("solid")
@@ -263,6 +447,155 @@ impl UnheldClass {
             }
         }
     }
+}
+
+/// Whether `value` holds a literal dimension.
+fn holds_literal(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => {
+            fields.get("kind").and_then(Value::as_str) == Some("literal")
+                || fields.values().any(holds_literal)
+        }
+        Value::Array(items) => items.iter().any(holds_literal),
+        _ => false,
+    }
+}
+
+/// Whether `text` is an ASCII identifier: a letter or underscore, then
+/// letters, digits and underscores.
+fn is_identifier(text: &str) -> bool {
+    let mut characters = text.chars();
+    characters
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+/// The bodies whose stated kind differs from the kind their shells state.
+/// A shell closes when each edge with a curve that its faces use is used
+/// equally often in each sense.
+fn bodies_off_their_shapes(document: &Value) -> BTreeSet<String> {
+    let model = document.get("model");
+    let rows = |arena: &str| -> BTreeMap<String, &Value> {
+        model
+            .and_then(|model| model.get(arena))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|row| Some((row.get("id")?.as_str()?.to_owned(), row)))
+            .collect()
+    };
+    let (regions, shells, faces, loops, coedges, edges) = (
+        rows("regions"),
+        rows("shells"),
+        rows("faces"),
+        rows("loops"),
+        rows("coedges"),
+        rows("edges"),
+    );
+    let ids = |value: Option<&Value>| -> Vec<String> {
+        value
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|id| id.as_str().map(str::to_owned))
+            .collect()
+    };
+    let closed = |shell: &Value| -> bool {
+        let mut uses = BTreeMap::<&str, [usize; 2]>::new();
+        for member in shell
+            .get("members")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if member.get("kind").and_then(Value::as_str) != Some("face") {
+                continue;
+            }
+            let Some(face) = member
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| faces.get(id))
+            else {
+                return false;
+            };
+            let wires = face.pointer("/loops/loops").or_else(|| face.get("loops"));
+            for wire in ids(wires) {
+                let Some(wire) = loops.get(&wire) else {
+                    return false;
+                };
+                for coedge in ids(wire.pointer("/boundary/coedges")) {
+                    let Some(coedge) = coedges.get(&coedge) else {
+                        return false;
+                    };
+                    let Some(edge) = coedge.get("edge").and_then(Value::as_str) else {
+                        return false;
+                    };
+                    let curved = edges
+                        .get(edge)
+                        .and_then(|edge| edge.pointer("/carrier/curve"))
+                        .is_some_and(|curve| !curve.is_null());
+                    if curved {
+                        let reversed =
+                            coedge.get("sense").and_then(Value::as_str) == Some("reversed");
+                        uses.entry(edge).or_default()[usize::from(reversed)] += 1;
+                    }
+                }
+            }
+        }
+        !uses.is_empty()
+            && uses
+                .values()
+                .all(|&[forward, reversed]| forward > 0 && forward == reversed)
+    };
+    let mut members = BTreeSet::new();
+    for (id, body) in rows("bodies") {
+        let mut kinds = BTreeSet::new();
+        let mut all_closed = true;
+        for region in ids(body.get("regions")) {
+            let Some(region) = regions.get(&region) else {
+                continue;
+            };
+            for shell in ids(region.get("shells")) {
+                let Some(shell) = shells.get(&shell) else {
+                    continue;
+                };
+                let mut faced = false;
+                for member in shell
+                    .get("members")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    match member.get("kind").and_then(Value::as_str) {
+                        Some("face") => faced = true,
+                        Some("wire_edge") => {
+                            kinds.insert("wire");
+                        }
+                        Some("free_vertex") => {
+                            kinds.insert("general");
+                        }
+                        _ => {}
+                    }
+                }
+                if faced {
+                    kinds.insert("faces");
+                    all_closed &= closed(shell);
+                }
+            }
+        }
+        let derived = match kinds.iter().copied().collect::<Vec<_>>().as_slice() {
+            [] => continue,
+            ["faces"] if all_closed => "solid",
+            ["faces"] => "sheet",
+            [single] => *single,
+            _ => "general",
+        };
+        if body.get("kind").and_then(Value::as_str) != Some(derived) {
+            members.insert(id);
+        }
+    }
+    members
 }
 
 /// The members of a class whose query evaluates geometry. The harness
@@ -738,6 +1071,453 @@ fn solved_curve(document: &Value, curve: &str) -> bool {
         .any(|kind| kind != "procedural")
 }
 
+/// The shells holding faces beside other members, with their regions and
+/// bodies.
+fn mixed_shells(document: &Value) -> BTreeSet<String> {
+    let mut members = BTreeSet::new();
+    for shell in model_rows(document, "shells") {
+        let kinds: BTreeSet<&str> = shell
+            .get("members")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|member| member.get("kind").and_then(Value::as_str))
+            .collect();
+        if !(kinds.contains("face") && kinds.len() > 1) {
+            continue;
+        }
+        let Some(id) = row_id(shell) else {
+            continue;
+        };
+        let region = shell
+            .get("region")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let body = region.as_deref().and_then(|region| {
+            model_rows(document, "regions")
+                .into_iter()
+                .find(|row| row.get("id").and_then(Value::as_str) == Some(region))
+                .and_then(|row| row.get("body").and_then(Value::as_str))
+                .map(str::to_owned)
+        });
+        members.insert(id);
+        members.extend(region);
+        members.extend(body);
+    }
+    members
+}
+
+/// The surfaces of unknown geometry or stated only by a construction the
+/// format cannot hold, the faces on them, and the shells and bodies holding
+/// those faces.
+fn unencoded_surfaces(document: &Value) -> BTreeSet<String> {
+    let rows = |arena: &str| -> Vec<&Value> {
+        document
+            .get("model")
+            .and_then(|model| model.get(arena))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .collect()
+    };
+    let id = |row: &Value| row.get("id").and_then(Value::as_str).map(str::to_owned);
+    let held: BTreeSet<String> = rows("procedural_surfaces")
+        .into_iter()
+        .filter(|row| {
+            matches!(
+                row.pointer("/definition/kind").and_then(Value::as_str),
+                Some(
+                    "extrusion"
+                        | "revolution"
+                        | "axis_revolution"
+                        | "offset"
+                        | "parallel_offset"
+                        | "subset"
+                )
+            )
+        })
+        .filter_map(id)
+        .collect();
+    let surfaces: BTreeSet<String> = rows("surfaces")
+        .into_iter()
+        .filter(|row| {
+            let kind = row.pointer("/geometry/kind").and_then(Value::as_str);
+            let unknown = kind == Some("unknown")
+                && !row_id(row).is_some_and(|id| constructed_surface(document, &id));
+            unknown
+                || (kind == Some("procedural")
+                    && row.pointer("/geometry/cache").is_none_or(Value::is_null)
+                    && !row
+                        .pointer("/geometry/construction")
+                        .and_then(Value::as_str)
+                        .is_some_and(|construction| held.contains(construction)))
+        })
+        .filter_map(id)
+        .collect();
+    let faces: BTreeSet<String> = rows("faces")
+        .into_iter()
+        .filter(|row| {
+            row.get("surface")
+                .and_then(Value::as_str)
+                .is_some_and(|surface| surfaces.contains(surface))
+        })
+        .filter_map(id)
+        .collect();
+    let refers = |row: &Value, key: &str, targets: &BTreeSet<String>| {
+        row.get(key)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|item| {
+                item.as_str()
+                    .or_else(|| item.get("id").and_then(Value::as_str))
+                    .is_some_and(|target| targets.contains(target))
+            })
+    };
+    let shells: BTreeSet<String> = rows("shells")
+        .into_iter()
+        .filter(|row| refers(row, "members", &faces))
+        .filter_map(id)
+        .collect();
+    let regions: BTreeSet<String> = rows("regions")
+        .into_iter()
+        .filter(|row| refers(row, "shells", &shells))
+        .filter_map(id)
+        .collect();
+    let bodies: BTreeSet<String> = rows("bodies")
+        .into_iter()
+        .filter(|row| refers(row, "regions", &regions))
+        .filter_map(id)
+        .collect();
+    surfaces
+        .into_iter()
+        .chain(faces)
+        .chain(shells)
+        .chain(bodies)
+        .collect()
+}
+
+fn model_rows<'a>(document: &'a Value, arena: &str) -> Vec<&'a Value> {
+    document
+        .get("model")
+        .and_then(|model| model.get(arena))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+fn row_id(row: &Value) -> Option<String> {
+    row.get("id").and_then(Value::as_str).map(str::to_owned)
+}
+
+/// Every string at any depth of `value`.
+fn strings<'a>(value: &'a Value, out: &mut Vec<&'a str>) {
+    match value {
+        Value::String(text) => out.push(text),
+        Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+        Value::Object(fields) => fields.values().for_each(|item| strings(item, out)),
+        _ => {}
+    }
+}
+
+fn foreign_native_feature(record: &Value) -> bool {
+    record
+        .pointer("/definition/definition")
+        .and_then(Value::as_str)
+        == Some("native")
+        && !record
+            .pointer("/definition/kind")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind.contains("::"))
+}
+
+/// Whether `value` holds an unresolved value.
+fn holds_unresolved(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => {
+            fields.get("kind").and_then(Value::as_str) == Some("unresolved")
+                || fields.get("definition").and_then(Value::as_str) == Some("unresolved")
+                || fields.values().any(holds_unresolved)
+        }
+        Value::Array(items) => items.iter().any(holds_unresolved),
+        _ => false,
+    }
+}
+
+fn second_coedge_pcurves(document: &Value) -> BTreeSet<String> {
+    model_rows(document, "coedges")
+        .into_iter()
+        .flat_map(|coedge| {
+            coedge
+                .get("pcurves")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .skip(1)
+        })
+        .filter_map(|usage| {
+            usage
+                .get("pcurve")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+fn rangeless_edge_pcurves(document: &Value) -> BTreeSet<String> {
+    let rangeless: BTreeSet<String> = model_rows(document, "edges")
+        .into_iter()
+        .filter(|row| {
+            row.pointer("/carrier/curve")
+                .is_some_and(|curve| !curve.is_null())
+                && row
+                    .pointer("/carrier/param_range")
+                    .is_none_or(Value::is_null)
+        })
+        .filter_map(row_id)
+        .collect();
+    let face_of: BTreeMap<String, String> = model_rows(document, "loops")
+        .into_iter()
+        .filter_map(|row| Some((row_id(row)?, row.get("face")?.as_str()?.to_owned())))
+        .collect();
+    let face = |coedge: &Value| {
+        coedge
+            .get("owner_loop")
+            .and_then(Value::as_str)
+            .and_then(|wire| face_of.get(wire))
+            .cloned()
+    };
+    let unwritten: BTreeSet<String> = model_rows(document, "coedges")
+        .into_iter()
+        .filter(|coedge| {
+            coedge
+                .get("edge")
+                .and_then(Value::as_str)
+                .is_some_and(|edge| rangeless.contains(edge))
+        })
+        .filter_map(face)
+        .collect();
+    pcurve_uses(document)
+        .into_iter()
+        .filter(|(coedge, _)| face(coedge).is_some_and(|face| unwritten.contains(&face)))
+        .filter_map(|(_, usage)| {
+            usage
+                .get("pcurve")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+fn unbound_appearances(document: &Value) -> BTreeSet<String> {
+    let held = |target: &Value| match target.get("kind").and_then(Value::as_str) {
+        Some("body" | "face" | "edge" | "vertex" | "occurrence") => true,
+        Some("record") => matches!(
+            target.get("arena").and_then(Value::as_str),
+            Some("bodies" | "faces" | "edges" | "vertices" | "occurrences")
+        ),
+        _ => false,
+    };
+    let bound: BTreeSet<&str> = model_rows(document, "appearance_bindings")
+        .into_iter()
+        .filter(|row| row.get("target").is_some_and(held))
+        .filter_map(|row| row.get("appearance").and_then(Value::as_str))
+        .collect();
+    model_rows(document, "appearances")
+        .into_iter()
+        .filter_map(row_id)
+        .filter(|id| !bound.contains(id.as_str()))
+        .collect()
+}
+
+/// The pcurve uses of every coedge: the coedge and the use's record.
+fn pcurve_uses(document: &Value) -> Vec<(&Value, &Value)> {
+    model_rows(document, "coedges")
+        .into_iter()
+        .flat_map(|coedge| {
+            coedge
+                .get("pcurves")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(move |usage| (coedge, usage))
+        })
+        .collect()
+}
+
+fn orphan_pcurves(document: &Value) -> BTreeSet<String> {
+    let used: BTreeSet<&str> = pcurve_uses(document)
+        .into_iter()
+        .filter_map(|(_, usage)| usage.get("pcurve").and_then(Value::as_str))
+        .collect();
+    model_rows(document, "pcurves")
+        .into_iter()
+        .filter_map(row_id)
+        .filter(|id| !used.contains(id.as_str()))
+        .collect()
+}
+
+fn descending(range: Option<&Value>) -> bool {
+    let bounds = range
+        .and_then(Value::as_array)
+        .map(|range| range.iter().filter_map(Value::as_f64).collect::<Vec<_>>());
+    matches!(bounds.as_deref(), Some([start, end]) if start > end)
+}
+
+fn descending_pcurves(document: &Value) -> BTreeSet<String> {
+    let mut members: BTreeSet<String> = model_rows(document, "pcurves")
+        .into_iter()
+        .filter(|row| descending(row.pointer("/metadata/form/parameter_range")))
+        .filter_map(row_id)
+        .collect();
+    for (_, usage) in pcurve_uses(document) {
+        if descending(usage.get("parameter_range")) {
+            if let Some(pcurve) = usage.get("pcurve").and_then(Value::as_str) {
+                members.insert(pcurve.to_owned());
+            }
+        }
+    }
+    members
+}
+
+fn features_outside_model(document: &Value) -> BTreeSet<String> {
+    let model: BTreeSet<String> = document
+        .get("model")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|model| model.values())
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter_map(row_id)
+        .collect();
+    // A reference to a feature's native record names that feature.
+    let features: BTreeSet<&str> = model_rows(document, "features")
+        .into_iter()
+        .filter_map(|row| row.get("native_ref").and_then(Value::as_str))
+        .collect();
+    model_rows(document, "features")
+        .into_iter()
+        .filter(|row| {
+            let mut texts = Vec::new();
+            if let Some(definition) = row.get("definition") {
+                strings(definition, &mut texts);
+            }
+            texts.iter().any(|text| {
+                text.contains('#')
+                    && text.contains(':')
+                    && !model.contains(*text)
+                    && !features.contains(text)
+            })
+        })
+        .filter_map(row_id)
+        .collect()
+}
+
+fn distinct_sketch_feature_names(document: &Value) -> BTreeSet<String> {
+    let sketches: BTreeMap<String, Option<&str>> = model_rows(document, "sketches")
+        .into_iter()
+        .filter_map(|row| Some((row_id(row)?, row.get("name").and_then(Value::as_str))))
+        .collect();
+    model_rows(document, "features")
+        .into_iter()
+        .filter(|row| {
+            let mut texts = Vec::new();
+            if let Some(definition) = row.get("definition") {
+                strings(definition, &mut texts);
+            }
+            let name = row.get("name").and_then(Value::as_str);
+            texts
+                .iter()
+                .any(|text| sketches.get(*text).is_some_and(|sketch| *sketch != name))
+        })
+        .filter_map(row_id)
+        .collect()
+}
+
+fn constraint_parameters(document: &Value) -> BTreeSet<String> {
+    let parameters: BTreeSet<String> = model_rows(document, "parameters")
+        .into_iter()
+        .filter_map(row_id)
+        .collect();
+    let mut members = BTreeSet::new();
+    for constraint in model_rows(document, "sketch_constraints") {
+        let mut texts = Vec::new();
+        if let Some(definition) = constraint.get("definition") {
+            strings(definition, &mut texts);
+        }
+        members.extend(
+            texts
+                .into_iter()
+                .filter(|text| parameters.contains(*text))
+                .map(str::to_owned),
+        );
+    }
+    members
+}
+
+/// Whether a parameter states a one-token literal expression that differs
+/// from its value's canonical spelling only by spacing.
+fn uncanonical_literal(record: &Value) -> bool {
+    let Some([token]) = record
+        .pointer("/expression/tokens")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+    else {
+        return false;
+    };
+    let Some(text) = token.get("value").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(value) =
+        serde_json::from_value::<cadmpeg_ir::features::ParameterValue>(record["value"].clone())
+    else {
+        return false;
+    };
+    let canonical = serde_json::to_value(cadmpeg_ir::features::Expression::literal(&value))
+        .ok()
+        .and_then(|expression| {
+            expression
+                .pointer("/tokens/0/value")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    canonical.is_some_and(|canonical| {
+        canonical != text && canonical.replace(' ', "") == text.replace(' ', "")
+    })
+}
+
+/// Whether one property type holds `values`: one string, boolean, integer,
+/// float, three-component vector or reference, or a list of strings.
+fn encodable_attribute(values: &[Value]) -> bool {
+    let kind = |value: &Value| value.get("kind").and_then(Value::as_str).map(str::to_owned);
+    match values {
+        [single] => match kind(single).as_deref() {
+            Some("string" | "boolean" | "integer" | "float" | "reference") => true,
+            Some("vector") => single
+                .get("value")
+                .and_then(Value::as_array)
+                .is_some_and(|vector| vector.len() == 3),
+            _ => false,
+        },
+        [] => false,
+        values => values
+            .iter()
+            .all(|value| value.is_null() || kind(value).as_deref() == Some("string")),
+    }
+}
+
+/// Whether a procedural surface of `document` constructs `surface`.
+fn constructed_surface(document: &Value, surface: &str) -> bool {
+    document
+        .get("model")
+        .and_then(|model| model.get("procedural_surfaces"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|row| row.get("surface").and_then(Value::as_str) == Some(surface))
+}
+
 fn translucent(document: &Value, appearance: &str) -> bool {
     document
         .get("model")
@@ -1118,7 +1898,7 @@ pub fn crate_scan(scan_json: &str) -> CrateScan {
 
 #[cfg(test)]
 mod tests {
-    use super::{ambiguity_sample, json_variants, observe_arenas, observe_paths};
+    use super::{ambiguity_sample, json_variants, observe_arenas, observe_paths, UnheldClass};
     use serde_json::json;
 
     #[test]
@@ -1139,6 +1919,86 @@ mod tests {
         assert_eq!(
             members,
             std::collections::BTreeSet::from(["test:model:vertex#finer".to_owned()])
+        );
+    }
+
+    #[test]
+    fn a_body_stated_as_a_solid_on_an_open_shell_holds_a_derived_kind() {
+        let body = |kind: &str| {
+            json!({"model": {
+                "bodies": [{"id": "body", "kind": kind, "regions": ["region"]}],
+                "regions": [{"id": "region", "body": "body", "shells": ["shell"]}],
+                "shells": [{"id": "shell", "members": [{"kind": "face", "id": "face"}]}],
+                "faces": [{"id": "face", "loops": {"loops": ["loop"]}}],
+                "loops": [{"id": "loop", "face": "face",
+                           "boundary": {"kind": "ring", "coedges": ["coedge"]}}],
+                "coedges": [{"id": "coedge", "edge": "edge", "sense": "forward"}],
+                "edges": [{"id": "edge", "carrier": {"curve": "curve"}}]
+            }})
+        };
+        assert!(UnheldClass::DerivedBodyKind
+            .members(&body("solid"))
+            .contains("body"));
+        assert!(UnheldClass::DerivedBodyKind
+            .members(&body("sheet"))
+            .is_empty());
+    }
+
+    #[test]
+    fn freecad_unheld_classes_name_their_records() {
+        let document = json!({"model": {
+            "features": [
+                {"id": "box", "definition": {"definition": "primitive",
+                    "solid": {"kind": "box", "length": {"kind": "literal", "value": 2.0}}}},
+                {"id": "native", "definition": {"definition": "native", "kind": "Decal"}},
+                {"id": "own", "definition": {"definition": "native", "kind": "Part::Thing"}}
+            ],
+            "parameters": [
+                {"id": "owned", "owner": "native", "value": {"kind": "length", "value": 1.0}},
+                {"id": "text", "value": {"kind": "string", "value": "x"}}
+            ],
+            "product_definitions": [
+                {"id": "part", "kind": "part", "bodies": ["body"], "source_name": "Part1"},
+                {"id": "unnamed", "kind": "object"}
+            ],
+            "appearances": [{"id": "curve-colour"}, {"id": "face-colour"}],
+            "appearance_bindings": [
+                {"id": "b1", "appearance": "curve-colour", "target": {"kind": "curve", "id": "c"}},
+                {"id": "b2", "appearance": "face-colour", "target": {"kind": "face", "id": "f"}}
+            ],
+            "attributes": [
+                {"id": "vector4", "values": [{"kind": "vector", "value": [1.0, 2.0, 3.0, 4.0]}]},
+                {"id": "string", "values": [{"kind": "string", "value": "a"}]}
+            ]
+        }});
+        let members = |class: UnheldClass| class.members(&document);
+        assert_eq!(
+            members(UnheldClass::LiteralPrimitiveDimension),
+            ["box".to_owned()].into()
+        );
+        assert_eq!(
+            members(UnheldClass::ForeignNativeFeature),
+            ["native".to_owned(), "owned".to_owned()].into()
+        );
+        assert_eq!(
+            members(UnheldClass::TextParameter),
+            ["text".to_owned()].into()
+        );
+        assert_eq!(
+            members(UnheldClass::PartOwnedBodies),
+            ["part".to_owned()].into()
+        );
+        assert_eq!(
+            members(UnheldClass::NonIdentifierProductName),
+            ["unnamed".to_owned()].into()
+        );
+        assert_eq!(
+            members(UnheldClass::UnboundAppearance),
+            ["curve-colour".to_owned()].into()
+        );
+        assert_eq!(
+            members(UnheldClass::UnencodedAttribute),
+            ["vector4".to_owned()].into()
         );
     }
 

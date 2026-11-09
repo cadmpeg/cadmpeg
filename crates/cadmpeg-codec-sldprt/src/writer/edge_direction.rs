@@ -3,7 +3,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId};
@@ -29,7 +28,9 @@ impl ReversedCompactEdges {
 /// A stored edge runs along its forward coedge. An edge on a compact analytic
 /// curve whose coedges all run against it is stored reversed, and its curve
 /// carries the marker that runs against edges.
-pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges, CodecError> {
+pub(super) fn reversed_compact_edges(
+    ir: &CadIr,
+) -> Result<ReversedCompactEdges, crate::writer::write_error::WriteError> {
     let compact_curves = ir
         .model
         .curves
@@ -57,7 +58,7 @@ pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges,
         };
         let reversed = !has_forward;
         if *curve_directions.entry(curve).or_insert(reversed) != reversed {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT curve {curve} carries edges stored in both directions"
             )));
         }

@@ -625,29 +625,10 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     unexpected_tolerance.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.04))
         .unwrap();
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(
-                EncodeInput::new(&unexpected_tolerance, None),
-                TargetRequest::Inherit,
-            )
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("none-shape scaled compound loft with tolerance must fail"),
-    };
-    assert!(
-        message.contains("none shape cannot carry a cache-fit tolerance"),
-        "{message}"
-    );
+    let record = unexpected_tolerance.model.procedural_surfaces[0]
+        .id
+        .to_string();
+    crate::test_support::assert_written_naming(&unexpected_tolerance, None, &record);
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1209,7 +1190,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
 }
 
 #[test]
-fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
+fn source_less_writer_writes_around_invalid_and_unframed_law_arities() {
     use cadmpeg_ir::geometry::{LawExpression, LawFormula, ProceduralSurfaceDefinition};
 
     let decoded = F3dCodec
@@ -1247,23 +1228,8 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("invalid law arity must be rejected"),
-    };
-    assert!(message.contains("requires 1 operands, got 0"), "{message}");
+    let record = source_less.model.procedural_surfaces[0].id.to_string();
+    crate::test_support::assert_written_naming(&source_less, None, &record);
 
     source_less.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {

@@ -812,7 +812,7 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
 }
 
 #[test]
-fn generated_f3d_rejects_an_incoherent_delta_state_header() {
+fn generated_f3d_writes_around_an_incoherent_delta_state_header() {
     let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -826,24 +826,10 @@ fn generated_f3d_rejects_an_incoherent_delta_state_header() {
         state.next_ref = Some(14);
         state.node_index = 16;
     });
-    // #239 §5.0: writer-detected input/precondition violations are invariant errors.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-    }));
-    let message = match &result {
-        Ok(Err(error)) => error.to_string(),
-        Err(panic) => panic.downcast_ref::<String>().cloned().unwrap_or_else(|| {
-            panic
-                .downcast_ref::<&str>()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        }),
-        Ok(Ok(_)) => panic!("an incoherent history cannot be serialized"),
-    };
-    assert!(
-        message.contains("coherent doubly linked state chain"),
-        "{message}"
-    );
+    let history = crate::test_support::native_test::f3d_native(&edited).asm_histories[0]
+        .id
+        .clone();
+    crate::test_support::assert_written_naming(&edited, Some(&fidelity), &history);
 }
 
 #[test]

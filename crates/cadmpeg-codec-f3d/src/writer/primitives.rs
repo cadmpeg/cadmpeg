@@ -3,11 +3,10 @@
 //! edit-and-patch engine.
 
 use crate::native::F3dNative;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Sense;
 
-pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
+pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, crate::writer::WriteError> {
     ir.native
         .namespace("f3d")
         .map(F3dNative::load)
@@ -18,7 +17,7 @@ pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
 pub(super) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut projected =
         crate::design::configurations::project_configurations(&native.design_configurations)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
@@ -37,7 +36,7 @@ pub(super) fn validate_configuration_projection(
         &mut features,
     )?;
     if target.model.configurations != projected {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "neutral F3D configurations must equal the projection of native configuration tables"
                 .into(),
         ));
@@ -48,7 +47,7 @@ pub(super) fn validate_configuration_projection(
 pub(crate) fn validate_assembly_projection(
     target: &CadIr,
     native: Option<&F3dNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let Some(native) = native else {
         return target
             .model
@@ -56,7 +55,7 @@ pub(crate) fn validate_assembly_projection(
             .is_empty()
             .then_some(())
             .ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "source-less F3D generation does not support assembly joints".into(),
                 )
             });
@@ -79,7 +78,7 @@ pub(crate) fn validate_assembly_projection(
         ),
     );
     if target.model.assembly_joints != projected.joints {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "editing F3D assembly joints is not supported".into(),
         ));
     }

@@ -362,7 +362,15 @@ pub(super) fn write(
             .entry(name.clone())
             .or_insert_with(|| Provider::new(name.clone()));
         bound.insert(appearance.id.as_str());
-        let material_slot = (appearance.schema.as_deref() == Some(SHAPE_APPEARANCE_SCHEMA))
+        // A material list entry holds an asset identity; the view provider
+        // material lanes hold none.
+        let catalogued = appearance.asset_guid.is_some()
+            && !appearance
+                .schema
+                .as_deref()
+                .is_some_and(|schema| schema.starts_with("FCStd "));
+        let material_slot = (appearance.schema.as_deref() == Some(SHAPE_APPEARANCE_SCHEMA)
+            || catalogued)
             .then(|| match selection(&binding.target) {
                 None => Some(WHOLE_OBJECT_SLOT),
                 Some((id, "DiffuseColor")) => names

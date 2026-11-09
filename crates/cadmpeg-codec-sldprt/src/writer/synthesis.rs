@@ -2,9 +2,8 @@
 //! Neutral-first synthesis after a retained layout cannot express an edit.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, ArenaDisposition, Consumption, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, ArenaDisposition, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -20,6 +19,7 @@ pub(super) mod parameters;
 mod presentation;
 
 /// Why synthesis replaced an eligible retained layout.
+#[derive(Clone)]
 pub(super) enum SynthesisCause {
     Fresh,
     SourceImageUnavailable,
@@ -37,7 +37,7 @@ pub(super) enum SynthesisCause {
 fn cascade_validation_errors(
     projected: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     use cadmpeg_ir::report::check::Check;
     let definitions = projected
         .model
@@ -69,6 +69,7 @@ fn cascade_validation_errors(
     // exact finding keeps the cascade from re-finding it on the next pass,
     // while a later finding on the same record still blocks.
     let mut acknowledged = std::collections::BTreeSet::new();
+    let mut held = std::collections::BTreeSet::new();
     let acked = |finding: &&cadmpeg_ir::report::check::Finding,
                  acknowledged: &std::collections::BTreeSet<(String, String)>| {
         acknowledged.contains(&(
@@ -122,8 +123,28 @@ fn cascade_validation_errors(
                 ));
                 continue;
             }
-            let first = pending[0];
-            return Err(CodecError::Malformed(first.message.clone()));
+            // Any other Error is written from the canonical side: its holder
+            // drops with a loss that names it (#217 §5.0).
+            let holder = pending.iter().find(|finding| {
+                finding
+                    .entity
+                    .as_deref()
+                    .is_some_and(|entity| !entity.is_empty() && !held.contains(entity))
+            });
+            let Some(finding) = holder else {
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    pending[0].message.clone(),
+                ));
+            };
+            let entity = finding.entity.clone().unwrap_or_default();
+            held.insert(entity.clone());
+            for dropped in drop_model_record(projected, &entity)? {
+                losses.push(
+                    SldprtLossCode::WriterEntityOmitted
+                        .note(format!("record {dropped} dropped; {}", finding.message)),
+                );
+            }
+            continue;
         };
         let entity = finding.entity.clone().unwrap_or_default();
         match finding.check {
@@ -171,7 +192,9 @@ fn cascade_validation_errors(
                     .find(|edge| edge.id.as_str() == entity)
                     .filter(|edge| edge.param_range().is_some())
                 else {
-                    return Err(CodecError::Malformed(finding.message.clone()));
+                    return Err(crate::writer::write_error::WriteError::Unwritable(
+                        finding.message.clone(),
+                    ));
                 };
                 edge.set_param_range(None);
                 losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
@@ -179,7 +202,9 @@ fn cascade_validation_errors(
                 )));
             }
             _ => {
-                return Err(CodecError::Malformed(finding.message.clone()));
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    finding.message.clone(),
+                ));
             }
         }
     }
@@ -264,9 +289,13 @@ const APPEARANCE_BINDING_OWNER: &str = "appearance-binding:";
 
 /// Bindings of the finding's appearance whose appearance or target the
 /// document does not hold.
-fn dangling_appearance_bindings(projected: &CadIr, owner: &str) -> Result<Vec<String>, CodecError> {
+fn dangling_appearance_bindings(
+    projected: &CadIr,
+    owner: &str,
+) -> Result<Vec<String>, crate::writer::write_error::WriteError> {
     let appearance = &owner[APPEARANCE_BINDING_OWNER.len()..];
-    let model = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
+    let model = serde_json::to_value(&projected.model)
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     let held = model
         .as_object()
         .into_iter()
@@ -282,7 +311,8 @@ fn dangling_appearance_bindings(projected: &CadIr, owner: &str) -> Result<Vec<St
         .iter()
         .filter(|binding| binding.appearance.as_str() == appearance)
     {
-        let target = serde_json::to_value(&binding.target).map_err(CodecError::malformed)?;
+        let target = serde_json::to_value(&binding.target)
+            .map_err(crate::writer::write_error::WriteError::unwritable)?;
         let unresolved = target
             .as_object()
             .into_iter()
@@ -295,7 +325,7 @@ fn dangling_appearance_bindings(projected: &CadIr, owner: &str) -> Result<Vec<St
         }
     }
     if dangling.is_empty() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT cascade finds no dangling binding of {appearance}"
         )));
     }
@@ -309,9 +339,10 @@ fn dangling_appearance_bindings(projected: &CadIr, owner: &str) -> Result<Vec<St
 fn drop_model_record(
     projected: &mut CadIr,
     id: &str,
-) -> Result<std::collections::BTreeSet<String>, CodecError> {
+) -> Result<std::collections::BTreeSet<String>, crate::writer::write_error::WriteError> {
     projected.model.finalize();
-    let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
+    let mut document = serde_json::to_value(&projected.model)
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     let mut dropped = std::collections::BTreeSet::from([id.to_owned()]);
     if let Some(model) = document.as_object() {
         if let Some(features) = model.get("features").and_then(|rows| rows.as_array()) {
@@ -357,19 +388,24 @@ fn drop_model_record(
         }
     }
     if !removed {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT cascade cannot drop unheld record {id}"
         )));
     }
-    let model = serde_json::from_value(document).map_err(CodecError::malformed)?;
+    let model = serde_json::from_value(document)
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     projected.model = model;
     Ok(dropped)
 }
 
 /// Drop every later repeat of one model identity, keeping the first row.
-fn drop_duplicate_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> {
+fn drop_duplicate_model_record(
+    projected: &mut CadIr,
+    id: &str,
+) -> Result<(), crate::writer::write_error::WriteError> {
     projected.model.finalize();
-    let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
+    let mut document = serde_json::to_value(&projected.model)
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     let mut dropped = false;
     if let Some(model) = document.as_object_mut() {
         for rows in model.values_mut() {
@@ -390,16 +426,126 @@ fn drop_duplicate_model_record(projected: &mut CadIr, id: &str) -> Result<(), Co
         }
     }
     if !dropped {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT cascade cannot drop unrepeated record {id}"
         )));
     }
-    let model = serde_json::from_value(document).map_err(CodecError::malformed)?;
+    let model = serde_json::from_value(document)
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     projected.model = model;
     Ok(())
 }
 
+/// Synthesize the document (#217 §5.0).
+///
+/// A document whose content the writer cannot write as it stands is written
+/// in reduced form, each reduction with a loss that names what it omits:
+/// first without its SLDPRT native records, last as a document without
+/// exportable content. Only a caller resource limit, a target refusal, a
+/// stored-field capacity or a destination failure fails the write.
 pub(super) fn plan(
+    input: EncodeInput<'_>,
+    resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
+    cause: SynthesisCause,
+) -> Result<ExportBody, EncodeError> {
+    let error = match plan_document(input, resolved, cause.clone()) {
+        Ok(body) => return Ok(body),
+        Err(error) => content_error(input.ir, error)?,
+    };
+    let mut canonical = input.ir.clone();
+    let mut reductions = Vec::new();
+    if let Some(namespace) = canonical.native.0.remove("sldprt") {
+        let mut omitted: Vec<&str> = namespace
+            .arenas()
+            .values()
+            .flatten()
+            .map(cadmpeg_ir::native::NativeRecord::id)
+            .collect();
+        omitted.sort_unstable();
+        reductions.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+            "the SLDPRT native records cannot be written ({error}); omitted {} record(s): {}",
+            omitted.len(),
+            omitted.join(", ")
+        )));
+        let reduced = EncodeInput {
+            ir: &canonical,
+            ..input
+        };
+        match plan_document(reduced, resolved, cause.clone()) {
+            Ok(body) => return Ok(with_reductions(body, reductions)),
+            Err(error) => {
+                content_error(input.ir, error)?;
+            }
+        }
+    }
+    reductions.push(SldprtLossCode::WriterNoExportableSolids.note(format!(
+        "the document content cannot be written ({error}); wrote a document without its content"
+    )));
+    let empty = CadIr::empty();
+    let reduced = EncodeInput {
+        ir: &empty,
+        ..input
+    };
+    let mut body = match plan_document(reduced, resolved, cause) {
+        Ok(body) => body,
+        Err(error) => {
+            let error = content_error(input.ir, error)?;
+            debug_assert!(false, "the SLDPRT writer writes an empty document: {error}");
+            ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete)
+        }
+    };
+    body.coverage = ArenaCoverage::Declared(cadmpeg_ir::codec::write::ArenaDispositions::uniform(
+        ArenaDisposition::Omitted,
+    ));
+    body.native_dispositions = cadmpeg_ir::codec::write::NativeDispositions::default();
+    Ok(with_reductions(body, reductions))
+}
+
+/// Omit each mesh with a position or normal outside the f32 range its display
+/// list stores (#209 §5.2); a loss names it.
+fn omit_unstorable_tessellations(projected: &mut CadIr, losses: &mut Vec<LossNote>) {
+    let storable = |value: f64| cadmpeg_core::convert::f32_from_f64(value).is_some();
+    projected.model.tessellations.retain(|mesh| {
+        let positions = mesh.vertices().iter().all(|point| {
+            [point.x, point.y, point.z]
+                .into_iter()
+                .all(|value| storable(value * super::TESSELLATION_LENGTH_SCALE))
+        });
+        let normals = mesh.vertex_normals().iter().all(|normal| {
+            [normal.x, normal.y, normal.z].into_iter().all(storable)
+        });
+        if !(positions && normals) {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "tessellation {} omitted: a position or normal exceeds the f32 range of its display list",
+                mesh.id
+            )));
+        }
+        positions && normals
+    });
+}
+
+fn with_reductions(mut body: ExportBody, mut reductions: Vec<LossNote>) -> ExportBody {
+    reductions.append(&mut body.losses);
+    body.losses = reductions;
+    body
+}
+
+/// The content failure in `error`, or the encode failure that ends the write.
+fn content_error(
+    document: &CadIr,
+    error: super::write_error::WriteError,
+) -> Result<super::write_error::WriteError, EncodeError> {
+    let content = match EncodeError::try_from(error) {
+        Ok(error) => return Err(error),
+        Err(content) => content,
+    };
+    cadmpeg_ir::codec::write::ValidatedFinding::non_finite(document)
+        .map_or(Ok(content), |finding| {
+            Err(EncodeError::InvalidInput(finding))
+        })
+}
+
+fn plan_document(
     input: EncodeInput<'_>,
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     cause: SynthesisCause,
@@ -407,6 +553,7 @@ pub(super) fn plan(
     let mut projected = input.ir.clone();
     super::sort_arenas(&mut projected);
     let mut losses = Vec::new();
+    omit_unstorable_tessellations(&mut projected, &mut losses);
     repair_multiple_active_configurations(&mut projected.model.configurations, &mut losses);
     // Write the canonical side of an active configuration that carries state
     // instead of refusing on its validation Error (#217, #237).
@@ -731,8 +878,11 @@ pub(super) fn plan(
                         "configuration {}: omitted bodies removed from membership",
                         configuration.id
                     )));
-                    configuration.bodies =
-                        Some(retained.try_into().map_err(CodecError::malformed)?);
+                    configuration.bodies = Some(
+                        retained
+                            .try_into()
+                            .map_err(crate::writer::write_error::WriteError::unwritable)?,
+                    );
                 }
             }
         }
@@ -1283,7 +1433,7 @@ fn null_unresolvable_native_refs(
     native: &cadmpeg_ir::native::Native,
     foreign_only: bool,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     fn walk(
         value: &mut serde_json::Value,
         owned: &std::collections::HashSet<String>,
@@ -1349,8 +1499,8 @@ fn null_unresolvable_native_refs(
         } else {
             std::collections::HashSet::new()
         };
-    let mut document =
-        serde_json::to_value(&*model).map_err(|error| CodecError::Malformed(error.to_string()))?;
+    let mut document = serde_json::to_value(&*model)
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     let mut cleared = Vec::new();
     // `semantic_annotations.native_ref` is mandatory: clearing it breaks
     // deserialization, so its dangling links keep their refusal below.
@@ -1367,7 +1517,7 @@ fn null_unresolvable_native_refs(
         return Ok(());
     }
     *model = serde_json::from_value(document)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     cleared.sort();
     for (id, target, dropped) in &cleared {
         if *dropped {
@@ -1512,7 +1662,7 @@ fn reduce_fields(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     native: Option<&SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     for vertex in &mut ir.model.vertices {
         if vertex
             .tolerance
@@ -1737,7 +1887,9 @@ fn reduce_design(
             }
         });
         if let Some(error) = pattern_error {
-            return Err(CodecError::malformed(error).into());
+            return Err(crate::writer::write_error::WriteError::Unwritable(
+                error.to_string(),
+            ));
         }
         for position in omitted_positions {
             losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
@@ -1786,7 +1938,9 @@ fn reduce_design(
             native.as_ref(),
         )
         .map_err(|error| {
-            CodecError::malformed(format_args!("SLDPRT orphaned scalar scan failed: {error}"))
+            crate::writer::write_error::WriteError::Unwritable(format!(
+                "SLDPRT orphaned scalar scan failed: {error}"
+            ))
         })?;
         design::synthesize_neutral_features_repairing(
             candidate,
@@ -1824,7 +1978,9 @@ fn reduce_design(
     Ok(())
 }
 
-fn reduce_feature_to_solved(feature: &mut cadmpeg_ir::features::Feature) -> Result<(), CodecError> {
+fn reduce_feature_to_solved(
+    feature: &mut cadmpeg_ir::features::Feature,
+) -> Result<(), crate::writer::write_error::WriteError> {
     // The degraded neutral definition replaces its earlier native operation.
     feature.native_ref = None;
     feature.source_tag = None;
@@ -1846,7 +2002,7 @@ fn reduce_feature_to_solved(feature: &mut cadmpeg_ir::features::Feature) -> Resu
         .cloned()
         .collect::<Vec<_>>()
         .try_into()
-        .map_err(CodecError::malformed)?;
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     Ok(())
 }
 

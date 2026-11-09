@@ -161,7 +161,8 @@ fn display_descriptor_reports_item_count_capacity() {
     let error: cadmpeg_ir::codec::write::EncodeError =
         crate::writer::descriptor(&mut bytes, 4, 8, 2, count, &[])
             .unwrap_err()
-            .into();
+            .try_into()
+            .expect("an encode failure");
     assert!(bytes.is_empty());
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
@@ -245,7 +246,8 @@ fn parasolid_header_reports_field_capacity() {
         let error: cadmpeg_ir::codec::write::EncodeError =
             crate::writer::parasolid_stream_named(&[], &schema, &description)
                 .unwrap_err()
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field: actual, limit: actual_limit, value: actual_value,
@@ -270,7 +272,8 @@ fn capacity_helpers_follow_their_rows() {
         let error: cadmpeg_ir::codec::write::EncodeError =
             crate::writer::field_u16(field, field.limit + 1)
                 .unwrap_err()
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field: actual, limit, value
@@ -284,15 +287,18 @@ fn capacity_helpers_follow_their_rows() {
     let error: cadmpeg_ir::codec::write::EncodeError =
         crate::writer::display_list_c_value(2_147_483_649)
             .unwrap_err()
-            .into();
+            .try_into()
+            .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 4_294_967_295, value: 4_294_967_296
     } if field.field == "display_list.list_c_value")
     );
     assert_eq!(crate::writer::unit_name_byte_len(127).unwrap(), 254);
-    let error: cadmpeg_ir::codec::write::EncodeError =
-        crate::writer::unit_name_byte_len(128).unwrap_err().into();
+    let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::unit_name_byte_len(128)
+        .unwrap_err()
+        .try_into()
+        .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 255, value: 256
@@ -305,7 +311,8 @@ fn capacity_helpers_follow_their_rows() {
     let error: cadmpeg_ir::codec::write::EncodeError =
         crate::writer::feature_input_name_len(65_536)
             .unwrap_err()
-            .into();
+            .try_into()
+            .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 65_535, value: 65_536
@@ -324,7 +331,8 @@ fn capacity_helpers_follow_their_rows() {
     assert!(crate::writer::section_type_id_at(index).is_ok());
     let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::section_type_id_at(index + 1)
         .unwrap_err()
-        .into();
+        .try_into()
+        .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: actual_limit, value } if field.field == "section.type_id" && actual_limit == limit && value == limit + 1)
     );
@@ -337,7 +345,8 @@ fn capacity_helpers_follow_their_rows() {
         let error: cadmpeg_ir::codec::write::EncodeError =
             crate::writer::field_u32(field, limit + 1)
                 .unwrap_err()
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field: actual, limit: actual_limit, value
@@ -363,7 +372,8 @@ fn synthesized_unit_name_reports_its_byte_capacity() {
     let error: cadmpeg_ir::codec::write::EncodeError =
         crate::writer::metadata_payloads(&ir, None, 0.001)
             .unwrap_err()
-            .into();
+            .try_into()
+            .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 255, value: 256
@@ -500,7 +510,8 @@ fn compressed_sketch_lengths_report_their_target_fields() {
         let error: cadmpeg_ir::codec::write::EncodeError =
             crate::writer::field_u32(field, usize::try_from(u64::from(u32::MAX) + 1).unwrap())
                 .unwrap_err()
-                .into();
+                .try_into()
+                .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field: actual, limit, value

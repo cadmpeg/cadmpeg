@@ -2,7 +2,6 @@
 //! Reconcile ACT metadata with held neutral product labels and typed references.
 
 use crate::{loss::F3dLossCode, native::F3dNative};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::ProductDefinitionKind;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
@@ -12,7 +11,7 @@ pub(super) fn reconcile(
     ir: &CadIr,
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let all_bodies = ir
         .model
         .bodies
@@ -49,7 +48,7 @@ pub(super) fn reconcile(
             }
             let label = product.label.as_deref().unwrap_or("").to_owned();
             root.try_set_strings(name, label)
-                .map_err(CodecError::Malformed)?;
+                .map_err(crate::writer::WriteError::Unwritable)?;
         }
         roots.push(root);
     }

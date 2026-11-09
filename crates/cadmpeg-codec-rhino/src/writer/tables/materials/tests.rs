@@ -80,7 +80,7 @@ fn materials(ir: &CadIr) -> Result<Vec<Vec<u8>>, crate::writer::WriteError> {
     MaterialPlan::new(ir)?.encode(ir)
 }
 
-fn native_index(ir: &CadIr, id: &str) -> Result<Option<i32>, CodecError> {
+fn native_index(ir: &CadIr, id: &str) -> Result<Option<i32>, crate::writer::WriteError> {
     let plan = MaterialPlan::new(ir)?;
     Ok(match plan.native_targets(id) {
         [index] => Some(*index),

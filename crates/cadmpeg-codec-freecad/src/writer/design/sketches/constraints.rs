@@ -305,34 +305,29 @@ pub(super) fn common(
     constraint: &SketchConstraint,
     attributes: &mut Vec<(&'static str, String)>,
 ) {
-    attributes.extend([
-        (
-            "IsDriving",
-            u8::from(
-                constraint
-                    .definition
-                    .kind()
-                    .dimension_parameters()
-                    .ok()
-                    .and_then(|ids| {
-                        ids.into_iter().find_map(|id| {
-                            ir.model
-                                .parameters
-                                .iter()
-                                .find(|parameter| parameter.id == id)
-                                .map(|parameter| parameter.driving)
-                        })
+    attributes.push((
+        "IsDriving",
+        u8::from(
+            constraint
+                .definition
+                .kind()
+                .dimension_parameters()
+                .ok()
+                .and_then(|ids| {
+                    ids.into_iter().find_map(|id| {
+                        ir.model
+                            .parameters
+                            .iter()
+                            .find(|parameter| parameter.id == id)
+                            .map(|parameter| parameter.driving)
                     })
-                    .unwrap_or_else(|| constraint.driving.unwrap_or(true)),
-            )
-            .to_string(),
-        ),
-        (
-            "IsActive",
-            u8::from(constraint.active.unwrap_or(true)).to_string(),
-        ),
-    ]);
+                })
+                .unwrap_or_else(|| constraint.driving.unwrap_or(true)),
+        )
+        .to_string(),
+    ));
     for (key, value) in [
+        ("IsActive", constraint.active),
         ("IsInVirtualSpace", constraint.virtual_space),
         ("IsVisible", constraint.visible),
     ] {

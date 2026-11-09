@@ -5,7 +5,6 @@ use super::{
     attributes, map_parameter_references, reference_marker, BodyPresentation, DirectoryLineFont,
     Entity,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,7 +12,7 @@ pub(super) fn source_order(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
     presentations: &mut BTreeMap<usize, BodyPresentation>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let Some(records) = ir
         .native
         .namespace("iges")
@@ -61,7 +60,7 @@ pub(super) fn reorder(
     entities: &mut Vec<Entity>,
     presentations: &mut BTreeMap<usize, BodyPresentation>,
     permutation: Vec<usize>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if permutation.iter().enumerate().all(|(new, old)| new == *old) {
         return Ok(());
     }
@@ -99,7 +98,9 @@ pub(super) fn reorder(
                 .copied()
                 .map(reference_marker)
                 .ok_or_else(|| {
-                    CodecError::malformed("IGES entity ordering found a dangling parameter pointer")
+                    crate::writer::WriteError::Unwritable(
+                        "IGES entity ordering found a dangling parameter pointer".into(),
+                    )
                 })
         })?;
     }

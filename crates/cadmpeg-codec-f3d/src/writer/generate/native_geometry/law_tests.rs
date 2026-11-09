@@ -93,7 +93,7 @@ fn assert_refused(ir: &CadIr) {
     // must still author the representable document and report the reduction.
     let error = crate::writer::generate::write_new(ir, &mut Vec::new())
         .expect_err("the exact law serializer cannot encode this grammar");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(error, crate::writer::WriteError::Unsupported(_)));
     let plan = F3dCodec
         .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
         .expect("an unsupported law is an export loss");

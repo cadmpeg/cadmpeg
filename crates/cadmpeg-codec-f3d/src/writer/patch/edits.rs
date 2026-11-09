@@ -12,7 +12,6 @@ use crate::records::{
     references::{DesignMaterialAssignment, LostEdgeReference},
     sketch_geometry::SketchCurveGeometry,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -35,9 +34,13 @@ use crate::writer::generate::native_geometry::{
 use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
-fn source_position(value: Option<u64>, id: &str, field: &str) -> Result<u64, CodecError> {
+fn source_position(
+    value: Option<u64>,
+    id: &str,
+    field: &str,
+) -> Result<u64, crate::writer::WriteError> {
     value.ok_or_else(|| {
-        CodecError::NotImplemented(format!(
+        crate::writer::WriteError::Unsupported(format!(
             "F3D patch requires an actual source {field} for {id}"
         ))
     })
@@ -105,7 +108,7 @@ pub(crate) struct SketchCurveEdit {
 
 pub(super) fn validate_creation_timestamp_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, f64>, CodecError> {
+) -> Result<BTreeMap<usize, f64>, crate::writer::WriteError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.creation_timestamps.as_slice());
@@ -121,7 +124,7 @@ pub(super) fn validate_creation_timestamp_edits(
         .copied()
         .ne(target.iter().map(|timestamp| timestamp.id.as_str()))
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D timestamp regeneration requires the unchanged timestamp-id set".into(),
         ));
     }
@@ -130,7 +133,7 @@ pub(super) fn validate_creation_timestamp_edits(
         let mut normalized = timestamp.clone();
         normalized.unix_microseconds = before.unix_microseconds;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D timestamp edit changes structural fields: {}",
                 timestamp.id
             )));
@@ -139,7 +142,7 @@ pub(super) fn validate_creation_timestamp_edits(
             continue;
         }
         let record_index = usize::try_from(timestamp.record_index).map_err(|_| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "F3D timestamp record index exceeds usize: {}",
                 timestamp.id
             ))
@@ -151,7 +154,7 @@ pub(super) fn validate_creation_timestamp_edits(
 
 pub(super) fn validate_edge_continuity_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, (Sense, String)>, CodecError> {
+) -> Result<BTreeMap<usize, (Sense, String)>, crate::writer::WriteError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.edge_continuities.as_slice());
@@ -167,7 +170,7 @@ pub(super) fn validate_edge_continuity_edits(
         .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D edge-continuity regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -178,7 +181,7 @@ pub(super) fn validate_edge_continuity_edits(
         normalized.sense = before.sense;
         normalized.continuity.clone_from(&before.continuity);
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D edge-continuity edit changes structural fields: {id}"
             )));
         }
@@ -186,7 +189,7 @@ pub(super) fn validate_edge_continuity_edits(
             continue;
         }
         if !matches!(after.continuity.as_str(), "tangent" | "unknown") {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D edge continuity {id} has unsupported token {}",
                 after.continuity
             )));
@@ -202,7 +205,7 @@ pub(super) fn validate_edge_continuity_edits(
 pub(super) fn validate_edge_ownership_edits(
     native: PatchNatives<'_>,
     target: &CadIr,
-) -> Result<BTreeMap<usize, i64>, CodecError> {
+) -> Result<BTreeMap<usize, i64>, crate::writer::WriteError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.edge_ownerships.as_slice());
@@ -218,7 +221,7 @@ pub(super) fn validate_edge_ownership_edits(
         .map(|ownership| (ownership.id(), ownership))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D edge-ownership regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -228,7 +231,7 @@ pub(super) fn validate_edge_ownership_edits(
         let mut normalized = after.clone();
         normalized.owner_coedge_index = before.owner_coedge_index;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D edge-ownership edit changes structural fields: {id}"
             )));
         }
@@ -242,7 +245,7 @@ pub(super) fn validate_edge_ownership_edits(
                 .iter()
                 .find(|edge| edge.native_ref.as_deref() == Some(id.as_str()))
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "F3D edge ownership {id} resolves to no neutral edge"
                     ))
                 })?;
@@ -256,7 +259,7 @@ pub(super) fn validate_edge_ownership_edits(
                             == Some(index)
                 })
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "F3D edge ownership {id} references missing coedge index {index}"
                     ))
                 })?;
@@ -272,7 +275,7 @@ pub(super) fn validate_edge_ownership_edits(
 pub(super) fn validate_vertex_ownership_edits(
     native: PatchNatives<'_>,
     target: &CadIr,
-) -> Result<BTreeMap<usize, (i64, EndpointSlot)>, CodecError> {
+) -> Result<BTreeMap<usize, (i64, EndpointSlot)>, crate::writer::WriteError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.vertex_ownerships.as_slice());
@@ -288,7 +291,7 @@ pub(super) fn validate_vertex_ownership_edits(
         .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D vertex-ownership regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -299,7 +302,7 @@ pub(super) fn validate_vertex_ownership_edits(
         normalized.owner.clone_from(&before.owner);
         normalized.endpoint_index = before.endpoint_index;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D vertex-ownership edit changes structural fields: {id}"
             )));
         }
@@ -312,7 +315,7 @@ pub(super) fn validate_vertex_ownership_edits(
             .iter()
             .find(|vertex| vertex.native_ref.as_deref() == Some(id.as_str()))
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D vertex ownership {id} resolves to no neutral vertex"
                 ))
             })?;
@@ -324,7 +327,7 @@ pub(super) fn validate_vertex_ownership_edits(
                     .iter()
                     .find(|edge| edge.native_ref.as_deref() == Some(owner.as_str()))
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "F3D vertex ownership {id} references missing edge row {}",
                             owner.as_str()
                         ))
@@ -332,7 +335,7 @@ pub(super) fn validate_vertex_ownership_edits(
                 let endpoint = match after.endpoint_index {
                     Some(EndpointSlot::Start) => {
                         if edge.start != vertex.id {
-                            return Err(CodecError::malformed(format_args!(
+                            return Err(crate::writer::WriteError::Unwritable(format!(
                                 "F3D vertex ownership {id} has an inconsistent endpoint slot"
                             )));
                         }
@@ -340,7 +343,7 @@ pub(super) fn validate_vertex_ownership_edits(
                     }
                     Some(EndpointSlot::End) => {
                         if edge.end != vertex.id {
-                            return Err(CodecError::malformed(format_args!(
+                            return Err(crate::writer::WriteError::Unwritable(format!(
                                 "F3D vertex ownership {id} has an inconsistent endpoint slot"
                             )));
                         }
@@ -352,7 +355,7 @@ pub(super) fn validate_vertex_ownership_edits(
                         } else if edge.end == vertex.id {
                             EndpointSlot::End
                         } else {
-                            return Err(CodecError::malformed(format_args!(
+                            return Err(crate::writer::WriteError::Unwritable(format!(
                                 "F3D vertex ownership {id} matches neither endpoint of its edge"
                             )));
                         }
@@ -363,7 +366,7 @@ pub(super) fn validate_vertex_ownership_edits(
                     .rsplit_once('#')
                     .and_then(|(_, index)| index.parse::<i64>().ok())
                     .ok_or_else(|| {
-                        CodecError::NotImplemented(format!(
+                        crate::writer::WriteError::Unsupported(format!(
                             "F3D owning edge row {} has no native record index",
                             owner.as_str()
                         ))
@@ -371,7 +374,7 @@ pub(super) fn validate_vertex_ownership_edits(
                 (edge_record, endpoint)
             }
             None => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D vertex ownership {id} drops its owning edge"
                 )));
             }
@@ -383,7 +386,8 @@ pub(super) fn validate_vertex_ownership_edits(
 
 pub(super) fn validate_face_sidedness_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>, CodecError> {
+) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>, crate::writer::WriteError>
+{
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.face_sidedness.as_slice());
@@ -399,7 +403,7 @@ pub(super) fn validate_face_sidedness_edits(
         .map(|metadata| (metadata.id(), metadata))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D face-sidedness regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -409,7 +413,7 @@ pub(super) fn validate_face_sidedness_edits(
         let mut normalized = after.clone();
         normalized.containment = before.containment;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D face-sidedness edit changes structural fields: {id}"
             )));
         }
@@ -421,7 +425,7 @@ pub(super) fn validate_face_sidedness_edits(
                 edits.insert(index_from_u32(after.record_index), containment);
             }
             _ => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D face sidedness {id} cannot change record width"
                 )));
             }
@@ -434,7 +438,7 @@ pub(super) fn validate_tolerant_vertex_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<usize, (f64, [f64; 2])>, CodecError> {
+) -> Result<BTreeMap<usize, (f64, [f64; 2])>, crate::writer::WriteError> {
     let baseline_vertices = baseline
         .model
         .vertices
@@ -448,7 +452,7 @@ pub(super) fn validate_tolerant_vertex_edits(
         .map(|vertex| (vertex.id.as_str(), vertex))
         .collect::<BTreeMap<_, _>>();
     if baseline_vertices.keys().ne(target_vertices.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D tolerant-vertex regeneration requires the unchanged vertex-id set".into(),
         ));
     }
@@ -488,7 +492,7 @@ pub(super) fn validate_tolerant_vertex_edits(
         let mut normalized = after.clone();
         normalized.tolerance = before.tolerance;
         if &normalized != *before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D vertex edit changes fields other than tolerance: {id}"
             )));
         }
@@ -500,7 +504,7 @@ pub(super) fn validate_tolerant_vertex_edits(
             && (before.tolerance.is_none() || after.tolerance.is_none())
             && !tolerant_vertices.contains(id)
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D vertex tolerance {id} cannot change record width"
             )));
         }
@@ -514,7 +518,7 @@ pub(super) fn validate_tolerant_vertex_edits(
         .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D tolerant-vertex regeneration requires the unchanged tail-id set".into(),
         ));
     }
@@ -524,24 +528,24 @@ pub(super) fn validate_tolerant_vertex_edits(
         let mut normalized = after.clone();
         normalized.leading_tolerances = before.leading_tolerances;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
             )));
         }
         if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Absent {})
             != matches!(after.evaluated_slot, EvaluatedToleranceSlot::Absent {})
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D tolerant-vertex tail edit changes record width: {id}"
             )));
         }
         let Some(vertex_id) = target_owners.get(after.owner.as_str()) else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "tolerant vertex {id} tail has no target vertex"
             )));
         };
         let target_vertex = target_vertices.get(*vertex_id).ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "tolerant vertex {id} tail has no target vertex"
             ))
         })?;
@@ -552,18 +556,18 @@ pub(super) fn validate_tolerant_vertex_edits(
             (None, EvaluatedToleranceSlot::Absent {}) => continue,
             (Some(_), EvaluatedToleranceSlot::Absent {} | EvaluatedToleranceSlot::Unset { .. })
             | (None, EvaluatedToleranceSlot::Evaluated { .. }) => {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "tolerant vertex {id} tail disagrees with its vertex tolerance"
                 )));
             }
         };
         let Some(baseline_id) = baseline_owners.get(before.owner.as_str()) else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "tolerant vertex {id} tail has no baseline vertex"
             )));
         };
         let baseline_vertex = baseline_vertices.get(*baseline_id).ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "tolerant vertex {id} tail has no baseline vertex"
             ))
         })?;
@@ -604,7 +608,7 @@ pub(super) fn validate_tolerant_edge_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<usize, f64>, CodecError> {
+) -> Result<BTreeMap<usize, f64>, crate::writer::WriteError> {
     let baseline_edges = baseline
         .model
         .edges
@@ -618,7 +622,7 @@ pub(super) fn validate_tolerant_edge_edits(
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<BTreeMap<_, _>>();
     if baseline_edges.keys().ne(target_edges.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D tolerant-edge regeneration requires the unchanged edge-id set".into(),
         ));
     }
@@ -627,7 +631,7 @@ pub(super) fn validate_tolerant_edge_edits(
         if after.tolerance != before.tolerance
             && (before.tolerance.is_none() || after.tolerance.is_none())
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D edge tolerance {id} cannot change record width"
             )));
         }
@@ -647,7 +651,7 @@ pub(super) fn validate_tolerant_edge_edits(
         .map(|tail| (tail.id(), tail))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D tolerant-edge regeneration requires the unchanged tail-id set".into(),
         ));
     }
@@ -655,7 +659,7 @@ pub(super) fn validate_tolerant_edge_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[&id];
         if after != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D tolerant-edge tail edit changes retained fields: {id}"
             )));
         }
@@ -666,7 +670,7 @@ pub(super) fn validate_tolerant_edge_edits(
             .find(|edge| edge.native_ref.as_deref() == Some(after.owner.as_str()))
             .map(|edge| edge.id.as_str())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "tolerant edge tail {id} resolves to no target edge"
                 ))
             })?;
@@ -674,7 +678,9 @@ pub(super) fn validate_tolerant_edge_edits(
             .get(edge_id)
             .and_then(|edge| edge.tolerance)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "tolerant edge {id} has no tolerance"
+                ))
             })?;
         if baseline
             .model
@@ -697,7 +703,7 @@ pub(super) fn validate_tolerant_coedge_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<usize, [f64; 2]>, CodecError> {
+) -> Result<BTreeMap<usize, [f64; 2]>, crate::writer::WriteError> {
     let baseline_coedges = baseline
         .model
         .coedges
@@ -711,14 +717,14 @@ pub(super) fn validate_tolerant_coedge_edits(
         .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<BTreeMap<_, _>>();
     if baseline_coedges.keys().ne(target_coedges.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D tolerant-coedge regeneration requires the unchanged coedge-id set".into(),
         ));
     }
     for (id, before) in &baseline_coedges {
         let after = target_coedges[id];
         if after.use_curve != before.use_curve {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D coedge use-curve edit changes embedded record structure: {id}"
             )));
         }
@@ -738,7 +744,7 @@ pub(super) fn validate_tolerant_coedge_edits(
         .map(|parameters| (parameters.id(), parameters))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D tolerant-coedge regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -748,7 +754,7 @@ pub(super) fn validate_tolerant_coedge_edits(
         let mut normalized = after.clone();
         normalized.parameter_range = before.parameter_range;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D tolerant-coedge edit changes structural fields: {id}"
             )));
         }
@@ -764,7 +770,7 @@ pub(super) fn validate_tolerant_coedge_edits(
 
 pub(super) fn validate_wire_topology_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>, CodecError> {
+) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>, crate::writer::WriteError> {
     let baseline_wires = native
         .baseline
         .map_or(&[][..], |native| native.wire_topologies.as_slice());
@@ -780,7 +786,7 @@ pub(super) fn validate_wire_topology_edits(
         .map(|wire| (wire.id(), wire))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D wire regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -790,7 +796,7 @@ pub(super) fn validate_wire_topology_edits(
         let mut normalized = after.clone();
         normalized.side = before.side;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D wire edit changes structural fields: {id}"
             )));
         }
@@ -907,7 +913,7 @@ pub(super) fn validate_material_assignment_appearances(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<String, crate::materials::ProteinAppearanceEdit>, CodecError> {
+) -> Result<BTreeMap<String, crate::materials::ProteinAppearanceEdit>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline_appearances = baseline
@@ -923,7 +929,7 @@ pub(super) fn validate_material_assignment_appearances(
         .map(|appearance| (appearance.id.as_str(), appearance))
         .collect::<BTreeMap<_, _>>();
     if baseline_appearances.keys().ne(target_appearances.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D material regeneration requires the unchanged appearance-id set".into(),
         ));
     }
@@ -943,22 +949,24 @@ pub(super) fn validate_material_assignment_appearances(
         normalized.base_color = before.base_color;
         normalized.properties.clone_from(&before.properties);
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D appearance edit changes fields outside physical token or Protein values: {id}"
             )));
         }
         if before.properties.keys().ne(after.properties.keys()) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D Protein property regeneration requires the unchanged property set: {id}"
             )));
         }
         let mut edit = crate::materials::ProteinAppearanceEdit::default();
         if after.base_color != before.base_color {
             let color = after.base_color.ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
+                crate::writer::WriteError::Unsupported(format!(
+                    "cannot remove F3D appearance color: {id}"
+                ))
             })?;
             if before.base_color.is_none() || color.a() != 1.0 {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
             }
@@ -975,7 +983,7 @@ pub(super) fn validate_material_assignment_appearances(
                 _ => false,
             };
             if !valid {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D Protein property {id}.{name} is outside its writable range"
                 )));
             }
@@ -984,7 +992,9 @@ pub(super) fn validate_material_assignment_appearances(
         }
         if edit.color.is_some() || !edit.properties.is_empty() {
             let guid = after.visual_guid.clone().ok_or_else(|| {
-                CodecError::NotImplemented(format!("F3D appearance {id} has no visual token"))
+                crate::writer::WriteError::Unsupported(format!(
+                    "F3D appearance {id} has no visual token"
+                ))
             })?;
             appearance_edits.insert(guid, edit);
         }
@@ -1007,7 +1017,7 @@ pub(super) fn validate_material_assignment_appearances(
             }
         }
         if !synchronized {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D appearance {id} changed without a synchronized material assignment"
             )));
         }
@@ -1032,7 +1042,7 @@ pub(super) fn validate_material_assignment_appearances(
         if after_token != before_token
             && selected.is_none_or(|appearance| appearance.physical_token.as_deref() != after_token)
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D material assignment {} changed without its appearance physical token",
                 before.id
             )));
@@ -1043,7 +1053,7 @@ pub(super) fn validate_material_assignment_appearances(
 
 pub(super) fn validate_material_assignment_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<DesignMaterialAssignment>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<DesignMaterialAssignment>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1063,7 +1073,7 @@ pub(super) fn validate_material_assignment_edits(
         .map(|assignment| (assignment.id.as_str(), assignment))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D material-assignment regeneration requires the unchanged assignment-id set".into(),
         ));
     }
@@ -1071,7 +1081,7 @@ pub(super) fn validate_material_assignment_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         if after.entity_id != before.entity_id {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D material-assignment identity edit requires synchronized body-presentation, browser-node, B-rep, and scene graphs: {id}"
             )));
         }
@@ -1080,7 +1090,7 @@ pub(super) fn validate_material_assignment_edits(
             || after.physical_token.is_some() != before.physical_token.is_some()
             || after.visual_preset.is_some() != before.visual_preset.is_some()
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D material-assignment edit changes fields outside writable strings: {id}"
             )));
         }
@@ -1141,9 +1151,13 @@ pub(super) fn validate_material_assignment_edits(
     Ok(edits)
 }
 
-fn validate_utf16_replacement(id: &str, before: &str, after: &str) -> Result<(), CodecError> {
+fn validate_utf16_replacement(
+    id: &str,
+    before: &str,
+    after: &str,
+) -> Result<(), crate::writer::WriteError> {
     if before.encode_utf16().count() != after.encode_utf16().count() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "F3D native string {id} must retain its UTF-16 length"
         )));
     }
@@ -1154,11 +1168,11 @@ fn validate_optional_utf16_replacement(
     id: &str,
     before: Option<&str>,
     after: Option<&str>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     match (before, after) {
         (Some(before), Some(after)) => validate_utf16_replacement(id, before, after),
         (None, None) => Ok(()),
-        _ => Err(CodecError::NotImplemented(format!(
+        _ => Err(crate::writer::WriteError::Unsupported(format!(
             "cannot add or remove F3D native string carrier: {id}"
         ))),
     }
@@ -1166,7 +1180,7 @@ fn validate_optional_utf16_replacement(
 
 pub(super) fn validate_lost_edge_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<LostEdgeReference>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<LostEdgeReference>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1186,7 +1200,7 @@ pub(super) fn validate_lost_edge_edits(
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D lost-edge regeneration requires the unchanged reference-id set".into(),
         ));
     }
@@ -1196,7 +1210,7 @@ pub(super) fn validate_lost_edge_edits(
         if after.next_class_tag != before.next_class_tag
             || after.next_record_index != before.next_record_index
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D lost-edge edit changes fields outside its fixed payload: {id}"
             )));
         }
@@ -1218,7 +1232,7 @@ pub(super) fn validate_act_appearance_bindings(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline_entities = baseline_native
@@ -1230,7 +1244,7 @@ pub(super) fn validate_act_appearance_bindings(
         .map(|native| &native.act_entities[..])
         .unwrap_or_default();
     if baseline.model.appearance_bindings.len() != target.model.appearance_bindings.len() {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D ACT regeneration requires the unchanged appearance-binding count".into(),
         ));
     }
@@ -1261,7 +1275,7 @@ pub(super) fn validate_act_appearance_bindings(
             .get(&(before.target.clone(), before.appearance.clone()))
             .copied()
             .ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D appearance binding target or appearance changed: {}",
                     before.id
                 ))
@@ -1273,7 +1287,7 @@ pub(super) fn validate_act_appearance_bindings(
             .clone_from(&before.source_entity_id);
         normalized.channels.clone_from(&before.channels);
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D appearance binding edit changes fields outside its derived identity, source, or channels: {}",
                 before.id
             )));
@@ -1307,7 +1321,7 @@ pub(super) fn validate_act_appearance_bindings(
                 })
         });
         if before_entity.is_none() || after_entity.is_none() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D appearance binding {} must remain synchronized with one ACT entity",
                 before.id
             )));
@@ -1318,7 +1332,7 @@ pub(super) fn validate_act_appearance_bindings(
                 .as_deref()
                 .is_none_or(|source| !after.id.as_str().contains(source))
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D appearance binding id does not contain its changed source entity: {}",
                 after.id
             )));
@@ -1357,7 +1371,7 @@ pub(super) fn validate_act_appearance_bindings(
         });
         let assignment_synchronized = assignment_entities.contains(after.entity_id());
         if before.entity_id() != after.entity_id() && derived_binding && !assignment_synchronized {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
                 before.id()
             )));
@@ -1384,7 +1398,7 @@ pub(super) fn validate_act_appearance_bindings(
             && derived_binding
             && !synchronized
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT entity {} changed without a synchronized appearance binding",
                 before.id()
             )));
@@ -1403,7 +1417,7 @@ fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&str, &str)> 
 
 pub(super) fn validate_act_entity_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ActEntity>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ActEntity>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1423,7 +1437,7 @@ pub(super) fn validate_act_entity_edits(
         .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D ACT entity regeneration requires the unchanged entity-id set".into(),
         ));
     }
@@ -1433,16 +1447,16 @@ pub(super) fn validate_act_entity_edits(
         let mut normalized = after.clone();
         normalized
             .try_set_entity_id(before.entity_id().to_owned())
-            .map_err(CodecError::malformed)?;
+            .map_err(crate::writer::WriteError::unwritable)?;
         for (name, guid) in before.channel_group().channels() {
             if normalized.channel_group().channels().contains_key(name) {
                 normalized
                     .set_channel_guid(name, guid.value.clone())
-                    .map_err(CodecError::malformed)?;
+                    .map_err(crate::writer::WriteError::unwritable)?;
             }
         }
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT entity edit changes fields other than entity_id or channel GUIDs: {id}"
             )));
         }
@@ -1450,7 +1464,7 @@ pub(super) fn validate_act_entity_edits(
             continue;
         }
         if after.entity_id().encode_utf16().count() != before.entity_id().encode_utf16().count() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));
         }
@@ -1464,7 +1478,7 @@ pub(super) fn validate_act_entity_edits(
 
 pub(super) fn validate_act_guid_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ByteEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ByteEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1484,7 +1498,7 @@ pub(super) fn validate_act_guid_edits(
         .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D ACT GUID regeneration requires the unchanged GUID-id set".into(),
         ));
     }
@@ -1494,7 +1508,7 @@ pub(super) fn validate_act_guid_edits(
         let mut normalized: ActGuid = after.clone();
         normalized.guid.clone_from(&before.guid);
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT GUID edit changes fields other than guid: {id}"
             )));
         }
@@ -1510,7 +1524,9 @@ pub(super) fn validate_act_guid_edits(
         let stream = native_stream(id, ":act-guid#")?;
         edits.entry(stream).or_default().push(ByteEdit {
             offset: before.guid_offset().ok_or_else(|| {
-                CodecError::NotImplemented("ACT GUID source location is unavailable".into())
+                crate::writer::WriteError::Unsupported(
+                    "ACT GUID source location is unavailable".into(),
+                )
             })?,
             value: encoded,
         });
@@ -1520,7 +1536,7 @@ pub(super) fn validate_act_guid_edits(
 
 pub(super) fn validate_act_registry_channel_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ByteEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ByteEdit>>, crate::writer::WriteError> {
     let baseline = native
         .baseline
         .map(|native| &native.act_registry_channels[..])
@@ -1538,7 +1554,7 @@ pub(super) fn validate_act_registry_channel_edits(
         .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D ACT channel-registry regeneration requires the unchanged entry-id set".into(),
         ));
     }
@@ -1548,7 +1564,7 @@ pub(super) fn validate_act_registry_channel_edits(
         let mut normalized: ActRegistryChannel = after.clone();
         normalized.guid.clone_from(&before.guid);
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT channel-registry edit changes fields other than guid: {id}"
             )));
         }
@@ -1566,7 +1582,9 @@ pub(super) fn validate_act_registry_channel_edits(
             .or_default()
             .push(ByteEdit {
                 offset: before.guid_offset().ok_or_else(|| {
-                    CodecError::NotImplemented("ACT GUID source location is unavailable".into())
+                    crate::writer::WriteError::Unsupported(
+                        "ACT GUID source location is unavailable".into(),
+                    )
                 })?,
                 value: encoded,
             });
@@ -1576,7 +1594,7 @@ pub(super) fn validate_act_registry_channel_edits(
 
 pub(super) fn validate_act_link_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ActComponentLink>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ActComponentLink>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1596,7 +1614,7 @@ pub(super) fn validate_act_link_edits(
         .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D ACT component-link regeneration requires the unchanged link-id set".into(),
         ));
     }
@@ -1611,9 +1629,9 @@ pub(super) fn validate_act_link_edits(
                 after.layout().entity_id().into(),
                 after.layout().display_name().into(),
             )
-            .map_err(CodecError::NotImplemented)?;
+            .map_err(crate::writer::WriteError::Unsupported)?;
         if !edited.content_eq(after) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT component-link edit changes fields outside supported graph links and fixed-length strings: {id}"
             )));
         }
@@ -1625,7 +1643,7 @@ pub(super) fn validate_act_link_edits(
             || after.layout().display_name().encode_utf16().count()
                 != before.layout().display_name().encode_utf16().count()
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D ACT component-link strings must retain their UTF-16 lengths: {id}"
             )));
         }
@@ -1644,7 +1662,7 @@ pub(super) struct DesignTypeEdit {
 
 pub(super) fn validate_design_type_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<DesignTypeEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<DesignTypeEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1664,7 +1682,7 @@ pub(super) fn validate_design_type_edits(
         .map(|design_type| (design_type.id().as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D design-type regeneration requires the unchanged type-id set".into(),
         ));
     }
@@ -1675,7 +1693,7 @@ pub(super) fn validate_design_type_edits(
             || before.class_tag != after.class_tag
             || before.entities.len() != after.entities.len()
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D design-type patch changes its class, module, or entity cardinality: {id}"
             )));
         }
@@ -1715,12 +1733,14 @@ pub(super) fn validate_design_type_edits(
         if base_guid_text(&before.base_type_guid) != base_guid_text(&after.base_type_guid) {
             let (before_text, offset) =
                 located_base_guid(&before.base_type_guid).ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
+                    crate::writer::WriteError::Unsupported(format!(
                         "F3D base type GUID has no source field: {id}"
                     ))
                 })?;
             let after_text = base_guid_text(&after.base_type_guid).ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
+                crate::writer::WriteError::Unsupported(format!(
+                    "cannot remove F3D base type GUID: {id}"
+                ))
             })?;
             validate_fixed_design_string(id, before_text, after_text)?;
             strings.push((offset, after_text.as_bytes().to_vec()));
@@ -1732,7 +1752,9 @@ pub(super) fn validate_design_type_edits(
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":design-type#"))
             .map(|(stream, _)| stream.to_owned())
-            .ok_or_else(|| CodecError::malformed(format_args!("invalid design-type id {id}")))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(format!("invalid design-type id {id}"))
+            })?;
         edits
             .entry(stream)
             .or_default()
@@ -1741,13 +1763,17 @@ pub(super) fn validate_design_type_edits(
     Ok(edits)
 }
 
-fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(), CodecError> {
+fn validate_fixed_design_string(
+    id: &str,
+    before: &str,
+    after: &str,
+) -> Result<(), crate::writer::WriteError> {
     if before.len() != after.len()
         || !after
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "F3D object string {id} must retain its encoded length and alphabet"
         )));
     }
@@ -1756,7 +1782,7 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
 
 pub(super) fn validate_configuration_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<u8>>, crate::writer::WriteError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.design_configurations.as_slice());
@@ -1772,7 +1798,7 @@ pub(super) fn validate_configuration_edits(
         .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "retained F3D configuration editing requires the unchanged entry-name set".into(),
         ));
     }
@@ -1780,7 +1806,7 @@ pub(super) fn validate_configuration_edits(
     for (name, before) in baseline {
         let after = target[name];
         if before.id() != after.id() || before.kind() != after.kind() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
@@ -1801,7 +1827,7 @@ pub(super) struct EntityHeaderEdit {
 
 pub(super) fn validate_entity_header_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<EntityHeaderEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<EntityHeaderEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1821,7 +1847,7 @@ pub(super) fn validate_entity_header_edits(
         .map(|header| (header.id.as_str(), header))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D entity-header regeneration requires the unchanged header-id set".into(),
         ));
     }
@@ -1839,7 +1865,7 @@ pub(super) fn validate_entity_header_edits(
             }
         }
         if !normalized.content_eq(before) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D entity-header patch changes fields outside record references: {id}"
             )));
         }
@@ -1857,7 +1883,7 @@ pub(super) fn validate_entity_header_edits(
                     "owning record-reference offset",
                 )?,
                 value: after.record_reference.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
+                    crate::writer::WriteError::Unsupported(format!(
                         "cannot remove F3D entity-header record reference: {id}"
                     ))
                 })?,
@@ -1880,7 +1906,9 @@ pub(super) fn validate_entity_header_edits(
             .and_then(|id| id.rsplit_once(":design-entity-header#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid design-entity-header id {id}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "invalid design-entity-header id {id}"
+                ))
             })?;
         edits.entry(stream).or_default().push(EntityHeaderEdit {
             record_reference,
@@ -1892,7 +1920,7 @@ pub(super) fn validate_entity_header_edits(
 
 pub(super) fn validate_body_member_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<BodyMemberEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<BodyMemberEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1912,7 +1940,7 @@ pub(super) fn validate_body_member_edits(
         .map(|member| (member.id().as_str(), member))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D body-membership regeneration requires the unchanged member-id set".into(),
         ));
     }
@@ -1927,7 +1955,7 @@ pub(super) fn validate_body_member_edits(
             .and_then(|id| id.rsplit_once(":design-body-member#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid design-body-member id {id}"))
+                crate::writer::WriteError::Unwritable(format!("invalid design-body-member id {id}"))
             })?;
         edits.entry(stream).or_default().push(BodyMemberEdit {
             offset: source_position(before.byte_offset(), id, "body member byte offset")?,
@@ -1942,7 +1970,7 @@ pub(super) fn validate_body_visibility_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<String, Vec<(u64, bool)>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<(u64, bool)>>, crate::writer::WriteError> {
     let baseline_bodies = baseline
         .model
         .bodies
@@ -1956,7 +1984,7 @@ pub(super) fn validate_body_visibility_edits(
         .map(|body| (&body.id, body))
         .collect::<BTreeMap<_, _>>();
     if baseline_bodies.keys().ne(target_bodies.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D body-visibility regeneration requires the unchanged body-id set".into(),
         ));
     }
@@ -1971,7 +1999,9 @@ pub(super) fn validate_body_visibility_edits(
             continue;
         }
         let visible = after.visible.ok_or_else(|| {
-            CodecError::NotImplemented(format!("cannot remove F3D body visibility: {id}"))
+            crate::writer::WriteError::Unsupported(format!(
+                "cannot remove F3D body visibility: {id}"
+            ))
         })?;
         let record = metadata
             .iter()
@@ -1982,7 +2012,7 @@ pub(super) fn validate_body_visibility_edits(
                     .is_some_and(|native_ref| native_ref == item.body.as_str())
             })
             .ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D body visibility {id} has no joined Design browser node"
                 ))
             })?;
@@ -2001,7 +2031,7 @@ pub(super) fn validate_body_visibility_edits(
 pub(super) fn validate_transform_hint_edits(
     native: PatchNatives<'_>,
     bodies: &[cadmpeg_ir::topology::Body],
-) -> Result<BTreeMap<usize, [bool; 3]>, CodecError> {
+) -> Result<BTreeMap<usize, [bool; 3]>, crate::writer::WriteError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.transform_hints.as_slice());
@@ -2017,7 +2047,7 @@ pub(super) fn validate_transform_hint_edits(
         .map(|hints| (hints.id(), hints))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D transform-hint regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -2029,7 +2059,7 @@ pub(super) fn validate_transform_hint_edits(
         normalized.reflection = before.reflection;
         normalized.shear = before.shear;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D transform-hint edit changes structural fields: {id}"
             )));
         }
@@ -2052,7 +2082,7 @@ pub(super) fn validate_transform_hint_edits(
 
 pub(in crate::writer) fn validate_body_native_key_edits(
     native: PatchNatives<'_>,
-) -> Result<BodyNativeKeyEdits, CodecError> {
+) -> Result<BodyNativeKeyEdits, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline_body_visibilities =
@@ -2071,7 +2101,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
         .map(|key| (key.id(), key))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D body-key regeneration requires the unchanged metadata-id set".into(),
         ));
     }
@@ -2081,14 +2111,16 @@ pub(in crate::writer) fn validate_body_native_key_edits(
         let mut normalized = after.clone();
         normalized.asm_body_key = before.asm_body_key;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D body-key edit changes structural fields: {id}"
             )));
         }
         if after.asm_body_key != before.asm_body_key {
             let key = after.asm_body_key.map_or(Ok(-1), |key| {
                 i64::try_from(key).map_err(|_| {
-                    CodecError::InvalidInput(format!("F3D ASM body key exceeds i64::MAX: {key}"))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "F3D ASM body key exceeds i64::MAX: {key}"
+                    ))
                 })
             })?;
             edits.asm.insert(index_from_u32(after.record_index), key);
@@ -2121,12 +2153,12 @@ pub(in crate::writer) fn validate_body_native_key_edits(
                                 )?,
                             ))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                        .collect::<Result<Vec<_>, crate::writer::WriteError>>()?,
                 );
             }
             if !joined.is_empty() {
                 let design_key = after.asm_body_key.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
+                    crate::writer::WriteError::Unsupported(format!(
                         "cannot remove joined F3D ASM body key: {id}"
                     ))
                 })?;
@@ -2156,7 +2188,7 @@ pub(super) struct ConstructionRecipeEdit {
 
 pub(super) fn validate_construction_recipe_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ConstructionRecipeEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ConstructionRecipeEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2176,7 +2208,7 @@ pub(super) fn validate_construction_recipe_edits(
         .map(|recipe| (recipe.id.as_str(), recipe))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D construction-recipe regeneration requires the unchanged recipe-id set".into(),
         ));
     }
@@ -2202,7 +2234,7 @@ pub(super) fn validate_construction_recipe_edits(
                 old
             });
         if !normalized.content_eq(after) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D construction-recipe patch changes fields other than record index or design identity: {id}"
             )));
         }
@@ -2215,10 +2247,14 @@ pub(super) fn validate_construction_recipe_edits(
             None
         } else {
             let old = before.record_index.ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot add F3D recipe record index: {id}"))
+                crate::writer::WriteError::Unsupported(format!(
+                    "cannot add F3D recipe record index: {id}"
+                ))
             })?;
             let new = after.record_index.ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot remove F3D recipe record index: {id}"))
+                crate::writer::WriteError::Unsupported(format!(
+                    "cannot remove F3D recipe record index: {id}"
+                ))
             })?;
             Some(Edit {
                 offset: source_position(old.offset, id, "recipe record-index offset")?,
@@ -2231,10 +2267,12 @@ pub(super) fn validate_construction_recipe_edits(
             None
         } else {
             let old = before.design.as_ref().ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot add F3D recipe design identity: {id}"))
+                crate::writer::WriteError::Unsupported(format!(
+                    "cannot add F3D recipe design identity: {id}"
+                ))
             })?;
             let new = after.design.as_ref().ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "cannot remove F3D recipe design identity: {id}"
                 ))
             })?;
@@ -2245,7 +2283,7 @@ pub(super) fn validate_construction_recipe_edits(
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric())
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "ASCII F3D recipe design identity must retain its encoded length: {id}"
                 )));
             }
@@ -2259,7 +2297,9 @@ pub(super) fn validate_construction_recipe_edits(
             .and_then(|id| id.rsplit_once(":construction-recipe#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid construction-recipe id {id}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "invalid construction-recipe id {id}"
+                ))
             })?;
         edits
             .entry(stream)
@@ -2274,7 +2314,7 @@ pub(super) fn validate_construction_recipe_edits(
 
 pub(super) fn validate_persistent_reference_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<PersistentReferenceEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<PersistentReferenceEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2294,7 +2334,7 @@ pub(super) fn validate_persistent_reference_edits(
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D persistent-reference regeneration requires the unchanged reference-id set".into(),
         ));
     }
@@ -2302,7 +2342,7 @@ pub(super) fn validate_persistent_reference_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         if after.kind != before.kind {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D persistent-reference edit changes fields other than value: {id}"
             )));
         }
@@ -2314,7 +2354,9 @@ pub(super) fn validate_persistent_reference_edits(
             .and_then(|id| id.rsplit_once(":persistent-reference#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid persistent-reference id {id}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "invalid persistent-reference id {id}"
+                ))
             })?;
         edits
             .entry(stream)
@@ -2326,7 +2368,7 @@ pub(super) fn validate_persistent_reference_edits(
                     "persistent-reference field offset",
                 )?,
                 identity_offset: before.value_offset.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
+                    crate::writer::WriteError::Unsupported(format!(
                         "F3D patch requires an actual persistent-reference value offset: {id}"
                     ))
                 })?,
@@ -2355,7 +2397,7 @@ pub(super) struct HistoryEdits {
 
 pub(super) fn validate_history_state_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, HistoryEdits>, CodecError> {
+) -> Result<BTreeMap<String, HistoryEdits>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2375,7 +2417,7 @@ pub(super) fn validate_history_state_edits(
         .copied()
         .ne(target.iter().map(|history| history.id.as_str()))
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D history regeneration requires the unchanged history-id set".into(),
         ));
     }
@@ -2383,7 +2425,7 @@ pub(super) fn validate_history_state_edits(
     for history in target {
         let before = baseline_by_id[history.id.as_str()];
         if before.states().len() != history.states().len() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D history edit changes the state count: {}",
                 history.id
             )));
@@ -2405,7 +2447,7 @@ pub(super) fn validate_history_state_edits(
             state.partner_ref = before_state.partner_ref;
             state.owner_ref = before_state.owner_ref;
             if state.bulletin_boards.len() != before_state.bulletin_boards.len() {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D history edit changes the bulletin-board count: {}",
                     history.id
                 )));
@@ -2419,7 +2461,7 @@ pub(super) fn validate_history_state_edits(
                 board.owner_ref = before_board.owner_ref;
                 board.number = before_board.number;
                 if board.changes.len() != before_board.changes.len() {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "F3D history edit changes the entity-change count: {}",
                         board.id
                     )));
@@ -2431,7 +2473,7 @@ pub(super) fn validate_history_state_edits(
             }
         }
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D history edit changes fields outside the fixed delta-state header: {}",
                 history.id
             )));
@@ -2442,14 +2484,17 @@ pub(super) fn validate_history_state_edits(
             .and_then(|id| id.rsplit_once(":asm-history#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid ASM history id {}", history.id))
+                crate::writer::WriteError::Unwritable(format!(
+                    "invalid ASM history id {}",
+                    history.id
+                ))
             })?;
         if before.preamble.is_some()
             && history.preamble.is_none()
             && history.states().first().map(|state| state.state_id)
                 != before.states().first().map(|state| state.state_id)
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D head-state identity change requires a regenerated history envelope: {}",
                 history.id
             )));
@@ -2461,7 +2506,7 @@ pub(super) fn validate_history_state_edits(
                 .is_none_or(|state| state.state_id != preamble.stream_size)
                 || preamble.history_entry_count < 0
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
@@ -2469,7 +2514,7 @@ pub(super) fn validate_history_state_edits(
         }
         if history.preamble.is_some() && history.preamble != before.preamble {
             let (Some(preamble), Some(_)) = (history.preamble, before.preamble) else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "cannot add or remove the F3D history preamble: {}",
                     history.id
                 )));
@@ -2477,7 +2522,7 @@ pub(super) fn validate_history_state_edits(
             let byte_offset =
                 source_position(before.byte_offset, &history.id, "history preamble offset")?;
             if byte_offset == 0 || preamble.history_entry_count < 0 {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
@@ -2526,7 +2571,7 @@ pub(super) fn validate_history_state_edits(
 
 pub(super) fn validate_sketch_point_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<SketchPointEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<SketchPointEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2546,7 +2591,7 @@ pub(super) fn validate_sketch_point_edits(
         .copied()
         .ne(target.iter().map(|point| point.id.as_str()))
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D sketch-point regeneration requires the unchanged point-id set".into(),
         ));
     }
@@ -2559,16 +2604,16 @@ pub(super) fn validate_sketch_point_edits(
                     .map(|native| native.sketch_curve_identities.as_slice())
                     .unwrap_or_default(),
             )
-            .map_err(CodecError::Malformed)?;
+            .map_err(crate::writer::WriteError::Unwritable)?;
         let before = by_id[point.id.as_str()];
         let mut normalized = point.clone();
         normalized.byte_offset = before.byte_offset;
         normalized.coordinate_offset = before.coordinate_offset;
         normalized
             .try_set_coordinates(before.coordinates())
-            .map_err(CodecError::Malformed)?;
+            .map_err(crate::writer::WriteError::Unwritable)?;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch-point edit changes fields other than coordinates: {}",
                 point.id
             )));
@@ -2582,12 +2627,15 @@ pub(super) fn validate_sketch_point_edits(
             .and_then(|id| id.rsplit_once(":sketch-point#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid sketch-point id {}", point.id))
+                crate::writer::WriteError::Unwritable(format!(
+                    "invalid sketch-point id {}",
+                    point.id
+                ))
             })?;
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: source_position(before.byte_offset, &point.id, "sketch point byte offset")?,
             coordinate_offset: before.coordinate_offset.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D patch requires an actual source sketch point coordinate offset for {}",
                     point.id
                 ))
@@ -2600,7 +2648,7 @@ pub(super) fn validate_sketch_point_edits(
 
 pub(super) fn validate_sketch_curve_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<SketchCurveEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<SketchCurveEdit>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2620,7 +2668,7 @@ pub(super) fn validate_sketch_curve_edits(
         .copied()
         .ne(target.iter().map(|curve| curve.id.as_str()))
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D sketch-curve regeneration requires the unchanged curve-id set".into(),
         ));
     }
@@ -2632,7 +2680,7 @@ pub(super) fn validate_sketch_curve_edits(
         normalized.byte_offset = before.byte_offset;
         normalized.geometry_offset = before.geometry_offset;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch-curve edit changes fields other than geometry: {}",
                 curve.id
             )));
@@ -2641,10 +2689,13 @@ pub(super) fn validate_sketch_curve_edits(
             continue;
         }
         let geometry = curve.geometry.clone().ok_or_else(|| {
-            CodecError::NotImplemented(format!("cannot remove sketch-curve geometry: {}", curve.id))
+            crate::writer::WriteError::Unsupported(format!(
+                "cannot remove sketch-curve geometry: {}",
+                curve.id
+            ))
         })?;
         if !same_sketch_layout(before.geometry.as_ref(), &geometry) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch-curve edit requires valid geometry with the original native layout: {}",
                 curve.id
             )));
@@ -2655,17 +2706,20 @@ pub(super) fn validate_sketch_curve_edits(
             .and_then(|id| id.rsplit_once(":sketch-curve-identity#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid sketch-curve id {}", curve.id))
+                crate::writer::WriteError::Unwritable(format!(
+                    "invalid sketch-curve id {}",
+                    curve.id
+                ))
             })?;
         edits.entry(stream).or_default().push(SketchCurveEdit {
             offset: before.byte_offset.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D sketch curve {} has no actual source position",
                     before.id
                 ))
             })?,
             geometry_offset: before.geometry_offset.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D sketch curve {} has no actual source geometry position",
                     before.id
                 ))
@@ -2712,9 +2766,9 @@ pub(super) fn encode_sketch_relation_state(
     relation_id: &str,
     raw_bytes: &[u8],
     state: u64,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     match crate::design::decode::sketch::relation_mask_width(raw_bytes).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::writer::WriteError::Unwritable(format!(
             "F3D sketch relation {relation_id} has no valid mask-width discriminator"
         ))
     })? {
@@ -2724,7 +2778,7 @@ pub(super) fn encode_sketch_relation_state(
         crate::design::decode::sketch::SketchRelationMaskWidth::U32 => u32::try_from(state)
             .map(|state| state.to_le_bytes().to_vec())
             .map_err(|_| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D sketch relation {relation_id} stores a u32 mask that cannot carry the requested 64-bit state"
                 ))
             }),
@@ -2733,7 +2787,7 @@ pub(super) fn encode_sketch_relation_state(
 
 pub(super) fn validate_sketch_relation_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<Vec<ByteEdit>>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<Vec<ByteEdit>>>, crate::writer::WriteError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2753,7 +2807,7 @@ pub(super) fn validate_sketch_relation_edits(
         .copied()
         .ne(target.iter().map(|relation| relation.id.as_str()))
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D sketch-relation regeneration requires the unchanged relation-id set".into(),
         ));
     }
@@ -2767,7 +2821,7 @@ pub(super) fn validate_sketch_relation_edits(
             || before.return_members().len() != relation.return_members().len()
             || before.auxiliary_references().len() != relation.auxiliary_references().len()
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch relation patch requires unchanged reference cardinalities: {}",
                 relation.id
             )));
@@ -2785,7 +2839,7 @@ pub(super) fn validate_sketch_relation_edits(
             .try_into()
             .map_err(
                 |error: crate::records::sketch_relations::SketchRelationPayloadError| {
-                    CodecError::NotImplemented(error.to_string())
+                    crate::writer::WriteError::Unsupported(error.to_string())
                 },
             )?;
         let returns = before
@@ -2801,14 +2855,14 @@ pub(super) fn validate_sketch_relation_edits(
             .try_into()
             .map_err(
                 |error: crate::records::sketch_relations::SketchRelationPayloadError| {
-                    CodecError::NotImplemented(error.to_string())
+                    crate::writer::WriteError::Unsupported(error.to_string())
                 },
             )?;
         let auxiliary = before
             .auxiliary_references()
             .located_rows()
             .ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D sketch relation has no source auxiliary-reference positions: {}",
                     relation.id
                 ))
@@ -2832,9 +2886,9 @@ pub(super) fn validate_sketch_relation_edits(
                 draft.definition = relation.definition.clone();
                 draft.return_members = returns;
             })
-            .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+            .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))?;
         if !admitted.content_eq(relation) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch relation patch changes fields outside supported references and constraint state: {}",
                 relation.id
             )));
@@ -2845,7 +2899,10 @@ pub(super) fn validate_sketch_relation_edits(
             .and_then(|id| id.rsplit_once(":sketch-relation#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("invalid sketch-relation id {}", relation.id))
+                crate::writer::WriteError::Unwritable(format!(
+                    "invalid sketch-relation id {}",
+                    relation.id
+                ))
             })?;
         let mut values = Vec::new();
         collect_sketch_reference_edits(
@@ -2869,7 +2926,7 @@ pub(super) fn validate_sketch_relation_edits(
             .auxiliary_references()
             .located_rows()
             .ok_or_else(|| {
-                CodecError::NotImplemented(
+                crate::writer::WriteError::Unsupported(
                     "F3D patch lacks source auxiliary-reference positions".into(),
                 )
             })?
@@ -2878,7 +2935,9 @@ pub(super) fn validate_sketch_relation_edits(
         {
             if old.value != *new {
                 let offset = base.checked_add(u64::from(old.offset)).ok_or_else(|| {
-                    CodecError::malformed("F3D source auxiliary-reference position overflows")
+                    crate::writer::WriteError::Unwritable(
+                        "F3D source auxiliary-reference position overflows".into(),
+                    )
                 })?;
                 values.push(ByteEdit {
                     offset,
@@ -2894,7 +2953,9 @@ pub(super) fn validate_sketch_relation_edits(
             )?;
             values.push(ByteEdit {
                 offset: base.checked_add(relative).ok_or_else(|| {
-                    CodecError::malformed("F3D source owner-reference position overflows")
+                    crate::writer::WriteError::Unwritable(
+                        "F3D source owner-reference position overflows".into(),
+                    )
                 })?,
                 value: relation.owner_reference.to_le_bytes().to_vec(),
             });
@@ -2913,7 +2974,7 @@ pub(super) fn validate_sketch_relation_edits(
         )?;
         if relation.definition.state() != before.definition.state() {
             let raw = before.raw_bytes().ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "F3D patch lacks the actual source sketch-relation frame: {}",
                     relation.id
                 ))
@@ -2927,7 +2988,9 @@ pub(super) fn validate_sketch_relation_edits(
             )?;
             values.push(ByteEdit {
                 offset: base.checked_add(relative).ok_or_else(|| {
-                    CodecError::malformed("F3D source constraint-state position overflows")
+                    crate::writer::WriteError::Unwritable(
+                        "F3D source constraint-state position overflows".into(),
+                    )
                 })?,
                 value: encoded,
             });
@@ -2941,9 +3004,9 @@ fn collect_sketch_reference_edits(
     before: impl ExactSizeIterator<Item = (u32, Option<u32>)>,
     after: impl ExactSizeIterator<Item = u32>,
     edits: &mut Vec<ByteEdit>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if before.len() != after.len() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "F3D sketch relation must retain reference cardinality: {}",
             baseline.id
         )));
@@ -2963,7 +3026,9 @@ fn collect_sketch_reference_edits(
             "sketch reference offset",
         )?;
         let offset = base.checked_add(relative).ok_or_else(|| {
-            CodecError::malformed("F3D source sketch-reference position overflows")
+            crate::writer::WriteError::Unwritable(
+                "F3D source sketch-reference position overflows".into(),
+            )
         })?;
         edits.push(ByteEdit {
             offset,
@@ -2976,7 +3041,7 @@ fn collect_sketch_reference_edits(
 pub(super) fn validate_body_transform_edits(
     baseline: &[Body],
     target: &[Body],
-) -> Result<BTreeMap<String, Transform>, CodecError> {
+) -> Result<BTreeMap<String, Transform>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|body| (body.id.as_str(), body))
@@ -2986,7 +3051,7 @@ pub(super) fn validate_body_transform_edits(
         .map(|body| (body.id.as_str(), body))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D body-transform regeneration requires the unchanged body-id set".into(),
         ));
     }
@@ -2998,7 +3063,7 @@ pub(super) fn validate_body_transform_edits(
         normalized.color = before.color;
         normalized.visible = before.visible;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
@@ -3006,10 +3071,12 @@ pub(super) fn validate_body_transform_edits(
             continue;
         }
         let transform = after.transform.ok_or_else(|| {
-            CodecError::NotImplemented(format!("cannot remove F3D body transform: {id}"))
+            crate::writer::WriteError::Unsupported(format!(
+                "cannot remove F3D body transform: {id}"
+            ))
         })?;
         if before.transform.is_none() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D body transform {id} must replace an existing finite affine transform"
             )));
         }
@@ -3021,7 +3088,7 @@ pub(super) fn validate_body_transform_edits(
 pub(super) fn validate_body_color_edits(
     baseline: &[Body],
     target: &[Body],
-) -> Result<BTreeMap<String, Color>, CodecError> {
+) -> Result<BTreeMap<String, Color>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|body| (body.id.as_str(), body))
@@ -3031,7 +3098,7 @@ pub(super) fn validate_body_color_edits(
         .map(|body| (body.id.as_str(), body))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D body-color regeneration requires the unchanged body-id set".into(),
         ));
     }
@@ -3043,7 +3110,7 @@ pub(super) fn validate_body_color_edits(
         normalized.transform = before.transform;
         normalized.visible = before.visible;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
@@ -3051,10 +3118,10 @@ pub(super) fn validate_body_color_edits(
             continue;
         }
         let color = after.color.ok_or_else(|| {
-            CodecError::NotImplemented(format!("cannot remove F3D body color: {id}"))
+            crate::writer::WriteError::Unsupported(format!("cannot remove F3D body color: {id}"))
         })?;
         if before.color.is_none() || color.a() != 1.0 {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D body color {id} must replace an existing opaque finite RGB color"
             )));
         }
@@ -3066,7 +3133,7 @@ pub(super) fn validate_body_color_edits(
 pub(super) fn validate_edge_range_edits(
     baseline: &[Edge],
     target: &[Edge],
-) -> Result<BTreeMap<String, [f64; 2]>, CodecError> {
+) -> Result<BTreeMap<String, [f64; 2]>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
@@ -3076,7 +3143,7 @@ pub(super) fn validate_edge_range_edits(
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D edge-range regeneration requires the unchanged edge-id set".into(),
         ));
     }
@@ -3090,10 +3157,10 @@ pub(super) fn validate_edge_range_edits(
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
         )
-        .map_err(CodecError::malformed)?;
+        .map_err(crate::writer::WriteError::unwritable)?;
         normalized.tolerance = before.tolerance;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D edge edit changes fields other than parameter range: {id}"
             )));
         }
@@ -3101,10 +3168,10 @@ pub(super) fn validate_edge_range_edits(
             continue;
         }
         let range = after.param_range().ok_or_else(|| {
-            CodecError::NotImplemented(format!("cannot remove F3D edge range: {id}"))
+            crate::writer::WriteError::Unsupported(format!("cannot remove F3D edge range: {id}"))
         })?;
         if before.param_range().is_none() || range[0] == range[1] {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "edited F3D edge range {id} must replace an existing finite non-degenerate range"
             )));
         }
@@ -3117,7 +3184,7 @@ pub(super) fn validate_face_sense_edits(
     native: PatchNatives<'_>,
     baseline_ir: &CadIr,
     target_ir: &CadIr,
-) -> Result<BTreeMap<String, Sense>, CodecError> {
+) -> Result<BTreeMap<String, Sense>, crate::writer::WriteError> {
     let baseline = &baseline_ir.model.faces;
     let target = &target_ir.model.faces;
     let native_senses = native
@@ -3145,7 +3212,7 @@ pub(super) fn validate_face_sense_edits(
         .map(|face| (face.id.as_str(), face))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D face-sense regeneration requires the unchanged face-id set".into(),
         ));
     }
@@ -3156,7 +3223,7 @@ pub(super) fn validate_face_sense_edits(
         normalized.sense = before.sense;
         normalized.color = before.color;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D face edit changes fields other than sense: {id}"
             )));
         }
@@ -3172,7 +3239,7 @@ pub(super) fn validate_face_sense_edits(
 pub(super) fn validate_face_color_edits(
     baseline: &[Face],
     target: &[Face],
-) -> Result<BTreeMap<String, Color>, CodecError> {
+) -> Result<BTreeMap<String, Color>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|face| (face.id.as_str(), face))
@@ -3182,7 +3249,7 @@ pub(super) fn validate_face_color_edits(
         .map(|face| (face.id.as_str(), face))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D face-color regeneration requires the unchanged face-id set".into(),
         ));
     }
@@ -3193,7 +3260,7 @@ pub(super) fn validate_face_color_edits(
         normalized.color = before.color;
         normalized.sense = before.sense;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D face edit changes fields other than sense or color: {id}"
             )));
         }
@@ -3201,10 +3268,10 @@ pub(super) fn validate_face_color_edits(
             continue;
         }
         let color = after.color.ok_or_else(|| {
-            CodecError::NotImplemented(format!("cannot remove F3D face color: {id}"))
+            crate::writer::WriteError::Unsupported(format!("cannot remove F3D face color: {id}"))
         })?;
         if before.color.is_none() || color.a() != 1.0 {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D face color {id} must replace an existing opaque finite RGB color"
             )));
         }
@@ -3216,7 +3283,7 @@ pub(super) fn validate_face_color_edits(
 pub(super) fn validate_coedge_sense_edits(
     baseline: &[Coedge],
     target: &[Coedge],
-) -> Result<BTreeMap<String, Sense>, CodecError> {
+) -> Result<BTreeMap<String, Sense>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|coedge| (coedge.id.as_str(), coedge))
@@ -3226,7 +3293,7 @@ pub(super) fn validate_coedge_sense_edits(
         .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D coedge-sense regeneration requires the unchanged coedge-id set".into(),
         ));
     }
@@ -3236,7 +3303,7 @@ pub(super) fn validate_coedge_sense_edits(
         let mut normalized = after.clone();
         normalized.sense = before.sense;
         if &normalized != before {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D coedge edit changes fields other than sense: {id}"
             )));
         }
@@ -3250,7 +3317,7 @@ pub(super) fn validate_coedge_sense_edits(
 pub(super) fn validate_curve_edits(
     baseline: &[Curve],
     target: &[Curve],
-) -> Result<std::collections::BTreeSet<String>, CodecError> {
+) -> Result<std::collections::BTreeSet<String>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|curve| (curve.id.as_str(), curve.geometry.solved()))
@@ -3260,7 +3327,7 @@ pub(super) fn validate_curve_edits(
         .map(|curve| (curve.id.as_str(), curve.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D curve regeneration requires the unchanged curve-id set".into(),
         ));
     }
@@ -3274,7 +3341,7 @@ pub(super) fn validate_curve_edits(
         // A curve-kind change is refused here, once, so the arms below decide
         // the edit on their own bodies and carry no policy in their order.
         if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 if matches!(after, Some(SolvedCurveGeometry::Nurbs(_))) {
                     format!("F3D regeneration cannot change curve {id} into a NURBS carrier")
                 } else {
@@ -3310,33 +3377,33 @@ pub(super) fn validate_curve_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":directrix") || id.ends_with(":spine"))))
                 {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D curve {id} is not a patchable NURBS carrier"
                     )));
                 }
                 if !writable_nurbs_degree(after.degree()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "edited F3D curve {id} has a NURBS degree outside [1, 20]"
                     )));
                 }
                 if !unchanged_unique_knot_count(before.knots(), after.knots()) {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D curve {id} changes the NURBS knot layout"
                     )));
                 }
                 if before.weights().is_some() != after.weights().is_some() {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D curve {id} changes the NURBS rational form"
                     )));
                 }
                 if before.pole_count() != after.pole_count() {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D curve {id} changes the NURBS control-point count"
                     )));
                 }
             }
             _ => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D regeneration does not support edits to curve {id}"
                 )));
             }
@@ -3348,7 +3415,7 @@ pub(super) fn validate_curve_edits(
 pub(super) fn validate_pcurve_edits(
     baseline_model: &Model,
     target_model: &Model,
-) -> Result<BTreeMap<String, PcurveEdit>, CodecError> {
+) -> Result<BTreeMap<String, PcurveEdit>, crate::writer::WriteError> {
     let baseline = baseline_model
         .pcurves
         .iter()
@@ -3360,7 +3427,7 @@ pub(super) fn validate_pcurve_edits(
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D pcurve regeneration requires the unchanged pcurve-id set".into(),
         ));
     }
@@ -3385,7 +3452,7 @@ pub(super) fn validate_pcurve_edits(
             PcurveGeometry::Nurbs { nurbs: after_nurbs },
         ) = (&before.geometry, &after.geometry)
         else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D regeneration does not support this pcurve edit: {id}"
             )));
         };
@@ -3406,7 +3473,7 @@ pub(super) fn validate_pcurve_edits(
             && before.parameter_range() == after.parameter_range()
             && before.fit_tolerance().is_some() == after.fit_tolerance().is_some();
         if !valid || !contract_valid {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
             )));
         }
@@ -3461,7 +3528,7 @@ pub(super) fn validate_pcurve_edits(
 pub(super) fn validate_surface_edits(
     baseline: &[Surface],
     target: &[Surface],
-) -> Result<std::collections::BTreeSet<String>, CodecError> {
+) -> Result<std::collections::BTreeSet<String>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|surface| (surface.id.as_str(), surface.geometry.solved()))
@@ -3471,7 +3538,7 @@ pub(super) fn validate_surface_edits(
         .map(|surface| (surface.id.as_str(), surface.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D surface regeneration requires the unchanged surface-id set".into(),
         ));
     }
@@ -3484,7 +3551,7 @@ pub(super) fn validate_surface_edits(
         // A surface-kind change is refused here, once, so the arms below decide
         // the edit on their own bodies and carry no policy in their order.
         if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 if matches!(after, Some(SolvedSurfaceGeometry::Nurbs(_))) {
                     format!("F3D regeneration cannot change surface {id} into a NURBS carrier")
                 } else {
@@ -3518,12 +3585,12 @@ pub(super) fn validate_surface_edits(
                 // the closed endpoint survives the round trip. A negative half
                 // angle and one above pi/2 are shapes no f3d document holds.
                 if cone_surface.radius().get() == 0.0 {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "edited F3D cone surface {id} has a zero cross-section radius"
                     )));
                 }
                 if !(0.0..=std::f64::consts::FRAC_PI_2).contains(&cone_surface.half_angle().get()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "edited F3D cone surface {id} has a half angle outside [0, pi/2]"
                     )));
                 }
@@ -3545,48 +3612,48 @@ pub(super) fn validate_surface_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
                 {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D surface {id} is not a patchable NURBS carrier"
                     )));
                 }
                 if !writable_nurbs_degree(after.u_degree()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "edited F3D surface {id} has a NURBS u degree outside [1, 20]"
                     )));
                 }
                 if !unchanged_unique_knot_count(before.u_knots(), after.u_knots()) {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D surface {id} changes the NURBS u knot layout"
                     )));
                 }
                 if !writable_nurbs_degree(after.v_degree()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "edited F3D surface {id} has a NURBS v degree outside [1, 20]"
                     )));
                 }
                 if !unchanged_unique_knot_count(before.v_knots(), after.v_knots()) {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D surface {id} changes the NURBS v knot layout"
                     )));
                 }
                 if before.u_count() != after.u_count() {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D surface {id} changes the NURBS u control-point count"
                     )));
                 }
                 if before.v_count() != after.v_count() {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D surface {id} changes the NURBS v control-point count"
                     )));
                 }
                 if before.weights().is_some() != after.weights().is_some() {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "edited F3D surface {id} changes the NURBS rational form"
                     )));
                 }
             }
             _ => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D regeneration does not support edits to surface {id}"
                 )));
             }
@@ -3599,7 +3666,7 @@ pub(super) fn validate_surface_edits(
 pub(super) fn validate_procedural_surface_edits(
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<String, ProceduralSurfaceEdit>, CodecError> {
+) -> Result<BTreeMap<String, ProceduralSurfaceEdit>, crate::writer::WriteError> {
     let baseline = baseline
         .model
         .procedural_surfaces
@@ -3613,7 +3680,7 @@ pub(super) fn validate_procedural_surface_edits(
         .map(|surface| (surface.id.as_str(), surface))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D procedural-surface regeneration requires the unchanged construction-id set".into(),
         ));
     }
@@ -3639,22 +3706,22 @@ pub(super) fn validate_procedural_surface_edits(
                 let after_native_position = definition_payload_1.native_position();
                 {
                     let interval = after_parameter_interval.ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "F3D extrusion interval is missing: {id}"
                         ))
                     })?;
                     let position = after_native_position.ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "F3D extrusion native position is missing: {id}"
                         ))
                     })?;
                     if interval[0] >= interval[1] {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(crate::writer::WriteError::Unwritable(format!(
                             "F3D extrusion interval must be strictly increasing: {id}"
                         )));
                     }
                     if after_direction.norm() == 0.0 {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(crate::writer::WriteError::Unwritable(format!(
                             "F3D extrusion direction must be nonzero: {id}"
                         )));
                     }
@@ -3680,13 +3747,13 @@ pub(super) fn validate_procedural_surface_edits(
                     BlendRadiusLaw::Constant { signed_radius } => [signed_radius.get(); 2],
                     BlendRadiusLaw::Linear { start, end } => [start.get(), end.get()],
                     BlendRadiusLaw::Law { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "F3D explicit blend-law regeneration is unsupported: {id}"
                         )));
                     }
                 };
                 if values.contains(&0.0) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "F3D rolling-ball radii must be nonzero: {id}"
                     )));
                 }
@@ -3694,7 +3761,7 @@ pub(super) fn validate_procedural_surface_edits(
                     .then_some(ProceduralSurfaceEdit::BlendRadii(values))
             }
             _ => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D procedural-surface edit changes non-writable construction fields: {id}"
                 )));
             }
@@ -3709,7 +3776,7 @@ pub(super) fn validate_procedural_surface_edits(
 pub(super) fn validate_procedural_surface_fit_edits(
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<String, f64>, CodecError> {
+) -> Result<BTreeMap<String, f64>, crate::writer::WriteError> {
     let baseline = baseline
         .model
         .procedural_surfaces
@@ -3729,12 +3796,12 @@ pub(super) fn validate_procedural_surface_fit_edits(
             continue;
         }
         let tolerance = after.cache_fit_tolerance().ok_or_else(|| {
-            CodecError::NotImplemented(format!(
+            crate::writer::WriteError::Unsupported(format!(
                 "cannot remove F3D procedural-surface fit tolerance: {id}"
             ))
         })?;
         if before.cache_fit_tolerance().is_none() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D procedural-surface fit tolerance must replace a finite nonnegative value: {id}"
             )));
         }
@@ -3746,7 +3813,7 @@ pub(super) fn validate_procedural_surface_fit_edits(
 pub(super) fn validate_procedural_curve_edits(
     baseline: &[ProceduralCurve],
     target: &[ProceduralCurve],
-) -> Result<BTreeMap<String, ProceduralCurveEdit>, CodecError> {
+) -> Result<BTreeMap<String, ProceduralCurveEdit>, crate::writer::WriteError> {
     let baseline = baseline
         .iter()
         .map(|curve| (curve.id.as_str(), curve))
@@ -3756,7 +3823,7 @@ pub(super) fn validate_procedural_curve_edits(
         .map(|curve| (curve.id.as_str(), curve))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D procedural-curve regeneration requires the unchanged construction-id set".into(),
         ));
     }
@@ -3963,7 +4030,7 @@ pub(super) fn validate_procedural_curve_edits(
             }
             (before, after) if before == after => None,
             _ => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "F3D procedural-curve edit changes a non-writable definition: {id}"
                 )));
             }
@@ -3980,17 +4047,17 @@ pub(super) fn validate_procedural_curve_edits(
             // No writable construction carries the tolerance of an unknown
             // curve. Decline so the edit reduces to the solved carrier in
             // synthesis instead of patching a tolerance the writer cannot own.
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D procedural-curve fit tolerance on an unknown construction requires synthesis: {id}"
             )));
         } else {
             let tolerance = after.cache_fit_tolerance().ok_or_else(|| {
-                CodecError::NotImplemented(format!(
+                crate::writer::WriteError::Unsupported(format!(
                     "cannot remove F3D procedural-curve fit tolerance: {id}"
                 ))
             })?;
             if before.cache_fit_tolerance().is_none() {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D procedural-curve fit tolerance must replace a finite nonnegative value: {id}"
                 )));
             }
@@ -4138,7 +4205,7 @@ mod tests {
                 baseline: Some(&baseline),
                 target: Some(&target)
             }),
-            Err(cadmpeg_core::CodecError::NotImplemented(_))
+            Err(crate::writer::WriteError::Unsupported(_))
         ));
     }
     #[test]
@@ -4178,7 +4245,7 @@ mod tests {
                 baseline: Some(&baseline),
                 target: Some(&target)
             }),
-            Err(cadmpeg_core::CodecError::NotImplemented(_))
+            Err(crate::writer::WriteError::Unsupported(_))
         ));
     }
 

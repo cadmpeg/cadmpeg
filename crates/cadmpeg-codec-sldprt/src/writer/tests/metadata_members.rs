@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -276,7 +275,7 @@ fn the_actual_owned_stream_is_required_even_if_a_lookalike_member_exists() {
     let error = crate::writer::retained_swobjects_sections(decoded.ir(), &records, annotations)
         .unwrap_err();
     assert!(
-        matches!(error, CodecError::Malformed(detail) if detail.contains(MEMBER) && detail.contains("no retained source member"))
+        matches!(error, crate::writer::write_error::WriteError::Unwritable(detail) if detail.contains(MEMBER) && detail.contains("no retained source member"))
     );
     let records = crate::source_records(decoded.ir(), decoded.source_fidelity());
     let owner = records
@@ -303,7 +302,7 @@ fn the_actual_owned_stream_is_required_even_if_a_lookalike_member_exists() {
         crate::writer::retained_swobjects_sections(decoded.ir(), &records, &lookalike_annotations)
             .unwrap_err();
     assert!(
-        matches!(error, CodecError::Malformed(detail) if detail.contains(MEMBER) && detail.contains("no retained source member"))
+        matches!(error, crate::writer::write_error::WriteError::Unwritable(detail) if detail.contains(MEMBER) && detail.contains("no retained source member"))
     );
 }
 
@@ -400,7 +399,7 @@ fn duplicate_physical_metadata_owners_are_ambiguous_even_with_identical_bytes() 
     let error = crate::writer::retained_swobjects_sections(decoded.ir(), &records, &annotations)
         .unwrap_err();
     assert!(
-        matches!(error, CodecError::NotImplemented(detail) if detail.contains("ambiguous retained members"))
+        matches!(error, crate::writer::write_error::WriteError::Unwritable(detail) if detail.contains("ambiguous retained members"))
     );
 }
 
@@ -421,7 +420,9 @@ fn digest_only_metadata_owner_cannot_supply_a_patch_payload() {
     record.data = None;
     let error = crate::writer::retained_swobjects_sections(decoded.ir(), &records, annotations)
         .unwrap_err();
-    assert!(matches!(error, CodecError::Malformed(detail) if detail.contains("has no bytes")));
+    assert!(
+        matches!(error, crate::writer::write_error::WriteError::Unwritable(detail) if detail.contains("has no bytes"))
+    );
 }
 
 #[test]
@@ -439,7 +440,7 @@ fn generated_output_cannot_select_one_of_two_owned_members() {
     )
     .unwrap_err();
     assert!(
-        matches!(error, CodecError::NotImplemented(detail) if detail.contains("ambiguous output members"))
+        matches!(error, crate::writer::write_error::WriteError::Unwritable(detail) if detail.contains("ambiguous output members"))
     );
 }
 

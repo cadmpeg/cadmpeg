@@ -37,7 +37,7 @@ pub(crate) fn synchronize_feature_records(
     validate_embedded_helix_edits(ctx, &ir.model.features, native.as_ref())?;
     let orphaned =
         self::parameters::orphaned_scalar_parameters(ir, native.as_ref()).map_err(|error| {
-            cadmpeg_core::CodecError::malformed(format_args!(
+            crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT orphaned scalar scan failed: {error}"
             ))
         })?;
@@ -177,14 +177,14 @@ fn validate_surface_sweep_profile_edits(
 pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
     sketches: &[cadmpeg_ir::sketches::Sketch],
-) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::Feature>, crate::writer::write_error::WriteError> {
     Ok(project_feature_model_with_native_inputs(native, sketches)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
     sketches: &[cadmpeg_ir::sketches::Sketch],
-) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
+) -> Result<FeatureProjection, crate::writer::write_error::WriteError> {
     let projection_bytes = native
         .feature_input_lanes
         .iter()

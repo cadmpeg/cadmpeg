@@ -7,7 +7,6 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchPointRecordForm, SketchText},
 };
 use crate::writer::primitives::zero_fill_to;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
@@ -46,7 +45,7 @@ pub(super) fn native_tolerant_coedge_extension(
     target: &CadIr,
     index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let extension = index
         .tolerant_coedges
         .get(coedge.as_str())
@@ -73,9 +72,13 @@ pub(super) fn native_tolerant_coedge_extension(
                 .coedges
                 .iter()
                 .find(|candidate| candidate.id == *coedge)
-                .ok_or_else(|| CodecError::malformed(format_args!("missing coedge {coedge}")))?;
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(format!("missing coedge {coedge}"))
+                })?;
             let use_curve = model_coedge.use_curve.as_ref().ok_or_else(|| {
-                CodecError::malformed(format_args!("tolerant coedge {coedge} has no use curve"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "tolerant coedge {coedge} has no use curve"
+                ))
             })?;
             let curve = target
                 .model
@@ -83,10 +86,13 @@ pub(super) fn native_tolerant_coedge_extension(
                 .iter()
                 .find(|curve| curve.id == use_curve.curve)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("missing use curve {}", use_curve.curve))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "missing use curve {}",
+                        use_curve.curve
+                    ))
                 })?;
             let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));
             };
@@ -112,7 +118,7 @@ pub(super) fn native_tolerant_coedge_extension(
             native_i64(records, 0);
             Ok(())
         }
-        _ => Err(CodecError::NotImplemented(format!(
+        _ => Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D cannot serialize nonempty tolerant-coedge extension for {coedge}"
         ))),
     }
@@ -146,7 +152,7 @@ pub(super) fn encode_design_bulkstream(
     parameter_bytes: Vec<u8>,
     brep_name: &str,
     extra_body_pairs: &[(u64, u64)],
-) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
+) -> Result<Option<EncodedDesignBulkStream>, crate::writer::WriteError> {
     let body_key_bodies = target
         .model
         .bodies
@@ -218,7 +224,7 @@ pub(super) fn encode_design_bulkstream(
             .iter()
             .any(|header| header.member_values().next().is_some())
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D Design parameter records are not writable".into(),
         ));
     }
@@ -247,9 +253,12 @@ pub(super) fn encode_design_bulkstream(
             .as_map()
             .len()
             .checked_add(extra.len())
-            .ok_or_else(|| CodecError::InvalidInput("Design body map count overflows".into()))?;
-        let count = u32::try_from(total)
-            .map_err(|_| CodecError::InvalidInput("Design body map exceeds u32::MAX".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("Design body map count overflows".into())
+            })?;
+        let count = u32::try_from(total).map_err(|_| {
+            crate::writer::WriteError::Unwritable("Design body map exceeds u32::MAX".into())
+        })?;
         out.extend_from_slice(&count.to_le_bytes());
         for (&body_key, &entity_suffix) in body_map.entries.as_map() {
             out.extend_from_slice(&body_key.to_le_bytes());
@@ -303,11 +312,12 @@ pub(super) fn encode_design_bulkstream(
                     .as_str()
                     .eq_ignore_ascii_case(super::presentation::BODY_ROOT_TYPE_GUID)
             })
-            .ok_or_else(|| CodecError::Malformed("missing generated BodiesRoot type".into()))?;
-        let record_index = *kind
-            .entity_ids
-            .first()
-            .ok_or_else(|| CodecError::Malformed("missing generated BodiesRoot identity".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("missing generated BodiesRoot type".into())
+            })?;
+        let record_index = *kind.entity_ids.first().ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("missing generated BodiesRoot identity".into())
+        })?;
         primary_records.push(primary_record_u64(output_ctx, record_index, out.len())?);
         native_lp_ascii(
             &mut out,
@@ -315,7 +325,9 @@ pub(super) fn encode_design_bulkstream(
         )?;
         out.extend_from_slice(
             &u32::try_from(record_index)
-                .map_err(|_| CodecError::InvalidInput("BodiesRoot index exceeds u32".into()))?
+                .map_err(|_| {
+                    crate::writer::WriteError::Unwritable("BodiesRoot index exceeds u32".into())
+                })?
                 .to_le_bytes(),
         );
         out.extend_from_slice(&[0; 4]);
@@ -323,7 +335,9 @@ pub(super) fn encode_design_bulkstream(
         out.extend_from_slice(&0u16.to_le_bytes());
         native_lp_ascii(&mut out, "BodiesRoot")?;
         let count = u32::try_from(native.design_body_members.len()).map_err(|_| {
-            CodecError::InvalidInput("Design BodiesRoot exceeds u32::MAX members".into())
+            crate::writer::WriteError::Unwritable(
+                "Design BodiesRoot exceeds u32::MAX members".into(),
+            )
         })?;
         out.extend_from_slice(&count.to_le_bytes());
         for member in &native.design_body_members {
@@ -390,7 +404,9 @@ pub(super) fn encode_design_bulkstream(
         native_lp_utf16(&mut out, header.entity_id.as_str())?;
         if header.in_sketch_module() {
             let count = u32::try_from(header.reference_values().count()).map_err(|_| {
-                CodecError::InvalidInput("Design sketch header exceeds u32::MAX references".into())
+                crate::writer::WriteError::Unwritable(
+                    "Design sketch header exceeds u32::MAX references".into(),
+                )
             })?;
             match header
                 .sketch_references()
@@ -415,7 +431,7 @@ pub(super) fn encode_design_bulkstream(
     for point in &native.sketch_points {
         point
             .validate_for_write(&native.sketch_curve_identities)
-            .map_err(CodecError::Malformed)?;
+            .map_err(crate::writer::WriteError::Unwritable)?;
         let expected = crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE;
         let mut companion_types = registry
             .types
@@ -436,13 +452,13 @@ pub(super) fn encode_design_bulkstream(
             .next()
             .map(|(ordinal, _)| ordinal)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "generated sketch point {} has no registered companion type",
                     point.id
                 ))
             })?;
         if companion_types.next().is_some() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "generated sketch point {} has multiple registered companion types",
                 point.id
             )));
@@ -524,7 +540,7 @@ pub(super) fn encode_design_bulkstream(
             if previous.next_class_tag != reference.class_tag
                 || previous.next_record_index != reference.record_index
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D lost-edge record {} does not continue the preceding indexed run",
                     reference.id
                 )));
@@ -604,7 +620,9 @@ pub(super) fn encode_design_bulkstream(
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| {
-                    CodecError::InvalidInput("Design recipe name exceeds u32::MAX".into())
+                    crate::writer::WriteError::Unwritable(
+                        "Design recipe name exceeds u32::MAX".into(),
+                    )
                 })?
                 .to_le_bytes(),
         );
@@ -615,9 +633,9 @@ pub(super) fn encode_design_bulkstream(
             out.extend_from_slice(&value.to_le_bytes());
         }
         written_recipes.insert(recipe.id.clone());
-        *expected = expected
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("F3D recipe count exceeds u32".into()))?;
+        *expected = expected.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D recipe count exceeds u32".into())
+        })?;
     }
     for reference in &native.persistent_references {
         if primary_records.is_empty() {
@@ -651,7 +669,7 @@ fn primary_record(
     output_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity_id: u32,
     bulk_offset: usize,
-) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
+) -> Result<crate::metastream::RecordIndexEntry, crate::writer::WriteError> {
     primary_record_u64(output_ctx, u64::from(entity_id), bulk_offset)
 }
 
@@ -662,7 +680,7 @@ fn encode_material_assignment(
     registry: &GeneratedDesignRegistry,
     target: &CadIr,
     assignment: &crate::records::references::DesignMaterialAssignment,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     use crate::design::presentation::{
         APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_TYPE_GUID, BODY_SCENE_NODE_TYPE_GUID,
         BREP_CONTAINER_TYPE_GUID, PHYSICAL_MATERIAL_LIBRARY_ID,
@@ -776,7 +794,7 @@ fn primary_record_u64(
     output_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity_id: u64,
     bulk_offset: usize,
-) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
+) -> Result<crate::metastream::RecordIndexEntry, crate::writer::WriteError> {
     output_ctx.charge_entities(1, "F3D Design record")?;
     Ok(crate::metastream::RecordIndexEntry {
         entity_id,
@@ -797,9 +815,9 @@ fn encode_sketch_record_header(
 fn encode_sketch_point(
     out: &mut Vec<u8>,
     point: &crate::records::sketch_geometry::SketchPoint,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let owner_reference = point.owner_reference.ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::writer::WriteError::Unwritable(format!(
             "source-less sketch point {} has no direct owner",
             point.id
         ))
@@ -815,7 +833,7 @@ fn encode_sketch_point(
         ..
     } = point.record_form()
     else {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less sketch point {} requires the version-11 member sequence",
             point.id
         )));
@@ -863,11 +881,11 @@ fn encode_sketch_point_companion(
     record_index: u32,
     point_record_index: u32,
     companion: crate::records::sketch_geometry::SketchPointCompanionRef<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let prefix_present_zero = companion.prefix_present_zero;
     let incident_curves = companion.incident_curves;
     let count = u32::try_from(incident_curves.len()).map_err(|_| {
-        CodecError::InvalidInput(
+        crate::writer::WriteError::Unwritable(
             "source-less sketch point companion exceeds u32::MAX curves".into(),
         )
     })?;
@@ -895,9 +913,9 @@ fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
     curve: &crate::records::sketch_geometry::SketchCurveIdentity,
     construction: bool,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let owner_reference = curve.owner_reference.ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::writer::WriteError::Unwritable(format!(
             "source-less sketch curve {} has no direct owner",
             curve.id
         ))
@@ -988,7 +1006,7 @@ fn encode_sketch_curve_identity(
             geometry,
         )?,
         None => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less sketch curve {} has no writable geometry",
                 curve.id
             )))
@@ -1036,7 +1054,7 @@ pub(super) fn encode_sketch_nurbs(
     subtype_class_tag: &crate::records::references::DesignClassTag,
     subtype_record_index: u32,
     geometry: &crate::records::sketch_geometry::SketchNurbsGeometry,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     const NURBS_PREFIX_PADDING: usize = 88 - (8 + 4 + 3 + 4);
     let knots = geometry.knots();
     let poles = geometry.poles();
@@ -1053,20 +1071,23 @@ pub(super) fn encode_sketch_nurbs(
     record.push(0);
     record.extend_from_slice(&geometry.degree().to_le_bytes());
     record.extend_from_slice(&(geometry.fit_tolerance().get() / LEN_TO_MM).to_le_bytes());
-    let knot_count = u32::try_from(knots.len())
-        .map_err(|_| CodecError::InvalidInput("sketch NURBS has too many knots".into()))?;
+    let knot_count = u32::try_from(knots.len()).map_err(|_| {
+        crate::writer::WriteError::Unwritable("sketch NURBS has too many knots".into())
+    })?;
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
     encode_f64_sequence(record, knots);
-    let weight_count = u32::try_from(poles.weights().len())
-        .map_err(|_| CodecError::InvalidInput("sketch NURBS has too many weights".into()))?;
+    let weight_count = u32::try_from(poles.weights().len()).map_err(|_| {
+        crate::writer::WriteError::Unwritable("sketch NURBS has too many weights".into())
+    })?;
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
     encode_f64_sequence(record, &poles.weights().collect::<Vec<_>>());
-    let point_count = u32::try_from(poles.point_count())
-        .map_err(|_| CodecError::InvalidInput("sketch NURBS has too many control points".into()))?;
+    let point_count = u32::try_from(poles.point_count()).map_err(|_| {
+        crate::writer::WriteError::Unwritable("sketch NURBS has too many control points".into())
+    })?;
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
@@ -1110,10 +1131,13 @@ pub(in crate::writer) fn sketch_text_supported(text: &SketchText) -> bool {
         && text.persistent_id.is_some()
 }
 
-pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
+pub(super) fn encode_sketch_text(
+    out: &mut Vec<u8>,
+    text: &SketchText,
+) -> Result<(), crate::writer::WriteError> {
     use crate::records::sketch_geometry::SketchTextLayout;
     if !sketch_text_supported(text) {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "sketch text {} has unsupported F3D metrics or identity",
             text.id,
         )));
@@ -1125,7 +1149,7 @@ pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result
         ..
     } = &text.layout
     else {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "sketch text {} has no supported F3D member layout",
             text.id,
         )));
@@ -1149,7 +1173,7 @@ pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result
         .count();
     out.extend_from_slice(
         &u32::try_from(count)
-            .map_err(CodecError::malformed)?
+            .map_err(crate::writer::WriteError::unwritable)?
             .to_le_bytes(),
     );
     for (name, value) in properties {
@@ -1208,12 +1232,12 @@ const SKETCH_RELATION_RECORD_FILLED_LEN: usize = 101;
 fn encode_sketch_relation(
     out: &mut Vec<u8>,
     relation: &crate::records::sketch_relations::SketchRelation,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut record = vec![0u8; 19];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
     record.push(1);
     let member_count = u32::try_from(relation.members().len()).map_err(|_| {
-        CodecError::InvalidInput(
+        crate::writer::WriteError::Unwritable(
             "sketch relation members: the Design record states a u32 member count".into(),
         )
     })?;
@@ -1224,7 +1248,7 @@ fn encode_sketch_relation(
         // stated ordinal there, not an absent one. A member that retains none
         // has no bytes to write.
         let relation_ordinal = member.relation_ordinal.ok_or_else(|| {
-            CodecError::InvalidInput(
+            crate::writer::WriteError::Unwritable(
                 "sketch relation member relation_ordinal: the Design record states a u32 \
                  ordinal for every member, and this member retains none"
                     .into(),
@@ -1253,7 +1277,7 @@ fn encode_sketch_relation(
     }
     record.extend_from_slice(&relation.definition.state().to_le_bytes());
     let return_count = u32::try_from(relation.return_members().len()).map_err(|_| {
-        CodecError::InvalidInput(
+        crate::writer::WriteError::Unwritable(
             "sketch relation return_members: the Design record states a u32 return count".into(),
         )
     })?;
@@ -1299,7 +1323,7 @@ pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
     primary_records: &[crate::metastream::RecordIndexEntry],
     secondary_records: &[crate::metastream::RecordIndexEntry],
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<Vec<u8>>, crate::writer::WriteError> {
     if registry.types.is_empty() {
         return Ok(None);
     }
@@ -1317,7 +1341,9 @@ pub(super) fn encode_design_metastream(
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     let type_count = u32::try_from(registry.types.len()).map_err(|_| {
-        CodecError::InvalidInput("Design MetaStream registers more than u32::MAX types".into())
+        crate::writer::WriteError::Unwritable(
+            "Design MetaStream registers more than u32::MAX types".into(),
+        )
     })?;
     out.extend_from_slice(&type_count.to_le_bytes());
     let mut next_entity_id = 1u64;
@@ -1331,20 +1357,24 @@ pub(super) fn encode_design_metastream(
         }
         out.extend_from_slice(&design_type.version.to_le_bytes());
         if crate::bytes::is_guid_relaxed(&design_type.module) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "Design type module name is GUID-shaped: {}",
                 design_type.module
             )));
         }
         native_lp_ascii(&mut out, &design_type.module)?;
         let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
-            CodecError::InvalidInput("Design type owns more than u32::MAX entities".into())
+            crate::writer::WriteError::Unwritable(
+                "Design type owns more than u32::MAX entities".into(),
+            )
         })?;
         out.extend_from_slice(&count.to_le_bytes());
         for entity_id in &design_type.entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
             let next = entity_id.checked_add(1).ok_or_else(|| {
-                CodecError::Malformed("generated Design next entity id overflows".into())
+                crate::writer::WriteError::Unwritable(
+                    "generated Design next entity id overflows".into(),
+                )
             })?;
             if next > next_entity_id {
                 next_entity_id = next;
@@ -1354,7 +1384,9 @@ pub(super) fn encode_design_metastream(
     // Named-entity list, primary record index, and secondary index.
     out.extend_from_slice(&0u32.to_le_bytes());
     let record_count = u32::try_from(primary_records.len()).map_err(|_| {
-        CodecError::InvalidInput("Design primary index exceeds u32::MAX records".into())
+        crate::writer::WriteError::Unwritable(
+            "Design primary index exceeds u32::MAX records".into(),
+        )
     })?;
     out.extend_from_slice(&record_count.to_le_bytes());
     let registered_entities = registry
@@ -1366,19 +1398,19 @@ pub(super) fn encode_design_metastream(
     let mut previous_offset = None;
     for record in primary_records {
         if !registered_entities.contains(&record.entity_id) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "generated Design primary entity {} has no type registration",
                 record.entity_id
             )));
         }
         if !indexed_entities.insert(record.entity_id) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "generated Design primary entity {} is indexed more than once",
                 record.entity_id
             )));
         }
         if previous_offset.is_some_and(|previous| previous >= record.bulk_offset) {
-            return Err(CodecError::Malformed(
+            return Err(crate::writer::WriteError::Unwritable(
                 "generated Design primary offsets are not strictly increasing".into(),
             ));
         }
@@ -1389,7 +1421,9 @@ pub(super) fn encode_design_metastream(
     out.extend_from_slice(
         &u32::try_from(secondary_records.len())
             .map_err(|_| {
-                CodecError::InvalidInput("Design secondary index exceeds u32::MAX records".into())
+                crate::writer::WriteError::Unwritable(
+                    "Design secondary index exceeds u32::MAX records".into(),
+                )
             })?
             .to_le_bytes(),
     );
@@ -1408,7 +1442,7 @@ fn encode_browser_nodes(
     out: &mut Vec<u8>,
     primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
     registry: &GeneratedDesignRegistry,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let Some(browser_nodes) = &registry.browser_nodes else {
         return Ok(());
     };
@@ -1430,24 +1464,31 @@ fn encode_browser_nodes(
 /// asset to name.
 const GENERATED_ASSET_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
-pub(super) fn native_lp_ascii(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_lp_ascii(
+    out: &mut Vec<u8>,
+    value: &str,
+) -> Result<(), crate::writer::WriteError> {
     if !value.bytes().all(|byte| byte.is_ascii_graphic()) {
-        return Err(CodecError::Malformed(
+        return Err(crate::writer::WriteError::Unwritable(
             "Design MetaStream strings must contain printable ASCII".into(),
         ));
     }
     let length = u32::try_from(value.len()).map_err(|_| {
-        CodecError::InvalidInput("Design MetaStream string exceeds u32::MAX".into())
+        crate::writer::WriteError::Unwritable("Design MetaStream string exceeds u32::MAX".into())
     })?;
     out.extend_from_slice(&length.to_le_bytes());
     out.extend_from_slice(value.as_bytes());
     Ok(())
 }
 
-pub(super) fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_lp_utf16(
+    out: &mut Vec<u8>,
+    value: &str,
+) -> Result<(), crate::writer::WriteError> {
     let units = value.encode_utf16().collect::<Vec<_>>();
-    let length = u32::try_from(units.len())
-        .map_err(|_| CodecError::InvalidInput("Design UTF-16 string exceeds u32::MAX".into()))?;
+    let length = u32::try_from(units.len()).map_err(|_| {
+        crate::writer::WriteError::Unwritable("Design UTF-16 string exceeds u32::MAX".into())
+    })?;
     out.extend_from_slice(&length.to_le_bytes());
     for unit in units {
         out.extend_from_slice(&unit.to_le_bytes());
@@ -1480,7 +1521,7 @@ mod tests {
         assert_eq!((first.entity_id, first.bulk_offset), (17, 3));
         let error = super::primary_record(&ctx, 18, 7).unwrap_err();
         assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(error, crate::writer::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
                 && (limit.limit, limit.used, limit.additional) == (2, 2, 1))
         );
@@ -1533,7 +1574,7 @@ mod tests {
         let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[], &[])
             .expect_err("the next identity cannot be represented");
         assert!(
-            matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
+            matches!(error, crate::writer::WriteError::Unwritable(ref message)
             if message == "generated Design next entity id overflows")
         );
     }

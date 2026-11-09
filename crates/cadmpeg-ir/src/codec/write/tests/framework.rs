@@ -2,7 +2,7 @@
 //! Caller limits and source-reuse declarations survive the sealed wrapper.
 
 use super::{
-    coverage_losses, uniform_dispositions, ArenaCoverage, ArenaDisposition, CadIr, DecodeDepth,
+    coverage_losses, ArenaCoverage, ArenaDisposition, ArenaDispositions, CadIr, DecodeDepth,
     DialectFree, EncodeError, EncodeInput, Encoder, EncoderBackend, ExportBody, FormatId,
     SourceFidelity, TargetRequest,
 };
@@ -111,7 +111,7 @@ fn neutral_omission_lists_every_original_id_in_order_after_the_count() {
         .collect();
     expected.sort();
     ir.model.faces.reverse();
-    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    let mut dispositions = ArenaDispositions::uniform(ArenaDisposition::Written);
     dispositions.faces = ArenaDisposition::Omitted;
     let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
     assert_eq!(losses.len(), 1);

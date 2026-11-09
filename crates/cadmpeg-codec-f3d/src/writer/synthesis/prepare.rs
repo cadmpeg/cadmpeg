@@ -12,7 +12,7 @@ use crate::loss::F3dLossCode;
 pub(super) fn pcurves(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use super::super::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
     use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
     use cadmpeg_ir::topology::{LoopBoundary, LoopRing};
@@ -97,7 +97,7 @@ pub(super) fn pcurves(
                         .retain(|use_| !omitted.contains(&use_.pcurve));
                 }
                 *ring = LoopRing::new(ring.coedges().to_vec(), vertices)
-                    .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_string()))?;
+                    .map_err(crate::writer::WriteError::unwritable)?;
             }
         }
     }
@@ -125,7 +125,7 @@ pub(super) fn auxiliary(
     native: &crate::native::F3dNative,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut attributes = std::collections::BTreeSet::new();
     target.model.attributes.retain(|attribute| {
         if attributes.insert(attribute.id.clone()) {
@@ -173,7 +173,7 @@ pub(super) fn auxiliary(
                 cage.faces().to_vec(),
                 symmetries,
             )
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .map_err(crate::writer::WriteError::unwritable)?;
         }
         if super::super::generate::subd::encode(&ctx, &surface, false)?.is_some() {
             retained.push(surface);
@@ -261,7 +261,7 @@ pub(super) fn auxiliary(
 pub(super) fn solved_carriers(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use super::super::generate::native_geometry::{
         native_procedural_curve, native_procedural_surface,
     };
@@ -409,7 +409,7 @@ pub(super) fn unreferenced_composite_curves(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     let candidates: std::collections::BTreeSet<String> = target
         .model
@@ -459,7 +459,7 @@ pub(super) fn unreferenced_composite_curves(
             )));
         }
     }
-    let needs = super::design::with_context(limits, |ctx| target.neutral_needs(ctx))?;
+    let needs = super::design::with_context(limits, |ctx| Ok(target.neutral_needs(ctx)?))?;
     let mut retained = std::collections::BTreeSet::new();
     let mut pending: Vec<String> = needs
         .iter()

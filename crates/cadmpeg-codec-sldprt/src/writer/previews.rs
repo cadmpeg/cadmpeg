@@ -133,15 +133,19 @@ mod tests {
     fn thumbnail_size_reports_native_field_capacity() {
         let limit = usize::try_from(u32::MAX).expect("u32 capacity fits usize");
         assert_eq!(super::thumbnail_size(limit - 4).unwrap(), u32::MAX);
-        let error: cadmpeg_ir::codec::write::EncodeError =
-            super::thumbnail_size(limit - 3).unwrap_err().into();
+        let error: cadmpeg_ir::codec::write::EncodeError = super::thumbnail_size(limit - 3)
+            .unwrap_err()
+            .try_into()
+            .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field, limit: actual_limit, value
         } if field.field == "thumbnail.byte_length" && actual_limit == u64::from(u32::MAX) && value == actual_limit + 1)
         );
-        let error: cadmpeg_ir::codec::write::EncodeError =
-            super::thumbnail_size(usize::MAX).unwrap_err().into();
+        let error: cadmpeg_ir::codec::write::EncodeError = super::thumbnail_size(usize::MAX)
+            .unwrap_err()
+            .try_into()
+            .expect("an encode failure");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field, limit: actual_limit, value

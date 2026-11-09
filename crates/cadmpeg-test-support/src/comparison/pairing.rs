@@ -326,12 +326,12 @@ pub(super) fn pair(
     let left_shapes: Vec<_> = before
         .records
         .iter()
-        .map(|record| unranked_shape(&record.value, &before.ids))
+        .map(|record| unranked_shape(record, &before.ids))
         .collect();
     let right_shapes: Vec<_> = after
         .records
         .iter()
-        .map(|record| unranked_shape(&record.value, &after.ids))
+        .map(|record| unranked_shape(record, &after.ids))
         .collect();
     let candidates: Vec<Vec<usize>> = before
         .records
@@ -367,30 +367,44 @@ pub(super) fn pair(
                 if pairs.contains_key(&left) {
                     continue;
                 }
-                let mut available = candidate.iter().copied().filter(|right| {
-                    !owners.contains_key(right)
-                        && references_agree_with_pairs(
-                            &before.records[left].value,
-                            &after.records[*right].value,
-                            before,
-                            after,
-                            &pairs,
-                            &owners,
-                        )
-                        && incoming_agrees_with_pairs(
-                            left,
-                            *right,
-                            &incoming_before,
-                            &incoming_after,
-                            &pairs,
-                        )
-                });
-                match (available.next(), available.next()) {
-                    (Some(right), None) => claims.entry(right).or_default().push(left),
-                    (Some(right), Some(_)) => {
-                        ambiguous.get_or_insert((left, right));
+                let available: Vec<usize> = candidate
+                    .iter()
+                    .copied()
+                    .filter(|right| {
+                        !owners.contains_key(right)
+                            && references_agree_with_pairs(
+                                &before.records[left].value,
+                                &after.records[*right].value,
+                                before,
+                                after,
+                                &pairs,
+                                &owners,
+                            )
+                            && incoming_agrees_with_pairs(
+                                left,
+                                *right,
+                                &incoming_before,
+                                &incoming_after,
+                                &pairs,
+                            )
+                    })
+                    .collect();
+                match available.as_slice() {
+                    [right] => claims.entry(*right).or_default().push(left),
+                    [_, _, ..] => {
+                        // Twins pair in sequence: the earliest record takes
+                        // its earliest candidate.
+                        let right = available
+                            .iter()
+                            .copied()
+                            .min_by_key(|right| (rank(&after.records[*right]), *right))
+                            .unwrap_or(available[0]);
+                        let key = (rank(&before.records[left]), left);
+                        if ambiguous.is_none_or(|(_, _, best)| key < best) {
+                            ambiguous = Some((left, right, key));
+                        }
                     }
-                    _ => {}
+                    [] => {}
                 }
             }
             let mut changed = false;
@@ -431,7 +445,9 @@ pub(super) fn pair(
             // candidate; the references of that pair then single out the
             // partners of its twin's other records.
             if !changed {
-                let Some((left, right)) = contested.or(ambiguous) else {
+                let Some((left, right)) =
+                    contested.or(ambiguous.map(|(left, right, _)| (left, right)))
+                else {
                     break;
                 };
                 pairs.insert(left, right);
@@ -525,10 +541,18 @@ fn agree_shapes(left: &Value, right: &Value, cross: bool) -> Result<(), String> 
     }
 }
 
-fn unranked_shape(value: &Value, identities: &BTreeMap<String, usize>) -> Value {
-    let mut value = value.clone();
+/// A record's sequence position, when it states one.
+fn rank(record: &graph::Record) -> Option<u64> {
+    record
+        .value
+        .get(graph::rank_key(&record.arena))
+        .and_then(Value::as_u64)
+}
+
+fn unranked_shape(record: &graph::Record, identities: &BTreeMap<String, usize>) -> Value {
+    let mut value = record.value.clone();
     if let Value::Object(fields) = &mut value {
-        fields.remove("ordinal");
+        fields.remove(graph::rank_key(&record.arena));
     }
     graph::shape(&value, identities, false)
 }

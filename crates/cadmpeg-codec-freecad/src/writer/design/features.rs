@@ -490,10 +490,19 @@ pub(in crate::writer) fn write(
         "native" => {
             let native = value["kind"].as_str().unwrap_or_default();
             if native != object.kind {
+                let owned: Vec<&str> = ir
+                    .model
+                    .parameters
+                    .iter()
+                    .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
+                    .map(|parameter| parameter.id.as_str())
+                    .collect();
                 output.losses.push(
                     crate::loss::FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                        "feature {} of native kind {native} is written as {}",
-                        feature.id, object.kind
+                        "feature {} of native kind {native} is written as {} with its parameters {}",
+                        feature.id,
+                        object.kind,
+                        owned.join(", ")
                     )),
                 );
             }

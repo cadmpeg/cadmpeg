@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::BodyRetentionMode;
 
 use crate::classification::{native_object_class, NativeClassKind};
@@ -39,7 +38,7 @@ pub(super) struct Output {
 pub(super) fn events(
     lane: &FeatureInputLane,
     histories: &[FeatureHistory],
-) -> Result<Output, CodecError> {
+) -> Result<Output, crate::writer::write_error::WriteError> {
     let features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -52,8 +51,8 @@ pub(super) fn events(
             .sum::<usize>()
     {
         // (C): repeated record identities do not define a consistent native graph.
-        return Err(CodecError::malformed(
-            "SLDPRT selection writer received duplicate native feature identities",
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            "SLDPRT selection writer received duplicate native feature identities".into(),
         ));
     }
     let mut output = Output::default();

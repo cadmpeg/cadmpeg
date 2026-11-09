@@ -2,7 +2,6 @@
 //! Regenerate neutral design records; native envelopes cannot override edits.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -16,7 +15,7 @@ pub(super) fn regenerate(
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     // Configurations first: binding and canonicalizing the neutral model
     // folds the active overrides into their parameters. Parameters author
     // from that canonical neutral, so the generator's re-projection of the
@@ -168,8 +167,8 @@ pub(super) fn reconcile_body_tags(target: &CadIr, native: &mut F3dNative) {
 
 pub(super) fn with_context<T>(
     limits: cadmpeg_core::decode::ResourceLimits,
-    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, crate::writer::WriteError>,
+) -> Result<T, crate::writer::WriteError> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits,

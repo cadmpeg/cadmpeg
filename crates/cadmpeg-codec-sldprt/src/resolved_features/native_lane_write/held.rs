@@ -128,7 +128,7 @@ fn lane_is_held(
         .collect::<BTreeSet<_>>();
     for feature in &model.features {
         let definition = serde_json::to_string(feature.evaluation.definition())
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .map_err(crate::writer::write_error::WriteError::unwritable)?;
         if sketch_ids
             .iter()
             .any(|id| definition.contains(&format!("\"{id}\"")))
@@ -262,12 +262,12 @@ fn same<A: serde::Serialize, B: serde::Serialize>(
         .iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     let right = right
         .iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     Ok(ordered(left) == ordered(right))
 }
 

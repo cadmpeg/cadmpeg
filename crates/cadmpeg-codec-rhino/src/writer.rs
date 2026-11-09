@@ -147,6 +147,7 @@ fn is_support(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
 use tables::materials::MaterialPlan;
 
 struct WriteOutcome {
+    content: WrittenContent,
     losses: Vec<LossNote>,
     geometry_objects: usize,
     subds: usize,
@@ -155,36 +156,135 @@ struct WriteOutcome {
     written_curves: std::collections::BTreeSet<String>,
 }
 
-/// Build the archive and hand over its staged bytes with no copy.
+/// The part of the document an archive holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WrittenContent {
+    /// The whole document.
+    Document,
+    /// The document without its Rhino native records.
+    Neutral,
+    /// No record of the document.
+    Empty,
+}
+
+/// Build the archive and hand over its staged bytes with no copy (#217 §5.0).
+///
+/// A document whose content the writer cannot write as it stands is written
+/// in reduced form, each reduction with a loss that names what it omits:
+/// first without its Rhino native records, last as an empty archive. Only a
+/// non-finite written value, a caller resource limit, a target refusal or a
+/// stored-field capacity fails the write.
 fn write<'budget>(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
     session: &'budget EncodeSession,
 ) -> Result<(EncodeBuffer<'budget>, WriteOutcome), cadmpeg_ir::codec::write::EncodeError> {
+    let error = match write_attempt(ctx, ir, version, session)? {
+        Ok(written) => return Ok(written),
+        Err(error) => content_failure(ir, error)?,
+    };
+    let mut reductions = Vec::new();
+    let mut canonical = ir.clone();
+    if let Some(namespace) = canonical.native.0.remove("rhino") {
+        let mut omitted: Vec<&str> = namespace
+            .arenas()
+            .values()
+            .flatten()
+            .map(cadmpeg_ir::native::NativeRecord::id)
+            .collect();
+        omitted.sort_unstable();
+        reductions.push(RhinoLossCode::WriterNativeRecordsOmitted.note(format!(
+            "the Rhino native records cannot be written ({error}); omitted {} record(s): {}",
+            omitted.len(),
+            omitted.join(", ")
+        )));
+        match write_attempt(ctx, &canonical, version, session)? {
+            Ok(written) => {
+                return Ok(with_reductions(
+                    written,
+                    reductions,
+                    WrittenContent::Neutral,
+                ))
+            }
+            Err(error) => {
+                content_failure(ir, error)?;
+            }
+        }
+    }
+    reductions.push(RhinoLossCode::NoExportableSolids.note(format!(
+        "the document content cannot be written ({error}); wrote an empty archive"
+    )));
+    match write_attempt(ctx, &CadIr::empty(), version, session)? {
+        Ok(written) => Ok(with_reductions(written, reductions, WrittenContent::Empty)),
+        Err(error) => {
+            let error = content_failure(ir, error)?;
+            debug_assert!(false, "the Rhino writer writes an empty document: {error}");
+            Ok((
+                session.buffer(),
+                WriteOutcome {
+                    content: WrittenContent::Empty,
+                    losses: reductions,
+                    geometry_objects: 0,
+                    subds: 0,
+                    history_features: std::collections::BTreeSet::new(),
+                    face_colors: std::collections::BTreeSet::new(),
+                    written_curves: std::collections::BTreeSet::new(),
+                },
+            ))
+        }
+    }
+}
+
+/// One write of `ir`; the inner error is content the writer cannot write.
+fn write_attempt<'budget>(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: RhinoArchiveVersion,
+    session: &'budget EncodeSession,
+) -> Result<
+    Result<(EncodeBuffer<'budget>, WriteOutcome), WriteError>,
+    cadmpeg_ir::codec::write::EncodeError,
+> {
     let mut staged = session.buffer();
     let outcome = write_buffered(ctx, ir, version, session, &mut staged);
     session.finish()?;
-    match outcome {
-        Ok(outcome) => Ok((staged, outcome)),
-        Err(WriteError::Omit(message)) => {
-            debug_assert!(false, "Rhino encode omission reached boundary: {message}");
-            panic!("Rhino encode omission reached boundary: {message}");
+    Ok(outcome.map(|outcome| (staged, outcome)))
+}
+
+fn with_reductions(
+    (bytes, mut outcome): (EncodeBuffer<'_>, WriteOutcome),
+    mut reductions: Vec<LossNote>,
+    content: WrittenContent,
+) -> (EncodeBuffer<'_>, WriteOutcome) {
+    outcome.content = content;
+    reductions.append(&mut outcome.losses);
+    outcome.losses = reductions;
+    (bytes, outcome)
+}
+
+/// The content the writer cannot write, or the encode failure that ends the
+/// write.
+fn content_failure(
+    document: &CadIr,
+    error: WriteError,
+) -> Result<String, cadmpeg_ir::codec::write::EncodeError> {
+    use cadmpeg_ir::codec::write::EncodeError;
+    let reason = match error {
+        WriteError::Encode(error) => return Err(error),
+        WriteError::Fail(CodecError::ResourceLimit(limit)) => {
+            return Err(EncodeError::ResourceLimit(limit))
         }
-        Err(WriteError::Fail(error)) => match error {
-            CodecError::UnsupportedTarget(r) => {
-                Err(cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(r))
-            }
-            CodecError::ResourceLimit(l) => {
-                Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(l))
-            }
-            CodecError::Io(e) => Err(cadmpeg_ir::codec::write::EncodeError::from(e)),
-            error => {
-                debug_assert!(false, "unmapped Rhino encode error: {error}");
-                panic!("unmapped Rhino encode error: {error}");
-            }
-        },
-        Err(WriteError::Encode(error)) => Err(error),
+        WriteError::Fail(CodecError::Io(error)) => return Err(EncodeError::Io(error)),
+        WriteError::Fail(CodecError::UnsupportedTarget(refusal)) => {
+            return Err(EncodeError::UnsupportedTarget(refusal))
+        }
+        WriteError::Fail(error) => error.to_string(),
+        WriteError::Omit(reason) => reason,
+    };
+    match cadmpeg_ir::codec::write::ValidatedFinding::non_finite(document) {
+        Some(proof) => Err(EncodeError::InvalidInput(proof)),
+        None => Ok(reason),
     }
 }
 
@@ -477,7 +577,7 @@ fn write_buffered<'budget>(
         &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history_exported.records)?,
         "retain Rhino archive bytes",
     )?;
-    let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
+    let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()));
     output.append(
         &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
         "retain Rhino archive bytes",
@@ -491,6 +591,7 @@ fn write_buffered<'budget>(
         .filter(|point| !plan.topology_points.contains(point.id.as_str()))
         .count();
     Ok(WriteOutcome {
+        content: WrittenContent::Document,
         geometry_objects: plan.brep_count
             + free_points
             + plan.curves.len()
@@ -742,7 +843,7 @@ impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
 
 impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
     fn from(error: cadmpeg_ir::native::NativeConvertError) -> Self {
-        Self::Fail(error.into())
+        native_record_error(error)
     }
 }
 
@@ -2028,7 +2129,7 @@ fn brep_payload(
             );
             Ok(record)
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, WriteError>>()?;
     count_records(vertices.len())?;
     payload.extend(raw_array(&vertices)?);
     let edges = model
@@ -2062,7 +2163,7 @@ fn brep_payload(
             );
             Ok(record)
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, WriteError>>()?;
     count_records(edges.len())?;
     payload.extend(raw_array(&edges)?);
     let trims = model
@@ -2150,7 +2251,7 @@ fn brep_payload(
             record.extend(wire_index(loop_.face)?.to_le_bytes());
             Ok(record)
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, WriteError>>()?;
     count_records(loops.len())?;
     payload.extend(raw_array(&loops)?);
     let faces = model
@@ -2165,7 +2266,7 @@ fn brep_payload(
             record.extend(0_i32.to_le_bytes());
             Ok(record)
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, WriteError>>()?;
     count_records(faces.len())?;
     payload.extend(face_array(
         &faces,
@@ -2916,12 +3017,6 @@ pub(super) const PARAMETER_DUST_RELATIVE: f64 = 1.0e-12;
 pub(super) const TORUS_PROFILE_DOMAIN_SLACK: f64 = 1.0e-10;
 
 /// A count the native field cannot store.
-fn native_count_limit(limit: u64, count: u64) -> CodecError {
-    CodecError::InvalidInput(format!(
-        "Rhino native count {count} exceeds the format limit {limit}"
-    ))
-}
-
 fn writable_count_limit(limit: u64, count: u64) -> WriteError {
     WriteError::Omit(format!(
         "Rhino native count {count} exceeds the format limit {limit}"
@@ -2957,7 +3052,7 @@ fn polymorphic_records<'a>(
             checksum.unwrap_or(payload),
         )?);
     }
-    Ok(crc_chunk_with_direct(0x4000_8000, &body, &direct)?)
+    crc_chunk_with_direct(0x4000_8000, &body, &direct)
 }
 
 fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
@@ -2972,7 +3067,7 @@ fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
         .to_le_bytes(),
     );
     body.extend(records.concat());
-    Ok(crc_chunk(0x4000_8000, &body)?)
+    crc_chunk(0x4000_8000, &body)
 }
 
 fn face_array(
@@ -3006,12 +3101,12 @@ fn face_array(
             body.push(0);
         }
     }
-    Ok(crc_chunk(0x4000_8000, &body)?)
+    crc_chunk(0x4000_8000, &body)
 }
 
 fn encoded_face_colors(
     faces: &[&cadmpeg_ir::topology::Face],
-) -> Result<Option<Vec<[u8; 4]>>, CodecError> {
+) -> Result<Option<Vec<[u8; 4]>>, WriteError> {
     if faces.is_empty() {
         return Ok(None);
     }
@@ -3033,7 +3128,7 @@ fn encoded_face_colors(
     Ok(any_color.then_some(colors))
 }
 
-fn empty_region_wrapper() -> Result<Vec<u8>, CodecError> {
+fn empty_region_wrapper() -> Result<Vec<u8>, WriteError> {
     let mut body = 1_i32.to_le_bytes().to_vec();
     body.extend(1_i32.to_le_bytes());
     body.push(0);
@@ -3041,15 +3136,13 @@ fn empty_region_wrapper() -> Result<Vec<u8>, CodecError> {
 }
 
 /// Converts one arena position into the native index the Brep records store.
-fn wire_index(position: usize) -> Result<i32, CodecError> {
-    native_i32_count(
-        position,
-        "Brep record index exceeds the native index range".into(),
-    )
-}
-
-fn native_i32_count(value: usize, message: String) -> Result<i32, CodecError> {
-    i32::try_from(value).map_err(|_| CodecError::InvalidInput(message))
+fn wire_index(position: usize) -> Result<i32, cadmpeg_ir::codec::write::EncodeError> {
+    let field = &target::CAPACITY_FIELDS[1];
+    i32::try_from(position).map_err(|_| cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field,
+        limit: field.limit,
+        value: cadmpeg_core::decode::u64_from_index(position),
+    })
 }
 
 fn writable_i32_count(value: usize, message: String) -> Result<i32, WriteError> {
@@ -3068,24 +3161,35 @@ fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeE
     Ok(value.cast_signed())
 }
 
-fn archive_final_size(position: u64) -> Result<u64, CodecError> {
-    position
-        .checked_add(20)
-        .ok_or_else(|| CodecError::InvalidInput("3DM output size overflow".into()))
+/// The archive size once its 20-byte end mark follows `position`.
+fn archive_final_size(position: u64) -> u64 {
+    match position.checked_add(20) {
+        Some(size) => size,
+        None => {
+            debug_assert!(
+                false,
+                "an in-memory archive length leaves room for its end mark"
+            );
+            position
+        }
+    }
 }
 
 /// Converts a list of arena positions into the native indexes they store as.
-fn wire_indexes(positions: impl IntoIterator<Item = usize>) -> Result<Vec<i32>, CodecError> {
-    positions.into_iter().map(wire_index).collect()
+fn wire_indexes(positions: impl IntoIterator<Item = usize>) -> Result<Vec<i32>, WriteError> {
+    positions
+        .into_iter()
+        .map(|position| wire_index(position).map_err(WriteError::from))
+        .collect()
 }
 
-fn indexes(values: &[i32]) -> Result<Vec<u8>, CodecError> {
+fn indexes(values: &[i32]) -> Result<Vec<u8>, WriteError> {
     let mut bytes = wire_index(values.len())?.to_le_bytes().to_vec();
     bytes.extend(values.iter().flat_map(|value| value.to_le_bytes()));
     Ok(bytes)
 }
 
-fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Result<Vec<u8>, WriteError> {
     class_wrapper_with_direct(class_uuid, payload, payload)
 }
 
@@ -3093,7 +3197,7 @@ fn class_wrapper_with_direct(
     class_uuid: [u8; 16],
     payload: &[u8],
     direct: &[u8],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
     let uuid = long_chunk(TCODE_CLASS_UUID, &uuid_body)?;
@@ -3259,32 +3363,24 @@ fn header(version: RhinoArchiveVersion) -> Vec<u8> {
     bytes
 }
 
-fn long_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn long_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, WriteError> {
     let mut bytes = typecode.to_le_bytes().to_vec();
-    bytes.extend(
-        (i64::try_from(body.len()).map_err(|_| {
-            native_count_limit(
-                9_223_372_036_854_775_807,
-                cadmpeg_core::decode::u64_from_index(body.len()),
-            )
-        })?)
-        .to_le_bytes(),
-    );
+    bytes.extend(archive_body_len(cadmpeg_core::decode::u64_from_index(body.len()))?.to_le_bytes());
     bytes.extend(body);
     Ok(bytes)
 }
 
-fn crc_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn crc_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, WriteError> {
     crc_chunk_with_direct(typecode, body, body)
 }
 
-fn crc_chunk_with_direct(typecode: u32, body: &[u8], direct: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn crc_chunk_with_direct(typecode: u32, body: &[u8], direct: &[u8]) -> Result<Vec<u8>, WriteError> {
     let mut payload = body.to_vec();
     payload.extend(crc32fast::hash(direct).to_le_bytes());
     long_chunk(typecode, &payload)
 }
 
-fn zero_crc_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn zero_crc_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, WriteError> {
     let mut payload = body.to_vec();
     payload.extend(0_u32.to_le_bytes());
     long_chunk(typecode, &payload)
@@ -3300,7 +3396,7 @@ fn table(
     ctx: &DecodeContext<'_>,
     typecode: u32,
     records: &[Vec<u8>],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let mut body = Vec::new();
     for record in records {
         ctx.charge_entities(1, "write Rhino table record")?;
@@ -3310,7 +3406,7 @@ fn table(
     long_chunk(typecode, &body)
 }
 
-fn units_record(linear: f64, angular: f64) -> Result<Vec<u8>, CodecError> {
+fn units_record(linear: f64, angular: f64) -> Result<Vec<u8>, WriteError> {
     let mut body = 100_i32.to_le_bytes().to_vec();
     body.extend(2_i32.to_le_bytes()); // millimeters
     body.extend(linear.to_le_bytes());
@@ -3322,21 +3418,21 @@ fn units_record(linear: f64, angular: f64) -> Result<Vec<u8>, CodecError> {
 fn point_cloud_payload(
     points: &[cadmpeg_ir::math::Point3],
     colors: Option<&[cadmpeg_ir::topology::Color]>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     if points.is_empty() {
-        return Err(CodecError::InvalidInput(
+        return Err(WriteError::Omit(
             "Rhino point cloud requires at least one point".into(),
         ));
     }
     if colors.is_some_and(|colors| colors.len() != points.len()) {
-        return Err(CodecError::InvalidInput(
+        return Err(WriteError::Omit(
             "point-cloud colors must match the point count".into(),
         ));
     }
     let mut payload = vec![if colors.is_some() { 0x11 } else { 0x10 }];
     payload.extend(
         (i32::try_from(points.len()).map_err(|_| {
-            native_count_limit(
+            writable_count_limit(
                 2_147_483_647,
                 cadmpeg_core::decode::u64_from_index(points.len()),
             )
@@ -4325,7 +4421,7 @@ fn mesh_payload(
     })
 }
 
-fn mesh_mapping_tag() -> Result<Vec<u8>, CodecError> {
+fn mesh_mapping_tag() -> Result<Vec<u8>, WriteError> {
     let mut body = 1_i32.to_le_bytes().to_vec();
     body.extend(0_i32.to_le_bytes());
     body.extend([0_u8; 16]);
@@ -4387,7 +4483,7 @@ fn attributed_object_record(
     identity: &str,
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     framed_object_record_with_userdata(
         object_type,
         class_uuid,
@@ -4412,7 +4508,7 @@ fn surface_object_record(
     identity: &str,
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     framed_object_record_with_userdata(
         if payload.class == crate::extrusion::ON_EXTRUSION.to_wire() {
             0x10
@@ -4441,7 +4537,7 @@ fn curve_object_record(
     identity: &str,
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     framed_object_record_with_userdata(
         4,
         payload.class,
@@ -4466,7 +4562,7 @@ fn mesh_object_record(
     identity: &str,
     display: presentation::Display<'_>,
     materials: &MaterialPlan,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     framed_object_record_with_userdata(
         0x20,
         MESH_CLASS,
@@ -4493,7 +4589,7 @@ fn brep_object_record(
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
     materials: &MaterialPlan,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     framed_object_record_with_userdata(
         0x10,
         BREP_CLASS,
@@ -4513,7 +4609,7 @@ fn framed_object_record(
     payload: &[u8],
     direct_class_data: Option<&[u8]>,
     attributes: Option<Vec<u8>>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     framed_object_record_with_userdata(
         object_type,
         class_uuid,
@@ -4530,7 +4626,7 @@ fn object_userdata(
     ir: &CadIr,
     records: &[&str],
     name: Option<&str>,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<Vec<u8>>, WriteError> {
     user_strings::attributes_userdata(&user_strings::object_user_strings(ir, records, name))
 }
 
@@ -4542,7 +4638,7 @@ fn framed_object_record_with_userdata(
     attributes: Option<Vec<u8>>,
     attributes_userdata: Option<Vec<u8>>,
     userdata: &[Vec<u8>],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
@@ -4608,7 +4704,7 @@ fn object_attributes_payload(
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
     materials: &MaterialPlan,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     object_attributes_for_target(ir, identity, identity, name, color, visible, materials)
 }
 
@@ -4620,7 +4716,7 @@ fn object_attributes_for_target(
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
     materials: &MaterialPlan,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let uuid = tables::products::occurrence_uuid(ir, identity)
         .unwrap_or_else(|| neutral_object_uuid(identity));
     let material = materials
@@ -4756,7 +4852,7 @@ fn object_attributes_for_target(
     Ok(payload)
 }
 
-fn default_layer_payload() -> Result<Vec<u8>, CodecError> {
+fn default_layer_payload() -> Result<Vec<u8>, WriteError> {
     let mut payload = vec![0x15];
     payload.extend(0_i32.to_le_bytes());
     payload.extend(0_i32.to_le_bytes());
@@ -4778,18 +4874,18 @@ fn default_layer_payload() -> Result<Vec<u8>, CodecError> {
     Ok(payload)
 }
 
-fn unit_color_channel(value: f32) -> Result<u8, CodecError> {
+fn unit_color_channel(value: f32) -> Result<u8, WriteError> {
     cadmpeg_core::convert::truncate_f64_to_u8(f64::from((value * 255.0).round()))
-        .ok_or_else(|| CodecError::Malformed("color channel is outside byte range".into()))
+        .ok_or_else(|| WriteError::Omit("color channel is outside byte range".into()))
 }
 
-fn utf16(value: &str) -> Result<Vec<u8>, CodecError> {
+fn utf16(value: &str) -> Result<Vec<u8>, WriteError> {
     let mut units = value.encode_utf16().collect::<Vec<_>>();
     if !units.is_empty() {
         units.push(0);
     }
     let mut bytes = (u32::try_from(units.len()).map_err(|_| {
-        native_count_limit(
+        writable_count_limit(
             4_294_967_295,
             cadmpeg_core::decode::u64_from_index(units.len()),
         )

@@ -16,6 +16,16 @@ pub(super) struct Record {
 /// The records whose ordinals rank together: a parameter ranks within its
 /// owner and an occurrence within its parent; other records rank across
 /// their arena.
+/// The field holding a record's sequence position, compared as a rank:
+/// a semantic annotation's `order`, otherwise `ordinal`.
+pub(super) fn rank_key(arena: &str) -> &'static str {
+    if arena == "model/semantic_annotations" {
+        "order"
+    } else {
+        "ordinal"
+    }
+}
+
 fn ordinal_scope(arena: &str, fields: &serde_json::Map<String, Value>) -> Option<String> {
     match arena {
         "model/parameters" => fields
@@ -102,7 +112,11 @@ impl Document {
         let mut groups = BTreeMap::<(String, Option<String>), Vec<(u64, usize)>>::new();
         for index in selected {
             let record = &self.records[*index];
-            if let Some(ordinal) = record.value.get("ordinal").and_then(Value::as_u64) {
+            if let Some(ordinal) = record
+                .value
+                .get(rank_key(&record.arena))
+                .and_then(Value::as_u64)
+            {
                 let owner = record
                     .value
                     .as_object()
@@ -116,7 +130,8 @@ impl Document {
         for group in groups.values_mut() {
             group.sort_unstable();
             for (rank, (_, index)) in group.iter().enumerate() {
-                self.records[*index].value["ordinal"] = Value::Number(Number::from(
+                let key = rank_key(&self.records[*index].arena);
+                self.records[*index].value[key] = Value::Number(Number::from(
                     u64::try_from(rank).expect("selected rank fits the admitted u64 arena rank"),
                 ));
             }
@@ -274,7 +289,7 @@ fn append(
         // D21 makes the source-object association identity-only, so a
         // writer-minted identity is not content.
         value.remove("source_object");
-        if let Some(ordinal) = value.get("ordinal") {
+        if let Some(ordinal) = value.get(rank_key(arena)) {
             let ordinal = ordinal
                 .as_u64()
                 .ok_or_else(|| format!("{arena} has a non-integer ordinal"))?;
@@ -294,7 +309,7 @@ fn append(
         group.sort_unstable();
         for (rank, (_, index)) in group.iter().enumerate() {
             let rank = u64::try_from(rank).map_err(|_| "ordinal rank exceeds u64")?;
-            records[*index].value["ordinal"] = Value::Number(Number::from(rank));
+            records[*index].value[rank_key(arena)] = Value::Number(Number::from(rank));
         }
     }
     for record in &mut records[first..] {
@@ -421,11 +436,23 @@ fn hash(value: &Value) -> String {
     Sha256Digest::digest(&serde_json::to_vec(value).expect("JSON colour serializes")).into()
 }
 
+/// The starting colour of each record. An annotation's `order` compares as a
+/// rank among paired records, so it takes no part in the colour.
 fn initial(document: &Document) -> Vec<String> {
     document
         .records
         .iter()
-        .map(|record| hash(&shape(&record.value, &document.ids, true)))
+        .map(|record| {
+            if record.arena == "model/semantic_annotations" {
+                let mut value = record.value.clone();
+                if let Some(fields) = value.as_object_mut() {
+                    fields.remove("order");
+                }
+                hash(&shape(&value, &document.ids, true))
+            } else {
+                hash(&shape(&record.value, &document.ids, true))
+            }
+        })
         .collect()
 }
 

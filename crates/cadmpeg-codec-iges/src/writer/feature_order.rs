@@ -2,7 +2,6 @@
 //! Keep the Directory order of emitted features consistent with CADIR.
 
 use super::{BodyPresentation, Entity};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
@@ -10,7 +9,7 @@ pub(super) fn order(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
     presentations: &mut BTreeMap<usize, BodyPresentation>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let ordinals = ir
         .model
         .features

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter frames authored from semantic values, without retained envelopes.
 
-use cadmpeg_core::CodecError;
-
 use crate::records::parameters::DesignParameter;
 
 use super::records::{native_lp_ascii, native_lp_utf16};
@@ -11,20 +9,20 @@ pub(super) fn encode_document_parameter(
     out: &mut Vec<u8>,
     parameter: &DesignParameter,
     collection_index: u32,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let owner = parameter.owner_record_index();
     let discriminator = parameter
         .family_discriminator()
         .map(|value| value.value.code());
     let legacy = parameter.class_tag.as_str() == "287";
     if legacy && (owner.is_none() || discriminator.is_some()) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "class-287 parameter {} requires its owned compact family",
             parameter.id,
         )));
     }
     if owner.is_none() && discriminator.is_none() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "user parameter {} requires its document family discriminator",
             parameter.id,
         )));
@@ -84,7 +82,7 @@ pub(super) fn encode_collection(
     class_tag: &str,
     index: u32,
     parameter_indices: &[u32],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, class_tag)?;
     out.extend_from_slice(&index.to_le_bytes());
     out.extend_from_slice(&[0; 15]);
@@ -93,7 +91,9 @@ pub(super) fn encode_collection(
     out.push(0);
     out.extend_from_slice(
         &u32::try_from(parameter_indices.len())
-            .map_err(|_| CodecError::InvalidInput("F3D parameter collection exceeds u32".into()))?
+            .map_err(|_| {
+                crate::writer::WriteError::Unwritable("F3D parameter collection exceeds u32".into())
+            })?
             .to_le_bytes(),
     );
     for parameter in parameter_indices {

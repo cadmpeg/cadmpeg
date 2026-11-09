@@ -7,7 +7,6 @@ use crate::records::parameters::{
     DesignParameter, DesignParameterContent, DesignParameterDiscriminator, DesignParameterOwner,
     DesignParameterOwnerContent, DesignParameterSource,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, Dimension, DimensionValue, FeatureDefinition, FeatureId, FeatureOperation,
@@ -760,7 +759,7 @@ fn select_copies(
     target: &CadIr,
     native: &crate::native::F3dNative,
     attributes: &super::attributes::AttributeIndex<'_>,
-) -> Result<Vec<CopyFeature>, CodecError> {
+) -> Result<Vec<CopyFeature>, crate::writer::WriteError> {
     let mut selected = Vec::new();
     for feature in &target.model.features {
         if !matches!(
@@ -810,7 +809,7 @@ fn select_copies(
             let key = u64::try_from(super::attributes::source_less_body_key(
                 attributes, body, ordinal,
             )?)
-            .map_err(CodecError::malformed)?;
+            .map_err(crate::writer::WriteError::unwritable)?;
             bodies.push((key, copied.source.value, copied.copied.value));
         }
         if !bodies.is_empty()
@@ -989,7 +988,7 @@ pub(super) fn encode(
     design_registry: &GeneratedDesignRegistry,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut sketch: Option<&mut super::sketches::SketchStream>,
-) -> Result<Option<EncodedFeatures>, CodecError> {
+) -> Result<Option<EncodedFeatures>, crate::writer::WriteError> {
     let mut primitives = select(target);
     let mut extrusions = select_extrusions(target, native, sketch.as_deref());
     let base_features = select_empty_base_features(target, native);
@@ -1036,12 +1035,16 @@ pub(super) fn encode(
         )
         .ok()
         .and_then(|value| value.checked_add(256))
-        .ok_or_else(|| CodecError::InvalidInput("F3D feature type count exceeds u32".into()))?
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D feature type count exceeds u32".into())
+        })?
     } else if append_main {
         u32::try_from(design_registry.types.len())
             .ok()
             .and_then(|n| n.checked_add(256))
-            .ok_or_else(|| CodecError::InvalidInput("F3D feature type count exceeds u32".into()))?
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("F3D feature type count exceeds u32".into())
+            })?
     } else {
         256
     };
@@ -1055,7 +1058,9 @@ pub(super) fn encode(
                 .map(|value| value.to_string())
         })
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| CodecError::InvalidInput("F3D feature type count exceeds u32".into()))?;
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D feature type count exceeds u32".into())
+        })?;
     let mut occupied = sketch
         .as_ref()
         .filter(|_| joined)
@@ -1189,7 +1194,9 @@ pub(super) fn encode(
         let count = u32::try_from(copy.bodies.len())
             .ok()
             .and_then(|n| n.checked_add(3))
-            .ok_or_else(|| CodecError::InvalidInput("too many copied bodies".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("too many copied bodies".into())
+            })?;
         copy_bases.push(reserve_indices(&mut occupied, &mut next, count)?);
     }
     let body_map_index = if copies.is_empty() || append_main {
@@ -1219,7 +1226,7 @@ pub(super) fn encode(
     for ((source_ordinal, kind, values, operation, _), base) in primitives.iter().zip(bases) {
         let family_ordinal = family_ordinals.entry(kind).or_default();
         *family_ordinal = family_ordinal.checked_add(1).ok_or_else(|| {
-            CodecError::InvalidInput("F3D feature family ordinal exceeds u32".into())
+            crate::writer::WriteError::Unwritable("F3D feature family ordinal exceeds u32".into())
         })?;
         scopes.push(u64::from(base));
         timeline_scopes.push((*source_ordinal, u64::from(base)));
@@ -1231,7 +1238,9 @@ pub(super) fn encode(
         out.push(1);
         out.extend_from_slice(
             &u32::try_from(values.len())
-                .map_err(|_| CodecError::InvalidInput("too many F3D feature parameters".into()))?
+                .map_err(|_| {
+                    crate::writer::WriteError::Unwritable("too many F3D feature parameters".into())
+                })?
                 .to_le_bytes(),
         );
         for local in 0..values.len() {
@@ -1239,7 +1248,9 @@ pub(super) fn encode(
                 &mut out,
                 base + 1
                     + 3 * u32::try_from(local).map_err(|_| {
-                        CodecError::InvalidInput("too many F3D feature parameters".into())
+                        crate::writer::WriteError::Unwritable(
+                            "too many F3D feature parameters".into(),
+                        )
                     })?,
             );
         }
@@ -1265,8 +1276,9 @@ pub(super) fn encode(
         mark(&mut secondary, base, out.len());
         header(&mut out, &tags[0], base)?;
         for (local, scalar) in values.iter().enumerate() {
-            let local = u32::try_from(local)
-                .map_err(|_| CodecError::InvalidInput("too many F3D feature parameters".into()))?;
+            let local = u32::try_from(local).map_err(|_| {
+                crate::writer::WriteError::Unwritable("too many F3D feature parameters".into())
+            })?;
             let value = scalar.value;
             let owner_index = base + 1 + 3 * local;
             let parameter_index = owner_index + 1;
@@ -1274,7 +1286,10 @@ pub(super) fn encode(
             parameters.push(u64::from(parameter_index));
             let owner = DesignParameterOwner::try_from(DesignParameterOwnerContent {
                 id: format!("f3d:generated:owner#{owner_index}"),
-                class_tag: tags[2].clone().try_into().map_err(CodecError::Malformed)?,
+                class_tag: tags[2]
+                    .clone()
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?,
                 record_index: owner_index,
                 scope_record_index: Some(base),
                 local_ordinal: Some(local),
@@ -1284,7 +1299,7 @@ pub(super) fn encode(
                 variant: Some(0),
                 companion_record_index: owner_index + 2,
             })
-            .map_err(CodecError::Malformed)?;
+            .map_err(crate::writer::WriteError::Unwritable)?;
             mark_primary(ctx, &mut primary, owner_index, out.len())?;
             ctx.charge_entities(1, "F3D feature record")?;
             super::parameter_links::encode(&mut out, &[owner], &[])?;
@@ -1295,7 +1310,10 @@ pub(super) fn encode(
             );
             let parameter = DesignParameter::authored(DesignParameterContent {
                 id: format!("f3d:generated:parameter#{parameter_index}"),
-                class_tag: tags[3].clone().try_into().map_err(CodecError::Malformed)?,
+                class_tag: tags[3]
+                    .clone()
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?,
                 record_index: parameter_index,
                 source_ordinal: local,
                 source: DesignParameterSource::authored(
@@ -1303,7 +1321,7 @@ pub(super) fn encode(
                     Some(owner_index),
                     Some(DesignParameterDiscriminator::Code3),
                 )
-                .map_err(CodecError::Malformed)?,
+                .map_err(crate::writer::WriteError::Unwritable)?,
                 expression: scalar
                     .expression
                     .clone()
@@ -1315,7 +1333,7 @@ pub(super) fn encode(
                     .unwrap_or_else(|| format!("{}{base}", scalar.kind)),
                 evaluated_value: value,
             })
-            .map_err(CodecError::Malformed)?;
+            .map_err(crate::writer::WriteError::Unwritable)?;
             mark_primary(ctx, &mut primary, parameter_index, out.len())?;
             super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
         }
@@ -1333,7 +1351,7 @@ pub(super) fn encode(
         let family = family_ordinals.entry("Form").or_default();
         *family = family
             .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D forms".into()))?;
+            .ok_or_else(|| crate::writer::WriteError::Unwritable("too many F3D forms".into()))?;
         mark_primary(ctx, &mut primary, index, out.len())?;
         header(&mut out, &tags[1], index)?;
         out.extend_from_slice(&[0; 10]);
@@ -1355,9 +1373,9 @@ pub(super) fn encode(
         let sources = [base + 2, base + 3];
         let component = u64::from(base + 4);
         let family = family_ordinals.entry("CopyPaste").or_default();
-        *family = family
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D component copies".into()))?;
+        *family = family.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("too many F3D component copies".into())
+        })?;
         for (index, record) in sources.into_iter().enumerate() {
             mark_primary(ctx, &mut primary, record, out.len())?;
             let start = out.len();
@@ -1368,7 +1386,8 @@ pub(super) fn encode(
             out[start + 24] = 1;
             out[start + 25..start + 33].copy_from_slice(&component.to_le_bytes());
             out[start + 40..start + 44].copy_from_slice(
-                &(u32::try_from(index).map_err(CodecError::malformed)? + 1).to_le_bytes(),
+                &(u32::try_from(index).map_err(crate::writer::WriteError::unwritable)? + 1)
+                    .to_le_bytes(),
             );
             for (at, value) in [
                 (44, copy.component.as_str()),
@@ -1435,9 +1454,9 @@ pub(super) fn encode(
         let tolerance = index + 4;
         let settings = index + 5;
         let family = family_ordinals.entry("SurfaceStitch").or_default();
-        *family = family
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D surface stitches".into()))?;
+        *family = family.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("too many F3D surface stitches".into())
+        })?;
         stitch_scopes.push(u64::from(index));
         timeline_scopes.push((feature.ordinal, u64::from(index)));
         mark_primary(ctx, &mut primary, index, out.len())?;
@@ -1497,9 +1516,9 @@ pub(super) fn encode(
     for (feature, index) in removals.iter().zip(removal_bases) {
         let group = index + 1;
         let family = family_ordinals.entry("RemoveBody").or_default();
-        *family = family
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D body removals".into()))?;
+        *family = family.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("too many F3D body removals".into())
+        })?;
         removal_scopes.push(u64::from(index));
         timeline_scopes.push((feature.ordinal, u64::from(index)));
         mark_primary(ctx, &mut primary, index, out.len())?;
@@ -1565,9 +1584,9 @@ pub(super) fn encode(
     }
     for (feature, index) in base_flanges.iter().zip(base_flange_indices) {
         let family = family_ordinals.entry("BaseFlange").or_default();
-        *family = family
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D base flanges".into()))?;
+        *family = family.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("too many F3D base flanges".into())
+        })?;
         base_flange_scopes.push(u64::from(index));
         timeline_scopes.push((feature.ordinal, u64::from(index)));
         mark_primary(ctx, &mut primary, index, out.len())?;
@@ -1597,9 +1616,9 @@ pub(super) fn encode(
     }
     for (feature, index) in base_features.iter().zip(base_feature_indices) {
         let family = family_ordinals.entry("Base Feature").or_default();
-        *family = family
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D base features".into()))?;
+        *family = family.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("too many F3D base features".into())
+        })?;
         base_feature_scopes.push(u64::from(index));
         timeline_scopes.push((feature.ordinal, u64::from(index)));
         mark_primary(ctx, &mut primary, index, out.len())?;
@@ -1625,17 +1644,17 @@ pub(super) fn encode(
         let [owner_index, parameter_index, companion_index] =
             frame.unwrap_or([base + 8, base + 9, base + 10]);
         let family = family_ordinals.entry("Extrude").or_default();
-        *family = family
-            .checked_add(1)
-            .ok_or_else(|| CodecError::InvalidInput("too many F3D extrusions".into()))?;
+        *family = family.checked_add(1).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("too many F3D extrusions".into())
+        })?;
         extrusion_scopes.push(u64::from(scope));
         timeline_scopes.push((extrusion.ordinal, u64::from(scope)));
         mark_primary(ctx, &mut primary, scope, out.len())?;
         let start = out.len();
         header(&mut out, &tags[8], scope)?;
-        let end = start
-            .checked_add(208)
-            .ok_or_else(|| CodecError::InvalidInput("F3D scope length overflows".into()))?;
+        let end = start.checked_add(208).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("F3D scope length overflows".into())
+        })?;
         out.resize(end, 0);
         out[start + 21..start + 25].copy_from_slice(&4u32.to_le_bytes());
         out[start + 25..start + 29].copy_from_slice(&2u32.to_le_bytes());
@@ -1687,7 +1706,10 @@ pub(super) fn encode(
         let scalar = &extrusion.distance;
         let owner = DesignParameterOwner::try_from(DesignParameterOwnerContent {
             id: format!("f3d:generated:owner#{owner_index}"),
-            class_tag: tags[2].clone().try_into().map_err(CodecError::Malformed)?,
+            class_tag: tags[2]
+                .clone()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?,
             record_index: owner_index,
             scope_record_index: Some(scope),
             local_ordinal: Some(2),
@@ -1697,7 +1719,7 @@ pub(super) fn encode(
             variant: Some(0),
             companion_record_index: companion_index,
         })
-        .map_err(CodecError::Malformed)?;
+        .map_err(crate::writer::WriteError::Unwritable)?;
         owners.push(u64::from(owner_index));
         parameters.push(u64::from(parameter_index));
         mark_primary(ctx, &mut primary, owner_index, out.len())?;
@@ -1709,7 +1731,10 @@ pub(super) fn encode(
         );
         let parameter = DesignParameter::authored(DesignParameterContent {
             id: format!("f3d:generated:parameter#{parameter_index}"),
-            class_tag: tags[3].clone().try_into().map_err(CodecError::Malformed)?,
+            class_tag: tags[3]
+                .clone()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?,
             record_index: parameter_index,
             source_ordinal: 2,
             source: DesignParameterSource::authored(
@@ -1717,7 +1742,7 @@ pub(super) fn encode(
                 Some(owner_index),
                 Some(DesignParameterDiscriminator::Code3),
             )
-            .map_err(CodecError::Malformed)?,
+            .map_err(crate::writer::WriteError::Unwritable)?,
             expression: scalar
                 .expression
                 .clone()
@@ -1729,7 +1754,7 @@ pub(super) fn encode(
                 .unwrap_or_else(|| format!("Depth{base}")),
             evaluated_value: scalar.value,
         })
-        .map_err(CodecError::Malformed)?;
+        .map_err(crate::writer::WriteError::Unwritable)?;
         mark_primary(ctx, &mut primary, parameter_index, out.len())?;
         super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
         mark_primary(ctx, &mut primary, companion_index, out.len())?;
@@ -1747,7 +1772,10 @@ pub(super) fn encode(
         let scalar = &dimension.scalar;
         let owner = DesignParameterOwner::try_from(DesignParameterOwnerContent {
             id: format!("f3d:generated:owner#{base}"),
-            class_tag: tags[2].clone().try_into().map_err(CodecError::Malformed)?,
+            class_tag: tags[2]
+                .clone()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?,
             record_index: base,
             scope_record_index: Some(dimension.scope),
             local_ordinal: Some(dimension.ordinal),
@@ -1757,7 +1785,7 @@ pub(super) fn encode(
             variant: Some(1),
             companion_record_index: companion_index,
         })
-        .map_err(CodecError::Malformed)?;
+        .map_err(crate::writer::WriteError::Unwritable)?;
         owners.push(u64::from(base));
         parameters.push(u64::from(parameter_index));
         mark_primary(ctx, &mut primary, base, out.len())?;
@@ -1769,7 +1797,10 @@ pub(super) fn encode(
         );
         let parameter = DesignParameter::authored(DesignParameterContent {
             id: format!("f3d:generated:parameter#{parameter_index}"),
-            class_tag: tags[3].clone().try_into().map_err(CodecError::Malformed)?,
+            class_tag: tags[3]
+                .clone()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?,
             record_index: parameter_index,
             source_ordinal: dimension.source_ordinal,
             source: DesignParameterSource::authored(
@@ -1777,7 +1808,7 @@ pub(super) fn encode(
                 Some(base),
                 None,
             )
-            .map_err(CodecError::Malformed)?,
+            .map_err(crate::writer::WriteError::Unwritable)?,
             expression: scalar
                 .expression
                 .clone()
@@ -1789,7 +1820,7 @@ pub(super) fn encode(
                 .unwrap_or_else(|| format!("Dimension{base}")),
             evaluated_value: scalar.value,
         })
-        .map_err(CodecError::Malformed)?;
+        .map_err(crate::writer::WriteError::Unwritable)?;
         mark_primary(ctx, &mut primary, parameter_index, out.len())?;
         super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
         mark_primary(ctx, &mut primary, companion_index, out.len())?;
@@ -1834,7 +1865,8 @@ pub(super) fn encode(
     for (copy, base) in copies.iter().zip(copy_bases) {
         let group = base + 1;
         let relation = base + 2;
-        let count = u32::try_from(copy.bodies.len()).map_err(CodecError::malformed)?;
+        let count =
+            u32::try_from(copy.bodies.len()).map_err(crate::writer::WriteError::unwritable)?;
         let family = family_ordinals.entry("CopyPasteBodies").or_default();
         *family += 1;
         scopes.push(u64::from(base));
@@ -1866,7 +1898,8 @@ pub(super) fn encode(
         }
         copy_groups.push(u64::from(group));
         for (i, (_, source, _)) in copy.bodies.iter().enumerate() {
-            let index = base + 3 + u32::try_from(i).map_err(CodecError::malformed)?;
+            let index =
+                base + 3 + u32::try_from(i).map_err(crate::writer::WriteError::unwritable)?;
             scopes.push(u64::from(index));
             mark_primary(ctx, &mut primary, index, out.len())?;
             header(&mut out, &tags[1], index)?;
@@ -1879,7 +1912,9 @@ pub(super) fn encode(
         out.extend_from_slice(&[0; 8]);
         out.push(1);
         let reference_count = count.checked_mul(2).ok_or_else(|| {
-            CodecError::InvalidInput("F3D copy body reference count exceeds u32".into())
+            crate::writer::WriteError::Unwritable(
+                "F3D copy body reference count exceeds u32".into(),
+            )
         })?;
         out.extend_from_slice(&reference_count.to_le_bytes());
         for (i, (key, source, copied)) in copy.bodies.iter().enumerate() {
@@ -1903,7 +1938,7 @@ pub(super) fn encode(
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
         out.extend_from_slice(
             &u32::try_from(body_map.len())
-                .map_err(CodecError::malformed)?
+                .map_err(crate::writer::WriteError::unwritable)?
                 .to_le_bytes(),
         );
         for (key, suffix) in body_map {
@@ -1924,7 +1959,7 @@ pub(super) fn encode(
     out.extend_from_slice(&[0; 2]);
     out.extend_from_slice(
         &u32::try_from(timeline_scopes.len())
-            .map_err(|_| CodecError::InvalidInput("too many F3D features".into()))?
+            .map_err(|_| crate::writer::WriteError::Unwritable("too many F3D features".into()))?
             .to_le_bytes(),
     );
     for (_, scope) in &timeline_scopes {
@@ -1936,8 +1971,9 @@ pub(super) fn encode(
     let parameter_indices = parameters
         .iter()
         .map(|value| {
-            u32::try_from(*value)
-                .map_err(|_| CodecError::InvalidInput("F3D parameter index exceeds u32".into()))
+            u32::try_from(*value).map_err(|_| {
+                crate::writer::WriteError::Unwritable("F3D parameter index exceeds u32".into())
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     super::parameters::encode_collection(&mut out, &tags[5], collection_index, &parameter_indices)?;
@@ -2079,17 +2115,20 @@ pub(super) fn encode(
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
         Ok(GeneratedDesignType {
-            type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
+            type_guid: guid
+                .to_owned()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?,
             base_type_guid: base
                 .map(|value| value.to_owned().try_into())
                 .transpose()
-                .map_err(CodecError::Malformed)?,
+                .map_err(crate::writer::WriteError::Unwritable)?,
             version,
             module: module.into(),
             entity_ids,
         })
     })
-    .collect::<Result<Vec<_>, CodecError>>()?;
+    .collect::<Result<Vec<_>, crate::writer::WriteError>>()?;
     let mut registry = GeneratedDesignRegistry {
         types,
         body_map: None,
@@ -2106,15 +2145,14 @@ pub(super) fn encode(
         });
         None
     } else if joined {
-        let sketch = sketch
-            .as_mut()
-            .ok_or_else(|| CodecError::Malformed("missing generated sketch stream".into()))?;
+        let sketch = sketch.as_mut().ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("missing generated sketch stream".into())
+        })?;
         let offset = cadmpeg_core::decode::u64_from_index(sketch.bulk.len());
         for record in primary.iter_mut().chain(&mut secondary) {
-            record.bulk_offset = record
-                .bulk_offset
-                .checked_add(offset)
-                .ok_or_else(|| CodecError::InvalidInput("F3D Design stream exceeds u64".into()))?;
+            record.bulk_offset = record.bulk_offset.checked_add(offset).ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("F3D Design stream exceeds u64".into())
+            })?;
         }
         sketch.bulk.extend_from_slice(&out);
         sketch.constraints.extend(
@@ -2127,12 +2165,14 @@ pub(super) fn encode(
         sketch.secondary.extend(secondary.iter().copied());
         let combined =
             encode_design_metastream(&sketch.registry, &sketch.primary, &sketch.secondary)?;
-        sketch.meta = combined
-            .ok_or_else(|| CodecError::Malformed("missing generated Design metadata".into()))?;
+        sketch.meta = combined.ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("missing generated Design metadata".into())
+        })?;
         None
     } else {
-        let meta = encode_design_metastream(&registry, &primary, &secondary)?
-            .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
+        let meta = encode_design_metastream(&registry, &primary, &secondary)?.ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("missing generated feature metadata".into())
+        })?;
         Some((out, meta))
     };
     let mut written_parameters: Vec<_> = primitives
@@ -2191,14 +2231,16 @@ fn reserve_indices(
     occupied: &mut std::collections::BTreeSet<u32>,
     next: &mut u32,
     count: u32,
-) -> Result<u32, CodecError> {
+) -> Result<u32, crate::writer::WriteError> {
     loop {
         let start = *next;
         let end = start
             .checked_add(count - 1)
             .filter(|_| start != 0)
             .ok_or_else(|| {
-                CodecError::InvalidInput("F3D feature record indices exceed u32".into())
+                crate::writer::WriteError::Unwritable(
+                    "F3D feature record indices exceed u32".into(),
+                )
             })?;
         if let Some(collision) = occupied.range(start..=end).next().copied() {
             *next = collision.checked_add(1).unwrap_or(0);
@@ -2215,7 +2257,7 @@ fn mark_primary(
     records: &mut Vec<crate::metastream::RecordIndexEntry>,
     id: u32,
     offset: usize,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     ctx.charge_entities(1, "F3D feature record")?;
     mark(records, id, offset);
     Ok(())
@@ -2227,7 +2269,7 @@ fn mark(records: &mut Vec<crate::metastream::RecordIndexEntry>, id: u32, offset:
         bulk_offset: cadmpeg_core::decode::u64_from_index(offset),
     });
 }
-fn header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), CodecError> {
+fn header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, tag)?;
     out.extend_from_slice(&id.to_le_bytes());
     Ok(())
