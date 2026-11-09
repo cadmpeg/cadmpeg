@@ -964,3 +964,141 @@ fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_witho
     assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
     assert!(native_losses(&model_of(feature_seed), &joins()).is_empty());
 }
+
+fn plain_feature(
+    name: &str,
+    ordinal: u64,
+    suppressed: Option<bool>,
+) -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    Feature {
+        id: FeatureId::mint(format!("test:model:feature#{name}")).expect("synthetic feature"),
+        ordinal,
+        name: None,
+        suppressed,
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(combine(BodySelection::Native(
+            "tool".into(),
+        ))),
+        native_ref: None,
+        product_definition: None,
+    }
+}
+
+fn result_of(feature: &cadmpeg_ir::features::Feature, wrappers: &[&str]) -> FeatureResultTopology {
+    FeatureResultTopology::new(
+        FeatureResultTopologyId::mint(format!(
+            "test:model:feature-result#{}",
+            feature.id.as_str().rsplit('#').next().expect("name")
+        ))
+        .expect("synthetic result"),
+        feature.id.clone(),
+        FeatureResultMembers::new(
+            wrappers
+                .iter()
+                .map(|wrapper| NonBlankString::new(*wrapper).expect("wrapper"))
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .expect("members"),
+        None,
+    )
+}
+
+#[test]
+fn produced_wrappers_come_from_earlier_unsuppressed_features_only() {
+    let earlier = plain_feature("earlier", 3, Some(false));
+    let suppressed = plain_feature("suppressed", 4, Some(true));
+    let later = plain_feature("later", 9, Some(false));
+    let consumer = plain_feature("consumer", 6, Some(false));
+    let features = [earlier, suppressed, later, consumer];
+    let results = [
+        result_of(&features[0], &["made"]),
+        result_of(&features[1], &["skipped"]),
+        result_of(&features[2], &["future"]),
+    ];
+    let produced = produced_before(&features, &results, &features[3]);
+    assert_eq!(produced, HashSet::from(["made".to_owned()]));
+}
+
+#[test]
+fn unplaced_producer_is_not_an_earlier_producer() {
+    let unplaced = plain_feature("unplaced", 1, None);
+    let consumer = plain_feature("consumer", 6, Some(false));
+    let features = [unplaced, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(produced_before(&features, &results, &features[1]).is_empty());
+}
+
+#[test]
+fn unplaced_combine_has_no_earlier_producers() {
+    let producer = plain_feature("producer", 1, Some(false));
+    let consumer = plain_feature("consumer", 6, None);
+    let features = [producer, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(produced_before(&features, &results, &features[1]).is_empty());
+    let mut actual = combine(BodySelection::Native("tool".into()));
+    combine_local(&mut actual, &HashSet::new(), None);
+    assert_eq!(actual, combine(BodySelection::Native("tool".into())));
+}
+
+#[test]
+fn unjoined_combine_operands_stay_local_only_when_every_wrapper_is_produced_earlier() {
+    let tools = || {
+        BodySelection::NativeSet(
+            NativeSelections::try_from(vec!["tool".into(), "other".into()])
+                .expect("distinct wrappers"),
+        )
+    };
+    let operands = |actual: &FeatureDefinition| {
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = actual
+        else {
+            panic!("combine")
+        };
+        operands.clone().into_parts()
+    };
+    let all: HashSet<String> = ["target", "tool", "other"].map(String::from).into();
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &all, Some("tools"));
+    let (target, tools_after) = operands(&actual);
+    assert_eq!(
+        target,
+        BodySelection::local(vec!["target".into()], "target".into()).expect("local")
+    );
+    assert_eq!(
+        tools_after,
+        BodySelection::local(vec!["tool".into(), "other".into()], "tools".into()).expect("local")
+    );
+    assert!(combine_matches(
+        combine(tools()),
+        &actual,
+        &HashMap::new(),
+        Some("tools"),
+        &all
+    ));
+    // A wrapper that no earlier feature produces keeps its selection native.
+    let partial: HashSet<String> = ["target", "tool"].map(String::from).into();
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &partial, Some("tools"));
+    let (target, tools_after) = operands(&actual);
+    assert!(matches!(target, BodySelection::Local { .. }));
+    assert_eq!(tools_after, tools());
+    // A set without its collection identity stays native.
+    let mut actual = combine(tools());
+    combine_local(&mut actual, &all, None);
+    assert_eq!(operands(&actual).1, tools());
+    // A complete current-body join wins over the local form.
+    let mut actual = combine(tools());
+    definition(&mut actual, &joins(), Some("tools"));
+    combine_local(&mut actual, &all, Some("tools"));
+    assert!(matches!(
+        operands(&actual).0,
+        BodySelection::Resolved { .. }
+    ));
+}
