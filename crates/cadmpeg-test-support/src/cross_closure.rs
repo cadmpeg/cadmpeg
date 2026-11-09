@@ -693,7 +693,11 @@ pub fn cross_compare(
         .filter(|id| rows.contains_key(id) && !unpaired.contains(id))
         .collect();
     for id in &degraded {
-        if !report.losses.iter().any(|loss| loss.message.contains(id.as_str())) {
+        if !report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(id.as_str()))
+        {
             findings.push(format!("degraded record {id} is named by no export loss"));
         }
     }
@@ -1537,12 +1541,21 @@ mod tests {
         use serde_json::Value;
         use std::collections::BTreeMap;
 
-        let identity = json!([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]);
-        let moved = json!([[1.0, 0.0, 0.0, 5.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]);
-        let occurrence = |id: &str, parent: Value, ordinal: u64, product: &str, transform: &Value| {
-            json!({"id": id, "parent": parent, "ordinal": ordinal,
+        let identity = json!([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ]);
+        let moved = json!([
+            [1.0, 0.0, 0.0, 5.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ]);
+        let occurrence =
+            |id: &str, parent: Value, ordinal: u64, product: &str, transform: &Value| {
+                json!({"id": id, "parent": parent, "ordinal": ordinal,
                 "prototype": {"scope": "local", "definition": product}, "transform": transform})
-        };
+            };
         let root = json!({"kind": "root"});
         let before = json!({"model": {
             "product_definitions": [{"id": "test:product#part", "kind": "part"}],
@@ -1814,14 +1827,33 @@ mod tests {
         carried.unheld.insert(UnheldClass::MultiRegionSolid);
         carried.unheld.insert(UnheldClass::DistinctProductNames);
         carried.unheld.insert(UnheldClass::MultiPcurveCoedge);
-        carried.unheld.insert(UnheldClass::ConstructionBesideSolvedCurve);
+        carried
+            .unheld
+            .insert(UnheldClass::ConstructionBesideSolvedCurve);
         carried.unheld.insert(UnheldClass::PcurveOnSeveralSurfaces);
         let required = super::required_ids(&solids, &carried, "step");
-        for id in ["lumps", "a", "b", "renamed", "two-pcurves", "beside", "shared"] {
+        for id in [
+            "lumps",
+            "a",
+            "b",
+            "renamed",
+            "two-pcurves",
+            "beside",
+            "shared",
+        ] {
             assert!(!required.contains(id));
         }
         for id in [
-            "lump", "c", "sheets", "d", "e", "named", "one-pcurve", "p1", "built", "solved",
+            "lump",
+            "c",
+            "sheets",
+            "d",
+            "e",
+            "named",
+            "one-pcurve",
+            "p1",
+            "built",
+            "solved",
         ] {
             assert!(required.contains(id));
         }
@@ -1874,7 +1906,12 @@ mod tests {
 
         let ir = cadmpeg_ir::examples::unit_cube().expect("cube");
         let coedge = &ir.model.coedges[0];
-        let edge = ir.model.edges.iter().find(|edge| edge.id == coedge.edge).expect("edge");
+        let edge = ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == coedge.edge)
+            .expect("edge");
         let face = ir
             .model
             .loops
@@ -1887,15 +1924,36 @@ mod tests {
             .faces
             .iter()
             .find(|candidate| candidate.id == face)
-            .and_then(|face| ir.model.surfaces.iter().find(|surface| surface.id == face.surface))
+            .and_then(|face| {
+                ir.model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == face.surface)
+            })
             .expect("surface");
         let SurfaceGeometry::Solved(plane) = &surface.geometry else {
             panic!("the cube faces are planes");
         };
         let uv = |vertex: &cadmpeg_ir::ids::VertexId| {
-            let point = ir.model.vertices.iter().find(|candidate| &candidate.id == vertex).expect("vertex").point.clone();
-            let position = ir.model.points.iter().find(|candidate| candidate.id == point).expect("point").position().get();
-            cadmpeg_ir::eval::analytic_surface_parameters_solved(plane, position).expect("plane chart").get()
+            let point = ir
+                .model
+                .vertices
+                .iter()
+                .find(|candidate| &candidate.id == vertex)
+                .expect("vertex")
+                .point
+                .clone();
+            let position = ir
+                .model
+                .points
+                .iter()
+                .find(|candidate| candidate.id == point)
+                .expect("point")
+                .position()
+                .get();
+            cadmpeg_ir::eval::analytic_surface_parameters_solved(plane, position)
+                .expect("plane chart")
+                .get()
         };
         let (start, end) = (uv(&edge.start), uv(&edge.end));
         let length = (end.u - start.u).hypot(end.v - start.v);
@@ -1913,9 +1971,13 @@ mod tests {
             document["model"]["coedges"][0]["pcurves"] = json!([{"pcurve": "test:model:pcurve#p"}]);
             document
         };
-        assert!(UnheldClass::PcurveOffItsEdge.members(&with_pcurve(0.0)).is_empty());
+        assert!(UnheldClass::PcurveOffItsEdge
+            .members(&with_pcurve(0.0))
+            .is_empty());
         let off = with_pcurve(5.0);
-        assert!(UnheldClass::PcurveOffItsEdge.members(&off).contains("test:model:pcurve#p"));
+        assert!(UnheldClass::PcurveOffItsEdge
+            .members(&off)
+            .contains("test:model:pcurve#p"));
         let mut carried = Carried::all();
         carried.unheld = BTreeSet::from([UnheldClass::PcurveOffItsEdge]);
         assert!(!super::required_ids(&off, &carried, "step").contains("test:model:pcurve#p"));
@@ -1944,7 +2006,10 @@ mod tests {
         };
         assert!(UnheldClass::OpenRing.members(&document("a")).is_empty());
         let open = document("b");
-        assert_eq!(UnheldClass::OpenRing.members(&open), BTreeSet::from(["ring".to_owned()]));
+        assert_eq!(
+            UnheldClass::OpenRing.members(&open),
+            BTreeSet::from(["ring".to_owned()])
+        );
         let mut carried = Carried::all();
         carried.unheld = BTreeSet::from([UnheldClass::OpenRing]);
         let required = super::required_ids(&open, &carried, "step");
@@ -2086,7 +2151,9 @@ mod tests {
         .expect("report");
         let unnamed = super::cross_compare(&before, &after, &report, "step", &config);
         assert!(
-            unnamed.iter().any(|finding| finding.contains("record tint is named by no export loss")),
+            unnamed
+                .iter()
+                .any(|finding| finding.contains("record tint is named by no export loss")),
             "{unnamed:?}"
         );
         report.losses.push(

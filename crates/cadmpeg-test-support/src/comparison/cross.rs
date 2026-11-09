@@ -76,7 +76,8 @@ fn walk_shape(left: &Value, right: &Value, path: &mut String) -> Result<(), Stri
                     ),
                 ));
             };
-            for (index, (left_child, right_child)) in left_items.into_iter().zip(right_items).enumerate()
+            for (index, (left_child, right_child)) in
+                left_items.into_iter().zip(right_items).enumerate()
             {
                 let restore = path.len();
                 path.push('[');
@@ -196,7 +197,8 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
                     ),
                 ));
             };
-            for (index, (left_child, right_child)) in left_items.into_iter().zip(right_items).enumerate()
+            for (index, (left_child, right_child)) in
+                left_items.into_iter().zip(right_items).enumerate()
             {
                 let restore = path.len();
                 path.push('[');
