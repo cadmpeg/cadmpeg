@@ -333,9 +333,6 @@ pub(crate) fn matches(
     &expected == actual
 }
 
-/// Like [`matches`] for a Combine, whose operands that lack a complete
-/// current-body join are persistent input bodies when each wrapper is a result
-/// member of an earlier feature.
 pub(crate) fn combine_matches(
     mut expected: FeatureDefinition,
     actual: &FeatureDefinition,
@@ -348,9 +345,6 @@ pub(crate) fn combine_matches(
     &expected == actual
 }
 
-/// Like [`matches`] for a Split, whose work-plane trim target that lacks a
-/// current-body join is a persistent input body when its wrapper is a result
-/// member of an earlier feature.
 pub(crate) fn split_matches(
     mut expected: FeatureDefinition,
     actual: &FeatureDefinition,
@@ -362,14 +356,17 @@ pub(crate) fn split_matches(
     &expected == actual
 }
 
-/// Wrapper identities that features before `feature` in history order produce.
-/// Only a feature that history placed has a known suppression state. The set is
-/// empty unless `feature` is placed, and a producer counts only when it is
-/// placed and unsuppressed.
+pub(crate) struct ProducerRecords<'a> {
+    pub(crate) features: &'a [super::PmDcFeature],
+    pub(crate) labels: &'a [super::PmDcFeatureLabel],
+    pub(crate) properties: &'a [PmDcFeatureProperty],
+}
+
 pub(crate) fn produced_before(
     features: &[cadmpeg_ir::features::Feature],
     results: &[cadmpeg_ir::features::FeatureResultTopology],
     feature: &cadmpeg_ir::features::Feature,
+    records: &ProducerRecords<'_>,
 ) -> HashSet<String> {
     if feature.suppressed.is_none() {
         return HashSet::new();
@@ -377,19 +374,76 @@ pub(crate) fn produced_before(
     let producers = features
         .iter()
         .filter(|other| other.ordinal < feature.ordinal && other.suppressed == Some(false))
+        .collect::<Vec<_>>();
+    let ids = producers
+        .iter()
         .map(|other| &other.id)
         .collect::<HashSet<_>>();
-    results
+    let mut wrappers = results
         .iter()
-        .filter(|result| producers.contains(&result.output_of))
+        .filter(|result| ids.contains(&result.output_of))
         .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
         .map(|wrapper| wrapper.as_str().to_owned())
-        .collect()
+        .collect::<HashSet<_>>();
+    let sources = cadmpeg_core::decode::unique_index(
+        records.features.iter().map(|source| (source.id(), source)),
+    );
+    let properties =
+        cadmpeg_core::decode::unique_index(records.properties.iter().map(|property| {
+            (
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
+                property,
+            )
+        }));
+    let labels = cadmpeg_core::decode::unique_index(records.labels.iter().map(|label| {
+        (
+            (
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal(),
+            ),
+            label,
+        )
+    }));
+    for producer in producers {
+        if !matches!(
+            producer.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        ) {
+            continue;
+        }
+        let Some(source) = producer
+            .native_ref
+            .as_deref()
+            .and_then(|id| sources.get(id))
+            .and_then(Option::as_ref)
+        else {
+            continue;
+        };
+        let token = source.identity.segment_token.as_str();
+        let Some(label) = labels
+            .get(&(token, Some(source.identity.record_ordinal)))
+            .and_then(Option::as_ref)
+        else {
+            continue;
+        };
+        if label.class_id() != super::derived::CLASS_ID {
+            continue;
+        }
+        if let Some((_, output)) = base::wrappers(source, label.class_id(), |ordinal| {
+            properties
+                .get(&(token, ordinal))
+                .and_then(Option::as_ref)
+                .copied()
+        }) {
+            wrappers.insert(output.id());
+        }
+    }
+    wrappers
 }
 
-/// Retain the persistent wrappers of a Combine selection that has no complete
-/// current-body join. Every wrapper must be a result member of an earlier
-/// feature; otherwise the selection stays native.
 fn combine_local(
     definition: &mut FeatureDefinition,
     earlier: &HashSet<String>,
@@ -425,9 +479,6 @@ fn combine_local(
     }
 }
 
-/// Retain the persistent wrapper of a work-plane trim target that has no
-/// current-body join. The wrapper must be a result member of an earlier
-/// feature; otherwise the selection stays native.
 fn plane_trim_local(definition: &mut FeatureDefinition, earlier: &HashSet<String>) {
     let FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane { targets, .. }) =
         definition
@@ -516,7 +567,16 @@ pub(crate) fn project(
                 .and_then(|source| tools_group(source, &inventory.properties))
         })
         .flatten();
-        let earlier = produced_before(&features, &model.feature_result_topologies, feature);
+        let earlier = produced_before(
+            &features,
+            &model.feature_result_topologies,
+            feature,
+            &ProducerRecords {
+                features: &inventory.features,
+                labels: &inventory.labels,
+                properties: &inventory.properties,
+            },
+        );
         feature.evaluation.edit(|value, _| {
             definition(value, bodies, group.as_deref());
             combine_local(value, &earlier, group.as_deref());

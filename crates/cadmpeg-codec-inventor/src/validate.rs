@@ -2578,6 +2578,11 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
+                        &crate::feature::body_selection::ProducerRecords {
+                            features: &data.pm_dc_features,
+                            labels: &data.pm_dc_feature_labels,
+                            properties: &data.pm_dc_feature_properties,
+                        },
                     ),
                 )
             })
@@ -2613,6 +2618,11 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
+                        &crate::feature::body_selection::ProducerRecords {
+                            features: &data.pm_dc_features,
+                            labels: &data.pm_dc_feature_labels,
+                            properties: &data.pm_dc_feature_properties,
+                        },
                     ),
                 )
             }) {
