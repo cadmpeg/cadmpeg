@@ -295,9 +295,11 @@ fn scan_part(
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
         let start = offset + TOKEN.len();
-        let (Some(id), Some(version)) = (
+        let (Some(id), Some(0), Some(version), Some(0)) = (
             View::u32_le_at(payload, start),
+            View::u32_le_at(payload, start + 4),
             View::u32_le_at(payload, start + 8),
+            payload.get(start + 12).copied(),
         ) else {
             continue;
         };

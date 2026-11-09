@@ -160,6 +160,8 @@ fn reduced_rows_hold_their_normalizations() {
             "model.product_definitions[].source_name",
             "model.occurrences[].linked_prototype",
             "model.features[].source_tag",
+            "model.semantic_annotations[].value",
+            "model.coedges",
             "model.parameters[].name",
             "model.parameters[].driving",
             "model.parameters[].expression",

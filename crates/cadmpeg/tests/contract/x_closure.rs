@@ -567,13 +567,17 @@ fn observe_fcstd() -> ObservedFcstd {
     }
     let fixed_paths = single_value_paths(&documents);
     let carried = observe_carried(&documents);
+    let rules = super::freecad_storage::topology_rules();
     let reduced = encoder
         .reduced_fields()
         .iter()
         .map(|row| ReducedProbe {
             path: row.path,
             storage: row.storage,
-            normalize: None,
+            normalize: rules
+                .iter()
+                .find(|rule| rule.path == row.path && rule.storage == row.storage)
+                .and_then(|rule| rule.normalize),
         })
         .collect();
     ObservedFcstd {
@@ -664,6 +668,7 @@ fn observe_f3d() -> ObservedF3d {
                 "model.bodies[].color.a" | "model.faces[].color.a" => {
                     Some(|_| serde_json::Value::from(1.0))
                 }
+                "model.features[].needs_recompute" => Some(|_| serde_json::Value::from(false)),
                 _ => None,
             },
         })

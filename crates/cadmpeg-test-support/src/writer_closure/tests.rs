@@ -121,6 +121,43 @@ fn a_field_row_normalizes_the_whole_field_below_it() {
 }
 
 #[test]
+fn a_row_that_normalizes_to_null_leaves_the_field_absent() {
+    use crate::cross_closure::ReducedProbe;
+    use cadmpeg_ir::codec::write::ReducedStorage;
+    use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
+
+    let row = ReducedProbe {
+        path: "model.semantic_annotations[].value",
+        storage: ReducedStorage::Normalized {
+            loss: "fcstd/annotation.value-derived",
+        },
+        normalize: Some(|_| serde_json::Value::Null),
+    };
+    let note = LossNote::new(
+        LossKind::namespaced(
+            cadmpeg_ir::loss_namespace!("fcstd"),
+            "annotation.value-derived",
+            LossTaxonomy::MetadataNotTransferred,
+        ),
+        "annotation#1 value derived",
+    );
+    let mut candidate =
+        json!({"model":{"semantic_annotations":[{"id":"annotation#1","value":91.0}]}});
+    normalize_edit(
+        &mut candidate,
+        "/model/semantic_annotations/0/value",
+        &row,
+        "annotation#1",
+        &[note],
+    )
+    .expect("declared loss permits normalization");
+    assert_eq!(
+        candidate.pointer("/model/semantic_annotations/0"),
+        Some(&json!({"id":"annotation#1"}))
+    );
+}
+
+#[test]
 fn dropped_native_list_member_does_not_make_the_owner_missing() {
     use crate::comparison::{unpaired_after_allowances, Allowances};
     let before = json!({

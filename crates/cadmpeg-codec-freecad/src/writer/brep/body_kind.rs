@@ -20,12 +20,36 @@ impl<'a> Topology<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
         let model = &ir.model;
         Self {
-            shells: model.shells.iter().map(|row| (row.id.as_str(), row)).collect(),
-            faces: model.faces.iter().map(|row| (row.id.as_str(), row)).collect(),
-            loops: model.loops.iter().map(|row| (row.id.as_str(), row)).collect(),
-            coedges: model.coedges.iter().map(|row| (row.id.as_str(), row)).collect(),
-            edges: model.edges.iter().map(|row| (row.id.as_str(), row)).collect(),
-            regions: model.regions.iter().map(|row| (row.id.as_str(), row)).collect(),
+            shells: model
+                .shells
+                .iter()
+                .map(|row| (row.id.as_str(), row))
+                .collect(),
+            faces: model
+                .faces
+                .iter()
+                .map(|row| (row.id.as_str(), row))
+                .collect(),
+            loops: model
+                .loops
+                .iter()
+                .map(|row| (row.id.as_str(), row))
+                .collect(),
+            coedges: model
+                .coedges
+                .iter()
+                .map(|row| (row.id.as_str(), row))
+                .collect(),
+            edges: model
+                .edges
+                .iter()
+                .map(|row| (row.id.as_str(), row))
+                .collect(),
+            regions: model
+                .regions
+                .iter()
+                .map(|row| (row.id.as_str(), row))
+                .collect(),
         }
     }
 

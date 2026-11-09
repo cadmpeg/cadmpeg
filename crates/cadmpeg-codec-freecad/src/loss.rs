@@ -165,6 +165,12 @@ pub(crate) enum FreecadLossCode {
     ParameterDrivingNotTransferred,
     /// An expression is stored using the native scalar or cell spelling.
     ParameterExpressionNormalized,
+    /// A literal primitive dimension is stored as a property parameter.
+    FeatureDimensionParameterized,
+    /// A coedge radial order is stored only for an edge with two uses.
+    TopologyRadialOrderNotStored,
+    /// A dimension value is measured on its saved reference geometry.
+    AnnotationValueDerived,
     /// An occurrence placement is not a rigid motion `FreeCAD` stores.
     ProductPlacementNotRigid,
     /// A joint connector frame is not a rigid motion `FreeCAD` stores.
@@ -268,6 +274,9 @@ impl FreecadLossCode {
         Self::ParameterNameNotTransferred,
         Self::ParameterDrivingNotTransferred,
         Self::ParameterExpressionNormalized,
+        Self::FeatureDimensionParameterized,
+        Self::TopologyRadialOrderNotStored,
+        Self::AnnotationValueDerived,
         Self::ProductPlacementNotRigid,
         Self::JointFrameNotRigid,
         Self::SketchPlacementNormalized,
@@ -365,6 +374,9 @@ impl FreecadLossCode {
             Self::ParameterNameNotTransferred => "parameter.name-not-transferred",
             Self::ParameterDrivingNotTransferred => "parameter.driving-not-transferred",
             Self::ParameterExpressionNormalized => "parameter.expression-normalized",
+            Self::FeatureDimensionParameterized => "feature.dimension-parameterized",
+            Self::TopologyRadialOrderNotStored => "topology.radial-order-not-stored",
+            Self::AnnotationValueDerived => "annotation.value-derived",
             Self::ProductPlacementNotRigid => "product.placement-not-rigid",
             Self::JointFrameNotRigid => "joint.frame-not-rigid",
             Self::SketchPlacementNormalized => "sketch.placement-normalized",
@@ -455,6 +467,9 @@ impl FreecadLossCode {
             | Self::ParameterNameNotTransferred
             | Self::ParameterDrivingNotTransferred
             | Self::ParameterExpressionNormalized
+            | Self::FeatureDimensionParameterized
+            | Self::TopologyRadialOrderNotStored
+            | Self::AnnotationValueDerived
             | Self::ProductPlacementNotRigid
             | Self::JointFrameNotRigid
             | Self::SketchPlacementNormalized
@@ -489,6 +504,8 @@ impl FreecadLossCode {
             Self::ExportPresentationNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::ExportProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::ExportGeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
+            Self::TopologyRadialOrderNotStored => LossTaxonomy::TopologyNotTransferred,
+            Self::AnnotationValueDerived => LossTaxonomy::MetadataNotTransferred,
             Self::ExportNativePropertyNotTransferred
             | Self::DrawingSourceNotTransferred
             | Self::ProductMembershipNotTransferred => LossTaxonomy::MetadataNotTransferred,
@@ -542,6 +559,7 @@ impl FreecadLossCode {
             | Self::FeatureLengthNotTransferred
             | Self::ParameterDrivingNotTransferred
             | Self::ParameterExpressionNormalized
+            | Self::FeatureDimensionParameterized
             | Self::ProductPlacementNotRigid
             | Self::JointFrameNotRigid
             | Self::SketchPlacementNormalized
@@ -677,6 +695,9 @@ mod tests {
                 "parameter.name-not-transferred",
                 "parameter.driving-not-transferred",
                 "parameter.expression-normalized",
+                "feature.dimension-parameterized",
+                "topology.radial-order-not-stored",
+                "annotation.value-derived",
                 "product.placement-not-rigid",
                 "joint.frame-not-rigid",
                 "sketch.placement-normalized",
