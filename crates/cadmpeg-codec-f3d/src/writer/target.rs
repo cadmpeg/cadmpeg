@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeError, EncodeInput, ExportBody,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -30,7 +30,7 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     if target.preserves_source() {
         return match preserve(input)? {
             Preservation::Written {
@@ -184,7 +184,7 @@ impl SynthesisCause {
 fn synthesized_body(
     input: EncodeInput<'_>,
     cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     let super::synthesis::Synthesized {
         bytes,
         coverage,

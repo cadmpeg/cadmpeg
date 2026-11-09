@@ -59,6 +59,29 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Writes `ir` and asserts that the write succeeds with a loss that names
+/// `record`: content the writer cannot write is written from the canonical
+/// side (#217 §5.0).
+pub(crate) fn assert_written_naming(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    record: &str,
+) -> cadmpeg_ir::report::export::ExportReport {
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect("content the writer cannot write does not refuse the write");
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(record)),
+        "no loss names {record}: {:?}",
+        report.losses
+    );
+    report
+}
+
 /// A finite test value as the checked scalar a record holds.
 pub(crate) fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("a finite test value")

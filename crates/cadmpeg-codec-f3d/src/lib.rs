@@ -294,15 +294,7 @@ impl EncoderBackend for F3dCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(|error| match error {
-            cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
-            cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
-            cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
-            error => {
-                debug_assert!(false, "unmapped F3D encode error: {error}");
-                panic!("unmapped F3D encode error: {error}");
-            }
-        })
+        writer::target::plan(input, &target)
     }
 }
 
