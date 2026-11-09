@@ -8043,6 +8043,9 @@ fn bind_historical_edge_operand<'a>(
         })
         .collect::<Vec<_>>();
     operand.recipe_state_id = Some(previous_state_id);
+    let mut transition_deleted = deleted_edges.clone();
+    transition_deleted.sort_unstable();
+    operand.transition_deleted_edge_slots = transition_deleted;
     operand.result_candidate_faces =
         selection::faces_in_topology(&operand.candidate_faces, result_topology);
     operand.result_boundary_edge_slots = face_boundary_edges(
