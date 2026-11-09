@@ -457,7 +457,7 @@ Same-index scope envelopes with the same logical payload are equivalent generati
 
 The last edge-recipe member of a counted construction-operand group ends at the immediately following indexed record. Its terminal record index need not continue the consecutive indices of the member's four-record envelope.
 
-A body-map entity suffix between a history-bearing parameter scope and the next parameter scope is the result body of the first scope. Its BREP basename selects that scope's ASM history when the scope's state pair occurs in multiple histories. A whole-body recipe whose solved candidate faces name exactly one candidate BREP supplies the same history selection.
+A body-map entity suffix between a history-bearing parameter scope and the next parameter scope is the result body of the first scope. Its BREP basename selects that scope's ASM history when the scope's state pair occurs in multiple histories. A whole-body recipe whose solved candidate faces name exactly one candidate BREP supplies the same history selection. A feature with an unbound scope uses the unique history that contains its state pair in the BREP blob shared by every output body, or by every body its Base Feature resolves, for history properties and its output transition interval.
 
 History-state identities and body slots are local to one ASM history. A construction recipe state resolves by Design stream, bound ASM history, and state identity; the same numeric state identity in another history does not name the recipe's topology state or its producing feature.
 
