@@ -603,7 +603,8 @@ impl<'a> Graph<'a, '_> {
     }
 
     /// Whether exactly one distinct member of the field carries the stored
-    /// key. A field without a stored key needs no carrier.
+    /// key, with every entity member resolved. A field without a stored key
+    /// needs no carrier.
     fn field_key(&self, field: &Field<'_>, expected: Option<u32>) -> bool {
         let Some(expected) = expected else {
             return true;
@@ -615,7 +616,7 @@ impl<'a> Graph<'a, '_> {
                     continue;
                 };
                 let Some((entity, _)) = self.record(id) else {
-                    continue;
+                    return false;
                 };
                 let matches = match &entity.body {
                     CatiaEntityRecordBody::Inline(_) => (|| {
@@ -1287,6 +1288,7 @@ pub(crate) fn transfer(
                     continue;
                 }
                 let Some(with_drf) = with_drf else {
+                    stats.unresolved_secondaries += 1;
                     continue;
                 };
                 let Some(secondary) =

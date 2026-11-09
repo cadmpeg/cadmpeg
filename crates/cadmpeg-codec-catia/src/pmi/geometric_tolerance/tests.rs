@@ -116,6 +116,8 @@ enum FixtureCase {
     KeylessMain,
     AmbiguousSecondaryKey,
     UnresolvableSecondaryMember,
+    MissingSecondaryField,
+    RepeatedSecondaryField,
 }
 
 #[derive(Clone, Copy)]
@@ -322,7 +324,9 @@ fn fixture(options: Options) -> Vec<u8> {
         let at = secondary_declaration.len() - 5;
         secondary_declaration[at] = 0x7f;
     }
-    declarations.extend(secondary_declaration);
+    if !matches!(options.case, FixtureCase::MissingSecondaryField) {
+        declarations.extend(secondary_declaration);
+    }
     let tol = instance_field(
         ["TolBloc", "CATTPSToleranceData"],
         &[None, None, None],
@@ -347,7 +351,7 @@ fn fixture(options: Options) -> Vec<u8> {
     if matches!(options.case, FixtureCase::DuplicateField) {
         fields.extend(tol);
     }
-    fields.extend(instance_field(
+    let with_drf = instance_field(
         ["TolWiDRF", "CATTPSToleranceWiDRFData"],
         &[Some(id(4))],
         &[
@@ -357,7 +361,15 @@ fn fixture(options: Options) -> Vec<u8> {
             None,
         ],
         options,
-    ));
+    );
+    let with_drf_fields = match options.case {
+        FixtureCase::MissingSecondaryField => 0,
+        FixtureCase::RepeatedSecondaryField => 2,
+        _ => 1,
+    };
+    for _ in 0..with_drf_fields {
+        fields.extend(&with_drf);
+    }
     let mut records = vec![(
         inline_entity(
             id(1),
@@ -367,7 +379,8 @@ fn fixture(options: Options) -> Vec<u8> {
         ),
         instance(
             fields,
-            3 + u8::from(matches!(options.case, FixtureCase::InstanceBlobDecoy))
+            2 + with_drf_fields
+                + u8::from(matches!(options.case, FixtureCase::InstanceBlobDecoy))
                 + u8::from(matches!(options.case, FixtureCase::DuplicateField)),
         ),
     )];
@@ -1018,7 +1031,7 @@ fn secondary_metadata_key_binds_its_frame_or_reports_unresolved_meaning() {
 fn ambiguous_or_unresolvable_secondary_key_members_keep_the_secondary() {
     for (case, unresolved_keys) in [
         (FixtureCase::AmbiguousSecondaryKey, 1),
-        (FixtureCase::UnresolvableSecondaryMember, 0),
+        (FixtureCase::UnresolvableSecondaryMember, 1),
     ] {
         let (_, stats) = decode(&fixture(Options {
             secondary: 1,
@@ -1042,6 +1055,23 @@ fn unreadable_secondary_declaration_charges_an_untransferred_secondary() {
     assert_eq!(stats.main_tolerances, 1);
     assert_eq!(stats.secondary_tolerances, 0);
     assert_eq!(stats.unresolved_secondaries, 1);
+}
+
+#[test]
+fn missing_or_repeated_secondary_field_charges_an_untransferred_secondary() {
+    for case in [
+        FixtureCase::MissingSecondaryField,
+        FixtureCase::RepeatedSecondaryField,
+    ] {
+        let (_, stats) = decode(&fixture(Options {
+            secondary: 1,
+            case,
+            ..Options::default()
+        }));
+        assert_eq!(stats.main_tolerances, 1);
+        assert_eq!(stats.secondary_tolerances, 0);
+        assert_eq!(stats.unresolved_secondaries, 1);
+    }
 }
 
 #[test]
