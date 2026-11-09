@@ -4,7 +4,7 @@
 use super::{
     anonymous_with_children, class_wrapper, class_wrapper_with_direct, component,
     crc_chunk_with_direct, object_record, records, source_record_resolves, utf16, uuid, wire_index,
-    CadIr, CodecError, Value,
+    CadIr, Value,
 };
 
 const GROUP_CLASS: [u8; 16] = [
@@ -14,7 +14,7 @@ const LINETYPE_CLASS: [u8; 16] = [
     0x24, 0x0a, 0xf1, 0x26, 0x13, 0x7d, 0x05, 0x4f, 0x8f, 0xda, 0x8e, 0x36, 0x4d, 0xaf, 0x8e, 0xa6,
 ];
 
-pub(in crate::writer) fn groups(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(in crate::writer) fn groups(ir: &CadIr) -> Result<Vec<Vec<u8>>, crate::writer::WriteError> {
     let mut output = Vec::new();
     for (index, record) in records(ir, "groups")
         .iter()
@@ -51,7 +51,10 @@ pub(in crate::writer) fn group_resolves(ir: &CadIr, record: &cadmpeg_ir::NativeR
         .unwrap_or(false)
 }
 
-pub(in crate::writer) fn group_indices(ir: &CadIr, identity: &str) -> Result<Vec<i32>, CodecError> {
+pub(in crate::writer) fn group_indices(
+    ir: &CadIr,
+    identity: &str,
+) -> Result<Vec<i32>, crate::writer::WriteError> {
     let Some(source) = object_record(ir, identity) else {
         return Ok(Vec::new());
     };
@@ -71,7 +74,7 @@ pub(in crate::writer) fn group_indices(ir: &CadIr, identity: &str) -> Result<Vec
                 })
                 .unwrap_or(false)
         })
-        .map(|(index, _)| wire_index(index))
+        .map(|(index, _)| wire_index(index).map_err(crate::writer::WriteError::from))
         .collect()
 }
 
@@ -80,15 +83,27 @@ mod tests;
 
 enum LinetypeError {
     Omit(String),
-    Fail(CodecError),
+    Fail(crate::writer::WriteError),
 }
 
-impl From<CodecError> for LinetypeError {
-    fn from(error: CodecError) -> Self {
+impl From<crate::writer::WriteError> for LinetypeError {
+    fn from(error: crate::writer::WriteError) -> Self {
         match error {
-            CodecError::Malformed(reason) | CodecError::InvalidInput(reason) => Self::Omit(reason),
+            crate::writer::WriteError::Omit(reason) => Self::Omit(reason),
             error => Self::Fail(error),
         }
+    }
+}
+
+impl From<cadmpeg_ir::codec::write::EncodeError> for LinetypeError {
+    fn from(error: cadmpeg_ir::codec::write::EncodeError) -> Self {
+        Self::Fail(error.into())
+    }
+}
+
+impl From<cadmpeg_core::CodecError> for LinetypeError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        crate::writer::WriteError::from(error).into()
     }
 }
 
@@ -98,7 +113,9 @@ pub(in crate::writer) struct LinetypeExport {
     pub(in crate::writer) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-pub(in crate::writer) fn linetypes(ir: &CadIr) -> Result<LinetypeExport, CodecError> {
+pub(in crate::writer) fn linetypes(
+    ir: &CadIr,
+) -> Result<LinetypeExport, crate::writer::WriteError> {
     let mut result = LinetypeExport {
         records: Vec::new(),
         indices: std::collections::BTreeMap::new(),
@@ -139,7 +156,7 @@ pub(in crate::writer) fn linetypes(ir: &CadIr) -> Result<LinetypeExport, CodecEr
 pub(in crate::writer) fn linetype_index(
     ir: &CadIr,
     source: i32,
-) -> Result<Option<i32>, CodecError> {
+) -> Result<Option<i32>, crate::writer::WriteError> {
     if source < 0 {
         return Ok(Some(source));
     }
@@ -159,7 +176,7 @@ pub(in crate::writer) fn linetype_index(
 }
 
 fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, LinetypeError> {
-    let fields = record.fields().map_err(CodecError::from)?;
+    let fields = record.fields().map_err(crate::writer::WriteError::from)?;
     let mut payload = component(
         record.id(),
         wire_index(index)?,

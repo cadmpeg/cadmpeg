@@ -3,7 +3,7 @@
 
 use super::{
     anonymous, anonymous_with_children, framed_object_record, integer, object_attributes_payload,
-    utf16, wire_index, CadIr, CodecError, LossNote, Map, RhinoLossCode, Value,
+    utf16, wire_index, CadIr, LossNote, Map, RhinoLossCode, Value,
 };
 use crate::writer::WriteError;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
@@ -244,7 +244,7 @@ fn dot(
     annotation: &SemanticAnnotation,
     position: [f64; 3],
     fields: Option<&Map<String, Value>>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let mut payload = vec![0x11];
     for value in position {
         payload.extend(value.to_le_bytes());
@@ -358,7 +358,7 @@ fn v1_dimension(
     position: [f64; 3],
     record: &Map<String, Value>,
     plane_fields: &Map<String, Value>,
-) -> Result<Option<V1DimensionPayload>, CodecError> {
+) -> Result<Option<V1DimensionPayload>, crate::writer::WriteError> {
     let Some(fields) = record.get("payload").and_then(|v| v.get("fields")) else {
         return Ok(None);
     };

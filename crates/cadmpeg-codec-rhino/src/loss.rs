@@ -333,6 +333,9 @@ pub(crate) enum RhinoLossCode {
     WriterBodyPlacementBaked,
     /// No geometry can be written to the target.
     NoExportableSolids,
+    /// The Rhino native records cannot be written; synthesis writes the
+    /// neutral content alone.
+    WriterNativeRecordsOmitted,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -469,6 +472,7 @@ impl RhinoLossCode {
         Self::WriterBodyPlacementOmitted,
         Self::WriterBodyPlacementBaked,
         Self::NoExportableSolids,
+        Self::WriterNativeRecordsOmitted,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
@@ -579,6 +583,7 @@ impl RhinoLossCode {
             Self::WriterBodyPlacementOmitted => "body.placement-omitted",
             Self::WriterBodyPlacementBaked => "writer.body-placement-baked",
             Self::NoExportableSolids => "export.no-exportable-solids",
+            Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
@@ -718,6 +723,7 @@ impl RhinoLossCode {
             | Self::WriterHatchPatternFieldsReduced => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
+            Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -876,6 +882,7 @@ mod tests {
                 "body.placement-omitted",
                 "writer.body-placement-baked",
                 "export.no-exportable-solids",
+                "writer.native-records-omitted",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",

@@ -2,7 +2,6 @@
 //! Rhino target resolution and export reporting.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, CapacityField,
     Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
@@ -18,23 +17,6 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, EncodeError> {
-    let mut input_records = 0_u64;
-    for count in input.ir.census().values() {
-        let count = cadmpeg_core::decode::u64_from_index(*count);
-        if count > input.limits.max_entities - input_records {
-            return Err(cadmpeg_core::decode::ResourceLimit {
-                scope: cadmpeg_core::decode::LimitScope::Session,
-                dimension: cadmpeg_core::decode::ResourceDimension::Entities,
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: input.limits.max_entities,
-                used: input.limits.max_entities,
-                additional: 1,
-                operation: "inspect Rhino input records",
-            }
-            .into());
-        }
-        input_records += count;
-    }
     let synthesis = target.for_synthesis()?;
     let target = synthesis.resolution();
     let index = synthesis.index();
@@ -52,6 +34,15 @@ pub(crate) fn plan(
         limits: input.limits,
     };
     let ctx = DecodeContext::for_encode(&arena, &policy);
+    // The caller's entity ceiling bounds the input records synthesis visits
+    // (#217 §5.0).
+    let records = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    for count in input.ir.census().values() {
+        records.charge_entities(
+            cadmpeg_core::decode::u64_from_index(*count),
+            "inspect Rhino input records",
+        )?;
+    }
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(&ctx, input.ir)?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let (bytes, outcome) = super::write(&ctx, &recovered.document, version, &session)?;
@@ -363,33 +354,38 @@ pub(crate) fn plan(
     }
     let (verify_ctx, verify_root) =
         DecodeContext::for_encode_session_root(&arena, &session, bytes.as_bytes())?;
-    let coverage = ArenaCoverage::Declared(coverage::verified(
-        &verify_ctx,
-        input.ir,
-        verify_root.window(),
-        outcome.subds,
-        !outcome.history_features.is_empty(),
-    ));
+    let coverage = if outcome.content == super::WrittenContent::Empty {
+        ArenaDispositions::uniform(ArenaDisposition::Omitted)
+    } else {
+        coverage::verified(
+            &verify_ctx,
+            input.ir,
+            verify_root.window(),
+            outcome.subds,
+            !outcome.history_features.is_empty(),
+        )
+    };
+    let coverage = ArenaCoverage::Declared(coverage);
     session.finish()?;
+    let native_dispositions = match super::native_dispositions(input.ir, version) {
+        Ok(_) if outcome.content != super::WrittenContent::Document => {
+            cadmpeg_ir::codec::write::NativeDispositions::default()
+        }
+        Ok(dispositions) => dispositions,
+        Err(error) => {
+            let reason = super::content_failure(input.ir, error)?;
+            losses.push(RhinoLossCode::WriterNativeRecordsOmitted.note(format!(
+                "the Rhino native records cannot be stated as written ({reason}); each is reported omitted"
+            )));
+            cadmpeg_ir::codec::write::NativeDispositions::for_namespace(
+                "rhino",
+                crate::native_registry::ARENAS,
+                cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+            )
+        }
+    };
     Ok(ExportBody {
-        native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {
-            match error {
-                super::WriteError::Omit(message) => {
-                    debug_assert!(false, "Rhino native disposition omission: {message}");
-                    panic!("Rhino native disposition omission: {message}");
-                }
-                super::WriteError::Fail(error) => match error {
-                    CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
-                    CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
-                    CodecError::Io(e) => EncodeError::from(e),
-                    error => {
-                        debug_assert!(false, "unmapped Rhino encode error: {error}");
-                        panic!("unmapped Rhino encode error: {error}");
-                    }
-                },
-                super::WriteError::Encode(error) => error,
-            }
-        })?,
+        native_dispositions,
         synthesis_cause: None,
         bytes: bytes.into_vec(),
         census: cadmpeg_ir::report::export::EntityCensus {
@@ -499,16 +495,24 @@ pub(crate) enum ReducedStorage {
 /// The writer emits only archive words at and above 50, whose chunk framing
 /// stores an eight-byte declared length (`docs/formats/rhino_3dm.md` §4).
 /// `archive_body_len` enforces the declared field width.
-pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
-    field: "chunk.declared_length",
-    limit: 9_223_372_036_854_775_807,
-    source: "docs/formats/rhino_3dm.md §4: archive version >= 50 stores an i64 declared_length",
-    helper: "archive_body_len",
-}];
+pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[
+    CapacityField {
+        field: "chunk.declared_length",
+        limit: 9_223_372_036_854_775_807,
+        source: "docs/formats/rhino_3dm.md §4: archive version >= 50 stores an i64 declared_length",
+        helper: "archive_body_len",
+    },
+    CapacityField {
+        field: "archive.i32_index",
+        limit: 2_147_483_647,
+        source: "docs/formats/rhino_3dm.md §3: an archive array stores an i32 count; component indexes are i32",
+        helper: "wire_index",
+    },
+];
 
 const _: () = {
     assert!(REDUCED_FIELDS.len() == 8);
-    assert!(CAPACITY_FIELDS.len() == 1);
+    assert!(CAPACITY_FIELDS.len() == 2);
 };
 
 /// Fallback claims are promoted only after full-record verification under a
