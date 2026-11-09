@@ -566,7 +566,44 @@ fn observe_fcstd() -> ObservedFcstd {
         documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
     }
     let fixed_paths = single_value_paths(&documents);
-    let carried = observe_carried(&documents);
+    let mut carried = observe_carried(&documents);
+    // An OCCT edge holds a parameter range only with a 3D curve, and a 3D
+    // curve only with its range.
+    use cadmpeg_test_support::carried::EdgeCarrierVariant;
+    carried.edge_carriers = Some(std::collections::BTreeSet::from([
+        EdgeCarrierVariant::Free,
+        EdgeCarrierVariant::Bounded,
+    ]));
+    use cadmpeg_test_support::carried::UnheldClass;
+    carried.unheld = std::collections::BTreeSet::from([
+        UnheldClass::EllipticalCone,
+        UnheldClass::MultiPcurveCoedge,
+        UnheldClass::ConstructionBesideSolvedCurve,
+        UnheldClass::DocumentIdentityReference,
+        UnheldClass::ColourlessAppearance,
+        UnheldClass::DerivedBodyKind,
+        UnheldClass::LiteralPrimitiveDimension,
+        UnheldClass::PartOwnedBodies,
+        UnheldClass::NonIdentifierProductName,
+        UnheldClass::SolvedSurfaceBesideConstruction,
+        UnheldClass::ForeignNativeFeature,
+        UnheldClass::TextParameter,
+        UnheldClass::UnencodedSurface,
+        UnheldClass::MixedShell,
+        UnheldClass::UnboundAppearance,
+        UnheldClass::OrphanPcurve,
+        UnheldClass::DescendingPcurveRange,
+        UnheldClass::FeatureOutsideModel,
+        UnheldClass::UncanonicalLiteralExpression,
+        UnheldClass::DistinctSketchFeatureName,
+        UnheldClass::ForeignNativeConstraint,
+        UnheldClass::ConstraintParameter,
+        UnheldClass::UnencodedAttribute,
+        UnheldClass::UnresolvedFeature,
+        UnheldClass::RangelessEdgePcurve,
+        UnheldClass::ReinterpretedConstructionSurface,
+        UnheldClass::SecondCoedgePcurve,
+    ]);
     let rules = super::freecad_storage::topology_rules();
     let reduced = encoder
         .reduced_fields()
@@ -839,3 +876,4 @@ fn iges_cross_closure_carries_other_formats() {
     }
     assert_none(&findings);
 }
+
