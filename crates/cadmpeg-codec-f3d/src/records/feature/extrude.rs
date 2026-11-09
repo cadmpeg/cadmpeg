@@ -100,11 +100,21 @@ pub(crate) enum DesignExtrudeReferenceType {
     ConstructionGroup,
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_type_guid,
+    DesignExtrudeReferenceType,
+    "type_guid"
+);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct DesignExtrudePrologueReferenceWire {
     /// Referenced Design record.
     record_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_type_guid"
+    )]
     type_guid: Option<DesignExtrudeReferenceType>,
     /// Byte offset of `record_index`.
     record_index_offset: u64,
