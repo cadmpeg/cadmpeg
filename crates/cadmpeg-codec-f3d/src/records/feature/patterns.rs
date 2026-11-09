@@ -52,7 +52,20 @@ pub(crate) struct DesignCircularPatternConstruction {
     pub(crate) axis_record_index: u32,
     /// Referenced persistent selection operand.
     pub(crate) selection_record_index: u32,
+    /// Byte offset of the `u8 1` separator of a 130-byte axis record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_axis_separator_flag_offset"
+    )]
+    pub(crate) axis_separator_flag_offset: Option<u64>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_axis_separator_flag_offset,
+    u64,
+    "axis_separator_flag_offset"
+);
 
 /// Proven origin and unit direction.
 #[derive(Debug, Clone, Copy, PartialEq)]
