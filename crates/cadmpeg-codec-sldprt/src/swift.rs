@@ -616,6 +616,8 @@ pub(crate) fn annotations(
         &root,
         &mut projected,
         face_identities,
+        crate::container::declared_sw_version(scan)
+            .and_then(|version| version.trim().parse::<u32>().ok()),
         losses,
     )?;
     if presentation.is_unframed() {

@@ -94,6 +94,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftPresentationUnframed,
     /// A SWIFT display selects faces through a one- or two-string in-place document.
     PmiSwiftFaceDocumentLayoutAssumed,
+    /// A SWIFT display selects faces through an in-place document whose tail length the file's `swVersion` does not establish.
+    PmiSwiftFaceDocumentTailAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -328,6 +330,7 @@ impl SldprtLossCode {
         Self::PmiSwiftPresentationUnresolved,
         Self::PmiSwiftPresentationUnframed,
         Self::PmiSwiftFaceDocumentLayoutAssumed,
+        Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -444,6 +447,7 @@ impl SldprtLossCode {
             Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
             Self::PmiSwiftPresentationUnframed => "pmi.swift-presentation-unframed",
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
+            Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -597,6 +601,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftPresentationUnresolved
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
+            | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -768,7 +773,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
             | Self::PmiSwiftPresentationUnframed
-            | Self::PmiSwiftFaceDocumentLayoutAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftFaceDocumentLayoutAssumed
+            | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1003,6 +1009,7 @@ mod tests {
                 "pmi.swift-presentation-unresolved",
                 "pmi.swift-presentation-unframed",
                 "pmi.swift-face-document-layout-assumed",
+                "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",

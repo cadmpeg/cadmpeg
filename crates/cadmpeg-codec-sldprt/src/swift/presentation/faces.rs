@@ -23,6 +23,7 @@ const DOCUMENT_FORM: u16 = 2;
 const DOCUMENT_STRINGS: usize = 3;
 const DOCUMENT_BYTES_BEFORE_CONFIGURATION: [usize; 2] = [17, 18];
 const DOCUMENT_BYTES_AFTER_CONFIGURATION: usize = 12;
+const DOCUMENT_TAIL_STATED_BELOW_SW_VERSION: u32 = 17_000;
 const ENTRY_TRAILER: usize = 8;
 const FEATURE_RECORD_WORDS: usize = 8;
 
@@ -41,9 +42,33 @@ pub(in crate::swift) struct FaceIdentity {
 pub(super) struct IdentityReference {
     pub(super) offset: usize,
     pub(super) face: Option<FaceIdentity>,
-    /// The first hop's document is written in place with one or two strings,
-    /// a layout that `sldprt.md` §2.3 does not state (open item EV-14).
-    pub(super) assumed_document: bool,
+    pub(super) document: DocumentLayout,
+}
+
+/// How a face reference's first hop reads a document written in place.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct DocumentLayout {
+    /// The hop reads a document written in place, with the 12-byte tail
+    /// after its configuration name.
+    pub(super) in_place: bool,
+    /// That document holds one or two strings, a count that `sldprt.md` §2.3
+    /// does not state (open item EV-14).
+    pub(super) short: bool,
+}
+
+impl DocumentLayout {
+    pub(super) fn merge(self, other: Self) -> Self {
+        Self {
+            in_place: self.in_place || other.in_place,
+            short: self.short || other.short,
+        }
+    }
+
+    /// Whether `sldprt.md` §2.3 states the 12-byte tail of an in-place
+    /// document in a file with this `swVersion` declaration.
+    pub(super) fn tail_is_stated(sw_version: Option<u32>) -> bool {
+        sw_version.is_some_and(|version| version < DOCUMENT_TAIL_STATED_BELOW_SW_VERSION)
+    }
 }
 
 /// One reading of a `moFR_c` object's document: the offset after it and the
@@ -81,21 +106,21 @@ pub(super) fn identity_references(archive: &[u8]) -> Vec<IdentityReference> {
             .map(|&offset| IdentityReference {
                 offset,
                 face: None,
-                assumed_document: false,
+                document: DocumentLayout::default(),
             })
             .collect();
     };
     headers
         .iter()
         .map(|&offset| {
-            let (face, assumed_document) = match reader.face(offset) {
-                Some((face, assumed)) => (Some(face), assumed),
-                None => (None, false),
+            let (face, document) = match reader.face(offset) {
+                Some((face, document)) => (Some(face), document),
+                None => (None, DocumentLayout::default()),
             };
             IdentityReference {
                 offset,
                 face,
-                assumed_document,
+                document,
             }
         })
         .collect()
@@ -322,7 +347,7 @@ impl<'a> Reader<'a> {
 
     /// The identity that the first hop of the face reference at `header`
     /// names.
-    fn face(&self, header_offset: usize) -> Option<(FaceIdentity, bool)> {
+    fn face(&self, header_offset: usize) -> Option<(FaceIdentity, DocumentLayout)> {
         if !self.is_face_reference(header_offset) {
             return None;
         }
@@ -358,19 +383,22 @@ impl<'a> Reader<'a> {
                 let identity = self.closed_identity(reading.end, words, hops)?;
                 Some((
                     identity,
-                    reading
-                        .strings
-                        .is_some_and(|strings| strings < DOCUMENT_STRINGS),
+                    DocumentLayout {
+                        in_place: reading.strings.is_some(),
+                        short: reading
+                            .strings
+                            .is_some_and(|strings| strings < DOCUMENT_STRINGS),
+                    },
                 ))
             });
-        let (identity, mut assumed) = identities.next()?;
-        for (other, other_assumed) in identities {
+        let (identity, mut layout) = identities.next()?;
+        for (other, other_layout) in identities {
             if other != identity {
                 return None;
             }
-            assumed |= other_assumed;
+            layout = layout.merge(other_layout);
         }
-        Some((identity, assumed))
+        Some((identity, layout))
     }
 
     /// The identity a hop's feature record and own words name when the next

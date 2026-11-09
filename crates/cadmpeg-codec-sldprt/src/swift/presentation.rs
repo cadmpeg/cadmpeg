@@ -39,7 +39,7 @@ const COMPOSITE_LOWER_TIER_SUFFIX: &str = ":lower-tier";
 const EPS_TIER_RATIO_E9: f64 = 1.0e-9;
 
 mod faces;
-use faces::{FaceIdentity, IdentityReference};
+use faces::{DocumentLayout, FaceIdentity, IdentityReference};
 
 /// The geometric-tolerance displays of one presentation archive.
 #[derive(Debug, Default)]
@@ -75,7 +75,7 @@ struct GtolDisplay {
     characteristics: Vec<String>,
     path: FeaturePath,
     faces: FaceAttachment,
-    assumed_document: bool,
+    document: DocumentLayout,
     rows: Vec<Row>,
     note: Option<String>,
 }
@@ -186,7 +186,7 @@ fn gtol_display(
         .filter_map(|text| characteristic(&text.value))
         .map(str::to_owned)
         .collect();
-    let (faces, assumed_document) = face_attachment(
+    let (faces, document) = face_attachment(
         references
             .iter()
             .filter(|reference| inside(reference.offset)),
@@ -197,32 +197,32 @@ fn gtol_display(
         characteristics,
         path: display_path(paths.iter().filter(|path| inside(path.offset))),
         faces,
-        assumed_document,
+        document,
         rows: frame_rows(&texts),
         note: frame_note(&texts),
     }
 }
 
-/// The faces a display's references select, and whether one of them reads
-/// its first hop through a document layout that §2.3 does not state.
+/// The faces a display's references select, and how their first hops read
+/// documents written in place.
 fn face_attachment<'a>(
     references: impl Iterator<Item = &'a IdentityReference>,
-) -> (FaceAttachment, bool) {
+) -> (FaceAttachment, DocumentLayout) {
     let mut faces = Vec::new();
-    let mut assumed = false;
+    let mut document = DocumentLayout::default();
     for reference in references {
         let Some(face) = &reference.face else {
-            return (FaceAttachment::Unresolved, false);
+            return (FaceAttachment::Unresolved, DocumentLayout::default());
         };
-        assumed |= reference.assumed_document;
+        document = document.merge(reference.document);
         if !faces.contains(face) {
             faces.push(face.clone());
         }
     }
     if faces.is_empty() {
-        (FaceAttachment::Absent, false)
+        (FaceAttachment::Absent, DocumentLayout::default())
     } else {
-        (FaceAttachment::Faces(faces), assumed)
+        (FaceAttachment::Faces(faces), document)
     }
 }
 
@@ -569,6 +569,7 @@ pub(super) fn annotations(
     root: &Entity,
     projected: &mut Vec<PmiAnnotation>,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
+    sw_version: Option<u32>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<PmiAnnotation>, usize), CodecError> {
     let faces = face_index(face_identities);
@@ -589,14 +590,21 @@ pub(super) fn annotations(
     };
     apply_datum_systems(projected, systems)?;
     let mut unresolved = 0usize;
-    let mut assumed = 0usize;
+    let mut short = 0usize;
+    let mut tail = 0usize;
+    let tail_is_stated = DocumentLayout::tail_is_stated(sw_version);
     let mut presentations = Vec::new();
     for (display, semantics) in archive.gtols.iter().zip(links) {
         let overflow = || CodecError::malformed("SWIFT display count overflows");
         if semantics.is_none() {
             unresolved = unresolved.checked_add(1).ok_or_else(overflow)?;
-        } else if display.path == FeaturePath::Absent && display.assumed_document {
-            assumed = assumed.checked_add(1).ok_or_else(overflow)?;
+        } else if display.path == FeaturePath::Absent {
+            if display.document.short {
+                short = short.checked_add(1).ok_or_else(overflow)?;
+            }
+            if display.document.in_place && !tail_is_stated {
+                tail = tail.checked_add(1).ok_or_else(overflow)?;
+            }
         }
         let id = PmiId::mint(format!("sldprt:model:pmi#display-{:x}", display.offset))
             .map_err(|_| CodecError::malformed("invalid SWIFT display ID"))?;
@@ -612,9 +620,18 @@ pub(super) fn annotations(
             },
         });
     }
-    if assumed > 0 {
+    if short > 0 {
         losses.push(SldprtLossCode::PmiSwiftFaceDocumentLayoutAssumed.note(format!(
-            "{assumed} SWIFT geometric-tolerance display(s) select faces through a document written in place with one or two strings, read as the three-string layout of sldprt.md section 2.3 without its third string"
+            "{short} SWIFT geometric-tolerance display(s) select faces through a document written in place with one or two strings, read as the document layout of sldprt.md section 2.3 with one or two of its three strings"
+        )));
+    }
+    if tail > 0 {
+        let version = sw_version.map_or_else(
+            || "no declared swVersion".to_owned(),
+            |version| format!("swVersion {version}"),
+        );
+        losses.push(SldprtLossCode::PmiSwiftFaceDocumentTailAssumed.note(format!(
+            "{tail} SWIFT geometric-tolerance display(s) select faces through a document written in place in a file with {version}, read with the 12-byte tail after its configuration name that sldprt.md section 2.3 states below swVersion 17000"
         )));
     }
     Ok((presentations, unresolved))

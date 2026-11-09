@@ -902,7 +902,7 @@ resolve a seed feature?
 
 **Conflict.** The history object reader requires three strings and skips 16 bytes after the configuration name in files whose `swVersion` is 17000 or above.
 
-**Note.** The SWIFT presentation reader reads a one- or two-string in-place object with its 12-byte tail and reports `pmi.swift-face-document-layout-assumed` for each display whose face selection depends on that reading.
+**Note.** The SWIFT presentation reader reads every in-place object with the 12-byte tail. It reports `pmi.swift-face-document-layout-assumed` for each display whose face selection depends on a one- or two-string object, and `pmi.swift-face-document-tail-assumed` for each display whose face selection depends on an in-place object in a file whose `swVersion` is 17000 or above or is not declared.
 
 ### EV-15. Feature-object block inputs
 

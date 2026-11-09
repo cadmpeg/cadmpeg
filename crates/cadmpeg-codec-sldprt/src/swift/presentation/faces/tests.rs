@@ -1,4 +1,4 @@
-use super::{identity_references, FaceIdentity, IdentityReference};
+use super::{identity_references, DocumentLayout, FaceIdentity, IdentityReference};
 use crate::layout::identity_reference_header as header;
 
 const FACE_REFERENCE_TAG: u16 = 0x8040;
@@ -62,7 +62,7 @@ fn document_head() -> Vec<u8> {
 
 /// A `moExtObject_c` written in place with `strings` empty strings and a
 /// `gap`-byte run before its configuration name.
-fn document_with(strings: usize, gap: usize) -> Vec<u8> {
+pub(in crate::swift) fn document_with(strings: usize, gap: usize) -> Vec<u8> {
     let mut bytes = document_head();
     for _ in 0..strings {
         bytes.extend(framed(""));
@@ -94,7 +94,7 @@ pub(in crate::swift) fn declared_reference(feature: u32, words: [u32; 3]) -> Vec
 
 /// A declared first face reference with the given in-place document; each
 /// entry of `more` is a further hop entry.
-fn declared_reference_with(
+pub(in crate::swift) fn declared_reference_with(
     document: &[u8],
     feature: u32,
     words: [u32; 3],
@@ -232,7 +232,7 @@ fn first_reading(document: &[u8], more: &[&[u8]]) -> (Option<FaceIdentity>, bool
     ]);
     let references = identity_references(&bytes);
     let first: &IdentityReference = references.first().expect("first reference");
-    (first.face.clone(), first.assumed_document)
+    (first.face.clone(), first.document.short)
 }
 
 #[test]
@@ -281,5 +281,27 @@ fn string_counts_that_close_on_different_identities_name_no_face() {
     assert_eq!(
         first_reading(&two_count_document(), &[&[0, 0]]),
         (None, false)
+    );
+}
+
+#[test]
+fn only_a_document_written_in_place_marks_the_in_place_layout() {
+    let bytes = archive(&[
+        declared_reference_with(&document_with(3, 17), 183, [1, 0, 0], &[]),
+        tagged_reference(44, [2, 0, 5], None),
+    ]);
+    let layouts = identity_references(&bytes)
+        .into_iter()
+        .map(|reference| reference.document)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        layouts,
+        [
+            DocumentLayout {
+                in_place: true,
+                short: false
+            },
+            DocumentLayout::default()
+        ]
     );
 }

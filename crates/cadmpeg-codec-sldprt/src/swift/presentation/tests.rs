@@ -1,4 +1,6 @@
-use super::faces::tests::{declared_reference, tagged_reference};
+use super::faces::tests::{
+    declared_reference, declared_reference_with, document_with, tagged_reference,
+};
 use super::{annotations, parse, Archive, FeaturePath};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
@@ -237,7 +239,7 @@ fn presentations(image: &Image<'_>) -> (Vec<PmiAnnotation>, usize) {
     let root = root();
     let mut projected = project(&root);
     let archive = parse(&image.bytes());
-    annotations(&archive, &root, &mut projected, &[], &mut Vec::new())
+    annotations(&archive, &root, &mut projected, &[], None, &mut Vec::new())
         .expect("presentation annotations")
 }
 
@@ -319,9 +321,15 @@ fn a_feature_path_selects_its_outer_feature_and_admits_member_suffixes() {
         FeaturePath::Features(vec![300, 200])
     );
     let root = root();
-    let (presentations, unresolved) =
-        annotations(&archive, &root, &mut project(&root), &[], &mut Vec::new())
-            .expect("presentation annotations");
+    let (presentations, unresolved) = annotations(
+        &archive,
+        &root,
+        &mut project(&root),
+        &[],
+        None,
+        &mut Vec::new(),
+    )
+    .expect("presentation annotations");
     assert_eq!(unresolved, 0);
     assert_eq!(
         depicted(only(&presentations)).1,
@@ -366,8 +374,15 @@ fn feature_paths_that_disagree_leave_the_display_unlinked() {
     let archive = parse(&image.bytes());
     assert_eq!(only(&archive.gtols).path, FeaturePath::Inconsistent);
     let root = root();
-    let (_, unresolved) = annotations(&archive, &root, &mut project(&root), &[], &mut Vec::new())
-        .expect("presentation annotations");
+    let (_, unresolved) = annotations(
+        &archive,
+        &root,
+        &mut project(&root),
+        &[],
+        None,
+        &mut Vec::new(),
+    )
+    .expect("presentation annotations");
     assert_eq!(unresolved, 1);
 }
 
@@ -403,9 +418,15 @@ fn the_last_display_without_a_following_list_is_unframed() {
     assert_eq!(archive.gtols.len(), 1);
     assert_eq!(archive.unbounded.len(), 1);
     let root = root();
-    let (presentations, unresolved) =
-        annotations(&archive, &root, &mut project(&root), &[], &mut Vec::new())
-            .expect("presentation annotations");
+    let (presentations, unresolved) = annotations(
+        &archive,
+        &root,
+        &mut project(&root),
+        &[],
+        None,
+        &mut Vec::new(),
+    )
+    .expect("presentation annotations");
     assert_eq!(presentations.len(), 1);
     assert_eq!(unresolved, 0);
     assert!(archive.is_unframed());
@@ -542,9 +563,15 @@ fn a_display_without_a_feature_path_depicts_the_tolerances_on_its_faces_and_supp
     ];
     let archive = parse(&image.bytes());
     let mut losses = Vec::new();
-    let (presentations, unresolved) =
-        annotations(&archive, &root, &mut projected, &identities, &mut losses)
-            .expect("presentations");
+    let (presentations, unresolved) = annotations(
+        &archive,
+        &root,
+        &mut projected,
+        &identities,
+        None,
+        &mut losses,
+    )
+    .expect("presentations");
     assert_eq!(unresolved, 0);
     assert!(losses
         .iter()
@@ -597,6 +624,7 @@ fn a_face_identity_without_a_current_face_leaves_the_display_unlinked() {
         &root,
         &mut projected,
         &identities,
+        None,
         &mut Vec::new(),
     )
     .expect("presentations");
@@ -738,6 +766,7 @@ fn composite_transfer(
         &root,
         &mut projected,
         &identities,
+        None,
         &mut Vec::new(),
     )
     .expect("presentations");
@@ -838,4 +867,98 @@ fn tier_literals_whose_ratio_differs_from_the_magnitudes_withhold_the_tier_datum
         composite_projected(),
     );
     assert_eq!(transferred(&projected), (vec![], vec![]));
+}
+
+/// The loss codes of a decode whose two flatness displays select faces, the
+/// first through `first`, in a file with the given `swVersion` declaration.
+fn face_route_loss_codes(first: Vec<u8>, sw_version: Option<u32>) -> Vec<String> {
+    let image = Image {
+        count: None,
+        gtols: vec![
+            Gtol {
+                name: "DetailItem1",
+                paths: vec![first],
+                rows: &[("<GTOL-FLAT>", ".02", &[])],
+                note: "",
+            },
+            Gtol {
+                name: "DetailItem2",
+                paths: vec![tagged_reference(44, [2, 0, 5], None)],
+                rows: &[("<GTOL-FLAT>", ".01", &[])],
+                note: "",
+            },
+        ],
+        datum_tags: true,
+        mirrors: &[],
+    };
+    let root = Entity {
+        class: ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut projected = vec![
+        tolerance("A1", GeometricToleranceKind::Flatness, 0.508, 10),
+        tolerance("A2", GeometricToleranceKind::Flatness, 0.254, 20),
+    ];
+    let identities = [
+        (face(10), persistent(183, 1, &[0, 0])),
+        (face(20), persistent(44, 2, &[0, 5])),
+    ];
+    let archive = parse(&image.bytes());
+    let mut losses = Vec::new();
+    let (presentations, unresolved) = annotations(
+        &archive,
+        &root,
+        &mut projected,
+        &identities,
+        sw_version,
+        &mut losses,
+    )
+    .expect("presentations");
+    assert_eq!(unresolved, 0);
+    assert_eq!(
+        linked(&presentations),
+        [vec!["sldprt:model:pmi#A1"], vec!["sldprt:model:pmi#A2"]]
+    );
+    losses
+        .iter()
+        .map(|loss| loss.code.local_code().to_owned())
+        .collect()
+}
+
+const TAIL_ASSUMED: &str = "pmi.swift-face-document-tail-assumed";
+const LAYOUT_ASSUMED: &str = "pmi.swift-face-document-layout-assumed";
+
+#[test]
+fn a_three_string_document_below_sw_version_17000_reads_its_stated_tail() {
+    let first = declared_reference_with(&document_with(3, 17), 183, [1, 0, 0], &[]);
+    assert_eq!(
+        face_route_loss_codes(first, Some(16_999)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn an_in_place_document_at_or_above_sw_version_17000_reports_the_assumed_tail() {
+    for version in [17_000, 34_000] {
+        let first = declared_reference_with(&document_with(3, 17), 183, [1, 0, 0], &[]);
+        assert_eq!(face_route_loss_codes(first, Some(version)), [TAIL_ASSUMED]);
+    }
+}
+
+#[test]
+fn an_in_place_document_without_a_declared_sw_version_reports_the_assumed_tail() {
+    let first = declared_reference_with(&document_with(3, 18), 183, [1, 0, 0], &[]);
+    assert_eq!(face_route_loss_codes(first, None), [TAIL_ASSUMED]);
+}
+
+#[test]
+fn a_two_string_document_above_sw_version_17000_reports_both_assumptions() {
+    assert_eq!(
+        face_route_loss_codes(declared_reference(183, [1, 0, 0]), Some(34_000)),
+        [LAYOUT_ASSUMED, TAIL_ASSUMED]
+    );
+    assert_eq!(
+        face_route_loss_codes(declared_reference(183, [1, 0, 0]), Some(11_000)),
+        [LAYOUT_ASSUMED]
+    );
 }
