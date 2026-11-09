@@ -407,6 +407,12 @@ pub(crate) enum F3dLossCode {
     FeatureLoftReferenceUnresolved,
     /// A three-flag `Loft` scope stores flag bytes whose Loft settings are unresolved.
     FeatureLoftSettingsAssumed,
+    /// A `Loft` scope body has no unique reading of its section and rail lists, and the scope stays native.
+    FeatureLoftListsUnresolved,
+    /// The section and rail lists of a `Loft` scope do not assign its construction-operand groups, and the scope stays native.
+    FeatureLoftGroupsUnassigned,
+    /// A `Loft` projects the one role-`0x7` group of its rail list as a centerline.
+    FeatureLoftCenterlineAssumed,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
     /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
@@ -784,6 +790,9 @@ impl F3dLossCode {
         Self::FeatureMoveTransformAssumed,
         Self::FeatureLoftReferenceUnresolved,
         Self::FeatureLoftSettingsAssumed,
+        Self::FeatureLoftListsUnresolved,
+        Self::FeatureLoftGroupsUnassigned,
+        Self::FeatureLoftCenterlineAssumed,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSurfaceExtendDistanceNonpositive,
         Self::FeatureSurfaceBoundaryFlagRecordAssumed,
@@ -1100,6 +1109,9 @@ impl F3dLossCode {
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureLoftReferenceUnresolved => "feature.loft-reference-unresolved",
             Self::FeatureLoftSettingsAssumed => "feature.loft-settings-assumed",
+            Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
+            Self::FeatureLoftGroupsUnassigned => "feature.loft-groups-unassigned",
+            Self::FeatureLoftCenterlineAssumed => "feature.loft-centerline-assumed",
             Self::FeatureSurfaceExtendMethodUnresolved => {
                 "feature.surface-extend-method-unresolved"
             }
@@ -1419,6 +1431,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureLoftListsUnresolved
+            | Self::FeatureLoftGroupsUnassigned
+            | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
@@ -1656,6 +1671,9 @@ impl F3dLossCode {
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureLoftReferenceUnresolved
             | Self::FeatureLoftSettingsAssumed
+            | Self::FeatureLoftListsUnresolved
+            | Self::FeatureLoftGroupsUnassigned
+            | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
@@ -1989,6 +2007,9 @@ mod tests {
                 "feature.move-transform-assumed",
                 "feature.loft-reference-unresolved",
                 "feature.loft-settings-assumed",
+                "feature.loft-lists-unresolved",
+                "feature.loft-groups-unassigned",
+                "feature.loft-centerline-assumed",
                 "feature.surface-extend-method-unresolved",
                 "feature.surface-extend-distance-nonpositive",
                 "feature.surface-boundary-flag-record-assumed",

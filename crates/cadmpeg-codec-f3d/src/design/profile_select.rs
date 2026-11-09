@@ -5070,6 +5070,15 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     if let Some((profile, _)) = resolved_profiles.get(native.as_str()) {
                         bound_profiles.insert(native.clone());
                         *section = LoftSection::Profile(copy_bound_profile(profile)?);
+                    } else if let Some(PathRef::SketchCurves { sketch, curves }) =
+                        resolved_entity_paths.get(native.as_str())
+                    {
+                        *section = LoftSection::Profile(ProfileRef::Planar(
+                            PlanarProfileRef::SketchEntities {
+                                sketch: sketch.clone(),
+                                entities: curves.clone(),
+                            },
+                        ));
                     }
                 }
                 match guidance {

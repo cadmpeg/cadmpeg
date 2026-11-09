@@ -2276,9 +2276,9 @@ Unstated regions:
 
 ## `compact_loft_operation_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 45 B
+Spec §3.1 · layout: byte offsets · size: 34 B
 
-Offsets are relative to the primary indexed header. The variable scope body follows this fixed prefix.
+Offsets are relative to the primary indexed header. The Loft scope body starts at offset 30.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2288,13 +2288,12 @@ Offsets are relative to the primary indexed header. The variable scope body foll
 | 25 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at primary-header offset 25 |
 | 29 | 1 | `zero_flag` | `u8` | little | spec | Byte 29 is zero |
 | 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
-| 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
 
 ## `three_flag_compact_loft_operation_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 44 B
+Spec §3.1 · layout: byte offsets · size: 33 B
 
-Offsets are relative to the primary indexed header.
+Offsets are relative to the primary indexed header. The Loft scope body starts at offset 29.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2303,7 +2302,6 @@ Offsets are relative to the primary indexed header.
 | 24 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 24 |
 | 28 | 1 | `zero_flag` | `u8` | little | spec | a zero byte at offset 28 |
 | 29 | 4 | `all_ones` | `bytes[4]` | little | spec | `ff ff ff ff` at offsets 29 through 32 |
-| 33 | 11 | `zero_run_11` | `bytes[11]` | little | spec | zero bytes at offsets 33 through 43 |
 
 Unstated regions:
 
@@ -2327,6 +2325,18 @@ Offsets are relative to the primary indexed header.
 Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `loft_scope_body_head`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Offsets are relative to the first byte of the Loft scope body. A reference follows the head at offset 12.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `first_word` | `i32` | little | spec | an i32 at body offset 0 |
+| 4 | 4 | `second_word` | `u32` | little | spec | u32 values at body offsets 4 and 8 |
+| 8 | 4 | `third_word` | `u32` | little | spec | u32 values at body offsets 4 and 8 |
 
 ## `three_flag_standard_loft_operation_prefix`
 

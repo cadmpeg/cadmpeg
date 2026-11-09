@@ -1639,6 +1639,30 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
+
+### DR-331. Fields of the Loft scope body
+
+**Question.** Which Loft settings do the head words, the three references, the selector, and the six bytes between the rail list and the third reference of the `Loft` scope body select?
+
+**Known.** `f3d.md` §3.1 "The `Loft` scope body starts after the result-operation u32" gives the field order. The first head word is `-1` or `1`. A nonzero selector precedes a non-null second reference, which names a parameter owned by the scope. The decoder reads the rail list and the section list, keeps the other fields in the scope bytes, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+
+**Need.** Saves of one `Loft` that change one end condition, one guide setting, and closed, solid, ruled, and linearize one at a time, each recording the scope body.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-332. Centerline of a Loft rail list
+
+**Question.** Does a rail list whose only entry is a role-`0x0000000700000000` group identify a centerline or one rail?
+
+**Known.** `f3d.md` §3.1 "A `Loft` has at least two sections" reads that list as a centerline. A rail list with two or more entries can hold role-`0x0000000700000000` groups, and those groups are rails. The decoder projects the sole role-`0x0000000700000000` entry as `LoftGuidance::Centerline` and records `feature.loft-centerline-assumed`.
+
+**Need.** One save of a centerline `Loft` and one save of a one-rail `Loft` whose rail is a model edge, each recording the rail list and the group roles.
+
+**Conflict.** The specification assigns the centerline from the role of a rail-list entry, and it reads role-`0x0000000700000000` entries of longer rail lists as rails.
+
+**Note.** None.
 ### DR-313. Flag bytes of the Thicken scope frame
 
 **Question.** Which Thicken settings do the prologue flag byte of the six-byte marker-one prologue and the two flag bytes between the marked group references and the marked scalar reference of a `Thicken` scope select?
