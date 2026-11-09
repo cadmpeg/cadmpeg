@@ -53,7 +53,8 @@ pub(super) fn admit(ir: &CadIr, losses: &mut Vec<LossNote>) -> Option<CadIr> {
             .model
             .features
             .retain(|feature| feature.id != owner);
-        if admitted.model.features.len() == before {
+        let parent = admitted.model.remove_feature_regeneration_parent(&owner);
+        if admitted.model.features.len() == before && !parent {
             break;
         }
         refused_features.push((owner, reason));
