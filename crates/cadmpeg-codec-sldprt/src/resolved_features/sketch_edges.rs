@@ -51,7 +51,7 @@ impl EdgeProjectionTolerance {
 pub(super) struct EndpointConstraintSource<'a> {
     pub(super) sketch: &'a SketchId,
     pub(super) entities: &'a [SketchEntity],
-    pub(super) block_offset: usize,
+    pub(super) lane_key: &'a str,
     pub(super) stream_ordinal: usize,
     pub(super) face_ordinal: usize,
     pub(super) stream: &'a cadmpeg_ir::StreamName,
@@ -65,7 +65,7 @@ pub(super) fn project_endpoint_constraints(
     let EndpointConstraintSource {
         sketch,
         entities,
-        block_offset,
+        lane_key,
         stream_ordinal,
         face_ordinal,
         stream,
@@ -89,7 +89,7 @@ pub(super) fn project_endpoint_constraints(
             continue;
         }
         let Ok(id) = SketchConstraintId::mint(format!(
-            "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
+            "sldprt:model:sketch-constraint#{lane_key}:{stream_ordinal}:{face_ordinal}:{}",
             constraints.len()
         )) else {
             continue;
