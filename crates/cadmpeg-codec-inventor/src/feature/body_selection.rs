@@ -346,15 +346,20 @@ pub(crate) fn combine_matches(
 }
 
 /// Wrapper identities that features before `feature` in history order produce.
-/// A suppressed producer produces nothing.
+/// Only a feature that history placed has a known suppression state. The set is
+/// empty unless `feature` is placed, and a producer counts only when it is
+/// placed and unsuppressed.
 pub(crate) fn produced_before(
     features: &[cadmpeg_ir::features::Feature],
     results: &[cadmpeg_ir::features::FeatureResultTopology],
     feature: &cadmpeg_ir::features::Feature,
 ) -> HashSet<String> {
+    if feature.suppressed.is_none() {
+        return HashSet::new();
+    }
     let producers = features
         .iter()
-        .filter(|other| other.ordinal < feature.ordinal && other.suppressed != Some(true))
+        .filter(|other| other.ordinal < feature.ordinal && other.suppressed == Some(false))
         .map(|other| &other.id)
         .collect::<HashSet<_>>();
     results

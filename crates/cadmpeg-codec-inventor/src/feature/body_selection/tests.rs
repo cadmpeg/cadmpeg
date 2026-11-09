@@ -1013,10 +1013,10 @@ fn result_of(feature: &cadmpeg_ir::features::Feature, wrappers: &[&str]) -> Feat
 
 #[test]
 fn produced_wrappers_come_from_earlier_unsuppressed_features_only() {
-    let earlier = plain_feature("earlier", 3, None);
+    let earlier = plain_feature("earlier", 3, Some(false));
     let suppressed = plain_feature("suppressed", 4, Some(true));
-    let later = plain_feature("later", 9, None);
-    let consumer = plain_feature("consumer", 6, None);
+    let later = plain_feature("later", 9, Some(false));
+    let consumer = plain_feature("consumer", 6, Some(false));
     let features = [earlier, suppressed, later, consumer];
     let results = [
         result_of(&features[0], &["made"]),
@@ -1025,6 +1025,27 @@ fn produced_wrappers_come_from_earlier_unsuppressed_features_only() {
     ];
     let produced = produced_before(&features, &results, &features[3]);
     assert_eq!(produced, HashSet::from(["made".to_owned()]));
+}
+
+#[test]
+fn unplaced_producer_is_not_an_earlier_producer() {
+    let unplaced = plain_feature("unplaced", 1, None);
+    let consumer = plain_feature("consumer", 6, Some(false));
+    let features = [unplaced, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(produced_before(&features, &results, &features[1]).is_empty());
+}
+
+#[test]
+fn unplaced_combine_has_no_earlier_producers() {
+    let producer = plain_feature("producer", 1, Some(false));
+    let consumer = plain_feature("consumer", 6, None);
+    let features = [producer, consumer];
+    let results = [result_of(&features[0], &["made"])];
+    assert!(produced_before(&features, &results, &features[1]).is_empty());
+    let mut actual = combine(BodySelection::Native("tool".into()));
+    combine_local(&mut actual, &HashSet::new(), None);
+    assert_eq!(actual, combine(BodySelection::Native("tool".into())));
 }
 
 #[test]
