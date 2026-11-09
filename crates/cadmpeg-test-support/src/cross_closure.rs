@@ -574,14 +574,18 @@ fn is_named_degradation_disagreement(
     let Some((left_id, rest)) = rest.split_once('"') else {
         return false;
     };
-    let named = report
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains(left_id));
-    if !named {
+    let named = |id: &str| report.losses.iter().any(|loss| loss.message.contains(id));
+    if !named(left_id) {
         return false;
     }
-    rest.contains(&format!("right \"added:{format}:"))
+    // A record the writer names, whose differing reference it also names,
+    // pairs with a re-read only by structure.
+    let record_named = error
+        .split_once(' ')
+        .and_then(|(_, tail)| tail.split_once(": at "))
+        .is_some_and(|(record, _)| record.contains('#') && named(record));
+    record_named
+        || rest.contains(&format!("right \"added:{format}:"))
         || rest.contains("right \"added:cadir:")
         || rest.contains("right <absent>")
         || rest.contains("right null")
@@ -1136,6 +1140,14 @@ mod tests {
         ));
         assert!(!super::is_named_degradation_disagreement(
             error, "step", &report
+        ));
+        let paired = "model/shells iges:model:region#free: at `.region`: left \"iges:model:region#free\", right \"iges:model:region#other\"";
+        assert!(super::is_named_degradation_disagreement(
+            paired, "step", &report
+        ));
+        let unnamed = "model/shells iges:model:shell#1: at `.region`: left \"iges:model:region#free\", right \"iges:model:region#other\"";
+        assert!(!super::is_named_degradation_disagreement(
+            unnamed, "step", &report
         ));
     }
     use super::{apply_reduced, apply_storage, ReducedProbe};
