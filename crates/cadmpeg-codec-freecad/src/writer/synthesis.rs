@@ -731,7 +731,7 @@ pub(super) fn write(
             }
         }
         if annotation.kind == SemanticAnnotationKind::Dimension {
-            super::drawings::dimension_kind(annotation, object);
+            super::drawings::dimension_kind(annotation, object, &mut losses);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
             if annotation.text_override.is_some()
                 && object
@@ -1369,11 +1369,19 @@ pub(super) fn write(
     );
     // Features, definitions and sketches sharing an object share its one
     // Label (#238 §5.5). A value that differs from the stored Label is the
-    // current one; otherwise the feature name wins. Every other differing
-    // value is a documented loss. A label that already matches keeps its
+    // current one; otherwise a sketch name, then a feature name wins, so the
+    // records a sketch owns keep their owner. Every other differing value is
+    // a documented loss. A label that already matches keeps its
     // native XML with its status.
     for object in &mut objects {
         let mut candidates: Vec<(&str, &str, &str)> = Vec::new();
+        for sketch in &ir.model.sketches {
+            if let Some(label) = sketch.name.as_deref() {
+                if names.get(sketch.id.as_str()) == Some(&object.name) {
+                    candidates.push(("sketch", sketch.id.as_str(), label));
+                }
+            }
+        }
         for feature in &ir.model.features {
             if let Some(label) = feature.name.as_deref() {
                 if names.get(feature.id.as_str()) == Some(&object.name) {
@@ -1385,13 +1393,6 @@ pub(super) fn write(
             if let Some(label) = definition.label.as_deref() {
                 if names.get(definition.id.as_str()) == Some(&object.name) {
                     candidates.push(("definition", definition.id.as_str(), label));
-                }
-            }
-        }
-        for sketch in &ir.model.sketches {
-            if let Some(label) = sketch.name.as_deref() {
-                if names.get(sketch.id.as_str()) == Some(&object.name) {
-                    candidates.push(("sketch", sketch.id.as_str(), label));
                 }
             }
         }

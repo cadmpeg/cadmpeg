@@ -204,6 +204,7 @@ fn leading_number(text: &str, fractional: bool) -> String {
 pub(super) fn dimension_kind(
     annotation: &cadmpeg_ir::semantic_annotations::SemanticAnnotation,
     object: &mut Object,
+    losses: &mut Vec<LossNote>,
 ) {
     use cadmpeg_ir::semantic_annotations::DimensionKind;
     let Some(kind) = &annotation.dimension_kind else {
@@ -244,6 +245,15 @@ pub(super) fn dimension_kind(
         }
     });
     if current == Some(true) {
+        return;
+    }
+    // A kind outside FreeCAD's dimension types has no Type to state.
+    if let DimensionKind::Other { native_type } = kind {
+        object.properties.shift_remove("Type");
+        losses.push(FreecadLossCode::DrawingDimensionKindNotTransferred.note(format!(
+            "annotation {} dimension kind {native_type:?} has no FreeCAD dimension type",
+            annotation.id
+        )));
         return;
     }
     let content = if let Some(number) = number {

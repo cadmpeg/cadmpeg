@@ -12,6 +12,7 @@ use std::fmt::Write as _;
 
 use super::geometry;
 use crate::loss::FreecadLossCode;
+mod body_kind;
 mod native_text;
 mod reachable;
 use reachable::Reach;
@@ -1260,6 +1261,7 @@ fn serialize_geometry_inner(
         }
     }
     let mut roots = Vec::new();
+    let readings = body_kind::Topology::new(ir);
     for body in bodies {
         let placement = root_override.or(body.transform).unwrap_or_default();
         let placement = if location_supported(placement) {
@@ -1601,6 +1603,16 @@ fn serialize_geometry_inner(
             }
             _ => root,
         };
+        if let Some(reading) = readings.reading(body, root, &shapes) {
+            if reading != body.kind {
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "body {} of kind {:?} re-reads as {:?}: FreeCAD derives a body's kind from its shapes",
+                        body.id, body.kind, reading
+                    )),
+                );
+            }
+        }
         // A source root Location, identity or not, keeps the root placed so
         // its topology keeps its located identity.
         let location = if root_kinds.located(body.id.as_str()) {

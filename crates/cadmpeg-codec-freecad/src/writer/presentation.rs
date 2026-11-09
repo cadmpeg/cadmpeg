@@ -299,6 +299,22 @@ fn neutral_views(
     }
     for occurrence in &ir.model.occurrences {
         if let Some(value) = occurrence.visible {
+            // Only a link array element keeps its own visibility; any other
+            // link's visibility is its view provider's.
+            let element = occurrence.native_ref.as_ref().is_some_and(|native| {
+                ir.model
+                    .occurrences
+                    .iter()
+                    .filter(|other| other.native_ref.as_ref() == Some(native))
+                    .nth(1)
+                    .is_some()
+            });
+            if !element {
+                losses.push(FreecadLossCode::ExportPresentationNotTransferred.note(format!(
+                    "occurrence {} visibility is written as its link view provider's",
+                    occurrence.id
+                )));
+            }
             if let Some(name) = names
                 .get(occurrence.id.as_str())
                 .filter(|name| live.contains(name.as_str()))

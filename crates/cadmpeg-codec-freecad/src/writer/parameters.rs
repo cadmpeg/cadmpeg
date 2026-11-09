@@ -147,6 +147,23 @@ pub(in crate::writer) fn render_expression(
         .as_ref()
         .and_then(|owner| names.get(owner.as_str()))
         .or_else(|| names.get(&format!("parameter-owner:{}", parameter.id)));
+    // A name in a foreign expression's own text has no FreeCAD target; a
+    // FreeCAD expression keeps the names its document states.
+    let text = parameter.expression.render_with(|_| Some(" ".to_owned()))?;
+    if crate::design::names_free_quantity(&text) {
+        let native = parameter.native_ref.as_ref().is_some_and(|native| {
+            ir.native.namespace("fcstd").is_some_and(|namespace| {
+                namespace
+                    .arenas()
+                    .values()
+                    .flatten()
+                    .any(|record| record.id() == native.as_str())
+            })
+        });
+        if !native {
+            return None;
+        }
+    }
     parameter
         .expression
         .render_with(|id| parameter_reference(ir, id, current.map(String::as_str), names))
