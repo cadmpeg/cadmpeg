@@ -1318,6 +1318,29 @@ fn serialize_geometry_inner(
                         losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                             format!("face {face_id} in body {} has no OCCT representation and is omitted", body.id),
                         ));
+                        let wires: Vec<&str> = ir
+                            .model
+                            .loops
+                            .iter()
+                            .filter(|wire| wire.face == *face_id)
+                            .map(|wire| wire.id.as_str())
+                            .collect();
+                        let uses: Vec<&str> = ir
+                            .model
+                            .coedges
+                            .iter()
+                            .filter(|coedge| wires.contains(&coedge.owner_loop.as_str()))
+                            .map(|coedge| coedge.id.as_str())
+                            .collect();
+                        if !wires.is_empty() {
+                            losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
+                                    "the loops {} and coedges {} of omitted face {face_id} are omitted",
+                                    wires.join(", "),
+                                    uses.join(", ")
+                                ),
+                            ));
+                        }
                         continue;
                     };
                     let Some(face) = ir.model.faces.iter().find(|value| value.id == *face_id)
@@ -1362,6 +1385,9 @@ fn serialize_geometry_inner(
                 }
                 if shell_degraded {
                     degraded = true;
+                    losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                        format!("shell {} is written with its encodable members only", shell.id),
+                    ));
                     let mut retained_edges = HashSet::new();
                     let mut retained_vertices = std::collections::BTreeSet::new();
                     let mut represented_vertices = HashSet::new();
