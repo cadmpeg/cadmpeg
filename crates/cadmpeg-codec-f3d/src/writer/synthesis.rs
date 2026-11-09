@@ -43,6 +43,7 @@ pub(super) fn write(
     normalize::sketch_placements(&mut prepared, &mut losses);
     normalize::asset_media_types(&mut prepared, &mut losses);
     normalize::mesh_import_vertices(&mut prepared, &mut losses);
+    normalize::stale_sketch_distances(&mut prepared, &mut losses);
     let original = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
     prepare::auxiliary(&mut prepared, &original, &mut losses, limits)?;
     appearance::prepare(&mut prepared, &original, &mut losses);
