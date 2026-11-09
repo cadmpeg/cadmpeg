@@ -124,6 +124,129 @@ pub(crate) fn feature_derived_base_scopes<'a>(
         .collect()
 }
 
+/// Gives the first scope of each derived base group of one stream the
+/// timeline position of the group's owner in `ordinals`. A group takes the
+/// position when its owner is a timeline item that forms no scope, the
+/// position holds no other scope, and no scope of the group holds a position.
+pub(crate) fn take_owner_positions<'a>(
+    stream: &'a str,
+    scopes: &[&'a super::scope::DesignParameterScope],
+    item_ordinals: &std::collections::HashMap<u64, u64>,
+    ordinals: &mut std::collections::HashMap<(&'a str, u32), u64>,
+) {
+    let claimed = ordinals
+        .values()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    for ((_, owner), group) in derived_base_groups(scopes.iter().copied()) {
+        let (Some(ordinal), Some(first)) =
+            (item_ordinals.get(&u64::from(owner)).copied(), group.first())
+        else {
+            continue;
+        };
+        if scopes.iter().any(|scope| scope.record_index == owner)
+            || claimed.contains(&ordinal)
+            || group
+                .iter()
+                .any(|scope| ordinals.contains_key(&(stream, scope.record_index)))
+        {
+            continue;
+        }
+        // discarded-value: no scope of the group holds an ordinal yet.
+        let _ = ordinals.insert((stream, first.record_index), ordinal);
+    }
+}
+
+/// The derived base group that `scope` leads when the group took its
+/// owner's timeline position: the owner is a timeline item of the stream,
+/// the scope holds an ordinal and is no timeline item itself, and no other
+/// scope of the group holds an ordinal.
+fn projected_derived_base_group<'a>(
+    scope: &super::scope::DesignParameterScope,
+    scopes: &'a [super::scope::DesignParameterScope],
+    ordinals: &std::collections::HashMap<(&str, u32), u64>,
+    timeline_items: &std::collections::HashSet<(&str, u64)>,
+) -> Option<Vec<&'a super::scope::DesignParameterScope>> {
+    let group = derived_base_group(scope, scopes)?;
+    let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let (first, rest) = group.split_first()?;
+    let owner = scope.derived_base_owner?.record_index.value;
+    (first.record_index == scope.record_index
+        && timeline_items.contains(&(stream, u64::from(owner)))
+        && ordinals.contains_key(&(stream, scope.record_index))
+        && !timeline_items.contains(&(stream, u64::from(scope.record_index)))
+        && rest
+            .iter()
+            .all(|member| !ordinals.contains_key(&(stream, member.record_index))))
+    .then_some(group)
+}
+
+/// Lists the scopes of each derived base group on the feature projected at
+/// the position of the group's owner, under [`derived_base_scopes_property`].
+pub(crate) fn mark_group_features(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[super::scope::DesignParameterScope],
+    timelines: &[crate::records::entity_header::DesignFeatureTimeline],
+    ordinals: &std::collections::HashMap<(&str, u32), u64>,
+) {
+    let timeline_items = timelines
+        .iter()
+        .flat_map(|timeline| {
+            let stream =
+                crate::ids::native_stream(timeline.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+            timeline
+                .frame()
+                .items()
+                .iter()
+                .map(move |item| (stream, item.value))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    for feature in features {
+        let Some(group) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+            .and_then(|scope| {
+                projected_derived_base_group(scope, scopes, ordinals, &timeline_items)
+            })
+        else {
+            continue;
+        };
+        // discarded-value: the projection sets this property only here.
+        let _ = feature.source_properties.insert(
+            derived_base_scopes_property(),
+            group
+                .iter()
+                .map(|member| member.record_index.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+}
+
+/// The feature among `features` that lists `scope` in its derived base group.
+pub(crate) fn group_feature<'a>(
+    features: &'a [cadmpeg_ir::features::Feature],
+    scopes: &[super::scope::DesignParameterScope],
+    scope: &super::scope::DesignParameterScope,
+) -> Option<&'a cadmpeg_ir::features::Feature> {
+    features.iter().find(|feature| {
+        feature_derived_base_scopes(feature, scopes)
+            .is_some_and(|group| group.iter().any(|member| member.id == scope.id))
+    })
+}
+
+/// The history state that a derived base group produces and the state it
+/// follows: the state of its last scope and the previous state of its first.
+pub(crate) fn group_history_states(
+    group: &[&super::scope::DesignParameterScope],
+) -> Option<(i64, i64)> {
+    Some((
+        group.last()?.history_state_id()?,
+        group.first()?.previous_history_state_id()?,
+    ))
+}
+
 /// The outputs of a derived base group feature in the record-index order of
 /// its scopes, each scope contributing the outputs of its own history state;
 /// every other feature keeps `outputs`.

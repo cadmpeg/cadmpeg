@@ -188,12 +188,7 @@ pub(crate) fn losses(
             .iter()
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
             .or_else(|| {
-                features.iter().find(|feature| {
-                    crate::records::feature::derived_base::feature_derived_base_scopes(
-                        feature, scopes,
-                    )
-                    .is_some_and(|group| group.iter().any(|member| member.id == scope.id))
-                })
+                crate::records::feature::derived_base::group_feature(features, scopes, scope)
             });
         match scope.kind_name() {
             "Base Feature" => {

@@ -1972,8 +1972,7 @@ fn combine_states_applied_operation(
         })
 }
 
-/// The history states a feature's scope produces and follows; a derived base
-/// group spans the states of all its scopes.
+/// The history state a feature's scope produces and the state it follows.
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -1985,11 +1984,7 @@ fn feature_history_states(
     if let Some(group) =
         crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
     {
-        // A derive operation spans the history states of all its derived scopes.
-        return Some((
-            group.last()?.history_state_id()?,
-            group.first()?.previous_history_state_id()?,
-        ));
+        return crate::records::feature::derived_base::group_history_states(&group);
     }
     Some((
         scope.history_state_id()?,
