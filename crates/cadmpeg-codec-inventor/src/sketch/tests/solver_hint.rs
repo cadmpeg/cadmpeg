@@ -81,3 +81,30 @@ fn a_perpendicular_relation_with_an_unknown_hint_code_stays_native() {
     assert_eq!(projected.unresolved_sketches, 1);
     assert!(projected.constraints.is_empty());
 }
+
+/// The same record read as a perpendicular relation with the same operands.
+fn with_perpendicular_kind(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
+    let mut wire = serde_json::to_value(relation).expect("relation wire");
+    wire["kind"] = serde_json::json!({
+        "form": "perpendicular",
+        "first": wire["kind"]["first"].clone(),
+        "second": wire["kind"]["second"].clone(),
+        "orientation": 0,
+    });
+    serde_json::from_value(wire).expect("perpendicular wire")
+}
+
+#[test]
+fn a_perpendicular_hint_code_is_not_validated_as_a_reference() {
+    let coincident = hinted_relation(2);
+    let perpendicular = with_perpendicular_kind(&coincident);
+    let references = crate::validate::sketch_constraint_references;
+    assert_eq!(
+        references(&coincident).len(),
+        references(&perpendicular).len() + 1
+    );
+    assert_eq!(
+        references(&coincident).last(),
+        references(&perpendicular).last()
+    );
+}
