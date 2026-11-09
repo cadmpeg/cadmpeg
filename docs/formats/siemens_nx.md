@@ -611,6 +611,18 @@ UUID, and container-image source offset. Equal UUIDs or matrices do not
 merge placement records. Physical placement order does not define a
 FastLoad occurrence ordinal.
 
+The matrix maps the child part frame into the frame of the assembly part
+that contains the placement. A child point `p` has the assembly position
+`R p + t`, where `R` is the three-by-three rotation block and `t` is the
+translation column. The translation uses the length unit of the assembly
+part.
+
+A placement UUID that occurs once in the FastLoad UUID table selects the
+FastLoad uses that reference that table entry. When every selected use names
+one prototype and the number of uses equals the number of placements with
+that UUID, each of these placements places that prototype. Placements of
+distinct child parts can share one UUID.
+
 ### 2.4 Legacy CFB envelope
 
 Legacy NX parts use the Compound File Binary envelope with the eight-byte header

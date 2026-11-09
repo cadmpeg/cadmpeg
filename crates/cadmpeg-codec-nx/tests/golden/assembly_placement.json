@@ -138,7 +138,7 @@
             "namespace": "nx",
             "scope": "namespaced"
           },
-          "message": "Withheld 1 NX placement(s) and 0 FastLoad component use(s) from neutral output because the native records do not establish a general placement-to-component association, assembly root frame, or translation unit. Their placement frames and component uses remain in the NX native namespace.",
+          "message": "Withheld 1 NX placement(s) and 0 FastLoad component use(s) from neutral output because the part does not establish the placement translation unit: it declares no length expression. Their placement frames and component uses remain in the NX native namespace.",
           "severity": "blocking"
         }
       ],

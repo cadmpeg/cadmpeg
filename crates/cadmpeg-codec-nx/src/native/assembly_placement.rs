@@ -27,9 +27,9 @@ pub(crate) struct AssemblyPlacement {
     pub(super) id: String,
     raw_frame: NativeBytes,
     /// Row-major three-by-four matrix in the serialized translation unit.
-    matrix: [f64; 12],
+    pub(super) matrix: [f64; 12],
     label: String,
-    uuid: CanonicalUuid<String>,
+    pub(super) uuid: CanonicalUuid<String>,
     /// Bounded object record containing the complete placement frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     object_record: Option<String>,
