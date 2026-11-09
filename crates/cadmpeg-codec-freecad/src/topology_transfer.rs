@@ -2184,7 +2184,8 @@ fn transformed_pcurve_geometry(
     }
     // Reflections and translations have an exact native line form. Normalize
     // those chart changes rather than making source coordinate conventions
-    // part of neutral content. Non-isometric charts retain their affine form.
+    // part of neutral content. Other curves under non-isometric charts,
+    // except a NURBS, retain their affine form.
     if affine.u_scale.abs() == 1.0 && affine.v_scale.abs() == 1.0 {
         use cadmpeg_ir::geometry::pcurve::{
             CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve,
@@ -2259,6 +2260,20 @@ fn transformed_pcurve_geometry(
             .ok()
             .map(PcurveGeometry::Line);
         }
+    }
+    // An affine image of a NURBS is the NURBS with mapped control points.
+    if let PcurveGeometry::Nurbs { mut nurbs } = geometry {
+        nurbs
+            .try_map_control_points_in_place(|point| {
+                let point = point.get();
+                cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                    affine.u_scale * point.u + affine.u_offset,
+                    affine.v_scale * point.v + affine.v_offset,
+                ))
+                .ok_or(())
+            })
+            .ok()?;
+        return Some(PcurveGeometry::Nurbs { nurbs });
     }
     Some(PcurveGeometry::Transformed(
         cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
