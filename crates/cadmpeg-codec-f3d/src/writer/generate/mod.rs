@@ -5,7 +5,6 @@
 use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions, ExportLossCode};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -18,9 +17,9 @@ mod act;
 pub(super) mod attributes;
 pub(in crate::writer) mod canvas;
 pub(in crate::writer) mod decal;
-pub(in crate::writer) mod mesh;
 pub(super) mod features;
 mod index;
+pub(in crate::writer) mod mesh;
 pub(in crate::writer) mod native_bytes;
 pub(crate) mod native_geometry;
 pub(crate) mod parameter_links;
@@ -60,7 +59,7 @@ const MESH_SEGMENT_START: usize = 7;
 pub(crate) fn write_new(
     target: &CadIr,
     writer: &mut dyn Write,
-) -> Result<(ArenaDispositions, Vec<LossNote>), CodecError> {
+) -> Result<(ArenaDispositions, Vec<LossNote>), crate::writer::WriteError> {
     write_with_limits(
         target,
         writer,
@@ -75,7 +74,7 @@ pub(super) fn write_with_limits(
     target: &CadIr,
     writer: &mut dyn Write,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<Generated, CodecError> {
+) -> Result<Generated, crate::writer::WriteError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true);
@@ -94,7 +93,7 @@ pub(super) fn write_with_limits(
             .is_none_or(|canvas| canvas.asset != asset.id)
             && decal.as_ref().is_none_or(|decal| decal.asset != asset.id)
     }) {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D generation does not support document assets".into(),
         ));
     }
@@ -118,7 +117,7 @@ pub(super) fn write_with_limits(
         if !native.design_parameter_owners.is_empty()
             || !native.design_parameter_companions.is_empty()
         {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "source-less F3D parameter ownership requires a same-segment scope".into(),
             ));
         }
@@ -130,7 +129,9 @@ pub(super) fn write_with_limits(
                 .max()
                 .and_then(|index| index.checked_add(1))
                 .ok_or_else(|| {
-                    CodecError::InvalidInput("F3D parameter collection index exceeds u32".into())
+                    crate::writer::WriteError::Unwritable(
+                        "F3D parameter collection index exceeds u32".into(),
+                    )
                 })?;
             let mut primary = Vec::new();
             let mut indices = Vec::new();
@@ -171,16 +172,21 @@ pub(super) fn write_with_limits(
                 .into_iter()
                 .map(|(guid, base, version, entity_ids)| {
                     Ok(presentation::GeneratedDesignType {
-                        type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
+                        type_guid: guid
+                            .to_owned()
+                            .try_into()
+                            .map_err(crate::writer::WriteError::Unwritable)?,
                         base_type_guid: Some(
-                            base.to_owned().try_into().map_err(CodecError::Malformed)?,
+                            base.to_owned()
+                                .try_into()
+                                .map_err(crate::writer::WriteError::Unwritable)?,
                         ),
                         version,
                         module: "CommonData".into(),
                         entity_ids,
                     })
                 })
-                .collect::<Result<_, CodecError>>()?,
+                .collect::<Result<_, crate::writer::WriteError>>()?,
                 body_map: None,
                 browser_nodes: None,
             };
@@ -212,12 +218,8 @@ pub(super) fn write_with_limits(
         .map(|decal| decal::encode(decal, &output_ctx))
         .transpose()?;
     let encoded_meshes = mesh::encode(mesh::select(target, &native), &output_ctx)?;
-    let design_native = reemitted::design1_native(
-        &native,
-        target,
-        &encoded_meshes,
-        written_sketches.as_ref(),
-    );
+    let design_native =
+        reemitted::design1_native(&native, target, &encoded_meshes, written_sketches.as_ref());
     if let Some(design_native) = &design_native {
         for kind in &mut design_registry.types {
             kind.entity_ids.retain(|entity| {
@@ -282,7 +284,7 @@ pub(super) fn write_with_limits(
         ] {
             archive
                 .start_file(name, options)
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
             archive.write_all(data)?;
         }
     }
@@ -300,16 +302,16 @@ pub(super) fn write_with_limits(
         ] {
             archive
                 .start_file(name, options)
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
             archive.write_all(data)?;
         }
     }
     for (ordinal, encoded) in encoded_meshes.iter().enumerate() {
         let segment = format!(
             "{DESIGN_FOLDER}/FusionDesignSegmentType{}",
-            ordinal
-                .checked_add(MESH_SEGMENT_START)
-                .ok_or_else(|| CodecError::InvalidInput("F3D mesh segment count".into()))?
+            ordinal.checked_add(MESH_SEGMENT_START).ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("F3D mesh segment count".into())
+            })?
         );
         for (name, data) in [
             (format!("{segment}/BulkStream.dat"), encoded.bulk.as_slice()),
@@ -317,7 +319,7 @@ pub(super) fn write_with_limits(
         ] {
             archive
                 .start_file(name, options)
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
             archive.write_all(data)?;
         }
         for (entry, data) in &encoded.containers {
@@ -326,26 +328,28 @@ pub(super) fn write_with_limits(
                     format!("{DESIGN_FOLDER}/ParaMeshGeometry.BlobParts/{entry}"),
                     options,
                 )
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
             archive.write_all(data)?;
         }
     }
     archive
         .start_file("Manifest.dat", options)
         .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D manifest: {error}"))
+            crate::writer::WriteError::Unwritable(format!("cannot create F3D manifest: {error}"))
         })?;
     archive.write_all(&manifest::generated_top_level()?)?;
     archive
         .start_file("Properties.dat", options)
         .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D properties: {error}"))
+            crate::writer::WriteError::Unwritable(format!("cannot create F3D properties: {error}"))
         })?;
     archive.write_all(&0u32.to_le_bytes())?;
     archive
         .start_file(format!("{DESIGN_FOLDER}/Manifest.dat"), options)
         .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D asset manifest: {error}"))
+            crate::writer::WriteError::Unwritable(format!(
+                "cannot create F3D asset manifest: {error}"
+            ))
         })?;
     archive.write_all(&manifest::generated_design_asset()?)?;
     archive
@@ -354,7 +358,7 @@ pub(super) fn write_with_limits(
             options,
         )
         .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D BREP entry: {error}"))
+            crate::writer::WriteError::Unwritable(format!("cannot create F3D BREP entry: {error}"))
         })?;
     archive.write_all(&smbh)?;
     let mut subd_names = BTreeSet::new();
@@ -382,11 +386,11 @@ pub(super) fn write_with_limits(
             name =
                 format!("{DESIGN_FOLDER}/TSplines.BlobParts/TSpline.{ordinal}-{discriminator}.tsm");
             discriminator = discriminator.checked_add(1).ok_or_else(|| {
-                CodecError::NotImplemented("F3D cage name space exhausted".into())
+                crate::writer::WriteError::Unsupported("F3D cage name space exhausted".into())
             })?;
         }
         let Some(program) = subd::encode(&output_ctx, surface, true)? else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D cage {} has unsupported topology or controls",
                 surface.id
             )));
@@ -421,7 +425,7 @@ pub(super) fn write_with_limits(
             )));
         }
         archive.start_file(&name, options).map_err(|error| {
-            CodecError::malformed(format_args!("cannot create T-spline cage: {error}"))
+            crate::writer::WriteError::Unwritable(format!("cannot create T-spline cage: {error}"))
         })?;
         archive.write_all(program.as_bytes())?;
     }
@@ -430,7 +434,7 @@ pub(super) fn write_with_limits(
         for configuration in &native.design_configurations {
             output_ctx.charge_entities(1, "F3D configuration record")?;
             if !configuration_names.insert(configuration.entry_name().as_str()) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "duplicate F3D configuration identity: {}",
                     configuration.entry_name()
                 )));
@@ -440,7 +444,7 @@ pub(super) fn write_with_limits(
             archive
                 .start_file(configuration.entry_name(), options)
                 .map_err(|error| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "cannot create F3D configuration entry: {error}"
                     ))
                 })?;
@@ -454,7 +458,9 @@ pub(super) fn write_with_limits(
                 options,
             )
             .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D parameter stream: {error}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "cannot create F3D parameter stream: {error}"
+                ))
             })?;
         archive.write_all(&parameter_bytes)?;
         if let Some(meta) = parameter_meta {
@@ -464,7 +470,7 @@ pub(super) fn write_with_limits(
                     options,
                 )
                 .map_err(|error| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "cannot create F3D parameter metadata: {error}"
                     ))
                 })?;
@@ -474,11 +480,11 @@ pub(super) fn write_with_limits(
     for segment in act_segments {
         archive
             .start_file(format!("{}/BulkStream.dat", segment.folder), options)
-            .map_err(|error| CodecError::malformed(error.to_string()))?;
+            .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
         archive.write_all(&segment.bulk)?;
         archive
             .start_file(format!("{}/MetaStream.dat", segment.folder), options)
-            .map_err(|error| CodecError::malformed(error.to_string()))?;
+            .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
         archive.write_all(&segment.meta)?;
     }
     // The parameter segment owns its independent dynamic class tags. Browser
@@ -502,22 +508,20 @@ pub(super) fn write_with_limits(
         .and_then(|features| features.append.take())
     {
         let bulk = design_bulk.as_mut().ok_or_else(|| {
-            CodecError::Malformed("missing Design stream for body feature".into())
+            crate::writer::WriteError::Unwritable("missing Design stream for body feature".into())
         })?;
         let offset = cadmpeg_core::decode::u64_from_index(bulk.bytes.len());
         bulk.bytes.extend_from_slice(&append.bulk);
         for mut record in append.primary {
-            record.bulk_offset = record
-                .bulk_offset
-                .checked_add(offset)
-                .ok_or_else(|| CodecError::InvalidInput("F3D Design stream exceeds u64".into()))?;
+            record.bulk_offset = record.bulk_offset.checked_add(offset).ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("F3D Design stream exceeds u64".into())
+            })?;
             bulk.primary_records.push(record);
         }
         for mut record in append.secondary {
-            record.bulk_offset = record
-                .bulk_offset
-                .checked_add(offset)
-                .ok_or_else(|| CodecError::InvalidInput("F3D Design stream exceeds u64".into()))?;
+            record.bulk_offset = record.bulk_offset.checked_add(offset).ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("F3D Design stream exceeds u64".into())
+            })?;
             design_secondary.push(record);
         }
         design_registry.types.extend(append.types);
@@ -527,7 +531,9 @@ pub(super) fn write_with_limits(
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
             .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D Design BulkStream: {error}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "cannot create F3D Design BulkStream: {error}"
+                ))
             })?;
         archive.write_all(&bulk_stream.bytes)?;
     }
@@ -540,12 +546,14 @@ pub(super) fn write_with_limits(
         if design_bulk.is_none() {
             archive
                 .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
         }
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
             .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D Design MetaStream: {error}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "cannot create F3D Design MetaStream: {error}"
+                ))
             })?;
         archive.write_all(&meta_stream)?;
     }
@@ -601,7 +609,7 @@ pub(super) fn write_with_limits(
                         format!("{DESIGN_FOLDER}/FusionDesignSegmentType3/{name}"),
                         options,
                     )
-                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+                    .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
                 archive.write_all(&data)?;
             }
         }
@@ -616,7 +624,7 @@ pub(super) fn write_with_limits(
                     format!("{DESIGN_FOLDER}/FusionDesignSegmentType4/{name}"),
                     options,
                 )
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                .map_err(|error| crate::writer::WriteError::unwritable(error.to_string()))?;
             archive.write_all(data)?;
         }
         for id in &sketches.sketches {
@@ -654,12 +662,14 @@ pub(super) fn write_with_limits(
                 options,
             )
             .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D Protein asset: {error}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "cannot create F3D Protein asset: {error}"
+                ))
             })?;
         archive.write_all(&protein)?;
     }
     archive.finish().map_err(|error| {
-        CodecError::malformed(format_args!("cannot finish F3D archive: {error}"))
+        crate::writer::WriteError::Unwritable(format!("cannot finish F3D archive: {error}"))
     })?;
     output_ctx.finish_session()?;
     staged.seek(SeekFrom::Start(0))?;

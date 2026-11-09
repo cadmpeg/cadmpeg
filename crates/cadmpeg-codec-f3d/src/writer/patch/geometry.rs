@@ -6,7 +6,6 @@ use cadmpeg_core::convert::truncate_f64_to_u8;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::bytes::assemble_u32_be;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Color, Sense};
@@ -108,7 +107,7 @@ fn asm_nurbs_curve_edit(edit: &NurbsCurveEdit) -> AsmNurbsCurveEdit<'_> {
 fn retained_plane_pcurve(
     native: &PcurveNurbs,
     chart: NativeChart,
-) -> Result<PcurveNurbs, CodecError> {
+) -> Result<PcurveNurbs, crate::writer::WriteError> {
     let unit = NativeChart::Plane {
         reverse_v: false,
         scale: 1.0,
@@ -124,7 +123,7 @@ fn retained_plane_pcurve(
         poles,
         native.periodic(),
     )
-    .map_err(|error| CodecError::NotImplemented(error.to_string()))
+    .map_err(|error| crate::writer::WriteError::Unsupported(error.to_string()))
 }
 
 /// A pcurve edit whose poles are already in the chart of its retained support.
@@ -154,7 +153,10 @@ fn asm_pcurve_edit<'a>(
     }
 }
 
-pub(super) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
+pub(super) fn patch_geometry(
+    bytes: &mut [u8],
+    edits: &GeometryEdits,
+) -> Result<(), crate::writer::WriteError> {
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         patch_asm_geometry(bytes, asm_edits, edits)
     })
@@ -166,7 +168,7 @@ pub(in crate::writer) fn patch_framed_geometry(
     records: &[sab::Record],
     edits: &GeometryEdits,
     header_scale: f64,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let asm_edits = AsmEditSet::from_framed(
         records.to_vec(),
         cadmpeg_asm::asm_header::parse(bytes)
@@ -182,7 +184,7 @@ fn patch_asm_geometry(
     bytes: &mut [u8],
     asm_edits: &AsmEditSet,
     edits: &GeometryEdits,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let records = asm_edits.records();
     let GeometryEdits {
         positions,
@@ -254,11 +256,15 @@ fn patch_asm_geometry(
                     point.u - offset[0],
                     point.v - offset[1],
                 ))
-                .ok_or_else(|| CodecError::malformed("pcurve UV offset subtraction overflows"))
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(
+                        "pcurve UV offset subtraction overflows".into(),
+                    )
+                })
             })?;
             Ok((id.as_str(), geometry))
         })
-        .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
+        .collect::<Result<BTreeMap<_, _>, crate::writer::WriteError>>()?;
     let ref_pcurve_geometry = records
         .iter()
         .filter(|record| record.head() == "pcurve")
@@ -294,7 +300,7 @@ fn patch_asm_geometry(
                 .and_then(|index| records_by_index.get(&index).copied())
         });
         let Some((attribute, decoded)) = carrier else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D entity color {id} has no writable exact direct-color attribute"
             )));
         };
@@ -302,7 +308,7 @@ fn patch_asm_geometry(
             color_records.insert(attribute.index, (*color, decoded.carrier))
         {
             if existing != *color || existing_carrier != decoded.carrier {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D entities share conflicting color attribute {}",
                     attribute.index
                 )));
@@ -312,7 +318,7 @@ fn patch_asm_geometry(
     for record in records {
         if let Some(timestamp) = creation_timestamps.get(&record.index) {
             if !record.head().contains("ATTRIB_CUSTOM") {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D timestamp record {} has the wrong attribute family",
                     record.index
                 )));
@@ -322,13 +328,13 @@ fn patch_asm_geometry(
             let Some(family) = record.chunks().position(
                 |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
             ) else {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D timestamp record {} has the wrong attribute family",
                     record.index
                 )));
             };
             if !matches!(record.chunk(family + 1), Some(sab::Token::Long(1))) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D timestamp record {} lacks marker 1 after its family",
                     record.index
                 )));
@@ -339,7 +345,7 @@ fn patch_asm_geometry(
         }
         if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
             if !matches!(record.head(), "edge" | "tedge") {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D edge-continuity record {} is not an edge",
                     record.index
                 )));
@@ -349,7 +355,7 @@ fn patch_asm_geometry(
         }
         if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
             if !matches!(record.head(), "vertex" | "tvertex") {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D vertex-ownership record {} is not a vertex",
                     record.index
                 )));
@@ -363,7 +369,7 @@ fn patch_asm_geometry(
         }
         if let Some(containment) = face_sidedness.get(&record.index) {
             if record.head() != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D face-sidedness record {} is not double-sided",
                     record.index
                 )));
@@ -376,7 +382,7 @@ fn patch_asm_geometry(
         }
         if let Some((tolerance, leading)) = tolerant_vertices.get(&record.index) {
             if record.head() != "tvertex" {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D tolerant-vertex record {} is not a tvertex",
                     record.index
                 )));
@@ -393,7 +399,7 @@ fn patch_asm_geometry(
                 || !matches!(record.chunk(12), Some(sab::Token::Long(_)))
                 || !matches!(record.chunk(13), Some(sab::Token::Long(_)))
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D tolerant-edge record {} has the wrong layout",
                     record.index
                 )));
@@ -451,7 +457,7 @@ fn patch_asm_geometry(
         let tolerant_curve_id = format!("f3d:brep:tolerant-coedge-curve#{}", record.index);
         if let Some(edit) = nurbs_curves.get(&tolerant_curve_id) {
             if record.head() != "tcoedge" {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D tolerant use-curve carrier {tolerant_curve_id} is not a tcoedge record"
                 )));
             }
@@ -523,7 +529,7 @@ fn patch_asm_geometry(
         }
         if let Some(edit) = procedural_surface_edits.get(&procedural_id) {
             if record.head() != "spline" {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D extrusion carrier {procedural_id} is not a spline record"
                 )));
             }
@@ -582,7 +588,7 @@ fn patch_asm_geometry(
                     "straight" => [0, 1],
                     "straight-curve" => [3, 4],
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "straight record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -612,7 +618,7 @@ fn patch_asm_geometry(
                     "degenerate_curve" => 0,
                     "degenerate_curve-curve" => 3,
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "degenerate-curve record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -637,7 +643,7 @@ fn patch_asm_geometry(
                     "ellipse" => [0, 1, 2, 3],
                     "ellipse-curve" => [3, 4, 5, 6],
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "ellipse record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -683,7 +689,7 @@ fn patch_asm_geometry(
                     "plane" => [0, 1, 2],
                     "plane-surface" => [3, 4, 5],
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "plane record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -720,7 +726,7 @@ fn patch_asm_geometry(
                     "sphere" => [0, 1, 2, 3],
                     "sphere-surface" => [3, 4, 5, 6],
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "sphere record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -754,7 +760,7 @@ fn patch_asm_geometry(
                     "torus" => [0, 1, 2, 3, 4],
                     "torus-surface" => [3, 4, 5, 6, 7],
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "torus record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -794,7 +800,7 @@ fn patch_asm_geometry(
                     "cone" => [0, 1, 2, 3, 4, 5, 6],
                     "cone-surface" => [3, 4, 5, 6, 9, 10, 11],
                     _ => {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(crate::writer::WriteError::Unsupported(format!(
                             "cone record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -853,11 +859,14 @@ fn patch_asm_geometry(
     Ok(())
 }
 
-fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecError> {
+fn exact_8_bit_rgb(
+    color: Color,
+    record: &sab::Record,
+) -> Result<[u8; 3], crate::writer::WriteError> {
     let channels = [color.r(), color.g(), color.b()];
     let encoded = channels.map(|channel| truncate_f64_to_u8(f64::from((channel * 255.0).round())));
     let [Some(red), Some(green), Some(blue)] = encoded else {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
             record.head(),
             record.index
@@ -866,7 +875,7 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     let encoded = [red, green, blue];
     let decoded = encoded.map(|channel| f32::from(channel) / 255.0);
     if decoded != channels {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
             record.head(),
             record.index

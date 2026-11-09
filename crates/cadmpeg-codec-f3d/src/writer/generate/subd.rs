@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::subd::{
     SubdEdgeTag, SubdRadialMapSelector, SubdSurface, SubdSymmetryKind, SubdUserKnot, SubdVertexTag,
 };
@@ -23,7 +22,7 @@ pub(in crate::writer) fn encode(
     ctx: &DecodeContext<'_>,
     subd: &SubdSurface,
     charge_output: bool,
-) -> Result<Option<String>, CodecError> {
+) -> Result<Option<String>, crate::writer::WriteError> {
     let cage = &subd.cage;
     let vertices = cage.vertices();
     let edges = cage.edges();
@@ -289,7 +288,7 @@ pub(in crate::writer) fn encode_symmetry(
     face_count: usize,
     edge_count: usize,
     vertex_count: usize,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     macro_rules! record {
         ($($args:tt)*) => {{
             charge_record(ctx, charge_output)?;
@@ -445,7 +444,7 @@ pub(in crate::writer) fn encode_symmetry(
     Ok(true)
 }
 
-fn charge_record(ctx: &DecodeContext<'_>, charge: bool) -> Result<(), CodecError> {
+fn charge_record(ctx: &DecodeContext<'_>, charge: bool) -> Result<(), crate::writer::WriteError> {
     if charge {
         ctx.charge_entities(1, "F3D T-spline record")?;
     }

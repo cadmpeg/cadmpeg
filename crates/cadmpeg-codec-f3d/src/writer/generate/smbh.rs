@@ -49,7 +49,7 @@ pub(super) fn encode_smbh(
     attributes: &AttributeIndex<'_>,
     limits: cadmpeg_core::decode::ResourceLimits,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let topology = NativeGenerationIndex::new(target, native);
     if target.model.faces.is_empty() {
         if !target
@@ -75,7 +75,7 @@ pub(super) fn encode_smbh(
                 native_history_tail(&mut bytes, native, output)?;
                 return Ok(bytes);
             }
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "source-less F3D generation requires owned face topology or a nonempty wire shell"
                     .into(),
             ));
@@ -118,7 +118,7 @@ impl<'a> NativeRecordPlan<'a> {
     fn for_model(
         model: &'a cadmpeg_ir::document::Model,
         surface_records: usize,
-    ) -> Result<Self, CodecError> {
+    ) -> Result<Self, crate::writer::WriteError> {
         let body_start = 1;
         let region_start = native_record_index(body_start, model.bodies.len())?;
         let shell_start = native_record_index(region_start, model.regions.len())?;
@@ -176,7 +176,7 @@ impl<'a> NativeRecordPlan<'a> {
             .len()
             .checked_add(ref_pcurve_count)
             .ok_or_else(|| {
-                CodecError::InvalidInput("pcurve record count overflows usize".into())
+                crate::writer::WriteError::Unwritable("pcurve record count overflows usize".into())
             })?;
         let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
         let wire_coedge_start = native_record_index(coedge_start, model.coedges.len())?;
@@ -225,7 +225,7 @@ fn source_less_wire_record_for_shell(
     model: &cadmpeg_ir::document::Model,
     wire_start: i64,
     shell_ordinal: usize,
-) -> Result<i64, CodecError> {
+) -> Result<i64, crate::writer::WriteError> {
     let wire_ordinal = model.shells[..shell_ordinal]
         .iter()
         .map(source_less_wire_count)
@@ -247,7 +247,7 @@ fn encode_source_less_wires(
     topology: &NativeGenerationIndex<'_>,
     starts: WireRecordStarts,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<BTreeMap<VertexId, i64>, CodecError> {
+) -> Result<BTreeMap<VertexId, i64>, crate::writer::WriteError> {
     let WireRecordStarts {
         wire: wire_start,
         coedge: wire_coedge_start,
@@ -301,10 +301,12 @@ fn encode_source_less_wires(
         }
         for (free_ordinal, vertex_id) in shell.free_vertices().iter().enumerate() {
             let vertex_ordinal = vertex_ordinals.get(vertex_id).copied().ok_or_else(|| {
-                CodecError::InvalidInput(format!("wire references missing free vertex {vertex_id}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "wire references missing free vertex {vertex_id}"
+                ))
             })?;
             if edge_vertex_ids.contains(vertex_id) {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "wire vertex {vertex_id} is both free and an edge endpoint"
                 )));
             }
@@ -313,7 +315,7 @@ fn encode_source_less_wires(
                 .insert(vertex_id.clone(), owner)
                 .is_some()
             {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "free vertex {vertex_id} belongs to more than one wire"
                 )));
             }
@@ -351,7 +353,7 @@ fn encode_source_less_wires(
             !edge_vertex_ids.contains(vertex) && !free_vertex_owners.contains_key(*vertex)
         })
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
         ));
     }
@@ -364,7 +366,7 @@ fn encode_wire_body_smbh(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let model = &target.model;
     if model.bodies.is_empty()
         || model.regions.is_empty()
@@ -395,7 +397,7 @@ fn encode_wire_body_smbh(
             .iter()
             .any(|body| body.kind != cadmpeg_ir::topology::BodyKind::Wire)
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D wire generation requires face-less wire bodies with nonempty wire shells"
                 .into(),
         ));
@@ -609,10 +611,10 @@ fn encode_wire_body_smbh(
 fn record_surfaces<'a>(
     model: &'a cadmpeg_ir::document::Model,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Vec<&'a cadmpeg_ir::geometry::Surface>, CodecError> {
+) -> Result<Vec<&'a cadmpeg_ir::geometry::Surface>, crate::writer::WriteError> {
     use cadmpeg_ir::schema::EntitySchema;
     let mut inline = std::collections::BTreeSet::new();
-    let mut collect = |target: &str| -> Result<(), CodecError> {
+    let mut collect = |target: &str| -> Result<(), crate::writer::WriteError> {
         inline.insert(target.to_owned());
         Ok(())
     };
@@ -638,7 +640,7 @@ fn encode_source_less_surfaces(
     target: &CadIr,
     native: &F3dNative,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for surface in surfaces {
         output.charge_entities(1, "F3D BREP record")?;
         match surface.geometry.solved() {
@@ -768,13 +770,13 @@ fn encode_source_less_surfaces(
                 records.extend_from_slice(&[0x0b; 5]);
             }
             Some(SolvedSurfaceGeometry::Polygonal(_)) => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D face generation does not support polygonal surface carrier {}",
                     surface.id
                 )));
             }
             Some(SolvedSurfaceGeometry::Transformed(_)) => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D face generation does not support transformed surface carrier {}",
                     surface.id
                 )));
@@ -787,7 +789,7 @@ fn encode_source_less_surfaces(
                 {
                     native_ident(records, "mesh_surface")?;
                 } else if !native_cacheless_procedural_surface(records, target, surface)? {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "source-less F3D face generation does not support surface carrier {}",
                         surface.id
                     )));
@@ -804,7 +806,7 @@ fn encode_source_less_curves(
     records: &mut Vec<u8>,
     target: &CadIr,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let model = &target.model;
     for carrier in &model.curves {
         output.charge_entities(1, "F3D BREP record")?;
@@ -882,7 +884,7 @@ fn encode_source_less_curves(
             }
             None => {
                 if !native_cacheless_procedural_curve(records, target, &carrier.id)? {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "procedural curve carrier {} has no construction",
                         carrier.id
                     )));
@@ -902,7 +904,7 @@ fn encode_source_less_curves(
                 records.extend_from_slice(&[0x0b, 0x0b]);
             }
             _ => {
-                return Err(CodecError::NotImplemented(
+                return Err(crate::writer::WriteError::Unsupported(
                     "source-less F3D does not support this curve carrier".into(),
                 ))
             }
@@ -919,7 +921,7 @@ fn encode_face_topology_smbh(
     topology: &NativeGenerationIndex<'_>,
     limits: cadmpeg_core::decode::ResourceLimits,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let model = &target.model;
     let region_ordinals: HashMap<_, _> = model
         .regions
@@ -963,7 +965,7 @@ fn encode_face_topology_smbh(
         || model.faces.is_empty()
         || model.loops.len() < model.faces.len()
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D generation requires owned face topology".into(),
         ));
     }
@@ -996,12 +998,11 @@ fn encode_face_topology_smbh(
     native_string(&mut records, "231.6.3.65535");
     records.push(0x11);
     for (body_ordinal, body) in model.bodies.iter().enumerate() {
-        let first_region = body
-            .regions
-            .first()
-            .ok_or_else(|| CodecError::malformed(format_args!("body {} has no region", body.id)))?;
+        let first_region = body.regions.first().ok_or_else(|| {
+            crate::writer::WriteError::Unwritable(format!("body {} has no region", body.id))
+        })?;
         let region_ordinal = region_ordinals.get(first_region).copied().ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::writer::WriteError::Unwritable(format!(
                 "body references missing region {first_region}"
             ))
         })?;
@@ -1067,7 +1068,7 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|body| body.id == region.body)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("region {} has no body", region.id))
+                crate::writer::WriteError::Unwritable(format!("region {} has no body", region.id))
             })?;
         let body = &model.bodies[body_ordinal];
         let ordinal = body
@@ -1075,17 +1076,20 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|id| *id == region.id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("body does not own region {}", region.id))
+                crate::writer::WriteError::Unwritable(format!(
+                    "body does not own region {}",
+                    region.id
+                ))
             })?;
         let first_shell = region.shells.first().ok_or_else(|| {
-            CodecError::malformed(format_args!("region {} has no shell", region.id))
+            crate::writer::WriteError::Unwritable(format!("region {} has no shell", region.id))
         })?;
         let shell_ordinal = model
             .shells
             .iter()
             .position(|shell| shell.id == *first_shell)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "region references missing shell {first_shell}"
                 ))
             })?;
@@ -1098,7 +1102,9 @@ fn encode_face_topology_smbh(
                 .iter()
                 .position(|item| item.id == *id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("body references missing region {id}"))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "body references missing region {id}"
+                    ))
                 })?;
             native_record_index(region_start, position)?
         };
@@ -1121,7 +1127,7 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|region| region.id == shell.region)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("shell {} has no region", shell.id))
+                crate::writer::WriteError::Unwritable(format!("shell {} has no region", shell.id))
             })?;
         let region = &model.regions[region_ordinal];
         let ordinal = region
@@ -1129,7 +1135,10 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|id| *id == shell.id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("region does not own shell {}", shell.id))
+                crate::writer::WriteError::Unwritable(format!(
+                    "region does not own shell {}",
+                    shell.id
+                ))
             })?;
         let first_face = shell
             .faces()
@@ -1140,7 +1149,7 @@ fn encode_face_topology_smbh(
                     .iter()
                     .position(|face| face.id == *first_face)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "shell references missing face {first_face}"
                         ))
                     })
@@ -1157,7 +1166,9 @@ fn encode_face_topology_smbh(
                 .iter()
                 .position(|item| item.id == *id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("region references missing shell {id}"))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "region references missing shell {id}"
+                    ))
                 })?;
             native_record_index(shell_start, position)?
         };
@@ -1202,17 +1213,22 @@ fn encode_face_topology_smbh(
             .shells
             .iter()
             .position(|shell| shell.id == face.shell)
-            .ok_or_else(|| CodecError::malformed(format_args!("face {} has no shell", face.id)))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable(format!("face {} has no shell", face.id))
+            })?;
         let shell = &model.shells[shell_ordinal];
         let ordinal = shell
             .faces()
             .iter()
             .position(|id| *id == face.id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("shell does not own face {}", face.id))
+                crate::writer::WriteError::Unwritable(format!(
+                    "shell does not own face {}",
+                    face.id
+                ))
             })?;
         let first_loop = face.loops.iter().next().ok_or_else(|| {
-            CodecError::NotImplemented(
+            crate::writer::WriteError::Unsupported(
                 "source-less F3D face generation requires every face to own a loop".into(),
             )
         })?;
@@ -1221,13 +1237,15 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|loop_| &loop_.id == first_loop)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("face references missing loop {first_loop}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "face references missing loop {first_loop}"
+                ))
             })?;
         let surface_position = surfaces
             .iter()
             .position(|surface| surface.id == face.surface)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "face references missing surface {}",
                     face.surface
                 ))
@@ -1251,7 +1269,7 @@ fn encode_face_topology_smbh(
             .map(i64::try_from)
             .transpose()
             .map_err(|_| {
-                CodecError::InvalidInput(format!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D face {} join key exceeds its signed 64-bit native slot",
                     face.id,
                 ))
@@ -1270,7 +1288,9 @@ fn encode_face_topology_smbh(
                     .iter()
                     .position(|item| item.id == *id)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!("shell references missing face {id}"))
+                        crate::writer::WriteError::Unwritable(format!(
+                            "shell references missing face {id}"
+                        ))
                     })?;
                 native_record_index(face_start, position)?
             },
@@ -1301,17 +1321,22 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|face| face.id == loop_.face)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("loop references missing face {}", loop_.face))
+                crate::writer::WriteError::Unwritable(format!(
+                    "loop references missing face {}",
+                    loop_.face
+                ))
             })?;
         let first = loop_.coedges().first().ok_or_else(|| {
-            CodecError::malformed(format_args!("loop {} has no coedges", loop_.id))
+            crate::writer::WriteError::Unwritable(format!("loop {} has no coedges", loop_.id))
         })?;
         let coedge_position = model
             .coedges
             .iter()
             .position(|coedge| coedge.id == *first)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("loop references missing coedge {first}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "loop references missing coedge {first}"
+                ))
             })?;
         output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "loop")?;
@@ -1324,7 +1349,7 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|id| *id == loop_.id)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "face {} does not own loop {}",
                     face.id, loop_.id
                 ))
@@ -1335,7 +1360,9 @@ fn encode_face_topology_smbh(
                 .iter()
                 .position(|candidate| candidate.id == *next_id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("face references missing loop {next_id}"))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "face references missing loop {next_id}"
+                    ))
                 })?;
             native_record_index(loop_start, position)?
         } else {
@@ -1384,7 +1411,7 @@ fn encode_face_topology_smbh(
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
         if coedge.pcurves.len() > 1 {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "coedge {} has an ordered pcurve collection",
                 coedge.id
             )));
@@ -1392,7 +1419,7 @@ fn encode_face_topology_smbh(
         let Some((next_id, previous_id)) =
             cadmpeg_ir::topology::coedge_ring_neighbors(&model.loops, coedge)
         else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "coedge {} is absent from its owning loop ring",
                 coedge.id
             )));
@@ -1405,7 +1432,7 @@ fn encode_face_topology_smbh(
         let (Some(next), Some(previous), Some(radial), Some(edge), Some(owner)) =
             (next, previous, radial, edge, owner)
         else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "coedge {} has an unresolved topology reference",
                 coedge.id
             )));
@@ -1449,7 +1476,7 @@ fn encode_face_topology_smbh(
                     .get(pcurve_id)
                     .copied()
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "coedge references missing pcurve {pcurve_id}"
                         ))
                     })
@@ -1475,12 +1502,14 @@ fn encode_face_topology_smbh(
         let wire_ref = source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?;
         for (ordinal, edge_id) in shell.wire_edges().iter().enumerate() {
             let edge_ordinal = edge_ordinals.get(edge_id).copied().ok_or_else(|| {
-                CodecError::malformed(format_args!("wire references missing edge {edge_id}"))
+                crate::writer::WriteError::Unwritable(format!(
+                    "wire references missing edge {edge_id}"
+                ))
             })?;
             let coedge_ordinal = wire_edge_base + ordinal;
             let owner = native_record_index(wire_coedge_start, coedge_ordinal)?;
             if wire_edge_owners.insert(edge_id.clone(), owner).is_some() {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "wire edge {edge_id} belongs to more than one shell"
                 )));
             }
@@ -1585,9 +1614,9 @@ fn closed_edge_traversal(
     carrier: &CurveGeometry,
     vertex: Point3,
     tolerance: f64,
-) -> Result<[f64; 2], CodecError> {
+) -> Result<[f64; 2], crate::writer::WriteError> {
     let no_traversal = || {
-        CodecError::NotImplemented(format!(
+        crate::writer::WriteError::Unsupported(format!(
             "source-less F3D edge generation requires a parameter range for edge {}",
             edge.id
         ))
@@ -1629,7 +1658,7 @@ fn closed_edge_traversal(
         ) {
             Ok(end) => end.get(),
             Err(EvaluationFailure::ResourceLimit(limit)) => {
-                return Err(CodecError::ResourceLimit(limit))
+                return Err(CodecError::ResourceLimit(limit).into())
             }
             Err(
                 EvaluationFailure::NoValue
@@ -1671,7 +1700,7 @@ fn encode_source_less_edges_vertices_points(
         &BTreeMap<VertexId, i64>,
     ),
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let (edge_owners, free_vertex_owners) = owners;
     let SourceLessRecordStarts {
         curve: curve_start,
@@ -1703,7 +1732,7 @@ fn encode_source_less_edges_vertices_points(
         let start = vertex_ordinals.get(&edge.start).copied();
         let end = vertex_ordinals.get(&edge.end).copied();
         let (Some(start), Some(end)) = (start, end) else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "edge {} has an unresolved vertex",
                 edge.id
             )));
@@ -1715,7 +1744,7 @@ fn encode_source_less_edges_vertices_points(
                     .get(curve_id)
                     .copied()
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "edge references missing curve {curve_id}"
                         ))
                     })
@@ -1731,7 +1760,7 @@ fn encode_source_less_edges_vertices_points(
                     .get(&vertex.point)
                     .map(|ordinal| model.points[*ordinal].position().get())
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "vertex {} has an unresolved carrier",
                             vertex.id
                         ))
@@ -1814,7 +1843,7 @@ fn encode_source_less_edges_vertices_points(
     for vertex in &model.vertices {
         let point = point_ordinals.get(&vertex.point).copied();
         let Some(point) = point else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "vertex {} has an unresolved carrier",
                 vertex.id
             )));
@@ -1864,7 +1893,7 @@ fn encode_points(
     records: &mut Vec<u8>,
     model: &cadmpeg_ir::document::Model,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for point in &model.points {
         output.charge_entities(1, "F3D BREP record")?;
         native_ident(records, "point")?;
@@ -1888,7 +1917,7 @@ fn vertex_ownership(
     target: &CadIr,
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
-) -> Result<(usize, EndpointSlot), CodecError> {
+) -> Result<(usize, EndpointSlot), crate::writer::WriteError> {
     let model = &target.model;
     if let Some(metadata) = topology.vertex_ownerships.get(vertex.id.as_str()) {
         if let Some(owner) = metadata.owner.as_ref() {
@@ -1897,7 +1926,7 @@ fn vertex_ownership(
                 .iter()
                 .find(|edge| edge.native_ref.as_deref() == Some(owner.as_str()))
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "vertex {} references missing owning edge row {}",
                         vertex.id,
                         owner.as_str()
@@ -1908,7 +1937,7 @@ fn vertex_ownership(
                 .iter()
                 .position(|candidate| candidate.id == edge.id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "vertex {} references missing owning edge {}",
                         vertex.id, edge.id
                     ))
@@ -1920,7 +1949,7 @@ fn vertex_ownership(
                         EndpointSlot::End => edge.end == vertex.id,
                     };
                     if !valid {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(crate::writer::WriteError::Unwritable(format!(
                             "vertex {} endpoint slot {} conflicts with owning edge {}",
                             vertex.id,
                             slot.code(),
@@ -1935,7 +1964,7 @@ fn vertex_ownership(
                     } else if edge.end == vertex.id {
                         EndpointSlot::End
                     } else {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(crate::writer::WriteError::Unwritable(format!(
                             "vertex {} matches neither endpoint of owning edge {}",
                             vertex.id, edge.id
                         )));
@@ -1958,7 +1987,9 @@ fn vertex_ownership(
                 None
             }
         })
-        .ok_or_else(|| CodecError::malformed(format_args!("vertex {} has no edge", vertex.id)))
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable(format!("vertex {} has no edge", vertex.id))
+        })
 }
 
 fn native_face_sidedness(
@@ -2009,7 +2040,7 @@ fn native_wire_side(
     shell: &ShellId,
     edges: &[cadmpeg_ir::ids::EdgeId],
     free_vertex: Option<&VertexId>,
-) -> Result<u8, CodecError> {
+) -> Result<u8, crate::writer::WriteError> {
     let mut matches = topology
         .wires_by_shell
         .get(shell.as_str())
@@ -2042,7 +2073,7 @@ fn native_wire_side(
         (None, _) => cadmpeg_asm::brep::records::WireSide::Out,
         (Some(wire), None) => wire.side,
         (Some(_), Some(_)) => {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "source-less F3D generation has duplicate native wire metadata on shell {shell}"
             )))
         }
@@ -2129,7 +2160,7 @@ fn native_tolerant_edge_tail(
 fn edge_record_metadata(
     topology: &NativeGenerationIndex<'_>,
     edge: &cadmpeg_ir::topology::Edge,
-) -> Result<(Sense, String), CodecError> {
+) -> Result<(Sense, String), crate::writer::WriteError> {
     let metadata = topology.edge_continuities.get(edge.id.as_str()).copied();
     let sense = metadata
         .as_ref()
@@ -2139,7 +2170,7 @@ fn edge_record_metadata(
         |metadata| metadata.continuity.clone(),
     );
     if continuity != "tangent" && continuity != "unknown" {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "F3D edge {} has unsupported continuity token {continuity}",
             edge.id
         )));
@@ -2152,7 +2183,7 @@ fn apply_native_edge_owners(
     topology: &NativeGenerationIndex<'_>,
     coedge_start: i64,
     owners: &mut BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for ownership in topology.edge_ownerships {
         let edge = target
             .model
@@ -2160,7 +2191,7 @@ fn apply_native_edge_owners(
             .iter()
             .find(|edge| edge.native_ref.as_deref() == Some(ownership.id().as_str()))
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D edge ownership {} resolves to no neutral edge",
                     ownership.id(),
                 ))
@@ -2179,7 +2210,7 @@ fn apply_native_edge_owners(
                 } else if owners.contains_key(&edge.id) {
                     continue;
                 } else {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "F3D edge ownership {} references missing coedge index {index}",
                         ownership.id()
                     )));

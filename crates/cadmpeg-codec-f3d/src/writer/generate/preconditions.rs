@@ -13,7 +13,6 @@ use crate::records::{
     sketch_links::{PersistentDesignLink, PersistentSubentityTag},
 };
 use cadmpeg_asm::brep::records::EvaluatedToleranceSlot;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -21,11 +20,13 @@ use cadmpeg_ir::geometry::{
 
 use super::attributes::source_less_body_key;
 /// Each face has one signed native key slot; keys are not globally unique.
-pub(super) fn validate_source_less_face_keys(native: &F3dNative) -> Result<(), CodecError> {
+pub(super) fn validate_source_less_face_keys(
+    native: &F3dNative,
+) -> Result<(), crate::writer::WriteError> {
     let mut records = BTreeSet::new();
     for record in &native.face_native_keys {
         if !records.insert(record.id()) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "multiple F3D native face key records have identity {}",
                 record.id(),
             )));
@@ -36,7 +37,7 @@ pub(super) fn validate_source_less_face_keys(native: &F3dNative) -> Result<(), C
             .asm_face_key
             .is_some_and(|key| i64::try_from(key).is_err())
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D native face key {} exceeds its signed 64-bit native slot",
                 record.id(),
             )));
@@ -45,7 +46,9 @@ pub(super) fn validate_source_less_face_keys(native: &F3dNative) -> Result<(), C
     Ok(())
 }
 
-pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
+pub(super) fn validate_source_less_procedural_carriers(
+    target: &CadIr,
+) -> Result<(), crate::writer::WriteError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
         let mut owners =
@@ -53,14 +56,14 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 surface.geometry.procedural_construction() == Some(&procedural.id)
             });
         let (Some(surface), None) = (owners.next(), owners.next()) else {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "procedural surface {} has no unique carrier",
                 procedural.id
             )));
         };
         let owner = &surface.id;
         if !surface_owners.insert(owner) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "surface {owner} has multiple procedural constructions"
             )));
         }
@@ -70,7 +73,7 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 SolvedSurfaceGeometry::Nurbs(_) | SolvedSurfaceGeometry::Unknown { .. }
             )
         }) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
                 procedural.id, surface.id
             )));
@@ -85,14 +88,14 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             .iter()
             .filter(|curve| curve.geometry.procedural_construction() == Some(&procedural.id));
         let (Some(curve), None) = (owners.next(), owners.next()) else {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "procedural curve {} has no unique carrier",
                 procedural.id
             )));
         };
         let owner = &curve.id;
         if !curve_owners.insert(owner) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "curve {owner} has multiple procedural constructions"
             )));
         }
@@ -100,13 +103,13 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             Some(SolvedCurveGeometry::Nurbs(_)) => {}
             None if procedural.cache_fit_tolerance().is_none() => {}
             None => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "cacheless procedural curve {} carries a cache-fit tolerance",
                     procedural.id
                 )))
             }
             Some(_) => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
                 procedural.id, curve.id
             )))
@@ -119,14 +122,14 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
 pub(super) fn validate_source_less_topology_tolerances(
     target: &CadIr,
     native: &F3dNative,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if let Some(face) = target
         .model
         .faces
         .iter()
         .find(|face| face.tolerance.is_some())
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D cannot serialize face {} tolerance losslessly",
             face.id
         )));
@@ -156,7 +159,7 @@ pub(super) fn validate_source_less_topology_tolerances(
         .iter()
         .find(|coedge| coedge.use_curve.is_some() && !tolerant.contains(coedge.id.as_str()))
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D coedge {} use curve lacks a cache-local tolerant extension",
             coedge.id
         )));
@@ -167,7 +170,7 @@ pub(super) fn validate_source_less_topology_tolerances(
 pub(super) fn validate_source_less_auxiliary_geometry(
     target: &CadIr,
     native: &F3dNative,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let authored = super::mesh::authored_tessellations(target, native);
     if let Some(tessellation) = target
         .model
@@ -175,7 +178,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(
         .iter()
         .find(|tessellation| !authored.contains(&tessellation.id))
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D cannot serialize neutral tessellation {} losslessly",
             tessellation.id
         )));
@@ -186,7 +189,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(
         .iter()
         .find(|surface| surface.source_object.is_some())
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D cannot serialize source-object association on surface {} losslessly",
             surface.id
         )));
@@ -197,7 +200,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(
         .iter()
         .find(|curve| curve.source_object.is_some())
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D cannot serialize source-object association on curve {} losslessly",
             curve.id
         )));
@@ -210,15 +213,15 @@ fn source_less_design_record_type<'a>(
     class_tag: &crate::records::references::DesignClassTag,
     record_index: u32,
     record_kind: &str,
-) -> Result<&'a SegmentType, CodecError> {
+) -> Result<&'a SegmentType, crate::writer::WriteError> {
     let type_ordinal = class_tag.dynamic_ordinal().ok_or_else(|| {
-        CodecError::NotImplemented(format!(
+        crate::writer::WriteError::Unsupported(format!(
             "F3D {record_kind} class tag {} is below the dynamic type range",
             class_tag.as_str()
         ))
     })?;
     let design_type = native.design_types.get(type_ordinal).ok_or_else(|| {
-        CodecError::NotImplemented(format!(
+        crate::writer::WriteError::Unsupported(format!(
             "F3D {record_kind} class tag {} is outside the Design type table",
             class_tag.as_str()
         ))
@@ -228,7 +231,7 @@ fn source_less_design_record_type<'a>(
         .values()
         .any(|registered| *registered == u64::from(record_index))
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "F3D {record_kind} {record_index} is not registered by class tag {}",
             class_tag.as_str()
         )));
@@ -247,7 +250,7 @@ fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -
 
 pub(in crate::writer) fn validate_source_less_sketch_graph(
     native: &F3dNative,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let sketch_owners = native
         .design_entity_headers
         .iter()
@@ -286,7 +289,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         )
     {
         if let Some(before) = typed_indices.insert(record_index, id) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch records {before} and {id} share record index {record_index}"
             )));
         }
@@ -313,7 +316,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             point_type,
             crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE,
         ) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D sketch point {} requires the current point record type",
                 point.id
             )));
@@ -327,7 +330,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
                 }
             )
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D sketch point {} requires the version-11 member sequence",
                 point.id
             )));
@@ -336,19 +339,19 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             .persistent_id()
             .is_none_or(|persistent_id| persistent_id == 0)
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "source-less F3D sketch point {} has no persistent identity",
                 point.id
             )));
         }
         let owner_reference = point.owner_reference.ok_or_else(|| {
-            CodecError::NotImplemented(format!(
+            crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch point {} has no direct sketch owner",
                 point.id
             ))
         })?;
         if !sketch_owners.contains(&u64::from(owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch point {} references missing sketch owner {owner_reference}",
                 point.id
             )));
@@ -367,7 +370,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             })
             .count();
         if owner_type_count != 1 {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch point {} owner {owner_reference} does not have one sketch-container type registration",
                 point.id
             )));
@@ -376,7 +379,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             || typed_indices.contains_key(&point.paired_reference)
             || !point_companions.insert(point.paired_reference)
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch point {} has a conflicting companion record {}",
                 point.id, point.paired_reference
             )));
@@ -396,7 +399,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             })
             .count();
         if companion_type != 1 {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch point {} companion {} does not have one current companion type registration",
                 point.id, point.paired_reference
             )));
@@ -404,7 +407,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         let companion = point.companion();
         for curve in companion.incident_curves {
             if !curve_indices.contains(curve) {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D sketch point {} companion references missing curve {curve}",
                     point.id
                 )));
@@ -430,26 +433,26 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
                 crate::design::decode::sketch::CURRENT_SKETCH_NURBS_TYPE
             }
             None => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D sketch curve {} has no writable geometry",
                     curve.id
                 )))
             }
         };
         if !design_type_matches(curve_type, expected_type) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D sketch curve {} requires its current geometry record type",
                 curve.id
             )));
         }
         let owner_reference = curve.owner_reference.ok_or_else(|| {
-            CodecError::NotImplemented(format!(
+            crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch curve {} has no direct sketch owner",
                 curve.id
             ))
         })?;
         if !sketch_owners.contains(&u64::from(owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch curve {} references missing sketch owner {owner_reference}",
                 curve.id
             )));
@@ -458,7 +461,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
     }
     for relation in &native.sketch_relations {
         if !sketch_owners.contains(&u64::from(relation.owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch relation {} references missing sketch owner {}",
                 relation.id, relation.owner_reference
             )));
@@ -468,7 +471,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
                 .get(&member)
                 .is_some_and(|owner| *owner != relation.owner_reference)
             {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D sketch relation {} owner disagrees with geometry record {member}",
                     relation.id
                 )));
@@ -488,19 +491,19 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             .eq_ignore_ascii_case("E0618268-3A06-450E-9E94-7CF4C2E66802")
             || text_type.version != text.class_version
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D sketch text {} requires its textex type registration",
                 text.id
             )));
         }
         if !root_indices.contains(&text.record_index) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch text {} is not reachable from a sketch header",
                 text.id
             )));
         }
         if !sketch_owners.contains(&u64::from(text.owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch text {} references missing sketch owner {}",
                 text.id, text.owner_reference
             )));
@@ -513,7 +516,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         .collect::<BTreeMap<_, _>>();
     for header in &native.design_record_headers {
         if !explicit_headers.insert(header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "multiple F3D Design record headers use index {}",
                 header.record_index
             )));
@@ -524,7 +527,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         // is a genuine conflict.
         if let Some(typed) = typed_tags.get(&header.record_index) {
             if *typed != header.class_tag.as_str() {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D Design record header {} names a different tag than the typed sketch record in its slot",
                     header.id
                 )));
@@ -536,7 +539,7 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
 
 pub(in crate::writer) fn validate_source_less_design_ownership(
     native: &F3dNative,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let mut types_by_guid = BTreeMap::new();
     let mut entity_types = BTreeMap::new();
     let mut entity_modules = BTreeMap::new();
@@ -545,14 +548,14 @@ pub(in crate::writer) fn validate_source_less_design_ownership(
             .insert(design_type.type_guid.as_str(), design_type)
             .is_some()
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "duplicate F3D Design type GUID: {}",
                 design_type.type_guid.as_str()
             )));
         }
         for entity_id in design_type.entities.values() {
             if let Some(before) = entity_types.insert(*entity_id, design_type.type_guid.as_str()) {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D Design entity {entity_id} is registered by both type {before} and type {}",
                     design_type.type_guid.as_str()
                 )));
@@ -569,7 +572,7 @@ pub(in crate::writer) fn validate_source_less_design_ownership(
             .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             == Some(design_type.type_guid.as_str())
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D Design type {} is its own base type",
                 design_type.id()
             )));
@@ -583,7 +586,7 @@ pub(in crate::writer) fn validate_source_less_design_ownership(
             .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D Design type hierarchy contains a cycle at {}",
                     base.type_guid.as_str()
                 )));
@@ -594,7 +597,7 @@ pub(in crate::writer) fn validate_source_less_design_ownership(
     for header in &native.design_entity_headers {
         let owned_module = entity_modules.get(&header.entity_id.suffix()).cloned();
         if header.module() != owned_module.as_deref() {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D Design header {} module conflicts with MetaStream ownership",
                 header.id
             )));
@@ -621,10 +624,10 @@ impl<'a> DesignBindingsValidated<'a> {
 
 pub(super) fn validate_source_less_design_bindings(
     native: &F3dNative,
-) -> Result<DesignBindingsValidated<'_>, CodecError> {
+) -> Result<DesignBindingsValidated<'_>, crate::writer::WriteError> {
     let mut by_key = BTreeMap::new();
     let mut by_suffix = BTreeMap::new();
-    let mut insert = |key: u64, suffix: u64, id: &str| -> Result<(), CodecError> {
+    let mut insert = |key: u64, suffix: u64, id: &str| -> Result<(), crate::writer::WriteError> {
         if by_key
             .insert(key, suffix)
             .is_some_and(|before| before != suffix)
@@ -632,7 +635,7 @@ pub(super) fn validate_source_less_design_bindings(
                 .insert(suffix, key)
                 .is_some_and(|before| before != key)
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D Design body binding {id} conflicts with the body-map key/suffix bijection"
             )));
         }
@@ -651,7 +654,7 @@ pub(super) fn validate_source_less_design_bindings(
 pub(in crate::writer) fn validate_source_less_history_graph(
     target: &CadIr,
     native: &F3dNative,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let Some(namespace) = target.native.namespace("f3d") else {
         return Ok(());
     };
@@ -669,7 +672,7 @@ pub(in crate::writer) fn validate_source_less_history_graph(
                 .map(cadmpeg_ir::NativeRecord::id)
                 .collect::<BTreeSet<_>>();
             if unique.len() != records.len() {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D {arena} contains duplicate record ids"
                 )));
             }
@@ -697,14 +700,14 @@ pub(in crate::writer) fn validate_source_less_history_graph(
         .iter()
         .any(|(arena, count)| stored_count(arena) != *count)
     {
-        return Err(CodecError::InvalidInput(
+        return Err(crate::writer::WriteError::Unwritable(
             "F3D ASM history graph contains orphaned or ambiguously parented records".into(),
         ));
     }
     for state in states {
         for record in &state.records {
             if record.raw_bytes.is_empty() {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D ASM history record {} has an empty native payload",
                     record.id
                 )));
@@ -716,7 +719,7 @@ pub(in crate::writer) fn validate_source_less_history_graph(
         .iter()
         .find(|history| history.binding_budget_exceeded)
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "source-less F3D cannot serialize ASM history {} whose bulletin boards and records were not retained",
             history.id
         )));
@@ -730,7 +733,7 @@ pub(in crate::writer) fn validate_source_less_history_graph(
                     .is_some_and(|state| state.state_id == preamble.stream_size)
                     && preamble.history_entry_count >= 0 => {}
             Some(_) => {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
@@ -743,7 +746,7 @@ pub(in crate::writer) fn validate_source_less_history_graph(
         .iter()
         .any(|history| !crate::history::graph_is_coherent(history))
     {
-        return Err(CodecError::InvalidInput(
+        return Err(crate::writer::WriteError::Unwritable(
             "F3D ASM history graph is not a coherent doubly linked state chain".into(),
         ));
     }
@@ -775,7 +778,7 @@ pub(super) fn validate_source_less_design_links(
     target: &CadIr,
     native: &F3dNative,
     attributes: &super::attributes::AttributeIndex<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let coedges = target
         .model
         .coedges
@@ -801,13 +804,13 @@ pub(super) fn validate_source_less_design_links(
             continue;
         };
         coedges.get(id.as_str()).copied().ok_or_else(|| {
-            CodecError::InvalidInput(format!(
+            crate::writer::WriteError::Unwritable(format!(
                 "F3D sketch-curve link {} targets a missing coedge {id}",
                 link.id
             ))
         })?;
         if !linked_coedges.insert(id.clone()) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "source-less F3D generation supports one sketch-curve link per coedge: {id}"
             )));
         }
@@ -867,7 +870,7 @@ pub(super) fn validate_source_less_design_links(
         )
         .filter(|id| bodies.contains_key(id.as_str()));
         let Some(target_key) = target_key else {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D persistent design link {} has an unsupported or missing target",
                 link.id
             )));
@@ -893,7 +896,7 @@ pub(super) fn validate_source_less_design_links(
             _ => None,
         };
         let Some(target_key) = target_key else {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D persistent subentity tag {} has an unsupported or missing target",
                 tag.id
             )));
@@ -905,7 +908,7 @@ pub(super) fn validate_source_less_design_links(
         tags.sort_by_key(|tag| tag.ordinal);
         for (ordinal, tag) in tags.iter().enumerate() {
             if index_from_u32(tag.ordinal) != ordinal {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D persistent subentity tags for {target:?} require contiguous ordinals"
                 )));
             }
@@ -915,7 +918,7 @@ pub(super) fn validate_source_less_design_links(
         links.sort_by_key(|link| link.ordinal);
         for (ordinal, link) in links.iter().enumerate() {
             if index_from_u32(link.ordinal) != ordinal {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D persistent design links for {target:?} require contiguous ordinals"
                 )));
             }
@@ -934,19 +937,19 @@ pub(super) fn validate_source_less_design_links(
             &parameters.source_namespace,
             parameters.record_index,
         ) else {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D tolerant-coedge metadata {} has no source record",
                 parameters.id()
             )));
         };
         let coedge = coedges.get(entity.as_str()).copied().ok_or_else(|| {
-            CodecError::InvalidInput(format!(
+            crate::writer::WriteError::Unwritable(format!(
                 "F3D tolerant-coedge metadata {} targets missing coedge {entity}",
                 parameters.id(),
             ))
         })?;
         if !tolerant_coedges.insert(entity) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "multiple F3D tolerant-coedge records target {}",
                 coedge.id
             )));
@@ -960,7 +963,7 @@ pub(super) fn validate_source_less_design_links(
                 ..
             } => {
                 let use_curve = coedge.use_curve.as_ref().ok_or_else(|| {
-                    CodecError::InvalidInput(format!(
+                    crate::writer::WriteError::Unwritable(format!(
                         "F3D tolerant-coedge extension {} has no use curve",
                         parameters.id()
                     ))
@@ -969,7 +972,7 @@ pub(super) fn validate_source_less_design_links(
                     .get(use_curve.curve.as_str())
                     .copied()
                     .ok_or_else(|| {
-                        CodecError::InvalidInput(format!(
+                        crate::writer::WriteError::Unwritable(format!(
                             "F3D tolerant-coedge extension {} references missing use curve {}",
                             parameters.id(),
                             use_curve.curve
@@ -979,14 +982,14 @@ pub(super) fn validate_source_less_design_links(
                     curve.geometry,
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
                 ) {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
                         parameters.id()
                     )));
                 }
                 let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
                 if use_curve.parameter_range.endpoints() != effective_range.get() {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
                         parameters.id()
                     )));
@@ -998,7 +1001,7 @@ pub(super) fn validate_source_less_design_links(
                 target: Some(_),
                 ..
             } => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "source-less F3D cannot relocate tolerant-coedge extension {}",
                     parameters.id()
                 )));
@@ -1025,7 +1028,7 @@ pub(super) fn validate_source_less_design_links(
                     .as_ref()
                     .is_some_and(|id| !seen.insert(id.clone()))
                 {
-                    return Err(CodecError::InvalidInput(format!(
+                    return Err(crate::writer::WriteError::Unwritable(format!(
                         "multiple F3D {} records target the same entity",
                         $label
                     )));
@@ -1034,7 +1037,7 @@ pub(super) fn validate_source_less_design_links(
                     .as_deref()
                     .and_then(|id| $valid.get(id).copied())
                     .ok_or_else(|| {
-                        CodecError::NotImplemented(format!(
+                        crate::writer::WriteError::Unsupported(format!(
                             "F3D {} metadata {} targets missing entity",
                             $label, $item.$($id)+
                         ))
@@ -1061,7 +1064,7 @@ pub(super) fn validate_source_less_design_links(
         [id()],
         |visibility, (ordinal, body)| {
             if body.visible != Some(visibility.visible) {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D body visibility {} conflicts with body {} visibility",
                     visibility.id(),
                     visibility.body
@@ -1069,7 +1072,7 @@ pub(super) fn validate_source_less_design_links(
             }
             let emitted_key = source_less_body_key(attributes, body, ordinal)?;
             if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key()) {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D body visibility {} uses an ASM key different from body {}",
                     visibility.id(),
                     visibility.body
@@ -1087,7 +1090,7 @@ pub(super) fn validate_source_less_design_links(
         [id()],
         |hints, (_, body)| {
             if body.transform.is_none() {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D transform hints {} target a body without a transform",
                     hints.id()
                 )));
@@ -1129,7 +1132,7 @@ pub(super) fn validate_source_less_design_links(
             .count()
             > 1
         {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "multiple F3D face-sidedness records target {}",
                 face.id
             )));
@@ -1139,7 +1142,7 @@ pub(super) fn validate_source_less_design_links(
         if !target.model.faces.iter().any(|face| {
             record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
         }) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D face-sidedness metadata {} has no linked face",
                 record.id()
             )));
@@ -1155,7 +1158,7 @@ pub(super) fn validate_source_less_design_links(
         [id()],
         |tail, edge| {
             if edge.tolerance.is_none() {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D tolerant-edge metadata {} requires a tolerant edge",
                     tail.id()
                 )));
@@ -1177,7 +1180,7 @@ pub(super) fn validate_source_less_design_links(
                     EvaluatedToleranceSlot::Evaluated { .. }
                 )
             {
-                return Err(CodecError::InvalidInput(format!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
                     tail.id()
                 )));
@@ -1215,13 +1218,13 @@ pub(super) fn validate_source_less_design_links(
                 })
             })
             .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D wire-topology metadata {} targets missing shell",
                     wire.id()
                 ))
             })?;
         if !wire_record_indices.insert(wire.record_index) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "multiple F3D wire-topology records use native index {}",
                 wire.record_index
             )));
@@ -1248,7 +1251,7 @@ pub(super) fn validate_source_less_design_links(
             }
         };
         if !member_form_is_valid {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D wire metadata {} has invalid edge-ring or isolated-vertex membership",
                 wire.id()
             )));
@@ -1402,10 +1405,13 @@ impl WireOwnershipValidated {
 
 pub(super) fn validate_source_less_wire_ownership(
     target: &CadIr,
-) -> Result<WireOwnershipValidated, CodecError> {
+) -> Result<WireOwnershipValidated, crate::writer::WriteError> {
     let model = &target.model;
-    let inconsistent =
-        || CodecError::Malformed("source-less F3D wire ownership is inconsistent".into());
+    let inconsistent = || {
+        crate::writer::WriteError::Unwritable(
+            "source-less F3D wire ownership is inconsistent".into(),
+        )
+    };
     let region_ordinal =
         |id: &cadmpeg_ir::ids::RegionId| model.regions.iter().position(|region| region.id == *id);
     let shell_ordinal =
@@ -1511,7 +1517,6 @@ mod tests {
     use crate::writer::generate::attributes::AttributeIndex;
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
     use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::scalar::PositiveReal;
 
     #[test]
@@ -1538,7 +1543,7 @@ mod tests {
         let attributes = AttributeIndex::new(&target, &native);
         let error = validate_source_less_design_links(&target, &native, &attributes)
             .expect_err("unset native evaluation must not coexist with a neutral tolerance");
-        assert!(matches!(error, CodecError::InvalidInput(_)));
+        assert!(matches!(error, crate::writer::WriteError::Unwritable(_)));
         assert!(error
             .to_string()
             .contains("requires finite fields and a tolerant vertex"));

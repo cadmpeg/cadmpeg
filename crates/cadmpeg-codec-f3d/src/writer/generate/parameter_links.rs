@@ -3,13 +3,12 @@
 
 use super::records::native_lp_ascii;
 use crate::records::parameters::{DesignParameterCompanion, DesignParameterOwner};
-use cadmpeg_core::CodecError;
 
 pub(crate) fn encode(
     out: &mut Vec<u8>,
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     for owner in owners {
         encode_owner(out, owner)?;
         // A repeated indexed header terminates the owner frame. It is a
@@ -30,7 +29,7 @@ pub(crate) fn encode(
     Ok(())
 }
 
-fn header(out: &mut Vec<u8>, tag: &str, index: u32) -> Result<(), CodecError> {
+fn header(out: &mut Vec<u8>, tag: &str, index: u32) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, tag)?;
     out.extend_from_slice(&index.to_le_bytes());
     Ok(())
@@ -42,7 +41,10 @@ fn reference(out: &mut Vec<u8>, index: u32, tail: usize) {
     out.resize(out.len() + tail, 0);
 }
 
-fn encode_owner(out: &mut Vec<u8>, owner: &DesignParameterOwner) -> Result<(), CodecError> {
+fn encode_owner(
+    out: &mut Vec<u8>,
+    owner: &DesignParameterOwner,
+) -> Result<(), crate::writer::WriteError> {
     header(out, owner.class_tag().as_str(), owner.record_index())?;
     out.extend_from_slice(&[0; 8]);
     let Some(scope) = owner.scope_record_index() else {

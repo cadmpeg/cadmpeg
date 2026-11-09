@@ -5,7 +5,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -52,7 +51,7 @@ fn validate_recipe_class_headers<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'a>,
     root: cadmpeg_core::decode::View<'a>,
     edits: &BTreeMap<String, Vec<edits::ConstructionRecipeEdit>>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if !edits
         .values()
         .flatten()
@@ -66,7 +65,7 @@ fn validate_recipe_class_headers<'a>(
             continue;
         }
         let prefix = stream.strip_suffix("BulkStream.dat").ok_or_else(|| {
-            CodecError::NotImplemented(format!(
+            crate::writer::WriteError::Unsupported(format!(
                 "F3D recipe stream {stream} has no matching metadata"
             ))
         })?;
@@ -79,17 +78,23 @@ fn validate_recipe_class_headers<'a>(
         {
             let length = cadmpeg_core::decode::u64_from_index(edit.value.len());
             let end = edit.offset.checked_add(length).ok_or_else(|| {
-                CodecError::NotImplemented("F3D recipe identity extent overflows".into())
+                crate::writer::WriteError::Unsupported(
+                    "F3D recipe identity extent overflows".into(),
+                )
             })?;
             for row in meta.records.iter().chain(&meta.secondary_records) {
                 let tag_start = row.bulk_offset.checked_add(4).ok_or_else(|| {
-                    CodecError::NotImplemented("F3D record class offset overflows".into())
+                    crate::writer::WriteError::Unsupported(
+                        "F3D record class offset overflows".into(),
+                    )
                 })?;
                 let tag_end = tag_start.checked_add(3).ok_or_else(|| {
-                    CodecError::NotImplemented("F3D record class extent overflows".into())
+                    crate::writer::WriteError::Unsupported(
+                        "F3D record class extent overflows".into(),
+                    )
                 })?;
                 if edit.offset < tag_end && tag_start < end {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(crate::writer::WriteError::Unsupported(format!(
                         "F3D recipe identity edit in {stream} overlaps an indexed record class"
                     )));
                 }
@@ -104,7 +109,7 @@ fn validate_recipe_class_headers<'a>(
 /// `source_image` must match the F3D source represented by `target`. The
 /// function validates changed topology, geometry, design, sketch, history, and
 /// appearance fields before patching records. An edit the patch path cannot
-/// express returns [`CodecError::NotImplemented`]; the target layer turns
+/// express returns [`crate::writer::WriteError::Unsupported`]; the target layer turns
 /// that decline into synthesis with `PatchDeclined`.
 ///
 /// Completeness of the patch is checked by rebuilding the document from the
@@ -120,7 +125,7 @@ pub(crate) fn write_semantic(
     limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy {
         limits,
@@ -152,7 +157,7 @@ pub(crate) fn write_with_context<'a>(
     notes: &mut Vec<String>,
     encode_ctx: &cadmpeg_core::decode::DecodeContext<'a>,
     source_root: cadmpeg_core::decode::View<'a>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
         validate_configuration_projection(target, native)?;
@@ -180,7 +185,7 @@ pub(crate) fn write_with_context<'a>(
         .map(|point| point.id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
     if baseline_point_ids != target_point_ids {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D point regeneration requires the unchanged point-id set and finite coordinates"
                 .into(),
         ));
@@ -271,7 +276,7 @@ pub(crate) fn write_with_context<'a>(
     let design_type_edits = validate_design_type_edits(natives)?;
     let lost_edge_edits = validate_lost_edge_edits(natives)?;
     if let Some(reference) = lost_edge_edits.values().flatten().next() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(crate::writer::WriteError::Unsupported(format!(
             "F3D lost-edge edit {} changes an indexed record identity",
             reference.id
         )));
@@ -299,7 +304,7 @@ pub(crate) fn write_with_context<'a>(
             .zip(target_act_table_references)
             .all(|(before, after)| before.content_eq(after))
     {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
         ));
     }
@@ -520,16 +525,15 @@ pub(crate) fn write_with_context<'a>(
         supported.store(encode_ctx, supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),
         ));
     }
 
-    let active_brep = baseline
-        .primary_model_brep_name
-        .as_deref()
-        .ok_or_else(|| CodecError::Malformed("F3D baseline has no active BREP".into()))?;
+    let active_brep = baseline.primary_model_brep_name.as_deref().ok_or_else(|| {
+        crate::writer::WriteError::Unwritable("F3D baseline has no active BREP".into())
+    })?;
     let positions = target
         .model
         .points
@@ -691,7 +695,7 @@ pub(crate) fn write_with_context<'a>(
         .collect::<BTreeMap<_, _>>();
 
     let mut archive = zip::ZipArchive::new(Cursor::new(source_image)).map_err(|error| {
-        CodecError::malformed(format_args!("retained F3D ZIP is invalid: {error}"))
+        crate::writer::WriteError::Unwritable(format!("retained F3D ZIP is invalid: {error}"))
     })?;
     let output = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(output);
@@ -707,12 +711,14 @@ pub(crate) fn write_with_context<'a>(
                 archive.by_index(index)
             }
             .map_err(|error| {
-                CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
+                crate::writer::WriteError::Unwritable(format!("invalid F3D ZIP entry: {error}"))
             })?;
             let name = entry
                 .name()
                 .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+                    crate::writer::WriteError::Unwritable(format!(
+                        "invalid ZIP entry name: {error}"
+                    ))
                 })?
                 .into_owned();
             let options = crate::zip_write::file_options(entry.compression());
@@ -729,7 +735,9 @@ pub(crate) fn write_with_context<'a>(
                     )?;
                 } else {
                     zip.add_directory(name, options).map_err(|error| {
-                        CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
+                        crate::writer::WriteError::Unwritable(format!(
+                            "cannot write F3D directory: {error}"
+                        ))
                     })?;
                 }
                 continue;
@@ -867,23 +875,25 @@ pub(crate) fn write_with_context<'a>(
             continue;
         }
         zip.start_file(name, options).map_err(|error| {
-            CodecError::malformed(format_args!("cannot write F3D entry: {error}"))
+            crate::writer::WriteError::Unwritable(format!("cannot write F3D entry: {error}"))
         })?;
         zip.write_all(&bytes)?;
     }
     if !user_knot_edits.is_empty() {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "one or more edited T-spline surfaces have no writable TSM member".into(),
         ));
     }
     if patched_protein_appearances.len() != protein_appearance_edits.len() {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "one or more edited F3D appearances have no writable Protein carrier".into(),
         ));
     }
     let output = zip
         .finish()
-        .map_err(|error| CodecError::malformed(format_args!("cannot finish F3D ZIP: {error}")))?
+        .map_err(|error| {
+            crate::writer::WriteError::Unwritable(format!("cannot finish F3D ZIP: {error}"))
+        })?
         .into_inner();
     writer.write_all(&output)?;
     Ok(())

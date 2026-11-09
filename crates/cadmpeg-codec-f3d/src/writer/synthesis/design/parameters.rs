@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document scalar parameters authored from neutral values and expressions.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{DesignParameter as NeutralParameter, ParameterValue};
 use cadmpeg_ir::report::loss::LossNote;
@@ -22,7 +21,7 @@ pub(super) fn regenerate(
         cadmpeg_ir::features::ParameterId,
         cadmpeg_ir::features::ParameterId,
     )>,
-    CodecError,
+    crate::writer::WriteError,
 > {
     let original_native = std::mem::take(&mut native.design_parameters);
     let owned = target
@@ -71,7 +70,7 @@ pub(super) fn regenerate(
                     .map(|candidate| candidate.name.clone())
             })
             .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
+                crate::writer::WriteError::Unwritable(format!(
                     "F3D parameter {} has a dangling expression reference",
                     parameter.id
                 ))
@@ -88,14 +87,21 @@ pub(super) fn regenerate(
         }
         // (O-capacity): indexed Design records and source ordinals are u32.
         let index = u32::try_from(native.design_parameters.len()).map_err(|_| {
-            CodecError::InvalidInput("F3D document parameter count exceeds u32::MAX".into())
+            crate::writer::WriteError::Unwritable(
+                "F3D document parameter count exceeds u32::MAX".into(),
+            )
         })?;
         let record_index = index.checked_add(1).ok_or_else(|| {
-            CodecError::InvalidInput("F3D document parameter index exceeds u32::MAX".into())
+            crate::writer::WriteError::Unwritable(
+                "F3D document parameter index exceeds u32::MAX".into(),
+            )
         })?;
         let generated = DesignParameter::authored(DesignParameterContent {
             id: format!("f3d:design:design-parameter#{record_index}"),
-            class_tag: "256".to_owned().try_into().map_err(CodecError::Malformed)?,
+            class_tag: "256"
+                .to_owned()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?,
             record_index,
             source_ordinal: parameter.ordinal,
             source: DesignParameterSource::authored(
@@ -108,13 +114,13 @@ pub(super) fn regenerate(
                 None,
                 Some(DesignParameterDiscriminator::Code0),
             )
-            .map_err(CodecError::Malformed)?,
+            .map_err(crate::writer::WriteError::Unwritable)?,
             expression,
             unit,
             name: parameter.name.clone(),
             evaluated_value: scalar,
         })
-        .map_err(CodecError::Malformed)?;
+        .map_err(crate::writer::WriteError::Unwritable)?;
         native.design_parameters.push(generated);
         authored.push((parameter.id.clone(), native.design_parameters.len() - 1));
         if parameter.display.is_some()

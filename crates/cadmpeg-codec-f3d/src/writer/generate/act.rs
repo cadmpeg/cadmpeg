@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::records::{native_lp_ascii, native_lp_utf16};
 use crate::native::F3dNative;
 use crate::records::entity_header::SegmentType;
-use cadmpeg_core::CodecError;
 
 pub(super) struct Segment {
     pub(super) folder: String,
@@ -17,14 +16,17 @@ pub(super) struct Segment {
 pub(super) fn encode(
     native: &F3dNative,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Vec<Segment>, CodecError> {
+) -> Result<Vec<Segment>, crate::writer::WriteError> {
     let mut segments = Vec::new();
     for table in &native.act_tables {
-        let scope = crate::ids::native_stream(&table.id)
-            .ok_or_else(|| CodecError::malformed("ACT table has no native segment identity"))?;
-        let prefix = scope
-            .strip_suffix("BulkStream.dat")
-            .ok_or_else(|| CodecError::malformed("ACT table identity must name a BulkStream"))?;
+        let scope = crate::ids::native_stream(&table.id).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("ACT table has no native segment identity".into())
+        })?;
+        let prefix = scope.strip_suffix("BulkStream.dat").ok_or_else(|| {
+            crate::writer::WriteError::Unwritable(
+                "ACT table identity must name a BulkStream".into(),
+            )
+        })?;
         let meta_scope = format!("{prefix}MetaStream.dat");
         let mut types = native
             .act_types
@@ -44,7 +46,7 @@ pub(super) fn encode(
         let mut bulk = ctx.alloc_filled(prefix_length, 0u8, "F3D ACT table prefix")?;
         let mut records = Vec::new();
         let mut registrations = BTreeMap::<u32, usize>::new();
-        let type_for = |index: u32| -> Result<usize, CodecError> {
+        let type_for = |index: u32| -> Result<usize, crate::writer::WriteError> {
             let mut matching = types.iter().enumerate().filter(|(_, record)| {
                 record
                     .entities
@@ -52,22 +54,22 @@ pub(super) fn encode(
                     .any(|value| *value == u64::from(index))
             });
             let Some((ordinal, _)) = matching.next() else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(crate::writer::WriteError::Unsupported(format!(
                     "ACT record {index} has no typed class registration"
                 )));
             };
             if matching.next().is_some() {
-                return Err(CodecError::malformed(
-                    "ACT record belongs to multiple class registrations",
+                return Err(crate::writer::WriteError::Unwritable(
+                    "ACT record belongs to multiple class registrations".into(),
                 ));
             }
             Ok(ordinal)
         };
-        let mut header = |out: &mut Vec<u8>, index: u32| -> Result<(), CodecError> {
+        let mut header = |out: &mut Vec<u8>, index: u32| -> Result<(), crate::writer::WriteError> {
             let ordinal = type_for(index)?;
             if registrations.insert(index, ordinal).is_some() {
-                return Err(CodecError::malformed(
-                    "ACT typed records repeat a segment-local index",
+                return Err(crate::writer::WriteError::Unwritable(
+                    "ACT typed records repeat a segment-local index".into(),
                 ));
             }
             ctx.charge_entities(1, "F3D ACT record")?;
@@ -76,7 +78,9 @@ pub(super) fn encode(
                 .checked_add(256)
                 .filter(|value| *value <= 999)
                 .ok_or_else(|| {
-                    CodecError::InvalidInput("ACT registry exceeds three-digit class tags".into())
+                    crate::writer::WriteError::Unwritable(
+                        "ACT registry exceeds three-digit class tags".into(),
+                    )
                 })?;
             native_lp_ascii(out, &tag.to_string())?;
             out.extend_from_slice(&index.to_le_bytes());
@@ -161,7 +165,7 @@ pub(super) fn encode(
             .filter(|record| record.stream() == scope)
             .any(|record| !known.contains(&record.target_record))
         {
-            return Err(CodecError::NotImplemented(
+            return Err(crate::writer::WriteError::Unsupported(
                 "ACT table reference has no typed target record".into(),
             ));
         }
@@ -179,9 +183,9 @@ pub(super) fn encode(
     Ok(segments)
 }
 
-fn count(out: &mut Vec<u8>, value: usize) -> Result<(), CodecError> {
+fn count(out: &mut Vec<u8>, value: usize) -> Result<(), crate::writer::WriteError> {
     let value = u32::try_from(value)
-        .map_err(|_| CodecError::InvalidInput("ACT count exceeds u32::MAX".into()))?;
+        .map_err(|_| crate::writer::WriteError::Unwritable("ACT count exceeds u32::MAX".into()))?;
     out.extend_from_slice(&value.to_le_bytes());
     Ok(())
 }
@@ -194,7 +198,7 @@ fn metastream(
     types: &[&SegmentType],
     records: &[(u32, u64)],
     registrations: &BTreeMap<u32, usize>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let mut out = Vec::new();
     native_lp_ascii(&mut out, "FusionACTSegmentType")?;
     out.extend_from_slice(&0_u32.to_le_bytes());

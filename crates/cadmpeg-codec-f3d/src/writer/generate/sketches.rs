@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Author legacy sketch containers, points and analytic curve members.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchConstraintId, SketchEntityId, SketchGeometryDefinition,
@@ -43,7 +42,7 @@ pub(super) fn encode(
     target: &CadIr,
     native: &crate::native::F3dNative,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Option<SketchStream>, CodecError> {
+) -> Result<Option<SketchStream>, crate::writer::WriteError> {
     let mut bulk = Vec::new();
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
@@ -326,8 +325,9 @@ pub(super) fn encode(
                     .filter(|index| *index != 0 && occupied.insert(*index))
             })
             .collect::<Vec<_>>();
-        let count = u32::try_from(members.len())
-            .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
+        let count = u32::try_from(members.len()).map_err(|_| {
+            crate::writer::WriteError::Unwritable("F3D sketch member count exceeds u32".into())
+        })?;
         let Some(head) = allocate(&mut occupied, &mut next) else {
             break;
         };
@@ -386,7 +386,9 @@ pub(super) fn encode(
         let ordinal = u32::try_from(sketches.len())
             .ok()
             .and_then(|v| v.checked_add(1))
-            .ok_or_else(|| CodecError::InvalidInput("F3D sketch ordinal exceeds u32".into()))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("F3D sketch ordinal exceeds u32".into())
+            })?;
         bulk.extend_from_slice(&ordinal.to_le_bytes());
         bulk.extend_from_slice(&[0; 7]);
         bulk.extend_from_slice(&count.to_le_bytes());
@@ -422,7 +424,10 @@ pub(super) fn encode(
                 mark(ctx, &mut primary, point, bulk.len())?;
                 let mut record = Vec::new();
                 curve_header(&mut record, "265", point)?;
-                let subtype = "266".to_owned().try_into().map_err(CodecError::Malformed)?;
+                let subtype = "266"
+                    .to_owned()
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?;
                 super::records::encode_sketch_nurbs(&mut record, None, &subtype, point, &geometry)?;
                 curve_tail(&mut record, container, false);
                 bulk.extend_from_slice(&record);
@@ -536,14 +541,15 @@ pub(super) fn encode(
                 .into_iter()
                 .map(|member| member_indices[member].0)
                 .collect::<Vec<_>>();
-            let count = u32::try_from(entities.len())
-                .map_err(|_| CodecError::InvalidInput("too many F3D relation members".into()))?;
+            let count = u32::try_from(entities.len()).map_err(|_| {
+                crate::writer::WriteError::Unwritable("too many F3D relation members".into())
+            })?;
             let returned = returned
                 .into_iter()
                 .map(|member| member_indices[member].0)
                 .collect::<Vec<_>>();
             let returned_count = u32::try_from(returned.len()).map_err(|_| {
-                CodecError::InvalidInput("too many F3D relation return members".into())
+                crate::writer::WriteError::Unwritable("too many F3D relation return members".into())
             })?;
             mark(ctx, &mut primary, index, bulk.len())?;
             header(&mut bulk, "263", index)?;
@@ -555,7 +561,9 @@ pub(super) fn encode(
                 reference(&mut bulk, *entity);
                 bulk.extend_from_slice(&ordinal.to_le_bytes());
                 *ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                    CodecError::InvalidInput("too many relations on F3D sketch entity".into())
+                    crate::writer::WriteError::Unwritable(
+                        "too many relations on F3D sketch entity".into(),
+                    )
                 })?;
             }
             bulk.push(0);
@@ -594,7 +602,9 @@ pub(super) fn encode(
                 .checked_add(1)
                 .and_then(|value| u32::try_from(value).ok())
                 .ok_or_else(|| {
-                    CodecError::InvalidInput("F3D sketch feature ordinal exceeds u32".into())
+                    crate::writer::WriteError::Unwritable(
+                        "F3D sketch feature ordinal exceeds u32".into(),
+                    )
                 })?;
             mark(ctx, &mut primary, scope, bulk.len())?;
             header(&mut bulk, "267", scope)?;
@@ -719,14 +729,21 @@ pub(super) fn encode(
     )
     .map(|(guid, base, version, module, entity_ids)| {
         Ok(GeneratedDesignType {
-            type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
-            base_type_guid: Some(base.to_owned().try_into().map_err(CodecError::Malformed)?),
+            type_guid: guid
+                .to_owned()
+                .try_into()
+                .map_err(crate::writer::WriteError::Unwritable)?,
+            base_type_guid: Some(
+                base.to_owned()
+                    .try_into()
+                    .map_err(crate::writer::WriteError::Unwritable)?,
+            ),
             version,
             module: module.into(),
             entity_ids,
         })
     })
-    .collect::<Result<Vec<_>, CodecError>>()?;
+    .collect::<Result<Vec<_>, crate::writer::WriteError>>()?;
     let registry = GeneratedDesignRegistry {
         types,
         body_map: None,
@@ -959,7 +976,7 @@ fn mark(
     rows: &mut Vec<crate::metastream::RecordIndexEntry>,
     id: u32,
     offset: usize,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     ctx.charge_entities(1, "F3D sketch record")?;
     rows.push(crate::metastream::RecordIndexEntry {
         entity_id: u64::from(id),
@@ -967,7 +984,7 @@ fn mark(
     });
     Ok(())
 }
-fn header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), CodecError> {
+fn header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, tag)?;
     out.extend_from_slice(&id.to_le_bytes());
     Ok(())
@@ -988,7 +1005,7 @@ fn curve_tail(out: &mut Vec<u8>, owner: u32, construction: bool) {
     }
 }
 
-fn curve_header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), CodecError> {
+fn curve_header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), crate::writer::WriteError> {
     header(out, tag, id)?;
     out.extend_from_slice(&[0; 9]);
     out.push(1);
@@ -1020,7 +1037,7 @@ fn profiles_match(
     indices: &[(u32, u32)],
     tolerance: f64,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> Result<bool, crate::writer::WriteError> {
     use cadmpeg_ir::sketches::SketchEntityUse;
     let mut endpoints = Vec::new();
     let mut edges = Vec::new();
@@ -1182,7 +1199,7 @@ fn profiles_match(
 fn nurbs_endpoints(
     curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Option<[cadmpeg_ir::math::Point2; 2]>, CodecError> {
+) -> Result<Option<[cadmpeg_ir::math::Point2; 2]>, crate::writer::WriteError> {
     use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
     let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
     let Ok(degree) = usize::try_from(curve.degree()) else {
