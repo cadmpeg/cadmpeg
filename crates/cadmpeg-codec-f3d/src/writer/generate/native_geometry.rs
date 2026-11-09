@@ -5401,22 +5401,12 @@ pub(crate) fn native_procedural_curve(
                 context,
                 tail.as_ref().map(|value| (&value.form, value.flags, None)),
             ),
-            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, tail } => {
-                // The reader parses a parametric surface curve only in its
-                // cache-first form; without that tail the record would read
-                // back as an unknown construction.
-                let Some(tail) = tail else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "parametric surface curve {} has no cache-first tail",
-                        procedural.id
-                    )));
-                };
-                (
-                    "par_int_cur",
-                    context,
-                    Some((&tail.form, tail.flags.flag, tail.flags.second_flag)),
-                )
-            }
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, tail } => (
+                "par_int_cur",
+                context,
+                tail.as_ref()
+                    .map(|value| (&value.form, value.flags.flag, value.flags.second_flag)),
+            ),
             cadmpeg_ir::geometry::SurfaceCurveFamily::Skin { context, tail } => (
                 "skin_int_cur",
                 context,
