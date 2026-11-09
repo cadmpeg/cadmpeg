@@ -1828,3 +1828,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-326. Extrude start face on another component's body
+
+**Question.** Which identity in a role-`0x0000001100000000` direct start group names the selected face when that face belongs to a body of another component, and in which ASM history and state is it resolved?
+
+**Known.** The group uses the 143-byte direct construction-group frame of `f3d.md` §3.1. Its sole member is a bounded-face recipe operand, and its two auxiliary records each carry one u64 entity identity. The recipe's references resolve no face in the input state of the Extrude's own history. The two auxiliary identities also occur in a second history, as a surface and a pcurve. The surface carries one planar face, and the coedge of the pcurve lies on a different face. In the Extrude's own history, both identities occur as coedges, first inserted after the Extrude's state. The selected-face entity-operand rule resolves one identity independently in each history and requires exactly one history to supply a face proof. Applied to either identity here, two histories hold it, and the two identities do not name one face in any single history. The decoder keeps the start face native.
+
+**Need.** Designs with two components, A placed once in B. B's first `Extrude` starts from a planar face of a body in A and extends a sketch profile 5 mm. Save one design per selected face of A: the top face, a side face, and a face that a later feature of A changes. Save a further design where A is placed twice and the face of one occurrence is selected. Each save needs the start group frame, its auxiliary records, and the ASM histories of both components.
+
+**Conflict.** None.
+
+**Note.** With a proven face, the start plane in the Extrude's component frame requires the transform between the two occurrences. When the other component is placed more than once relative to the Extrude's component, the plane is not unique.
