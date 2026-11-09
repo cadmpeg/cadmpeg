@@ -567,13 +567,17 @@ fn observe_fcstd() -> ObservedFcstd {
     }
     let fixed_paths = single_value_paths(&documents);
     let carried = observe_carried(&documents);
+    let rules = super::freecad_storage::topology_rules();
     let reduced = encoder
         .reduced_fields()
         .iter()
         .map(|row| ReducedProbe {
             path: row.path,
             storage: row.storage,
-            normalize: None,
+            normalize: rules
+                .iter()
+                .find(|rule| rule.path == row.path && rule.storage == row.storage)
+                .and_then(|rule| rule.normalize),
         })
         .collect();
     ObservedFcstd {

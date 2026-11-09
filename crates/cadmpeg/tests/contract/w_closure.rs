@@ -164,7 +164,12 @@ fn auxiliary_item_size(value: &serde_json::Value) -> serde_json::Value {
 
 /// The unit direction of an `{x, y, z}` vector.
 fn unit_direction(value: &serde_json::Value) -> serde_json::Value {
-    let component = |key| value.get(key).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+    let component = |key| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0)
+    };
     let (x, y, z) = (component("x"), component("y"), component("z"));
     let length = (x * x + y * y + z * z).sqrt();
     serde_json::json!({"x": x / length, "y": y / length, "z": z / length})

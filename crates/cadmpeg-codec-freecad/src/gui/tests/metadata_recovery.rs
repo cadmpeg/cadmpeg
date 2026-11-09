@@ -225,10 +225,10 @@ fn failed_gui_member_does_not_add_design_content() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    // #209 §1.1: requested scope classes are reported as delivered; a
+    // #209 §1.1: a document with no design part holds no design class; a
     // failed GUI member does not add design content or mark design
     // unrepresented.
-    assert!(decoded.ir().scope.design);
+    assert!(!decoded.ir().scope.design);
     assert!(decoded.ir().model.features.is_empty());
     assert!(!decoded
         .source_fidelity()
