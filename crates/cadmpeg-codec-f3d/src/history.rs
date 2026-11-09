@@ -1903,8 +1903,13 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
-        let outputs =
-            derived_base_output_order(feature, scopes, history_index, &state_outputs, outputs);
+        let outputs = stored_bodies::derived_base_output_order(
+            feature,
+            scopes,
+            history_index,
+            &state_outputs,
+            outputs,
+        );
         if stored_bodies::bound_result_bodies(feature).is_some()
             || stored_bodies::is_base_feature_copy(feature, scopes)
         {
@@ -1965,46 +1970,6 @@ fn combine_states_applied_operation(
         .is_some_and(|operation| {
             operation.form == crate::records::feature::combine::DesignCombineForm::OperandLists
         })
-}
-
-/// The outputs of a derived base group feature in the record-index order of
-/// its scopes, each scope contributing the outputs of its own history state;
-/// every other feature keeps `outputs`.
-fn derived_base_output_order(
-    feature: &cadmpeg_ir::features::Feature,
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-    history_index: usize,
-    state_outputs: &HashMap<(usize, i64), Option<Vec<i64>>>,
-    outputs: Vec<i64>,
-) -> Vec<i64> {
-    let Some(group) = feature
-        .native_ref
-        .as_deref()
-        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
-        .and_then(|scope| crate::records::feature::derived_base::derived_base_group(scope, scopes))
-    else {
-        return outputs;
-    };
-    let mut ordered = Vec::new();
-    for scope in group {
-        let Some(Some(slots)) = scope
-            .history_state_id()
-            .and_then(|state| state_outputs.get(&(history_index, state)))
-        else {
-            continue;
-        };
-        for slot in slots {
-            if outputs.contains(slot) && !ordered.contains(slot) {
-                ordered.push(*slot);
-            }
-        }
-    }
-    for slot in outputs {
-        if !ordered.contains(&slot) {
-            ordered.push(slot);
-        }
-    }
-    ordered
 }
 
 /// The history states a feature's scope produces and follows; a derived base
