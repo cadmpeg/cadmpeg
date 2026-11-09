@@ -137,6 +137,9 @@ pub enum UnheldClass {
     /// A presentation annotation with no placement, where the format places
     /// the text of every annotation.
     UnplacedPresentation,
+    /// A solid body whose faces use an edge of extent once, where the
+    /// format bounds a solid by closed shells.
+    OpenSolid,
 }
 
 impl UnheldClass {
@@ -149,6 +152,7 @@ impl UnheldClass {
             Self::PcurveOffItsEdge => return pcurves_off_their_edges(document),
             Self::OpenRing => return open_rings(document),
             Self::CurvelessEdgePcurve => return curveless_edge_pcurves(document),
+            Self::OpenSolid => return open_solids(document),
             _ => {}
         }
         let mut members = BTreeSet::new();
@@ -178,7 +182,8 @@ impl UnheldClass {
             | Self::PcurveOnSeveralSurfaces
             | Self::PcurveOffItsEdge
             | Self::OpenRing
-            | Self::CurvelessEdgePcurve => record
+            | Self::CurvelessEdgePcurve
+            | Self::OpenSolid => record
                 .get("id")
                 .and_then(Value::as_str)
                 .is_some_and(|id| self.members(document).contains(id)),
@@ -265,23 +270,105 @@ fn edges_with_ranges_off_their_vertices(document: &Value) -> BTreeSet<String> {
         let Some(vertex) = position(vertex) else {
             return false;
         };
-        cadmpeg_ir::eval::model_curve_point_by_id(
+        let point = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::model_curve_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             curve,
             parameter,
-        )
-        .is_ok_and(|point| point.get().distance(vertex) > tolerance)
+        ))
+        .expect("the class evaluates within the resource limits");
+        // A solved carrier with no point at a range end holds that range
+        // outside its domain.
+        let solved = index
+            .curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)
+            .and_then(|curve| curve.geometry.solved())
+            .is_some_and(|geometry| {
+                !matches!(
+                    geometry,
+                    cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { .. }
+                )
+            });
+        match point {
+            Some(point) => point.get().distance(vertex) > tolerance,
+            None => solved,
+        }
     };
     ir.model
         .edges
         .iter()
         .filter(|edge| {
-            edge.curve().zip(edge.param_range()).is_some_and(|(curve, range)| {
-                off(curve, range[0], &edge.start) || off(curve, range[1], &edge.end)
-            })
+            edge.curve()
+                .zip(edge.param_range())
+                .is_some_and(|(curve, range)| {
+                    off(curve, range[0], &edge.start) || off(curve, range[1], &edge.end)
+                })
         })
         .map(|edge| edge.id.as_str().to_owned())
+        .collect()
+}
+
+fn open_solids(document: &Value) -> BTreeSet<String> {
+    let rows = |arena: &str| {
+        document
+            .get("model")
+            .and_then(|model| model.get(arena))
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+    };
+    fn text<'v>(row: &'v Value, key: &str) -> Option<&'v str> {
+        row.get(key).and_then(Value::as_str)
+    }
+    let owner = |arena: &str, key: &str| -> BTreeMap<&str, &str> {
+        rows(arena)
+            .iter()
+            .filter_map(|row| Some((text(row, "id")?, text(row, key)?)))
+            .collect()
+    };
+    let region_body = owner("regions", "body");
+    let shell_region = owner("shells", "region");
+    let face_shell = owner("faces", "shell");
+    let loop_face = owner("loops", "face");
+    let degenerate_curves: BTreeSet<&str> = rows("curves")
+        .iter()
+        .filter(|curve| {
+            curve.pointer("/geometry/kind").and_then(Value::as_str) == Some("degenerate")
+        })
+        .filter_map(|curve| text(curve, "id"))
+        .collect();
+    // An edge collapsed to one vertex on no carrier, or on a degenerate one,
+    // closes a loop at a singular point and has no second use.
+    let collapsed: BTreeSet<&str> = rows("edges")
+        .iter()
+        .filter(|edge| {
+            text(edge, "start") == text(edge, "end")
+                && edge
+                    .pointer("/carrier/curve")
+                    .and_then(Value::as_str)
+                    .is_none_or(|curve| degenerate_curves.contains(curve))
+        })
+        .filter_map(|edge| text(edge, "id"))
+        .collect();
+    let mut uses = BTreeMap::<(&str, &str), usize>::new();
+    for coedge in rows("coedges") {
+        let body = text(coedge, "owner_loop")
+            .and_then(|lp| loop_face.get(lp))
+            .and_then(|face| face_shell.get(face))
+            .and_then(|shell| shell_region.get(shell))
+            .and_then(|region| region_body.get(region));
+        if let (Some(body), Some(edge)) = (body, text(coedge, "edge")) {
+            if !collapsed.contains(edge) {
+                *uses.entry((body, edge)).or_default() += 1;
+            }
+        }
+    }
+    let solids: BTreeSet<&str> = rows("bodies")
+        .iter()
+        .filter(|body| text(body, "kind") == Some("solid"))
+        .filter_map(|body| text(body, "id"))
+        .collect();
+    uses.into_iter()
+        .filter(|((body, _), count)| *count == 1 && solids.contains(body))
+        .map(|((body, _), _)| body.to_owned())
         .collect()
 }
 
@@ -345,9 +432,10 @@ fn open_rings(document: &Value) -> BTreeSet<String> {
     let text = |row: &Value, key: &str| row.get(key).and_then(Value::as_str).map(str::to_owned);
     let mut members = BTreeSet::new();
     for lp in rows("loops") {
-        let Some(boundary) = lp.get("boundary").filter(|boundary| {
-            boundary.get("kind").and_then(Value::as_str) == Some("ring")
-        }) else {
+        let Some(boundary) = lp
+            .get("boundary")
+            .filter(|boundary| boundary.get("kind").and_then(Value::as_str) == Some("ring"))
+        else {
             continue;
         };
         let mut balance = BTreeMap::<String, i64>::new();
@@ -401,12 +489,23 @@ fn pcurves_off_their_edges(document: &Value) -> BTreeSet<String> {
         Some(point.position().get())
     };
     let lifted = |surface: &SurfaceGeometry, pcurve: &PcurveGeometry, parameter: f64| {
-        let uv = cadmpeg_ir::eval::decode::pcurve_uv(EvaluationAdmission::Standard, pcurve, parameter)
-            .ok()?
-            .get();
-        cadmpeg_ir::eval::model_surface_point(EvaluationAdmission::Standard, &ir, surface, uv.u, uv.v)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+        let within = "the class evaluates within the resource limits";
+        let uv = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+            EvaluationAdmission::Standard,
+            pcurve,
+            parameter,
+        ))
+        .expect(within)?
+        .get();
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+            EvaluationAdmission::Standard,
+            &ir,
+            surface,
+            uv.u,
+            uv.v,
+        ))
+        .expect(within)
+        .map(cadmpeg_ir::features::FinitePoint3::get)
     };
     // The nearest point of a line pcurve to a vertex, found in the surface
     // chart where the analytic surface inverts the vertex.

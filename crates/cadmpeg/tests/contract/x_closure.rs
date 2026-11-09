@@ -317,6 +317,7 @@ fn step_observe() -> StepObserved {
         cadmpeg_test_support::carried::UnheldClass::DocumentIdentityReference,
         cadmpeg_test_support::carried::UnheldClass::ColourlessAppearance,
         cadmpeg_test_support::carried::UnheldClass::UnplacedPresentation,
+        cadmpeg_test_support::carried::UnheldClass::OpenSolid,
     ]);
     StepObserved {
         carried,
