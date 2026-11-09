@@ -49,6 +49,11 @@ fn probe(path: &'static str, loss: &'static str, normalize: fn(&Value) -> Value)
 pub(crate) fn probes() -> Vec<ReducedProbe> {
     vec![
         probe(
+            "model.semantic_annotations[].value",
+            "fcstd/annotation.value-derived",
+            |_| Value::Null,
+        ),
+        probe(
             "model.parameters[].driving",
             "fcstd/parameter.driving-not-transferred",
             |_| json!(true),
@@ -109,6 +114,52 @@ pub(crate) fn probes() -> Vec<ReducedProbe> {
             annotation,
         ),
     ]
+    .into_iter()
+    .chain(topology_rules())
+    .collect()
+}
+
+/// The rules that hold for every record `FreeCAD` restores, edited or not.
+pub(crate) fn topology_rules() -> Vec<ReducedProbe> {
+    vec![probe(
+        "model.coedges",
+        "fcstd/topology.radial-order-not-stored",
+        radial_rings,
+    )]
+}
+
+/// OCCT restores a radial order only for an edge with two uses: the two
+/// uses link to each other and any other use links to itself.
+fn radial_rings(value: &Value) -> Value {
+    let mut coedges = value.clone();
+    let Some(rows) = coedges.as_array_mut() else {
+        return coedges;
+    };
+    let mut rings = std::collections::BTreeMap::<String, Vec<usize>>::new();
+    for (index, row) in rows.iter().enumerate() {
+        if let Some(edge) = row.get("edge").and_then(Value::as_str) {
+            rings.entry(edge.to_owned()).or_default().push(index);
+        }
+    }
+    for ring in rings.values() {
+        for (position, index) in ring.iter().enumerate() {
+            let next = match ring.as_slice() {
+                [first, second] => {
+                    if position == 0 {
+                        *second
+                    } else {
+                        *first
+                    }
+                }
+                _ => *index,
+            };
+            let id = rows[next].get("id").cloned().unwrap_or(Value::Null);
+            if let Some(row) = rows[*index].as_object_mut() {
+                row.insert("radial_next".to_owned(), id);
+            }
+        }
+    }
+    coedges
 }
 
 type Matrix = [[f64; 4]; 3];
