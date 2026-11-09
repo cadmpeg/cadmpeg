@@ -20,7 +20,8 @@ const REFERENCE_CLASSES: [&[u8]; 4] = [
 ];
 const MAX_REFERENCE_HOPS: u32 = 64;
 const DOCUMENT_FORM: u16 = 2;
-const DOCUMENT_BYTES_BEFORE_CONFIGURATION: usize = 17;
+const DOCUMENT_STRINGS: usize = 3;
+const DOCUMENT_BYTES_BEFORE_CONFIGURATION: [usize; 2] = [17, 18];
 const DOCUMENT_BYTES_AFTER_CONFIGURATION: usize = 12;
 const ENTRY_TRAILER: usize = 8;
 const FEATURE_RECORD_WORDS: usize = 8;
@@ -327,7 +328,19 @@ impl<'a> Reader<'a> {
         } else {
             return None;
         };
-        let identity = self.after_document(document)?;
+        let mut identities = self
+            .after_document(document)
+            .into_iter()
+            .filter_map(|identity| self.closed_identity(identity, words, hops));
+        let identity = identities.next()?;
+        identities
+            .all(|other| other == identity)
+            .then_some(identity)
+    }
+
+    /// The identity a hop's feature record and own words name when the next
+    /// entry, or the reference trailer after the last hop, follows them.
+    fn closed_identity(&self, identity: usize, words: usize, hops: u32) -> Option<FaceIdentity> {
         let feature = self.u32_at(identity).filter(|feature| *feature != 0)?;
         let own = identity.checked_add(FEATURE_RECORD_WORDS)?;
         let values = (0..words)
@@ -359,15 +372,22 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// The offset after a `moFR_c` object's document pointer.
-    fn after_document(&self, pointer: usize) -> Option<usize> {
+    /// The offsets after a `moFR_c` object's document pointer. A document
+    /// written in place holds one to three Unicode strings, then 17 or 18
+    /// bytes, its configuration string, and 12 bytes (open item EV-14), so
+    /// each gap that frames a configuration string gives a candidate.
+    fn after_document(&self, pointer: usize) -> Vec<usize> {
+        self.document_candidates(pointer).unwrap_or_default()
+    }
+
+    fn document_candidates(&self, pointer: usize) -> Option<Vec<usize>> {
         let value = self.u16_at(pointer)?;
         let body = if Some(pointer) == self.document {
             pointer.checked_add(6)?.checked_add(DOCUMENT_CLASS.len())?
         } else if Self::is_tag(value) {
             pointer.checked_add(2)?
         } else if value != 0 {
-            return pointer.checked_add(2);
+            return Some(vec![pointer.checked_add(2)?]);
         } else {
             return None;
         };
@@ -377,12 +397,32 @@ impl<'a> Reader<'a> {
             return None;
         }
         cursor = cursor.checked_add(7)?;
-        for _ in 0..2 {
-            cursor = framed_text(self.archive, cursor)?.end;
+        let mut strings = false;
+        for _ in 0..DOCUMENT_STRINGS {
+            let Some(text) = framed_text(self.archive, cursor) else {
+                break;
+            };
+            cursor = text.end;
+            strings = true;
         }
-        cursor = cursor.checked_add(DOCUMENT_BYTES_BEFORE_CONFIGURATION)?;
-        cursor = framed_text(self.archive, cursor)?.end;
-        cursor.checked_add(DOCUMENT_BYTES_AFTER_CONFIGURATION)
+        if !strings {
+            return None;
+        }
+        let mut candidates = Vec::new();
+        for gap in DOCUMENT_BYTES_BEFORE_CONFIGURATION {
+            let Some(configuration) = cursor
+                .checked_add(gap)
+                .and_then(|at| framed_text(self.archive, at))
+            else {
+                continue;
+            };
+            candidates.extend(
+                configuration
+                    .end
+                    .checked_add(DOCUMENT_BYTES_AFTER_CONFIGURATION),
+            );
+        }
+        Some(candidates)
     }
 
     fn after_string_handle(&self, pointer: usize) -> Option<usize> {

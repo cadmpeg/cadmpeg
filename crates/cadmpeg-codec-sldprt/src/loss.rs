@@ -90,6 +90,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftSphericalDiameterTargetUnresolved,
     /// A SWIFT geometric-tolerance display has no established semantic annotation.
     PmiSwiftPresentationUnresolved,
+    /// A SWIFT presentation archive declares displays that its framing discards.
+    PmiSwiftPresentationUnframed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -322,6 +324,7 @@ impl SldprtLossCode {
         Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
         Self::PmiSwiftSphericalDiameterTargetUnresolved,
         Self::PmiSwiftPresentationUnresolved,
+        Self::PmiSwiftPresentationUnframed,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -436,6 +439,7 @@ impl SldprtLossCode {
                 "pmi.swift-spherical-diameter-target-unresolved"
             }
             Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
+            Self::PmiSwiftPresentationUnframed => "pmi.swift-presentation-unframed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -587,6 +591,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftPresentationUnframed
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -756,7 +761,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftPositionTargetUnresolved
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
-            | Self::PmiSwiftPresentationUnresolved => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftPresentationUnresolved
+            | Self::PmiSwiftPresentationUnframed => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -989,6 +995,7 @@ mod tests {
                 "pmi.swift-spherical-diameter-count-text-equal-radius-assumed",
                 "pmi.swift-spherical-diameter-target-unresolved",
                 "pmi.swift-presentation-unresolved",
+                "pmi.swift-presentation-unframed",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",

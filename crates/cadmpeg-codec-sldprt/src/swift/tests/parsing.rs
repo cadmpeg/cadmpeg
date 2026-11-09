@@ -729,3 +729,39 @@ fn swift_spherical_zone_type_is_scoped_to_position() {
     };
     assert!(constraints.zones.is_empty());
 }
+
+fn class_declaration(class: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xff, 0x01, 0x00];
+    bytes.extend_from_slice(
+        &u16::try_from(class.len())
+            .expect("class length")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(class.as_bytes());
+    bytes
+}
+
+#[test]
+fn a_declared_display_list_that_its_head_does_not_frame_reports_its_loss() {
+    let mut payload = 11000u32.to_le_bytes().to_vec();
+    payload.extend(class_declaration("moSwiftSchema_c"));
+    payload.extend(class_declaration("moUnframedHead_c"));
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend(class_declaration("moDisplayGtol_c"));
+    payload.extend(encoded_root());
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &[], &mut losses)
+        .expect("SWIFT annotations");
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "pmi.swift-presentation-unframed"));
+}

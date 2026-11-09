@@ -44,6 +44,23 @@ pub(super) struct Archive {
     names: HashMap<u32, Option<String>>,
     gtols: Vec<GtolDisplay>,
     unbounded: Vec<usize>,
+    unframed: bool,
+}
+
+impl Archive {
+    /// An archive that declares geometric-tolerance displays whose list the
+    /// head, count, or item openings do not frame.
+    fn unframed() -> Self {
+        Self {
+            unframed: true,
+            ..Self::default()
+        }
+    }
+
+    /// Whether the archive declares displays that its framing discards.
+    pub(super) fn is_unframed(&self) -> bool {
+        self.unframed
+    }
 }
 
 #[derive(Debug)]
@@ -103,18 +120,18 @@ pub(super) fn parse(archive: &[u8]) -> Archive {
         return Archive::default();
     };
     if !head_declares_only(archive, gtol) {
-        return Archive::default();
+        return Archive::unframed();
     }
     let Some(count) = gtol
         .checked_sub(2)
         .and_then(|at| View::u16_le_at(archive, at))
     else {
-        return Archive::default();
+        return Archive::unframed();
     };
     let mut starts = vec![gtol];
     starts.extend(gtol_tags(archive, gtol));
     if starts.len() != usize::from(count) {
-        return Archive::default();
+        return Archive::unframed();
     }
     let (named, names) = named_objects(archive);
     let paths = feature_paths(archive, &names);
@@ -638,7 +655,7 @@ struct Tolerance<'a> {
 }
 
 struct SemanticIndex<'a> {
-    features_by_attribute: HashMap<i32, Vec<&'a str>>,
+    features_by_attribute: HashMap<i32, Vec<(&'a str, Option<&'a str>)>>,
     features_by_name: HashMap<&'a str, Vec<&'a str>>,
     sources: Vec<(&'a str, BTreeSet<&'a str>)>,
     tolerances: Vec<Tolerance<'a>>,
@@ -648,14 +665,14 @@ struct SemanticIndex<'a> {
 
 impl<'a> SemanticIndex<'a> {
     fn new(root: &'a Entity, projected: &'a [PmiAnnotation]) -> Self {
-        let mut features_by_attribute: HashMap<i32, Vec<&str>> = HashMap::new();
+        let mut features_by_attribute: HashMap<i32, Vec<(&str, Option<&str>)>> = HashMap::new();
         let mut features_by_name: HashMap<&str, Vec<&str>> = HashMap::new();
         for (reference, entity) in root.features.references.iter().zip(&root.features.entities) {
             if let Some(attribute) = entity.integers.get("UserAttribute") {
-                features_by_attribute
-                    .entry(*attribute)
-                    .or_default()
-                    .push(reference.id.as_str());
+                features_by_attribute.entry(*attribute).or_default().push((
+                    reference.id.as_str(),
+                    entity.strings.get("ObjectName").map(String::as_str),
+                ));
             }
             if let Some(name) = entity.strings.get("ObjectName") {
                 features_by_name
@@ -748,18 +765,26 @@ impl<'a> SemanticIndex<'a> {
         })
     }
 
+    /// The semantic feature that a presentation object names: the one whose
+    /// `UserAttribute` equals the object identifier, when its `ObjectName`
+    /// and the object's name agree, or else the one whose `ObjectName` equals
+    /// the object's name.
     fn feature(&self, archive: &Archive, object: u32) -> Option<&'a str> {
-        let unique = |ids: Option<&Vec<&'a str>>| match ids.map(Vec::as_slice) {
+        let presented = archive.names.get(&object).and_then(Option::as_deref);
+        let attributed = i32::try_from(object)
+            .ok()
+            .and_then(|attribute| self.features_by_attribute.get(&attribute))
+            .map(Vec::as_slice);
+        if let Some([(id, name)]) = attributed {
+            return match (name, presented) {
+                (Some(name), Some(presented)) if name != &presented => None,
+                _ => Some(*id),
+            };
+        }
+        match self.features_by_name.get(presented?).map(Vec::as_slice) {
             Some([id]) => Some(*id),
             _ => None,
-        };
-        i32::try_from(object)
-            .ok()
-            .and_then(|attribute| unique(self.features_by_attribute.get(&attribute)))
-            .or_else(|| {
-                let name = archive.names.get(&object)?.as_deref()?;
-                unique(self.features_by_name.get(name))
-            })
+        }
     }
 
     fn depicted(

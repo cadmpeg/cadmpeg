@@ -11,6 +11,7 @@ use cadmpeg_ir::pmi::{
 use cadmpeg_ir::scalar::NonNegativeReal;
 
 const FEATURE_REFERENCE_TAG: u16 = 0x8040;
+const OTHER_FEATURE_REFERENCE_TAG: u16 = 0x8041;
 const MIRROR_TAG: u16 = 0x8050;
 const SCHEMA_VERSION: u32 = 11000;
 const NO_ID: u32 = u32::MAX;
@@ -54,6 +55,7 @@ fn name(text: &str, id: u32) -> Vec<u8> {
 enum FeatureReference {
     Declared,
     Tagged,
+    OtherTag,
 }
 
 fn path(features: &[(FeatureReference, u32, u32)]) -> Vec<u8> {
@@ -66,6 +68,9 @@ fn path(features: &[(FeatureReference, u32, u32)]) -> Vec<u8> {
             FeatureReference::Declared => bytes.extend(declaration("moSwiftFR_c")),
             FeatureReference::Tagged => {
                 bytes.extend_from_slice(&FEATURE_REFERENCE_TAG.to_le_bytes());
+            }
+            FeatureReference::OtherTag => {
+                bytes.extend_from_slice(&OTHER_FEATURE_REFERENCE_TAG.to_le_bytes());
             }
         }
         bytes.extend_from_slice(&id.to_le_bytes());
@@ -378,6 +383,7 @@ fn a_display_list_count_that_disagrees_with_its_items_yields_no_displays() {
     let archive: Archive = parse(&image.bytes());
     assert!(archive.gtols.is_empty());
     assert!(archive.unbounded.is_empty());
+    assert!(archive.is_unframed());
 }
 
 #[test]
@@ -580,4 +586,235 @@ fn a_face_identity_without_a_current_face_leaves_the_display_unlinked() {
     let (_, unresolved) =
         annotations(&archive, &root, &mut projected, &identities).expect("presentations");
     assert_eq!(unresolved, 2);
+}
+
+fn plane_display(name: &str, form: FeatureReference, id: u32, stamp: u32) -> Gtol<'_> {
+    Gtol {
+        name,
+        paths: vec![path(&[(form, id, stamp)])],
+        rows: &[("<GTOL-FLAT>", ".010", &[])],
+        note: "",
+    }
+}
+
+fn linked(presentations: &[PmiAnnotation]) -> Vec<Vec<&str>> {
+    presentations
+        .iter()
+        .map(|presentation| depicted(presentation).1)
+        .collect()
+}
+
+#[test]
+fn feature_references_under_two_class_tags_frame_no_path() {
+    let image = Image {
+        count: None,
+        gtols: vec![
+            two_row_display("DetailItem1", 100, "", true),
+            plane_display("DetailItem2", FeatureReference::Tagged, 200, 9),
+            plane_display("DetailItem3", FeatureReference::OtherTag, 200, 9),
+        ],
+        datum_tags: true,
+        mirrors: MIRRORS,
+    };
+    let (presentations, unresolved) = presentations(&image);
+    assert_eq!(unresolved, 3);
+    assert!(linked(&presentations).iter().all(Vec::is_empty));
+}
+
+#[test]
+fn an_identifier_with_two_timestamps_frames_no_path_through_it() {
+    let image = Image {
+        count: None,
+        gtols: vec![
+            two_row_display("DetailItem1", 100, "", true),
+            Gtol {
+                name: "DetailItem2",
+                paths: vec![path(&[(FeatureReference::Tagged, 100, 8)])],
+                rows: &[("<GTOL-FLAT>", ".015", &[]), ("<GTOL-FLAT>", ".005", &[])],
+                note: "",
+            },
+            plane_display("DetailItem3", FeatureReference::Tagged, 200, 9),
+        ],
+        datum_tags: true,
+        mirrors: MIRRORS,
+    };
+    let (presentations, unresolved) = presentations(&image);
+    assert_eq!(unresolved, 2);
+    assert_eq!(
+        linked(&presentations),
+        [vec![], vec![], vec!["sldprt:model:pmi#A3"]]
+    );
+}
+
+#[test]
+fn a_declaration_before_the_display_list_leaves_the_archive_unframed() {
+    let image = Image {
+        count: None,
+        gtols: vec![
+            two_row_display("DetailItem1", 100, "", true),
+            plane_display("DetailItem2", FeatureReference::Tagged, 200, 9),
+        ],
+        datum_tags: true,
+        mirrors: MIRRORS,
+    };
+    let mut bytes = image.bytes();
+    let list = bytes
+        .windows(b"moDisplayGtol_c".len())
+        .position(|window| window == b"moDisplayGtol_c")
+        .and_then(|name| name.checked_sub(8))
+        .expect("display list count");
+    let tail = bytes.split_off(list);
+    bytes.extend(declaration("moUnframedHead_c"));
+    bytes.extend(tail);
+    let archive = parse(&bytes);
+    assert!(archive.gtols.is_empty());
+    assert!(archive.is_unframed());
+}
+
+#[test]
+fn an_attribute_whose_feature_name_differs_from_the_object_name_selects_no_feature() {
+    let image = Image {
+        count: None,
+        gtols: vec![two_row_display("DetailItem1", 100, "", true)],
+        datum_tags: true,
+        mirrors: &[("Plane C", 100)],
+    };
+    let (presentations, unresolved) = presentations(&image);
+    assert_eq!(unresolved, 1);
+    assert!(linked(&presentations).iter().all(Vec::is_empty));
+}
+
+/// The composite-profile display of the face-route test with the given rows,
+/// decoded against `projected`; returns the projected PMI afterwards.
+fn composite_transfer(
+    rows: &[(&str, &str, &[&str])],
+    mut projected: Vec<PmiAnnotation>,
+) -> Vec<PmiAnnotation> {
+    let image = Image {
+        count: None,
+        gtols: vec![
+            Gtol {
+                name: "DetailItem1",
+                paths: vec![declared_reference(183, [1, 0, 0])],
+                rows,
+                note: "",
+            },
+            Gtol {
+                name: "DetailItem2",
+                paths: vec![tagged_reference(44, [2, 0, 5], None)],
+                rows: &[("<GTOL-FLAT>", ".01", &[])],
+                note: "",
+            },
+        ],
+        datum_tags: true,
+        mirrors: &[],
+    };
+    let root = Entity {
+        class: ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let identities = [
+        (face(10), persistent(183, 1, &[0, 0])),
+        (face(20), persistent(44, 2, &[0, 5])),
+    ];
+    let archive = parse(&image.bytes());
+    let (presentations, _) =
+        annotations(&archive, &root, &mut projected, &identities).expect("presentations");
+    assert_eq!(
+        depicted(presentations.first().expect("composite display")).1,
+        ["sldprt:model:pmi#A1", "sldprt:model:pmi#A1:lower-tier"]
+    );
+    projected
+}
+
+fn composite_projected() -> Vec<PmiAnnotation> {
+    vec![
+        tolerance("A1", GeometricToleranceKind::SurfaceProfile, 2.0, 10),
+        tolerance(
+            "A1:lower-tier",
+            GeometricToleranceKind::SurfaceProfile,
+            0.2,
+            10,
+        ),
+        tolerance("A2", GeometricToleranceKind::Flatness, 0.254, 20),
+        datum("D", "D"),
+        datum("G", "G"),
+        datum("H", "H"),
+    ]
+}
+
+const COMPOSITE_ROWS: &[(&str, &str, &[&str])] = &[
+    ("<GTOL-SPROF>", "2", &["D", "G", "H"]),
+    ("<GTOL-SPROF>", "0.2", &["D"]),
+];
+
+fn transferred(projected: &[PmiAnnotation]) -> (Vec<String>, Vec<String>) {
+    (
+        datum_letters(projected, "A1"),
+        datum_letters(projected, "A1:lower-tier"),
+    )
+}
+
+#[test]
+fn a_modified_datum_label_withholds_the_display_datum_systems() {
+    let projected = composite_transfer(
+        &[
+            ("<GTOL-SPROF>", "2", &["D", "<MOD-MMC>", "G", "H"]),
+            ("<GTOL-SPROF>", "0.2", &["D"]),
+        ],
+        composite_projected(),
+    );
+    assert_eq!(transferred(&projected), (vec![], vec![]));
+}
+
+#[test]
+fn an_ambiguous_datum_label_withholds_the_display_datum_systems() {
+    let mut projected = composite_projected();
+    projected.push(datum("D2", "D"));
+    let projected = composite_transfer(COMPOSITE_ROWS, projected);
+    assert_eq!(transferred(&projected), (vec![], vec![]));
+}
+
+#[test]
+fn a_disagreeing_datum_system_withholds_the_display_datum_systems() {
+    let mut projected = composite_projected();
+    let system = pmi("A1:stored-datum-system");
+    let Some(PmiDefinition::GeometricTolerance { datum_system, .. }) = projected
+        .first_mut()
+        .map(|annotation| &mut annotation.definition)
+    else {
+        panic!("composite tolerance")
+    };
+    *datum_system = Some(system.clone());
+    projected.push(PmiAnnotation {
+        id: system,
+        name: None,
+        visible: None,
+        targets: Vec::new(),
+        definition: PmiDefinition::DatumSystem {
+            references: cadmpeg_ir::pmi::DatumReferences::try_from(vec![
+                cadmpeg_ir::pmi::DatumReference {
+                    datum: pmi("G"),
+                    precedence: std::num::NonZeroU32::MIN,
+                    common_group: None,
+                    modifiers: Vec::new(),
+                },
+            ])
+            .expect("datum references"),
+        },
+    });
+    let projected = composite_transfer(COMPOSITE_ROWS, projected);
+    assert_eq!(transferred(&projected), (vec!["G".to_owned()], vec![]));
+}
+
+#[test]
+fn tier_literals_whose_ratio_differs_from_the_magnitudes_withhold_the_tier_datums() {
+    let projected = composite_transfer(
+        &[
+            ("<GTOL-SPROF>", "2", &["D", "G", "H"]),
+            ("<GTOL-SPROF>", "0.5", &["D"]),
+        ],
+        composite_projected(),
+    );
+    assert_eq!(transferred(&projected), (vec![], vec![]));
 }

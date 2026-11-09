@@ -883,11 +883,13 @@ resolve a seed feature?
 
 ### EV-14. Persistent identity fields
 
-**Question.** What do the fields of the identity-representation objects, the `moFR_c` u32 before its time stamp, and the reference header's selector and record identifier mean, and what are the `moExtObject_c` forms whose u16 after the two string pointers is not `2`?
+**Question.** What do the own fields of the identity-representation objects after a reference's first hop, and the reference header's selector and record identifier mean? Which field selects the count of Unicode strings and the 17- or 18-byte gap of a `moExtObject_c` object, and what are the `moExtObject_c` forms whose u16 after the two string pointers is not `2`?
 
-**Known.** The `moFR_c` u32 is small and repeats across hops of one feature, so it may number the producing feature. In `moFromSktEnt3IntSurfIdRep_c` the second u32 is usually `ffffffff`. In 173 `moExtObject_c` objects the bytes between the third string and the configuration name are 17, not 18. Hop lists whose class index the corpus walk cannot name, and identity-representation classes not in the table of `sldprt.md` §2.3, remain unparsed.
+**Known.** `sldprt.md` §2.3 gives the `moFR_c` feature identifier and the `moExtObject_c` layout, and §2.1 gives the face identity of a reference's first hop. In `moFromSktEnt3IntSurfIdRep_c` the second u32 is usually `ffffffff`. In-place `moExtObject_c` objects hold one, two, or three Unicode strings after the u32, then 17 or 18 bytes before the configuration name; three-string objects occur with both gaps. Hop lists whose class index the corpus walk cannot name, and identity-representation classes not in the table of `sldprt.md` §2.3, remain unparsed.
 
 **Need.** A reader that resolves a selected face or edge to geometry, and a writer that creates a selection, have to read and write these fields.
+
+**Conflict.** The history object reader requires three strings and skips 16 bytes after the configuration name in files whose `swVersion` is 17000 or above. Every in-place object that a feature record follows has 12 bytes there, and objects with one or two strings occur.
 
 ### EV-15. Feature-object block inputs
 

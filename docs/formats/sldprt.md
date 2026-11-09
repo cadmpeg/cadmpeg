@@ -1586,18 +1586,17 @@ references take precedence in row order, and a `<MOD-` token after one
 modifies it.
 
 A geometric-tolerance display without a feature path attaches to faces through
-`moFaceRef_c` objects (§2.3). The first hop of a face reference names one
-face: its `moFR_c` feature identifier, its first own u32 as the feature-local
-face identity, and its remaining own u32 values as the ordered path fields
-form the persistent identity that `FACE_ID_2001` carries (§5). Such a display
+`moFaceRef_c` objects (§2.3). A first hop of class `moSimpleSurfIdRep_c`,
+`moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`,
+`moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`,
+`moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`,
+`moFromSktEnt3IntSurfIdRep_c`, or `moEndFace3IntSurfIdRep_c` names the faces
+whose `FACE_ID_2001` identity (§5) is its `moFR_c` feature identifier, its
+first own u32 as the feature-local face identity, and its remaining own u32
+values as the ordered path fields. Such a display
 depicts the semantic geometric tolerances of its rows' characteristics that
 target a face its references select, when their characteristics equal those
 of its rows as a multiset.
-
-In the presentation archive, a `moExtObject_c` object written in place holds
-two object pointers to `moCStringHandle_c` objects, u16 LE `2`, a byte, a u32
-LE value, two Unicode `CString` values, 17 bytes, a Unicode `CString` holding a
-configuration name, and 12 bytes.
 
 Class map indices rise in declaration order (§2.2). When the archive declares
 as many identity-representation classes as there are class tags that open a
@@ -1789,7 +1788,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | Class | Bytes after the `moFR_c` object |
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
-| `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
+| `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
 | `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
@@ -1797,9 +1796,9 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 
 The hop a pattern or mirror hop points to is written in place inside it, and so is not a separate entry of the list.
 
-A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC.
+A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC. The u32 is the object identifier of the producing history feature, the identifier that `FACE_ID_2001` value 1 carries (§5).
 
-A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, three Unicode `CString` values, 18 bytes, a Unicode `CString` holding a configuration name, and 16 bytes. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
+A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, one to three Unicode `CString` values, 17 or 18 bytes, a Unicode `CString` holding a configuration name, and 12 bytes. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
 
 After the feature-object block, a `Fillet_c` fillet and a `Chamfer_c` chamfer write these bytes of their own, or one of the forms of open item EV-12:
 
