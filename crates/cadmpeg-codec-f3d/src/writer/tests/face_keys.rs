@@ -53,7 +53,7 @@ fn source_free_synthesis_preserves_face_keys_and_drops_only_unresolved_targets()
                 &row.id(),
             ),
             if linked {
-                NativeDisposition::Written
+                NativeDisposition::Regenerated
             } else {
                 NativeDisposition::Dropped
             }

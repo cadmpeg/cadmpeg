@@ -1023,19 +1023,6 @@
             "MeasureType": "1",
             "ScaleType": "0"
           },
-          "relationships": {
-            "References2D": [
-              {
-                "subelements": [
-                  "Edge1"
-                ],
-                "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#View:entity"
-                }
-              }
-            ]
-          },
           "rotation_degrees": 0.0,
           "runtime_type": "TechDraw::DrawViewDimension",
           "scale": 1.0
@@ -2400,9 +2387,7 @@
           "order": 0,
           "parameters": {
             "AngleOverride": "false",
-            "Arbitrary": "false",
             "ArbitraryTolerances": "false",
-            "Caption": "",
             "EqualTolerance": "true",
             "ExpressionEngine": "[]",
             "ExtensionAngle": "0.0",
@@ -2412,17 +2397,9 @@
             "Label": "Dimension",
             "Label2": "",
             "LineAngle": "0.0",
-            "LockPosition": "false",
-            "MeasureType": "1",
-            "OverTolerance": "0.0",
             "References3D": "[]",
-            "Rotation": "0.0",
-            "Scale": "1.0",
-            "ScaleType": "0",
             "ShowUnits": "false",
             "TheoreticalExact": "false",
-            "Type": "0",
-            "UnderTolerance": "0.0",
             "UseActualArea": "true",
             "Visibility": "true"
           },
@@ -2456,17 +2433,12 @@
           "object": "fcstd:native:object#Note",
           "order": 1,
           "parameters": {
-            "Caption": "",
             "ExpressionEngine": "[]",
             "Font": "osifont",
             "Label": "Note",
             "Label2": "",
             "LineSpace": "100",
-            "LockPosition": "false",
             "MaxWidth": "-1.0",
-            "Rotation": "0.0",
-            "Scale": "1.0",
-            "ScaleType": "0",
             "TextColor": "556083711",
             "TextSize": "5.0",
             "TextStyle": "0",
@@ -2502,15 +2474,10 @@
           "object": "fcstd:native:object#Symbol",
           "order": 2,
           "parameters": {
-            "Caption": "",
             "EditableTexts": "[]",
             "ExpressionEngine": "[]",
             "Label": "Symbol",
             "Label2": "",
-            "LockPosition": "false",
-            "Rotation": "0.0",
-            "Scale": "1.0",
-            "ScaleType": "2",
             "Symbol": "__elided_authoring_path_sha256:a5fccab6942217b6880d94e60e8a3d0a8721c21259dc7e6d06a506947c836292",
             "Visibility": "true"
           },

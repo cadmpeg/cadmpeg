@@ -785,15 +785,10 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
             (1 + expected_pcurves - retained_copious - model_copious) * 2
         );
         assert_eq!(copious_entries, (retained_copious + model_copious) * 2);
-        assert_eq!(
-            generated
-                .losses
-                .iter()
-                .filter(|loss| loss.code
-                    == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind())
-                .count(),
-            expected_pcurves - retained_copious
-        );
+        // Each parameter-space carrier writes as the parameter curve that holds
+        // its geometry, so none is withheld.
+        assert!(!generated.losses.iter().any(|loss| loss.code
+            == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()));
         let result = IgesCodec
             .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
             .unwrap();

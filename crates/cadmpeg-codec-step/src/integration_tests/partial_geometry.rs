@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, PcurveUse};
@@ -16,39 +16,54 @@ use crate::loss::StepLossCode;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
-fn a_solid_with_a_carrierless_face_edge_synthesizes_its_curve() {
-    // #209 §5.2: a face-context edge with no 3D carrier is synthesized from
-    // endpoint vertices so the face and shell remain writable.
+fn a_solid_with_a_carrierless_edge_keeps_its_faces() {
+    // #209 §5.2: the edge is written without an invented 3D curve, and the
+    // solid keeps every face.
     let mut ir = unit_cube().expect("unit cube");
     let removed_curve = ir.model.edges[0].curve().expect("curve").clone();
     ir.model.edges[0].carrier = EdgeCarrier::Free;
     ir.model.curves.retain(|curve| curve.id != removed_curve);
 
     let mut output = Vec::new();
-    let report = write_step(
+    write_step(
         &ir,
         &mut output,
         StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("partial export");
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::EdgeCurveSynthesizedFromVertices.kind()));
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("partial STEP decodes");
     assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
     assert_eq!(decoded.ir().model.faces.len(), 6);
     assert_eq!(decoded.ir().model.edges.len(), 12);
+    assert_eq!(edges_without_stated_curve(decoded.ir()), 1);
+}
+
+/// Decoded edges whose 3D geometry the file leaves unstated.
+fn edges_without_stated_curve(ir: &cadmpeg_ir::CadIr) -> usize {
+    ir.model
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.curve().is_none_or(|id| {
+                ir.model.curves.iter().any(|curve| {
+                    &curve.id == id
+                        && matches!(
+                            curve.geometry.solved(),
+                            None | Some(SolvedCurveGeometry::Unknown { .. })
+                        )
+                })
+            })
+        })
+        .count()
 }
 
 #[test]
-fn carrierless_edges_synthesized_curves_keep_their_body_placement() {
-    // #209 §5.2: carrierless face-context edges are synthesized so placement
-    // and topology are preserved.
+fn carrierless_edges_keep_their_body_placement() {
     let mut ir = unit_cube().unwrap();
     let retained = ir.model.edges[0].curve().unwrap().clone();
     for edge in ir.model.edges.iter_mut().skip(1) {
@@ -64,17 +79,13 @@ fn carrierless_edges_synthesized_curves_keep_their_body_placement() {
         .unwrap(),
     );
     let mut output = Vec::new();
-    let report = write_step(
+    write_step(
         &ir,
         &mut output,
         StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::EdgeCurveSynthesizedFromVertices.kind()));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
@@ -82,6 +93,7 @@ fn carrierless_edges_synthesized_curves_keep_their_body_placement() {
     assert_eq!(body.transform, ir.model.bodies[0].transform);
     assert_eq!(decoded.ir().model.faces.len(), 6);
     assert_eq!(decoded.ir().model.edges.len(), 12);
+    assert_eq!(edges_without_stated_curve(decoded.ir()), 11);
 }
 
 #[test]

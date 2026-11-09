@@ -134,6 +134,41 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         dispositions.appearances = ArenaDisposition::Reported;
         dispositions.appearance_bindings = ArenaDisposition::Reported;
     }
+    let charged = |codes: &[FreecadLossCode]| {
+        losses.iter().any(|loss| {
+            codes
+                .iter()
+                .any(|code| loss.code.local_code() == code.code())
+        })
+    };
+    if charged(&[
+        FreecadLossCode::AppearanceNameNotTransferred,
+        FreecadLossCode::AppearanceChannelDerived,
+    ]) {
+        dispositions.appearances = ArenaDisposition::Reported;
+        dispositions.appearance_bindings = ArenaDisposition::Reported;
+    }
+    if charged(&[
+        FreecadLossCode::PresentationSchemaNormalized,
+        FreecadLossCode::PresentationStateOrderNormalized,
+    ]) {
+        dispositions.presentation_documents = ArenaDisposition::Reported;
+    }
+    if charged(&[FreecadLossCode::PresentationViewModeNotTransferred]) {
+        dispositions.view_presentations = ArenaDisposition::Reported;
+    }
+    if charged(&[FreecadLossCode::ProductPlacementNotRigid]) {
+        dispositions.occurrences = ArenaDisposition::Reported;
+    }
+    if charged(&[FreecadLossCode::JointFrameNotRigid]) {
+        dispositions.assembly_joints = ArenaDisposition::Reported;
+    }
+    if charged(&[
+        FreecadLossCode::SketchPlacementNormalized,
+        FreecadLossCode::SketchProfileOrientationDerived,
+    ]) {
+        dispositions.sketches = ArenaDisposition::Reported;
+    }
     if losses
         .iter()
         .any(|loss| loss.code.local_code() == "presentation.not-transferred")

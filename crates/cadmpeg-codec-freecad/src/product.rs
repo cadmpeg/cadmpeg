@@ -715,7 +715,9 @@ pub(crate) fn transfer_neutral(
             ordinal: 0,
             transform: local_transform,
             linked_prototype: None,
-            name: Some((*object).to_owned()),
+            // The container's display name is its definition label and its
+            // identity is `native_ref`.
+            name: None,
             visible: None,
             link: None,
             native_ref: Some((*object).to_owned()),

@@ -58,11 +58,20 @@ pub(crate) fn geometry_name<'a>(
     })
 }
 
-/// The record ids an omission loss lists after its count (#217 §5.6).
+/// The record ids an omission loss names (#217 §5.6): the one record of a
+/// per-record loss, or the ids an arena loss lists after its count.
 ///
 /// Asserts that the count equals the number of listed ids and that the ids
 /// are sorted.
 pub(crate) fn omitted_record_ids(message: &str) -> Vec<&str> {
+    for single in [" omits native record ", " omits foreign unknown record identity "] {
+        if let Some((id, _)) = message
+            .split_once(single)
+            .and_then(|(_, rest)| rest.split_once(" from `"))
+        {
+            return vec![id];
+        }
+    }
     let mut offset = 0;
     let (count, count_end) = message
         .split(' ')

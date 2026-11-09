@@ -195,6 +195,9 @@ pub(crate) enum StepLossCode {
     SurfaceShellWireTopologyOmitted,
     /// A mixed surface and wire region was split into separate STEP items.
     MixedRegionSplit,
+    /// A solid body with several regions was written as a manifold solid per
+    /// region.
+    SolidRegionsSplit,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
     /// Tessellation feature-edge classification is not represented.
@@ -215,7 +218,7 @@ pub(crate) enum StepLossCode {
     TopologyUnreachableFromRegion,
     /// Signed or self-intersecting analytic surfaces were normalized.
     AnalyticSurfaceNormalized,
-    /// Elliptical cone surfaces were reduced to circular `CONICAL_SURFACE`.
+    /// An elliptical cone surface was omitted; ISO 10303-42 cones are circular.
     EllipticalConeReduced,
     /// Edges have no typed 3D curve or carry an unsupported transform.
     CurvelessEdgeOmitted,
@@ -288,6 +291,9 @@ pub(crate) enum StepLossCode {
     OccurrenceNoWritableProduct,
     /// Occurrence metadata values were not represented.
     OccurrenceMetadataOmitted,
+    /// External occurrences name their document by a persisted document
+    /// identity, which was written as the identifier of the external source.
+    ExternalDocumentIdAsSource,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
     /// A PMI dimension's parameter reference was not represented.
@@ -321,6 +327,8 @@ pub(crate) enum StepLossCode {
     ProceduralSurfaceCacheToleranceOmitted,
     /// Extrusion constructions were written as linear sweeps.
     ProceduralExtrusionNormalized,
+    /// Sub-surface constructions were written as rectangular trims.
+    ProceduralSubSurfaceNormalized,
     /// Helix definitions without a solved carrier were written as fitted
     /// cubic B-splines.
     HelixFittedToBspline,
@@ -336,7 +344,7 @@ pub(crate) enum StepLossCode {
     RegionNoWritableOuterShell,
     /// A region omitted a void shell with no writable faces.
     RegionOmittedVoidShell,
-    /// A solid region was written as a surface model because its shells are open.
+    /// A solid region was written as a surface model because faces of its shells were omitted.
     RegionSolidReducedToSheet,
     /// Vertices of unwritable topology were retained as standalone points.
     RegionVerticesRecovered,
@@ -393,8 +401,11 @@ pub(crate) enum StepLossCode {
     LoopEdgeMissingForOrder,
     /// An edge was omitted because it has no 3D curve.
     EdgeNo3dCurve,
-    /// A face-context edge with no 3D curve was written with a line synthesized from its vertices.
-    EdgeCurveSynthesizedFromVertices,
+    /// Edges with no 3D curve were written without their parameter range.
+    EdgeRangeOmitted,
+    /// Edges whose stated parameter range ends off their vertices were
+    /// written with the range their vertices imply.
+    EdgeRangeOffVertices,
     /// An edge was omitted because its curve is not writable.
     EdgeCurveNotWritable,
     /// An edge was omitted because its curve is unsupported.
@@ -520,6 +531,7 @@ impl StepLossCode {
         Self::BodyWithoutProductRepresentation,
         Self::SurfaceShellWireTopologyOmitted,
         Self::MixedRegionSplit,
+        Self::SolidRegionsSplit,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
         Self::TessellationCornerNormals,
@@ -566,6 +578,7 @@ impl StepLossCode {
         Self::OccurrenceExternalProduct,
         Self::OccurrenceNoWritableProduct,
         Self::OccurrenceMetadataOmitted,
+        Self::ExternalDocumentIdAsSource,
         Self::PmiAnnotationNotWritten,
         Self::PmiParameterReferenceOmitted,
         Self::SourceAssociationOmitted,
@@ -582,6 +595,7 @@ impl StepLossCode {
         Self::ProceduralCurveCacheToleranceOmitted,
         Self::ProceduralSurfaceCacheToleranceOmitted,
         Self::ProceduralExtrusionNormalized,
+        Self::ProceduralSubSurfaceNormalized,
         Self::HelixFittedToBspline,
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
@@ -616,7 +630,8 @@ impl StepLossCode {
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
         Self::EdgeNo3dCurve,
-        Self::EdgeCurveSynthesizedFromVertices,
+        Self::EdgeRangeOmitted,
+        Self::EdgeRangeOffVertices,
         Self::EdgeCurveNotWritable,
         Self::EdgeCurveUnsupported,
         Self::LoopNoContinuousOrdering,
@@ -734,6 +749,7 @@ impl StepLossCode {
             Self::BodyWithoutProductRepresentation => "product.body-without-representation",
             Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
             Self::MixedRegionSplit => "topology.mixed-region-split",
+            Self::SolidRegionsSplit => "topology.solid-regions-split",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::WireShellNoWritableEdges => "topology.wire-shell-no-writable-edges",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
@@ -784,6 +800,7 @@ impl StepLossCode {
             Self::OccurrenceExternalProduct => "occurrence.external-product",
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
+            Self::ExternalDocumentIdAsSource => "occurrence.external-document-id-as-source",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::PmiParameterReferenceOmitted => "pmi.parameter-reference-omitted",
             Self::SourceAssociationOmitted => "source.association-omitted",
@@ -804,6 +821,7 @@ impl StepLossCode {
                 "geometry.procedural-surface-cache-tolerance-omitted"
             }
             Self::ProceduralExtrusionNormalized => "geometry.procedural-extrusion-normalized",
+            Self::ProceduralSubSurfaceNormalized => "geometry.procedural-sub-surface-normalized",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
@@ -840,7 +858,8 @@ impl StepLossCode {
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
             Self::EdgeNo3dCurve => "topology.edge-no-3d-curve",
-            Self::EdgeCurveSynthesizedFromVertices => "topology.edge-curve-synthesized",
+            Self::EdgeRangeOmitted => "topology.edge-range-omitted",
+            Self::EdgeRangeOffVertices => "topology.edge-range-off-vertices",
             Self::EdgeCurveNotWritable => "topology.edge-curve-not-writable",
             Self::EdgeCurveUnsupported => "topology.edge-curve-unsupported",
             Self::LoopNoContinuousOrdering => "topology.loop-no-continuous-ordering",
@@ -918,6 +937,7 @@ impl StepLossCode {
             | Self::ProductSourceNameReduced
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceMetadataOmitted
+            | Self::ExternalDocumentIdAsSource
             | Self::SourceAssociationOmitted
             | Self::DisplayColorUnstyled
             | Self::WireBodyTransparencyOmitted
@@ -932,6 +952,7 @@ impl StepLossCode {
             | Self::ProceduralCurveCacheToleranceOmitted
             | Self::ProceduralSurfaceCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
+            | Self::ProceduralSubSurfaceNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
             | Self::NonManifoldEdgeSplit => Severity::Info,
@@ -980,6 +1001,7 @@ impl StepLossCode {
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceNoWritableProduct
             | Self::OccurrenceMetadataOmitted
+            | Self::ExternalDocumentIdAsSource
             | Self::ValidationItemUnsupported => LossTaxonomy::MetadataNotTransferred,
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
@@ -1025,6 +1047,7 @@ impl StepLossCode {
             | Self::BodyWithoutProductRepresentation
             | Self::SurfaceShellWireTopologyOmitted
             | Self::MixedRegionSplit
+            | Self::SolidRegionsSplit
             | Self::TessellationBodyLinkUnwritable
             | Self::TopologyUnreachableFromRegion
             | Self::RegionNoShellList
@@ -1058,7 +1081,8 @@ impl StepLossCode {
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
             | Self::EdgeNo3dCurve
-            | Self::EdgeCurveSynthesizedFromVertices
+            | Self::EdgeRangeOmitted
+            | Self::EdgeRangeOffVertices
             | Self::EdgeCurveNotWritable
             | Self::EdgeCurveUnsupported
             | Self::LoopNoContinuousOrdering
@@ -1135,6 +1159,7 @@ impl StepLossCode {
             | Self::ProceduralCurveCacheToleranceOmitted
             | Self::ProceduralSurfaceCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
+            | Self::ProceduralSubSurfaceNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
         }
@@ -1252,6 +1277,7 @@ mod tests {
                 "product.body-without-representation",
                 "topology.surface-shell-wire-omitted",
                 "topology.mixed-region-split",
+                "topology.solid-regions-split",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
                 "tessellation.corner-normals",
@@ -1298,6 +1324,7 @@ mod tests {
                 "occurrence.external-product",
                 "occurrence.no-writable-product",
                 "occurrence.metadata-omitted",
+                "occurrence.external-document-id-as-source",
                 "pmi.annotation-not-written",
                 "pmi.parameter-reference-omitted",
                 "source.association-omitted",
@@ -1314,6 +1341,7 @@ mod tests {
                 "geometry.procedural-curve-cache-tolerance-omitted",
                 "geometry.procedural-surface-cache-tolerance-omitted",
                 "geometry.procedural-extrusion-normalized",
+                "geometry.procedural-sub-surface-normalized",
                 "geometry.helix-fitted-to-bspline",
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
@@ -1348,7 +1376,8 @@ mod tests {
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",
                 "topology.edge-no-3d-curve",
-                "topology.edge-curve-synthesized",
+                "topology.edge-range-omitted",
+                "topology.edge-range-off-vertices",
                 "topology.edge-curve-not-writable",
                 "topology.edge-curve-unsupported",
                 "topology.loop-no-continuous-ordering",
