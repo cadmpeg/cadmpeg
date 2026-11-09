@@ -8300,6 +8300,9 @@ pub struct SketchProfileBoundaryUse {
     /// Sketch entity supplying the curve geometry.
     pub entity: crate::sketches::SketchEntityId,
     /// Parameter endpoints on the source curve, ordered in the entity's stored direction.
+    /// A line is parameterized from `0` at its start point to `1` at its end point; an arc
+    /// or circle by its angle in radians; an ellipse by its eccentric angle in radians; a
+    /// NURBS curve by its knot-domain coordinate.
     #[serde(deserialize_with = "deserialize_profile_parameter_range")]
     pub parameter_range: crate::geometry::DirectedParameterRange,
     /// Whether boundary traversal opposes the interval's stored direction.
