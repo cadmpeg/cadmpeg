@@ -296,3 +296,100 @@ fn unique_group_assignment_keeps_each_resolved_member_edge() {
         Some(vec![17, 18])
     );
 }
+
+/// A two-side member whose side faces hold the changed edges listed.
+fn two_side_operand(
+    record_index: u32,
+    sides: [(&str, &[i64]); 2],
+    deleted: &[i64],
+) -> crate::records::topology::edge_identity::DesignEdgeOperand {
+    let mut operand = recipe_edge_operand(record_index, &[], &[]);
+    let side = || crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+        header_value: 0,
+        scalars: Vec::new(),
+        payload_prefix: Vec::new(),
+        entries: Vec::new(),
+    };
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: vec![side(), side()],
+        },
+    );
+    operand.recipe_reference_contexts = sides
+        .iter()
+        .enumerate()
+        .map(|(ordinal, (face, edges))| {
+            serde_json::from_value(serde_json::json!({
+                "reference_ordinal": ordinal,
+                "result_faces": [],
+                "result_shared_edge_slots": [],
+                "preceding_faces": [face],
+                "shared_edge_slots": [],
+                "changed_shared_edge_slots": [],
+                "changed_reference_edge_slots": edges,
+            }))
+            .unwrap()
+        })
+        .collect();
+    operand.transition_deleted_edge_slots = deleted.to_vec();
+    operand
+}
+
+#[test]
+fn a_two_side_group_selects_the_edges_its_transition_deletes() {
+    use crate::design::edge_resolve::shared_reference_deleted_edge_group_candidates;
+    let deleted = [10, 11, 12];
+    // Two members share the faces of edges 10 and 12; the third names edge 11.
+    let operands = [
+        two_side_operand(
+            1,
+            [
+                ("f3d:brep:entity#1", &[10, 11, 12]),
+                ("f3d:brep:entity#2", &[10, 12]),
+            ],
+            &deleted,
+        ),
+        two_side_operand(
+            2,
+            [
+                ("f3d:brep:entity#1", &[10, 11, 12]),
+                ("f3d:brep:entity#2", &[10, 12]),
+            ],
+            &deleted,
+        ),
+        two_side_operand(
+            3,
+            [
+                ("f3d:brep:entity#1", &[10, 11, 12]),
+                ("f3d:brep:entity#3", &[11]),
+            ],
+            &deleted,
+        ),
+    ];
+    let resolve = |operands: &[crate::records::topology::edge_identity::DesignEdgeOperand]| {
+        let operands = operands.iter().collect::<Vec<_>>();
+        crate::test_support::with_decode_context(|ctx| {
+            shared_reference_deleted_edge_group_candidates(&operands, ctx)
+        })
+        .unwrap()
+    };
+    assert_eq!(resolve(&operands), Some(vec![10, 11, 12]));
+    // A transition that deletes another edge does not state the group.
+    let mut extra = operands.clone();
+    for operand in &mut extra {
+        operand.transition_deleted_edge_slots = vec![10, 11, 12, 13];
+    }
+    assert_eq!(resolve(&extra), None);
+    // Members that leave a deleted edge uncovered state nothing.
+    let mut uncovered = operands.clone();
+    uncovered[2] = two_side_operand(
+        3,
+        [
+            ("f3d:brep:entity#1", &[10, 11, 12]),
+            ("f3d:brep:entity#2", &[10, 12]),
+        ],
+        &deleted,
+    );
+    assert_eq!(resolve(&uncovered), None);
+}
