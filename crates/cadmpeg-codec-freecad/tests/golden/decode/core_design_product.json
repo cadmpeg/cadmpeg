@@ -5282,7 +5282,6 @@
       "occurrences": [
         {
           "id": "fcstd:model:occurrence#Box:container",
-          "name": "fcstd:native:object#Box",
           "native_ref": "fcstd:native:object#Box",
           "ordinal": 0,
           "parent": {
@@ -5316,7 +5315,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Cut:container",
-          "name": "fcstd:native:object#Cut",
           "native_ref": "fcstd:native:object#Cut",
           "ordinal": 2,
           "parent": {
@@ -5350,7 +5348,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Cylinder:container",
-          "name": "fcstd:native:object#Cylinder",
           "native_ref": "fcstd:native:object#Cylinder",
           "ordinal": 1,
           "parent": {
@@ -5384,7 +5381,6 @@
         },
         {
           "id": "fcstd:model:occurrence#DesignedFeature:container",
-          "name": "fcstd:native:object#DesignedFeature",
           "native_ref": "fcstd:native:object#DesignedFeature",
           "ordinal": 4,
           "parent": {
@@ -5488,7 +5484,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Product:container",
-          "name": "fcstd:native:object#Product",
           "native_ref": "fcstd:native:object#Product",
           "ordinal": 0,
           "parent": {
@@ -5521,7 +5516,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Profile:container",
-          "name": "fcstd:native:object#Profile",
           "native_ref": "fcstd:native:object#Profile",
           "ordinal": 3,
           "parent": {

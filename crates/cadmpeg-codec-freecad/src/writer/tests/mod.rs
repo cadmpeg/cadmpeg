@@ -12,5 +12,6 @@ mod polygon;
 mod polygon_pair;
 mod property_order;
 mod robustness;
+mod storage_rows;
 mod synthesis;
 mod triangulated_pcurve;

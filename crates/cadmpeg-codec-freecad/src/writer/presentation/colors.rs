@@ -51,6 +51,37 @@ fn object_color(provider: &mut Provider, color: Color, transparency_byte: bool) 
     );
 }
 
+/// The display precedence `FreeCAD` applies to a binding of one color lane.
+fn derived_precedence(schema: Option<&str>, target: &AppearanceTarget) -> Option<&'static str> {
+    Some(match (schema?, target) {
+        ("FCStd ViewProvider line style", _) => "edge_over_object",
+        ("FCStd ViewProvider point style", _) => "vertex_over_object",
+        ("FCStd DiffuseColor", _) | (SHAPE_APPEARANCE_SCHEMA, AppearanceTarget::Face(_)) => {
+            "face_over_object"
+        }
+        ("FCStd LineColorArray", _) => "edge_array_over_line",
+        ("FCStd PointColorArray", _) => "vertex_array_over_point",
+        (SHAPE_APPEARANCE_SCHEMA, AppearanceTarget::Body(_)) => "shape_over_object",
+        _ => return None,
+    })
+}
+
+/// Set a numeric attribute, in the source spelling when the source holds an
+/// equal value.
+fn set_number(
+    attributes: &mut BTreeMap<String, String>,
+    source: &BTreeMap<String, String>,
+    key: &str,
+    number: f64,
+) {
+    let spelled = source
+        .get(key)
+        .filter(|text| text.parse::<f64>().ok() == Some(number))
+        .cloned()
+        .unwrap_or_else(|| number.to_string());
+    attributes.insert(key.into(), spelled);
+}
+
 fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
@@ -73,23 +104,22 @@ fn material(
         let mut property = original.clone();
         for value in &mut property.values {
             if value.tag == "PropertyMaterial" {
+                // FreeCAD's material states every lane; one the neutral
+                // appearance leaves unstated keeps its stored value.
+                let source = value.attributes.clone();
                 if let Some(color) = appearance.base_color {
-                    value.attributes.insert(
-                        "diffuseColor".into(),
-                        packed(color, transparency_byte).to_string(),
+                    set_number(
+                        &mut value.attributes,
+                        &source,
+                        "diffuseColor",
+                        f64::from(packed(color, transparency_byte)),
                     );
-                } else {
-                    value.attributes.remove("diffuseColor");
                 }
                 if let Some(number) = shininess {
-                    value
-                        .attributes
-                        .insert("shininess".into(), number.to_string());
+                    set_number(&mut value.attributes, &source, "shininess", number);
                 }
                 if let Some(number) = transparency {
-                    value
-                        .attributes
-                        .insert("transparency".into(), number.to_string());
+                    set_number(&mut value.attributes, &source, "transparency", number);
                 }
             }
         }
@@ -105,29 +135,6 @@ fn material(
             ("shininess", shininess.unwrap_or(0.0).to_string()),
             ("transparency", transparency.unwrap_or(0.0).to_string()),
         ];
-        provider.properties.insert(
-            "ShapeMaterial".into(),
-            xml::property(
-                "ShapeMaterial",
-                "App::PropertyMaterial",
-                &xml::element("PropertyMaterial", &attributes),
-            ),
-        );
-    } else if shininess.is_some() || transparency.is_some() || appearance.base_color.is_none() {
-        let mut attributes = vec![
-            ("ambientColor", "0".into()),
-            ("specularColor", "0".into()),
-            ("emissiveColor", "0".into()),
-        ];
-        if let Some(color) = appearance.base_color {
-            attributes.push(("diffuseColor", packed(color, transparency_byte).to_string()));
-        }
-        if let Some(value) = shininess {
-            attributes.push(("shininess", value.to_string()));
-        }
-        if let Some(value) = transparency {
-            attributes.push(("transparency", value.to_string()));
-        }
         provider.properties.insert(
             "ShapeMaterial".into(),
             xml::property(
@@ -190,9 +197,9 @@ pub(super) fn write(
     losses: &mut Vec<LossNote>,
     transparency_byte: bool,
 ) -> Result<(), CodecError> {
-    // The neutral arenas own both values and absence of their material lanes.
-    // Ambient/specular/emissive members of an object material have no neutral
-    // object-material form and remain typed native content.
+    // The neutral arenas own the color lists. A material states every lane,
+    // so a stored one stays whole until a neutral appearance overrides its
+    // lanes; a material with no stored source is absent, FreeCAD's default.
     for provider in providers.values_mut() {
         for name in [
             "ShapeColor",
@@ -203,18 +210,6 @@ pub(super) fn write(
             "ShapeAppearance",
         ] {
             provider.properties.remove(name);
-        }
-        if let Some(material) = provider.native.get_mut("ShapeMaterial") {
-            for value in &mut material.values {
-                if value.tag == "PropertyMaterial" {
-                    for name in ["diffuseColor", "transparency", "shininess"] {
-                        value.attributes.remove(name);
-                    }
-                }
-            }
-            if let Some(value) = xml::native_gui(material) {
-                provider.properties.insert("ShapeMaterial".into(), value);
-            }
         }
     }
     let mut defaults = HashMap::new();
@@ -353,6 +348,16 @@ pub(super) fn write(
             );
             continue;
         };
+        if matches!(&binding.target, AppearanceTarget::Occurrence(_))
+            || matches!(&binding.target, AppearanceTarget::Record { arena, .. } if arena.as_str() == "occurrences")
+        {
+            losses.push(
+                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                    "appearance binding {} targets an occurrence; FreeCAD holds a link's material on its view provider without a binding",
+                    binding.id
+                )),
+            );
+        }
         let provider = providers
             .entry(name.clone())
             .or_insert_with(|| Provider::new(name.clone()));
@@ -434,22 +439,27 @@ pub(super) fn write(
         if selection(&binding.target).is_none()
             && material_slot.is_none()
             && !provider.properties.contains_key("ShapeMaterial")
-            && appearance.base_color.is_some()
         {
             losses.push(
                 FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-                    "appearance {} bare color has no complete material encoding and is omitted",
+                    "appearance {} has no complete material encoding and is omitted",
                     appearance.id
                 )),
             );
         }
-        if !binding.channels.is_empty() {
-            losses.push(
-                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-                    "appearance binding {} independent channel gates have no native provider state",
-                    binding.id
-                )),
-            );
+        // FreeCAD's display precedence follows from the color lane and the
+        // element kind; the re-decode derives it.
+        let derived = derived_precedence(appearance.schema.as_deref(), &binding.target);
+        if !binding.channels.is_empty()
+            && (binding.channels.len() != 1
+                || binding.channels.iter().any(|(key, value)| {
+                    key.as_str() != "precedence" || Some(value.as_str()) != derived
+                }))
+        {
+            losses.push(FreecadLossCode::AppearanceChannelDerived.note(format!(
+                "appearance binding {} channels are derived from its color lane and element kind",
+                binding.id
+            )));
         }
         for (key, value) in &appearance.properties {
             match key.as_str() {
@@ -474,35 +484,17 @@ pub(super) fn write(
                 ),
             }
         }
-        let (expected_name, expected_schema) = if let Some(slot) = material_slot {
-            (
-                format!("{name} face {} material", slot.max(1)),
-                SHAPE_APPEARANCE_SCHEMA.to_owned(),
-            )
-        } else if let Some((id, property)) = selection(&binding.target) {
-            (
-                format!(
-                    "{name} {} appearance",
-                    names
-                        .get(&format!("{id}:subelement"))
-                        .map_or("", String::as_str)
-                ),
-                format!("FCStd {property}"),
-            )
+        let expected_schema = if material_slot.is_some() {
+            SHAPE_APPEARANCE_SCHEMA.to_owned()
+        } else if let Some((_, property)) = selection(&binding.target) {
+            format!("FCStd {property}")
         } else {
-            (
-                format!("{name} shape appearance"),
-                "FCStd ViewProvider ShapeMaterial".to_owned(),
-            )
+            "FCStd ViewProvider ShapeMaterial".to_owned()
         };
         if appearance
-            .name
+            .schema
             .as_ref()
-            .is_some_and(|value| value != &expected_name)
-            || appearance
-                .schema
-                .as_ref()
-                .is_some_and(|value| value != &expected_schema)
+            .is_some_and(|value| value != &expected_schema)
             || (appearance.asset_guid.is_some() && material_slot.is_none())
             || appearance.library_id.is_some()
             || appearance.visual_guid.is_some()
@@ -523,6 +515,14 @@ pub(super) fn write(
                     appearance.id
                 )),
             );
+        }
+    }
+    for appearance in &ir.model.appearances {
+        if appearance.name.is_some() {
+            losses.push(FreecadLossCode::AppearanceNameNotTransferred.note(format!(
+                "appearance {} name has no FreeCAD GUI home",
+                appearance.id
+            )));
         }
     }
     // An unbound appearance read from a view provider's own material (an
@@ -582,6 +582,35 @@ pub(super) fn write(
                     continue;
                 }
             }
+            (Some(owner), Some(schema)) => {
+                // An entry of the provider's own color list with no element
+                // to bind returns to its list position.
+                // Appearances read from one list keep their entry order.
+                let entry = ["DiffuseColor", "LineColorArray", "PointColorArray"]
+                    .into_iter()
+                    .find(|property| schema.strip_prefix("FCStd ") == Some(*property))
+                    .and_then(|property| {
+                        let index = ir
+                            .model
+                            .appearances
+                            .iter()
+                            .filter(|other| other.native_ref == appearance.native_ref)
+                            .position(|other| other.id == appearance.id)?
+                            + 1;
+                        Some((property, index, appearance.base_color?))
+                    });
+                if let Some((property, index, color)) = entry {
+                    arrays
+                        .entry((owner.clone(), property))
+                        .or_default()
+                        .insert(index, packed(color, transparency_byte));
+                    array_sources
+                        .entry((owner, property))
+                        .or_default()
+                        .insert(appearance.id.as_str());
+                    continue;
+                }
+            }
             _ => {}
         }
         losses.push(
@@ -604,6 +633,7 @@ pub(super) fn write(
             .filter(|(id, _)| id.ends_with(":subelement"))
             .filter(|(id, _)| names.get(id.trim_end_matches(":subelement")) == Some(&owner))
             .filter_map(|(_, value)| value.strip_prefix(prefix)?.parse::<usize>().ok())
+            .chain(overrides.keys().copied())
             .max()
             .unwrap_or(0);
         // One appearance bound to every element is FreeCAD's one-entry
@@ -636,20 +666,29 @@ pub(super) fn write(
         for color in colors {
             bytes.extend_from_slice(&color.to_le_bytes());
         }
-        let filename = format!("{owner}.{property}");
-        entries.insert(filename.clone(), bytes);
         let Some(provider) = providers.get_mut(&owner) else {
             debug_assert!(false, "topology color provider is absent");
             continue;
         };
-        provider.properties.insert(
-            property.into(),
-            xml::property(
+        // A list the source stored keeps its entry name and status.
+        let native = provider.native.get(property).and_then(|native| {
+            let [entry] = native.side_entries.as_slice() else {
+                return None;
+            };
+            let value = xml::native_gui_with(native, &HashSet::from([entry.clone()]))?;
+            Some((entry.clone(), value))
+        });
+        let (filename, value) = native.unwrap_or_else(|| {
+            let filename = format!("{owner}.{property}");
+            let value = xml::property(
                 property,
                 "App::PropertyColorList",
-                &xml::element("ColorList", &[("file", filename)]),
-            ),
-        );
+                &xml::element("ColorList", &[("file", filename.clone())]),
+            );
+            (filename, value)
+        });
+        entries.insert(filename, bytes);
+        provider.properties.insert(property.into(), value);
     }
     for (owner, slots) in material_lists {
         let Some(provider) = providers.get_mut(&owner) else {
@@ -774,13 +813,6 @@ mod tests {
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
         material(&mut provider, &appearance, true, false);
-        let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
-        let value = document
-            .descendants()
-            .find(|node| node.has_tag_name("PropertyMaterial"))
-            .unwrap();
-        assert!(value.attribute("diffuseColor").is_none());
-        assert!(value.attribute("shininess").is_none());
-        assert!(value.attribute("transparency").is_none());
+        assert!(!provider.properties.contains_key("ShapeMaterial"));
     }
 }
