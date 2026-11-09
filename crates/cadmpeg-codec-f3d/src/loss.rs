@@ -415,6 +415,9 @@ pub(crate) enum F3dLossCode {
     WriterProductOmitted,
     /// Content outside the synthesized F3D encoding profile.
     WriterSourceAssociationOmitted,
+    /// A neutral value the F3D wire derives or holds in a reduced form; the
+    /// writer stores the derived or reduced value.
+    WriterValueNormalized,
 
     /// Design-intent decoding failed; its sketches, features and history were dropped.
     DesignIntentUndecoded,
@@ -606,6 +609,7 @@ impl F3dLossCode {
         Self::WriterPmiOmitted,
         Self::WriterProductOmitted,
         Self::WriterSourceAssociationOmitted,
+        Self::WriterValueNormalized,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -813,6 +817,7 @@ impl F3dLossCode {
             Self::WriterPmiOmitted => "writer.pmi-omitted",
             Self::WriterProductOmitted => "writer.product-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
+            Self::WriterValueNormalized => "writer.value-normalized",
 
             Self::DesignIntentUndecoded => "design.intent-undecoded",
         }
@@ -837,6 +842,7 @@ impl F3dLossCode {
             Self::WriterPmiOmitted => Severity::Warning,
             Self::WriterProductOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Warning,
+            Self::WriterValueNormalized => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::ScopeOwnerUnresolved
             | Self::OperationPoseApplied
@@ -1026,6 +1032,7 @@ impl F3dLossCode {
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
             Self::WriterProductOmitted => LossTaxonomy::AssemblyComponentsExternal,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
+            Self::WriterValueNormalized => LossTaxonomy::ValueQuantized,
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -1426,6 +1433,7 @@ mod tests {
                 "writer.pmi-omitted",
                 "writer.product-omitted",
                 "writer.source-association-omitted",
+                "writer.value-normalized",
             ]
         );
     }

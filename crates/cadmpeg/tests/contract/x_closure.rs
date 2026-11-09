@@ -664,8 +664,7 @@ fn observe_f3d() -> ObservedF3d {
                 "model.bodies[].color.a" | "model.faces[].color.a" => {
                     Some(|_| serde_json::Value::from(1.0))
                 }
-                "model.features[].needs_recompute" => Some(|_| serde_json::Value::from(false)),
-                _ => None,
+                path => super::f3d_storage::normalizer(path),
             },
         })
         .collect();

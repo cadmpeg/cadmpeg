@@ -210,12 +210,11 @@ fn select_component_copies(
                 {
                     return None;
                 }
-                let mut rows = placed.transform?.rows();
-                if (0..3)
-                    .any(|row| (0..3).any(|col| rows[row][col] != f64::from(u8::from(row == col))))
-                {
+                let transform = placed.transform?;
+                if !transform.is_proper_rigid() {
                     return None;
                 }
+                let mut rows = transform.rows();
                 for row in rows.iter_mut().take(3) {
                     row[3] /= 10.0;
                 }

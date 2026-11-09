@@ -33,6 +33,66 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
             loss: "export/evaluation.stale",
         },
     },
+    // A scope stores its family name and family-local ordinal, from which the
+    // reader derives the feature name, and a suppression state only in the
+    // Extrude, Fillet and Chamfer families (spec §3.1).
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.features[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
+    // A written creation timestamp names the terminal successor.
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.attributes[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
+    // Occurrence placements are rigid (spec §3.1 CopyPaste).
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.occurrences[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
+    // A feature parameter of a non-sketch feature is driving.
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.parameters[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
+    // A sketch placement is a rigid matrix with unit axes, and a legacy
+    // container stores its Design entity ID as the sketch name.
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.sketches[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
+    // A four-point sketch relation stores its state and member records; the
+    // reader derives its native kind and operand fields.
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.sketch_constraints[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
+    // A mesh container references its first and last vertex (spec §1.1.2).
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.tessellations[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
+    // An image asset's media type follows its entry-name extension.
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.assets[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.value-normalized",
+        },
+    },
 ];
 
 /// Preserve an eligible source dialect, or synthesize the selected catalog target.

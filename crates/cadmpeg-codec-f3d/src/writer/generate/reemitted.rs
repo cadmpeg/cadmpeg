@@ -10,6 +10,33 @@ use super::mesh::EncodedMesh;
 use super::sketches::SketchStream;
 use crate::native::F3dNative;
 
+/// Native sketch records of authored sketches whose neutral entity or
+/// constraint the sketch generator does not write: no stream carries them.
+pub(super) fn unwritten_sketch_records(target: &CadIr, sketches: &SketchStream) -> BTreeSet<String> {
+    let authored: BTreeSet<_> = sketches.sketches.iter().collect();
+    let entities: BTreeSet<_> = sketches.entities.iter().collect();
+    let constraints: BTreeSet<_> = sketches.constraints.iter().collect();
+    target
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| authored.contains(&entity.sketch) && !entities.contains(entity.id()))
+        .flat_map(|entity| [entity.native_ref.as_deref(), entity.geometry_ref.as_deref()])
+        .chain(
+            target
+                .model
+                .sketch_constraints
+                .iter()
+                .filter(|constraint| {
+                    authored.contains(&constraint.sketch) && !constraints.contains(&constraint.id)
+                })
+                .map(|constraint| constraint.native_ref.as_deref()),
+        )
+        .flatten()
+        .map(str::to_owned)
+        .collect()
+}
+
 /// The native records for Design1, or `None` when no generator re-authors a
 /// retained record. A mesh segment re-emits its own graph. An authored sketch
 /// regenerates every native point, curve, text and relation its neutral

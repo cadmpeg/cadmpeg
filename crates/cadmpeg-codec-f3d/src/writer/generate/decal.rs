@@ -40,7 +40,6 @@ pub(in crate::writer) fn select<'a>(target: &'a CadIr, native: &'a F3dNative) ->
         || feature.source_text.is_some()
         || !feature.source_content.is_empty()
         || !feature.evaluation.outputs().is_empty()
-        || feature.name.as_deref() != Some("Decal 1")
         || feature.source_tag.as_deref() != Some("Decal")
         || feature.source_properties.len() != 2
     {

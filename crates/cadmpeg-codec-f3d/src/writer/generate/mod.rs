@@ -50,6 +50,8 @@ pub(super) struct Generated {
     pub(super) losses: Vec<LossNote>,
     pub(super) regenerated_parameters: BTreeSet<String>,
     pub(super) written_recipes: BTreeSet<String>,
+    /// Native records no generated stream carries (#209 §2.3 W3 Dropped).
+    pub(super) dropped_records: BTreeSet<String>,
 }
 
 /// First `FusionDesignSegmentType` number of the authored mesh segments; the
@@ -218,6 +220,11 @@ pub(super) fn write_with_limits(
         &encoded_meshes,
         written_sketches.as_ref(),
     );
+    let mut dropped_records = written_sketches
+        .as_ref()
+        .map(|sketches| reemitted::unwritten_sketch_records(target, sketches))
+        .unwrap_or_default();
+    dropped_records.extend(mesh::unwritten_native_records(target, &native));
     if let Some(design_native) = &design_native {
         for kind in &mut design_registry.types {
             kind.entity_ids.retain(|entity| {
@@ -624,9 +631,14 @@ pub(super) fn write_with_limits(
                 "sketch {id}: generated member-run records have unspecified state fields"
             )));
         }
+        for id in &sketches.normalized_constraints {
+            residual_losses.push(crate::loss::F3dLossCode::WriterValueNormalized.note(format!(
+                "sketch constraint {id}: its native kind, operand fields and record indices follow its stored mask and members"
+            )));
+        }
         for id in &sketches.renamed_sketches {
             residual_losses.push(
-                crate::loss::F3dLossCode::WriterDesignRecordsOmitted
+                crate::loss::F3dLossCode::WriterValueNormalized
                     .note(format!("sketch {id} uses a generated Design entity name")),
             );
         }
@@ -978,7 +990,7 @@ pub(super) fn write_with_limits(
                 })
             }) {
                 partial = true;
-                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                residual_losses.push(crate::loss::F3dLossCode::WriterValueNormalized.note(
                     format!("feature {} uses a generated Design name", feature.id),
                 ));
             }
@@ -1086,6 +1098,7 @@ pub(super) fn write_with_limits(
         losses: residual_losses,
         regenerated_parameters,
         written_recipes: design_bulk.map_or_else(BTreeSet::new, |bulk| bulk.written_recipes),
+        dropped_records,
     })
 }
 

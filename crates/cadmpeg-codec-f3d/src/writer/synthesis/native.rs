@@ -1283,6 +1283,7 @@ pub(super) fn coverage(
     invalidated_timestamps: &std::collections::BTreeSet<String>,
     regenerated_parameters: &std::collections::BTreeSet<String>,
     written_recipes: &std::collections::BTreeSet<String>,
+    dropped_records: &std::collections::BTreeSet<String>,
 ) -> NativeDispositions {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
@@ -1299,8 +1300,9 @@ pub(super) fn coverage(
                 .namespace("f3d")
                 .and_then(|namespace| namespace.arenas().get(arena));
             for record in before {
-                if arena.as_str() == "construction_recipes"
-                    && !written_recipes.contains(record.id())
+                if dropped_records.contains(record.id())
+                    || (arena.as_str() == "construction_recipes"
+                        && !written_recipes.contains(record.id()))
                 {
                     result.set_record("f3d", arena, record.id(), NativeDisposition::Dropped);
                     continue;

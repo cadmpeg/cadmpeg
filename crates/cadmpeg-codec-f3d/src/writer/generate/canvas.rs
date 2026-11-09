@@ -47,7 +47,6 @@ pub(in crate::writer) fn select<'a>(
         || feature.source_text.is_some()
         || !feature.source_content.is_empty()
         || !feature.evaluation.outputs().is_empty()
-        || feature.name.as_deref() != Some("Canvas 1")
         || feature.source_tag.as_deref() != Some("Canvas")
         || feature.source_properties.len() != 1
     {
@@ -96,24 +95,10 @@ pub(in crate::writer) fn select<'a>(
     if name.contains(['/', '\\']) || name.encode_utf16().count() > 1024 {
         return None;
     }
-    let extension = std::path::Path::new(name).extension()?.to_str()?;
-    let media = if extension.eq_ignore_ascii_case("png") {
-        "image/png"
-    } else if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-        "image/jpeg"
-    } else {
-        return None;
-    };
-    if resource.media_type.as_ref()?.as_str() != media {
-        return None;
-    }
     let path = format!(
         "{}/Design1/Images.BlobParts/{name}",
         crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
     );
-    if resource.id != crate::ids::neutral_asset_id(&path) {
-        return None;
-    }
     let scope = native
         .design_parameter_scopes
         .iter()
@@ -122,8 +107,7 @@ pub(in crate::writer) fn select<'a>(
         resource.native_ref.as_deref() == Some(image.id.as_str())
             && image.scope_record_index == scope.record_index
     })?;
-    if image.asset_name() != name
-        || image.geometry().label().encode_utf16().count() > 256
+    if image.geometry().label().encode_utf16().count() > 256
         || crate::ids::design_segment(&image.id) != crate::ids::design_segment(&scope.id)
         || scope.kind() != crate::records::feature::scope::DesignFeatureKind::Canvas
         || !scope
