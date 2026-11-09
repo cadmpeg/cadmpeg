@@ -360,12 +360,25 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
             }
         }
     }
+    // Endpoint coincidences are the shared vertices of the sketch body and
+    // need no relation record, so they need no owning feature.
+    let stores_relation = |constraint: &cadmpeg_ir::sketches::SketchConstraint| {
+        !matches!(
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::CoincidentLoci { loci }
+                if loci.iter().all(|locus| matches!(
+                    locus,
+                    cadmpeg_ir::sketches::SketchLocus::Start(_)
+                        | cadmpeg_ir::sketches::SketchLocus::End(_)
+                ))
+        )
+    };
     for sketch in ir.model.sketches.clone() {
         if ir
             .model
             .sketch_constraints
             .iter()
-            .any(|constraint| constraint.sketch == sketch.id)
+            .any(|constraint| constraint.sketch == sketch.id && stores_relation(constraint))
             && !ir.model.features.iter().any(|feature| {
                 crate::resolved_features::write_prepare::feature_owns_planar_sketch(
                     ir, feature, &sketch.id,
@@ -675,6 +688,12 @@ fn sketches(
                         ir.model.sketch_constraints.pop();
                         ir.model.sketch_constraints.push(constraint.clone());
                     }
+                    ir.model.sketch_constraints.pop();
+                    losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                        "sketch constraint {} omitted: {reason}, and its parameter has no evaluated value to state",
+                        constraint.id
+                    )));
+                    continue;
                 }
                 let mut authored = original.clone();
                 authored.model.sketch_constraints = vec![constraint.clone()];

@@ -112,8 +112,16 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
         {
             return false;
         }
+        // A wire edge's owner is the wire coedge record the BREP writer
+        // regenerates for it; it has no neutral coedge.
+        let wire_edge = target
+            .model
+            .shells
+            .iter()
+            .any(|shell| shell.wire_edges().iter().any(|wire| wire.as_str() == edge));
         match record.owner_coedge_index {
             None => true,
+            Some(_) if wire_edge => true,
             Some(index) => target.model.coedges.iter().any(|coedge| {
                 coedge.edge.as_str() == edge
                     && cadmpeg_asm::brep::records::neutral_record_index(coedge.id.as_str())
