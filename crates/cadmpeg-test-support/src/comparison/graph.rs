@@ -560,7 +560,7 @@ fn unreferenced_nested_identities(records: &mut [Record]) {
                 if nested {
                     if let Some(Value::String(id)) = fields.get_mut("id") {
                         if counts.get(id.as_str()) == Some(&1) {
-                            *id = NESTED_IDENTITY.to_owned();
+                            NESTED_IDENTITY.clone_into(id);
                         }
                     }
                 }
