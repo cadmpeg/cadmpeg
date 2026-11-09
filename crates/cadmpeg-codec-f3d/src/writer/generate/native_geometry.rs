@@ -104,12 +104,40 @@ pub(crate) fn native_procedural_surface(
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
-    let written =
-        native_procedural_surface_definition(bytes, target, solved_surface, solved_cache)?;
+    let written = native_procedural_surface_definition(bytes, target, solved_surface, solved_cache)
+        .map_err(|error| naming_procedural(target, &solved_surface.id, error))?;
     if written {
         native_record_bounds(bytes, target, &solved_surface.id);
     }
     Ok(written)
+}
+
+/// `error` with the id of the procedural construction of `surface` in front
+/// of its message, so the loss that reports it names the record.
+fn naming_procedural(
+    target: &CadIr,
+    surface: &cadmpeg_ir::ids::SurfaceId,
+    error: CodecError,
+) -> CodecError {
+    let Some(procedural) =
+        target.model.procedural_surfaces.iter().find(|procedural| {
+            target.model.procedural_surface_owner(&procedural.id) == Some(surface)
+        })
+    else {
+        return error;
+    };
+    match error {
+        CodecError::NotImplemented(message) => {
+            CodecError::NotImplemented(format!("{}: {message}", procedural.id))
+        }
+        CodecError::Malformed(message) => {
+            CodecError::malformed(format_args!("{}: {message}", procedural.id))
+        }
+        CodecError::InvalidInput(message) => {
+            CodecError::InvalidInput(format!("{}: {message}", procedural.id))
+        }
+        error => error,
+    }
 }
 
 /// Emit the four optional record-level U/V bound fields retained on the
@@ -1943,7 +1971,8 @@ pub(super) fn native_cacheless_procedural_surface(
     target: &CadIr,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)?;
+    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)
+        .map_err(|error| naming_procedural(target, &surface.id, error))?;
     if written {
         native_record_bounds(bytes, target, &surface.id);
     }
