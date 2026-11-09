@@ -63,7 +63,13 @@ impl ValidatedFinding {
         }
     }
 
-    pub(crate) fn for_cadir_encode(document: &CadIr) -> Option<Self> {
+    /// Issues the validator's finding for a non-finite number in `document`.
+    ///
+    /// A writer calls this when a field it writes holds a non-finite number.
+    /// It returns `None` when the document holds only finite numbers: the
+    /// writer computed the value itself.
+    #[must_use]
+    pub fn non_finite(document: &CadIr) -> Option<Self> {
         Self::from_cadir_check(&crate::hash::finite_json::check_cadir_finite_for_encode(
             document,
         ))
@@ -137,10 +143,12 @@ mod tests {
         assert!(report.findings.contains(proof.finding()));
         assert_eq!(proof.finding().check, Check::FiniteValue);
         assert_eq!(proof.finding().severity, Severity::Error);
+        assert_eq!(ValidatedFinding::non_finite(&document), Some(proof));
 
         document.repro.as_mut().unwrap().signature.numbers[0].value = 0.5;
         assert!(ValidatedFinding::for_cadir(&ctx, &document)
             .unwrap()
             .is_none());
+        assert_eq!(ValidatedFinding::non_finite(&document), None);
     }
 }

@@ -8,8 +8,6 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use cadmpeg_core::CodecError;
-
 use crate::options::StepSchema;
 
 pub(crate) mod target;
@@ -216,17 +214,27 @@ impl Emitter {
     }
 
     /// Consume the emitter and return one encoded DATA instance per element,
-    /// or refuse the section when [`Self::real`] was handed a non-finite
-    /// number. This is a (C) emitter invariant; carrier transactions consume
-    /// numeric admission failures before the section is finalized.
-    pub(crate) fn into_lines(self) -> Result<Vec<String>, CodecError> {
+    /// or the first non-finite number [`Self::real`] was handed. Carrier
+    /// transactions consume numeric admission failures before the section is
+    /// finalized.
+    pub(crate) fn into_lines(self) -> Result<Vec<String>, NonFiniteReal> {
         match self.refusal.get() {
             None => Ok(self.lines),
-            Some(Refusal::NonFiniteReal(value)) => Err(CodecError::InvalidInput(format!(
-                "STEP writer computed the non-finite real {value}, which Part 21 cannot state"
-            ))),
+            Some(Refusal::NonFiniteReal(value)) => Err(NonFiniteReal {
+                value,
+                lines: self.lines,
+            }),
         }
     }
+}
+
+/// A non-finite number the emitter was handed outside a carrier transaction.
+#[derive(Debug)]
+pub(crate) struct NonFiniteReal {
+    /// The first such number.
+    pub(crate) value: f64,
+    /// The DATA instances, each non-finite number stated as an empty literal.
+    pub(crate) lines: Vec<String>,
 }
 
 /// Format a finite `f64` as a Part 21 real literal, or `None` for a
