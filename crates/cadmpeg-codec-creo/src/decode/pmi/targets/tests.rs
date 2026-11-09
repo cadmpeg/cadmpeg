@@ -71,7 +71,9 @@ fn edge_ir(edges: &[(u32, &[u32])]) -> cadmpeg_ir::document::CadIr {
 #[test]
 fn two_edge_links_select_each_edge_face_the_other_edge_does_not_bound() {
     let ir = edge_ir(&[(1, &[10, 11]), (2, &[10, 12])]);
-    let target = super::resolve_dimension(&[(1, 1), (1, 2)], &ir).expect("edge target");
+    let target = super::resolve_dimension(&[(1, 1), (1, 2)], &ir, "Dimension 219:1")
+        .0
+        .expect("edge target");
     assert!(target.from_edges);
     assert_eq!(target.faces, vec![face("11"), face("12")]);
 }
@@ -79,19 +81,31 @@ fn two_edge_links_select_each_edge_face_the_other_edge_does_not_bound() {
 #[test]
 fn edge_links_without_a_shared_face_select_no_target() {
     let ir = edge_ir(&[(1, &[10]), (2, &[11])]);
-    assert!(super::resolve_dimension(&[(1, 1), (1, 2)], &ir).is_none());
+    assert!(
+        super::resolve_dimension(&[(1, 1), (1, 2)], &ir, "Dimension 219:1")
+            .0
+            .is_none()
+    );
 }
 
 #[test]
 fn an_edge_with_two_unshared_faces_selects_no_target() {
     let ir = edge_ir(&[(1, &[10, 11, 14]), (2, &[10, 12])]);
-    assert!(super::resolve_dimension(&[(1, 1), (1, 2)], &ir).is_none());
+    assert!(
+        super::resolve_dimension(&[(1, 1), (1, 2)], &ir, "Dimension 219:1")
+            .0
+            .is_none()
+    );
 }
 
 #[test]
 fn one_edge_linked_twice_selects_no_target() {
     let ir = edge_ir(&[(1, &[10, 11])]);
-    assert!(super::resolve_dimension(&[(1, 1), (1, 1)], &ir).is_none());
+    assert!(
+        super::resolve_dimension(&[(1, 1), (1, 1)], &ir, "Dimension 219:1")
+            .0
+            .is_none()
+    );
 }
 
 fn cylinder_surface(id: &str, center_x: f64) -> cadmpeg_ir::geometry::Surface {
@@ -136,7 +150,9 @@ fn a_surface_link_selects_the_faces_of_its_visible_surface() {
         .surfaces
         .push(cylinder_surface("creo:visibgeom:surface#7", 0.0));
     visible_face(&mut ir, "7", "creo:visibgeom:surface#7");
-    let target = super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir).expect("target");
+    let target = super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir, "Dimension 219:1")
+        .0
+        .expect("target");
     assert_eq!(target.faces, vec![face("7")]);
 }
 
@@ -154,7 +170,9 @@ fn a_datum_cylinder_link_selects_the_visible_faces_on_its_carrier() {
         .push(cylinder_surface("creo:visibgeom:surface#9", 50.0));
     visible_face(&mut ir, "8", "creo:visibgeom:surface#8");
     visible_face(&mut ir, "9", "creo:visibgeom:surface#9");
-    let target = super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir).expect("target");
+    let target = super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir, "Dimension 219:1")
+        .0
+        .expect("target");
     assert_eq!(target.faces, vec![face("8")]);
 }
 
@@ -168,5 +186,49 @@ fn a_link_that_names_a_visible_and_a_datum_surface_selects_no_target() {
         .surfaces
         .push(cylinder_surface("creo:visibgeom:surface#7", 50.0));
     visible_face(&mut ir, "7", "creo:visibgeom:surface#7");
-    assert!(super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir).is_none());
+    let (target, notes) = super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir, "Dimension 219:1");
+    assert!(target.is_none());
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        notes[0].code,
+        crate::loss::CreoLossCode::PmiTargetNamespaceAmbiguous.kind()
+    );
+}
+
+/// An IR where surface number 7 names a visible surface with one face and,
+/// when `datum` holds, also an `ActDatums` surface.
+fn tolerance_surface_ir(datum: bool) -> cadmpeg_ir::document::CadIr {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    if datum {
+        ir.model
+            .surfaces
+            .push(cylinder_surface("creo:actdatums:surface#7", 0.0));
+    }
+    ir.model
+        .surfaces
+        .push(cylinder_surface("creo:visibgeom:surface#7", 50.0));
+    visible_face(&mut ir, "7", "creo:visibgeom:surface#7");
+    ir
+}
+
+#[test]
+fn a_tolerance_surface_link_selects_the_unique_visible_face() {
+    let (target, note) =
+        super::surface_tolerance_target(&tolerance_surface_ir(false), 7, (3900, 219));
+    assert!(matches!(
+        target,
+        Some(super::ToleranceTarget::Surface(selected)) if selected == face("7")
+    ));
+    assert!(note.is_none());
+}
+
+#[test]
+fn a_tolerance_link_that_names_both_sections_charges_the_ambiguity_loss() {
+    let (target, note) =
+        super::surface_tolerance_target(&tolerance_surface_ir(true), 7, (3900, 219));
+    assert!(target.is_none());
+    assert_eq!(
+        note.expect("ambiguity note").code,
+        crate::loss::CreoLossCode::PmiTargetNamespaceAmbiguous.kind()
+    );
 }

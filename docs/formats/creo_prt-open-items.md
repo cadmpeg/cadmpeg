@@ -1600,7 +1600,8 @@ uses the faces of two surface links, the visible faces on the carrier of an
 edge's face that the other edge does not bound, and a type-1 tolerance uses
 the targets of its dimension; it records both inferences. A link whose
 identifier names a `VisibGeom` surface with faces and also an `ActDatums`
-surface selects no target, as in the plane-lookup rule of `creo_prt.md` §6. Attachments of type
+surface selects no target, as in the plane-lookup rule of `creo_prt.md` §6;
+the decoder records each such link with `pmi.target-namespace-ambiguous`. Attachments of type
 `16`, tolerance attachments of type `1`, a dimension whose two links name one
 edge, and placements of type `5` remain unresolved.
 

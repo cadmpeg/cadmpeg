@@ -10,11 +10,13 @@ use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{EdgeId, FaceId, SurfaceId};
 use cadmpeg_ir::pmi::PmiTarget;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::ContainerScan;
 use crate::feature::pmi_framing::{
     dimension_attachments, prefixes_for_annotation_slots, AttachmentPrefix,
 };
+use crate::loss::CreoLossCode;
 
 use super::{elements::Element, Tolerance};
 
@@ -54,6 +56,7 @@ pub(super) fn tolerance_targets(
     tolerances: &BTreeMap<Owner, Tolerance<'_>>,
     dimension_targets: &BTreeMap<(&str, u32), DimensionTarget>,
     ir: &CadIr,
+    losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<Owner, ToleranceTarget>, CodecError> {
     let mut targets = BTreeMap::new();
     for name in ["BasFullData", "FullMData"] {
@@ -102,14 +105,11 @@ pub(super) fn tolerance_targets(
                         reference_type: SURFACE_ATTACHMENT,
                         id,
                     }),
-                ) if placement.id == id => surface_faces(ir, id).and_then(|faces| {
-                    let [face] = faces.as_slice() else {
-                        return None;
-                    };
-                    Some(ToleranceTarget::Surface(PmiTarget::Face {
-                        face: face.clone(),
-                    }))
-                }),
+                ) if placement.id == id => {
+                    let (target, note) = surface_tolerance_target(ir, id, owner);
+                    losses.extend(note);
+                    target
+                }
                 _ => None,
             };
             if let Some(target) = target {
@@ -120,11 +120,40 @@ pub(super) fn tolerance_targets(
     Ok(targets)
 }
 
+/// The unique face that a tolerance's surface link selects, and the note
+/// when the link is withheld because its identifier names both sections.
+fn surface_tolerance_target(
+    ir: &CadIr,
+    id: u32,
+    (owner, owner_type): Owner,
+) -> (Option<ToleranceTarget>, Option<LossNote>) {
+    match surface_faces(ir, id) {
+        SurfaceFaces::Faces(faces) => match faces.as_slice() {
+            [face] => (
+                Some(ToleranceTarget::Surface(PmiTarget::Face {
+                    face: face.clone(),
+                })),
+                None,
+            ),
+            _ => (None, None),
+        },
+        SurfaceFaces::Ambiguous => (
+            None,
+            Some(ambiguous_link_note(
+                &format!("Geometric tolerance {owner_type}:{owner}"),
+                id,
+            )),
+        ),
+        SurfaceFaces::Unresolved => (None, None),
+    }
+}
+
 /// Face targets of annotation dimensions keyed by section and `dim_array` slot.
 pub(super) fn dimension_targets<'a>(
     scan: &ContainerScan<'_>,
     element_tables: &[(&'a str, Vec<Option<Element>>)],
     ir: &CadIr,
+    losses: &mut Vec<LossNote>,
 ) -> BTreeMap<(&'a str, u32), DimensionTarget> {
     let mut targets = BTreeMap::new();
     for (name, elements) in element_tables {
@@ -149,7 +178,13 @@ pub(super) fn dimension_targets<'a>(
             else {
                 continue;
             };
-            if let Some(target) = resolve_dimension(&attachments, ir) {
+            let (target, notes) = resolve_dimension(
+                &attachments,
+                ir,
+                &format!("Dimension {}:{}", element.owner_type, element.owner),
+            );
+            losses.extend(notes);
+            if let Some(target) = target {
                 targets.insert((*name, slot), target);
             }
         }
@@ -165,23 +200,52 @@ pub(super) struct DimensionTarget {
     pub(super) from_edges: bool,
 }
 
-fn resolve_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<DimensionTarget> {
-    match attachments {
-        [(SURFACE_ATTACHMENT, first), (SURFACE_ATTACHMENT, second)] => {
-            let mut faces = surface_faces(ir, *first)?;
-            for face in surface_faces(ir, *second)? {
-                if !faces.contains(&face) {
-                    faces.push(face);
+/// The target of a dimension's two attachment links, and the note for each
+/// surface link withheld because its identifier names both sections.
+fn resolve_dimension(
+    attachments: &[(u32, u32)],
+    ir: &CadIr,
+    link: &str,
+) -> (Option<DimensionTarget>, Vec<LossNote>) {
+    let [(SURFACE_ATTACHMENT, first), (SURFACE_ATTACHMENT, second)] = attachments else {
+        return (resolve_edge_dimension(attachments, ir), Vec::new());
+    };
+    let mut faces = Vec::new();
+    let mut notes = Vec::new();
+    let mut resolved = true;
+    let ids: &[u32] = if first == second {
+        std::slice::from_ref(first)
+    } else {
+        &[*first, *second]
+    };
+    for id in ids {
+        match surface_faces(ir, *id) {
+            SurfaceFaces::Faces(found) => {
+                for face in found {
+                    if !faces.contains(&face) {
+                        faces.push(face);
+                    }
                 }
             }
-            Some(DimensionTarget {
-                faces: faces
-                    .into_iter()
-                    .map(|face| PmiTarget::Face { face })
-                    .collect(),
-                from_edges: false,
-            })
+            SurfaceFaces::Ambiguous => {
+                notes.push(ambiguous_link_note(link, *id));
+                resolved = false;
+            }
+            SurfaceFaces::Unresolved => resolved = false,
         }
+    }
+    let target = resolved.then(|| DimensionTarget {
+        faces: faces
+            .into_iter()
+            .map(|face| PmiTarget::Face { face })
+            .collect(),
+        from_edges: false,
+    });
+    (target, notes)
+}
+
+fn resolve_edge_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<DimensionTarget> {
+    match attachments {
         [(EDGE_ATTACHMENT, first), (EDGE_ATTACHMENT, second)] => {
             let first = edge_faces(ir, *first)?;
             let second = edge_faces(ir, *second)?;
@@ -203,17 +267,25 @@ fn resolve_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<Dimension
     }
 }
 
+/// The faces that a surface link selects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SurfaceFaces {
+    Faces(Vec<FaceId>),
+    /// The identifier names a visible surface with faces and a datum surface.
+    Ambiguous,
+    Unresolved,
+}
+
 /// The bounded faces of surface `id`. A visible surface supplies its own
 /// faces. A datum cylinder supplies the visible faces whose cylinder carrier
-/// has its axis line and radius. An identifier that names a visible surface
-/// with faces and a datum surface selects no faces.
-fn surface_faces(ir: &CadIr, id: u32) -> Option<Vec<FaceId>> {
-    let visible =
-        crate::identity::compose_checked::<SurfaceId>(&crate::identity::VISIBGEOM_SURFACE, id)
-            .ok()?;
-    let datum =
-        crate::identity::compose_checked::<SurfaceId>(&crate::identity::ACTDATUM_SURFACE, id)
-            .ok()?;
+/// has its axis line and radius.
+fn surface_faces(ir: &CadIr, id: u32) -> SurfaceFaces {
+    let (Ok(visible), Ok(datum)) = (
+        crate::identity::compose_checked::<SurfaceId>(&crate::identity::VISIBGEOM_SURFACE, id),
+        crate::identity::compose_checked::<SurfaceId>(&crate::identity::ACTDATUM_SURFACE, id),
+    ) else {
+        return SurfaceFaces::Unresolved;
+    };
     let faces_on = |predicate: &dyn Fn(&SurfaceId) -> bool| -> Vec<FaceId> {
         ir.model
             .faces
@@ -224,15 +296,30 @@ fn surface_faces(ir: &CadIr, id: u32) -> Option<Vec<FaceId>> {
     };
     let faces = faces_on(&|surface| *surface == visible);
     if !faces.is_empty() {
-        let names_datum = ir.model.surfaces.iter().any(|surface| surface.id == datum);
-        return (!names_datum).then_some(faces);
+        if ir.model.surfaces.iter().any(|surface| surface.id == datum) {
+            return SurfaceFaces::Ambiguous;
+        }
+        return SurfaceFaces::Faces(faces);
     }
-    let datum_cylinder = cylinder(ir, &datum)?;
+    let Some(datum_cylinder) = cylinder(ir, &datum) else {
+        return SurfaceFaces::Unresolved;
+    };
     let faces = faces_on(&|surface| {
         surface.as_str().starts_with(VISIBLE_SURFACE_PREFIX)
             && cylinder(ir, surface).is_some_and(|carrier| same_cylinder(carrier, datum_cylinder))
     });
-    (!faces.is_empty()).then_some(faces)
+    if faces.is_empty() {
+        SurfaceFaces::Unresolved
+    } else {
+        SurfaceFaces::Faces(faces)
+    }
+}
+
+/// The loss note for a link whose surface identifier names both sections.
+fn ambiguous_link_note(link: &str, id: u32) -> LossNote {
+    CreoLossCode::PmiTargetNamespaceAmbiguous.note(format!(
+        "{link} surface link {id} names a VisibGeom surface with faces and an ActDatums surface; its target was withheld."
+    ))
 }
 
 fn cylinder<'a>(ir: &'a CadIr, id: &SurfaceId) -> Option<&'a CylinderSurface> {

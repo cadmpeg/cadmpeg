@@ -139,7 +139,7 @@ pub(super) fn transfer(
         .framing
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
-    let dimension_targets = targets::dimension_targets(scan, &element_tables, ir);
+    let dimension_targets = targets::dimension_targets(scan, &element_tables, ir, losses);
     dimensions::transfer(
         ctx,
         &attributes,
@@ -152,8 +152,15 @@ pub(super) fn transfer(
         annotations,
         losses,
     )?;
-    let targets =
-        targets::tolerance_targets(ctx, scan, &owners, &tolerances, &dimension_targets, ir)?;
+    let targets = targets::tolerance_targets(
+        ctx,
+        scan,
+        &owners,
+        &tolerances,
+        &dimension_targets,
+        ir,
+        losses,
+    )?;
     let mut emitted = 0usize;
     let mut text_magnitudes = 0usize;
     let mut conflicting = 0usize;
