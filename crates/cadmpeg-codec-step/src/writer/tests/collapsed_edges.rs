@@ -419,25 +419,23 @@ fn writer_reports_a_curveless_edge_whose_pcurve_stays_at_its_vertex() {
     }));
 }
 
-/// A curveless edge with a pcurve is reported when the association cannot be written.
+/// A curveless edge with a pcurve is written as its topology, and the
+/// pcurve association it cannot carry is reported.
 #[test]
 fn writer_reports_a_curveless_edge_that_may_have_length() {
     let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
     let reported = written(&cube_with_a_collapsed_edge(Ring::CurvelessWithLength));
     assert_eq!(
         (reported.oriented_edges, reported.faces),
-        (plain.oriented_edges, plain.faces)
+        (plain.oriented_edges + 1, plain.faces)
     );
-    for code in [
-        "step/topology.edge-no-3d-curve",
-        "step/geometry.curveless-edge-omitted",
-    ] {
-        assert!(
-            reported.losses.contains(&code.to_owned()),
-            "{:?}",
-            reported.losses
-        );
-    }
+    assert!(
+        reported
+            .losses
+            .contains(&"step/pcurve.carrier-unwritable".to_owned()),
+        "{:?}",
+        reported.losses
+    );
 }
 
 #[test]
@@ -762,14 +760,15 @@ fn writer_keeps_a_seam_ring_that_is_the_only_bound() {
 }
 
 /// An edge with no 3D curve whose pcurve has length on the face is not a
-/// pole: the ring keeps its seam, and the edge is reported as left out.
+/// pole: the ring keeps its seam, and the edge is written without the
+/// pcurve, which is reported.
 #[test]
 fn writer_keeps_a_seam_ring_whose_curveless_edge_has_length() {
     let long = written(&cube_with_a_seam_ring(SeamRing::BesideALoopWithALongPole));
     assert_eq!(long.vertex_loops, 0);
     assert!(
         long.losses
-            .contains(&"step/topology.edge-no-3d-curve".to_owned()),
+            .contains(&"step/pcurve.carrier-unwritable".to_owned()),
         "{:?}",
         long.losses
     );

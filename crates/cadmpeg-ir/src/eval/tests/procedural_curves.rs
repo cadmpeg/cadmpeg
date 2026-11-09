@@ -196,3 +196,59 @@ fn model_differential_refusal_stops_later_derivatives() {
         );
     }
 }
+
+#[test]
+fn a_point_within_tolerance_beyond_a_subset_end_inverts_to_that_end() {
+    let source = CurveId::mint("test:model:curve#source").unwrap();
+    let subset = CurveId::mint("test:model:curve#subset").unwrap();
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        crate::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let mut ir = CadIr::empty();
+    for id in [&source, &subset] {
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            parameter_range: None,
+            id: id.clone(),
+            geometry: line.clone(),
+            source_object: None,
+        });
+    }
+    ir.model
+        .add_procedural_curve(
+            &subset,
+            ProceduralCurve::new(
+                ProceduralCurveId::mint("test:model:procedural-curve#subset").unwrap(),
+                ProceduralCurveDefinition::Subset(
+                    crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                        source.clone(),
+                        [2.0, 5.0],
+                        true,
+                        None,
+                    )
+                    .unwrap(),
+                ),
+            ),
+        )
+        .unwrap();
+    let index = crate::index::ModelIndex::build(&ir);
+    let invert = |x: f64| {
+        model_curve_parameter_near_point_with_tolerance(
+            &cadmpeg_test_support::service_decode_context(),
+            &index,
+            &subset,
+            Point3::new(x, 0.0, 0.0),
+            0.0,
+            NonNegativeLength::new(1.0e-6).unwrap(),
+        )
+        .expect("invert the subset")
+        .map(crate::scalar::FiniteReal::get)
+    };
+    assert_eq!(invert(2.0 - 1.0e-9), Some(0.0));
+    assert_eq!(invert(5.0 + 1.0e-9), Some(3.0));
+    assert_eq!(invert(2.0 - 1.0e-3), None);
+}

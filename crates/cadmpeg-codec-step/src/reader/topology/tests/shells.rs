@@ -164,10 +164,11 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
 
     assert_eq!(
         decoded.ir().model.bodies.len(),
-        2,
+        1,
         "{:#?}",
         decoded.report().losses
     );
+    assert_eq!(decoded.ir().model.regions.len(), 2);
     assert_eq!(decoded.ir().model.faces.len(), 2);
     assert_eq!(
         decoded
@@ -592,10 +593,11 @@ fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
 
     assert_eq!(
         decoded.ir().model.bodies.len(),
-        3,
+        2,
         "{:#?}",
         decoded.report().losses
     );
+    assert_eq!(decoded.ir().model.regions.len(), 3);
     assert_eq!(
         decoded
             .ir()
