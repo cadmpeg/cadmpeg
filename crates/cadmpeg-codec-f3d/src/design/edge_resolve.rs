@@ -2095,10 +2095,11 @@ fn contextual_deleted_edge_group_candidates(
     Ok(Some(assignment))
 }
 
-/// Resolve a two-side treatment group from the edges its transition deletes.
+/// Resolve a two-reference treatment group from the edges its transition
+/// deletes.
 ///
-/// Each member names the edge that the faces of its two side references
-/// share, so its candidates are the changed edges that both references hold.
+/// Each member's recipe references two distinct faces and names an edge they
+/// share, so its candidates are the changed edges that both faces hold.
 /// The transition deletes every treated edge. When it deletes exactly as many
 /// edges as the group has members, every member's candidates are deleted
 /// edges, the candidates together cover the deleted set, and a perfect
@@ -2123,14 +2124,10 @@ fn shared_reference_deleted_edge_group_candidates(
     let mut candidate_sets = Vec::new();
     let mut covered = HashSet::new();
     for operand in operands {
-        let two_sides = operand
-            .recipe_structure
-            .as_ref()
-            .is_some_and(|structure| structure.sides.len() == 2);
         let [first_side, second_side] = operand.recipe_reference_contexts.as_slice() else {
             return Ok(None);
         };
-        if !two_sides
+        if operand.recipe_structure.is_none()
             || first_side.preceding_faces.len() != 1
             || second_side.preceding_faces.len() != 1
             || first_side.preceding_faces == second_side.preceding_faces
