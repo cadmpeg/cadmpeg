@@ -905,6 +905,53 @@ pub(super) fn write(
     }
 }
 
+/// The `SavedGeometry` properties whose measurement disagrees with the value
+/// of their dimension. The re-decode measures the value on that geometry, so
+/// each such cache is written empty and its dimension named by a loss.
+pub(super) fn contradicted_measurements(
+    ir: &CadIr,
+    properties: &[crate::native::PropertyRecord],
+    retained: &HashMap<String, Vec<u8>>,
+    losses: &mut Vec<LossNote>,
+) -> std::collections::HashSet<String> {
+    let mut contradicted = std::collections::HashSet::new();
+    for annotation in &ir.model.semantic_annotations {
+        let (Some(value), Some(kind)) = (annotation.value, annotation.dimension_kind.as_ref())
+        else {
+            continue;
+        };
+        let Some(saved) = properties.iter().find(|property| {
+            property.owner == annotation.object && property.name == "SavedGeometry"
+        }) else {
+            continue;
+        };
+        let payloads = saved
+            .side_entries()
+            .iter()
+            .map(|name| {
+                let bytes = retained.get(name)?;
+                crate::brep::parse_reference_payload(
+                    name,
+                    cadmpeg_core::decode::View::over_retained(bytes),
+                )
+                .ok()
+            })
+            .collect::<Option<Vec<_>>>();
+        let measured = payloads.and_then(|payloads| {
+            let curves = crate::drawing_content::dimension::saved_curves(&payloads).ok()??;
+            crate::drawing_content::dimension::measurement(kind, &curves)
+        });
+        if measured.is_none_or(|(measured, _)| measured != value.get()) {
+            contradicted.insert(saved.id.clone());
+            losses.push(FreecadLossCode::AnnotationValueDerived.note(format!(
+                "annotation {} value is measured on its saved reference geometry, which disagrees and is written empty",
+                annotation.id
+            )));
+        }
+    }
+    contradicted
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1241,51 +1288,4 @@ mod tests {
         assert!(!list.children().any(|node| node.has_tag_name("Link")));
         assert!(losses.is_empty());
     }
-}
-
-/// The `SavedGeometry` properties whose measurement disagrees with the value
-/// of their dimension. The re-decode measures the value on that geometry, so
-/// each such cache is written empty and its dimension named by a loss.
-pub(super) fn contradicted_measurements(
-    ir: &CadIr,
-    properties: &[crate::native::PropertyRecord],
-    retained: &HashMap<String, Vec<u8>>,
-    losses: &mut Vec<LossNote>,
-) -> std::collections::HashSet<String> {
-    let mut contradicted = std::collections::HashSet::new();
-    for annotation in &ir.model.semantic_annotations {
-        let (Some(value), Some(kind)) = (annotation.value, annotation.dimension_kind.as_ref())
-        else {
-            continue;
-        };
-        let Some(saved) = properties.iter().find(|property| {
-            property.owner == annotation.object && property.name == "SavedGeometry"
-        }) else {
-            continue;
-        };
-        let payloads = saved
-            .side_entries()
-            .iter()
-            .map(|name| {
-                let bytes = retained.get(name)?;
-                crate::brep::parse_reference_payload(
-                    name,
-                    cadmpeg_core::decode::View::over_retained(bytes),
-                )
-                .ok()
-            })
-            .collect::<Option<Vec<_>>>();
-        let measured = payloads.and_then(|payloads| {
-            let curves = crate::drawing_content::dimension::saved_curves(&payloads).ok()??;
-            crate::drawing_content::dimension::measurement(kind, &curves)
-        });
-        if measured.is_none_or(|(measured, _)| measured != value.get()) {
-            contradicted.insert(saved.id.clone());
-            losses.push(FreecadLossCode::AnnotationValueDerived.note(format!(
-                "annotation {} value is measured on its saved reference geometry, which disagrees and is written empty",
-                annotation.id
-            )));
-        }
-    }
-    contradicted
 }
