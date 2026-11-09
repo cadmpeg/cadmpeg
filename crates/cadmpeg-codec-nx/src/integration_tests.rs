@@ -61,7 +61,9 @@ mod assembly_placement;
 mod blend_history;
 mod body_write;
 
+mod assembly_occurrences;
 mod attachment_containment;
+mod current_bodies;
 mod deltas_source;
 mod dialect;
 mod enlarge;

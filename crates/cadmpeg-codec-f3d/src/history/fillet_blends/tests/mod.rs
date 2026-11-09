@@ -1828,6 +1828,11 @@ fn a_blend_face_without_a_boundary_states_nothing() {
 }
 
 fn history() -> crate::history_records::AsmHistory {
+    named_history("f3d:history", output())
+}
+
+/// The fixture history under `id`, with `output` as its state-2 topology.
+fn named_history(id: &str, output: AsmHistoricalTopology) -> crate::history_records::AsmHistory {
     let state = |state_id: i64, topology: AsmHistoricalTopology, next_ref| {
         let versions = topology
             .faces
@@ -1860,11 +1865,11 @@ fn history() -> crate::history_records::AsmHistory {
         )
     };
     crate::test_support::history::history(
-        "f3d:history".into(),
+        id.into(),
         0,
         None,
         false,
-        vec![state(2, output(), Some(1)), state(1, input(z()), None)],
+        vec![state(2, output, Some(1)), state(1, input(z()), None)],
     )
 }
 
@@ -1892,6 +1897,7 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
             scopes: &[scope(42)],
             groups: &[group(42, &[7])],
             histories: &mut [history()],
+            scope_histories: &std::collections::HashMap::new(),
         },
     );
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
@@ -1900,6 +1906,65 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
         panic!("expected a fillet");
     };
     groups[0].edges.clone()
+}
+
+#[test]
+fn an_unbound_fillet_takes_the_one_history_in_which_its_edges_resolve() {
+    let bind = |histories: &mut [crate::history_records::AsmHistory]| {
+        let mut feature = cadmpeg_ir::features::Feature {
+            product_definition: None,
+            id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(fillet(
+                native(),
+                three_mm(),
+            )),
+            native_ref: Some(SCOPE_ID.to_owned()),
+        };
+        let bindings = super::bind_fillet_blend_edges(
+            std::slice::from_mut(&mut feature),
+            super::FilletBlendInputs {
+                scopes: &[scope(42)],
+                groups: &[group(42, &[7])],
+                histories,
+                scope_histories: &std::collections::HashMap::new(),
+            },
+        );
+        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+            feature.evaluation.definition()
+        else {
+            panic!("expected a fillet");
+        };
+        (groups[0].edges.clone(), bindings)
+    };
+    // The second history holds the same state pair, but its transition adds
+    // no blend, so only the first resolves the fillet's edges.
+    let (edges, bindings) = bind(&mut [
+        named_history("f3d:history", output()),
+        named_history("f3d:other-history", input(z())),
+    ]);
+    assert_eq!(slots(&edges), ["17"]);
+    assert_eq!(
+        bindings.inferred_scope_histories,
+        [(SCOPE_ID.to_owned(), "f3d:history".to_owned())]
+    );
+    assert!(bindings.notes.iter().any(|note| {
+        note.code == crate::loss::F3dLossCode::HistoricalEdgeHistoryInferred.kind()
+    }));
+    // When both histories resolve the edges, neither is taken.
+    let (edges, bindings) = bind(&mut [
+        named_history("f3d:history", output()),
+        named_history("f3d:other-history", output()),
+    ]);
+    assert_eq!(edges, native());
+    assert!(bindings.inferred_scope_histories.is_empty());
 }
 
 #[test]

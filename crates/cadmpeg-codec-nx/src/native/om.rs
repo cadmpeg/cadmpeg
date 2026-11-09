@@ -63,6 +63,8 @@ pub(super) enum OmSchemaRole {
     FeatureHistory,
     /// Expression model declaring `UGS::EXP_expression`.
     Expressions,
+    /// Assembly model declaring `UGS::OCC_instance`.
+    Assembly,
     /// Audit model declaring only `UGS::OM::SaveAuditTrail`.
     AuditTrail,
     /// More than one specialized role marker occurs in the registry.
@@ -232,7 +234,12 @@ pub(super) fn audit_trail_rows(
     let mut out = Vec::new();
     for (section_ordinal, link) in segment_om_links(container)?
         .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
+        .filter(|link| {
+            matches!(
+                link.schema_role,
+                OmSchemaRole::AuditTrail | OmSchemaRole::Assembly
+            )
+        })
         .enumerate()
     {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
@@ -1282,7 +1289,7 @@ impl TryFrom<FieldDefinitionWire> for FieldDefinition {
 #[serde(try_from = "ObjectRecordWire")]
 pub(super) struct ObjectRecord {
     /// Globally unique record identity.
-    id: String,
+    pub(super) id: String,
     /// Persistent OM object identifier and the offset of its table word.
     object_id: (u32, u64),
     /// Zero-based indexed-section ordinal within the container.
@@ -1292,7 +1299,7 @@ pub(super) struct ObjectRecord {
     /// Absolute file offset of the containing OM section base.
     section_offset: u64,
     /// Exact serialized record length.
-    byte_len: u64,
+    pub(super) byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
     sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// Content-backed identity when the scoped exact bytes are unique.
@@ -1305,9 +1312,9 @@ pub(super) struct ObjectRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     dependents: Vec<String>,
     /// Directory entry containing the OM section.
-    source_entry: String,
+    pub(super) source_entry: String,
     /// Absolute file offset of the record start.
-    source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize)]
@@ -2594,7 +2601,7 @@ pub(super) struct ExternalReference {
     /// Zero-based string-table ordinal within the stream.
     ordinal: u32,
     /// Exact serialized child-part name or path.
-    path: String,
+    pub(super) path: String,
     /// Directory entry containing the external-reference stream.
     source_entry: String,
     /// Absolute file offset of the first path byte.
@@ -4509,16 +4516,24 @@ pub(super) fn store_headers(
     {
         let candidate = match &section.store {
             IndexedStore::Fixed { records } => records.iter().find_map(|record| {
-                crate::om::store_version(record.bytes, record.offset)
-                    .map(|version| (Some(record.object_id.0), version))
+                crate::om::store_version(
+                    record.bytes,
+                    record.offset,
+                    crate::om::product::ProductRecordForm::IndexedRoot,
+                )
+                .map(|version| (Some(record.object_id.0), version))
             }),
             IndexedStore::OffsetOnly {
                 control, records, ..
             } => std::iter::once(control)
                 .chain(records.iter())
                 .find_map(|record| {
-                    crate::om::store_version(record.bytes, record.offset)
-                        .map(|version| (None, version))
+                    crate::om::store_version(
+                        record.bytes,
+                        record.offset,
+                        crate::om::product::ProductRecordForm::Modern,
+                    )
+                    .map(|version| (None, version))
                 }),
         };
         let Some((object_id, version)) = candidate else {

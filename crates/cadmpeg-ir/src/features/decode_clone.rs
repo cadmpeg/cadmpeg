@@ -260,7 +260,7 @@ rewrite_enum!(FeatureOperation, []; {
     OffsetSurface { faces, distance },
     KnitSurface { faces, merge_entities, create_solid, gap_tolerance },
     SewBodies { bodies, gap_tolerance },
-    FilledSurface { boundary, support_faces, continuity, merge_result },
+    FilledSurface { boundary, support_faces, continuity, merge_result, interior_constraints, reverse_normal },
     TrimSurface { faces, tool, keep },
     ExtendSurface { faces, distance, method },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end contracts over synthesized CATPart byte images.
+//! End-to-end CATPart decode contracts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
@@ -25,6 +25,8 @@ use crate::test_support::test_e5::e5_catpart;
 use crate::test_support::test_topology::fbb_only_quad_unmatched_edge_topology_stream;
 use crate::variant::Variant;
 use crate::CatiaCodec;
+
+mod owned_sheet;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     EditableDecodeResult::from(
@@ -829,6 +831,8 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
 }
 
 mod float_packed_fixtures;
+
+mod nist_ftc_07;
 
 mod selected_shell_plane;
 

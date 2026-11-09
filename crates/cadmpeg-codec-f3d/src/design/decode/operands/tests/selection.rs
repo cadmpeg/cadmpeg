@@ -216,10 +216,13 @@ fn sketch_profile_with_an_83_byte_tail_omits_the_third_reference() {
     };
     let profile = parse(&build(&|_| {})).expect("83-byte sketch-profile operand");
     assert_eq!(profile.entity_id.suffix(), 172);
+    // The second u32 of the tail is zero or one.
+    let zero_second_word = parse(&build(&|tail| tail[4] = 0)).expect("zero second u32");
+    assert_eq!(zero_second_word.entity_id.suffix(), 172);
     // Each fixed field of the tail is required.
     let edits: [TailEdit<'_>; 7] = [
         &|tail| tail[0] = 2,
-        &|tail| tail[4] = 0,
+        &|tail| tail[4] = 2,
         &|tail| tail[9] = 1,
         &|tail| tail[16] = 0x42,
         &|tail| tail[47] = 0,
@@ -1164,6 +1167,7 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
         id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
         record_index: 400,
         owner_reference: Some(265),
+        geometry_group: None,
         class_tag: "270".to_owned().try_into().unwrap(),
         byte_offset: 4000,
         geometry_offset: 100,

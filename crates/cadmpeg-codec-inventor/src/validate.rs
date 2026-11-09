@@ -128,6 +128,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "pm_dc_thread_definitions",
     "body_wrapper_links",
     "composite_member_links",
+    "feature_history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "drawing_records",
@@ -202,6 +203,13 @@ pub(crate) fn validate_native(
         &mut findings,
     )?;
     validate_active_carrier(&data, &mut findings);
+    for detail in crate::feature::history_states::validate(
+        &data.feature_history_states,
+        &data.pm_dc_features,
+        &data.active_carrier,
+    ) {
+        findings.push(finding(Check::NativeLinks, detail, None));
+    }
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ctx, ir, &data, &mut findings)?;
@@ -860,6 +868,19 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         }
         if entity.native_ref.as_deref().is_some_and(|reference| {
             native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::degenerate_line(source, |token, reference| {
+                    sketch_point(&entities, token, reference)
+                })
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sketch entity source is a line whose endpoints coincide".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
                 crate::sketch::construction_carrier_conflict(source, |token, reference| {
                     sketch_point(&entities, token, reference)
                 })
@@ -960,6 +981,9 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                                     entity,
                                     |token, reference| sketch_point(&entities, token, reference),
                                 )
+                                || crate::sketch::degenerate_line(entity, |token, reference| {
+                                    sketch_point(&entities, token, reference)
+                                })
                         })
                 })
             })
@@ -2075,10 +2099,30 @@ fn validate_features(
             let label_matches = labels
                 .get(&(token, raw_feature.identity.record_ordinal))
                 .is_some_and(|label| label.class_id() == crate::feature::THREAD_CLASS_ID);
-            let selection_matches = collection.is_some_and(|collection| {
-                matches!(face, cadmpeg_ir::features::FaceSelection::Native(native)
-                    if *native == collection.id())
-            });
+            let selection_matches = collection.is_some_and(|collection| match face {
+                cadmpeg_ir::features::FaceSelection::Native(native) => *native == collection.id(),
+                cadmpeg_ir::features::FaceSelection::Historical { native, .. } => {
+                    native.as_str() == collection.id()
+                }
+                _ => false,
+            }) && crate::feature::face_selection::valid(
+                feature,
+                raw_feature,
+                &ir.model.feature_input_topologies,
+                |id| {
+                    let mut candidates = data
+                        .pm_dc_feature_properties
+                        .iter()
+                        .filter(|p| p.id() == id);
+                    let property = candidates.next()?;
+                    candidates.next().is_none().then_some(property)
+                },
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.record_ordinal()?))
+                        .copied()
+                },
+            );
             let thread_fields = labels
                 .get(&(token, raw_feature.identity.record_ordinal))
                 .map_or_else(crate::feature::thread::Fields::default, |label| {
@@ -2153,7 +2197,32 @@ fn validate_features(
                         .copied()
                 },
             );
-            if expected.as_ref().ok() != Some(actual) {
+            // A historical face selection names its native selection list; the
+            // face join is checked by `face_selection::valid`. A Thicken in the
+            // face-offset form is a Move Face operation.
+            let expected = expected.ok().map(|mut expected| {
+                use cadmpeg_ir::features::{FaceSelection, FeatureOperation};
+                let faces_of = |operation: &FeatureOperation| match operation {
+                    FeatureOperation::Thicken { faces, .. }
+                    | FeatureOperation::MoveFace { faces, .. } => Some(faces.clone()),
+                    _ => None,
+                };
+                if let (Some(FaceSelection::Native(native)), Some(joined)) =
+                    (faces_of(&expected), faces_of(actual))
+                {
+                    if matches!(&joined, FaceSelection::Historical { native: stored, .. }
+                        if native.as_str() == stored.as_str())
+                    {
+                        if let FeatureOperation::Thicken { faces, .. }
+                        | FeatureOperation::MoveFace { faces, .. } = &mut expected
+                        {
+                            *faces = joined;
+                        }
+                    }
+                }
+                expected
+            });
+            if expected.as_ref() != Some(actual) {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral thicken operands do not match their PmDc slots".into(),
@@ -2218,6 +2287,11 @@ fn validate_features(
                         raw_feature,
                         groups,
                         *flip_direction,
+                    ) && crate::feature::chamfer::oriented::valid(
+                        feature,
+                        raw_feature,
+                        &expected,
+                        &ir.model.feature_input_topologies,
                     )
                 }),
                 _ => false,
@@ -2409,13 +2483,16 @@ fn validate_features(
                     Some(feature.id.as_str().to_owned())));
             }
         }
-        if matches!(family, crate::feature::FeatureFamily::Extrusion)
-            && !labels
-                .get(&(
-                    raw_feature.identity.segment_token.as_str(),
-                    raw_feature.identity.record_ordinal,
-                ))
-                .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
+        if matches!(
+            family,
+            crate::feature::FeatureFamily::Extrusion
+                | crate::feature::FeatureFamily::SurfaceExtrusion
+        ) && !labels
+            .get(&(
+                raw_feature.identity.segment_token.as_str(),
+                raw_feature.identity.record_ordinal,
+            ))
+            .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -2446,6 +2523,33 @@ fn validate_features(
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral motion does not match its PmDc operands or transform".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
+        if !crate::feature::face_selection::valid(
+            feature,
+            raw_feature,
+            &ir.model.feature_input_topologies,
+            |id| {
+                let mut candidates = data
+                    .pm_dc_feature_properties
+                    .iter()
+                    .filter(|p| p.id() == id);
+                let property = candidates.next()?;
+                candidates.next().is_none().then_some(property)
+            },
+            |reference| {
+                properties_by_record
+                    .get(&(
+                        raw_feature.identity.segment_token.as_str(),
+                        reference.record_ordinal()?,
+                    ))
+                    .copied()
+            },
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral face selection differs from its PmDc face operands".into(),
                 Some(feature.id.as_str().to_owned()),
             ));
         }
@@ -2955,6 +3059,7 @@ struct NativeData {
     body_native_keys: Vec<BodyNativeKey>,
     body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
     composite_member_links: Vec<crate::feature::composite::MemberLink>,
+    feature_history_states: Vec<crate::feature::history_states::FeatureHistoryState>,
     presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
@@ -3034,6 +3139,7 @@ impl NativeData {
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
             body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
             composite_member_links: namespace.arena_as_for_decode(ctx, "composite_member_links")?,
+            feature_history_states: namespace.arena_as_for_decode(ctx, "feature_history_states")?,
             presentation_record_issues: namespace
                 .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
@@ -3829,8 +3935,12 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
     for (key, _) in header.scalar_map.entries() {
         references.push(key.index());
     }
-    // A tangent solver hint stores an unqualified code, not a reference, as its value.
-    let hint_codes = matches!(constraint.kind, PmDcSketchConstraintKind::Tangent { .. });
+    // A tangent or perpendicular solver hint stores an unqualified code, not a
+    // reference, as its value.
+    let hint_codes = matches!(
+        constraint.kind,
+        PmDcSketchConstraintKind::Tangent { .. } | PmDcSketchConstraintKind::Perpendicular { .. }
+    );
     for (key, value) in header.reference_map.entries() {
         references.push(key.index());
         if !hint_codes {

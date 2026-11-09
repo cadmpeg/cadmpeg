@@ -99,6 +99,7 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
+        text_members: Vec::new(),
         issues: Vec::new(),
     };
     for count in [1, 2] {

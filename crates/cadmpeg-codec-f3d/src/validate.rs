@@ -11,6 +11,7 @@
 
 mod body_ownership;
 mod emboss;
+mod path_pattern;
 mod sheet_metal_settings;
 mod xref;
 
@@ -39,6 +40,7 @@ use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_lega
 use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
 use crate::layout::class_296_261_symmetric_distance_extrude_prefix as class_296_symmetric;
 use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_two_faces;
+use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
@@ -86,6 +88,32 @@ fn body_recipe_reference_table_is_admitted(
                         .iter()
                         .any(|tool| tool.record_index == operand.record_index())
                 })
+        })
+}
+
+/// An operand-list `Combine` stores its operation after the presence byte, or
+/// after an empty property block, and its keep-tools Boolean after the
+/// companion list. A `Combine` with a companion consumes its tools.
+fn operand_list_combine_offsets_hold(
+    scope_offset: u64,
+    operation: &records::feature::combine::DesignCombineOperation,
+) -> bool {
+    const EMPTY_PROPERTY_BLOCK_LEN: u64 = 4;
+    const COMPANION_REFERENCE_LEN: u64 = 11;
+    let operation_at = u64_from_index(combine_lists::OPERATION);
+    let keep_tools_after_operation =
+        u64_from_index(combine_lists::KEEP_TOOLS - combine_lists::OPERATION);
+    let property_block = operation
+        .operation_offset
+        .checked_sub(scope_offset)
+        .and_then(|relative| relative.checked_sub(operation_at));
+    let companion_bytes = operation
+        .keep_tools_offset
+        .checked_sub(operation.operation_offset)
+        .and_then(|distance| distance.checked_sub(keep_tools_after_operation));
+    matches!(property_block, Some(0 | EMPTY_PROPERTY_BLOCK_LEN))
+        && companion_bytes.is_some_and(|bytes| {
+            bytes.is_multiple_of(COMPANION_REFERENCE_LEN) && (bytes == 0 || !operation.keep_tools)
         })
 }
 
@@ -1005,7 +1033,8 @@ fn validate_loaded(
         &native.design_body_recipe_operands,
         &native.asm_histories,
     );
-    history::bind_face_operand_history_candidates(
+    // discarded-value: the decoder reported these losses when it bound the operands.
+    let _ = history::bind_face_operand_history_candidates(
         decode,
         &mut expected_face_operands,
         &native.design_parameter_scopes,
@@ -1056,6 +1085,7 @@ fn validate_loaded(
     validate_parameter_scopes(&ctx, &mut findings)?;
     emboss::validate(&ctx, &mut findings);
     sheet_metal_settings::validate(&ctx, &mut findings);
+    path_pattern::validate(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
@@ -1798,7 +1828,9 @@ fn validate_canvas_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             && scope_unique
             && geometry_unique
             && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
-            && geometry_entities.contains(&(design_segment, u64::from(image.plane_entity_suffix)))
+            && image.plane_entity_suffix.is_none_or(|suffix| {
+                geometry_entities.contains(&(design_segment, u64::from(suffix)))
+            })
             && component_entities
                 .contains(&(design_segment, u64::from(image.component_entity_suffix)));
         if !valid {
@@ -3233,14 +3265,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records::feature::combine::DesignCombineForm::OperandLists => {
                             !compact_scope
                                 && !extended_reference_scope
-                                && scope.byte_offset().checked_add(21).is_some_and(
-                                    |expected_offset| operation.operation_offset == expected_offset,
-                                )
-                                && scope.byte_offset().checked_add(29).is_some_and(
-                                    |expected_offset| {
-                                        operation.keep_tools_offset == expected_offset
-                                    },
-                                )
+                                && operand_list_combine_offsets_hold(scope.byte_offset(), operation)
                         }
                         records::feature::combine::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope
@@ -5050,13 +5075,23 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
                 ) => group.extrude_role().is_none(),
                 Some(design::DesignFeatureFamily::Coil) => {
-                    group.role()
-                        == if scope.coil_has_ten_reference_target() {
-                            DesignOperandRole::BODIES_A
-                        } else {
-                            DesignOperandRole::BODIES_B
-                        }
+                    let admitted = |candidate: &records::topology::construction::DesignConstructionOperandGroup| {
+                        design_stream(&candidate.id) == native_stream
+                            && candidate.scope_record_index == group.scope_record_index
+                            && scope.coil_target_group_admits(
+                                candidate.role(),
+                                candidate.scope_reference_ordinal,
+                            )
+                    };
+                    admitted(group)
                         && group.extrude_role().is_none()
+                        && group.members().len() == 1
+                        && native
+                            .design_construction_operand_groups
+                            .iter()
+                            .filter(|candidate| admitted(candidate))
+                            .count()
+                            == 1
                 }
                 Some(design::DesignFeatureFamily::Move) => {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
@@ -5245,8 +5280,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.role() == DesignOperandRole::ROLE_0X10)
                     }) && group.extrude_role().is_none()
                 }
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::RemoveBody =>
+                None if matches!(
+                    scope.kind(),
+                    crate::records::feature::scope::DesignFeatureKind::RemoveBody
+                        | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                ) =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
@@ -5271,6 +5309,19 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 ) =>
                 {
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
+                }
+                None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::PathPattern =>
+                {
+                    let seed = matches!(
+                        group.role(),
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::BODIES_B
+                            | DesignOperandRole::ROLE_0X10
+                    ) && group.scope_reference_ordinal == 1;
+                    let path = group.role() == DesignOperandRole::ROLE_0X5
+                        && group.scope_reference_ordinal > 1;
+                    (seed || path || is_path_seed_group(group)) && group.extrude_role().is_none()
                 }
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Decal =>
@@ -5303,8 +5354,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::Emboss
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
+                        | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
+                        | crate::records::feature::scope::DesignFeatureKind::PathPattern
                         | crate::records::feature::scope::DesignFeatureKind::MoveFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
@@ -5339,7 +5392,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             design::DesignFeatureFamily::CircularPattern
                                 | design::DesignFeatureFamily::RectangularPattern
                         )
-                    )
+                    ) || scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::PathPattern
                 }) && is_path_seed_group(group))
             && {
                 let mut seen = HashSet::new();
@@ -5382,7 +5436,6 @@ fn is_path_seed_group(
                 .iter()
                 .map(|record| record.value))
         && group.frame.trailing_records().len() == 1
-        && !group.frame.variant
 }
 
 /// Validate path-feature operand roles against the scope construction.
@@ -6036,15 +6089,28 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let invalid_face_groups_hide_extent_conflict =
                 class_296_two_faces_layout && face_operand_group_count == 0;
+            // DR-322: a new-body one-sided distance scope with start-support
+            // byte 2, a ProfileOffset, and no face group of any role.
+            let selected_start_without_group = matches!(
+                extrude_start,
+                records::feature::extrude::DesignExtrudeStart::FromFace
+            ) && matches!(
+                extrude_extent,
+                records::feature::extrude::DesignExtrudeExtent::OneSidedDistance
+            ) && prologue.operation()
+                == records::feature::extrude::DesignExtrudeOperation::NewBody
+                && face_operand_group_count == 0
+                && face_groups.is_empty();
             if ctx.holds_design_intent()
                 && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands
                     || !start_matches_operands
-                    || face_operand_group_count != expected_face_group_count
-                    || face_groups
-                        .iter()
-                        .map(|group| group.extrude_face_role())
-                        .ne(expected_face_roles.iter().copied().map(Some)))
+                    || (!selected_start_without_group
+                        && (face_operand_group_count != expected_face_group_count
+                            || face_groups
+                                .iter()
+                                .map(|group| group.extrude_face_role())
+                                .ne(expected_face_roles.iter().copied().map(Some)))))
             {
                 push_constant_finding(findings, Check::NativeLinks, "Fusion Design Extrude start or extent conflicts with its parameters and face operands", Some(scope.id.clone()));
             }
@@ -6511,8 +6577,14 @@ fn validate_fillet_operand_groups<'a>(
                         )
                     })
             });
+        // DR-321: a sole face-role group with no owner and no fixed lane.
+        let no_stored_radius = !has_parameter_owner
+            && sole_compact_group_shape
+            && group.role() == DesignOperandRole::ROLE_0X10
+            && scope.is_some_and(|scope| scope.fixed_fillet_parameters().is_none());
         if is_fillet
             && !retained_fixed_assignment
+            && !no_stored_radius
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
             && !has_radius_assignment
@@ -6987,6 +7059,21 @@ fn validate_operand_group_carriers<'a>(
                                 .eq([profile.record_index])
                         })
                 });
+        // A profile group of several sketch-profile operands: each member is an
+        // operand that the scope retains as a native profile.
+        let has_exact_native_profile_members = group.extrude_role()
+            == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
+            && ctx
+                .scopes_by_index
+                .get(&(native_stream, group.scope_record_index))
+                .and_then(|scope| scope.extrude_native_profiles())
+                .is_some_and(|profiles| {
+                    group
+                        .members()
+                        .iter()
+                        .map(|member| member.value)
+                        .eq(profiles.iter().map(|profile| profile.record_index))
+                });
         let has_exact_group_members = !group.members().is_empty()
             && group
                 .members()
@@ -7039,6 +7126,7 @@ fn validate_operand_group_carriers<'a>(
             || has_exact_body_recipe_members
             || has_exact_topology_recipe_members
             || has_exact_sketch_profile_member
+            || has_exact_native_profile_members
             || has_exact_group_members;
         if !has_exact_member_carrier {
             push_constant_finding(
@@ -7774,8 +7862,25 @@ fn validate_face_operands<'a>(
         .map(|operand| (operand.id.as_str(), operand))
         .collect::<std::collections::HashMap<_, _>>();
     let mut face_operand_records = HashSet::new();
+    let mut stream_types_by_stream = std::collections::HashMap::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
+        let stream_types = stream_types_by_stream
+            .entry(native_stream)
+            .or_insert_with(|| {
+                native_stream
+                    .strip_prefix("f3d:")
+                    .and_then(ids::decode_identity_key_component)
+                    .map(|entry| {
+                        design::decode::meta::stream_types_by_entity(&native.design_types, &entry)
+                    })
+                    .unwrap_or_default()
+            });
+        let topology_recipe_member = stream_types
+            .get(&u64::from(operand.record_index()))
+            .is_some_and(|(guid, _)| {
+                guid.eq_ignore_ascii_case(records::feature::path_features::pipe::RECIPE_GUID)
+            });
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index()));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
@@ -7933,7 +8038,29 @@ fn validate_face_operands<'a>(
                                 })
                                 == Some(&operand.record_index())
                     });
+                    let next_member = group.and_then(|group| {
+                        usize::try_from(group_member_ordinal)
+                            .ok()
+                            .and_then(|ordinal| ordinal.checked_add(1))
+                            .and_then(|ordinal| group.members().get(ordinal))
+                            .map(|member| member.value)
+                    });
+                    let frame_end = next_member
+                        .or_else(|| {
+                            scope
+                                .reference_members()
+                                .values()
+                                .position(|candidate| *candidate == operand.record_index())
+                                .and_then(|ordinal| {
+                                    scope.reference_members().values().nth(ordinal + 1)
+                                })
+                                .copied()
+                        })
+                        .and_then(|record_index| records_by_index.get(&(native_stream, record_index)))
+                        .map(|next| next.byte_offset)
+                        .filter(|next| *next > operand.byte_offset());
                     exact_group_member
+                        && frame_end.is_none_or(|end| operand.next_byte_offset() <= end)
                         && match family {
                             Some(
                                 design::DesignFeatureFamily::Extrude
@@ -7958,9 +8085,12 @@ fn validate_face_operands<'a>(
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::Sweep) => {
-                                group.is_some_and(|group| group.role() == DesignOperandRole::FACES)
-                                    && operand.recipe_kind
-                                        == records::recipes::ConstructionRecipeKind::BoundedFace
+                                group.is_some_and(|group| match group.role() {
+                                    DesignOperandRole::FACES => true,
+                                    DesignOperandRole::PROFILE => topology_recipe_member,
+                                    _ => false,
+                                }) && operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::SurfaceOffset) => {
                                 group
@@ -7985,6 +8115,17 @@ fn validate_face_operands<'a>(
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X21
                                 }) && revolve_axis_recipe_kind_admitted(operand.recipe_kind)
+                            }
+                            Some(
+                                design::DesignFeatureFamily::RectangularPattern
+                                | design::DesignFeatureFamily::CircularPattern
+                                | design::DesignFeatureFamily::Mirror,
+                            ) if group.is_some_and(|group| {
+                                design::is_pattern_face_seed_group(&scope.kind(), group)
+                            }) =>
+                            {
+                                operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::CircularPattern) => {
                                 group.is_some_and(|group| {
@@ -8387,7 +8528,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
-    let mut visibility_ordinals = HashSet::new();
     let collections = native
         .design_types
         .iter()
@@ -8431,11 +8571,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     let collection = collection.get();
                     if header_valid
                         && collections.contains(&(ids::design_segment(&placement.id), collection))
-                        && visibility_ordinals.insert((
-                            native_stream,
-                            collection,
-                            visibility.stream_ordinal.get(),
-                        ))
                     {
                         visibility_offsets.insert((native_stream, visibility.visible_offset()))
                     } else {

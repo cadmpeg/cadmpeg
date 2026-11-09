@@ -43,8 +43,11 @@ use cadmpeg_ir::sketches::{
 use std::collections::{HashMap, HashSet};
 
 mod crossing_loops;
+mod loft_sketch_profile_binding;
+mod path_pattern_binding;
 mod resolution_rules;
 mod spatial_transition;
+mod sweep_paths;
 mod typed_regions;
 mod unprofiled_curves;
 
@@ -177,6 +180,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         id: format!("stream:curve-{record_index}"),
         record_index,
         owner_reference: Some(42),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
@@ -484,6 +488,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             asset_id_offset: 32,
             entity_id: placement.entity_id.clone(),
             entity_reference_offset: 80,
+            compact_tail_flags: None,
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 13,
                 byte_offset: 0,
@@ -557,6 +562,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
 
     let whole_sketch_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            compact_tail_flags: None,
             region_selection: None,
             ..profile_operand.clone().into_draft()
         },
@@ -989,6 +995,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             asset_id_offset: 32,
             entity_id: placement.entity_id,
             entity_reference_offset: 80,
+            compact_tail_flags: None,
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 11,
                 byte_offset: 0,

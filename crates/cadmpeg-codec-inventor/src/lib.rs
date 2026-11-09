@@ -8,6 +8,7 @@
 //! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
 //! <!-- /generated: capability inventor -->
 
+mod annotation;
 mod assembly;
 mod compact_matrix;
 mod container;

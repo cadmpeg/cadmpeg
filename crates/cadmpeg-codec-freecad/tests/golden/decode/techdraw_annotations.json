@@ -859,7 +859,15 @@
                 ]
               }
             ],
-            "texts": []
+            "texts": [
+              {
+                "position": [
+                  10.0,
+                  9.0
+                ],
+                "text": "cadmpeg CC0"
+              }
+            ]
           }
         },
         {
@@ -2547,22 +2555,12 @@
     "losses": [
       {
         "code": {
-          "code": "drawing.template-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "fcstd:native:object#Template: unsupported or invalid SVG text subtree; original asset is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "drawing.style-not-transferred",
           "kind": "record_not_typed",
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "fcstd:native:object#Template: SVG stroke, fill and font appearance remain in the asset; text em sizes are millimetres",
+        "message": "fcstd:native:object#Template: SVG stroke, fill and font appearance remain in the asset; specified text em sizes are millimetres",
         "severity": "warning"
       },
       {

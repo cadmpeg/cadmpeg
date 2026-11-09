@@ -731,6 +731,15 @@ pub(crate) struct FilletBlendInputs<'a> {
     pub(crate) groups:
         &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
     pub(crate) histories: &'a mut [AsmHistory],
+    pub(crate) scope_histories: &'a std::collections::HashMap<String, String>,
+}
+
+/// Loss notes and inferred history bindings of `bind_fillet_blend_edges`.
+pub(crate) struct FilletBlendBindings {
+    pub(crate) notes: Vec<LossNote>,
+    /// Each unbound scope that took the one history in which its edges
+    /// resolve, with that history's id.
+    pub(crate) inferred_scope_histories: Vec<(String, String)>,
 }
 
 /// Bind the edges of each `Fillet` feature from the blend faces of its
@@ -738,72 +747,163 @@ pub(crate) struct FilletBlendInputs<'a> {
 pub(crate) fn bind_fillet_blend_edges(
     features: &mut [cadmpeg_ir::features::Feature],
     input: FilletBlendInputs<'_>,
-) -> Vec<LossNote> {
+) -> FilletBlendBindings {
     let FilletBlendInputs {
         scopes,
         groups,
         histories,
+        scope_histories,
     } = input;
+    let is_fillet = |feature: &cadmpeg_ir::features::Feature| {
+        matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+        )
+    };
     let states = features
         .iter()
         .map(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
-            )
-            .then(|| super::face_selection_state(feature, scopes, histories))
-            .flatten()
+            is_fillet(feature)
+                .then(|| super::face_selection_state(feature, scopes, scope_histories, histories))
+                .flatten()
         })
         .collect::<Vec<_>>();
-    let gates = states
+    let candidates = features
+        .iter()
+        .zip(&states)
+        .map(|(feature, state)| {
+            if state.is_none() && is_fillet(feature) {
+                super::unbound_face_selection_candidates(
+                    feature,
+                    scopes,
+                    scope_histories,
+                    histories,
+                )
+            } else {
+                Vec::new()
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut gates = states
         .iter()
         .enumerate()
         .filter_map(|(position, state)| {
-            state.map(|state| (state.history, state.previous, position))
+            state.map(|state| (state.history, state.previous, (position, None)))
         })
         .collect::<Vec<_>>();
+    for (position, states) in candidates.iter().enumerate() {
+        for (candidate, state) in states.iter().enumerate() {
+            gates.push((state.history, state.previous, (position, Some(candidate))));
+        }
+    }
     let mut available = HashSet::new();
-    super::visit_states_oldest_first(histories, gates, |history, previous, position| {
+    super::visit_states_oldest_first(histories, gates, |history, previous, job| {
         if history.topology(previous).is_some() {
-            available.insert(position);
+            available.insert(job);
         }
     });
     let histories = &*histories;
     let mut notes = Vec::new();
-    for (position, (feature, state)) in features.iter_mut().zip(states).enumerate() {
-        let Some(state) = state.filter(|_| available.contains(&position)) else {
-            continue;
-        };
-        let Some(history) = histories.get(state.history) else {
-            continue;
-        };
-        let (Some(output_state), Some(input_state)) = (
-            history.states().get(state.state),
-            history.states().get(state.previous),
-        ) else {
-            continue;
-        };
-        let (Some(transition), Some(input), Some(output)) = (
-            output_state.transition.as_ref(),
-            history.topology(input_state),
-            history.topology(output_state),
-        ) else {
-            continue;
-        };
+    let mut inferred_scope_histories = Vec::new();
+    for (position, ((feature, state), candidates)) in
+        features.iter_mut().zip(states).zip(candidates).enumerate()
+    {
         let feature_id = feature.id.clone();
-        feature.evaluation.edit(|definition, _| {
+        if let Some(state) = state.filter(|_| available.contains(&(position, None))) {
+            let Some(states) = fillet_states(histories, &state) else {
+                continue;
+            };
+            feature.evaluation.edit(|definition, _| {
+                bind_fillet_groups(
+                    definition,
+                    &feature_id,
+                    state.scope,
+                    groups,
+                    state.previous_state_id,
+                    states,
+                    &mut notes,
+                );
+            });
+            continue;
+        }
+        // An unbound scope whose state pair several histories hold takes the
+        // one history in which every edge group resolves.
+        let mut resolved = Vec::new();
+        for (candidate, state) in candidates.iter().enumerate() {
+            if !available.contains(&(position, Some(candidate))) {
+                continue;
+            }
+            let Some(states) = fillet_states(histories, state) else {
+                continue;
+            };
+            let mut definition = feature.evaluation.definition().clone();
+            let mut candidate_notes = Vec::new();
             bind_fillet_groups(
-                definition,
+                &mut definition,
                 &feature_id,
                 state.scope,
                 groups,
                 state.previous_state_id,
-                (transition, input, output),
-                &mut notes,
+                states,
+                &mut candidate_notes,
             );
-        });
+            if every_fillet_group_historical(&definition) {
+                resolved.push((state.history, state.scope, definition, candidate_notes));
+            }
+        }
+        if let [(history, scope, definition, candidate_notes)] = resolved.as_mut_slice() {
+            let definition = definition.clone();
+            feature
+                .evaluation
+                .edit(|current, _| *current = definition.clone());
+            notes.append(candidate_notes);
+            notes.push(F3dLossCode::HistoricalEdgeHistoryInferred.note(format!(
+                "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve only in {}.",
+                feature_id.as_str(),
+                candidates.len(),
+                histories.get(*history).map_or("", |history| history.id.as_str())
+            )));
+            if let Some(history) = histories.get(*history) {
+                inferred_scope_histories.push((scope.id.clone(), history.id.clone()));
+            }
+        }
     }
-    notes
+    FilletBlendBindings {
+        notes,
+        inferred_scope_histories,
+    }
+}
+
+/// The transition, input topology and output topology of a fillet state.
+fn fillet_states<'a>(
+    histories: &'a [AsmHistory],
+    state: &super::FaceSelectionState<'_>,
+) -> Option<(
+    &'a AsmHistoricalTransition,
+    &'a AsmHistoricalTopology,
+    &'a AsmHistoricalTopology,
+)> {
+    let history = histories.get(state.history)?;
+    let output_state = history.states().get(state.state)?;
+    let input_state = history.states().get(state.previous)?;
+    Some((
+        output_state.transition.as_ref()?,
+        history.topology(input_state)?,
+        history.topology(output_state)?,
+    ))
+}
+
+/// Whether every group of a Fillet definition names historical edges.
+fn every_fillet_group_historical(definition: &FeatureDefinition) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+        return false;
+    };
+    groups.iter().all(|group| {
+        matches!(
+            group.edges,
+            EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. }
+        )
+    })
 }
 
 #[cfg(test)]

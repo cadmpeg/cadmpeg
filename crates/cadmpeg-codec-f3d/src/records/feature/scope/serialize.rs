@@ -181,6 +181,8 @@ impl Serialize for DesignParameterScope {
         emit_opt!("align_envelope", self.align_envelope());
         emit_opt!("move_operation", self.move_operation());
         emit_opt!("scale_operation", self.scale_operation());
+        emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
+        emit_opt!("path_pattern_settings", self.path_pattern_settings());
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
         emit_opt!("surface_offset_operation", self.surface_offset_operation());
@@ -200,6 +202,7 @@ impl Serialize for DesignParameterScope {
                 emit!("surface_patch_boundaries", &patch.boundaries);
             }
             emit_opt!("surface_patch_normal", patch.normal.as_ref());
+            emit_opt!("surface_patch_selection", patch.selection.as_ref());
         }
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());

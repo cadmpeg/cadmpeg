@@ -709,6 +709,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     )
                     .expect("valid entity identity"),
                     entity_reference_offset: 80,
+                    compact_tail_flags: None,
                     region_selection: None,
                     paired_class_tag: crate::records::references::DesignClassTag::try_from(
                         "264".to_owned(),
@@ -1229,6 +1230,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
                 std::slice::from_ref(&scope),
                 &mut features,
                 &cages,
+                &mut Vec::new(),
             )
         })
     })
@@ -1372,6 +1374,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
                     std::slice::from_ref(&scope),
                     &mut features,
                     &cages,
+                    &mut Vec::new(),
                 )
             })
         })

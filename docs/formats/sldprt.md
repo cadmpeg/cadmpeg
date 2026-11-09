@@ -1346,6 +1346,12 @@ A `GdtPattern` owns its ordered members through the `SubFeatures`
 the pattern applies to these member feature identities in collection order.
 Nested patterns apply the same rule recursively.
 
+A `GdtPosition` that references a `GdtCompoundHole` selects the non-empty
+`CadIdentifier` values owned by its applied `GdtCylinder` children in
+`SubFeatures`. The compound's `CadReferences` collection aggregates child
+identifiers. Each child feature's class determines its role. Repeated paths to
+one child identify the same feature.
+
 GDT-analysis double fields use millimetres for lengths and radians for angles.
 `Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
 `UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A
@@ -1385,16 +1391,8 @@ the unrounded evaluated geometry. A compound stack containing different
 diameters remains unresolved; the decoder does not select one contributor by
 position or magnitude. An empty `SubFeatures` collection contributes no
 geometry. A `CadRef` whose `CadIdentifier` string is empty contributes no
-topology identity or nominal geometry. A rendered literal cannot bind without
-applied nominal geometry or a resolved native-history nominal.
-
-An empty `GdtPattern` applied-feature graph may recover a diameter through the
-native feature history only when its object name is `Hole PatternN`, the history
-contains exactly one native `LPatternN` with one feature seed, and exactly one
-later native Hole feature consumes that seed and carries a positive diameter.
-The Hole diameter is the evaluated nominal and remains subject to the rendered
-literal precedence rule. A missing, multiply named, multiply seeded, or
-multiply consuming join leaves the nominal absent.
+topology identity or nominal geometry. A rendered literal binds to applied
+nominal geometry.
 
 The non-empty `CadIdentifier` form is `<lane>:<suffix>`. The lane prefix is
 local to the SWIFT schema lane. The active partition contributes one sequence
@@ -1506,7 +1504,18 @@ The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtCircularRunout`, and `GdtTotalRunout`. Dimension classes include
 `GdtDiameter`, `GdtRadius`, `GdtAngle`, `GdtAngleBetween`,
 `GdtCounterSinkAngle`, `GdtDistanceBetween`, `GdtWidth`, `GdtLength`,
-`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`.
+`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`. `GdtCounterBore`
+and `GdtCounterSinkDiameter` state diameters.
+
+A `GdtDiameter` with one direct feature reference whose declared class matches
+the referenced `GdtSphere` entity defines a spherical diameter. A `GdtRadius`
+with one such direct feature reference defines a spherical radius.
+
+`GdtPosition.ZoneType` value `2` defines a spherical tolerance zone.
+
+`GdtParallelism.IsTangentPlane` stores the tangent-plane modifier state: `0`
+clears it, and `1` sets it. `GdtParallelism.IsFreeState` stores the free-state
+modifier with the same encoding for values `0` and `1`.
 
 The integer field `Modifier` uses `0` for no material requirement, `1` for
 maximum material requirement, and `2` for least material requirement. The same
@@ -1515,6 +1524,88 @@ millimetre value in `ProjectedZoneValue`. `IsMaxTolerance` selects the
 millimetre value in `MaxTolerance`. `PerUnitAreaType` value `0` defines a
 rectangular unit from `PerUnitAreaLength` and `PerUnitAreaWidth`; value `1`
 defines a circular unit from `PerUnitAreaDiameter`.
+
+The bytes before the GDT-analysis part object hold the presentation archive: a
+u32 LE schema version and an MFC `CArchive` serialization (§2.2) of one
+`moSwiftSchema_c` object. The archive head declares `moSwiftSchema_c`,
+`moNodeName_c`, and `moDetailFolder_c` in that order and writes the folder's
+name object, so these classes take map indices 1, 3, and 5, and a name object
+opens with tag `0x8003`. The folder writes its display lists. A display list
+is a u16 LE item count and that many display objects. The first list holds the
+geometric-tolerance displays: its first item declares `moDisplayGtol_c` at map
+index 8, and each later item opens with that class's tag. The u16 LE count of
+the second list ends the last geometric-tolerance display; the second list
+holds the datum-tag displays, and the first item of a non-empty second list
+declares `moDisplayDatumTag_c`.
+
+| Offset | Field                                                         |
+| ------ | ------------------------------------------------------------- |
+| +0     | u16 LE geometric-tolerance display tag `0x8008`               |
+| +2     | u16 LE display word                                           |
+| +4     | u32 LE display body word `6`                                  |
+| +8     | u16 LE compound geometric-tolerance tag `0x800a`              |
+
+A named presentation object carries the named-object header of §2.3. A
+positive semantic `UserAttribute` equals the object identifier of the
+presentation object whose name equals the entity's `ObjectName`.
+
+A `moSwiftFR_c` object references one presentation object. Every
+`moSwiftFR_c` object after the class declaration uses one class tag. One object
+identifier has one timestamp.
+
+| Offset | Field                                            |
+| ------ | ------------------------------------------------ |
+| +0     | u16 LE `moSwiftFR_c` class tag                   |
+| +2     | u32 LE referenced presentation object identifier |
+| +6     | u32 LE reference timestamp                       |
+
+A feature path is a u16 LE count *n* from 1 through 8 and *n* `moSwiftFR_c`
+objects. The first object names the outermost feature, such as a pattern; each
+later object names a member of the feature before it. The feature paths of one
+geometric-tolerance display are suffixes of its longest path. A path object
+identifier selects the semantic feature whose `UserAttribute` equals it, or
+else the one semantic feature whose `ObjectName` equals the presentation
+object's name.
+
+A frame row stores its characteristic as the framed string `<GTOL-name>`:
+`POSI` position, `PERP` perpendicularity, `PARA` parallelism, `ANGULAR`
+angularity, `FLAT` flatness, `STRAIGHT` straightness, `CIRC` roundness, `CYL`
+cylindricity, `SPROF` surface profile, `LPROF` line profile, `CONC`
+concentricity, `SYMMETRY` symmetry, `SRUN` circular runout, and `TRUN` total
+runout. The display's `moGtolData_c` object writes four adjacent framed
+strings: the two between-extent labels, the frame template, which contains
+`<Gtol>`, and the note below the frame. A display depicts the semantic
+geometric-tolerance annotations that directly reference a feature on its
+longest path when their characteristics equal the characteristics of its rows
+as a multiset. A composite surface profile with a lower tier supplies two
+`SPROF` rows, the upper tier first.
+
+The strings after a row's tolerance literal and before the next row or the
+four-string block are its compartments. A compartment string that equals the
+`DatumIdentifier` of a semantic `GdtDatum` names a datum reference; datum
+references take precedence in row order, and a `<MOD-` token after one
+modifies it.
+
+A geometric-tolerance display without a feature path attaches to faces through
+`moFaceRef_c` objects (§2.3). A first hop of class `moSimpleSurfIdRep_c`,
+`moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`,
+`moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`,
+`moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`,
+`moFromSktEnt3IntSurfIdRep_c`, or `moEndFace3IntSurfIdRep_c` names the faces
+whose `FACE_ID_2001` identity (§5) is its `moFR_c` feature identifier, its
+first own u32 as the feature-local face identity, and its remaining own u32
+values as the ordered path fields. Such a display
+depicts the semantic geometric tolerances of its rows' characteristics that
+target a face its references select, when their characteristics equal those
+of its rows as a multiset.
+
+Class map indices rise in declaration order (§2.2). When the archive declares
+as many identity-representation classes as there are class tags that open a
+hop, the sorted tags name those classes in declaration order. The tags that
+open `moFaceRef_c` and `moEdgeRef_c` objects name the declared reference
+classes in the same way. A reference tag otherwise names the one reference
+class whose declaration lies between the identity classes with the next lower
+and next higher indices.
 
 ### 2.2 Object stream class map
 
@@ -1698,7 +1789,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | Class | Bytes after the `moFR_c` object |
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
-| `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
+| `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
 | `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
@@ -1706,9 +1797,9 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 
 The hop a pattern or mirror hop points to is written in place inside it, and so is not a separate entry of the list.
 
-A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC.
+A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC. The u32 is the object identifier of the producing history feature, the identifier that `FACE_ID_2001` value 1 carries (§5).
 
-A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, three Unicode `CString` values, 18 bytes, a Unicode `CString` holding a configuration name, and 16 bytes. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
+A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, three Unicode `CString` values, 17 or 18 bytes, and a Unicode `CString` holding a configuration name; in a file whose `swVersion` is below 17000, 12 bytes follow the configuration name. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
 
 After the feature-object block, a `Fillet_c` fillet and a `Chamfer_c` chamfer write these bytes of their own, or one of the forms of open item EV-12:
 
@@ -3160,6 +3251,10 @@ Every property set has unnamed PID 1 with type VT_I2 as its codepage control. Th
 VT_EMPTY (type 0) and VT_NULL (type 1) have no scalar payload. Their XML forms are empty `vt:empty` and `vt:null` elements. Each states a present property with no scalar value, distinct from an absent property record and from zero-length text.
 
 The native default dictionary permits multiple names for one PID and an administrative empty-name PID 0 entry. These extend the generic MS-OLEPS dictionary rules. Retain all alias entries. A name identifies a saved default value only when it selects one PID and that PID has one usable typed value. Names, whitespace and parenthesized suffixes remain exact source text. An alias with an empty or absent saved value does not select another PID by similarity. A name assigned to conflicting PIDs supplies no unique value. Saved values and formula companions are distinct records; a stored snapshot does not establish live calculation or cache freshness.
+
+An `SW-MassProp-Config-N` value with 14 comma-separated decimal fields, each with six fractional digits, stores a saved mass-properties vector for `Config-N`. Its first twelve values follow the metric mass-properties order: center-of-mass x, y and z in metres; volume in cubic metres; surface area in square metres; mass in kilograms; and six moments of inertia in kilogram square metres. Each recognized value has a source representation bound of one half unit in its last decimal place.
+
+The f64 density fields in `moPart_c` and `moDensityParameter_c` are in kilograms per cubic metre. The latter is referenced by `moMaterial_c`.
 
 ## 9. Units
 

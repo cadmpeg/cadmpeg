@@ -114,6 +114,7 @@ pub(crate) struct MirrorIndex<'a> {
     planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
     record_lengths: Option<HashMap<(&'a str, u32), Option<u64>>>,
     generated_nodes: Option<(&'a [super::PmDcFeature], &'a [PmDcFeatureLabel])>,
+    bodies: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
 }
 
 struct ResolvedMirror {
@@ -153,6 +154,7 @@ impl<'a> MirrorIndex<'a> {
         Self {
             record_lengths: None,
             generated_nodes: None,
+            bodies: None,
             properties: unique_index(properties.iter().map(|r| {
                 (
                     (r.identity.segment_token.as_str(), r.identity.record_ordinal),
@@ -181,6 +183,35 @@ impl<'a> MirrorIndex<'a> {
     ) -> Self {
         self.generated_nodes = Some((features, labels));
         self
+    }
+
+    /// Current-model bodies of the surface-body wrappers, which the body
+    /// selection pass substitutes into a projected mirror source.
+    pub(crate) fn with_bodies(
+        mut self,
+        bodies: &'a HashMap<String, cadmpeg_ir::ids::BodyId>,
+    ) -> Self {
+        self.bodies = Some(bodies);
+        self
+    }
+
+    /// Source of a body-mode mirror: the surface-body wrappers that the
+    /// object collection lists, grouped under the collection record.
+    fn body_source(
+        &self,
+        token: &str,
+        collection: &PmDcFeatureProperty,
+        items: &[PmDcReference],
+    ) -> Option<BodySelection> {
+        let mut wrappers = Vec::new();
+        for reference in items {
+            let wrapper = self.property(token, *reference)?;
+            if !matches!(wrapper.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
+                return None;
+            }
+            wrappers.push(wrapper.id());
+        }
+        BodySelection::local(wrappers, collection.id()).ok()
     }
 
     pub(crate) fn with_record_lengths(
@@ -413,7 +444,7 @@ impl<'a> MirrorIndex<'a> {
             .ok()?;
             return Some(ResolvedMirror {
                 definition: FeatureDefinition::Operation(FeatureOperation::MirrorShape {
-                    source: BodySelection::Native(collection.id()),
+                    source: self.body_source(token, collection, items.references())?,
                     plane_origin: origin,
                     plane_normal: unit_normal,
                     plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(plane.id())),
@@ -443,7 +474,7 @@ impl<'a> MirrorIndex<'a> {
             .ok()?;
             return Some(ResolvedMirror {
                 definition: FeatureDefinition::Operation(FeatureOperation::MirrorShape {
-                    source: BodySelection::Native(collection.id()),
+                    source: self.body_source(token, collection, items.references())?,
                     plane_origin: origin,
                     plane_normal: unit_normal,
                     plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(plane.id())),
@@ -469,7 +500,10 @@ impl<'a> MirrorIndex<'a> {
             if !source.participants.references().is_empty() {
                 return None;
             }
-            vec![PatternSeed::Bodies(BodySelection::Native(collection.id()))]
+            vec![PatternSeed::Bodies(
+                self.body_source(token, collection, items.references())
+                    .unwrap_or_else(|| BodySelection::Native(collection.id())),
+            )]
         } else {
             if source.participants.references().is_empty() {
                 return None;
@@ -573,7 +607,13 @@ impl<'a> MirrorIndex<'a> {
         };
         if feature.id != feature_id
             || feature.native_ref.as_deref() != Some(source.id().as_str())
-            || feature.evaluation.definition() != &resolved.definition
+            || {
+                let mut expected = resolved.definition.clone();
+                if let Some(bodies) = self.bodies {
+                    super::body_selection::definition(&mut expected, bodies, None);
+                }
+                feature.evaluation.definition() != &expected
+            }
         {
             return false;
         }

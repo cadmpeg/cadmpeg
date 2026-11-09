@@ -206,6 +206,10 @@ pub(crate) fn transfer_neutral(
     bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
     let record_by_object = product_record_index(records)?;
+    let object_by_id = objects
+        .iter()
+        .map(|object| (object.id().as_str(), object))
+        .collect::<HashMap<_, _>>();
     // An assembly lists its joints and its joint group among its members;
     // they constrain the components and are not components themselves.
     let constraint_objects = joints
@@ -261,6 +265,13 @@ pub(crate) fn transfer_neutral(
         }
         for name in record.element_objects() {
             component_objects.push(name);
+            if matches!(record.node, ProductNode::LinkGroup { .. })
+                && object_by_id.contains_key(name.as_str())
+                && !occurrence_objects.contains(name.as_str())
+                && !constraint_objects.contains(name.as_str())
+            {
+                placed_objects.insert(name.as_str());
+            }
         }
     }
     for joint in joints {
@@ -386,6 +397,7 @@ pub(crate) fn transfer_neutral(
         for member in record
             .members()
             .iter()
+            .chain(record.element_objects().iter())
             .filter(|member| !constraint_objects.contains(member.as_str()))
         {
             let member = member.as_str();
@@ -403,7 +415,7 @@ pub(crate) fn transfer_neutral(
         }
     }
 
-    let element_objects = link_element_objects(records, objects, &properties_by_owner)?;
+    let element_objects = listed_link_element_objects(records, objects);
     let mut occurrences = Vec::new();
     for record in records.iter().filter(|record| {
         matches!(record.node, ProductNode::Occurrence(_))
@@ -549,10 +561,6 @@ pub(crate) fn transfer_neutral(
         }
     }
 
-    let mut object_by_id = HashMap::new();
-    for object in objects {
-        object_by_id.insert(object.id().as_str(), object);
-    }
     let mut definitions = Vec::new();
     for &object in &component_objects {
         let record = record_by_object.get(object).copied();
@@ -653,17 +661,64 @@ pub(crate) fn transfer_neutral(
             native_ref: Some((*object).to_owned()),
         });
     }
-    let mut next_ordinal = HashMap::<Option<String>, u32>::new();
-    for occurrence in &mut occurrences {
-        let parent = match &occurrence.parent {
-            OccurrenceParent::Root {} => None,
-            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
-        };
-        let ordinal = next_ordinal.entry(parent).or_default();
-        occurrence.ordinal = *ordinal;
-        *ordinal = ordinal
-            .checked_add(1)
-            .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
+    let ordinals = {
+        let mut by_source = HashMap::<&str, Vec<usize>>::new();
+        for (index, occurrence) in occurrences.iter().enumerate() {
+            if let Some(source) = occurrence.native_ref.as_deref() {
+                by_source.entry(source).or_default().push(index);
+            }
+        }
+        let mut assigned =
+            ctx.alloc_filled(occurrences.len(), false, "freecad occurrence order")?;
+        let mut ordinals =
+            ctx.alloc_filled(occurrences.len(), 0_u32, "freecad occurrence ordinals")?;
+        let mut next_ordinal = HashMap::<Option<String>, u32>::new();
+        for record in records.iter().filter(|record| {
+            matches!(
+                record.node,
+                ProductNode::Part(_) | ProductNode::LinkGroup { .. }
+            )
+        }) {
+            let parent = container_occurrence_id(&record.object)?;
+            let mut ordinal = 0_u32;
+            for member in record
+                .members()
+                .iter()
+                .chain(record.element_objects().iter())
+            {
+                for &index in by_source.get(member.as_str()).into_iter().flatten() {
+                    if assigned[index]
+                        || !matches!(&occurrences[index].parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &parent)
+                    {
+                        continue;
+                    }
+                    assigned[index] = true;
+                    ordinals[index] = ordinal;
+                    ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed("product occurrence ordinal exceeds u32")
+                    })?;
+                }
+            }
+            next_ordinal.insert(Some(parent.as_str().to_owned()), ordinal);
+        }
+        for (index, occurrence) in occurrences.iter().enumerate() {
+            if assigned[index] {
+                continue;
+            }
+            let parent = match &occurrence.parent {
+                OccurrenceParent::Root {} => None,
+                OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
+            };
+            let ordinal = next_ordinal.entry(parent).or_default();
+            ordinals[index] = *ordinal;
+            *ordinal = ordinal
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
+        }
+        ordinals
+    };
+    for (occurrence, ordinal) in occurrences.iter_mut().zip(ordinals) {
+        occurrence.ordinal = ordinal;
     }
     Ok((definitions, occurrences))
 }
@@ -740,23 +795,21 @@ fn link_scale_transform([x, y, z]: [f64; 3]) -> Result<Transform, CodecError> {
         .ok_or_else(|| malformed("link scale must be finite"))
 }
 
-fn link_element_objects<'a>(
+fn listed_link_element_objects<'a>(
     records: &'a [ProductNodeRecord],
     objects: &[ObjectRecord],
-    properties: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Result<HashSet<&'a str>, CodecError> {
+) -> HashSet<&'a str> {
     let objects_by_id = objects
         .iter()
         .map(|object| (object.id().as_str(), object))
         .collect::<HashMap<_, _>>();
-    let mut owned_elements = HashSet::new();
-    for record in records
-        .iter()
-        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
-    {
-        let parent_id = objects_by_id
-            .get(record.object.as_str())
-            .and_then(|object| object.persistent_id);
+    let mut listed_elements = HashSet::new();
+    for record in records.iter().filter(|record| {
+        matches!(record.node, ProductNode::Occurrence(_))
+            && objects_by_id
+                .get(record.object.as_str())
+                .is_some_and(|object| object.type_name == "App::Link")
+    }) {
         for name in record.element_objects() {
             let Some(object) = objects_by_id.get(name.as_str()) else {
                 continue;
@@ -764,14 +817,10 @@ fn link_element_objects<'a>(
             if object.type_name != "App::LinkElement" {
                 continue;
             }
-            let owned = properties.get(name.as_str()).map_or(&[][..], Vec::as_slice);
-            let owner = integer_property(owned, "_LinkOwner", "App::PropertyInteger")?;
-            if owner.is_none_or(|owner| owner == 0 || Some(owner) == parent_id) {
-                owned_elements.insert(name.as_str());
-            }
+            listed_elements.insert(name.as_str());
         }
     }
-    Ok(owned_elements)
+    listed_elements
 }
 
 fn restored_cardinality(
@@ -828,7 +877,7 @@ pub(crate) fn link_occurrence_count(
             .or_default()
             .push(property);
     }
-    let element_objects = link_element_objects(records, objects, &properties_by_owner)?;
+    let element_objects = listed_link_element_objects(records, objects);
     let mut total = 0_u64;
     for record in records.iter().filter(|record| {
         matches!(record.node, ProductNode::Occurrence(_))

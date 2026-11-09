@@ -10,6 +10,17 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn placement_component_references_skip_text_and_label_operands() {
+    let expression = r#"Sketch.Placement.Base.x + "Sketch.Placement.Base.y" + 'Sketch.Placement.Base.z' + <<SketchLabel>>.Placement.Base.z"#;
+    assert_eq!(
+        super::super::expression_identifiers(expression).as_slice(),
+        &["Sketch.Placement.Base.x"]
+    );
+    let references = super::super::placement_component_references(expression).collect::<Vec<_>>();
+    assert_eq!(references.as_slice(), &[("Sketch", "x")]);
+}
+
+#[test]
 fn distinguishes_stored_base_and_application_owned_features() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -1071,6 +1082,17 @@ Ve 0.001 0 0 0 0 0 1001000 *
     for hidden in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
         assert_eq!(visible(hidden), Some(false), "{hidden}");
     }
+    let pad = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pad"))
+        .unwrap();
+    let [output] = pad.evaluation.outputs().as_slice() else {
+        panic!("pad must have one result body");
+    };
+    assert!(output.as_str().contains(":Pad.Shape.brp:"));
     assert_valid_document(result.ir());
 }
 

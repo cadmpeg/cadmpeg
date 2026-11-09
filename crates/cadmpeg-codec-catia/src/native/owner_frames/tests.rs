@@ -5,6 +5,73 @@ use crate::test_support::test_b2::b2_adjacent_face_counted_owner_stream;
 use crate::wire::records::{consolidated_records, consolidated_records_in_range_sources};
 
 #[test]
+fn compact_face_double_three_counted_owner_survives_native_wire_roundtrip() {
+    let mut bytes = b2_adjacent_face_counted_owner_stream();
+    bytes[10] = 0x03;
+    let records = consolidated_records(&bytes);
+    let packets = crate::test_support::with_service_context(|_ctx| {
+        crate::native::projection::consolidated_owner_packets(&bytes, &records)
+            .expect("valid owner records")
+    });
+    let [packet] = packets.as_slice() else {
+        panic!("one owner packet")
+    };
+    let face = packet.face_node.as_ref().expect("face relation");
+    assert_eq!(face.terminal, [0x03, 0x03]);
+    assert_eq!(face.target.checked_add(1), packet.payload.final_reference());
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("valid owner wire"),
+        *packet
+    );
+}
+
+#[test]
+fn owned_child_face_target_survives_native_projection_and_wire_roundtrip() {
+    let mut bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x07, 0x0b, 0x03, 0xb2, 0x03, 0x30, 0x02, 0x05, 0x80,
+        0x01, 0xb2, 0x03, 0x37, 0x02, 0x05, 0x81, 0x05, 0xb2, 0x03, 0x62, 0x14, 0x05, 0x8d, 0x03,
+        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x05, 0x86, 0x41, 0x17,
+        0xdc, 0x03, 0x01,
+    ];
+    let records = consolidated_records(&bytes);
+    let packets = crate::test_support::with_service_context(|_ctx| {
+        crate::native::projection::consolidated_owner_packets(&bytes, &records)
+            .expect("valid owner records")
+    });
+    let [packet] = packets.as_slice() else {
+        panic!("one owner packet")
+    };
+    let face = packet.face_node.as_ref().expect("face relation");
+    assert_eq!(face.frame.pos, 0);
+    assert_eq!(face.target, 1);
+    assert_eq!(packet.frame.pos, 23);
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert_eq!(wire["face_node"]["target_encoding"], "owned_child");
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("valid owner wire"),
+        *packet
+    );
+
+    bytes[8] = 0x05;
+    let records = consolidated_records(&bytes);
+    let packets = crate::native::projection::consolidated_owner_packets(&bytes, &records)
+        .expect("project owner with unsupported face link");
+    let [packet] = packets.as_slice() else {
+        panic!("retain the owner packet");
+    };
+    assert!(packet.face_node.is_none());
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("owner wire without an unsupported face link"),
+        *packet
+    );
+}
+
+#[test]
 fn owner_incidence_preserves_reversed_physical_extents() {
     let stream = b2_adjacent_face_counted_owner_stream();
     let split = 5 + usize::from(stream[3]);
@@ -144,4 +211,45 @@ fn counted_incidence_requires_two_pairs_and_one_final_reference() {
             "incidence count {count}"
         );
     }
+}
+
+#[test]
+fn counted_numeric_bounds_round_trip_and_reject_changed_projection() {
+    let mut bytes = b2_adjacent_face_counted_owner_stream();
+    let owner_start = 5 + usize::from(bytes[3]);
+    let old_tail_len = 5;
+    bytes.truncate(bytes.len() - old_tail_len);
+    let tail_start = bytes.len();
+    bytes.extend_from_slice(&[0x83, 0x41, 0, 0, 0x0d]);
+    for value in [0.0_f64, -1.0, 2.0, 3.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(1);
+    for value in [-2.0_f32, 2.0, -3.0, 3.0, -4.0, 4.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let new_tail_len = bytes.len() - tail_start;
+    bytes[owner_start + 3] =
+        u8::try_from(usize::from(bytes[owner_start + 3]) - old_tail_len + new_tail_len)
+            .expect("small owner frame");
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let packet = &native.consolidated_owner_packets[0];
+    let wire = serde_json::to_value(packet).expect("owner wire");
+    assert!(wire["payload"]["numeric_bounds"].is_object());
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire.clone())
+            .expect("valid wire"),
+        *packet
+    );
+    let mut invalid = wire.clone();
+    invalid["payload"]["numeric_bounds"]["upper"][0] = serde_json::json!(1.0);
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err()
+    );
+    let mut absent = wire;
+    absent["payload"]
+        .as_object_mut()
+        .expect("payload object")
+        .remove("numeric_bounds");
+    assert!(serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(absent).is_err());
 }

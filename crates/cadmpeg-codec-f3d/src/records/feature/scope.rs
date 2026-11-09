@@ -13,7 +13,9 @@ use super::assembly_features::{
     DesignDerivedInstanceConstruction,
 };
 use super::base_feature::DesignBaseFeatureConstruction;
-use super::body_ops::{DesignCopyPasteBodiesOperation, DesignScaleOperation};
+use super::body_ops::{
+    DesignCopyPasteBodiesOperation, DesignReverseNormalOperation, DesignScaleOperation,
+};
 use super::coil::{
     DesignCoilExtent, DesignCoilPlacement, DesignCoilScope, DesignCoilSection,
     DesignCoilSectionPlacement, DesignCoilTransform,
@@ -45,7 +47,7 @@ use super::sheet_metal::{
 use super::surface_ops::{
     DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
-    DesignSurfaceStitchOperation,
+    DesignSurfacePatchSelection, DesignSurfaceStitchOperation,
 };
 use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
@@ -249,9 +251,19 @@ cadmpeg_core::named_optional_field!(
     "ruled_surface_operation"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_settings,
+    crate::records::feature::patterns::DesignPathPatternSettings,
+    "path_pattern_settings"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_scale_operation,
     DesignScaleOperation,
     "scale_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_reverse_normal_operation,
+    DesignReverseNormalOperation,
+    "reverse_normal_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_solid_primitive,
@@ -360,6 +372,13 @@ impl From<DesignFaceRecipeKind> for ConstructionRecipeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct DesignNativeFeatureName(std::sync::Arc<str>);
 
+impl DesignFeatureKind {
+    /// Native kind carrying a stored family name.
+    pub(crate) fn native(name: &str) -> Self {
+        Self::Native(DesignNativeFeatureName(name.into()))
+    }
+}
+
 /// Optional payloads can be uninterpreted; a counted collection is decoded even when empty.
 trait ScopePayloadCompleteness {
     fn is_uninterpreted(&self) -> bool;
@@ -394,6 +413,12 @@ cadmpeg_core::named_optional_field!(
     deserialize_surface_patch_normal,
     DesignSurfacePatchNormalState,
     "surface_patch_normal"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_patch_selection,
+    DesignSurfacePatchSelection,
+    "surface_patch_selection"
 );
 
 macro_rules! design_feature_kinds {
@@ -579,6 +604,7 @@ design_feature_kinds! {
         RPattern => "R-Pattern": Option<DesignRectangularPatternConstruction>,
         RectangularPattern => "Rectangular Pattern": Option<DesignRectangularPatternConstruction>,
         Mirror => "Mirror": Option<DesignMirrorConstruction>,
+        PathPattern => "PathPattern": Option<crate::records::feature::patterns::DesignPathPatternSettings>,
         Align => "Align": Option<DesignAlignEnvelope>,
         Move => "Move": Option<DesignMoveOperation>,
         MoveFace => "MoveFace": Option<DesignMoveOperation>,
@@ -607,6 +633,7 @@ design_feature_kinds! {
         DerivedInstance => "DerivedInstance": Option<DesignDerivedInstanceConstruction>,
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
+        ReverseNormal => "Reverse Normal": Option<DesignReverseNormalOperation>,
     }
     fixed {
         Revolve => "Revolve": Option<DesignRevolveConstruction>,
@@ -892,6 +919,19 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_scale_operation"
     )]
     scale_operation: Option<DesignScaleOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reverse_normal_operation"
+    )]
+    reverse_normal_operation: Option<DesignReverseNormalOperation>,
+    /// Fixed settings carried by a `PathPattern` scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_settings"
+    )]
+    path_pattern_settings: Option<crate::records::feature::patterns::DesignPathPatternSettings>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(
         default,
@@ -899,7 +939,7 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_stitch_operation"
     )]
     surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
-    /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
+    /// Exact distance and boundary records carried by a `SurfaceExtend` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -936,6 +976,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_patch_normal"
     )]
     surface_patch_normal: Option<DesignSurfacePatchNormalState>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_surface_patch_selection"
+    )]
+    surface_patch_selection: Option<DesignSurfacePatchSelection>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
     #[serde(
         default,
@@ -1629,6 +1675,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.reverse_normal_operation.is_some() {
+            present.push("reverse_normal_operation");
+        }
+        if wire.path_pattern_settings.is_some() {
+            present.push("path_pattern_settings");
+        }
         if wire.surface_stitch_operation.is_some() {
             present.push("surface_stitch_operation");
         }
@@ -1641,7 +1693,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.ruled_surface_operation.is_some() {
             present.push("ruled_surface_operation");
         }
-        if !wire.surface_patch_boundaries.is_empty() || wire.surface_patch_normal.is_some() {
+        if !wire.surface_patch_boundaries.is_empty()
+            || wire.surface_patch_normal.is_some()
+            || wire.surface_patch_selection.is_some()
+        {
             present.push("surface_patch");
         }
         if wire.edge_flange_operation.is_some() {
@@ -1709,6 +1764,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "design parameter scope carries more than one payload family: {}",
                 present.join(", ")
             )));
+        }
+        if wire.kind == DesignFeatureKind::PathPattern && wire.source_kind.is_none() {
+            wire.kind = DesignFeatureKind::native(wire.kind.as_str());
         }
         let payload = match &wire.kind {
             DesignFeatureKind::Sketch => DesignScopePayload::Sketch(wire.sketch_entity.take()),
@@ -1850,6 +1908,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::SurfacePatch(DesignSurfacePatchScope {
                     boundaries: std::mem::take(&mut wire.surface_patch_boundaries),
                     normal: wire.surface_patch_normal.take(),
+                    selection: wire.surface_patch_selection.take(),
                 })
             }
             DesignFeatureKind::SurfaceExtend => {
@@ -1873,6 +1932,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Split => DesignScopePayload::Split,
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
+            DesignFeatureKind::ReverseNormal => {
+                DesignScopePayload::ReverseNormal(wire.reverse_normal_operation.take())
+            }
             DesignFeatureKind::Emboss => {
                 DesignScopePayload::Emboss(wire.emboss_construction.take())
             }
@@ -1924,6 +1986,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::CopyPasteBodies(wire.copy_paste_bodies_operation.take())
             }
             DesignFeatureKind::SplitFace => DesignScopePayload::SplitFace,
+            DesignFeatureKind::PathPattern => {
+                DesignScopePayload::PathPattern(wire.path_pattern_settings.take())
+            }
             DesignFeatureKind::DeleteFace => DesignScopePayload::DeleteFace,
             DesignFeatureKind::SurfaceDeleteFace => DesignScopePayload::SurfaceDeleteFace,
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
@@ -1986,12 +2051,15 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.align_envelope.is_some()
             || wire.move_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.reverse_normal_operation.is_some()
+            || wire.path_pattern_settings.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
             || wire.surface_offset_operation.is_some()
             || wire.ruled_surface_operation.is_some()
             || !wire.surface_patch_boundaries.is_empty()
             || wire.surface_patch_normal.is_some()
+            || wire.surface_patch_selection.is_some()
             || wire.edge_flange_operation.is_some()
             || wire.hem_operation.is_some()
             || wire.fixed_fillet_parameters.is_some()
@@ -2108,6 +2176,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             align_envelope: None,
             move_operation: None,
             scale_operation: None,
+            reverse_normal_operation: None,
+            path_pattern_settings: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
             surface_offset_operation: None,
@@ -2115,6 +2185,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             base_flange: None,
             surface_patch_boundaries: Vec::new(),
             surface_patch_normal: None,
+            surface_patch_selection: None,
             edge_flange_operation: None,
             hem_operation: None,
             fixed_fillet_parameters: None,
@@ -2210,6 +2281,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
             }
+            DesignScopePayload::ReverseNormal(value) => {
+                wire.reverse_normal_operation = value;
+            }
+            DesignScopePayload::PathPattern(value) => wire.path_pattern_settings = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
@@ -2217,6 +2292,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::SurfacePatch(value) => {
                 wire.surface_patch_boundaries = value.boundaries;
                 wire.surface_patch_normal = value.normal;
+                wire.surface_patch_selection = value.selection;
             }
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
@@ -2703,9 +2779,25 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn path_pattern_settings(
+        &self,
+    ) -> Option<&crate::records::feature::patterns::DesignPathPatternSettings> {
+        match &self.payload {
+            DesignScopePayload::PathPattern(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn scale_operation(&self) -> Option<&DesignScaleOperation> {
         match &self.payload {
             DesignScopePayload::Scale(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn reverse_normal_operation(&self) -> Option<&DesignReverseNormalOperation> {
+        match &self.payload {
+            DesignScopePayload::ReverseNormal(value) => value.as_ref(),
             _ => None,
         }
     }
@@ -2975,6 +3067,13 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn surface_patch_selection(&self) -> Option<&DesignSurfacePatchSelection> {
+        match &self.payload {
+            DesignScopePayload::SurfacePatch(value) => value.selection.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn surface_patch_boundaries(&self) -> &[DesignSurfacePatchBoundary] {
         match &self.payload {
             DesignScopePayload::SurfacePatch(value) => &value.boundaries,
@@ -3033,21 +3132,45 @@ impl DesignParameterScope {
             .and_then(|coil| coil.operation.map(|field| field.offset))
     }
 
-    /// Whether this scope is a ten-reference `CoilPrimitive` form, whose
-    /// Boolean target group has role `0x0000000400000000`.
+    /// Whether this scope is a ten-reference `CoilPrimitive` form.
     pub(crate) fn coil_has_ten_reference_target(&self) -> bool {
-        let at = |relative: usize| {
-            u64::try_from(relative)
-                .ok()
-                .and_then(|relative| self.byte_offset().checked_add(relative))
-        };
         self.kind() == DesignFeatureKind::CoilPrimitive
             && self.reference_members().len() == 10
-            && self.coil_operation_offset().is_some_and(|offset| {
-                at(crate::layout::coil_long_scope_fixed_prologue::OPERATION) == Some(offset)
-                    || at(crate::layout::coil_ten_reference_compact_prologue::OPERATION)
-                        == Some(offset)
-            })
+            && (self.coil_operation_at(crate::layout::coil_long_scope_fixed_prologue::OPERATION)
+                || self.coil_has_ten_reference_compact_prologue())
+    }
+
+    /// Whether `role` at `scope_reference_ordinal` is the Boolean target group
+    /// role of this `CoilPrimitive` or `SpirePrimitive` scope.
+    pub(crate) fn coil_target_group_admits(
+        &self,
+        role: crate::records::topology::extrude_selection::DesignOperandRole,
+        scope_reference_ordinal: u32,
+    ) -> bool {
+        use crate::records::topology::extrude_selection::DesignOperandRole;
+        if self.coil_has_ten_reference_compact_prologue() {
+            matches!(
+                (role, scope_reference_ordinal),
+                (DesignOperandRole::BODIES_A, 0) | (DesignOperandRole::BODIES_B, 8)
+            )
+        } else if self.coil_has_ten_reference_target() {
+            role == DesignOperandRole::BODIES_A
+        } else {
+            role == DesignOperandRole::BODIES_B
+        }
+    }
+
+    fn coil_has_ten_reference_compact_prologue(&self) -> bool {
+        self.kind() == DesignFeatureKind::CoilPrimitive
+            && self.reference_members().len() == 10
+            && self.coil_operation_at(crate::layout::coil_ten_reference_compact_prologue::OPERATION)
+    }
+
+    fn coil_operation_at(&self, relative: usize) -> bool {
+        let offset = u64::try_from(relative)
+            .ok()
+            .and_then(|relative| self.byte_offset().checked_add(relative));
+        offset.is_some() && self.coil_operation_offset() == offset
     }
 
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {

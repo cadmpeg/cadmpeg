@@ -158,6 +158,11 @@ and target pmarks to the owning partition's current state?
 
 **Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval. The general PMARK predecessor, following, sibling, initial, and current relations are defined in §4.2. They do not bind aggregate node sections to constituent deltas.
 
+The NIST CTC-03 current body does not depend on this selection: its one
+partition solid equals the solid of the revision C STEP export in face
+count, surface kinds, area, volume, and vertex box, and the ten plain-stream
+sheets have no counterpart in that export.
+
 **Need.** Identify each constituent delta's complete enclosing frame, delta-key
 association, direction, source pmark, target pmark, and partition ownership. Apply only edges that lead to
 the selected current state, including branches, undone changes, and multiple
@@ -165,6 +170,15 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
 pairing, and repeated carrier spellings cannot select an aggregate change.
+In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
+type 90 across separate PMARK and map sections. A lookup by stream, XMT,
+and type merges those revisions. The current PMARK 5892 has delta key 2481
+and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
+map after PMARK 5898 names GROUP 2562.
+That GROUP instance precedes the PMARK section. The map key leaves the
+instance revision and the action on its members unresolved.
+The counts of map entries and typed PMARK-section instances can differ from
+the adjacent PMARK's new-node and deleted-node counts in closed sections.
 
 **Note.** The reader withholds unselected history across topology, semantic
 residuals, GROUP updates and derived appearance or operation-result bindings.
@@ -246,7 +260,7 @@ or regenerated current-design selection.
 
 **Question.** What value-record grammar and semantic role does each declared NX OM member use?
 
-**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines registry token widths and values. `siemens_nx.md` §3.3 "Registry owner tokens are one-based class ordinals." defines the same-section class join. `siemens_nx.md` §3.3 "A storage code does not identify one member." defines declaration identity independently of storage codes and repeated names. `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the reference, class, and member regions. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines selected typed value records.
+**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines registry token widths and values. `siemens_nx.md` §3.3 "Registry owner tokens are one-based class ordinals." defines the same-section class join. `siemens_nx.md` §3.3 "A storage code does not identify one member." defines declaration identity independently of storage codes and repeated names. `siemens_nx.md` §7.1 "The bytes at `oid_end` begin" defines the reference, class, and member regions. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines selected typed value records.
 
 **Need.** We must identify the remaining value-record boundaries, field types,
 and semantic roles for feature history, constraints, attributes, and material
@@ -816,6 +830,18 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Need.** We must keep an inventory of skipped tests so a passing suite reads as a bounded proof.
 
+### OM-66. Current body set beside plain cached-body images
+
+**Question.** Which serialized relation selects the current bodies of a part whose partition and plain cached-body streams both carry bodies?
+
+**Known.** `siemens_nx.md` §7.2 "A complex part contains current body images and historical or tool bodies" names plain cached tool bodies and requires feature-history operand bindings when `RMFastLoad` membership does not select the current images. When membership selects no body, the decoder withholds the plain-stream bodies of a part that also has partition-stream bodies and charges `history.plain-images-withheld`. The terminal-lineage selector then selects among the remaining bodies; `history.sub-body-composition-unresolved` remains when it does not resolve them.
+
+In the NIST CTC-03 part, the one partition solid equals the solid of the revision C STEP export in face count, surface kinds, area, volume, and vertex box, and the ten plain-stream sheets have no counterpart in that export. Three parts with NX-written STEP exports contain one partition body and two to five plain-stream bodies; each export contains only the partition body. In ten NIST parts with same-revision STEP exports, no plain-stream body has an export body of the same kind and face count; one plain-stream plane has no vertices and is not compared.
+
+**Need.** Identify the serialized state that marks a body image as current, and the rule for parts with several partition streams.
+
+**Conflict.** The terminal-lineage statuses mark plain-stream bodies as terminal in five parts, including the three parts whose NX-written STEP exports omit them. §7.2 states that historical and tool bodies can own partition streams, so a partition stream does not by itself mark a body as current.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
@@ -854,15 +880,25 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the row roles to relate each indexed value to the correct display object or segment.
 
-### AM-05. Assembly occurrence placement
+### AM-05. Assembly placement parent, prototype, and unit selectors
 
-**Question.** Which serialized relation binds each placement frame to one child occurrence, and which field defines its translation unit?
+**Question.** Which serialized relation binds a placement to its parent component and to its prototype when one placement UUID covers several prototypes, and which field selects the length unit of an assembly part?
 
-**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order.
+**Known.** `siemens_nx.md` §2.3 "The matrix maps the child part frame into the frame of the assembly part" defines the pose, and "A placement UUID that occurs once in the FastLoad UUID table" defines the single-prototype UUID binding. The decoder emits placements bound by that rule when every numeric length expression of the part declares millimetres, and charges `assembly.placement-unit-from-expressions`. It withholds the other placements with `assembly.placement-frame-unresolved`. The decoder attaches every emitted placement to the assembly root and charges `assembly.placement-parent-assumed`. In the three flat assemblies with STEP exports, every STEP occurrence is a direct child of the root, and the root-attached placements give the STEP positions. All 36 MTC placement owners have zero recognized `RecordOrdinal16` parent edges under the bounded same-section ordinal parser; unrecognized reference encodings remain possible.
 
-**Need.** We must identify the child occurrence and translation unit to apply the matrix to external child geometry.
+The first trailer byte descends from `0x3f` to `0x1c` in MTC placement-record order. In another assembly, the first trailer byte plus the placement's record ordinal in its record directory is 65 for all 22 placements.
 
-**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. The five-byte trailer has no established instance or unit role.
+The third trailer byte has one value for all placements of one child part and distinct values for distinct child parts, also inside one UUID group. Its values increase in the order of the first placement of each child part. Most values are even. Placements whose trailer second byte is not `f0` carry other values in that position.
+
+Numeric expressions declare their own unit. OM length values of drafting preferences take inch values in parts with inch expressions and millimetre values in parts with millimetre expressions. These values do not select a unit.
+
+**Need.** Identify the serialized parent relation of a placement, and confirm the root reading on an assembly with a nested subassembly. Identify the record that the third trailer byte addresses and its relation to a FastLoad prototype or external reference. Identify the serialized part-unit selector, including for parts without length expressions.
+
+**Conflict.** The third trailer byte does not equal the FastLoad prototype ordinal, the FastLoad or UG_PART external-reference ordinal, or the half of either ordinal. Read as a reversed record ordinal in the placement record directory, it selects records that are not part objects. Positional pairing of the OM object-UUID values of a FastLoad object group with the occurrences of that group assigns wrong prototypes to more than half of the placements in a mixed UUID group.
+
+No byte of the SPLMSSTR header, the `hostglobalvariables` name table, or the streams `/Root/FastLoad/Structure`, `/Root/FastLoad/RMFastLoad`, `/Root/UG_PART/UG_PART`, `/Root/part/attrs`, and both `ExternalReferences` streams has one constant value for inch parts and another constant value for millimetre parts at a fixed position after a shared class or member name. No binary64 or placement-atom form of 25.4, 0.0254, 1/0.0254, 0.001, or 1000 occurs in every part of one unit and in no part of the other unit.
+
+**Note.** Matrix equality between an NX placement and a STEP occurrence written by another system is not a pose test: the child parts can use different frames. Compare placed child geometry.
 
 ### AM-06. Assembly pattern dimensions
 

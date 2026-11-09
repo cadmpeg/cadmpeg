@@ -19,12 +19,16 @@ use cadmpeg_ir::{
 use super::{geometry::EdgeGeometry, PmDcFeaturePropertyKind};
 use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcReference};
 
+/// The largest generator array that a direct edge selector stores.
+const MAX_SELECTOR_GENERATORS: usize = 4;
+
 pub(super) struct StoredSelector {
     pub(super) source: u32,
     pub(super) generators: Vec<u32>,
     pub(super) secondary: Vec<u32>,
     pub(super) key: u32,
     body: PmDcReference,
+    body_source: u32,
     item: PmDcReference,
     context: PmDcReference,
 }
@@ -43,16 +47,16 @@ pub(super) fn parse(
         return Ok(None);
     }
     let body = cursor.reference("edge selector body")?;
-    if cursor.u32("edge selector topology")? != 2
-        || (super::selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
-        || cursor.u32("edge selector naming form")? != 2
+    let body_source = cursor.u32("edge selector topology")?;
+    if (super::selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
+        || cursor.u32("edge selector naming form")? != body_source
     {
         return Ok(None);
     }
     let generators = u32_list_with_context(ctx, &mut cursor, 8, "edge selector generators")?;
     let secondary = u32_list_with_context(ctx, &mut cursor, 8, "edge selector secondary names")?;
     let mut distinct = HashSet::new();
-    if !matches!(generators.values().len(), 1 | 2)
+    if !(1..=MAX_SELECTOR_GENERATORS).contains(&generators.values().len())
         || generators.values().contains(&0)
         || generators.values().iter().collect::<HashSet<_>>().len() != generators.values().len()
         || secondary.values().contains(&0)
@@ -87,6 +91,7 @@ pub(super) fn parse(
         secondary: secondary_names,
         key,
         body,
+        body_source,
         item,
         context,
     }))
@@ -104,11 +109,16 @@ pub(super) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> 
     Ok(state_content_header(&mut Cursor::new(payload), version)?.source_index)
 }
 
-pub(super) fn links(selector: &StoredSelector, type_at: impl Fn(u32) -> Option<[u8; 16]>) -> bool {
+pub(super) fn links(
+    selector: &StoredSelector,
+    type_at: impl Fn(u32) -> Option<[u8; 16]>,
+    body_source_at: impl Fn(u32) -> Option<u32>,
+) -> bool {
     let target = |reference: PmDcReference, expected| {
         reference.qualified() && reference.record_ordinal().and_then(&type_at) == Some(expected)
     };
     target(selector.body, crate::pmdc::inventor_id(0x9087_4d47))
+        && selector.body.record_ordinal().and_then(&body_source_at) == Some(selector.body_source)
         && target(selector.item, super::super::EDGE_ITEM_TYPE)
         && target(
             selector.context,
@@ -122,15 +132,20 @@ pub(super) fn links(selector: &StoredSelector, type_at: impl Fn(u32) -> Option<[
 #[derive(Debug)]
 pub(in crate::feature) struct SelectedEdge {
     /// The matched owner with the lowest record index.
-    pub(super) owner: i64,
+    pub(in crate::feature) owner: i64,
     /// Number of matched owners, all with the same geometry.
-    pub(super) owners: usize,
-    pub(super) item: u32,
-    pub(super) geometry: EdgeGeometry,
+    pub(in crate::feature) owners: usize,
+    /// Length of the generator array of the selector.
+    pub(in crate::feature) generators: usize,
+    pub(in crate::feature) item: u32,
+    pub(in crate::feature) geometry: EdgeGeometry,
+    /// Entity indexes of the two faces that use the owner, when the edge has
+    /// exactly one matched owner and its coedge ring holds two distinct faces.
+    pub(in crate::feature) faces: Option<[i64; 2]>,
 }
 
 pub(crate) const fn supported_schema(schema: u32) -> bool {
-    matches!(schema, 38 | 40 | 42 | 44)
+    matches!(schema, 38 | 40 | 42 | 43 | 44)
 }
 
 pub(super) fn selected(
@@ -205,8 +220,14 @@ pub(super) fn selected(
             SelectedEdge {
                 owner,
                 owners: owners.len(),
+                generators: selector.generators.len(),
                 item,
                 geometry,
+                faces: if owners.len() == 1 {
+                    super::adjacency::faces(owner, &by_index)
+                } else {
+                    None
+                },
             },
         ));
     }
@@ -233,14 +254,19 @@ fn controls<'a>(
     }
 }
 
-fn state_id(source: &crate::feature::PmDcFeature) -> Result<FeatureInputTopologyId, CodecError> {
+pub(in crate::feature) fn state_id(
+    source: &crate::feature::PmDcFeature,
+) -> Result<FeatureInputTopologyId, CodecError> {
     Ok(FeatureInputTopologyId::compose(
         &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-input"),
         source.identity.key()?,
     ))
 }
 
-fn edge_id(token: &str, source: u32) -> Result<HistoricalEdgeId, CodecError> {
+pub(in crate::feature) fn edge_id(
+    token: &str,
+    source: u32,
+) -> Result<HistoricalEdgeId, CodecError> {
     HistoricalEdgeId::mint(format!("inventor:input-edge#{token}-{source}"))
         .map_err(CodecError::malformed)
 }
@@ -455,6 +481,12 @@ pub(crate) fn project(
     Ok(states)
 }
 
+/// Whether the selection is a historical edge selection whose native
+/// reference is `native`.
+pub(crate) fn joins(selection: &EdgeSelection, native: &str) -> bool {
+    matches!(selection, EdgeSelection::Historical { native: actual, .. } if actual.as_str() == native)
+}
+
 fn selections(feature: &Feature) -> Vec<&EdgeSelection> {
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
@@ -561,6 +593,39 @@ pub(super) fn ambiguous_owner_losses(
         Vec::new()
     } else {
         vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
+    }
+}
+
+/// Longest generator array whose selector has no assumption about the extra
+/// generators.
+const PLAIN_SELECTOR_GENERATORS: usize = 2;
+
+/// One note counting the edge-treatment features that select an edge through a
+/// selector with more than two generators.
+pub(super) fn generator_losses(
+    inventory: &crate::feature::FeatureInventory,
+    features: &[Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let long = inventory
+        .edge_inputs
+        .historical
+        .iter()
+        .filter(|(_, edge)| edge.generators > PLAIN_SELECTOR_GENERATORS)
+        .filter_map(|((token, source), _)| edge_id(token, *source).ok())
+        .collect::<HashSet<_>>();
+    let count = features
+        .iter()
+        .filter(|feature| {
+            selections(feature).iter().any(|selection| {
+                matches!(selection, EdgeSelection::Historical { edges, .. }
+                    if edges.iter().any(|edge| long.contains(edge)))
+            })
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureEdgeSelectorGeneratorsAssumed.note(format!("{count} edge-treatment feature(s) select an input edge through a selector with three or four generators; the selection assumes that the extra generators do not change the matched edge."))]
     }
 }
 
