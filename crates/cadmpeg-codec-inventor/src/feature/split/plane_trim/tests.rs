@@ -233,3 +233,23 @@ fn plane_trim_requires_one_qualified_body_selection_member() {
         );
     }
 }
+
+#[test]
+fn plane_trim_requires_an_unnamed_zero_name_value_side_boolean() {
+    for kind in [
+        PmDcFeaturePropertyKind::Boolean {
+            name: String::new(),
+            name_value: 1,
+            value: false,
+        },
+        PmDcFeaturePropertyKind::Boolean {
+            name: "side".into(),
+            name_value: 0,
+            value: false,
+        },
+    ] {
+        let (source, mut properties) = plane_trim_fixture(false);
+        set_kind(&mut properties, 4, kind);
+        assert!(admit(&source, &properties).is_err());
+    }
+}
