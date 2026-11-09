@@ -594,6 +594,7 @@ enum RecipeReferenceTokenFrame {
 struct ScannedRecipeReferenceOperand<'a> {
     selector: u32,
     token: &'a str,
+    token_integer: u32,
     token_at: usize,
     references_at: usize,
     reference_count: usize,
@@ -611,9 +612,13 @@ fn scan_recipe_reference_operand(
         .then(|| {
             lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic)
                 .and_then(|(token, marker_at)| {
-                    (is_decimal_integer_token(token.as_bytes())
-                        && View::u32_le_at(prefix, marker_at) == Some(0))
-                    .then_some((token, token_encoding_at + 4, marker_at + 4))
+                    let token_integer = View::u32_le_at(prefix, marker_at)?;
+                    is_decimal_integer_token(token.as_bytes()).then_some((
+                        token,
+                        token_encoding_at + 4,
+                        marker_at + 4,
+                        token_integer,
+                    ))
                 })
         })
         .flatten();
@@ -627,11 +632,11 @@ fn scan_recipe_reference_operand(
                     && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
                 .then(|| std::str::from_utf8(token).ok())
                 .flatten()
-                .map(|token| (token, token_encoding_at, zero_at + 4))
+                .map(|token| (token, token_encoding_at, zero_at + 4, 0))
             })
         })
         .flatten();
-    let (token, token_at, marker_at) = length_prefixed.or(packed)?;
+    let (token, token_at, marker_at, token_integer) = length_prefixed.or(packed)?;
     let reference_count =
         usize::try_from(View::u32_le_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
     let reference_bytes = reference_count.checked_mul(4)?;
@@ -656,6 +661,7 @@ fn scan_recipe_reference_operand(
     Some(ScannedRecipeReferenceOperand {
         selector,
         token,
+        token_integer,
         token_at,
         references_at,
         reference_count,
@@ -691,6 +697,7 @@ fn decode_recipe_reference_operand(
             selector: i64::from(scanned.selector),
             selector_offset,
             token: token_copy,
+            token_integer: scanned.token_integer,
             token_offset,
             design_reference: i64::from(design_reference),
             design_reference_offset,
@@ -768,6 +775,7 @@ pub(crate) fn bind_recipe_reference_candidates(
     reference.alternate_selector_edges.clear();
     for tag in tags.iter().filter(|tag| {
         tag.token.as_str() == reference.token
+            && tag.token_integer == reference.token_integer
             && tag.design_references.contains(&reference.design_reference)
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
     }) {

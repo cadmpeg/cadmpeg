@@ -184,6 +184,7 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
                     entity_ref: attribute,
                     selector: attribute,
                     token: if changed { "changed" } else { "tag" }.into(),
+                    token_integer: 0,
                     design_references: vec![30],
                     ordinal,
                 });

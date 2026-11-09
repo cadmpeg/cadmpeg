@@ -5566,7 +5566,11 @@ fn bind_historical_recipe_reference_candidates<'a>(
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
     let index = recipe_topologies.get(topology);
-    for tag_index in index.matching_tags(&reference.token, reference.design_reference) {
+    for tag_index in index.matching_tags(
+        &reference.token,
+        reference.token_integer,
+        reference.design_reference,
+    ) {
         let tag = &index.topology.persistent_subentity_tags[*tag_index];
         match tag.entity_kind {
             AsmHistoricalEntityKind::Face => {
@@ -9767,6 +9771,7 @@ pub(crate) fn historical_topology_with_tags(
                 entity_ref,
                 selector: tag.selector,
                 token,
+                token_integer: tag.token_integer,
                 design_references,
                 ordinal: tag.ordinal,
             },

@@ -146,6 +146,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             target: AttributeTarget::Face(face_id.clone()),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("8").unwrap(),
+            token_integer: 4012,
             design_references: vec![301, -314, 411],
             ordinal: 0,
         },
@@ -154,6 +155,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             target: AttributeTarget::Edge(edge_id.clone()),
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("-1").unwrap(),
+            token_integer: 0,
             design_references: vec![511],
             ordinal: 0,
         },
@@ -162,6 +164,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             target: AttributeTarget::Face(face_id.clone()),
             selector: 3,
             token: cadmpeg_core::text::NonBlankString::new("42").unwrap(),
+            token_integer: 0,
             design_references: Vec::new(),
             ordinal: 1,
         },
@@ -301,7 +304,9 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     );
     assert_eq!(native.persistent_subentity_tags.len(), 3);
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
-        tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
+        tag.token_integer == 4012
+            && tag.design_references == [301, -314, 411]
+            && matches!(tag.target, AttributeTarget::Face(_))
     }));
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, round_trip.ir())

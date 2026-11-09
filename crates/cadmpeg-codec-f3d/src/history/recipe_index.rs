@@ -5,7 +5,7 @@ use crate::history_records::AsmHistoricalTopology;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{HashMap, HashSet};
 
-type TokenReferences<'a> = HashMap<&'a str, HashMap<i64, Vec<usize>>>;
+type TokenReferences<'a> = HashMap<&'a str, HashMap<u32, HashMap<i64, Vec<usize>>>>;
 
 pub(super) struct RecipeTopologyIndex<'a> {
     pub(super) topology: &'a AsmHistoricalTopology,
@@ -27,7 +27,11 @@ impl<'a> RecipeTopologyIndex<'a> {
             if !live || tag.design_references.is_empty() {
                 continue;
             }
-            let references = tokens.entry(tag.token.as_str()).or_default();
+            let references = tokens
+                .entry(tag.token.as_str())
+                .or_default()
+                .entry(tag.token_integer)
+                .or_default();
             for reference in &tag.design_references {
                 let rows = references.entry(*reference).or_default();
                 // One tag can repeat its Design reference; the old membership query
@@ -44,9 +48,15 @@ impl<'a> RecipeTopologyIndex<'a> {
         }
     }
 
-    pub(super) fn matching_tags(&self, token: &str, reference: i64) -> &[usize] {
+    pub(super) fn matching_tags(
+        &self,
+        token: &str,
+        token_integer: u32,
+        reference: i64,
+    ) -> &[usize] {
         self.tokens
             .get(token)
+            .and_then(|integers| integers.get(&token_integer))
             .and_then(|references| references.get(&reference))
             .map_or(&[], Vec::as_slice)
     }
@@ -56,7 +66,7 @@ impl<'a> RecipeTopologyIndex<'a> {
         self.faces
             .get_or_insert_with(|| {
                 let mut faces: HashMap<_, Vec<_>> = HashMap::new();
-                for references in tokens.values() {
+                for references in tokens.values().flat_map(|integers| integers.values()) {
                     for (reference, tags) in references {
                         for tag_index in tags {
                             if topology.persistent_subentity_tags[*tag_index].entity_kind
@@ -108,6 +118,7 @@ mod tests {
                 entity_ref,
                 selector: 0,
                 token: "rim".into(),
+                token_integer: 0,
                 design_references: vec![301, 301],
                 ordinal: 0,
             }],
@@ -118,20 +129,30 @@ mod tests {
         dead.entity_ref = 999;
         dead.token = "dead".into();
         first.persistent_subentity_tags.push(dead);
+        let mut other_integer = first.persistent_subentity_tags[0].clone();
+        other_integer.token_integer = 4012;
+        first.persistent_subentity_tags.push(other_integer);
         let second = topology(20);
         let mut cache = RecipeTopologyCache::default();
         for _ in 0..1_000 {
             for (topology, entity) in [(&first, 10), (&second, 20)] {
                 let index = cache.get(topology);
-                assert_eq!(index.matching_tags("rim", 301), &[0]);
-                assert_eq!(index.face_tags(301), &[0]);
+                assert_eq!(index.matching_tags("rim", 0, 301), &[0]);
+                if entity == 10 {
+                    assert_eq!(index.matching_tags("rim", 4012, 301), &[2]);
+                }
+                assert!(index.matching_tags("rim", 4013, 301).is_empty());
+                assert_eq!(
+                    index.face_tags(301),
+                    if entity == 10 { &[0, 2][..] } else { &[0][..] }
+                );
                 assert_eq!(
                     index.topology.persistent_subentity_tags[0].entity_ref,
                     entity
                 );
-                assert!(index.matching_tags("rim", 302).is_empty());
-                assert!(index.matching_tags("other", 301).is_empty());
-                assert!(index.matching_tags("dead", 301).is_empty());
+                assert!(index.matching_tags("rim", 0, 302).is_empty());
+                assert!(index.matching_tags("other", 0, 301).is_empty());
+                assert!(index.matching_tags("dead", 0, 301).is_empty());
             }
         }
     }
@@ -144,6 +165,7 @@ mod tests {
                 entity_ref: 10,
                 selector: 0,
                 token: "rim".into(),
+                token_integer: 0,
                 design_references: vec![301],
                 ordinal: 0,
             }],
@@ -151,7 +173,7 @@ mod tests {
         };
         let mut cache = RecipeTopologyCache::default();
         for _ in 0..1_000 {
-            assert_eq!(cache.get(&topology).matching_tags("rim", 301), &[0]);
+            assert_eq!(cache.get(&topology).matching_tags("rim", 0, 301), &[0]);
         }
     }
 }

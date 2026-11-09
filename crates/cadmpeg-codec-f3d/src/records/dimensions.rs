@@ -77,6 +77,8 @@ pub(crate) struct DesignRecipeReference {
     pub(crate) selector_offset: u64,
     /// ASCII persistent-subentity selector token.
     pub(crate) token: String,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) token_integer: u32,
     /// Byte offset of the token bytes.
     pub(crate) token_offset: u64,
     /// Persistent Design reference paired with `token`.

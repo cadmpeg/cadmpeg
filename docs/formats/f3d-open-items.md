@@ -2215,3 +2215,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** DR-142 covers construction options. DR-205 covers modeled extended-prefix entries.
+
+### DR-334. Persistent tag token integer meaning
+
+**Question.** What does the u32 integer after a Design recipe-prefix token and between a B-rep generic-tag token and its reference count mean?
+
+**Known.** The pair (token, token integer) identifies the persistent tag group. Both records retain the integer. A Design reference joins a tag with the same pair and Design reference. Most groups store integer `0`. In 70 public Design streams, 154 edge-recipe prefix fields store a nonzero integer, with values `4012`, `6798`, and `12173` after tokens `3273`, `726`, and `3666`. Each of 157 nonzero recipe fields in one part has a live generic-tag group with the same pair. The integer equals no body-map suffix, history-state identity, reference count, or byte length in the stream. In one part, 30 edge-recipe occurrences of `4012` equal an indexed record index and a Design type-table entity ID; in another part, 95 occurrences equal neither.
+
+**Need.** Designs that create the same persistent edge selection before and after an operation that gives a tag group a nonzero integer, for example a Fillet on an edge of a body that a Combine or a Split later changes. Each save needs the recipe prefix and the generic-tag groups of the BREP history.
+
+**Conflict.** None.
+
+**Note.** Zero and nonzero integers use the same pair comparison.

@@ -75,6 +75,7 @@ fn operand() -> DesignFaceOperand {
                 selector: 1,
                 selector_offset: ordinal,
                 token: format!("face{ordinal}"),
+                token_integer: 0,
                 token_offset: ordinal,
                 design_reference: i64::try_from(ordinal).unwrap(),
                 design_reference_offset: ordinal,
