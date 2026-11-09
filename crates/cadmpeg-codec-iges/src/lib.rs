@@ -210,7 +210,7 @@ impl EncoderBackend for IgesCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(EncodeError::from)
+        writer::target::plan(input, &target)
     }
 }
 
