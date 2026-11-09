@@ -130,7 +130,7 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 | torus                  | `u` is major azimuth and `v` is minor azimuth, both in `[0, 2π]`                                     |
 | NURBS curve or surface | parameters are the stored knot-domain coordinates                                                    |
 
-A sketch profile boundary use (`SketchProfileBoundaryUse.parameter_range`) parameterizes its sketch entity, not a 3D carrier. A sketch line is parameterized from `0` at its start point to `1` at its end point, so `P(t) = start + t (end − start)`; the parameter is a fraction of the line, not a length. A sketch arc or circle is parameterized by its angle in radians about its centre, measured in the sketch's `(u, v)` frame; a sketch ellipse by its eccentric angle in radians from its major axis; a sketch NURBS curve by its knot-domain coordinate.
+A sketch profile boundary use (`SketchProfileBoundaryUse.parameter_range`) parameterizes its sketch entity in the sketch frame. A sketch line is parameterized from `0` at its start point to `1` at its end point, so `P(t) = start + t (end − start)`, a fraction of the line. A sketch arc or circle is parameterized by its angle in radians about its centre, measured in the sketch's `(u, v)` frame; a sketch ellipse by its eccentric angle in radians from its major axis; a sketch NURBS curve by its knot-domain coordinate.
 
 `Curve.parameter_range` optionally retains a finite source interval independently of topology edges. Its first endpoint is strictly below its second. The interval records the bounded carrier extent; it does not restrict use of the underlying mathematical curve outside that interval.
 
