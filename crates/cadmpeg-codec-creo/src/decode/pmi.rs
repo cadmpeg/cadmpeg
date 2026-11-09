@@ -54,9 +54,9 @@ pub(super) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<BTreeMap<u32, Vec<PmiTarget>>, CodecError> {
     let Some(neutral) = section(scan, "NeuPrtSld") else {
-        return Ok(());
+        return Ok(BTreeMap::new());
     };
     let has_pmi_attributes = [b"PTC_GTOL_TYPE\0".as_slice(), b"PTC_DIM_TYPE\0".as_slice()]
         .into_iter()
@@ -67,14 +67,14 @@ pub(super) fn transfer(
                 .any(|bytes| bytes == marker)
         });
     if !has_pmi_attributes {
-        return Ok(());
+        return Ok(BTreeMap::new());
     }
     let Some(attributes) = attributes::attributes(ctx, neutral)? else {
         losses.push(
             CreoLossCode::PmiTableIncomplete
                 .note("The neutral attribute table containing PMI did not parse completely."),
         );
-        return Ok(());
+        return Ok(BTreeMap::new());
     };
     let mut tolerances = BTreeMap::<(u32, u32), Tolerance<'_>>::new();
     let mut unresolved = 0usize;
@@ -133,34 +133,56 @@ pub(super) fn transfer(
                 }
             }
         }
-        element_tables.push(elements);
+        element_tables.push((name, elements));
     }
     let scale = scan
         .framing
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
+    let dimension_targets = targets::dimension_targets(scan, &element_tables, ir, losses);
     dimensions::transfer(
         ctx,
         &attributes,
-        &element_tables,
+        &dimensions::AnnotationIndex {
+            elements: &element_tables,
+            dimension_targets: &dimension_targets,
+        },
         scale.map(cadmpeg_ir::scalar::PositiveReal::get),
         ir,
         annotations,
         losses,
     )?;
-    let targets = targets::flatness_targets(ctx, scan, &owners, &tolerances, ir)?;
+    let targets = targets::tolerance_targets(
+        ctx,
+        scan,
+        &owners,
+        &tolerances,
+        &dimension_targets,
+        ir,
+        losses,
+    )?;
     let mut emitted = 0usize;
     let mut text_magnitudes = 0usize;
     let mut conflicting = 0usize;
     let mut datum_state = DatumState::default();
     let mut inferred_targets = 0usize;
+    let mut dimension_targets_used = 0usize;
     for ((owner, owner_type), tolerance) in tolerances {
         if !matches!(owners.get(&(owner, owner_type)), Some(Some(_))) {
             unresolved += 1;
             continue;
         }
         let first_key = format!("{owner_type}:{owner}");
-        let target = targets.get(&(owner, owner_type)).cloned();
+        let target = targets.get(&(owner, owner_type));
+        let target_faces = target
+            .map(targets::ToleranceTarget::faces)
+            .unwrap_or_default();
+        let surface_target =
+            usize::from(matches!(target, Some(targets::ToleranceTarget::Surface(_))));
+        let dimension_target = usize::from(matches!(
+            target,
+            Some(targets::ToleranceTarget::Dimension(_))
+        ));
         let references = datum_system(
             ctx,
             ir,
@@ -202,10 +224,11 @@ pub(super) fn transfer(
                 (&first_key, tolerance.offset),
                 (kind.clone(), value),
                 references,
-                target.clone().into_iter().collect(),
+                target_faces.clone(),
             )?;
             emitted += 1;
-            inferred_targets += usize::from(target.is_some());
+            inferred_targets += surface_target;
+            dimension_targets_used += dimension_target;
         } else {
             unresolved += 1;
         }
@@ -233,10 +256,12 @@ pub(super) fn transfer(
                     (&second_key, tolerance.offset),
                     (kind, secondary),
                     second_references,
-                    Vec::new(),
+                    target_faces,
                 )?;
                 emitted += 1;
                 text_magnitudes += 1;
+                inferred_targets += surface_target;
+                dimension_targets_used += dimension_target;
             } else {
                 unresolved += 1;
             }
@@ -270,6 +295,11 @@ pub(super) fn transfer(
             "{inferred_targets} geometric tolerance(s) use the unique face of the referenced surface as the target."
         )));
     }
+    if dimension_targets_used != 0 {
+        losses.push(CreoLossCode::PmiToleranceTargetInferred.note(format!(
+            "{dimension_targets_used} geometric tolerance(s) attached to a dimension use that dimension's targets."
+        )));
+    }
     if text_magnitudes != 0 {
         losses.push(CreoLossCode::PmiTextMagnitudeInferred.note(format!("{text_magnitudes} composite tolerance segment(s) use the leading numeric value of the formatted magnitude. Trailing text and segment grouping are unresolved.")));
     }
@@ -285,7 +315,7 @@ pub(super) fn transfer(
             datum_state.unresolved
         )));
     }
-    Ok(())
+    Ok(targets::dimension_targets_by_slot(&dimension_targets))
 }
 
 fn section<'a>(scan: &'a ContainerScan<'_>, name: &str) -> Option<View<'a>> {

@@ -350,7 +350,7 @@ fn keeps_repeated_labels_as_separate_definition_slot_identities() {
 }
 
 #[test]
-fn retains_labels_when_the_preceding_definition_id_uses_an_extended_compact() {
+fn reads_two_byte_attributes_and_definition_ids_before_slave_info() {
     let mut payload = definition_array(16, 13, Some((0x25, 106)));
     let mut tags = tag_array(16, 13, Some(13), b"A", false);
     tags.extend_from_slice(&positional_tag_with_prefix(
@@ -364,7 +364,7 @@ fn retains_labels_when_the_preceding_definition_id_uses_an_extended_compact() {
 
     let (tags, unresolved) = decoded(&payload);
     assert_eq!(tags[1].identification, "B");
-    assert_eq!(tags[1].definition_id, None);
+    assert_eq!(tags[1].definition_id, Some(0x125));
     assert_eq!(tags[1].definition_slot, None);
     assert_eq!(tags[2].identification, "C");
     assert_eq!(tags[2].definition_id, Some(15));
@@ -413,4 +413,106 @@ fn does_not_label_join_when_an_unparsed_row_could_repeat_a_known_label() {
     assert_eq!(tags.len(), 1);
     assert_eq!(tags[0].identification, "A");
     assert_eq!(unparsed_label_slots, 2);
+}
+
+/// A definition array whose later rows replay `p_ldr.note_att` surface leaders.
+fn definition_array_with_leaders(count: u8, nulls: usize, leaders: &[u8]) -> Vec<u8> {
+    let mut bytes = array(
+            b"\x00gtol_datum_def_xar",
+            count,
+            10,
+            nulls,
+            b"\xe3\xe0\x01datum_type\0\x01\xe0\x01datum_id\0\xf6\xe0\x01feat_id\0\xf6\xe0\x01gtol_id\0\xf6\xe0\x00p_ldr\0\xe3\xe0\x01ldr_attrib\0\x00\xe0\x00note_att\0\xe3\xe0\x01type\0\x25\xe0\x01attach_id\0\x6a",
+        );
+    bytes.extend_from_slice(
+            b"\xe0\x00att_offsets\0\xf8\x00\xf1\xf7\x14\xe3\xe0\x00p_tgt_info\0\xe1\xe0\x01disp_dtm_geom\0\x01\xf1\xf7\x0a\xe3",
+        );
+    for (index, id) in leaders.iter().enumerate() {
+        if index > 0 {
+            bytes.push(0xe3);
+        }
+        bytes.extend_from_slice(b"\x01\xf6\xf6\xf6\xe3\x00\xe3\x25");
+        bytes.push(*id);
+        bytes.extend_from_slice(b"\xf8\x00\xe4\x00\xe1\x01");
+    }
+    bytes
+}
+
+fn leader_fixture(leaders: &[u8]) -> Vec<u8> {
+    let mut payload = definition_array_with_leaders(16, 13, leaders);
+    payload.extend_from_slice(&tag_array(16, 13, Some(13), b"A", true));
+    payload.extend_from_slice(&field(b"\x00drf_data_xar", &[0xe1]));
+    payload
+}
+
+#[test]
+fn later_definition_leaders_fill_the_slots_after_the_prototype() {
+    let (tags, unresolved) = decoded(&leader_fixture(&[0x52, 0x5e]));
+    assert_eq!(unresolved, 0);
+    assert_eq!(
+        tags.iter()
+            .map(|tag| (
+                tag.identification.as_str(),
+                tag.definition_slot,
+                tag.attachment
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "A",
+                Some(13),
+                Some(DatumAttachment {
+                    reference_type: 0x25,
+                    id: 0x6a
+                })
+            ),
+            (
+                "B",
+                Some(14),
+                Some(DatumAttachment {
+                    reference_type: 0x25,
+                    id: 0x52
+                })
+            ),
+            (
+                "C",
+                Some(15),
+                Some(DatumAttachment {
+                    reference_type: 0x25,
+                    id: 0x5e
+                })
+            ),
+        ]
+    );
+}
+
+#[test]
+fn definition_leaders_need_one_row_per_later_slot() {
+    let (tags, unresolved) = decoded(&leader_fixture(&[0x52]));
+    assert_eq!(unresolved, 2);
+    assert!(tags
+        .iter()
+        .skip(1)
+        .all(|tag| tag.definition_slot.is_none() && tag.attachment.is_none()));
+}
+
+#[test]
+fn a_positional_prototype_leader_keeps_its_type_and_identifier() {
+    let mut payload = definition_array_with_leaders(16, 13, &[0x52, 0x5e]);
+    let named = b"\xe3\xe0\x01type\0\x25\xe0\x01attach_id\0\x6a\xe0\x00att_offsets\0";
+    let start = payload
+        .windows(named.len())
+        .position(|window| window == named)
+        .expect("named prototype leader");
+    payload.splice(start..start + named.len(), *b"\xe3\xf7\x63\x05\x81\x7f");
+    payload.extend_from_slice(&tag_array(16, 13, Some(13), b"A", true));
+    payload.extend_from_slice(&field(b"\x00drf_data_xar", &[0xe1]));
+    let (tags, _) = decoded(&payload);
+    assert_eq!(
+        tags[0].attachment,
+        Some(DatumAttachment {
+            reference_type: 5,
+            id: 0x17f
+        })
+    );
 }
