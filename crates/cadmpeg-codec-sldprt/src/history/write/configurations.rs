@@ -4,7 +4,6 @@
 use crate::loss::SldprtLossCode;
 use crate::records::{Configuration, FeatureHistory};
 use crate::writer::write_error::WriteError;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration, DistinctMembers, ParameterValue};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -62,7 +61,7 @@ pub(crate) fn ensure_default_configuration(
     projected: &mut CadIr,
     supported: &[BodyId],
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let geometry = !supported.is_empty()
         || !projected.model.points.is_empty()
         || !projected.model.curves.is_empty()
@@ -70,9 +69,13 @@ pub(crate) fn ensure_default_configuration(
     if !projected.scope.design || !projected.model.configurations.is_empty() || !geometry {
         return Ok(());
     }
-    let id = ConfigurationId::mint("sldprt:model:configuration#default")
-        .map_err(|_| CodecError::malformed("SLDPRT default configuration identity is invalid"))?;
-    let bodies = DistinctMembers::try_from(supported.to_vec()).map_err(CodecError::malformed)?;
+    let id = ConfigurationId::mint("sldprt:model:configuration#default").map_err(|_| {
+        crate::writer::write_error::WriteError::Unwritable(
+            "SLDPRT default configuration identity is invalid".into(),
+        )
+    })?;
+    let bodies = DistinctMembers::try_from(supported.to_vec())
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
     losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
         "configuration {id}: the document carries no configuration, so synthesis authored the required native default carrying {} body(s)",
         supported.len()
@@ -163,7 +166,9 @@ pub(crate) fn synchronize_configuration_records(
         >::new();
         for (id, value) in values {
             let parameter = parameter_by_id.get(id).ok_or_else(|| {
-                CodecError::malformed("SLDPRT configuration references a missing parameter")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "SLDPRT configuration references a missing parameter".into(),
+                )
             })?;
             let owner = parameter.owner.as_ref().ok_or_else(|| {
                 WriteError::Decline(format!(
@@ -180,7 +185,9 @@ pub(crate) fn synchronize_configuration_records(
         let mut insertions = BTreeMap::<usize, Vec<u8>>::new();
         for (owner, values) in groups {
             let feature = feature_by_id.get(owner).ok_or_else(|| {
-                CodecError::malformed("SLDPRT configuration parameter references a missing feature")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "SLDPRT configuration parameter references a missing feature".into(),
+                )
             })?;
             let record = native
                 .feature_histories
@@ -272,7 +279,7 @@ type GeneratedLaneObjects = (Vec<u8>, HashMap<u32, Option<usize>>);
 fn generated_lane_objects(
     native: &crate::native::SldprtNative,
     slot: &str,
-) -> Result<GeneratedLaneObjects, CodecError> {
+) -> Result<GeneratedLaneObjects, crate::writer::write_error::WriteError> {
     let features = native
         .feature_histories
         .iter()
@@ -297,18 +304,20 @@ fn generated_lane_objects(
         objects.sort_unstable();
         for (index, &(_, id)) in objects.iter().enumerate() {
             let end = match objects.get(index + 1) {
-                Some((offset, _)) => usize::try_from(*offset).map_err(CodecError::malformed)?,
+                Some((offset, _)) => usize::try_from(*offset)
+                    .map_err(crate::writer::write_error::WriteError::unwritable)?,
                 None => lane.native_payload.len(),
             };
             if end > lane.native_payload.len() {
-                return Err(CodecError::malformed(
-                    "generated feature object exceeds its lane",
+                return Err(crate::writer::write_error::WriteError::Unwritable(
+                    "generated feature object exceeds its lane".into(),
                 ));
             }
-            let end = payload
-                .len()
-                .checked_add(end)
-                .ok_or_else(|| CodecError::malformed("generated lane offset overflow"))?;
+            let end = payload.len().checked_add(end).ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "generated lane offset overflow".into(),
+                )
+            })?;
             ends.entry(id)
                 .and_modify(|entry| *entry = None)
                 .or_insert(Some(end));

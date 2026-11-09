@@ -181,7 +181,7 @@ impl GeneratedValue<'_> {
                 .find(|parameter| parameter.id == *id)
                 .map(|parameter| parameter.name.clone())
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
+                    crate::writer::write_error::WriteError::Unwritable(format!(
                         "SLDPRT sketch dimension references missing parameter {id}"
                     ))
                 })?,
@@ -230,7 +230,9 @@ pub(super) fn append_generated_sketch_markers(
         .ok()
         .and_then(|count| count.checked_add(1))
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed("SLDPRT marker-local id space is exhausted")
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT marker-local id space is exhausted".into(),
+            )
         })?;
     for (locus, point, kind, local_id) in &marker_loci {
         append_coordinate_marker(
@@ -313,7 +315,7 @@ pub(super) fn append_generated_sketch_markers(
         }
         append_reference_marker(payload, kind, links, next_id);
         next_id = next_id.checked_add(1).ok_or_else(|| {
-            cadmpeg_core::CodecError::Malformed(
+            crate::writer::write_error::WriteError::Unwritable(
                 "source-less SLDPRT marker-local id space is exhausted".into(),
             )
         })?;
@@ -494,7 +496,7 @@ pub(super) fn append_generated_sketch_markers(
         let (name, value) = parameter.render(ir, next_id)?;
         append_generated_scalar(payload, class, &name, value, next_id, &operands)?;
         next_id = next_id.checked_add(1).ok_or_else(|| {
-            cadmpeg_core::CodecError::Malformed(
+            crate::writer::write_error::WriteError::Unwritable(
                 "source-less SLDPRT marker-local id space is exhausted".into(),
             )
         })?;
@@ -673,7 +675,7 @@ pub(super) fn append_scalar_fields(
     let units = name.encode_utf16().collect::<Vec<_>>();
     let length = crate::writer::feature_input_name_len(units.len())?;
     if length == 0 {
-        return Err(cadmpeg_core::CodecError::Malformed(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "SLDPRT generated parameter name must not be empty".into(),
         )
         .into());
@@ -780,7 +782,7 @@ fn generated_operand_address(
             ))
         })?;
     u16::try_from(ordinal).map_err(|_| {
-        WriteError::from(cadmpeg_core::CodecError::malformed(format_args!(
+        WriteError::from(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT sketch {} exceeds the dimension operand space",
             sketch.id.as_str()
         )))
@@ -855,7 +857,7 @@ pub(super) fn append_coordinate_marker_link(
         )));
     };
     let count = usize::from(View::u16_le_at(payload, *offset + 84).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(
+        crate::writer::write_error::WriteError::Unwritable(
             "source-less SLDPRT coordinate marker is truncated".into(),
         )
     })?);
@@ -866,7 +868,7 @@ pub(super) fn append_coordinate_marker_link(
         });
     }
     if count > 0 && payload.get(*offset + 86..*offset + 88) != Some(&SELECTOR.to_le_bytes()) {
-        return Err(cadmpeg_core::CodecError::Malformed(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "source-less SLDPRT coordinate marker changed reverse-relation selector".into(),
         )
         .into());
@@ -874,7 +876,7 @@ pub(super) fn append_coordinate_marker_link(
     let cell = offset + 86 + count * 12;
     let end = cell + 18;
     let bytes = payload.get_mut(cell..end).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(
+        crate::writer::write_error::WriteError::Unwritable(
             "source-less SLDPRT coordinate marker reverse relation is truncated".into(),
         )
     })?;
@@ -884,7 +886,7 @@ pub(super) fn append_coordinate_marker_link(
     bytes[4..8].fill(0xff);
     bytes[14..18].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
     let relation_count = u16::try_from(count + 1).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(
+        crate::writer::write_error::WriteError::Unwritable(
             "source-less SLDPRT coordinate marker reverse relation count exceeds 65535".into(),
         )
     })?;

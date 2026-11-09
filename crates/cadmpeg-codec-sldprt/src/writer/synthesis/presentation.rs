@@ -3,7 +3,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::report::loss::LossNote;
@@ -117,14 +116,20 @@ pub(super) fn reduce(
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| {
-                CodecError::malformed(format_args!("invalid tessellation channel: {error}"))
+                crate::writer::write_error::WriteError::Unwritable(format!(
+                    "invalid tessellation channel: {error}"
+                ))
             })?;
         let strip_lengths = mesh
             .strip_lengths()
             .iter()
             .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
+            .map_err(|_| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "tessellation strip length overflow".into(),
+                )
+            })?;
         let auxiliary = &channels[auxiliary_start.min(channels.len())..];
         let keep_channels = unwritable == 0
             && (auxiliary.is_empty()
@@ -137,7 +142,11 @@ pub(super) fn reduce(
             mesh.mesh().clone(),
             if keep_channels { channels } else { Vec::new() },
         )
-        .map_err(|error| CodecError::malformed(format_args!("invalid tessellation: {error}")))?
+        .map_err(|error| {
+            crate::writer::write_error::WriteError::Unwritable(format!(
+                "invalid tessellation: {error}"
+            ))
+        })?
         .with_body(mesh.body.clone());
         let mut candidate = CadIr::empty();
         candidate.model.tessellations.push(clean.clone());

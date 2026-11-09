@@ -93,8 +93,8 @@ fn sync_neutral_parameters(
         .collect::<HashMap<_, _>>();
     let global_owners = global_parameter_owners(&ir.model.features);
     if parameters_with_incoherent_dependencies(parameters, &feature_names, &global_owners) > 0 {
-        return Err(CodecError::malformed(
-            "SLDPRT parameter expressions reference missing canonical identities",
+        return Err(crate::writer::write_error::WriteError::Unwritable(
+            "SLDPRT parameter expressions reference missing canonical identities".into(),
         )
         .into());
     }
@@ -156,7 +156,7 @@ fn sync_neutral_parameters(
                     Some(render_identifier(&name))
                 })
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    crate::writer::write_error::WriteError::Unwritable(format!(
                         "SLDPRT parameter {} references an unrenderable canonical identity",
                         parameter.id
                     ))
@@ -170,7 +170,7 @@ fn sync_neutral_parameters(
             };
             Ok((parameter.id.clone(), text))
         })
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, crate::writer::write_error::WriteError>>()?;
     let features = ir
         .model
         .features
@@ -237,7 +237,7 @@ fn sync_neutral_parameters(
             )));
         };
         if !features.contains_key(owner_id) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT parameter {} references a missing feature",
                 parameter.id
             ))
@@ -248,7 +248,7 @@ fn sync_neutral_parameters(
             .iter()
             .any(|candidate| candidate.name == parameter.name)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "duplicate SLDPRT parameter {} on feature {}",
                 parameter.name, owner_id
             ))
@@ -258,7 +258,7 @@ fn sync_neutral_parameters(
             .iter()
             .any(|candidate| candidate.ordinal == parameter.ordinal)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "duplicate SLDPRT parameter ordinal {} on feature {}",
                 parameter.ordinal, owner_id
             ))
@@ -398,7 +398,7 @@ fn sync_neutral_parameters(
             {
                 continue;
             }
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "SLDPRT parameter {} references missing scalar {native_ref}",
                 parameter.id.as_str()
             ))
@@ -436,16 +436,24 @@ fn sync_neutral_parameters(
                 )));
             }
         };
-        let checked = cadmpeg_ir::scalar::FiniteReal::new(value)
-            .ok_or_else(|| CodecError::malformed("SLDPRT scalar update is non-finite"))?;
+        let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT scalar update is non-finite".into(),
+            )
+        })?;
         if !lane.native_payload.is_empty() {
-            let offset = usize::try_from(scalar.offset)
-                .map_err(|_| CodecError::malformed("SLDPRT scalar offset exceeds address space"))?;
+            let offset = usize::try_from(scalar.offset).map_err(|_| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "SLDPRT scalar offset exceeds address space".into(),
+                )
+            })?;
             let end = offset.checked_add(8).ok_or_else(|| {
-                CodecError::malformed("SLDPRT scalar extent overflows address space")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "SLDPRT scalar extent overflows address space".into(),
+                )
             })?;
             let bytes = lane.native_payload.get_mut(offset..end).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "SLDPRT scalar {} lies outside its payload",
                     scalar.id
                 ))
@@ -466,7 +474,7 @@ fn sync_neutral_parameters(
 pub(crate) fn orphaned_scalar_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
-) -> Result<HashSet<ParameterId>, CodecError> {
+) -> Result<HashSet<ParameterId>, crate::writer::write_error::WriteError> {
     let Some(native) = native else {
         return Ok(HashSet::new());
     };

@@ -5309,19 +5309,24 @@ fn stamp_local_digests(
         return Ok(());
     }
     let brep = brep_local_sha256_in_place(ctx, ir)?;
-    let (swobjects, material, identities) = match (|| -> Result<_, CodecError> {
-        Ok((
-            crate::writer::swobjects_local_sha256(ctx, ir)?,
-            crate::writer::swobjects_material_local_sha256(ctx, ir)?,
-            crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?,
-        ))
-    })() {
-        Ok((objects, material, identities)) => (Some(objects), Some(material), Some(identities)),
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        // A source-layout optimization is optional when a current attribute
-        // cannot be serialized by the source's metadata grammar.
-        Err(_) => (None, None, None),
-    };
+    let (swobjects, material, identities) =
+        match (|| -> Result<_, crate::writer::write_error::WriteError> {
+            Ok((
+                crate::writer::swobjects_local_sha256(ctx, ir)?,
+                crate::writer::swobjects_material_local_sha256(ctx, ir)?,
+                crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?,
+            ))
+        })() {
+            Ok((objects, material, identities)) => {
+                (Some(objects), Some(material), Some(identities))
+            }
+            Err(crate::writer::write_error::WriteError::Fatal(
+                error @ CodecError::ResourceLimit(_),
+            )) => return Err(error),
+            // A source-layout optimization is optional when a current attribute
+            // cannot be serialized by the source's metadata grammar.
+            Err(_) => (None, None, None),
+        };
     ir.native.namespace_mut("sldprt").set_arena(
         ctx,
         "decode_baselines",

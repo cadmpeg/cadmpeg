@@ -2,7 +2,6 @@
 //! Neutral feature synchronization into native history records.
 
 use crate::records::{Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     DesignParameter, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
     ParameterId,
@@ -159,8 +158,11 @@ fn generated_feature_source_ids(
         }
         allocated.insert(
             feature.id.clone(),
-            FeatureSource::from_value(source)
-                .ok_or_else(|| CodecError::malformed("invalid principal-plane source identity"))?,
+            FeatureSource::from_value(source).ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "invalid principal-plane source identity".into(),
+                )
+            })?,
         );
     }
     for feature in features
@@ -177,7 +179,9 @@ fn generated_feature_source_ids(
             allocate_feature_source_id(&mut used, &mut next)?
         };
         let source_id = FeatureSource::from_value(source_id).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT feature source-id space is exhausted".into(),
+            )
         })?;
         allocated.insert(feature.id.clone(), source_id);
     }
@@ -266,7 +270,7 @@ pub(crate) fn dependency_mismatches(
     features: &[cadmpeg_ir::features::Feature],
     record_ids: &HashMap<FeatureId, String>,
     projected: &[cadmpeg_ir::features::Feature],
-) -> Result<Vec<DependencyMismatch>, CodecError> {
+) -> Result<Vec<DependencyMismatch>, crate::writer::write_error::WriteError> {
     let projected = projected
         .iter()
         .map(|feature| (feature.id.clone(), feature))
@@ -281,7 +285,7 @@ pub(crate) fn dependency_mismatches(
                 Some(record) => neutral_feature_id(record),
                 None => Ok(dependency.clone()),
             })
-            .collect::<Result<Vec<_>, CodecError>>()?;
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
         let consistent = projected.get(&projected_id).is_some_and(|projected| {
             if feature.native_ref.is_some() {
                 projected.dependencies.as_slice() == expected
@@ -574,11 +578,13 @@ fn synchronize_features(
         .enumerate()
         .map(|(rank, (_, feature))| {
             let rank = u32::try_from(rank).map_err(|_| {
-                CodecError::malformed("SLDPRT native history cannot index this many features")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "SLDPRT native history cannot index this many features".into(),
+                )
             })?;
             Ok((&feature.id, rank))
         })
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, crate::writer::write_error::WriteError>>()?;
     let mut scope_ids = HashMap::new();
     for body in bodies {
         scope_ids.insert(body.id.as_str(), Some(&body.id));

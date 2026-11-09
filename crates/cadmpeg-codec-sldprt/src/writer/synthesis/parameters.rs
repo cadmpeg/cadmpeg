@@ -4,7 +4,6 @@
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     edge_treatments::RadiusSpec, DesignParameter, Dimension, ExpressionToken, FeatureDefinition,
     FeatureId, FeatureOperation, FeatureSourceContent, ParameterValue, RibDraft, ScaleFactors,
@@ -124,7 +123,7 @@ pub(super) fn move_unreferenced(
     ir: &mut CadIr,
     native: &mut SldprtNative,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let mut omitted = candidates(ir);
     if omitted.is_empty() {
         return Ok(());
@@ -253,7 +252,7 @@ fn move_to_global_owner(
     ir: &mut CadIr,
     candidates: &BTreeSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<HashMap<String, String>, CodecError> {
+) -> Result<HashMap<String, String>, crate::writer::write_error::WriteError> {
     let existing = super::design::find_generated_global_owner(ir);
     let global_owners = crate::history::parameters::global_parameter_owners(&ir.model.features);
     let is_global = |owner: Option<&FeatureId>| {
@@ -332,14 +331,14 @@ fn move_to_global_owner(
 fn remove_positions(
     feature: &mut cadmpeg_ir::features::Feature,
     removed: &BTreeSet<String>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if feature.source_content.iter().any(|content| {
         matches!(content,
         FeatureSourceContent::Parameter(id) if removed.contains(id.as_str()))
     }) {
         feature.source_content = feature.source_content.iter().filter(|content| {
             !matches!(content, FeatureSourceContent::Parameter(id) if removed.contains(id.as_str()))
-        }).cloned().collect::<Vec<_>>().try_into().map_err(CodecError::malformed)?;
+        }).cloned().collect::<Vec<_>>().try_into().map_err(crate::writer::write_error::WriteError::unwritable)?;
     }
     Ok(())
 }
