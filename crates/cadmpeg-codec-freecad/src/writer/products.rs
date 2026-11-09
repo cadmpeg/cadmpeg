@@ -29,7 +29,7 @@ fn link_list(property: &str, members: &[String]) -> String {
 fn bool_property(object: &mut Object, name: &str, value: bool) {
     object.set(
         name,
-        xml::scalar(name, "App::PropertyBool", "Bool", u8::from(value)),
+        xml::scalar(name, "App::PropertyBool", "Bool", value),
     );
 }
 
@@ -657,6 +657,12 @@ pub(super) fn write(
             *shared_uses.entry(native).or_default() += 1;
         }
     }
+    let native_properties = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::PropertyRecord>("properties"))
+        .transpose()?
+        .unwrap_or_default();
     let mut emitted_links = HashMap::<String, String>::new();
     let mut array_elements = HashMap::<String, Vec<String>>::new();
     let native_types = ir
@@ -860,15 +866,31 @@ pub(super) fn write(
             };
             if let Some(transform) = transform {
                 let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
-                object.set(
-                    "Placement",
-                    placement(
-                        rigid,
-                        occurrence.id.as_str(),
-                        FreecadLossCode::ProductPlacementNotRigid,
-                        losses,
-                    ),
+                let written = placement(
+                    rigid,
+                    occurrence.id.as_str(),
+                    FreecadLossCode::ProductPlacementNotRigid,
+                    losses,
                 );
+                // A sketch or feature sharing the object writes the same
+                // Placement; a value that differs from the stored one wins.
+                let stored = occurrence.native_ref.as_deref().and_then(|owner| {
+                    native_properties
+                        .iter()
+                        .find(|property| property.owner == owner && property.name == "Placement")
+                        .and_then(xml::native_placement)
+                });
+                let edited_elsewhere = stored.is_some_and(|stored| {
+                    xml::written_placement(&written) == Some(stored)
+                        && object
+                            .properties
+                            .get("Placement")
+                            .and_then(|existing| xml::written_placement(existing))
+                            .is_some_and(|existing| existing != stored)
+                });
+                if !edited_elsewhere {
+                    object.set("Placement", written);
+                }
                 // Only a link stores a scale beside its Placement.
                 let link = matches!(object.kind.as_str(), "App::Link" | "App::LinkElement");
                 if scale != [1.0; 3] && !link {

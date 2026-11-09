@@ -257,7 +257,7 @@ fn an_appearance_name_has_no_gui_home() {
 }
 
 #[test]
-fn a_dimension_parameter_that_does_not_parse_is_omitted() {
+fn a_dimension_parameter_that_does_not_parse_stores_its_restored_value() {
     let document = decode("techdraw-dimensions.FCStd");
     let id = document["model"]["semantic_annotations"][0]["id"]
         .as_str()
@@ -273,8 +273,8 @@ fn a_dimension_parameter_that_does_not_parse_is_omitted() {
         id
     ));
     assert_eq!(
-        record(&output, &document, "semantic_annotations", 0)["parameters"].get("AngleOverride"),
-        None
+        record(&output, &document, "semantic_annotations", 0)["parameters"]["AngleOverride"],
+        json!("false")
     );
 }
 

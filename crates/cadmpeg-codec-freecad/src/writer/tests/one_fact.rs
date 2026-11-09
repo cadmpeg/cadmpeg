@@ -1132,7 +1132,7 @@ fn edited_dimension_caption_reaches_output() {
 
 #[test]
 fn edited_annotation_scalar_parameters_reach_output() {
-    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="3"><Property name="Arbitrary" type="App::PropertyBool"><Bool value="0"/></Property><Property name="Count" type="App::PropertyInteger"><Integer value="1"/></Property><Property name="Size" type="App::PropertyFloat"><Float value="1.5"/></Property></Properties></Object></ObjectData></Document>"#;
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="3"><Property name="Inverted" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Count" type="App::PropertyInteger"><Integer value="1"/></Property><Property name="Size" type="App::PropertyFloat"><Float value="1.5"/></Property></Properties></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
@@ -1141,7 +1141,7 @@ fn edited_annotation_scalar_parameters_reach_output() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     let annotation = &mut ir.model.semantic_annotations[0];
-    for (name, value) in [("Arbitrary", "true"), ("Count", "2"), ("Size", "2.5")] {
+    for (name, value) in [("Inverted", "true"), ("Count", "2"), ("Size", "2.5")] {
         *annotation.parameters.get_mut(name).unwrap() = value.into();
     }
     let plan = FcstdCodec
@@ -1153,7 +1153,7 @@ fn edited_annotation_scalar_parameters_reach_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let parameters = &output.ir().model.semantic_annotations[0].parameters;
-    assert_eq!(parameters["Arbitrary"], "true");
+    assert_eq!(parameters["Inverted"], "true");
     assert_eq!(parameters["Count"], "2");
     assert_eq!(parameters["Size"], "2.5");
     let properties = output
@@ -1165,9 +1165,9 @@ fn edited_annotation_scalar_parameters_reach_output() {
         .unwrap();
     let flag = properties
         .iter()
-        .find(|property| property.name == "Arbitrary")
+        .find(|property| property.name == "Inverted")
         .unwrap();
-    assert_eq!(flag.values()[0].attributes["value"], "1");
+    assert_eq!(flag.values()[0].attributes["value"], "true");
 }
 
 #[test]
