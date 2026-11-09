@@ -3229,16 +3229,7 @@ fn bind_parameter_dependencies(
                 .or_else(|| local.get(&(parameter.owner.clone(), identifier.to_owned())));
             if let Some(dependency) = dependency {
                 spans.push((span, dependency.clone()));
-            } else if !identifier
-                .as_bytes()
-                .first()
-                .is_some_and(u8::is_ascii_digit)
-                && !matches!(
-                    identifier,
-                    "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad" | "true" | "false" | "pi" | "e"
-                )
-                && !text[span.end..].trim_start().starts_with('(')
-            {
+            } else if names_a_quantity(&text, &span, identifier) {
                 losses.push(crate::loss::FreecadLossCode::ExpressionReferenceUnresolved.note(format!("parameter {} expression identifier {identifier:?} has no unique parameter target and remains literal text", parameter.id)));
             }
         }
@@ -3323,6 +3314,25 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
     for position in order {
         parameters.extend(slots[position].take());
     }
+}
+
+/// Whether `identifier` at `span` of `text` names a quantity: it is not a
+/// number, a unit or constant, or a function name.
+fn names_a_quantity(text: &str, span: &std::ops::Range<usize>, identifier: &str) -> bool {
+    !identifier
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_digit)
+        && !matches!(
+            identifier,
+            "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad" | "true" | "false" | "pi" | "e"
+        )
+        && !text[span.end..].trim_start().starts_with('(')
+}
+
+/// Whether expression `text` names a quantity outside its references.
+pub(crate) fn names_free_quantity(text: &str) -> bool {
+    expression_identifiers(text).any(|(span, identifier)| names_a_quantity(text, &span, identifier))
 }
 
 fn expression_identifiers(
