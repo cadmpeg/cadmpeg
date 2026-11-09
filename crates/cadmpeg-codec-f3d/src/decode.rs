@@ -2923,6 +2923,7 @@ impl<'a> F3dDecodeSession<'a> {
         } = design;
         self.report.losses.extend(losses);
         model.store(&mut self.ir.model);
+        removed_bodies::mark(&mut self.ir.model);
         native
     }
 
@@ -5623,6 +5624,7 @@ pub(crate) fn apply_body_presentation_names(
 pub(crate) mod design_intent;
 mod geometry_admission;
 mod prereqs;
+mod removed_bodies;
 
 #[cfg(test)]
 mod tests;
