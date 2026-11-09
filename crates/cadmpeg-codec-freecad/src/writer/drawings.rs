@@ -1245,7 +1245,7 @@ mod tests {
 
 /// The `SavedGeometry` properties whose measurement disagrees with the value
 /// of their dimension. The re-decode measures the value on that geometry, so
-/// each such property is omitted and its dimension named by a loss.
+/// each such cache is written empty and its dimension named by a loss.
 pub(super) fn contradicted_measurements(
     ir: &CadIr,
     properties: &[crate::native::PropertyRecord],
@@ -1282,7 +1282,7 @@ pub(super) fn contradicted_measurements(
         if measured.is_none_or(|(measured, _)| measured != value.get()) {
             contradicted.insert(saved.id.clone());
             losses.push(FreecadLossCode::AnnotationValueDerived.note(format!(
-                "annotation {} value is measured on its saved reference geometry, which disagrees and is omitted",
+                "annotation {} value is measured on its saved reference geometry, which disagrees and is written empty",
                 annotation.id
             )));
         }
