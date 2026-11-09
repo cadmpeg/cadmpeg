@@ -1945,7 +1945,6 @@ fn combine_states_applied_operation(
         })
 }
 
-/// The history state a feature's scope produces and the state it follows.
 /// The outputs of a derived base group feature in the record-index order of
 /// its scopes, each scope contributing the outputs of its own history state;
 /// every other feature keeps `outputs`.
@@ -1986,6 +1985,8 @@ fn derived_base_output_order(
     ordered
 }
 
+/// The history states a feature's scope produces and follows; a derived base
+/// group spans the states of all its scopes.
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
