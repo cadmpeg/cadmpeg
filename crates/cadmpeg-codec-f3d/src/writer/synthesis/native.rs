@@ -68,6 +68,7 @@ const WRITTEN: &[&str] = &[
     "design_mesh_features",
     "design_parameter_scopes",
     "design_construction_operand_groups",
+    "design_body_recipe_operands",
     "body_native_keys",
     "body_visibilities",
     "edge_continuities",
