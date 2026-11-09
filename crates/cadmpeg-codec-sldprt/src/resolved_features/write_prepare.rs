@@ -119,7 +119,7 @@ pub(crate) fn prepare_sketches_for_write(
     {
         // (P): replacing a source sketch object can move references throughout
         // its input lane. Author the current document through synthesis.
-        return Err(cadmpeg_core::CodecError::InvalidInput(
+        return Err(crate::writer::write_error::WriteError::Decline(
             "SLDPRT canonical sketch regeneration requires synthesized input lanes".into(),
         )
         .into());
@@ -134,7 +134,7 @@ pub(crate) fn prepare_sketches_for_write(
 
 fn validate_source_less_constraints(
     ir: &cadmpeg_ir::CadIr,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     for constraint in &ir.model.sketch_constraints {
         let SketchConstraintDefinitionInput::CoincidentLoci { loci } = constraint.definition.kind()
         else {
@@ -142,7 +142,7 @@ fn validate_source_less_constraints(
             continue;
         };
         if loci.len() < 2 {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+            return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                 "sketch constraint {} requires at least two loci",
                 constraint.id.as_str()
             )));
@@ -153,7 +153,7 @@ fn validate_source_less_constraints(
             if !sketch_evaluation_is_stale(ir, &constraint.sketch)
                 && expected.is_some_and(|expected| !same_sketch_point(expected, point))
             {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT sketch constraint {} has noncoincident locus coordinates",
                     constraint.id.as_str()
                 )));
@@ -231,7 +231,7 @@ fn constraint_input_kind(input: &SketchConstraintDefinitionInput) -> &'static st
 fn validate_generated_marker_constraint(
     ir: &cadmpeg_ir::CadIr,
     constraint: &SketchConstraint,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if !ir.model.features.iter().any(|feature| {
         matches!(
             feature.evaluation.definition(),
@@ -240,7 +240,7 @@ fn validate_generated_marker_constraint(
             }) if sketch == &constraint.sketch
         )
     }) {
-        return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+        return Err(crate::writer::write_error::WriteError::Decline(format!(
             "source-less SLDPRT marker relation {} requires an owning sketch feature",
             constraint.id.as_str()
         )));
@@ -260,7 +260,7 @@ fn validate_generated_marker_constraint(
                 && !sketch_evaluation_is_stale(ir, &constraint.sketch)
                 && delta > SKETCH_POINT_TOLERANCE
             {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT sketch constraint {} is not satisfied by its locus coordinates",
                     constraint.id.as_str()
                 )));
@@ -271,7 +271,7 @@ fn validate_generated_marker_constraint(
             let point = constraint_locus_point(ir, constraint, point)?;
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
             let (start, end) = sketch_line(&entity.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::InvalidInput(format!(
+                crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT midpoint constraint {} requires a line entity",
                     constraint.id.as_str()
                 ))
@@ -282,7 +282,7 @@ fn validate_generated_marker_constraint(
                     Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
                 )
             {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT sketch constraint {} is not satisfied by its midpoint coordinates",
                     constraint.id.as_str()
                 )));
@@ -295,7 +295,7 @@ fn validate_generated_marker_constraint(
             second,
         } => {
             if first == second {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT at-intersection constraint {} repeats one entity",
                     constraint.id.as_str()
                 )));
@@ -306,7 +306,7 @@ fn validate_generated_marker_constraint(
                 if !sketch_evaluation_is_stale(ir, &constraint.sketch)
                     && !sketch_entity_contains_point(entity, point)
                 {
-                    return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                         "source-less SLDPRT at-intersection constraint {} is not satisfied by its entity geometry",
                         constraint.id.as_str()
                     )));
@@ -320,7 +320,7 @@ fn validate_generated_marker_constraint(
             axis,
         } => {
             if first == second {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT symmetric constraint {} repeats one locus",
                     constraint.id.as_str()
                 )));
@@ -329,13 +329,13 @@ fn validate_generated_marker_constraint(
             let second = constraint_locus_point(ir, constraint, second)?;
             let axis = sketch_constraint_entity(ir, constraint, axis)?;
             let Some(solved) = symmetric_loci_match_axis(first, second, axis) else {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT symmetric constraint {} requires a nondegenerate line axis",
                     constraint.id.as_str()
                 )));
             };
             if !sketch_evaluation_is_stale(ir, &constraint.sketch) && !solved {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT symmetric constraint {} is not satisfied by its locus coordinates",
                     constraint.id.as_str()
                 )));
@@ -348,7 +348,7 @@ fn validate_generated_marker_constraint(
         DimensionDefinition::from_definition(constraint.definition.kind())
     {
         let expected = value.magnitude(ir).ok_or_else(|| {
-            cadmpeg_core::CodecError::InvalidInput(format!(
+            crate::writer::write_error::WriteError::Decline(format!(
                 "SLDPRT sketch constraint {} has an unevaluated or incompatible dimension",
                 constraint.id
             ))
@@ -360,7 +360,7 @@ fn validate_generated_marker_constraint(
                 .iter()
                 .find(|parameter| parameter.id == *id)
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
+                    crate::writer::write_error::WriteError::Unwritable(format!(
                         "SLDPRT sketch constraint {} references missing parameter {id}",
                         constraint.id
                     ))
@@ -370,7 +370,7 @@ fn validate_generated_marker_constraint(
                 FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }) if sketch == &constraint.sketch
             ));
             if owner.is_none_or(|owner| parameter.owner.as_ref() != Some(&owner.id)) {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "SLDPRT dimension parameter {id} is not owned by its sketch feature"
                 )));
             }
@@ -400,7 +400,7 @@ fn validate_generated_marker_constraint(
             if arc_angle_relation_kind(
                 ir.dimension_value(angle)
                     .ok_or_else(|| {
-                        cadmpeg_core::CodecError::InvalidInput(
+                        crate::writer::write_error::WriteError::Decline(
                             "SLDPRT arc-angle constraint is unevaluated".into(),
                         )
                     })?
@@ -408,7 +408,7 @@ fn validate_generated_marker_constraint(
             )
             .is_none()
             {
-                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT arc-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
                 )));
@@ -419,7 +419,7 @@ fn validate_generated_marker_constraint(
             if ellipse_angle_relation_kind(
                 ir.dimension_value(angle)
                     .ok_or_else(|| {
-                        cadmpeg_core::CodecError::InvalidInput(
+                        crate::writer::write_error::WriteError::Decline(
                             "SLDPRT ellipse-angle constraint is unevaluated".into(),
                         )
                     })?
@@ -427,7 +427,7 @@ fn validate_generated_marker_constraint(
             )
             .is_none()
             {
-                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT ellipse-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
                 )));
@@ -435,14 +435,14 @@ fn validate_generated_marker_constraint(
             (entity, None)
         }
         SketchConstraintDefinitionInput::Native { native_kind, .. } => {
-            return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "source-less SLDPRT sketch constraint {} keeps native relation {}, which the synthesized writer cannot emit",
                 constraint.id.as_str(),
                 native_kind.as_str()
             )));
         }
         other => {
-            return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "source-less SLDPRT sketch constraint {} is {}; source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations",
                 constraint.id.as_str(),
                 constraint_input_kind(other)
@@ -455,7 +455,7 @@ fn validate_generated_marker_constraint(
         .iter()
         .find(|entity| entity.id() == entity_id && entity.sketch == constraint.sketch)
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
+            crate::writer::write_error::WriteError::Unwritable(format!(
                 "sketch constraint {} references entity {} outside sketch {}",
                 constraint.id.as_str(),
                 entity_id.as_str(),
@@ -469,7 +469,7 @@ fn validate_generated_marker_constraint(
         entity.geometry.definition(),
         SketchGeometryDefinition::Arc { .. }
     ) {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "sketch constraint {} applies an arc-angle relation to a non-arc entity",
             constraint.id.as_str()
         )));
@@ -481,7 +481,7 @@ fn validate_generated_marker_constraint(
         entity.geometry.definition(),
         SketchGeometryDefinition::Ellipse { .. }
     ) {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "sketch constraint {} applies an ellipse-angle relation to a non-ellipse entity",
             constraint.id.as_str()
         )));
@@ -490,7 +490,7 @@ fn validate_generated_marker_constraint(
         return Ok(());
     };
     let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition() else {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "sketch constraint {} applies an axis relation to a non-line entity",
             constraint.id.as_str()
         )));
@@ -503,7 +503,7 @@ fn validate_generated_marker_constraint(
         && !sketch_evaluation_is_stale(ir, &constraint.sketch)
         && delta > SKETCH_POINT_TOLERANCE
     {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT sketch constraint {} is not satisfied by its line coordinates",
             constraint.id.as_str()
         )));
@@ -640,7 +640,7 @@ fn validate_solved_dimension(
     constraint: &SketchConstraint,
     dimension: &DimensionDefinition<'_>,
     expected: f64,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let mut measured = match dimension {
         DimensionDefinition::DistanceLoci { first, second } => match (first, second) {
             (SketchLocus::Entity(first), SketchLocus::Entity(second))
@@ -675,7 +675,7 @@ fn validate_solved_dimension(
         },
         DimensionDefinition::Distance { entities } => {
             let [first, second] = entities else {
-                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT distance dimension {} requires exactly two lines",
                     constraint.id.as_str()
                 )));
@@ -700,13 +700,13 @@ fn validate_solved_dimension(
             let first = sketch_constraint_entity(ir, constraint, first)?;
             let second = sketch_constraint_entity(ir, constraint, second)?;
             let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::InvalidInput(format!(
+                crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT angular dimension {} requires two lines",
                     constraint.id.as_str()
                 ))
             })?;
             let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::InvalidInput(format!(
+                crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT angular dimension {} requires two lines",
                     constraint.id.as_str()
                 ))
@@ -719,7 +719,7 @@ fn validate_solved_dimension(
                 ],
             )
             .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "source-less SLDPRT angular dimension {} has a degenerate line",
                     constraint.id.as_str()
                 ))
@@ -731,7 +731,7 @@ fn validate_solved_dimension(
                 SketchGeometryDefinition::Circle { radius, .. }
                 | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
                 _ => {
-                    return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
                         "source-less SLDPRT radial dimension {} requires circular geometry",
                         constraint.id.as_str()
                     )));
@@ -752,7 +752,7 @@ fn validate_solved_dimension(
     }
     let tolerance = SKETCH_POINT_TOLERANCE * (1.0 + measured.abs().max(expected.abs()));
     if !measured.is_finite() || (measured - expected).abs() > tolerance {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT dimension {} value {} is not satisfied by measured geometry {}",
             constraint.id.as_str(),
             expected,
@@ -766,9 +766,9 @@ fn point_line_dimension(
     point: Point2,
     line: &SketchEntity,
     constraint: &SketchConstraint,
-) -> Result<f64, cadmpeg_core::CodecError> {
+) -> Result<f64, crate::writer::write_error::WriteError> {
     let (start, end) = sketch_line(&line.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::InvalidInput(format!(
+        crate::writer::write_error::WriteError::Decline(format!(
             "source-less SLDPRT point-line dimension {} requires a line",
             constraint.id.as_str()
         ))
@@ -776,7 +776,7 @@ fn point_line_dimension(
     let direction = [end.u - start.u, end.v - start.v];
     let length = vector2_length(direction);
     if length <= SKETCH_POINT_TOLERANCE {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT point-line dimension {} has a degenerate line",
             constraint.id.as_str()
         )));
@@ -788,15 +788,15 @@ fn line_line_dimension(
     constraint: &SketchConstraint,
     first: &SketchEntity,
     second: &SketchEntity,
-) -> Result<f64, cadmpeg_core::CodecError> {
+) -> Result<f64, crate::writer::write_error::WriteError> {
     let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::InvalidInput(format!(
+        crate::writer::write_error::WriteError::Decline(format!(
             "source-less SLDPRT line-line dimension {} requires two lines",
             constraint.id.as_str()
         ))
     })?;
     let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::InvalidInput(format!(
+        crate::writer::write_error::WriteError::Decline(format!(
             "source-less SLDPRT line-line dimension {} requires two lines",
             constraint.id.as_str()
         ))
@@ -806,7 +806,7 @@ fn line_line_dimension(
     let first_length = vector2_length(first_direction);
     let second_length = vector2_length(second_direction);
     if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT line-line dimension {} has a degenerate line",
             constraint.id.as_str()
         )));
@@ -814,7 +814,7 @@ fn line_line_dimension(
     if cross2(first_direction, second_direction).abs()
         > SKETCH_POINT_TOLERANCE * first_length * second_length
     {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT line-line dimension {} requires parallel solved lines",
             constraint.id.as_str()
         )));
@@ -834,14 +834,14 @@ fn constraint_locus_point(
     ir: &cadmpeg_ir::CadIr,
     constraint: &SketchConstraint,
     locus: &SketchLocus,
-) -> Result<Point2, cadmpeg_core::CodecError> {
+) -> Result<Point2, crate::writer::write_error::WriteError> {
     let entity = sketch_constraint_entity(ir, constraint, locus_entity(locus))?;
     sketch_entity_locus_points(entity)
         .into_iter()
         .flatten()
         .find_map(|(point, role)| role.matches(locus).then_some(point))
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
+            crate::writer::write_error::WriteError::Unwritable(format!(
                 "sketch constraint {} references unavailable locus {:?}",
                 constraint.id.as_str(),
                 locus
@@ -909,13 +909,13 @@ fn sketch_constraint_entity<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     constraint: &SketchConstraint,
     entity: &SketchEntityId,
-) -> Result<&'a SketchEntity, cadmpeg_core::CodecError> {
+) -> Result<&'a SketchEntity, crate::writer::write_error::WriteError> {
     ir.model
         .sketch_entities
         .iter()
         .find(|candidate| candidate.id() == entity && candidate.sketch == constraint.sketch)
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
+            crate::writer::write_error::WriteError::Unwritable(format!(
                 "sketch constraint {} references entity {} outside sketch {}",
                 constraint.id.as_str(),
                 entity.as_str(),
@@ -929,20 +929,20 @@ fn validate_solved_binary_relation(
     kind: GeneratedBinaryKind,
     first: &SketchEntity,
     second: &SketchEntity,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     use GeneratedBinaryKind::{
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
     let solved = match kind {
         Parallel | Perpendicular | Collinear => {
             let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "sketch constraint {} requires two line entities",
                     constraint.id.as_str()
                 ))
             })?;
             let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "sketch constraint {} requires two line entities",
                     constraint.id.as_str()
                 ))
@@ -986,7 +986,7 @@ fn validate_solved_binary_relation(
         ) {
             (Some(first), Some(second)) => same_point2(first, second),
             _ => {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "sketch constraint {} requires two centered entities",
                     constraint.id.as_str()
                 )));
@@ -1003,27 +1003,27 @@ fn validate_solved_binary_relation(
                             * (1.0 + first_radius.abs().max(second_radius.abs()))
             }
             _ => {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "sketch constraint {} requires two circular entities",
                     constraint.id.as_str()
                 )));
             }
         },
         Equal => equal_sketch_size(&first.geometry, &second.geometry).ok_or_else(|| {
-            cadmpeg_core::CodecError::InvalidInput(format!(
+            crate::writer::write_error::WriteError::Decline(format!(
                 "source-less SLDPRT equal constraint {} uses unsupported entity families",
                 constraint.id.as_str()
             ))
         })?,
         Tangent => solved_tangent(&first.geometry, &second.geometry).ok_or_else(|| {
-            cadmpeg_core::CodecError::InvalidInput(format!(
+            crate::writer::write_error::WriteError::Decline(format!(
                 "source-less SLDPRT tangent constraint {} uses unsupported entity families",
                 constraint.id.as_str()
             ))
         })?,
     };
     if !solved {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT sketch constraint {} is not satisfied by its entity geometry",
             constraint.id.as_str()
         )));
@@ -1185,7 +1185,7 @@ pub(super) fn ellipse_angle_relation_kind(angle: f64) -> Option<SketchRelationKi
 fn unique_planar_sketch_owner<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     sketch: &SketchId,
-) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
+) -> Result<&'a cadmpeg_ir::features::Feature, crate::writer::write_error::WriteError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
         feature_owns_planar_sketch(ir, feature, sketch)
     })
@@ -1220,7 +1220,7 @@ pub(crate) fn feature_owns_planar_sketch(
 fn unique_spatial_sketch_owner<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     sketch: &SpatialSketchId,
-) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
+) -> Result<&'a cadmpeg_ir::features::Feature, crate::writer::write_error::WriteError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
         feature_owns_spatial_sketch(ir, feature, sketch)
     })
@@ -1271,15 +1271,15 @@ fn unique_sketch_owner<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     sketch: &str,
     owns: impl Fn(&cadmpeg_ir::features::Feature) -> bool,
-) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
+) -> Result<&'a cadmpeg_ir::features::Feature, crate::writer::write_error::WriteError> {
     let mut owners = ir.model.features.iter().filter(|feature| owns(feature));
     let owner = owners.next().ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
+        crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT sketch {sketch} has no owning feature"
         ))
     })?;
     if owners.next().is_some() {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+        return Err(crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT sketch {sketch} has multiple owning features"
         )));
     }
@@ -1290,7 +1290,7 @@ fn generated_sketch_owner_record<'a>(
     native: &'a crate::native::SldprtNative,
     owner: &cadmpeg_ir::features::Feature,
     sketch: &str,
-) -> Result<&'a crate::records::Feature, cadmpeg_core::CodecError> {
+) -> Result<&'a crate::records::Feature, crate::writer::write_error::WriteError> {
     let owner_record_id = owner
         .native_ref
         .clone()
@@ -1301,7 +1301,7 @@ fn generated_sketch_owner_record<'a>(
         .flat_map(|history| &history.features)
         .find(|feature| feature.id == owner_record_id)
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
+            crate::writer::write_error::WriteError::Unwritable(format!(
                 "source-less SLDPRT sketch {sketch} has no native feature record"
             ))
         })
@@ -1310,9 +1310,9 @@ fn generated_sketch_owner_record<'a>(
 fn generated_sketch_owner_id(
     owner: &crate::records::Feature,
     sketch: &str,
-) -> Result<u32, cadmpeg_core::CodecError> {
+) -> Result<u32, crate::writer::write_error::WriteError> {
     owner.source_value().ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
+        crate::writer::write_error::WriteError::Unwritable(format!(
             "source-less SLDPRT sketch {sketch} has no numeric feature source id"
         ))
     })
@@ -1347,7 +1347,9 @@ pub(crate) fn synthesize_feature_classes(
     {
         let id = crate::history::write::features::allocate_feature_source_id(&mut used, &mut next)?;
         let source = crate::records::FeatureSource::from_value(id).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed("SLDPRT feature source identity is absent")
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT feature source identity is absent".into(),
+            )
         })?;
         feature.source_id = Some(source);
     }
@@ -1374,10 +1376,14 @@ pub(crate) fn synthesize_feature_classes(
             let instance = records
                 .get(record_ids[&feature.id].as_str())
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("SLDPRT block instance record is absent")
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "SLDPRT block instance record is absent".into(),
+                    )
                 })?;
             let definition = records.get(record_ids[block].as_str()).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("SLDPRT block definition record is absent")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "SLDPRT block definition record is absent".into(),
+                )
             })?;
             let previous = block_objects.get(block).copied();
             let value = previous.map_or(archive_index + 5, u64::from);
@@ -1419,8 +1425,8 @@ pub(crate) fn synthesize_feature_classes(
             continue;
         };
         let object_id = feature.source_value().ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(
-                "SLDPRT native feature class requires a numeric object identity",
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT native feature class requires a numeric object identity".into(),
             )
         })?;
         let length = crate::writer::field_u16(
@@ -1468,7 +1474,9 @@ fn append_block_instance(
     ) -> Result<(), crate::writer::write_error::WriteError> {
         class(payload, "moNodeName_c")?;
         let id = feature.source_value().ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed("SLDPRT block feature has no source identity")
+            crate::writer::write_error::WriteError::Unwritable(
+                "SLDPRT block feature has no source identity".into(),
+            )
         })?;
         let mut name = Vec::new();
         append_generated_object_name(&mut name, &feature.name, id)?;
@@ -1594,7 +1602,7 @@ fn source_less_lanes(
             .filter(|entity| entity.sketch == sketch.id)
             .collect::<Vec<_>>();
         if entities.is_empty() {
-            return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
                 "source-less SLDPRT spatial sketch {} requires at least one line",
                 sketch.id.as_str()
             ))
@@ -1619,7 +1627,7 @@ fn source_less_lanes(
                 ..
             } = constraint.definition.kind()
             else {
-                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "spatial sketch constraint {} has no native serializer",
                     constraint.id
                 ))
@@ -1643,7 +1651,7 @@ fn source_less_lanes(
                     append_spatial_vertex(&mut payload, end.get());
                 }
                 _ => {
-                    return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "source-less SLDPRT spatial sketch {} supports point and line geometry only",
                     sketch.id
                 ))
@@ -1655,7 +1663,9 @@ fn source_less_lanes(
             let value = cadmpeg_core::decode::u64_from_index(index)
                 .checked_add(1)
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("spatial marker count overflows u64")
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "spatial marker count overflows u64".into(),
+                    )
                 })?;
             super::write_generate::local_marker_id(value)
         };
@@ -1663,7 +1673,9 @@ fn source_less_lanes(
             .checked_mul(3)
             .and_then(|count| count.checked_add(cadmpeg_core::decode::u64_from_index(points.len())))
             .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("spatial marker count overflows u64")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "spatial marker count overflows u64".into(),
+                )
             })?;
         if marker_count != 0 {
             super::write_generate::local_marker_id(marker_count)?;
@@ -1673,11 +1685,13 @@ fn source_less_lanes(
                 .iter()
                 .find(|entity| entity.id() == *id)
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("spatial relation point is missing")
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "spatial relation point is missing".into(),
+                    )
                 })?;
             let SpatialSketchGeometryDefinition::Point { position } = entity.geometry.definition()
             else {
-                return Err(cadmpeg_core::CodecError::InvalidInput(
+                return Err(crate::writer::write_error::WriteError::Decline(
                     "spatial relation point has no point geometry".into(),
                 )
                 .into());
@@ -1696,11 +1710,13 @@ fn source_less_lanes(
                 .iter()
                 .find(|entity| entity.id() == *id)
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("spatial relation line is missing")
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "spatial relation line is missing".into(),
+                    )
                 })?;
             let SpatialSketchGeometryDefinition::Line { start, end } = entity.geometry.definition()
             else {
-                return Err(cadmpeg_core::CodecError::InvalidInput(
+                return Err(crate::writer::write_error::WriteError::Decline(
                     "spatial relation line has no line geometry".into(),
                 )
                 .into());
@@ -1747,7 +1763,7 @@ fn source_less_lanes(
                     constraint.definition.kind(),
                     &ir.model.parameters,
                 ) {
-                    return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
                         "spatial sketch constraint {} has no native serializer",
                         constraint.id
                     ))
@@ -1759,21 +1775,25 @@ fn source_less_lanes(
                     .iter()
                     .find(|record| &record.id == parameter)
                     .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("spatial relation parameter is missing")
+                        crate::writer::write_error::WriteError::Unwritable(
+                            "spatial relation parameter is missing".into(),
+                        )
                     })?;
                 let value = parameter
                     .value
                     .as_ref()
                     .and_then(|value| native_spatial_value(native_kind.as_str(), value))
                     .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("spatial relation value is missing")
+                        crate::writer::write_error::WriteError::Unwritable(
+                            "spatial relation value is missing".into(),
+                        )
                     })?;
                 let operands = operands
                     .iter()
                     .map(|operand| {
                         let address = operand.object_index.ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "spatial relation operand address is missing",
+                            crate::writer::write_error::WriteError::Unwritable(
+                                "spatial relation operand address is missing".into(),
                             )
                         })?;
                         let address = crate::writer::field_u16(
@@ -1782,8 +1802,8 @@ fn source_less_lanes(
                         )?;
                         let kind = native_spatial_operand_kind(operand.native_kind.as_str())
                             .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "spatial relation operand tag is invalid",
+                                crate::writer::write_error::WriteError::Unwritable(
+                                    "spatial relation operand tag is invalid".into(),
                                 )
                             })?;
                         Ok((kind, address))
@@ -1793,8 +1813,8 @@ fn source_less_lanes(
                     parameter.name.as_str()
                 } else {
                     parameter.name.strip_suffix("@reference").ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed(
-                            "spatial reference parameter name is invalid",
+                        crate::writer::write_error::WriteError::Unwritable(
+                            "spatial reference parameter name is invalid".into(),
                         )
                     })?
                 };
@@ -1815,7 +1835,7 @@ fn source_less_lanes(
                 parameter,
             } = constraint.definition.kind()
             else {
-                return Err(cadmpeg_core::CodecError::InvalidInput(format!(
+                return Err(crate::writer::write_error::WriteError::Decline(format!(
                     "spatial sketch constraint {} has no native serializer",
                     constraint.id
                 ))
@@ -1830,23 +1850,27 @@ fn source_less_lanes(
                         .find(|candidate| &candidate.id == id)
                 })
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::InvalidInput(
+                    crate::writer::write_error::WriteError::Decline(
                         "spatial point-line relation requires a bound parameter".into(),
                     )
                 })?;
             let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
                 parameter.value.as_ref()
             else {
-                return Err(cadmpeg_core::CodecError::InvalidInput(
+                return Err(crate::writer::write_error::WriteError::Decline(
                     "spatial point-line relation requires an evaluated length".into(),
                 )
                 .into());
             };
             let point_index = points.iter().position(|id| *id == point).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("spatial relation point was not allocated")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "spatial relation point was not allocated".into(),
+                )
             })?;
             let line_index = lines.iter().position(|id| *id == line).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("spatial relation line was not allocated")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "spatial relation line was not allocated".into(),
+                )
             })?;
             let construction = entities
                 .iter()
@@ -1883,8 +1907,8 @@ fn source_less_lanes(
                 parameter.name.as_str()
             } else {
                 parameter.name.strip_suffix("@reference").ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(
-                        "spatial reference parameter name is invalid",
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "spatial reference parameter name is invalid".into(),
                     )
                 })?
             };
@@ -1936,7 +1960,7 @@ pub(crate) fn generated_configuration_lane(
     histories: &[crate::records::FeatureHistory],
     configuration: &str,
     payload: Vec<u8>,
-) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+) -> Result<FeatureInputLane, crate::writer::write_error::WriteError> {
     generated_native_lane(
         histories,
         &format!("sldprt:generated:configuration-input#{configuration}"),
@@ -1951,7 +1975,7 @@ pub(crate) fn generated_native_lane(
     id: &str,
     configuration: Option<String>,
     payload: Vec<u8>,
-) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+) -> Result<FeatureInputLane, crate::writer::write_error::WriteError> {
     let mut lanes = Vec::new();
     let lane = source_less_lane(&mut lanes, configuration.as_deref().unwrap_or("0"));
     lane.id = id.into();
@@ -2408,7 +2432,7 @@ fn append_spatial_point_marker(
     payload: &mut Vec<u8>,
     point: Point3,
     object_id: u32,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let native = spatial_point_native_coordinates(point)?;
     payload.extend_from_slice(&object_id.to_le_bytes());
     let start = payload.len();
@@ -2432,7 +2456,7 @@ fn append_spatial_relation_marker(
     kind: u32,
     object_index: u32,
     construction: bool,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let start = payload.len() + 4;
     append_spatial_point_marker(payload, point, object_index)?;
     payload[start + 17..start + 21].copy_from_slice(&kind.to_le_bytes());
@@ -2512,13 +2536,15 @@ fn append_spatial_profile_line(payload: &mut Vec<u8>, first: u16, second: u16, l
         .copy_from_slice(&layout::IDENTITY_SELECTOR_VALUE.to_le_bytes());
 }
 
-fn spatial_point_native_coordinates(point: Point3) -> Result<[f64; 3], cadmpeg_core::CodecError> {
+fn spatial_point_native_coordinates(
+    point: Point3,
+) -> Result<[f64; 3], crate::writer::write_error::WriteError> {
     let native = [point.x * 0.001, point.y * 0.001, point.z * 0.001];
     if native
         .iter()
         .any(|value| *value != 0.0 && !value.is_normal())
     {
-        return Err(cadmpeg_core::CodecError::Malformed(
+        return Err(crate::writer::write_error::WriteError::Unwritable(
             "SLDPRT spatial point coordinates must be zero or normal finite native f64 values"
                 .into(),
         ));

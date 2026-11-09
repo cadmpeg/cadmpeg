@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureOperation, ParameterValue, SketchFeatureBinding,
@@ -59,7 +58,11 @@ pub(super) fn merge(
         let start = FeatureObjectNames::new(&native.feature_input_lanes[position].names)
             .of(record)
             .map(|name| name.offset)
-            .ok_or_else(|| CodecError::malformed("authored sketch has no object name"))?;
+            .ok_or_else(|| {
+                crate::writer::write_error::WriteError::Unwritable(
+                    "authored sketch has no object name".into(),
+                )
+            })?;
         let end = native
             .feature_histories
             .iter()
@@ -73,7 +76,9 @@ pub(super) fn merge(
             .min()
             .map(|offset| {
                 usize::try_from(offset).map_err(|_| {
-                    CodecError::malformed("sketch object offset exceeds address space")
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "sketch object offset exceeds address space".into(),
+                    )
                 })
             })
             .transpose()?
@@ -238,7 +243,9 @@ pub(super) fn merge(
                     .unwrap_or(0)
                     .checked_add(1)
                     .ok_or_else(|| {
-                        CodecError::malformed("SLDPRT native marker-local id space is exhausted")
+                        crate::writer::write_error::WriteError::Unwritable(
+                            "SLDPRT native marker-local id space is exhausted".into(),
+                        )
                     })?;
                 map.insert(marker.id(), next);
                 addresses.push((marker.kind(), next));
@@ -366,7 +373,9 @@ pub(super) fn merge(
                     (name.value.as_str(), scalar.value.get())
                 };
                 next_object_id = next_object_id.checked_add(1).ok_or_else(|| {
-                    CodecError::malformed("SLDPRT scalar object id space is exhausted")
+                    crate::writer::write_error::WriteError::Unwritable(
+                        "SLDPRT scalar object id space is exhausted".into(),
+                    )
                 })?;
                 let relation = relations
                     .iter()

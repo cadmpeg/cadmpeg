@@ -12,6 +12,9 @@ use cadmpeg_core::CodecError;
 pub(crate) enum WriteError {
     /// The patch cannot express the edit; synthesis owns the reason.
     Decline(String),
+    /// Content the writer cannot write as it stands; synthesis writes it
+    /// from the canonical side (#217 §5.0).
+    Unwritable(String),
     /// A precondition failure that stays an error on this path.
     Fatal(CodecError),
     /// An output write or seek failed.
@@ -23,10 +26,14 @@ pub(crate) enum WriteError {
 }
 
 impl WriteError {
+    pub(crate) fn unwritable(message: impl std::fmt::Display) -> Self {
+        Self::Unwritable(message.to_string())
+    }
+
     /// The synthesis reason for either variant.
     pub(crate) fn reason(&self) -> String {
         match self {
-            Self::Decline(reason) => reason.clone(),
+            Self::Decline(reason) | Self::Unwritable(reason) => reason.clone(),
             Self::Fatal(error) => error.to_string(),
             Self::Io(error) => error.to_string(),
             Self::Capacity { field, value } => format!(
@@ -46,6 +53,18 @@ impl From<CodecError> for WriteError {
             CodecError::InvalidInput(reason) => Self::Decline(reason),
             error => Self::Fatal(error),
         }
+    }
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Fatal(limit.into())
+    }
+}
+
+impl From<cadmpeg_ir::hash::DigestError> for WriteError {
+    fn from(error: cadmpeg_ir::hash::DigestError) -> Self {
+        Self::Fatal(error.into())
     }
 }
 

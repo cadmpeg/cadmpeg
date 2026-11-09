@@ -48,7 +48,7 @@ pub(super) fn sketch_brep(
         sketch.id.as_str().replace('%', "%25").replace('#', "%23"),
     )
     .map_err(|error| {
-        cadmpeg_core::CodecError::malformed(format_args!(
+        crate::writer::write_error::WriteError::Unwritable(format!(
             "SLDPRT sketch identity is not identity key text: {error}"
         ))
     })?;
@@ -77,8 +77,9 @@ pub(super) fn sketch_brep(
         native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).map_err(
+                |error| crate::writer::write_error::WriteError::Unwritable(error.to_string()),
+            )?,
         )),
         source_object: None,
     });
@@ -119,7 +120,7 @@ pub(super) fn sketch_brep(
             .iter()
             .map(|entity_use| {
                 let entity = entities.get(&entity_use.entity).ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
+                    crate::writer::write_error::WriteError::Unwritable(format!(
                         "sketch {} references missing entity {}",
                         sketch.id.as_str(),
                         entity_use.entity.as_str()
@@ -152,7 +153,7 @@ pub(super) fn sketch_brep(
         let mut ring: Option<cadmpeg_ir::topology::LoopRing> = None;
         for (use_index, entity_use) in profile.iter().enumerate() {
             let entity = entities.get(&entity_use.entity).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
+                crate::writer::write_error::WriteError::Unwritable(format!(
                     "sketch {} references missing entity {}",
                     sketch.id.as_str(),
                     entity_use.entity.as_str()
@@ -191,7 +192,7 @@ pub(super) fn sketch_brep(
                     SketchGeometryDefinition::Line { .. }
                 )
             {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "sketch entity {} has zero length",
                     entity.id()
                 ))
@@ -242,7 +243,7 @@ pub(super) fn sketch_brep(
             ir.model.edges.push(Edge {
                 native_ref: None,
                 id: edge_id.clone(),
-                carrier: carrier.map_err(cadmpeg_core::CodecError::malformed)?,
+                carrier: carrier.map_err(crate::writer::write_error::WriteError::unwritable)?,
                 start: start_vertex,
                 end: end_vertex,
                 tolerance: None,
@@ -250,7 +251,7 @@ pub(super) fn sketch_brep(
             match &mut ring {
                 Some(ring) => ring
                     .try_push(coedge_id.clone())
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    .map_err(crate::writer::write_error::WriteError::unwritable)?,
                 None => ring = Some(cadmpeg_ir::topology::LoopRing::single(coedge_id.clone())),
             }
             ir.model.coedges.push(Coedge {
@@ -273,7 +274,9 @@ pub(super) fn sketch_brep(
             id: loop_id,
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring.ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("sketch profile has no coedges")
+                crate::writer::write_error::WriteError::Unwritable(
+                    "sketch profile has no coedges".into(),
+                )
             })?),
         });
     }
@@ -302,7 +305,7 @@ pub(super) fn sketch_brep(
             v_axis,
         ))
         .ok_or(Point::NON_FINITE_POSITION)
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        .map_err(crate::writer::write_error::WriteError::unwritable)?;
         ir.model
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
@@ -435,7 +438,7 @@ fn generated_sketch_curve(
             );
             let length = delta.norm();
             if length == 0.0 {
-                return Err(cadmpeg_core::CodecError::Malformed(
+                return Err(crate::writer::write_error::WriteError::Unwritable(
                     "source-less SLDPRT sketch contains a zero-length line".into(),
                 ).into());
             }
@@ -444,7 +447,7 @@ fn generated_sketch_curve(
                         delta.x / length,
                         delta.y / length,
                         delta.z / length,
-                    )).map_err(cadmpeg_core::CodecError::malformed)?)),
+                    )).map_err(crate::writer::write_error::WriteError::unwritable)?)),
                 start: start.get(),
                 end: end.get(),
                 param_range: [0.0, length],
@@ -457,7 +460,7 @@ fn generated_sketch_curve(
                     SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                             lift(center.get()), normal, u_axis, radius.get()
-                        ).map_err(cadmpeg_core::CodecError::malformed)?
+                        ).map_err(crate::writer::write_error::WriteError::unwritable)?
                     )
                 ),
                 start: point,
@@ -475,7 +478,7 @@ fn generated_sketch_curve(
                 SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         lift(center.get()), normal, u_axis, radius.get()
-                    ).map_err(cadmpeg_core::CodecError::malformed)?
+                    ).map_err(crate::writer::write_error::WriteError::unwritable)?
                 )
             ),
             start: offset_point(center.get(), polar(radius.get(), start_angle.get())),
@@ -509,9 +512,9 @@ fn generated_sketch_curve(
                 normal,
                 vector(major_angle.get().cos(), major_angle.get().sin()),
             )
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.axis/major_direction must form an orthonormal frame"))?;
+            .ok_or_else(|| crate::writer::write_error::WriteError::Unwritable("EllipseCurve.axis/major_direction must form an orthonormal frame".into()))?;
             let center_3d = cadmpeg_ir::features::FinitePoint3::new(lift(center.get()))
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
+                .ok_or_else(|| crate::writer::write_error::WriteError::Unwritable("EllipseCurve.center must be finite".into()))?;
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, *radii))),
                 start: point(start),
@@ -531,7 +534,7 @@ fn generated_sketch_curve(
             let knots = curve.knots();
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.lift(lift).map_err(|error| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
+                    crate::writer::write_error::WriteError::Unwritable(format!(
                         "source-less SLDPRT sketch NURBS lift is invalid: {error}"
                     ))
                 })?)),
@@ -562,7 +565,7 @@ fn sketch_vertex(
     origin: Point3,
     u_axis: Vector3,
     v_axis: Vector3,
-) -> Result<VertexId, cadmpeg_core::CodecError> {
+) -> Result<VertexId, crate::writer::write_error::WriteError> {
     if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
         same_sketch_point(
             Point2::new(f64::from_bits(*u), f64::from_bits(*v)),
@@ -590,7 +593,7 @@ fn sketch_vertex(
     let finite_position =
         cadmpeg_ir::features::FinitePoint3::new(lift_point(position, origin, u_axis, v_axis))
             .ok_or(Point::NON_FINITE_POSITION)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .map_err(crate::writer::write_error::WriteError::unwritable)?;
     ir.model
         .points
         .push(Point::new(point_id.clone(), finite_position, None));
