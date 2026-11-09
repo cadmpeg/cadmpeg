@@ -265,7 +265,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A sketch geometry group has type GUID"
 size = 75
-note = "Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow."
+note = "Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes or none, and the owning sketch container reference follow."
 
 [[record.field]]
 name = "indexed_header"

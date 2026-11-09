@@ -119,7 +119,7 @@ pub(crate) mod sketch_container_visibility_member_prefix {
 /// Spec §3.1. Record length 75 B.
 ///
 /// ```text
-/// Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow.
+/// Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes or none, and the owning sketch container reference follow.
 /// ```
 pub(crate) mod sketch_geometry_group_prefix {
     /// Record length in bytes. Spec §3.1.

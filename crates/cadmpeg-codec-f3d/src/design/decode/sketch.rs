@@ -3588,10 +3588,9 @@ fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGro
     }
     let mut tail = View::over_retained(payload);
     tail.skip(cursor)?;
-    if tail.take(4)? != [0; 4] {
-        return None;
+    if tail.take(4).is_some_and(|run| run == [0; 4]) {
+        cursor = cursor.checked_add(4)?;
     }
-    cursor = cursor.checked_add(4)?;
     let sketch = take_same_segment_sketch_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(ParsedSketchGeometryGroup {
         ordinal,
