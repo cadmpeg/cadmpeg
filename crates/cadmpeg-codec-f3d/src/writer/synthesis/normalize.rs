@@ -296,6 +296,92 @@ pub(super) fn mesh_import_vertices(target: &mut CadIr, losses: &mut Vec<LossNote
     }
 }
 
+/// F3D stores no recompute flag, and a reader projects a sketch distance
+/// only where its solved points agree with its value (spec §3.1 paired-locus
+/// frames). A horizontal point distance in a sketch whose feature needs
+/// recompute is written evaluated: its second point is placed at the
+/// parameter's distance from the first, on the side it already lies.
+pub(super) fn stale_sketch_distances(target: &mut CadIr, losses: &mut Vec<LossNote>) {
+    use cadmpeg_ir::features::{Dimension, SketchFeatureBinding};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus};
+    let stale: std::collections::BTreeSet<_> = target
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.needs_recompute)
+        .filter_map(|feature| match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch)),
+            }) => Some(sketch.clone()),
+            _ => None,
+        })
+        .collect();
+    let tolerance = target.tolerances.linear_or_default().get();
+    let point = |target: &CadIr, id: &cadmpeg_ir::sketches::SketchEntityId| {
+        target
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id() == id)
+            .and_then(|entity| match entity.geometry.definition() {
+                SketchGeometryDefinition::Point { position } => Some(position.get()),
+                _ => None,
+            })
+    };
+    let mut moves = Vec::new();
+    for constraint in &target.model.sketch_constraints {
+        if !stale.contains(&constraint.sketch) {
+            continue;
+        }
+        let SketchConstraintDefinitionInput::HorizontalDistance {
+            first: SketchLocus::Entity(first),
+            second: SketchLocus::Entity(second),
+            parameter: parameter @ Dimension::Parameter(_),
+        } = constraint.definition.kind()
+        else {
+            continue;
+        };
+        let (Some(start), Some(end), Some(distance)) = (
+            point(target, first),
+            point(target, second),
+            target.dimension_value(parameter).map(|value| value.get().abs()),
+        ) else {
+            continue;
+        };
+        if ((end.u - start.u).abs() - distance).abs() <= tolerance {
+            continue;
+        }
+        let u = if end.u >= start.u {
+            start.u + distance
+        } else {
+            start.u - distance
+        };
+        moves.push((second.clone(), cadmpeg_ir::math::Point2::new(u, end.v), constraint.id.clone()));
+    }
+    for (entity_id, position, constraint) in moves {
+        let Some(position) = cadmpeg_ir::units::FinitePoint2::new(position) else {
+            continue;
+        };
+        let Ok(geometry) =
+            cadmpeg_ir::sketches::SketchGeometry::from_parts(SketchGeometryDefinition::Point { position })
+        else {
+            continue;
+        };
+        let Some(entity) = target
+            .model
+            .sketch_entities
+            .iter_mut()
+            .find(|entity| entity.id() == &entity_id)
+        else {
+            continue;
+        };
+        entity.geometry = geometry;
+        losses.push(F3dLossCode::WriterValueNormalized.note(format!(
+            "sketch entity {entity_id}: placed at the distance of stale sketch dimension {constraint}"
+        )));
+    }
+}
+
 fn referenced_rows<V: Clone>(rows: &[V], referenced: &std::collections::BTreeSet<u32>) -> Vec<V> {
     referenced
         .iter()

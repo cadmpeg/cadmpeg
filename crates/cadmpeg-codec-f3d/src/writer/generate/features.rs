@@ -575,9 +575,10 @@ fn select_sketch_dimensions(
                 };
                 let a = position(first)?;
                 let b = position(second)?;
-                let expected = target.dimension_value(&Dimension::<cadmpeg_ir::scalar::Length>::Parameter(id.clone()))?.get();
+                // The parameter is the dimension's value; points a stale
+                // evaluation left at another distance keep their positions.
                 let tolerance = target.tolerances.linear_or_default().get();
-                if (a.v - b.v).abs() > tolerance || ((a.u - b.u).abs() - expected.abs()).abs() > tolerance { return None; }
+                if (a.v - b.v).abs() > tolerance { return None; }
                 let first = *sketch.point_indices.get(first)?;
                 let second = *sketch.point_indices.get(second)?;
                 if first == second { return None; }
