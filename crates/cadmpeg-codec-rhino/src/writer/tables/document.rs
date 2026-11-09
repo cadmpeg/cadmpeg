@@ -246,7 +246,7 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, WriteEr
             0x2000_8024
         }
     };
-    Ok(crc_chunk(typecode, &payload)?)
+    crc_chunk(typecode, &payload)
 }
 
 pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, WriteError> {
@@ -896,7 +896,7 @@ pub(in crate::writer) fn settings(
                     )));
                     reference_changed = true;
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => return Err(error),
             }
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {

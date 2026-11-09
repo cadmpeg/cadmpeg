@@ -3,7 +3,6 @@
 
 use super::WriteError;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{EncodeBuffer, EncodeSession};
 use cadmpeg_ir::document::ArenaName;
 use cadmpeg_ir::report::loss::LossNote;
@@ -313,7 +312,7 @@ fn proxy_item(
     let mut item = vec![PROXY_ITEM_VERSION];
     item.extend(header);
     item.extend(payload);
-    Ok(super::long_chunk(crate::objects::CLASS_USERDATA, &item)?)
+    super::long_chunk(crate::objects::CLASS_USERDATA, &item)
 }
 
 /// The application UUID the specification assigns to proxy userdata
@@ -362,7 +361,7 @@ fn mesh_object_with_proxy(
         )?,
     )?);
     body.extend(object_end);
-    Ok(super::zero_crc_chunk(super::TCODE_OBJECT_RECORD, &body)?)
+    super::zero_crc_chunk(super::TCODE_OBJECT_RECORD, &body)
 }
 
 fn omission(surface: &SubdSurface, version: RhinoArchiveVersion) -> Option<&'static str> {

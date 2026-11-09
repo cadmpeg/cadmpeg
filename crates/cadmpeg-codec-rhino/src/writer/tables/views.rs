@@ -85,7 +85,7 @@ fn cplane(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     }
     body.extend(utf16(text(fields, "name"))?);
     body.push(u8::from(flag(fields, "depth_buffer", true)));
-    Ok(crc_chunk_with_direct(0x2000_813b, &body, &body)?)
+    crc_chunk_with_direct(0x2000_813b, &body, &body)
 }
 
 fn window(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
@@ -100,7 +100,7 @@ fn window(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
         .and_then(|value| u8::try_from(value).ok())
         .ok_or_else(|| WriteError::Omit("Rhino floating viewport flag exceeds u8".into()))?;
     body.push(floating);
-    Ok(crc_chunk_with_direct(0x2000_8b3b, &body, &body)?)
+    crc_chunk_with_direct(0x2000_8b3b, &body, &body)
 }
 
 fn property<'a>(view: &'a ViewPresentation, name: &str) -> Option<&'a str> {
@@ -219,7 +219,7 @@ fn encode_view(
         });
     }
     children.push(short_chunk(TCODE_ENDOFTABLE, 0));
-    Ok(crc_chunk_with_direct(0x2000_803b, &children.concat(), &[])?)
+    crc_chunk_with_direct(0x2000_803b, &children.concat(), &[])
 }
 
 fn native_only_supported(fields: &Map<String, Value>) -> bool {
@@ -274,7 +274,7 @@ fn list(typecode: u32, children: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
     let count = wire_index(children.len())?.to_le_bytes();
     let mut body = count.to_vec();
     body.extend(children.concat());
-    Ok(crc_chunk_with_direct(typecode, &body, &count)?)
+    crc_chunk_with_direct(typecode, &body, &count)
 }
 
 pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> {

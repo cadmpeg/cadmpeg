@@ -232,12 +232,12 @@ fn text(
             }
         }
     }
-    Ok(anonymous_with_children(
+    anonymous_with_children(
         1,
         i32::from(leader),
         &outer,
         std::slice::from_ref(&(0..base_end)),
-    )?)
+    )
 }
 
 fn dot(

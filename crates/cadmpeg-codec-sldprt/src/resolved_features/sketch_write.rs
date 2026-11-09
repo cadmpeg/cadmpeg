@@ -195,8 +195,7 @@ pub(super) fn sketch_brep(
                 return Err(crate::writer::write_error::WriteError::Unwritable(format!(
                     "sketch entity {} has zero length",
                     entity.id()
-                ))
-                .into());
+                )));
             }
             let curve_id = CurveId::compose(
                 &sketch_namespace(),
@@ -440,7 +439,7 @@ fn generated_sketch_curve(
             if length == 0.0 {
                 return Err(crate::writer::write_error::WriteError::Unwritable(
                     "source-less SLDPRT sketch contains a zero-length line".into(),
-                ).into());
+                ));
             }
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, Vector3::new(

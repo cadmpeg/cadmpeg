@@ -132,7 +132,7 @@ fn naming_procedural(
         crate::writer::WriteError::Unwritable(message) => {
             crate::writer::WriteError::Unwritable(format!("{}: {message}", procedural.id))
         }
-        error => error,
+        error @ crate::writer::WriteError::Codec(_) => error,
     }
 }
 

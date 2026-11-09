@@ -252,11 +252,11 @@ fn write_attempt<'budget>(
     Ok(outcome.map(|outcome| (staged, outcome)))
 }
 
-fn with_reductions<'budget>(
-    (bytes, mut outcome): (EncodeBuffer<'budget>, WriteOutcome),
+fn with_reductions(
+    (bytes, mut outcome): (EncodeBuffer<'_>, WriteOutcome),
     mut reductions: Vec<LossNote>,
     content: WrittenContent,
-) -> (EncodeBuffer<'budget>, WriteOutcome) {
+) -> (EncodeBuffer<'_>, WriteOutcome) {
     outcome.content = content;
     reductions.append(&mut outcome.losses);
     outcome.losses = reductions;
@@ -3052,7 +3052,7 @@ fn polymorphic_records<'a>(
             checksum.unwrap_or(payload),
         )?);
     }
-    Ok(crc_chunk_with_direct(0x4000_8000, &body, &direct)?)
+    crc_chunk_with_direct(0x4000_8000, &body, &direct)
 }
 
 fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
@@ -3067,7 +3067,7 @@ fn raw_array(records: &[Vec<u8>]) -> Result<Vec<u8>, WriteError> {
         .to_le_bytes(),
     );
     body.extend(records.concat());
-    Ok(crc_chunk(0x4000_8000, &body)?)
+    crc_chunk(0x4000_8000, &body)
 }
 
 fn face_array(
@@ -3101,7 +3101,7 @@ fn face_array(
             body.push(0);
         }
     }
-    Ok(crc_chunk(0x4000_8000, &body)?)
+    crc_chunk(0x4000_8000, &body)
 }
 
 fn encoded_face_colors(

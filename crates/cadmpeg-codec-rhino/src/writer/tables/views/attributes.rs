@@ -33,7 +33,7 @@ fn page(fields: Option<&Map<String, Value>>) -> Result<Vec<u8>, WriteError> {
         body.extend([0; 32]);
     }
     body.extend(utf16(text(fields, "printer_name"))?);
-    Ok(anonymous(1, 0, &body)?)
+    anonymous(1, 0, &body)
 }
 
 fn clip(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
@@ -194,5 +194,5 @@ pub(super) fn encode(
         .into_iter()
         .flat_map(|range| body[range].iter().copied())
         .collect::<Vec<_>>();
-    Ok(crc_chunk_with_direct(0x2000_8c3b, &body, &direct)?)
+    crc_chunk_with_direct(0x2000_8c3b, &body, &direct)
 }

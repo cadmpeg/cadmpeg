@@ -50,7 +50,7 @@ fn line(value: &Value) -> Result<Vec<u8>, WriteError> {
     for dash in dashes {
         body.extend(scalar(Some(dash), "dash")?.to_le_bytes());
     }
-    Ok(anonymous(1, 0, &body)?)
+    anonymous(1, 0, &body)
 }
 
 pub(in crate::writer) struct HatchExport {
@@ -162,11 +162,11 @@ fn pattern(record: &cadmpeg_ir::NativeRecord, index: i32) -> Result<Vec<u8>, Wri
     let list_end = payload.len();
     let payload =
         anonymous_with_children(1, 0, &payload, &[0..component_end, list_start..list_end])?;
-    Ok(crc_chunk_with_direct(
+    crc_chunk_with_direct(
         0x2000_8077,
         &class_wrapper_with_direct(PATTERN_CLASS, &payload, &[])?,
         &[],
-    )?)
+    )
 }
 
 #[cfg(test)]
