@@ -54,7 +54,7 @@ pub(super) fn feature_suppression(target: &mut CadIr, losses: &mut Vec<LossNote>
 }
 
 /// Occurrence placements are rigid row-major matrices (spec §3.1
-/// CopyPaste). A placement whose linear part is not a proper rotation keeps
+/// `CopyPaste`). A placement whose linear part is not a proper rotation keeps
 /// its translation and stores the rotation of its unit columns, with the
 /// third column reversed when that makes the frame right-handed, or the
 /// identity when neither is a proper rotation.
@@ -137,7 +137,12 @@ pub(super) fn feature_parameter_driving(target: &mut CadIr, losses: &mut Vec<Los
         .map(|feature| feature.id.clone())
         .collect();
     for parameter in &mut target.model.parameters {
-        if parameter.driving || !parameter.owner.as_ref().is_some_and(|owner| owners.contains(owner)) {
+        if parameter.driving
+            || !parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| owners.contains(owner))
+        {
             continue;
         }
         parameter.driving = true;
@@ -203,7 +208,12 @@ pub(super) fn asset_media_types(target: &mut CadIr, losses: &mut Vec<LossNote>) 
                     None
                 }
             });
-        if asset.media_type.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == derived {
+        if asset
+            .media_type
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str)
+            == derived
+        {
             continue;
         }
         asset.media_type = derived.and_then(cadmpeg_core::text::NonBlankString::new);
@@ -303,7 +313,9 @@ pub(super) fn mesh_import_vertices(target: &mut CadIr, losses: &mut Vec<LossNote
 /// parameter's distance from the first, on the side it already lies.
 pub(super) fn stale_sketch_distances(target: &mut CadIr, losses: &mut Vec<LossNote>) {
     use cadmpeg_ir::features::{Dimension, SketchFeatureBinding};
-    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus,
+    };
     let stale: std::collections::BTreeSet<_> = target
         .model
         .features
@@ -344,7 +356,9 @@ pub(super) fn stale_sketch_distances(target: &mut CadIr, losses: &mut Vec<LossNo
         let (Some(start), Some(end), Some(distance)) = (
             point(target, first),
             point(target, second),
-            target.dimension_value(parameter).map(|value| value.get().abs()),
+            target
+                .dimension_value(parameter)
+                .map(|value| value.get().abs()),
         ) else {
             continue;
         };
@@ -356,14 +370,20 @@ pub(super) fn stale_sketch_distances(target: &mut CadIr, losses: &mut Vec<LossNo
         } else {
             start.u - distance
         };
-        moves.push((second.clone(), cadmpeg_ir::math::Point2::new(u, end.v), constraint.id.clone()));
+        moves.push((
+            second.clone(),
+            cadmpeg_ir::math::Point2::new(u, end.v),
+            constraint.id.clone(),
+        ));
     }
     for (entity_id, position, constraint) in moves {
         let Some(position) = cadmpeg_ir::units::FinitePoint2::new(position) else {
             continue;
         };
         let Ok(geometry) =
-            cadmpeg_ir::sketches::SketchGeometry::from_parts(SketchGeometryDefinition::Point { position })
+            cadmpeg_ir::sketches::SketchGeometry::from_parts(SketchGeometryDefinition::Point {
+                position,
+            })
         else {
             continue;
         };
@@ -402,29 +422,52 @@ mod tests {
 
     #[test]
     fn a_scaled_axis_keeps_its_direction_and_the_translation() {
-        let scaled = transform([[2.0, 0.0, 0.0, 5.0], [0.0, 1.0, 0.0, 6.0], [0.0, 0.0, 1.0, 7.0]]);
+        let scaled = transform([
+            [2.0, 0.0, 0.0, 5.0],
+            [0.0, 1.0, 0.0, 6.0],
+            [0.0, 0.0, 1.0, 7.0],
+        ]);
         assert_eq!(
             rigid_part(scaled).affine_rows(),
-            [[1.0, 0.0, 0.0, 5.0], [0.0, 1.0, 0.0, 6.0], [0.0, 0.0, 1.0, 7.0]]
+            [
+                [1.0, 0.0, 0.0, 5.0],
+                [0.0, 1.0, 0.0, 6.0],
+                [0.0, 0.0, 1.0, 7.0]
+            ]
         );
     }
 
     #[test]
     fn a_reflection_reverses_its_third_axis() {
-        let mirrored =
-            transform([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, -1.0, 3.0]]);
+        let mirrored = transform([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 3.0],
+        ]);
         assert_eq!(
             rigid_part(mirrored).affine_rows(),
-            [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 3.0]]
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 3.0]
+            ]
         );
     }
 
     #[test]
     fn sheared_axes_fall_back_to_the_identity_rotation() {
-        let sheared = transform([[1.0, 1.0, 0.0, 1.0], [0.0, 1.0, 0.0, 2.0], [0.0, 0.0, 1.0, 3.0]]);
+        let sheared = transform([
+            [1.0, 1.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 2.0],
+            [0.0, 0.0, 1.0, 3.0],
+        ]);
         assert_eq!(
             rigid_part(sheared).affine_rows(),
-            [[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 2.0], [0.0, 0.0, 1.0, 3.0]]
+            [
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 2.0],
+                [0.0, 0.0, 1.0, 3.0]
+            ]
         );
     }
 }

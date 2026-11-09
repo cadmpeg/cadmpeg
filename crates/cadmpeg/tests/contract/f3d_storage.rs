@@ -171,9 +171,10 @@ fn attribute(record: &Value) -> Value {
                 == Some("float")
     });
     if let Some(first) = values.first_mut().filter(|_| timestamp) {
-        let terminal = first.get("value").and_then(Value::as_str).is_some_and(|value| {
-            value.ends_with(":entity#-1")
-        });
+        let terminal = first
+            .get("value")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.ends_with(":entity#-1"));
         if first.get("kind").and_then(Value::as_str) == Some("reference") && !terminal {
             first["value"] = json!(TERMINAL_SUCCESSOR);
         }
@@ -223,7 +224,8 @@ fn occurrence(record: &Value) -> Value {
             *slot = value;
         }
     }
-    let mut columns: Rotation = std::array::from_fn(|column| std::array::from_fn(|row| matrix[row][column]));
+    let mut columns: Rotation =
+        std::array::from_fn(|column| std::array::from_fn(|row| matrix[row][column]));
     if proper_rotation(columns) {
         return record;
     }
@@ -249,7 +251,12 @@ fn occurrence(record: &Value) -> Value {
     }
     .unwrap_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
     *transform = json!((0..3)
-        .map(|row| vec![rotation[0][row], rotation[1][row], rotation[2][row], matrix[row][3]])
+        .map(|row| vec![
+            rotation[0][row],
+            rotation[1][row],
+            rotation[2][row],
+            matrix[row][3]
+        ])
         .collect::<Vec<_>>());
     record
 }
@@ -371,7 +378,10 @@ fn sketch_constraint(record: &Value) -> Value {
     let Some(operands) = definition.get("operands").and_then(Value::as_array) else {
         return record;
     };
-    if state & !known != 0 || state & (0x10 | 0x4) == 0 || entities.len() != 4 || operands.len() != 4
+    if state & !known != 0
+        || state & (0x10 | 0x4) == 0
+        || entities.len() != 4
+        || operands.len() != 4
     {
         return record;
     }
@@ -445,8 +455,11 @@ fn tessellation(record: &Value) -> Value {
     if corners.first() == Some(&0) && corners.last() == last.as_ref() {
         return record;
     }
-    let remap: std::collections::BTreeMap<u64, usize> =
-        corners.iter().enumerate().map(|(new, old)| (*old, new)).collect();
+    let remap: std::collections::BTreeMap<u64, usize> = corners
+        .iter()
+        .enumerate()
+        .map(|(new, old)| (*old, new))
+        .collect();
     mesh["vertices"] = json!(corners
         .iter()
         .filter_map(|index| vertices.get(usize::try_from(*index).ok()?).cloned())

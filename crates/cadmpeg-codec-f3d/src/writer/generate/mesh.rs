@@ -67,7 +67,10 @@ pub(in crate::writer) struct MeshImport<'a> {
 
 /// Neutral mesh imports the writer can author, with the reason for each it
 /// cannot.
-pub(in crate::writer) fn select<'a>(target: &'a CadIr, native: &'a F3dNative) -> Vec<MeshImport<'a>> {
+pub(in crate::writer) fn select<'a>(
+    target: &'a CadIr,
+    native: &'a F3dNative,
+) -> Vec<MeshImport<'a>> {
     let mut features: Vec<_> = target
         .model
         .features
@@ -110,7 +113,10 @@ pub(in crate::writer) fn select<'a>(target: &'a CadIr, native: &'a F3dNative) ->
         else {
             continue;
         };
-        if !tessellations.iter().all(|tessellation| storable(tessellation)) {
+        if !tessellations
+            .iter()
+            .all(|tessellation| storable(tessellation))
+        {
             continue;
         }
         let native = native_mesh(feature, &tessellations, native);
@@ -231,7 +237,10 @@ fn native_mesh<'a>(
             })?;
             let kind = native.design_types.iter().find(|kind| {
                 crate::ids::design_segment(kind.id()) == Some(segment)
-                    && kind.entities.values().any(|entity| *entity == u64::from(member))
+                    && kind
+                        .entities
+                        .values()
+                        .any(|entity| *entity == u64::from(member))
             })?;
             Some((member, kind))
         })
@@ -736,9 +745,10 @@ fn encode_import(
         segment.bulk.extend_from_slice(&[0; 8]);
         let start = segment.bulk.len();
         segment.record(Class::Body.tag(), body.body)?;
-        segment
-            .bulk
-            .resize(start + mesh_body::LEN + kinds::SAME_SEGMENT_REFERENCE_BYTES, 0);
+        segment.bulk.resize(
+            start + mesh_body::LEN + kinds::SAME_SEGMENT_REFERENCE_BYTES,
+            0,
+        );
         let record = &mut segment.bulk[start..];
         put_matrix(record, mesh_body::FIRST_TRANSFORM, placements[ordinal]);
         put_matrix(record, mesh_body::SECOND_TRANSFORM, placements[ordinal]);
@@ -819,8 +829,9 @@ fn encode_import(
         .collect::<Result<_, CodecError>>()?;
     if let Some(native) = &import.native {
         for (member, kind) in &native.members {
-            let tag = 256 + u32::try_from(types.len())
-                .map_err(|_| CodecError::InvalidInput("F3D mesh type count".into()))?;
+            let tag = 256
+                + u32::try_from(types.len())
+                    .map_err(|_| CodecError::InvalidInput("F3D mesh type count".into()))?;
             ctx.charge_entities(1, "F3D Design mesh member record")?;
             segment.record(tag, *member)?;
             let mut generated = GeneratedDesignType::from(*kind);
@@ -905,7 +916,10 @@ fn reads_back(tessellation: &Tessellation, placement: [f64; 16], vertices: &[[f3
             let model = model.get();
             let [x, y, z] = container.map(f64::from);
             let row = |at: usize| {
-                (placement[at] * x + placement[at + 1] * y + placement[at + 2] * z + placement[at + 3])
+                (placement[at] * x
+                    + placement[at + 1] * y
+                    + placement[at + 2] * z
+                    + placement[at + 3])
                     * cadmpeg_asm::nurbs::reader::LEN_TO_MM
             };
             row(0) == model.x && row(4) == model.y && row(8) == model.z
@@ -942,8 +956,9 @@ fn container_vertices(tessellation: &Tessellation, placement: [f64; 16]) -> Opti
             -minor
         }
     };
-    let inverse: [[f64; 3]; 3] =
-        std::array::from_fn(|row| std::array::from_fn(|column| cofactor(column, row) / determinant));
+    let inverse: [[f64; 3]; 3] = std::array::from_fn(|row| {
+        std::array::from_fn(|column| cofactor(column, row) / determinant)
+    });
     let translation = [placement[3], placement[7], placement[11]];
     vertices
         .iter()
@@ -997,8 +1012,9 @@ fn corner_normal_bytes(tessellation: &Tessellation, placement: [f64; 16]) -> Vec
         .map(|normal| {
             let n = normal.get();
             let n = [n.x, n.y, n.z];
-            let container: [f64; 3] =
-                std::array::from_fn(|column| m[0][column] * n[0] + m[1][column] * n[1] + m[2][column] * n[2]);
+            let container: [f64; 3] = std::array::from_fn(|column| {
+                m[0][column] * n[0] + m[1][column] * n[1] + m[2][column] * n[2]
+            });
             octahedral(container)
                 .unwrap_or([0.0, 0.0])
                 .into_iter()
@@ -1094,9 +1110,11 @@ fn channels(
             continue;
         };
         match (role, code, channel.addressing()) {
-            (0, crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE, ChannelAddressing::Corner { indices })
-                if !written_normals =>
-            {
+            (
+                0,
+                crate::paramesh::ELEMENT_PACKED_DIRECTION_CODE,
+                ChannelAddressing::Corner { indices },
+            ) if !written_normals => {
                 written_normals = true;
                 channels.extend(normal_channel(
                     channel.data(),
@@ -1107,13 +1125,19 @@ fn channels(
                     item_size,
                 ));
             }
-            (0, crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE, ChannelAddressing::Triangle { .. })
-                if !written_groups =>
-            {
+            (
+                0,
+                crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE,
+                ChannelAddressing::Triangle { .. },
+            ) if !written_groups => {
                 written_groups = true;
                 channels.push(group_channel(tessellation, Some(channel.data()))?);
             }
-            (1, crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE, ChannelAddressing::Triangle { .. }) => {}
+            (
+                1,
+                crate::paramesh::ELEMENT_TRIANGLE_DELTA_CODE,
+                ChannelAddressing::Triangle { .. },
+            ) => {}
             (_, _, ChannelAddressing::Vertex {}) => channels.push(Channel {
                 domain: ChannelDomain::Vertex,
                 role,
@@ -1238,7 +1262,10 @@ fn normal_channel(
 /// The role-0 face-group partition. A stored value stream whose keys still
 /// partition the triangles as the neutral groups do keeps its keys; otherwise
 /// each group takes its ordinal as key.
-fn group_channel(tessellation: &Tessellation, stored: Option<&[u8]>) -> Result<Channel, CodecError> {
+fn group_channel(
+    tessellation: &Tessellation,
+    stored: Option<&[u8]>,
+) -> Result<Channel, CodecError> {
     let groups = tessellation.triangle_groups();
     let guid = |ordinal: usize, source: Option<&String>| {
         source
@@ -1259,11 +1286,12 @@ fn group_channel(tessellation: &Tessellation, stored: Option<&[u8]>) -> Result<C
                 consistent = false;
                 break;
             };
-            consistent &= group
-                .triangles
-                .iter()
-                .all(|triangle| usize::try_from(*triangle).ok().and_then(|index| keys.get(index)) == Some(&key))
-                && records.iter().all(|(other, _)| *other != key);
+            consistent &= group.triangles.iter().all(|triangle| {
+                usize::try_from(*triangle)
+                    .ok()
+                    .and_then(|index| keys.get(index))
+                    == Some(&key)
+            }) && records.iter().all(|(other, _)| *other != key);
             records.push((key, guid(ordinal, group.source_id.as_ref())));
         }
         if consistent {

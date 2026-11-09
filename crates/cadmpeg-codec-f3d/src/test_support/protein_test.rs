@@ -45,7 +45,9 @@ pub(crate) fn generated_protein_schema(schema: &str) -> String {
             Member::Color(_) => "Color",
             Member::Float(_) => "Float",
         };
-        document.push_str(&format!("  <{tag} id=\"{id}\"/>\n"));
+        for part in ["  <", tag, " id=\"", id, "\"/>\n"] {
+            document.push_str(part);
+        }
     }
     document.push_str("</Schema>\n");
     document

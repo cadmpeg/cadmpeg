@@ -204,13 +204,17 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     for (id, member) in protein_members(schema, appearance)? {
         match member {
             ProteinMember::Color(rgba) => {
-                document.push_str(&format!("  <Color id=\"{}\"/>\n", xml_attribute(&id)));
+                document.push_str("  <Color id=\"");
+                document.push_str(&xml_attribute(&id));
+                document.push_str("\"/>\n");
                 for value in rgba {
                     logical.extend_from_slice(&value.to_le_bytes());
                 }
             }
             ProteinMember::Float(value) => {
-                document.push_str(&format!("  <Float id=\"{}\"/>\n", xml_attribute(&id)));
+                document.push_str("  <Float id=\"");
+                document.push_str(&xml_attribute(&id));
+                document.push_str("\"/>\n");
                 logical.extend_from_slice(&value.to_le_bytes());
             }
         }
@@ -237,7 +241,10 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for (entry, data) in [
         ("AssetData/InstanceProperties.bin", instance.as_slice()),
-        ("AssetData/DefinitionIteratorProperties.bin", catalog.as_slice()),
+        (
+            "AssetData/DefinitionIteratorProperties.bin",
+            catalog.as_slice(),
+        ),
         (PROTEIN_SCHEMA_ENTRY, document.as_bytes()),
     ] {
         zip.start_file(entry, options).map_err(|error| {
@@ -2101,7 +2108,6 @@ fn nested_entry<'a>(
     }
     Ok(None)
 }
-
 
 #[cfg(test)]
 mod tests;

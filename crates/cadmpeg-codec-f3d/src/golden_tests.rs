@@ -1459,7 +1459,10 @@ fn an_edit_survives_native_writer_fallback() {
         let mut preserved_view = cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]);
         let mut authored_view = cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]);
         for view in [&mut preserved_view, &mut authored_view] {
-            for provenance in ["/source/attributes/save_date", "/source/attributes/product_version"] {
+            for provenance in [
+                "/source/attributes/save_date",
+                "/source/attributes/product_version",
+            ] {
                 if let Some(value) = view.pointer_mut(provenance) {
                     *value = serde_json::Value::Null;
                 }

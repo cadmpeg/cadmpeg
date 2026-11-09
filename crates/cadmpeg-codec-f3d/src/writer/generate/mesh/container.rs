@@ -175,7 +175,10 @@ pub(super) fn terminal_delta_values(words: &[u8]) -> Option<Vec<u32>> {
         words.push(view.u32_le()?);
     }
     let (terminal, deltas) = words.split_last()?;
-    let total: i64 = deltas.iter().map(|word| i64::from(word.cast_signed())).sum();
+    let total: i64 = deltas
+        .iter()
+        .map(|word| i64::from(word.cast_signed()))
+        .sum();
     let mut current = i64::from(*terminal).checked_sub(total)?;
     let mut values = Vec::with_capacity(words.len());
     for word in deltas {
@@ -246,7 +249,11 @@ pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, Codec
     let mut registry = Vec::new();
     let mut property = Vec::new();
     bytes_field(&mut property, PROPERTY_KEY, b"fusion_uuid");
-    bytes_field(&mut property, PROPERTY_TEXT, container.fusion_uuid.as_bytes());
+    bytes_field(
+        &mut property,
+        PROPERTY_TEXT,
+        container.fusion_uuid.as_bytes(),
+    );
     bytes_field(&mut registry, REGISTRY_PROPERTY, &property);
     let group_count = container
         .channels
@@ -343,9 +350,7 @@ pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, Codec
         names.push(0xde);
         names.extend_from_slice(
             &u16::try_from(count)
-                .map_err(|_| {
-                    CodecError::InvalidInput("paramesh stream count exceeds u16".into())
-                })?
+                .map_err(|_| CodecError::InvalidInput("paramesh stream count exceeds u16".into()))?
                 .to_be_bytes(),
         );
     }

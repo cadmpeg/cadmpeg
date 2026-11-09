@@ -132,7 +132,9 @@ const SPLINE_SUBTYPE: (&str, &str, u32, &str) = (
 fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     let registered = native.design_types.iter().any(|kind| {
-        kind.type_guid.as_str().eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
+        kind.type_guid
+            .as_str()
+            .eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
             && kind.version == SPLINE_SUBTYPE.2
             && kind.module == SPLINE_SUBTYPE.3
     });
@@ -217,22 +219,24 @@ fn regenerate_planar_curve(
     match (&mut record.geometry, entity.geometry.definition()) {
         (
             Some(SketchCurveGeometry::Line {
-                start, end, direction, ..
+                start,
+                end,
+                direction,
+                ..
             }),
-            SketchGeometryDefinition::Line { start: from, end: to },
+            SketchGeometryDefinition::Line {
+                start: from,
+                end: to,
+            },
         ) => {
-            let (Some(a), Some(b), Some(d)) = (
-                point(from.u, from.v),
-                point(to.u, to.v),
-                {
-                    let length = Vector3::new(to.u - from.u, to.v - from.v, 0.0).norm();
-                    cadmpeg_ir::units::UnitVector3::new(Vector3::new(
-                        (to.u - from.u) / length,
-                        (to.v - from.v) / length,
-                        0.0,
-                    ))
-                },
-            ) else {
+            let (Some(a), Some(b), Some(d)) = (point(from.u, from.v), point(to.u, to.v), {
+                let length = Vector3::new(to.u - from.u, to.v - from.v, 0.0).norm();
+                cadmpeg_ir::units::UnitVector3::new(Vector3::new(
+                    (to.u - from.u) / length,
+                    (to.v - from.v) / length,
+                    0.0,
+                ))
+            }) else {
                 return;
             };
             *start = a;
@@ -668,7 +672,9 @@ pub(super) fn reconcile(
             .design_types
             .iter()
             .position(|kind| {
-                kind.type_guid.as_str().eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
+                kind.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(SPLINE_SUBTYPE.0)
                     && kind.version == SPLINE_SUBTYPE.2
                     && kind.module == SPLINE_SUBTYPE.3
             })
@@ -1367,8 +1373,7 @@ pub(super) fn coverage(
                                 extension.eq_ignore_ascii_case("dat")
                                     || extension.eq_ignore_ascii_case("smbh")
                             });
-                    let disposition = if arena.as_str() == "mesh_surface_sentinels" || laid_out
-                    {
+                    let disposition = if arena.as_str() == "mesh_surface_sentinels" || laid_out {
                         NativeDisposition::Regenerated
                     } else if candidate == record {
                         NativeDisposition::Written

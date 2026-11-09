@@ -18,9 +18,9 @@ mod act;
 pub(super) mod attributes;
 pub(in crate::writer) mod canvas;
 pub(in crate::writer) mod decal;
-pub(in crate::writer) mod mesh;
 pub(super) mod features;
 mod index;
+pub(in crate::writer) mod mesh;
 pub(in crate::writer) mod native_bytes;
 pub(crate) mod native_geometry;
 pub(crate) mod parameter_links;
@@ -214,12 +214,8 @@ pub(super) fn write_with_limits(
         .map(|decal| decal::encode(decal, &output_ctx))
         .transpose()?;
     let encoded_meshes = mesh::encode(mesh::select(target, &native), &output_ctx)?;
-    let design_native = reemitted::design1_native(
-        &native,
-        target,
-        &encoded_meshes,
-        written_sketches.as_ref(),
-    );
+    let design_native =
+        reemitted::design1_native(&native, target, &encoded_meshes, written_sketches.as_ref());
     let mut dropped_records = written_sketches
         .as_ref()
         .map(|sketches| reemitted::unwritten_sketch_records(target, sketches))
