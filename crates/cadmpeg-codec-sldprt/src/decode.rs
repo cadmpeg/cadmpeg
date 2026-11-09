@@ -3573,6 +3573,7 @@ fn build_geometry_ir(
         scan,
         &mut annotations,
         Some(&topology_index),
+        &face_identities,
         &histories,
         &mut pmi_losses,
     )?;
@@ -4387,6 +4388,7 @@ fn build_metadata_ir(
         scan,
         &mut annotations,
         None,
+        &[],
         &histories,
         &mut pmi_losses,
     )?;

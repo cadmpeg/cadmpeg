@@ -558,6 +558,7 @@ struct ScannedRoot {
     root: Entity,
     rendered_dimensions: Vec<RenderedDimension>,
     spherical_diameter_displays: Vec<SphericalDiameterDisplay>,
+    presentation: presentation::Archive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -586,6 +587,7 @@ pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
+    face_identities: &[(FaceId, crate::brep::PersistentFaceIdentity)],
     histories: &[FeatureHistory],
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
@@ -594,6 +596,7 @@ pub(crate) fn annotations(
         root,
         rendered_dimensions,
         spherical_diameter_displays,
+        presentation,
     }) = scan_root(ctx, scan)?
     else {
         return Ok(Vec::new());
@@ -607,7 +610,27 @@ pub(crate) fn annotations(
         histories,
     )?;
     projection.append_losses(losses);
-    let projected = projection.annotations;
+    let mut projected = projection.annotations;
+    let (presentations, unresolved_displays) = presentation::annotations(
+        &presentation,
+        &root,
+        &mut projected,
+        face_identities,
+        crate::container::declared_sw_version(scan)
+            .and_then(|version| version.trim().parse::<u32>().ok()),
+        losses,
+    )?;
+    if presentation.is_unframed() {
+        losses.push(crate::loss::SldprtLossCode::PmiSwiftPresentationUnframed.note(
+            "SWIFT geometric-tolerance displays are declared but their display list is not framed",
+        ));
+    }
+    if unresolved_displays > 0 {
+        losses.push(crate::loss::SldprtLossCode::PmiSwiftPresentationUnresolved.note(format!(
+            "{unresolved_displays} SWIFT geometric-tolerance display(s) retain no established semantic annotation"
+        )));
+    }
+    projected.extend(presentations);
     let positions_by_prefix =
         positions_by_id_prefix(projected.iter().map(|annotation| annotation.id.as_str()));
     for (reference, entity) in root
@@ -713,11 +736,14 @@ fn scan_root(
             .map_err(|_| CodecError::malformed("invalid SWIFT source stream name"))?;
         let (rendered_dimensions, spherical_diameter_displays) =
             rendered_projections(section.payload());
+        let presentation =
+            presentation::parse(section.payload().get(..entity.offset).unwrap_or_default());
         let scanned = ScannedRoot {
             stream: source_name,
             root: entity,
             rendered_dimensions,
             spherical_diameter_displays,
+            presentation,
         };
         if root.replace(scanned).is_some() {
             return Ok(None);
@@ -4196,6 +4222,8 @@ fn suppressed(entity: &Entity) -> bool {
         .get("IsSuppressed")
         .is_some_and(|value| *value != 0)
 }
+
+mod presentation;
 
 #[cfg(test)]
 mod tests;

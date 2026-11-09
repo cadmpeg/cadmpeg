@@ -3116,6 +3116,56 @@ Unstated regions:
 - `29..48` (19 B): Marker state, selector, and reserved bytes precede the state value.
 - `56..64` (8 B): Zero bytes before the coordinate tag.
 
+## `swift_gtol_display_head`
+
+Spec §2.1 · layout: byte offsets · size: 10 B
+
+Opening bytes of each SWIFT geometric-tolerance display after the first, which declares moDisplayGtol_c.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/swift/presentation.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `display_tag` | `u16` | little | spec | u16 LE geometric-tolerance display tag `0x8008` · value `32776` |
+| 2 | 2 | `display_word` | `u16` | little | spec | u16 LE display word |
+| 4 | 4 | `body_word` | `u32` | little | spec | u32 LE display body word `6` · value `6` |
+| 8 | 2 | `compound_tag` | `u16` | little | spec | u16 LE compound geometric-tolerance tag `0x800a` · value `32778` |
+
+## `swift_feature_reference`
+
+Spec §2.1 · layout: byte offsets · size: 10 B
+
+A tagged moSwiftFR_c object; the declared form writes the class declaration in place of the tag.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/swift/presentation.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_tag` | `u16` | little | spec | u16 LE `moSwiftFR_c` class tag |
+| 2 | 4 | `object_id` | `u32` | little | spec | u32 LE referenced presentation object identifier |
+| 6 | 4 | `stamp` | `u32` | little | spec | u32 LE reference timestamp |
+
+## `identity_reference_header`
+
+Spec §2.3 · layout: byte offsets · size: 38 B
+
+Header of a face or edge identity reference; the hop entries follow at +38.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/swift/presentation/faces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `form` | `u32` | little | spec | a 38-byte header: little-endian u32 `1` · value `1` |
+| 4 | 4 | `zero_word` | `u32` | little | spec | u32 `0`, u32 count *c* · value `0` |
+| 8 | 4 | `hop_count` | `u32` | little | spec | u32 count *c* |
+| 12 | 4 | `selector` | `bytes[4]` | little | spec | a four-byte selector |
+| 16 | 4 | `record_id` | `u32` | little | spec | a little-endian u32 record identifier |
+| 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
+| 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
+
 ## `named_object_header`
 
 Spec §2.3 · layout: byte offsets · size: 16 B
