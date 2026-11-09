@@ -23,7 +23,7 @@ use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
 
 mod islands;
 mod membership;
-mod selection;
+pub(crate) mod selection;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::sketch::{PmDcSketchEntity, PmDcSketchEntityKind};
 
@@ -1215,6 +1215,15 @@ impl SketchFrame {
             u_axis,
             v_axis: normal.cross(u_axis),
         })
+    }
+
+    /// The model point at sketch coordinates `uv`.
+    fn point(&self, uv: Point2) -> Point3 {
+        Point3::new(
+            self.origin.x + uv.u * self.u_axis.x + uv.v * self.v_axis.x,
+            self.origin.y + uv.u * self.u_axis.y + uv.v * self.v_axis.y,
+            self.origin.z + uv.u * self.u_axis.z + uv.v * self.v_axis.z,
+        )
     }
 
     /// Sketch coordinates of a model point that lies in the sketch plane.

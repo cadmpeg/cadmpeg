@@ -11,7 +11,6 @@ use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::CadIr;
 
 use super::{finding, NativeData};
-use crate::design::scope::{BrepSegmentName, BrepSegmentRole};
 use crate::feature::history::{build_records, HistoryPlacement, HistoryRecords, SUPPRESSED_FLAG};
 
 pub(super) fn validate_mirrors(
@@ -114,21 +113,7 @@ pub(super) fn validate_mirrors(
     );
     let mut outputs = HashSet::new();
     let mut histories = HashMap::new();
-    let segments = data
-        .metadata
-        .iter()
-        .filter_map(|segment| {
-            let role = match segment.kind.as_str() {
-                "pm_brep" => BrepSegmentRole::Document,
-                "mb_brep" => BrepSegmentRole::FlatPattern,
-                _ => return None,
-            };
-            Some(BrepSegmentName {
-                display_name: segment.display_name.clone(),
-                role,
-            })
-        })
-        .collect::<Vec<_>>();
+    let segments = data.brep_segment_names();
     let history_records = HistoryRecords {
         features: &data.pm_dc_features,
         patterns: &data.pm_dc_pattern_features,

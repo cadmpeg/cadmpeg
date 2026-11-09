@@ -38,17 +38,18 @@ fn model() -> Model {
 fn sweep_requires_its_own_caps_complete_spans_and_unchanged_radius() {
     let model = model();
     let ends = [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)];
-    assert!(sweep(&model, 17, 2.0, 8, &[9], ends).is_some());
-    assert!(sweep(&model, 18, 2.0, 8, &[9], ends).is_none());
-    assert!(sweep(&model, 17, 3.0, 8, &[9], ends).is_none());
-    assert!(sweep(&model, 17, 2.0, 7, &[9], ends).is_none());
-    assert!(sweep(&model, 17, 2.0, 8, &[9, 10], ends).is_none());
+    assert!(sweep(&model, 17, 2.0, 8, &[(9, None)], ends).is_some());
+    assert!(sweep(&model, 18, 2.0, 8, &[(9, None)], ends).is_none());
+    assert!(sweep(&model, 17, 3.0, 8, &[(9, None)], ends).is_none());
+    assert!(sweep(&cylinder_model(3.0), 17, 2.0, 8, &[(9, None)], ends).is_none());
+    assert!(sweep(&model, 17, 2.0, 7, &[(9, None)], ends).is_none());
+    assert!(sweep(&model, 17, 2.0, 8, &[(9, None), (10, None)], ends).is_none());
     assert!(sweep(
         &model,
         17,
         2.0,
         8,
-        &[9],
+        &[(9, None)],
         [ends[0], Point3::new(0.0, 0.0, 4.0)]
     )
     .is_none());
@@ -66,14 +67,114 @@ fn sweep_requires_its_own_caps_complete_spans_and_unchanged_radius() {
             )
             .expect("shifted circle"),
         ));
-    assert!(sweep(&shifted, 17, 2.0, 8, &[9], ends).is_none());
+    assert!(sweep(&shifted, 17, 2.0, 8, &[(9, None)], ends).is_none());
 
     let mut missing = model.clone();
     missing.attributes.pop();
-    assert!(sweep(&missing, 17, 2.0, 8, &[9], ends).is_none());
+    assert!(sweep(&missing, 17, 2.0, 8, &[(9, None)], ends).is_none());
     let mut duplicate = model;
     duplicate.attributes.push(duplicate.attributes[0].clone());
-    assert!(sweep(&duplicate, 17, 2.0, 8, &[9], ends).is_none());
+    assert!(sweep(&duplicate, 17, 2.0, 8, &[(9, None)], ends).is_none());
+}
+
+fn cylinder_model(radius: f64) -> Model {
+    let mut model = model();
+    model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .expect("cylinder"),
+    ));
+    model
+}
+
+fn line_span() -> PathCurve {
+    PathCurve::Line {
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(0.0, 0.0, 5.0),
+    }
+}
+
+fn torus_model(center: Point3) -> Model {
+    torus_model_with_minor(center, 2.0)
+}
+
+fn torus_model_with_minor(center: Point3, minor: f64) -> Model {
+    let mut model = model();
+    model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            center,
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            6.0,
+            minor,
+        )
+        .expect("torus"),
+    ));
+    model
+}
+
+#[test]
+fn a_line_joined_span_requires_a_cylinder_on_the_line() {
+    let ends = [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)];
+    let model = model();
+    assert!(sweep(&model, 17, 2.0, 8, &[(9, Some(line_span()))], ends).is_some());
+    let off_axis = Some(PathCurve::Line {
+        start: Point3::new(1.0, 0.0, 0.0),
+        end: Point3::new(1.0, 0.0, 5.0),
+    });
+    assert!(sweep(&model, 17, 2.0, 8, &[(9, off_axis)], ends).is_none());
+    let skew = Some(PathCurve::Line {
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(1.0, 0.0, 5.0),
+    });
+    assert!(sweep(&model, 17, 2.0, 8, &[(9, skew)], ends).is_none());
+    let arc = Some(PathCurve::Arc {
+        center: Point3::new(0.0, 0.0, 0.0),
+        radius: 6.0,
+    });
+    assert!(sweep(&model, 17, 2.0, 8, &[(9, arc)], ends).is_none());
+    let torus = torus_model(Point3::new(0.0, 0.0, 0.0));
+    assert!(sweep(&torus, 17, 2.0, 8, &[(9, Some(line_span()))], ends).is_none());
+}
+
+#[test]
+fn an_arc_joined_span_requires_a_torus_about_the_arc() {
+    let ends = [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)];
+    let arc = |center: Point3, radius: f64| Some(PathCurve::Arc { center, radius });
+    let torus = torus_model(Point3::new(1.0, 2.0, 3.0));
+    let center = Point3::new(1.0, 2.0, 3.0);
+    assert!(sweep(&torus, 17, 2.0, 8, &[(9, arc(center, 6.0))], ends).is_some());
+    assert!(sweep(
+        &torus,
+        17,
+        2.0,
+        8,
+        &[(9, arc(Point3::new(1.0, 2.0, 4.0), 6.0))],
+        ends
+    )
+    .is_none());
+    assert!(sweep(&torus, 17, 2.0, 8, &[(9, arc(center, 5.0))], ends).is_none());
+    assert!(sweep(&model(), 17, 2.0, 8, &[(9, arc(center, 6.0))], ends).is_none());
+}
+
+#[test]
+fn a_span_without_a_joined_curve_keeps_only_the_radius_check() {
+    let ends = [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)];
+    let unjoined = [(9, None)];
+    let torus = torus_model(Point3::new(1.0, 2.0, 3.0));
+    assert!(sweep(&torus, 17, 2.0, 8, &unjoined, ends).is_some());
+    assert!(sweep(&model(), 17, 2.0, 8, &unjoined, ends).is_some());
+    // The caps keep the section radius; only the side surface differs.
+    let wide_torus = torus_model_with_minor(Point3::new(1.0, 2.0, 3.0), 2.5);
+    assert!(sweep(&wide_torus, 17, 2.0, 8, &unjoined, ends).is_none());
+    assert!(sweep(&cylinder_model(2.5), 17, 2.0, 8, &unjoined, ends).is_none());
+    // A joined span on the same faces applies the curve checks.
+    let line = [(9, Some(line_span()))];
+    assert!(sweep(&torus, 17, 2.0, 8, &line, ends).is_none());
 }
 
 #[test]
