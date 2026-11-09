@@ -473,15 +473,26 @@ fn body_with_only_carrierless_edges_keeps_its_vertices_as_wire() {
         &crate::StepWriteOptions::default(),
     )
     .expect("write vertex recovery");
-    let body = source.model.bodies[0].id.as_str();
     assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::BodyReducedToWire.kind() && loss.message.contains(body)
+        loss.code == StepLossCode::RegionVerticesRecovered.kind()
+            && source
+                .model
+                .vertices
+                .iter()
+                .all(|vertex| loss.message.contains(vertex.id.as_str()))
     }));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode vertex recovery");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
+    let mut kinds = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.kind)
+        .collect::<Vec<_>>();
+    kinds.sort_by_key(|kind| format!("{kind:?}"));
+    assert_eq!(kinds, [BodyKind::Sheet, BodyKind::Wire]);
     assert_eq!(
         decoded.ir().model.vertices.len(),
         source.model.vertices.len()

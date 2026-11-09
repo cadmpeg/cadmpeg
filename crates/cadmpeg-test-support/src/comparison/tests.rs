@@ -284,6 +284,24 @@ fn parameter_ordinals_rank_within_each_owner() {
 }
 
 #[test]
+fn occurrence_ordinals_rank_within_each_parent() {
+    let before = json!({"model":{"occurrences":[
+        {"id":"a","parent":{"kind":"root"},"ordinal":0},
+        {"id":"b","parent":{"kind":"occurrence","occurrence":"a"},"ordinal":1}]}});
+    let after = json!({"model":{"occurrences":[
+        {"id":"x","parent":{"kind":"root"},"ordinal":0},
+        {"id":"y","parent":{"kind":"occurrence","occurrence":"x"},"ordinal":0}]}});
+    assert!(accepts(&before, &after));
+    let siblings = json!({"model":{"occurrences":[
+        {"id":"a","parent":{"kind":"root"},"ordinal":0,"name":"first"},
+        {"id":"b","parent":{"kind":"root"},"ordinal":1,"name":"second"}]}});
+    let mut swapped = siblings.clone();
+    swapped["model"]["occurrences"][0]["ordinal"] = json!(1);
+    swapped["model"]["occurrences"][1]["ordinal"] = json!(0);
+    assert!(!accepts(&siblings, &swapped));
+}
+
+#[test]
 fn top_level_source_and_unknowns_are_not_record_content() {
     let mut before = document(&json!([{"id":"a","x":1.0,"native_ref":"old","source":"old"}]));
     let mut after = document(&json!([{"id":"x","x":1.0,"native_ref":"new","source":"new"}]));
@@ -535,6 +553,48 @@ fn a_removed_stub_does_not_unpair_a_different_retained_reference() {
             .expect("compare retained records"),
         BTreeSet::from(["removed".to_owned()])
     );
+}
+
+#[test]
+fn identical_twin_bodies_pair_consistently_when_their_records_interleave() {
+    let before = json!({"model":{
+        "bodies":[{"id":"b1","edges":["e1a","e1b"]},{"id":"b2","edges":["e2a","e2b"]}],
+        "edges":[{"id":"e1a","x":0.0},{"id":"e1b","x":1.0},{"id":"e2a","x":0.0},{"id":"e2b","x":1.0}]}});
+    let after = json!({"model":{
+        "bodies":[{"id":"p","edges":["k1","k2"]},{"id":"q","edges":["k0","k3"]}],
+        "edges":[{"id":"k0","x":0.0},{"id":"k1","x":0.0},{"id":"k2","x":1.0},{"id":"k3","x":1.0}]}});
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
+    let mut perturbed = after.clone();
+    for edge in [0, 3] {
+        perturbed["model"]["edges"][edge]["x"] = json!(1.0e-13 + f64::from(u8::from(edge == 3)));
+    }
+    assert!(agree(&before, &perturbed, &Allowances::default(), cross(&[])).is_ok());
+    let mut joined = after;
+    joined["model"]["bodies"][1]["edges"] = json!(["k1", "k3"]);
+    assert!(agree(&before, &joined, &Allowances::default(), cross(&[])).is_err());
+}
+
+#[test]
+fn a_nulled_reference_matches_an_omitted_or_a_replaced_list_item() {
+    let before = json!({"model":{
+        "loops":[{"id":"l","face":"f","coedges":["c0", null, "c2"]}],
+        "faces":[{"id":"f","loops":["l"]}],
+        "coedges":[{"id":"c0","x":0.0},{"id":"c2","x":2.0}]}});
+    let omitted = json!({"model":{
+        "loops":[{"id":"m","face":"g","coedges":["k0","k2"]}],
+        "faces":[{"id":"g","loops":["m"]}],
+        "coedges":[{"id":"k0","x":0.0},{"id":"k2","x":2.0}]}});
+    assert!(agree(&before, &omitted, &Allowances::default(), cross(&[])).is_ok());
+    let mut replaced = omitted.clone();
+    replaced["model"]["loops"][0]["coedges"] = json!(["k0", "k1", "k2"]);
+    replaced["model"]["coedges"]
+        .as_array_mut()
+        .expect("coedges")
+        .push(json!({"id":"k1","x":1.0}));
+    assert!(agree(&before, &replaced, &Allowances::default(), cross(&[])).is_ok());
+    let mut shortened = omitted;
+    shortened["model"]["loops"][0]["coedges"] = json!(["k0"]);
+    assert!(agree(&before, &shortened, &Allowances::default(), cross(&[])).is_err());
 }
 
 #[test]

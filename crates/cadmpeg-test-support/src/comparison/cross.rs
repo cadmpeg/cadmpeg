@@ -2,9 +2,11 @@
 //! The asymmetric record comparison of §5.3 `Cross` mode.
 //!
 //! Object keys the `before` record holds must survive; object keys only the
-//! `after` record holds are target detail and are ignored. Numbers, strings,
-//! arrays and nulls compare exactly as [`cadmpeg_ir::compare::values_agree`]
-//! compares them.
+//! `after` record holds are target detail and are ignored. A `before` null
+//! holds no content, such as a reference to a record that need not reappear
+//! (#232 §5.2), and agrees with any `after` value. Numbers, strings and
+//! arrays compare exactly as [`cadmpeg_ir::compare::values_agree`] compares
+//! them.
 
 use cadmpeg_ir::compare::{floats_agree, texts_agree};
 use serde_json::Value;
@@ -31,9 +33,21 @@ pub(super) fn shapes_agree(left: &Value, right: &Value) -> Result<(), String> {
     walk_shape(left, right, &mut path)
 }
 
+/// The `left` items to compare in step with `right`. A null item is a
+/// reference to a record that need not reappear, which a writer either
+/// replaces in place or omits from the list.
+pub(super) fn aligned<'v>(left: &'v [Value], right: &[Value]) -> Option<Vec<&'v Value>> {
+    if left.len() == right.len() {
+        return Some(left.iter().collect());
+    }
+    let kept: Vec<&Value> = left.iter().filter(|item| !item.is_null()).collect();
+    (kept.len() == right.len()).then_some(kept)
+}
+
 /// Walks two colour shapes in step; `right`-only object entries are ignored.
 fn walk_shape(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
     match (left, right) {
+        (Value::Null, _) => Ok(()),
         (Value::Object(left_map), Value::Object(right_map)) => {
             match (
                 left_map.get("object"),
@@ -52,7 +66,7 @@ fn walk_shape(left: &Value, right: &Value, path: &mut String) -> Result<(), Stri
             }
         }
         (Value::Array(left_items), Value::Array(right_items)) => {
-            if left_items.len() != right_items.len() {
+            let Some(left_items) = aligned(left_items, right_items) else {
                 return Err(disagreement(
                     path,
                     &format!(
@@ -61,8 +75,8 @@ fn walk_shape(left: &Value, right: &Value, path: &mut String) -> Result<(), Stri
                         right_items.len()
                     ),
                 ));
-            }
-            for (index, (left_child, right_child)) in left_items.iter().zip(right_items).enumerate()
+            };
+            for (index, (left_child, right_child)) in left_items.into_iter().zip(right_items).enumerate()
             {
                 let restore = path.len();
                 path.push('[');
@@ -115,6 +129,9 @@ fn entries_agree(left: &[Value], right: &[Value], path: &mut String) -> Result<(
     let mut used = vec![false; right.len()];
     for left_entry in left {
         let (left_key, left_value) = entry_parts(left_entry)?;
+        if left_value.is_null() {
+            continue;
+        }
         let mut matched = None;
         for (index, right_entry) in right.iter().enumerate() {
             if used[index] {
@@ -151,8 +168,9 @@ fn entry_parts(entry: &Value) -> Result<(Value, &Value), String> {
 /// Walks two values in step; `right`-only object keys are ignored.
 fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
     match (left, right) {
+        (Value::Null, _) => Ok(()),
         (Value::Object(left_map), Value::Object(right_map)) => {
-            for (key, left_child) in left_map {
+            for (key, left_child) in left_map.iter().filter(|(_, child)| !child.is_null()) {
                 let Some(right_child) = right_map.get(key) else {
                     return Err(disagreement(
                         path,
@@ -168,7 +186,7 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
             Ok(())
         }
         (Value::Array(left_items), Value::Array(right_items)) => {
-            if left_items.len() != right_items.len() {
+            let Some(left_items) = aligned(left_items, right_items) else {
                 return Err(disagreement(
                     path,
                     &format!(
@@ -177,8 +195,8 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
                         right_items.len()
                     ),
                 ));
-            }
-            for (index, (left_child, right_child)) in left_items.iter().zip(right_items).enumerate()
+            };
+            for (index, (left_child, right_child)) in left_items.into_iter().zip(right_items).enumerate()
             {
                 let restore = path.len();
                 path.push('[');
@@ -268,6 +286,14 @@ mod tests {
         let left = json!({"a": 1, "lost": 2});
         let right = json!({"a": 1});
         assert!(values_agree(&left, &right).is_err());
+    }
+
+    #[test]
+    fn a_before_null_agrees_with_any_after_value() {
+        let left = json!({"a": 1, "dropped": null, "list": [null, 2]});
+        assert!(values_agree(&left, &json!({"a": 1, "list": ["x", 2]})).is_ok());
+        assert!(values_agree(&left, &json!({"a": 1, "dropped": "y", "list": [null, 2]})).is_ok());
+        assert!(values_agree(&left, &json!({"a": 1, "list": ["x", 3]})).is_err());
     }
 
     #[test]

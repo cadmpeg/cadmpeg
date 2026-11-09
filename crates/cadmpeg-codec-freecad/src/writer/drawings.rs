@@ -31,7 +31,7 @@ pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
 
 pub(super) fn parameters(
     object: &mut Object,
-    owner: &str,
+    (owner, record): (&str, &str),
     parameters: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     properties: &[crate::native::PropertyRecord],
     (names, available): (&HashMap<String, String>, &std::collections::HashSet<String>),
@@ -54,8 +54,8 @@ pub(super) fn parameters(
                     })
                 }
                 "LockPosition" => match value.as_str() {
-                    "true" => Some(xml::scalar(name.as_str(), "App::PropertyBool", "Bool", 1)),
-                    "false" => Some(xml::scalar(name.as_str(), "App::PropertyBool", "Bool", 0)),
+                    "true" => Some(xml::scalar(name.as_str(), "App::PropertyBool", "Bool", true)),
+                    "false" => Some(xml::scalar(name.as_str(), "App::PropertyBool", "Bool", false)),
                     _ => None,
                 },
                 _ => None,
@@ -64,9 +64,11 @@ pub(super) fn parameters(
                 object.set(name.as_str(), xml);
             } else {
                 object.properties.shift_remove(name.as_str());
-                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                    "drawing {owner} parameter {name} has no writable property and is omitted"
-                )));
+                losses.push(
+                    FreecadLossCode::DrawingParameterNotTransferred.note(format!(
+                        "{record} parameter {name} has no writable property and is omitted"
+                    )),
+                );
             }
             continue;
         };
@@ -91,15 +93,16 @@ pub(super) fn parameters(
             if roots.next().is_some() {
                 break 'mapping None;
             }
-            let emitted = if entry.tag == "Bool" {
-                match value.as_str() {
-                    "true" => "1",
-                    "false" => "0",
-                    _ => break 'mapping None,
-                }
-            } else {
-                value.as_str()
+            let parses = match entry.tag.as_str() {
+                "Bool" => matches!(value.as_str(), "true" | "false"),
+                "Integer" => value.parse::<i64>().is_ok(),
+                "Float" => value.parse::<f64>().is_ok(),
+                _ => true,
             };
+            if !parses {
+                break 'mapping None;
+            }
+            let emitted = value.as_str();
             entry.attributes.insert("value".into(), emitted.to_owned());
             if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
                 break 'mapping None;
@@ -108,19 +111,100 @@ pub(super) fn parameters(
         };
         if let Some(xml) = encoded {
             object.set(name.as_str(), xml);
+        } else if let Some((xml, stored)) = coerced(source, value, (names, available)) {
+            object.set(name.as_str(), xml);
+            losses.push(
+                FreecadLossCode::DrawingParameterNotTransferred.note(format!(
+                    "{record} parameter {name} does not parse as property {} and is stored as {stored:?}",
+                    source.id
+                )),
+            );
         } else {
             object.properties.shift_remove(name.as_str());
-            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "drawing property {} cannot encode its current parameter and is omitted",
-                source.id
-            )));
+            losses.push(
+                FreecadLossCode::DrawingParameterNotTransferred.note(format!(
+                    "{record} parameter {name} does not parse as property {} and is omitted",
+                    source.id
+                )),
+            );
         }
     }
+}
+
+/// The value `FreeCAD` restores from `text` stored in `source`: a Bool is
+/// true only for `true`, a number is its leading numeric text, and an
+/// expression engine or link list that does not parse is empty.
+fn coerced(
+    source: &crate::native::PropertyRecord,
+    text: &str,
+    (names, available): (&HashMap<String, String>, &std::collections::HashSet<String>),
+) -> Option<(String, String)> {
+    let empty = match source.type_name.as_str() {
+        "App::PropertyExpressionEngine" => Some("<ExpressionEngine count=\"0\"></ExpressionEngine>"),
+        "App::PropertyLinkSubList" => Some("<LinkSubList count=\"0\"></LinkSubList>"),
+        "App::PropertyLinkList" => Some("<LinkList count=\"0\"></LinkList>"),
+        _ => None,
+    };
+    if let Some(content) = empty {
+        return Some((
+            xml::property(&source.name, &source.type_name, content),
+            "[]".to_owned(),
+        ));
+    }
+    let mut property = source.clone();
+    let crate::native::PropertyBody::Persisted { values, .. } = property.body.as_mut()? else {
+        return None;
+    };
+    let mut roots = values.iter_mut().filter(|entry| entry.parent.is_none());
+    let entry = roots.next()?;
+    if roots.next().is_some() {
+        return None;
+    }
+    let stored = match entry.tag.as_str() {
+        "Bool" => if text == "true" { "true" } else { "false" }.to_owned(),
+        "Integer" => leading_number(text, false),
+        "Float" => leading_number(text, true),
+        _ => return None,
+    };
+    entry.attributes.insert("value".into(), stored.clone());
+    Some((xml::native_named(&property, names, available)?, stored))
+}
+
+/// The leading decimal number of `text`, as C `strtol` or `strtod` reads it,
+/// or zero.
+fn leading_number(text: &str, fractional: bool) -> String {
+    let bytes = text.as_bytes();
+    let mut end = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
+    let digits = |from: usize| {
+        bytes[from..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count()
+    };
+    let integral = digits(end);
+    end += integral;
+    let mut fraction = 0;
+    if fractional && bytes.get(end) == Some(&b'.') {
+        fraction = digits(end + 1);
+        end += 1 + fraction;
+    }
+    if integral + fraction == 0 {
+        return "0".to_owned();
+    }
+    if fractional && matches!(bytes.get(end), Some(b'e' | b'E')) {
+        let sign = usize::from(matches!(bytes.get(end + 1), Some(b'+' | b'-')));
+        let exponent = digits(end + 1 + sign);
+        if exponent > 0 {
+            end += 1 + sign + exponent;
+        }
+    }
+    text[..end].to_owned()
 }
 
 pub(super) fn dimension_kind(
     annotation: &cadmpeg_ir::semantic_annotations::SemanticAnnotation,
     object: &mut Object,
+    losses: &mut Vec<LossNote>,
 ) {
     use cadmpeg_ir::semantic_annotations::DimensionKind;
     let Some(kind) = &annotation.dimension_kind else {
@@ -161,6 +245,15 @@ pub(super) fn dimension_kind(
         }
     });
     if current == Some(true) {
+        return;
+    }
+    // A kind outside FreeCAD's dimension types has no Type to state.
+    if let DimensionKind::Other { native_type } = kind {
+        object.properties.shift_remove("Type");
+        losses.push(FreecadLossCode::DrawingDimensionKindNotTransferred.note(format!(
+            "annotation {} dimension kind {native_type:?} has no FreeCAD dimension type",
+            annotation.id
+        )));
         return;
     }
     let content = if let Some(number) = number {
@@ -949,7 +1042,7 @@ mod tests {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::{Codec, DecodeOptions};
 
-        let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="2"><Property name="Caption" type="App::PropertyString"><String value="kept"/></Property><Property name="ScaleType" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object></ObjectData></Document>"#;
+        let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="2"><Property name="Caption" type="App::PropertyString"><String value="kept"/></Property><Property name="ScaleType" type="App::PropertyEnumeration"><Integer value="1"/></Property></Properties></Object></ObjectData></Document>"#;
         let source = crate::test_support::test_archive::archive(xml);
         let input = crate::FcstdCodec
             .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
@@ -966,14 +1059,14 @@ mod tests {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.message.contains("ScaleType") && loss.message.contains("omitted")));
+            .any(|loss| loss.message.contains("ScaleType") && loss.message.contains("stored as \"0\"")));
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
         let output = crate::FcstdCodec
             .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let parameters = &output.ir().model.drawings[0].parameters;
-        assert!(!parameters.contains_key("ScaleType"));
+        assert_eq!(parameters["ScaleType"], "0");
         assert_eq!(parameters["Caption"], "kept");
     }
 

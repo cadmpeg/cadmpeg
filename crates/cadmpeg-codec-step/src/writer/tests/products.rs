@@ -17,11 +17,12 @@ fn document_attributes_write_as_named_root_properties() {
     let representable = [
         ("Remark", AttributeValue::String("sample".into())),
         ("Count", AttributeValue::Integer(7)),
+        ("Enabled", AttributeValue::Boolean(true)),
     ];
     for (name, value) in representable
         .iter()
         .cloned()
-        .chain([("Enabled", AttributeValue::Boolean(true))])
+        .chain([("Target", AttributeValue::Reference("Other".into()))])
     {
         ir.model.attributes.push(SourceAttribute {
             id: format!("test:model:attribute#{name}").try_into().unwrap(),
@@ -39,15 +40,14 @@ fn document_attributes_write_as_named_root_properties() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    // Boolean document attributes cannot be held exactly in the CAx-IF
-    // DRI/VRI form (#209 §5.2).
     assert!(report.losses.iter().any(|loss| {
         loss.code == crate::loss::StepLossCode::DocumentAttributeValueDegraded.kind()
-            && loss.message.contains("Enabled")
+            && loss.message.contains("Target")
     }));
     let written = std::str::from_utf8(&output).unwrap();
     assert!(written.contains("DESCRIPTIVE_REPRESENTATION_ITEM('Remark','sample')"));
     assert!(written.contains("VALUE_REPRESENTATION_ITEM('Count',COUNT_MEASURE(7))"));
+    assert!(written.contains("BOOLEAN_REPRESENTATION_ITEM('Enabled',.T.)"));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
@@ -604,7 +604,7 @@ fn writer_names_the_model_product_from_options_on_both_paths() {
         None,
     )];
     let step = write_named(&ir, "Bracket model");
-    assert_eq!(record_names(&step, "PRODUCT"), ["part-0", "Bracket model"]);
+    assert_eq!(record_names(&step, "PRODUCT"), ["Bracket model"]);
 }
 
 #[test]
@@ -623,7 +623,7 @@ fn writer_names_a_product_by_its_part_number() {
     )];
     let step = write_named(&ir, "Bracket model")
         .replace("PRODUCT('P-1001','P-1001',", "PRODUCT('P-1001','',");
-    assert_eq!(record_names(&step, "PRODUCT"), ["", "Bracket model"]);
+    assert_eq!(record_names(&step, "PRODUCT"), [""]);
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(step), &DecodeOptions::default())
@@ -637,7 +637,7 @@ fn writer_names_a_product_by_its_part_number() {
     assert_eq!(product.label, None);
     assert_eq!(product.part_number.as_deref(), Some("P-1001"));
     let step = write_named(decoded.ir(), "Bracket model");
-    assert_eq!(record_names(&step, "PRODUCT"), ["P-1001", "Bracket model"]);
+    assert_eq!(record_names(&step, "PRODUCT"), ["P-1001"]);
 }
 
 /// World translation of every decoded use of a product labeled `label`.

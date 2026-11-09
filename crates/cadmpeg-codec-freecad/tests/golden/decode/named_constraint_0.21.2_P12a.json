@@ -886,7 +886,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Body",
-          "name": "Body line appearance",
           "native_ref": "fcstd:native:gui-property#Body:LineColor",
           "schema": "FCStd ViewProvider line style"
         },
@@ -898,7 +897,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Body:1",
-          "name": "Body Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#Body:LineColorArray",
           "schema": "FCStd LineColorArray"
         },
@@ -910,7 +908,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Pad",
-          "name": "Pad line appearance",
           "native_ref": "fcstd:native:gui-property#Pad:LineColor",
           "schema": "FCStd ViewProvider line style"
         },
@@ -922,7 +919,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:edge#Pad:1",
-          "name": "Pad Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#Pad:LineColorArray",
           "schema": "FCStd LineColorArray"
         },
@@ -934,7 +930,6 @@
             "r": 1.0
           },
           "id": "fcstd:appearance:edge#Sketch",
-          "name": "Sketch line appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:LineColor",
           "schema": "FCStd ViewProvider line style"
         },
@@ -946,7 +941,6 @@
             "r": 1.0
           },
           "id": "fcstd:appearance:edge#Sketch:1",
-          "name": "Sketch Edge1 appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:LineColorArray",
           "schema": "FCStd LineColorArray"
         },
@@ -958,7 +952,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:face#Body:1",
-          "name": "Body Face1 appearance",
           "native_ref": "fcstd:native:gui-property#Body:DiffuseColor",
           "schema": "FCStd DiffuseColor"
         },
@@ -970,7 +963,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:face#Pad:1",
-          "name": "Pad Face1 appearance",
           "native_ref": "fcstd:native:gui-property#Pad:DiffuseColor",
           "schema": "FCStd DiffuseColor"
         },
@@ -982,7 +974,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:face#Sketch:1",
-          "name": "Sketch Face1 appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:DiffuseColor",
           "schema": "FCStd DiffuseColor"
         },
@@ -994,7 +985,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:object#Body",
-          "name": "Body shape appearance",
           "native_ref": "fcstd:native:gui-property#Body:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1014,7 +1004,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:object#Pad",
-          "name": "Pad shape appearance",
           "native_ref": "fcstd:native:gui-property#Pad:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1034,7 +1023,6 @@
             "r": 0.800000011920929
           },
           "id": "fcstd:appearance:object#Sketch",
-          "name": "Sketch shape appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1054,7 +1042,6 @@
             "r": 0.19607843458652496
           },
           "id": "fcstd:appearance:object#XY_Plane",
-          "name": "XY_Plane shape appearance",
           "native_ref": "fcstd:native:gui-property#XY_Plane:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1074,7 +1061,6 @@
             "r": 0.19607843458652496
           },
           "id": "fcstd:appearance:object#XZ_Plane",
-          "name": "XZ_Plane shape appearance",
           "native_ref": "fcstd:native:gui-property#XZ_Plane:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1094,7 +1080,6 @@
             "r": 1.0
           },
           "id": "fcstd:appearance:object#X_Axis",
-          "name": "X_Axis shape appearance",
           "native_ref": "fcstd:native:gui-property#X_Axis:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1114,7 +1099,6 @@
             "r": 0.19607843458652496
           },
           "id": "fcstd:appearance:object#YZ_Plane",
-          "name": "YZ_Plane shape appearance",
           "native_ref": "fcstd:native:gui-property#YZ_Plane:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1134,7 +1118,6 @@
             "r": 0.0
           },
           "id": "fcstd:appearance:object#Y_Axis",
-          "name": "Y_Axis shape appearance",
           "native_ref": "fcstd:native:gui-property#Y_Axis:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1154,7 +1137,6 @@
             "r": 0.0
           },
           "id": "fcstd:appearance:object#Z_Axis",
-          "name": "Z_Axis shape appearance",
           "native_ref": "fcstd:native:gui-property#Z_Axis:ShapeMaterial",
           "properties": {
             "ambient_packed": 858993663.0,
@@ -1174,7 +1156,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Body",
-          "name": "Body point appearance",
           "native_ref": "fcstd:native:gui-property#Body:PointColor",
           "schema": "FCStd ViewProvider point style"
         },
@@ -1186,7 +1167,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Body:1",
-          "name": "Body Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#Body:PointColorArray",
           "schema": "FCStd PointColorArray"
         },
@@ -1198,7 +1178,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Pad",
-          "name": "Pad point appearance",
           "native_ref": "fcstd:native:gui-property#Pad:PointColor",
           "schema": "FCStd ViewProvider point style"
         },
@@ -1210,7 +1189,6 @@
             "r": 0.09803921729326248
           },
           "id": "fcstd:appearance:vertex#Pad:1",
-          "name": "Pad Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#Pad:PointColorArray",
           "schema": "FCStd PointColorArray"
         },
@@ -1222,7 +1200,6 @@
             "r": 1.0
           },
           "id": "fcstd:appearance:vertex#Sketch",
-          "name": "Sketch point appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:PointColor",
           "schema": "FCStd ViewProvider point style"
         },
@@ -1234,7 +1211,6 @@
             "r": 1.0
           },
           "id": "fcstd:appearance:vertex#Sketch:1",
-          "name": "Sketch Vertex1 appearance",
           "native_ref": "fcstd:native:gui-property#Sketch:PointColorArray",
           "schema": "FCStd PointColorArray"
         }
@@ -5173,9 +5149,6 @@
               "order": 0
             },
             {
-              "attributes": {
-                "settings": ""
-              },
               "kind": {
                 "type": "Camera",
                 "value": {

@@ -382,12 +382,24 @@ fn unbound_appearance_does_not_style_an_unrelated_carrier() {
         &StepWriteOptions::default(),
     )
     .expect("write unbound color");
-    let text = String::from_utf8(bytes).expect("STEP text");
+    let text = String::from_utf8(bytes.clone()).expect("STEP text");
     assert!(text.contains("COLOUR_RGB('unbound',0.125,0.25,0.5)"));
+    assert!(text.contains("SURFACE_STYLE_TRANSPARENT(0.25)"));
     assert!(!text.contains("STYLED_ITEM("));
     assert!(report.losses.iter().any(|loss| loss.code
         == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
         && loss.message.contains(id.as_str())));
+    let decoded = <crate::StepCodec as cadmpeg_ir::codec::Codec>::decode(
+        &crate::StepCodec::default(),
+        &mut std::io::Cursor::new(bytes),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+    )
+    .expect("decode unbound color");
+    assert!(decoded.ir().model.appearance_bindings.is_empty());
+    assert!(decoded.ir().model.appearances.iter().any(|appearance| {
+        appearance.name.as_deref() == Some("unbound")
+            && appearance.base_color == Some(Color::new(0.125, 0.25, 0.5, 0.75).expect("color"))
+    }));
 }
 
 #[test]
@@ -407,7 +419,17 @@ fn appearance_of_omitted_face_keeps_its_color_without_a_binding() {
         .iter_mut()
         .find(|item| item.id == surface)
         .unwrap()
-        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.4,
+            0.5,
+        )
+        .expect("elliptical cone"),
+    ));
     let appearance = AppearanceId::mint("test:model:appearance#omitted-face").expect("id");
     let color = Color::new(0.125, 0.25, 0.5, 1.0).expect("color");
     ir.model.appearances.push(Appearance {

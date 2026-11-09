@@ -482,6 +482,71 @@ pub(super) fn decode(
         typed.insert(id);
         typed.insert(coordinate_id);
     }
+    for (&id, record) in exchange.records() {
+        if record.partials.len() != 1 || !has_entity(record, "TESSELLATED_POINT_SET") {
+            continue;
+        }
+        let Some(coordinate_id) = record.parameter(1).and_then(ValueExt::reference) else {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "TESSELLATED_POINT_SET #{id} has no COORDINATES_LIST reference"
+            )));
+            continue;
+        };
+        let Some(vertices) = coordinates.get(&coordinate_id) else {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "TESSELLATED_POINT_SET #{id} has no resolved COORDINATES_LIST"
+            )));
+            continue;
+        };
+        let Some(points) = index_list(record.parameter(2)).filter(|points| {
+            points.iter().all(|index| {
+                *index != 0 && cadmpeg_core::decode::index_from_u32(*index) <= vertices.len()
+            })
+        }) else {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "TESSELLATED_POINT_SET #{id} has an invalid one-based point list"
+            )));
+            continue;
+        };
+        let points = points
+            .iter()
+            .map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1])
+            .collect::<Vec<_>>();
+        let mesh = cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+            points,
+            Vec::new(),
+            None,
+        )
+        .map_err(|error| error.to_string())
+        .and_then(|rows| {
+            Tessellation::from_parts(ids::tessellation(kind!("mesh"), id).into(), rows, Vec::new())
+                .map_err(|error| error.to_string())
+        });
+        let mesh = match mesh {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                losses.push(StepLossCode::TessellationInvalidPayload.note(format!(
+                    "TESSELLATED_POINT_SET #{id}: {error}"
+                )));
+                continue;
+            }
+        };
+        let mut pending_meshes = admitted_meshes;
+        let next_mesh_count = admitted_meshes
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("STEP tessellation mesh count exceeds u64"))?;
+        ctx.admit_entities(
+            next_mesh_count,
+            &mut pending_meshes,
+            "step_tessellation_mesh_entity",
+        )?;
+        admitted_meshes = pending_meshes;
+        ir.model
+            .tessellations
+            .push(mesh.with_source_object(Some(super::step_source_association(id))));
+        typed.insert(id);
+        typed.insert(coordinate_id);
+    }
     if !ir.model.tessellations.is_empty() {
         for (&id, record) in exchange.records() {
             if has_entity(record, "TESSELLATED_SHAPE_REPRESENTATION")

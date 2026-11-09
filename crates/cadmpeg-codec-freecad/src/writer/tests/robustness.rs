@@ -163,6 +163,17 @@ fn reduced_rows_hold_their_normalizations() {
             "model.parameters[].name",
             "model.parameters[].driving",
             "model.parameters[].expression",
+            "model.occurrences[]",
+            "model.assembly_joints[].operands",
+            "model.sketches[].placement",
+            "model.sketches[].profiles",
+            "model.presentation_documents[].schema_version",
+            "model.presentation_documents[].states",
+            "model.view_presentations[]",
+            "model.appearances[]",
+            "model.appearance_bindings[]",
+            "model.semantic_annotations[].parameters",
+            "model.semantic_annotations[]",
         ]
     );
     for row in rows {
