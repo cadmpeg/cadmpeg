@@ -304,6 +304,9 @@ pub(crate) enum StepLossCode {
     DisplayColorUnstyled,
     /// A wire body's direct color alpha was omitted from RGB curve styling.
     WireBodyTransparencyOmitted,
+    /// A translucent colour bound to a curve or point was written as a curve
+    /// or point style, which holds no transparency.
+    LineStyleTransparencyOmitted,
     /// Appearance assets were reduced to `STYLED_ITEM` base colors.
     AppearanceReducedToBaseColor,
     /// Appearance bindings carry source object or channel metadata.
@@ -584,6 +587,7 @@ impl StepLossCode {
         Self::SourceAssociationOmitted,
         Self::DisplayColorUnstyled,
         Self::WireBodyTransparencyOmitted,
+        Self::LineStyleTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
         Self::AppearanceBindingMetadataReduced,
         Self::AppearanceBindingBodyFallback,
@@ -806,6 +810,7 @@ impl StepLossCode {
             Self::SourceAssociationOmitted => "source.association-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
+            Self::LineStyleTransparencyOmitted => "appearance.line-style-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
@@ -941,6 +946,7 @@ impl StepLossCode {
             | Self::SourceAssociationOmitted
             | Self::DisplayColorUnstyled
             | Self::WireBodyTransparencyOmitted
+            | Self::LineStyleTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
             | Self::AppearanceBindingMetadataReduced
             | Self::AppearanceBindingBodyFallback
@@ -1138,7 +1144,8 @@ impl StepLossCode {
             Self::AppearanceBindingMissingAsset
             | Self::AppearanceBindingNoBaseColor
             | Self::AppearanceBindingTargetConflict
-            | Self::WireBodyTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
+            | Self::WireBodyTransparencyOmitted
+            | Self::LineStyleTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
             Self::ParametricDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::SemanticAnnotationOmitted
@@ -1330,6 +1337,7 @@ mod tests {
                 "source.association-omitted",
                 "appearance.display-color-unstyled",
                 "appearance.wire-body-transparency-omitted",
+                "appearance.line-style-transparency-omitted",
                 "appearance.reduced-to-base-color",
                 "appearance.binding-metadata-reduced",
                 "appearance.binding-body-fallback",
