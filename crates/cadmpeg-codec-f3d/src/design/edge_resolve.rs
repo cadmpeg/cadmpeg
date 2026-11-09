@@ -869,36 +869,6 @@ fn resolved_edge_group_with_transition_chain(
                 ));
             }
         }
-        // Identities that resolve no edge leave a treatment group to the
-        // deleted edges its members' recipe operands share.
-        if allow_edge_treatment_transition_chain
-            && has_recipe_operands
-            && identity_matches
-                .iter()
-                .all(|operand| operand.resolved_edge_slot.is_none())
-        {
-            let recipe_operands = members
-                .iter()
-                .filter_map(|member| {
-                    operands.iter().find(|operand| {
-                        native_stream(&operand.id) == stream
-                            && operand.scope_record_index == group.scope_record_index
-                            && operand.record_index() == member.value
-                    })
-                })
-                .collect::<Vec<_>>();
-            if let Some(edges) =
-                shared_reference_deleted_edge_group_candidates(&recipe_operands, ctx)?
-            {
-                return Ok(historical_identity_slots(
-                    group,
-                    state,
-                    feature_id,
-                    previous_state_id,
-                    &edges,
-                ));
-            }
-        }
         return match partial_historical_edge_selection(
             identity_matches
                 .iter()
@@ -1037,11 +1007,16 @@ fn resolved_edge_group_with_transition_chain(
         _ => None,
     };
     let resolved_slots = exact_slots.or(transition_complete_slots);
-    let resolved_slots = if resolved_slots.is_some()
-        || has_standard_recipe_operands
-        || transition_state_id.is_none()
-    {
+    let resolved_slots = if resolved_slots.is_some() || transition_state_id.is_none() {
         resolved_slots
+    } else if has_standard_recipe_operands {
+        // Standard recipes resolve member by member; their group may also
+        // take the edges its transition deletes.
+        if allow_edge_treatment_transition_chain {
+            shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?
+        } else {
+            None
+        }
     } else {
         transition_slots()?
     };
