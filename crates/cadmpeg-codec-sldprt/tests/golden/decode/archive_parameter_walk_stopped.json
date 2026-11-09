@@ -52,32 +52,7 @@
             "swobjects_metadata_identity": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
           }
         ],
-        "document_metadata": [
-          {
-            "attributes": [
-              {
-                "id": "sldprt:metadata:part_record#8:32",
-                "name": "part_record",
-                "target": {
-                  "kind": "document"
-                },
-                "values": [
-                  {
-                    "kind": "integer",
-                    "value": 4294901760
-                  },
-                  {
-                    "kind": "integer",
-                    "value": 1867411309
-                  }
-                ]
-              }
-            ],
-            "id": "sldprt:metadata:document#0",
-            "pmi": [],
-            "semantic_annotations": []
-          }
-        ],
+        "document_metadata": [],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [],
@@ -289,11 +264,6 @@
           "offset": 0,
           "stream": "source",
           "tag": "source_image"
-        },
-        "sldprt:metadata:part_record#8:32": {
-          "offset": 32,
-          "stream": "Contents/Config-0",
-          "tag": "moPart_c"
         },
         "sldprt:source:feature-input#b5a4569519155406f19633dc20259ad21692e021b2398a66df29069b503e0344": {
           "offset": 0,
