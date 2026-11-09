@@ -330,6 +330,14 @@ fn finish_decode(
             )),
         );
     }
+    if tolerance_transfer.unresolved_secondaries != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiSecondaryToleranceUntransferred.note(format!(
+                "Retained {} untransferred secondary geometric tolerance values",
+                tolerance_transfer.unresolved_secondaries
+            )),
+        );
+    }
     if tolerance_transfer.unresolved_target_bindings != 0 {
         report.losses.push(
             CatiaLossCode::AttributesPmiTargetRosterUnresolved.note(format!(

@@ -38,6 +38,7 @@ pub(crate) struct Transfer {
     pub(crate) unresolved_field_keys: usize,
     pub(crate) unresolved_identity_collisions: usize,
     pub(crate) unresolved_candidates: usize,
+    pub(crate) unresolved_secondaries: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -601,17 +602,21 @@ impl<'a> Graph<'a, '_> {
         (matches == 1).then_some(())
     }
 
-    fn field_key(&self, field: &Field<'_>, expected: Option<u32>) -> Option<bool> {
+    /// Whether exactly one distinct member of the field carries the stored
+    /// key. A field without a stored key needs no carrier.
+    fn field_key(&self, field: &Field<'_>, expected: Option<u32>) -> bool {
         let Some(expected) = expected else {
-            return Some(true);
+            return true;
         };
-        let mut selected = None;
+        let mut carriers = [None; 2];
         for group in [field.references, field.parameters] {
             for at in 0..group.count {
-                let Some(id) = group.reference(at)?.entity() else {
+                let Some(id) = group.reference(at).and_then(ReferenceSlot::entity) else {
                     continue;
                 };
-                let (entity, _) = self.record(id)?;
+                let Some((entity, _)) = self.record(id) else {
+                    continue;
+                };
                 let matches = match &entity.body {
                     CatiaEntityRecordBody::Inline(_) => (|| {
                         let mut body = inline(entity)?;
@@ -628,13 +633,16 @@ impl<'a> Graph<'a, '_> {
                     })(),
                     CatiaEntityRecordBody::Nested { .. } => self.parameter_key(id, Some(expected)),
                 };
-                if matches.is_some() && selected.replace(id).is_some_and(|previous| previous != id)
-                {
-                    return None;
+                if matches.is_some() && carriers[0] != Some(id) {
+                    if carriers[0].is_none() {
+                        carriers[0] = Some(id);
+                    } else {
+                        carriers[1] = Some(id);
+                    }
                 }
             }
         }
-        Some(selected.is_some())
+        matches!(carriers, [Some(_), None])
     }
 
     fn label(&self, id: u32, owner: u32) -> Option<&'a str> {
@@ -1284,6 +1292,7 @@ pub(crate) fn transfer(
                 let Some(secondary) =
                     scalar_declaration(entity, &with_drf).filter(|d| d.count == 4)
                 else {
+                    stats.unresolved_secondaries += 1;
                     continue;
                 };
                 let datum_count = index_from_u32(secondary.values[1]);
@@ -1291,36 +1300,19 @@ pub(crate) fn transfer(
                     continue;
                 }
                 let secondary_frame = frame.as_ref().and_then(|f| f.admitted_prefix(datum_count));
-                let Some(number) = with_drf
-                    .parameters
-                    .reference(0)
-                    .and_then(ReferenceSlot::entity)
-                else {
+                let staged = (|| {
+                    let number = with_drf.parameters.reference(0)?.entity()?;
+                    let tabulation = with_drf.parameters.reference(1)?.entity()?;
+                    graph.tabulation(tabulation, entity.entity_id, "RefTolTabValue")?;
+                    let magnitude = graph.magnitude(number, entity.entity_id, "RefTolNumValue")?;
+                    let (number, _) = graph.record(number)?;
+                    Some((number, magnitude))
+                })();
+                let Some((number, magnitude)) = staged else {
+                    stats.unresolved_secondaries += 1;
                     continue;
                 };
-                let Some(tabulation) = with_drf
-                    .parameters
-                    .reference(1)
-                    .and_then(ReferenceSlot::entity)
-                else {
-                    continue;
-                };
-                if graph
-                    .tabulation(tabulation, entity.entity_id, "RefTolTabValue")
-                    .is_none()
-                {
-                    continue;
-                }
-                let Some(field_key_resolved) = graph.field_key(&with_drf, secondary.key) else {
-                    continue;
-                };
-                let Some(magnitude) = graph.magnitude(number, entity.entity_id, "RefTolNumValue")
-                else {
-                    continue;
-                };
-                let Some((number, _)) = graph.record(number) else {
-                    continue;
-                };
+                let field_key_resolved = graph.field_key(&with_drf, secondary.key);
                 if matches!(
                     emit_tolerance(
                         ctx,

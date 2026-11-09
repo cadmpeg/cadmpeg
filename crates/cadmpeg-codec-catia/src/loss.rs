@@ -155,6 +155,8 @@ pub(crate) enum CatiaLossCode {
     AttributesDimensionQuantityUnresolved,
     /// Source geometric-tolerance candidates lack a complete neutral transfer.
     AttributesPmiToleranceUntransferred,
+    /// An active secondary tolerance value has no complete source production.
+    AttributesPmiSecondaryToleranceUntransferred,
     /// A tolerance datum-reference system has unbound source members.
     AttributesPmiDatumSystemUnresolved,
     /// A PMI target roster has unbound or unsupported source members.
@@ -225,6 +227,7 @@ impl CatiaLossCode {
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesPmiToleranceUntransferred,
+        Self::AttributesPmiSecondaryToleranceUntransferred,
         Self::AttributesPmiDatumSystemUnresolved,
         Self::AttributesPmiTargetRosterUnresolved,
         Self::AttributesPmiTopologyTargetUnresolved,
@@ -298,6 +301,9 @@ impl CatiaLossCode {
                 "attributes.dimension-quantity-unresolved"
             }
             Self::AttributesPmiToleranceUntransferred => "attributes.pmi-tolerance-untransferred",
+            Self::AttributesPmiSecondaryToleranceUntransferred => {
+                "attributes.pmi-secondary-tolerance-untransferred"
+            }
             Self::AttributesPmiDatumSystemUnresolved => "attributes.pmi-datum-system-unresolved",
             Self::AttributesPmiTargetRosterUnresolved => "attributes.pmi-target-roster-unresolved",
             Self::AttributesPmiTopologyTargetUnresolved => {
@@ -382,6 +388,7 @@ impl CatiaLossCode {
             Self::AttributesMaterialsMetadataNotTransferred
             | Self::AttributesDimensionQuantityUnresolved
             | Self::AttributesPmiToleranceUntransferred
+            | Self::AttributesPmiSecondaryToleranceUntransferred
             | Self::AttributesPmiDatumSystemUnresolved
             | Self::AttributesPmiTargetRosterUnresolved
             | Self::AttributesPmiTopologyTargetUnresolved
@@ -485,6 +492,7 @@ mod tests {
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.pmi-tolerance-untransferred",
+                "attributes.pmi-secondary-tolerance-untransferred",
                 "attributes.pmi-datum-system-unresolved",
                 "attributes.pmi-target-roster-unresolved",
                 "attributes.pmi-topology-target-unresolved",

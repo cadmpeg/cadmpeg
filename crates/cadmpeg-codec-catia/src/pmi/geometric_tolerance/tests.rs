@@ -114,6 +114,8 @@ enum FixtureCase {
     MultipleTargets,
     UnsupportedLastDatum,
     KeylessMain,
+    AmbiguousSecondaryKey,
+    UnresolvableSecondaryMember,
 }
 
 #[derive(Clone, Copy)]
@@ -127,6 +129,7 @@ struct Options {
     main_literal: Option<u8>,
     secondary_literal: Option<u8>,
     trailer: u8,
+    magnitude_trailer: Option<u8>,
     main_value: f64,
 }
 
@@ -142,6 +145,7 @@ impl Default for Options {
             main_literal: None,
             secondary_literal: None,
             trailer: 0x92,
+            magnitude_trailer: None,
             main_value: 0.762,
         }
     }
@@ -274,7 +278,12 @@ fn primitive(
     } else {
         entity.push(0x37);
     }
-    entity.extend([0x81, options.trailer]);
+    let trailer = if value.is_some() {
+        options.magnitude_trailer.unwrap_or(options.trailer)
+    } else {
+        options.trailer
+    };
+    entity.extend([0x81, trailer]);
     let mut object = vec![0x14, 1, 0x91];
     object.extend(reference(owner, options.wide));
     object.extend(frame(0x0a, vec![0xfe]));
@@ -341,7 +350,12 @@ fn fixture(options: Options) -> Vec<u8> {
     fields.extend(instance_field(
         ["TolWiDRF", "CATTPSToleranceWiDRFData"],
         &[Some(id(4))],
-        &[Some(id(12)), Some(id(13)), None, None],
+        &[
+            Some(id(12)),
+            Some(id(13)),
+            matches!(options.case, FixtureCase::UnresolvableSecondaryMember).then(|| id(999)),
+            None,
+        ],
         options,
     ));
     let mut records = vec![(
@@ -391,18 +405,30 @@ fn fixture(options: Options) -> Vec<u8> {
             1
         },
     ];
-    records.push((
-        inline_entity(
-            id(4),
-            ["frame", "CATTPSReferenceFrame"],
-            scalar_declaration(
-                ["FrameBloc", "CATTPSFrameData"],
-                &transitions,
-                Some(key(id(10))),
-                options,
-            ),
+    let mut frame_entity = inline_entity(
+        id(4),
+        ["frame", "CATTPSReferenceFrame"],
+        scalar_declaration(
+            ["FrameBloc", "CATTPSFrameData"],
+            &transitions,
+            Some(key(id(10))),
             options,
         ),
+        options,
+    );
+    if matches!(options.case, FixtureCase::AmbiguousSecondaryKey) {
+        let mut header = vec![0xea];
+        header.extend(id(4).to_le_bytes());
+        header.extend([0x81, 0x80]);
+        let at = frame_entity
+            .windows(header.len())
+            .position(|window| window == header.as_slice())
+            .expect("frame identity header")
+            + header.len();
+        frame_entity[at..at + 4].copy_from_slice(&key(id(12)).to_le_bytes());
+    }
+    records.push((
+        frame_entity,
         instance(
             instance_field(
                 ["FrameBloc", "CATTPSFrameData"],
@@ -989,6 +1015,48 @@ fn secondary_metadata_key_binds_its_frame_or_reports_unresolved_meaning() {
 }
 
 #[test]
+fn ambiguous_or_unresolvable_secondary_key_members_keep_the_secondary() {
+    for (case, unresolved_keys) in [
+        (FixtureCase::AmbiguousSecondaryKey, 1),
+        (FixtureCase::UnresolvableSecondaryMember, 0),
+    ] {
+        let (_, stats) = decode(&fixture(Options {
+            secondary: 1,
+            case,
+            ..Options::default()
+        }));
+        assert_eq!(stats.main_tolerances, 1);
+        assert_eq!(stats.secondary_tolerances, 1);
+        assert_eq!(stats.unresolved_field_keys, unresolved_keys);
+        assert_eq!(stats.unresolved_secondaries, 0);
+    }
+}
+
+#[test]
+fn unreadable_secondary_declaration_charges_an_untransferred_secondary() {
+    let (_, stats) = decode(&fixture(Options {
+        secondary: 1,
+        case: FixtureCase::MalformedSecondaryKey,
+        ..Options::default()
+    }));
+    assert_eq!(stats.main_tolerances, 1);
+    assert_eq!(stats.secondary_tolerances, 0);
+    assert_eq!(stats.unresolved_secondaries, 1);
+}
+
+#[test]
+fn unreadable_secondary_magnitude_charges_an_untransferred_secondary() {
+    let (_, stats) = decode(&fixture(Options {
+        secondary: 1,
+        secondary_literal: Some(0x55),
+        ..Options::default()
+    }));
+    assert_eq!(stats.main_tolerances, 1);
+    assert_eq!(stats.secondary_tolerances, 0);
+    assert_eq!(stats.unresolved_secondaries, 1);
+}
+
+#[test]
 fn exactness_omits_an_absent_datum_system() {
     let (mut ir, _) = decode(&fixture(Options::default()));
     let annotation = ir
@@ -1055,6 +1123,20 @@ fn keyless_main_declaration_transfers_the_tolerance() {
         PmiDefinition::GeometricTolerance { magnitude, .. }
             if (magnitude.get().value.get() - 0.762).abs() < VALUE_TOLERANCE
     )));
+}
+
+#[test]
+fn unsupported_magnitude_trailer_alone_withholds_the_tolerance() {
+    let (ir, stats) = decode(&fixture(Options {
+        magnitude_trailer: Some(0x55),
+        ..Options::default()
+    }));
+    assert_eq!(stats.main_tolerances, 0);
+    assert!(!ir
+        .model
+        .pmi
+        .iter()
+        .any(|p| matches!(p.definition, PmiDefinition::GeometricTolerance { .. })));
 }
 
 #[test]
