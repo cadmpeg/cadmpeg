@@ -2,8 +2,9 @@
 //! Blends whose supports share several edges along the blend axis.
 
 use super::{
-    bind_unbound, bind_unbound_fillet, blends, faces, fillet, group, history_between, input, line,
-    native, one_mm, output, partial, proven, scope, slots, three_mm, transition, x, y, z, SCOPE_ID,
+    bind_unbound, bind_unbound_fillet, blends, earlier, faces, fillet, group, history_between,
+    input, line, native, one_mm, output, partial, proven, scope, slots, three_mm, transition, x, y,
+    z, SCOPE_ID,
 };
 use crate::history::fillet_blends::{
     bind_fillet_groups, consumption_conflicts, transition_blends, Blend, Found, SharedEdge,
@@ -438,6 +439,13 @@ fn a_covering_blend_edge_binds_with_a_note_that_names_the_shared_edges() {
         [F3dLossCode::HistoricalFilletEdgeCovering.kind()],
         "a stated slot keeps the note, because the consumed edges stay assumed"
     );
+    let (bound, notes) = bind(earlier(&[17, 18]), &[17, 18, 19]);
+    assert_eq!(
+        bound,
+        ["17", "18"],
+        "a complete selection of every deleted shared edge disagrees and stays"
+    );
+    assert!(notes.is_empty(), "{notes:?}");
 }
 
 /// A covering blend of `edge` that consumes the deleted edge `consumed`.
