@@ -551,7 +551,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural curve record fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:construction is omitted from FCStd synthesis",
+        "message": "procedural curve record fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:construction of curves fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -561,7 +561,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural curve record fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9:construction is omitted from FCStd synthesis",
+        "message": "procedural curve record fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9:construction of curves fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -571,7 +571,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural curve record fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5:construction is omitted from FCStd synthesis",
+        "message": "procedural curve record fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5:construction of curves fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -581,7 +581,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural curve record fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9:construction is omitted from FCStd synthesis",
+        "message": "procedural curve record fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9:construction of curves fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -591,7 +591,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural surface record fcstd:model:surface#Loft:Shape:Loft.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "message": "procedural surface record fcstd:model:surface#Loft:Shape:Loft.Shape.brp:1:construction of surfaces fcstd:model:surface#Loft:Shape:Loft.Shape.brp:1 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -601,7 +601,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural surface record fcstd:model:surface#LoftSectionA:Shape:LoftSectionA.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "message": "procedural surface record fcstd:model:surface#LoftSectionA:Shape:LoftSectionA.Shape.brp:1:construction of surfaces fcstd:model:surface#LoftSectionA:Shape:LoftSectionA.Shape.brp:1 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -611,7 +611,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural surface record fcstd:model:surface#LoftSectionB:Shape:LoftSectionB.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "message": "procedural surface record fcstd:model:surface#LoftSectionB:Shape:LoftSectionB.Shape.brp:1:construction of surfaces fcstd:model:surface#LoftSectionB:Shape:LoftSectionB.Shape.brp:1 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -621,7 +621,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:1:construction is omitted from FCStd synthesis",
+        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:1:construction of surfaces fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:1 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -631,7 +631,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2:basis:construction is omitted from FCStd synthesis",
+        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2:basis:construction of surfaces fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2:basis is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
@@ -641,7 +641,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2:construction is omitted from FCStd synthesis",
+        "message": "procedural surface record fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2:construction of surfaces fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:2 is omitted from FCStd synthesis",
         "severity": "warning"
       },
       {
