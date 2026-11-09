@@ -1598,13 +1598,16 @@ the surface's unique bounded face and records the inference. `creo_prt.md`
 uses the faces of two surface links, the visible faces on the carrier of an
 `ActDatums` cylinder link, or for two distinct edge links each
 edge's face that the other edge does not bound, and a type-1 tolerance uses
-the targets of its dimension; it records both inferences. Attachments of type
+the targets of its dimension; it records both inferences. A link whose
+identifier names a `VisibGeom` surface with faces and also an `ActDatums`
+surface selects no target, as in the plane-lookup rule of `creo_prt.md` §6. Attachments of type
 `16`, tolerance attachments of type `1`, a dimension whose two links name one
 edge, and placements of type `5` remain unresolved.
 
 **Need.** Establish the native record that states a dimension's measured
 features before transferring an edge reference as a face target, and the
-target semantics of the unresolved attachment and placement types.
+target semantics of the unresolved attachment and placement types. Establish
+which section a type-`25` identifier selects when both sections define it.
 
 **Note.** Attachment tests gave these results:
 
@@ -1622,6 +1625,7 @@ target semantics of the unresolved attachment and placement types.
 12. A dimension's edge links name its target faces directly: each edge bounds the face shared by both links and one STEP-twin target face.
 13. A dimension's `p_sld_info` always starts with its owner fields: a class reference can precede them.
 14. A type-`25` link always names a `VisibGeom` surface: size dimensions link `ActDatums` cylinders, and the visible faces on those carriers are the STEP-twin dimension targets.
+15. One surface identifier space spans `VisibGeom` and `ActDatums`: `creo_prt.md` states that an `ActDatums` cylinder number and a plane number do not join the other namespace by number.
 ### PP-25. PMI attribute units
 
 **Question.** How does a nonempty neutral attribute `unit` field affect its

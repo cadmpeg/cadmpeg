@@ -205,7 +205,8 @@ fn resolve_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<Dimension
 
 /// The bounded faces of surface `id`. A visible surface supplies its own
 /// faces. A datum cylinder supplies the visible faces whose cylinder carrier
-/// has its axis line and radius.
+/// has its axis line and radius. An identifier that names a visible surface
+/// with faces and a datum surface selects no faces.
 fn surface_faces(ir: &CadIr, id: u32) -> Option<Vec<FaceId>> {
     let visible =
         crate::identity::compose_checked::<SurfaceId>(&crate::identity::VISIBGEOM_SURFACE, id)
@@ -223,7 +224,8 @@ fn surface_faces(ir: &CadIr, id: u32) -> Option<Vec<FaceId>> {
     };
     let faces = faces_on(&|surface| *surface == visible);
     if !faces.is_empty() {
-        return Some(faces);
+        let names_datum = ir.model.surfaces.iter().any(|surface| surface.id == datum);
+        return (!names_datum).then_some(faces);
     }
     let datum_cylinder = cylinder(ir, &datum)?;
     let faces = faces_on(&|surface| {

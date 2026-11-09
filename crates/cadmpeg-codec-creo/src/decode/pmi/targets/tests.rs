@@ -93,3 +93,80 @@ fn one_edge_linked_twice_selects_no_target() {
     let ir = edge_ir(&[(1, &[10, 11])]);
     assert!(super::resolve_dimension(&[(1, 1), (1, 1)], &ir).is_none());
 }
+
+fn cylinder_surface(id: &str, center_x: f64) -> cadmpeg_ir::geometry::Surface {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    Surface {
+        id: cadmpeg_ir::ids::SurfaceId::try_from(id.to_owned()).expect("surface id"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(center_x, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                17.5,
+            )
+            .expect("cylinder"),
+        )),
+        source_object: None,
+    }
+}
+
+fn visible_face(ir: &mut cadmpeg_ir::document::CadIr, face_id: &str, surface: &str) {
+    use cadmpeg_ir::ids::{ShellId, SurfaceId};
+    use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
+
+    ir.model.faces.push(Face {
+        id: FaceId::try_from(format!("creo:visibgeom:face#{face_id}")).expect("face id"),
+        shell: ShellId::try_from("creo:visibgeom:shell#1".to_owned()).expect("shell id"),
+        surface: SurfaceId::try_from(surface.to_owned()).expect("surface id"),
+        sense: Sense::Forward,
+        loops: FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+}
+
+#[test]
+fn a_surface_link_selects_the_faces_of_its_visible_surface() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model
+        .surfaces
+        .push(cylinder_surface("creo:visibgeom:surface#7", 0.0));
+    visible_face(&mut ir, "7", "creo:visibgeom:surface#7");
+    let target = super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir).expect("target");
+    assert_eq!(target.faces, vec![face("7")]);
+}
+
+#[test]
+fn a_datum_cylinder_link_selects_the_visible_faces_on_its_carrier() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model
+        .surfaces
+        .push(cylinder_surface("creo:actdatums:surface#7", 0.0));
+    ir.model
+        .surfaces
+        .push(cylinder_surface("creo:visibgeom:surface#8", 0.0));
+    ir.model
+        .surfaces
+        .push(cylinder_surface("creo:visibgeom:surface#9", 50.0));
+    visible_face(&mut ir, "8", "creo:visibgeom:surface#8");
+    visible_face(&mut ir, "9", "creo:visibgeom:surface#9");
+    let target = super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir).expect("target");
+    assert_eq!(target.faces, vec![face("8")]);
+}
+
+#[test]
+fn a_link_that_names_a_visible_and_a_datum_surface_selects_no_target() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model
+        .surfaces
+        .push(cylinder_surface("creo:actdatums:surface#7", 0.0));
+    ir.model
+        .surfaces
+        .push(cylinder_surface("creo:visibgeom:surface#7", 50.0));
+    visible_face(&mut ir, "7", "creo:visibgeom:surface#7");
+    assert!(super::resolve_dimension(&[(0x25, 7), (0x25, 7)], &ir).is_none());
+}
