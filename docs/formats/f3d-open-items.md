@@ -1236,15 +1236,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-164. Primary edge-recipe references with several face fragments
 
-**Question.** How does a standard edge recipe select among several persistent face fragments for one primary-side reference?
+**Question.** Which selector rule selects the edge when several edges remain after the primary-reference lane unions, distinct-support-face constraint, and recipe-boundary constraint?
 
-**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each face has an ordered loop and coedge boundary. The common-boundary rule admits references that each bind to one face and whose boundaries share exactly one live edge.
+**Known.** Each first-side reference lane contributes the union of its live face-fragment loop edges. The lane intersection requires distinct supporting faces. The recipe-boundary constraint and singleton fallback select a unique edge.
 
-**Need.** The selector rule that distinguishes face fragments and selects an edge when the referenced boundaries share several edges. Controlled recipe changes that preserve the prefix references and vary the selected fragment.
+**Need.** The selector rule for several remaining edges.
 
 **Conflict.** None.
 
-**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples. When the referenced faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the decoder reads that edge and reports `history.edge-selection-inferred`. Whether a recipe's candidate faces can omit the selected edge is open.
+**Note.** An unresolved member retains the native group.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 

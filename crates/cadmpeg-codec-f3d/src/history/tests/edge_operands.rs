@@ -552,7 +552,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
     };
     let resolve = |references: &[DesignRecipeReference], candidate_edges: &[i64]| {
         let mut queries = crate::history::topology_cache::TopologyQueryCache::default();
-        crate::history::side_one_reference_face_edge(
+        crate::history::fragment_edge::side_one_reference_face_edge(
             Some(&structure),
             references,
             candidate_edges,
@@ -567,14 +567,12 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
     // support faces alone still read it, as an inference.
     assert_eq!(resolve(&both, &[30, 32]), Some((31, true)));
     assert_eq!(resolve(&both, &[]), Some((31, true)));
-    // An operand whose names supply two faces names no single face; one
-    // whose first name supplies none takes its face from a later name.
     let lane = [
         reference(1, Some(10)),
         reference(2, Some(10)),
         reference(2, Some(20)),
     ];
-    assert_eq!(resolve(&lane, &[31]), None);
+    assert_eq!(resolve(&lane, &[31]), Some((31, false)));
     let lane = [
         reference(1, Some(10)),
         reference(2, None),
