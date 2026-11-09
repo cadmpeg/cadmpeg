@@ -1418,9 +1418,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What does byte 29 state in a 262-byte `Base Feature` frame whose layout otherwise matches the 262-byte zero-body form?
 
-**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope.
+**Known.** Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 as zero. One public frame stores `1` at offset 29 and zero in the rest of that run. Its current and preceding history states are equal. The decoder retains it as an unbound stored-body scope. In the one-body result-body forms the same element, `u8 1`, eight zero bytes, and this byte, precedes the body count. Two controlled saves from one Fusion release store `1` in that byte: a one-body Base Feature whose body is built in place, and a one-body Base Feature whose body is a copy of a body in a referenced design. The byte has the same value for a local body and for a body copied from another document.
 
-**Need.** Frames of this form that differ only in byte 29.
+**Need.** Saves of one design from a Fusion release that writes `0` and from one that writes `1`, or a design option that changes the byte.
 
 **Conflict.** None.
 
