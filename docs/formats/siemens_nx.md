@@ -615,7 +615,7 @@ The matrix maps the child part frame into the frame of the assembly part
 that contains the placement. A child point `p` has the assembly position
 `R p + t`, where `R` is the three-by-three rotation block and `t` is the
 translation column. The translation uses the length unit of the assembly
-part. A placement frame places a direct child of the assembly part.
+part.
 
 A placement UUID that occurs once in the FastLoad UUID table selects the
 FastLoad uses that reference that table entry. When every selected use names
@@ -2112,10 +2112,6 @@ is the run's partition. Every plain binding in that complete run belongs to
 the following partition's local kernel-node namespace. A missing or duplicate
 plain tuple, an intervening non-plain stream, a missing following partition,
 or an absent or repeated terminal role leaves the partition scope unresolved.
-
-A plain cached-body stream holds a feature-history image of a body. When a
-part contains a partition stream, the bodies of its partition streams are the
-current bodies of the part, and plain-stream bodies are history images.
 
 A body-write GROUP node resolves only inside the partition scope selected by
 its body-image stream's complete run. Every retained GROUP update with the

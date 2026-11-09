@@ -7,6 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::topology::BodyKind;
 
+use crate::loss::NxLossCode;
 use crate::NxCodec;
 
 /// The vertex box of the one solid in the NIST CTC-03 revision C STEP export.
@@ -25,6 +26,16 @@ fn ctc_03_keeps_the_partition_solid_and_drops_plain_history_images() {
         .unwrap();
     let model = &result.ir().model;
 
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::PlainHistoryImagesWithheld.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::SubBodyCompositionUnresolved.kind()));
     assert_eq!(model.bodies.len(), 1);
     assert_eq!(model.bodies[0].kind, BodyKind::Solid);
     assert_eq!(model.faces.len(), CTC_03_FACE_COUNT);

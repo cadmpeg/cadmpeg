@@ -181,13 +181,8 @@ pub(super) fn try_decode_geometry(
         && !rmfastload_selected.is_empty()
         && rmfastload_selected.len() < body_node_ids.len()
     {
-        rmfastload_stream_indices(&rmfastload_selected).map(|streams| {
-            (
-                rmfastload_selected,
-                streams,
-                "rmfastload_object_id_membership",
-            )
-        })
+        rmfastload_stream_indices(&rmfastload_selected)
+            .map(|streams| (rmfastload_selected, streams, RMFASTLOAD_MEMBERSHIP_SELECTOR))
     } else {
         None
     };
@@ -217,11 +212,7 @@ pub(super) fn try_decode_geometry(
         }),
         None => None,
     };
-    let preselection = if has_partition_and_plain_streams(&scan.streams) {
-        rmfastload_preselection
-    } else {
-        rmfastload_preselection.or(terminal_preselection)
-    };
+    let preselection = rmfastload_preselection.or(terminal_preselection);
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
@@ -1312,18 +1303,31 @@ pub(super) fn try_decode_geometry(
         &mut parsed,
         terminal_lineage,
     )?;
-    let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
+    let (mut active_body_selection, membership_selection) = if let Some((selected, _, source)) =
+        &preselection
+    {
         let selected_hits = selected
             .iter()
             .filter_map(|body| body_node_ids.get(body))
             .map(BTreeSet::len)
             .sum::<usize>();
-        apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
+        let applied =
+            apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits));
+        (
+            applied,
+            applied && *source == RMFASTLOAD_MEMBERSHIP_SELECTOR,
+        )
     } else {
-        select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
+        let applied = select_active_body(&mut ir, &body_node_ids, rmfastload_ids);
+        (applied, applied)
     };
-    if !active_body_selection {
-        active_body_selection = select_partition_stream_bodies(&mut ir, &scan.streams);
+    if !membership_selection {
+        let withheld = withhold_plain_history_images(&mut ir, &scan.streams);
+        if withheld != 0 {
+            native_losses.push(NxLossCode::PlainHistoryImagesWithheld.note(format!(
+                "Withheld {withheld} body image(s) of plain cached-body streams because the part also has partition-stream bodies and RMFastLoad membership selects no body. The plain streams remain retained source records."
+            )));
+        }
     }
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
@@ -1726,6 +1730,8 @@ pub(super) fn rmfastload_allows_terminal_lineage(
     body_count > 1 && rmfastload_selected.is_empty()
 }
 
+const RMFASTLOAD_MEMBERSHIP_SELECTOR: &str = "rmfastload_object_id_membership";
+
 fn body_stream_index(body: &BodyId) -> Option<usize> {
     body.as_str()
         .strip_prefix("nx:s")
@@ -1744,42 +1750,42 @@ pub(super) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<B
     Some(streams)
 }
 
-fn has_partition_and_plain_streams(streams: &[crate::parasolid::Stream]) -> bool {
-    streams
-        .iter()
-        .any(|stream| stream.kind() == StreamKind::Partition)
-        && streams
-            .iter()
-            .any(|stream| stream.kind() == StreamKind::Plain)
-}
-
-/// The bodies of partition streams when plain cached-body streams also carry
-/// bodies. A plain stream holds a feature-history image of a partition body.
-fn partition_stream_bodies<'a>(
-    streams: &[crate::parasolid::Stream],
+/// The plain-stream bodies of a part that also has partition-stream bodies.
+/// A body identity without a known stream withholds nothing.
+fn plain_history_images<'a>(
+    stream_kind: impl Fn(usize) -> Option<StreamKind>,
     bodies: impl IntoIterator<Item = &'a BodyId>,
 ) -> Option<BTreeSet<BodyId>> {
-    let mut partition = BTreeSet::new();
-    let mut plain = false;
+    let mut plain = BTreeSet::new();
+    let mut partition = false;
     for body in bodies {
-        match streams.get(body_stream_index(body)?)?.kind() {
-            StreamKind::Partition => {
-                partition.insert(body.clone());
+        match stream_kind(body_stream_index(body)?)? {
+            StreamKind::Partition => partition = true,
+            StreamKind::Plain => {
+                plain.insert(body.clone());
             }
-            StreamKind::Plain => plain = true,
             StreamKind::Deltas | StreamKind::Preview => {}
         }
     }
-    (plain && !partition.is_empty()).then_some(partition)
+    (partition && !plain.is_empty()).then_some(plain)
 }
 
-fn select_partition_stream_bodies(ir: &mut CadIr, streams: &[crate::parasolid::Stream]) -> bool {
-    let Some(selected) =
-        partition_stream_bodies(streams, ir.model.bodies.iter().map(|body| &body.id))
-    else {
-        return false;
+/// Remove plain-stream history images and return their count.
+fn withhold_plain_history_images(ir: &mut CadIr, streams: &[crate::parasolid::Stream]) -> usize {
+    let Some(images) = plain_history_images(
+        |index| streams.get(index).map(crate::parasolid::Stream::kind),
+        ir.model.bodies.iter().map(|body| &body.id),
+    ) else {
+        return 0;
     };
-    apply_preselected_active_body_selection(ir, &selected, "partition_stream_bodies", None)
+    let mut kept = BTreeSet::new();
+    for body in &ir.model.bodies {
+        if !images.contains(&body.id) {
+            kept.insert(body.id.clone());
+        }
+    }
+    prune_inactive_topology(ir, &kept);
+    images.len()
 }
 
 fn apply_preselected_active_body_selection(
@@ -1806,7 +1812,7 @@ fn apply_preselected_active_body_selection(
             selector,
         );
         let (hit_attribute, count_attribute) = match selector {
-            "rmfastload_object_id_membership" => (
+            RMFASTLOAD_MEMBERSHIP_SELECTOR => (
                 Some(cadmpeg_core::nonblank_literal!("rmfastload_hits")),
                 cadmpeg_core::nonblank_literal!("rmfastload_active_body_count"),
             ),
@@ -1852,7 +1858,7 @@ pub(super) fn select_active_body(
     apply_preselected_active_body_selection(
         ir,
         &selected,
-        "rmfastload_object_id_membership",
+        RMFASTLOAD_MEMBERSHIP_SELECTOR,
         Some(selected_hits),
     )
 }

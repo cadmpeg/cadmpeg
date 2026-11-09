@@ -319,6 +319,9 @@ pub(super) fn attach(
     losses.push(NxLossCode::AssemblyPlacementUnitFromExpressions.note(format!(
         "The {resolved} emitted NX placement translation(s) use millimeters, the length unit that every numeric expression of the part declares."
     )));
+    losses.push(NxLossCode::AssemblyPlacementParentAssumed.note(format!(
+        "The {resolved} emitted NX placement(s) are attached to the assembly root by assumption; the serialized parent relation of a placement is unresolved."
+    )));
     if joined_filenames != 0 {
         losses.push(NxLossCode::AssemblyExternalFilenameAssumed.note(format!(
             "{joined_filenames} NX component occurrence(s) join an external reference by a unique case-insensitive filename stem; the source directory remains unresolved."

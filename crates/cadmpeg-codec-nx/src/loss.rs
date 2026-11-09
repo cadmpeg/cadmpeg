@@ -86,6 +86,8 @@ loss_codes! {
     DeltasSelectionUnresolved => ("deltas.selection-unresolved", Warning, DecodeDiagnostic),
     /// Sub-body partitions remain; Boolean history does not resolve every image.
     SubBodyCompositionUnresolved => ("history.sub-body-composition-unresolved", Warning, FeatureHistoryRetained),
+    /// Plain cached-body images are withheld because the part also has partition-stream bodies.
+    PlainHistoryImagesWithheld => ("history.plain-images-withheld", Warning, FeatureHistoryRetained),
     /// A referenced Parasolid attribute value relation did not resolve.
     AttributeValueUnresolved => ("attribute.value-unresolved", Warning, AttributesNotTransferred),
     /// A topology attribute list reaches an omitted type-81 record or an unresolved type-80 class.
@@ -122,6 +124,8 @@ loss_codes! {
     AssemblyPlacementFrameUnresolved => ("assembly.placement-frame-unresolved", Blocking, AssemblyPlacementsNotTransferred),
     /// Emitted placement translations take the length unit of the part's expressions.
     AssemblyPlacementUnitFromExpressions => ("assembly.placement-unit-from-expressions", Warning, DecodeDiagnostic),
+    /// Emitted placements are direct children of the assembly root.
+    AssemblyPlacementParentAssumed => ("assembly.placement-parent-assumed", Warning, DecodeDiagnostic),
     /// External component filenames join roster names while directories remain unknown.
     AssemblyExternalFilenameAssumed => ("assembly.external-filename-assumed", Warning, DecodeDiagnostic),
     /// A roster prototype has no unique retained external document filename.
@@ -233,6 +237,7 @@ mod tests {
                 "geometry.adaptive-work-bounded",
                 "deltas.selection-unresolved",
                 "history.sub-body-composition-unresolved",
+                "history.plain-images-withheld",
                 "attribute.value-unresolved",
                 "attribute.list-unresolved",
                 "feature.suppression-unresolved",
@@ -251,6 +256,7 @@ mod tests {
                 "assembly.occurrences-unresolved",
                 "assembly.placement-frame-unresolved",
                 "assembly.placement-unit-from-expressions",
+                "assembly.placement-parent-assumed",
                 "assembly.external-filename-assumed",
                 "assembly.external-document-unresolved",
                 "carrier.lanes-unpaired",

@@ -148,6 +148,10 @@ fn millimeter_part_emits_placements_of_a_single_prototype_uuid_group() {
         &result,
         NxLossCode::AssemblyExternalDocumentUnresolved
     ));
+    assert!(has_loss(
+        &result,
+        NxLossCode::AssemblyPlacementParentAssumed
+    ));
     assert!(!has_loss(
         &result,
         NxLossCode::AssemblyPlacementFrameUnresolved
@@ -168,6 +172,10 @@ fn part_without_length_expressions_withholds_its_placements() {
     assert!(!has_loss(
         &result,
         NxLossCode::AssemblyPlacementUnitFromExpressions
+    ));
+    assert!(!has_loss(
+        &result,
+        NxLossCode::AssemblyPlacementParentAssumed
     ));
 }
 
@@ -315,6 +323,10 @@ fn mtc_occurrences_place_every_child_where_the_step_twin_does() {
     assert!(!has_loss(
         &result,
         NxLossCode::AssemblyOccurrencesUnresolved
+    ));
+    assert!(has_loss(
+        &result,
+        NxLossCode::AssemblyPlacementParentAssumed
     ));
 
     let world = |occurrence: &Occurrence| {
