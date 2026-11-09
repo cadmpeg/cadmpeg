@@ -164,8 +164,8 @@ impl<'a> BlendRows<'a> {
     /// blend's boundary. `None` when `BlendRows::extent` gives no extent, no
     /// edge or more than one covers the extent, an edge has no single pair of
     /// finite end points, or the covering edge has no single finite interior
-    /// sample or its interior sample point lies within the radius of the axis
-    /// line.
+    /// sample or its interior sample point lies at most `1e-6` mm beyond the
+    /// radius from the axis line.
     fn covering_edge(
         &self,
         blend_face: i64,
@@ -315,8 +315,9 @@ impl<'a> BlendRows<'a> {
 /// whose row radius is its radius and for which `BlendRows::covering_edge`
 /// reads an edge, or none and the blend is not such a cylinder for which
 /// `BlendRows::rounded_edge` reads an edge, the transition keeps that edge,
-/// two blends replace one edge, or a blend replaces an edge that the covering
-/// reading of another blend assumes that blend consumes.
+/// two blends replace one edge, or a deleted edge that the covering reading
+/// of a blend assumes the blend consumes is replaced by a blend or consumed
+/// by another blend.
 fn transition_blends(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
@@ -443,13 +444,20 @@ fn transition_blends(
             found,
         });
     }
-    let consumed_elsewhere = blends.iter().any(|blend| match &blend.found {
+    (!consumption_conflicts(&blends, &replaced)).then_some(blends)
+}
+
+/// Whether a deleted edge that the covering reading of a blend assumes the
+/// blend consumes is also `replaced` by a blend or consumed by another blend.
+fn consumption_conflicts(blends: &[Blend], replaced: &HashSet<i64>) -> bool {
+    let mut consumed = HashSet::new();
+    blends.iter().any(|blend| match &blend.found {
         Found::Covering { shared } => shared
             .iter()
-            .any(|edge| !edge.covers && replaced.contains(&edge.edge)),
+            .filter(|edge| !edge.covers && edge.deleted)
+            .any(|edge| replaced.contains(&edge.edge) || !consumed.insert(edge.edge)),
         Found::Shared | Found::Inferred { .. } => false,
-    });
-    (!consumed_elsewhere).then_some(blends)
+    })
 }
 
 /// The edges each group rounds, sorted, by the constant radius of its blends,
@@ -534,11 +542,13 @@ fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
 /// supports share no edge along its axis gives its best-ranked deleted
 /// candidate. A group that binds such an edge gets a note that states the
 /// assumptions of the reading and, when other candidates exist, a note that
-/// states the rank and the status of every candidate. A cylinder blend whose
-/// supports share several edges along its axis gives the one whose span
-/// covers the blend's axial extent, with a note that states the status of
-/// every shared edge. A slot that the replaced partial selection already states gets no
-/// note.
+/// states the rank and the status of every candidate. A slot that the
+/// replaced partial selection already states gets no such note. A cylinder
+/// blend whose supports share several edges along its axis gives the one
+/// whose span covers the blend's axial extent, with a note that states the
+/// status of every shared edge; a stated slot keeps this note, because the
+/// edges that the blend consumes stay assumed. Returns whether a blend of the
+/// transition takes the covering reading.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -551,17 +561,20 @@ pub(super) fn bind_fillet_groups(
         &AsmHistoricalTopology,
     ),
     notes: &mut Vec<LossNote>,
-) {
+) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: fillet_groups,
     }) = definition
     else {
-        return;
+        return false;
     };
     let (transition, input, output) = states;
     let Some(blends) = transition_blends(transition, input, output) else {
-        return;
+        return false;
     };
+    let covering = blends
+        .iter()
+        .any(|blend| matches!(blend.found, Found::Covering { .. }));
     let radii = fillet_groups
         .iter()
         .map(|group| match group.radius {
@@ -570,14 +583,14 @@ pub(super) fn bind_fillet_groups(
         })
         .collect::<Vec<_>>();
     let Some(edges) = group_edges(&radii, &blends) else {
-        return;
+        return covering;
     };
     if !fillet_groups
         .iter()
         .zip(&edges)
         .all(|(group, slots)| agrees(&group.edges, feature_id, previous_state_id, slots))
     {
-        return;
+        return covering;
     }
     let found = blends
         .iter()
@@ -610,22 +623,19 @@ pub(super) fn bind_fillet_groups(
         };
         let mut inferred = Vec::new();
         for slot in &slots {
-            if stated.contains(slot) {
-                continue;
-            }
             let at = format!(
                 "Fillet group {index} of feature {}: the edge at slot {slot} of history state {previous_state_id}",
                 feature_id.as_str()
             );
             match found.get(slot) {
-                Some(Found::Inferred { candidates }) => {
+                Some(Found::Inferred { candidates }) if !stated.contains(slot) => {
                     let Some(notes) = inferred_edge_notes(&at, candidates) else {
                         continue 'groups;
                     };
                     inferred.extend(notes);
                 }
                 Some(Found::Covering { shared }) => inferred.push(covering_edge_note(&at, shared)),
-                Some(Found::Shared) | None => {}
+                Some(Found::Shared | Found::Inferred { .. }) | None => {}
             }
         }
         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
@@ -642,6 +652,7 @@ pub(super) fn bind_fillet_groups(
             notes.append(&mut inferred);
         }
     }
+    covering
 }
 
 /// The notes of an edge that a blend reading infers from `candidates`, in
@@ -720,7 +731,7 @@ fn covering_edge_note(at: &str, shared: &[SharedEdge]) -> LossNote {
         .collect::<Vec<_>>()
         .join(", ");
     F3dLossCode::HistoricalFilletEdgeCovering.note(format!(
-        "{at} is inferred from the blend geometry, because the blend's supports share {} edges along its axis. The reading assumes the following about the rounded edge. It is the one shared edge whose span between its end points covers the blend's axial extent within 1e-6 mm at each end. Its interior sample point lies farther than the radius from the axis line. The transition deletes it. The reading also assumes that the blend consumes the other shared edges that the transition deletes. Shared edges in slot order: {status}.",
+        "{at} is inferred from the blend geometry, because the blend's supports share {} edges along its axis. The reading assumes the following about the rounded edge. It is the one shared edge whose span between its end points covers the blend's axial extent within 1e-6 mm at each end. Its interior sample point lies more than 1e-6 mm beyond the radius from the axis line. The transition deletes it. The reading also assumes that the blend consumes the other shared edges that the transition deletes. Shared edges in slot order: {status}.",
         shared.len()
     ))
 }
@@ -827,7 +838,8 @@ pub(crate) fn bind_fillet_blend_edges(
             continue;
         }
         // An unbound scope whose state pair several histories hold takes the
-        // one history in which every edge group resolves.
+        // one history in which every edge group resolves without the covering
+        // reading, else the one history in which every edge group resolves.
         let mut resolved = Vec::new();
         for (candidate, state) in candidates.iter().enumerate() {
             if !available.contains(&(position, Some(candidate))) {
@@ -838,7 +850,7 @@ pub(crate) fn bind_fillet_blend_edges(
             };
             let mut definition = feature.evaluation.definition().clone();
             let mut candidate_notes = Vec::new();
-            bind_fillet_groups(
+            let covering = bind_fillet_groups(
                 &mut definition,
                 &feature_id,
                 state.scope,
@@ -848,21 +860,45 @@ pub(crate) fn bind_fillet_blend_edges(
                 &mut candidate_notes,
             );
             if every_fillet_group_historical(&definition) {
-                resolved.push((state.history, state.scope, definition, candidate_notes));
+                resolved.push((
+                    state.history,
+                    state.scope,
+                    definition,
+                    candidate_notes,
+                    covering,
+                ));
             }
         }
-        if let [(history, scope, definition, candidate_notes)] = resolved.as_mut_slice() {
+        let covering_only = resolved.iter().filter(|resolved| resolved.4).count();
+        if covering_only < resolved.len() {
+            resolved.retain(|resolved| !resolved.4);
+        }
+        if let [(history, scope, definition, candidate_notes, covering)] = resolved.as_mut_slice() {
             let definition = definition.clone();
             feature
                 .evaluation
                 .edit(|current, _| *current = definition.clone());
             notes.append(candidate_notes);
-            notes.push(F3dLossCode::HistoricalEdgeHistoryInferred.note(format!(
-                "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve only in {}.",
-                feature_id.as_str(),
-                candidates.len(),
-                histories.get(*history).map_or("", |history| history.id.as_str())
-            )));
+            let history_id = histories
+                .get(*history)
+                .map_or("", |history| history.id.as_str());
+            notes.push(F3dLossCode::HistoricalEdgeHistoryInferred.note(match covering_only {
+                0 => format!(
+                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve only in {history_id}.",
+                    feature_id.as_str(),
+                    candidates.len(),
+                ),
+                _ if *covering => format!(
+                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve only in {history_id}, through the covering reading.",
+                    feature_id.as_str(),
+                    candidates.len(),
+                ),
+                _ => format!(
+                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve without the covering reading only in {history_id}, and through it in {covering_only} other histories.",
+                    feature_id.as_str(),
+                    candidates.len(),
+                ),
+            }));
             if let Some(history) = histories.get(*history) {
                 inferred_scope_histories.push((scope.id.clone(), history.id.clone()));
             }
