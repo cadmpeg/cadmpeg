@@ -269,7 +269,9 @@ fn project_brep(
                     let Ok(id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{lane_key}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
-                    )) else { continue };
+                    )) else {
+                        continue;
+                    };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
                     let nurbs_trim = nurbs_edge_trim_range(
                         ctx,

@@ -48,14 +48,23 @@ fn lane_is_held(
     {
         return Ok(false);
     }
-    let owned = lane.classes.iter().any(|record| record.feature_ref.is_some())
+    let owned = lane
+        .classes
+        .iter()
+        .any(|record| record.feature_ref.is_some())
         || lane.names.iter().any(|record| record.feature_ref.is_some())
-        || lane.scalars.iter().any(|record| record.feature_ref.is_some())
+        || lane
+            .scalars
+            .iter()
+            .any(|record| record.feature_ref.is_some())
         || lane
             .relation_bindings
             .iter()
             .any(|record| record.feature_ref.is_some())
-        || lane.references.iter().any(|record| record.feature_ref.is_some())
+        || lane
+            .references
+            .iter()
+            .any(|record| record.feature_ref.is_some())
         || lane
             .sketch_entities
             .iter()
@@ -161,9 +170,17 @@ fn lane_record_ids(lane: &FeatureInputLane) -> BTreeSet<&str> {
         .map(|record| record.id.as_str())
         .chain(lane.names.iter().map(|record| record.id.as_str()))
         .chain(lane.scalars.iter().map(|record| record.id.as_str()))
-        .chain(lane.relation_bindings.iter().map(|record| record.id.as_str()))
+        .chain(
+            lane.relation_bindings
+                .iter()
+                .map(|record| record.id.as_str()),
+        )
         .chain(lane.references.iter().map(|record| record.id.as_str()))
-        .chain(lane.sketch_entities.iter().map(crate::records::SketchInputEntity::id))
+        .chain(
+            lane.sketch_entities
+                .iter()
+                .map(crate::records::SketchInputEntity::id),
+        )
         .collect()
 }
 
@@ -171,8 +188,7 @@ fn lane_record_ids(lane: &FeatureInputLane) -> BTreeSet<&str> {
 fn project(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
-) -> Result<Option<crate::resolved_features::sketch_projection::ProjectedSketches>, WriteError>
-{
+) -> Result<Option<crate::resolved_features::sketch_projection::ProjectedSketches>, WriteError> {
     let Some(key) = lane
         .id
         .strip_prefix("sldprt:feature-input:resolved-features#")
