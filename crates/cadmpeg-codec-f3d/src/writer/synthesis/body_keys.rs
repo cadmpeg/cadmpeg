@@ -70,6 +70,7 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
                 "ASM body key",
             )?)
         };
+        let minted = original.is_none();
         let record = match original {
             Some(original) => {
                 let mut record = original.clone();
@@ -77,8 +78,16 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
                 record
             }
             None => {
+                // A key minted for a body that names an F3D key keeps that
+                // key's record, so the records that name the key still
+                // resolve to the body.
+                let named = body
+                    .native_ref
+                    .as_deref()
+                    .and_then(|native_ref| native_ref.strip_prefix("f3d:asm:body-native-key#"))
+                    .and_then(|index| index.parse::<u64>().ok());
                 let record_index = assign(
-                    None,
+                    named,
                     default_key,
                     &BTreeSet::new(),
                     &mut record_indices,
@@ -98,7 +107,9 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
                 }
             }
         };
-        if body.native_ref.is_none() {
+        // A body no key owns, such as another format's record, is written
+        // with the key minted for it.
+        if minted {
             body.native_ref = Some(record.id());
         }
         let row_id = record.id();
