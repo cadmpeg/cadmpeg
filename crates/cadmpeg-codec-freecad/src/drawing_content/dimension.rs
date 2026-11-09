@@ -47,12 +47,14 @@ pub(super) fn transfer(
             continue;
         }
         let owner = &annotation.object;
-        if property(properties, owner, "SavedGeometry")?
-            .is_some_and(|saved| empty_cache(saved, entries))
-        {
+        let saved = property(properties, owner, "SavedGeometry")?;
+        if saved.is_some_and(|saved| empty_cache(saved, entries)) {
             continue;
         }
         if annotation.runtime_type != "TechDraw::DrawViewDimension" {
+            if saved.is_none() {
+                continue;
+            }
             losses.push(
                 FreecadLossCode::DrawingDimensionGeometryNotTransferred.note(format!(
                     "{owner}: dimension family has no admitted measurement or reference anchors"
@@ -61,6 +63,9 @@ pub(super) fn transfer(
             continue;
         }
         let Some(kind) = annotation.dimension_kind.as_ref() else {
+            if saved.is_none() {
+                continue;
+            }
             losses.push(
                 FreecadLossCode::DrawingDimensionGeometryNotTransferred
                     .note(format!("{owner}: dimension kind is absent")),
@@ -86,7 +91,8 @@ pub(super) fn transfer(
                 losses.push(FreecadLossCode::DimensionAnchorsNotTransferred.note(format!("{owner}: exact value retained without admitted page-space reference anchors")));
             }
             annotation.reference_anchors = anchors;
-        } else {
+        } else if saved.is_some() {
+            // A dimension with no saved geometry states no measurement.
             losses.push(FreecadLossCode::DrawingDimensionGeometryNotTransferred.note(format!("{owner}: no exact admitted saved reference geometry and page placement; value and anchors remain absent")));
         }
     }
