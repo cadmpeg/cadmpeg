@@ -77,6 +77,7 @@ pub(crate) fn property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatu
             Property::Selection { .. } => crate::feature::mirror::SELECTION_TYPE,
             Property::Options { .. } => crate::feature::mirror::OPTIONS_TYPE,
             Property::InstanceMap { .. } => crate::feature::mirror::instance_map::TYPE,
+            Property::PlaneReference { .. } => crate::feature::mirror::plane_reference::TYPE,
         },
         PmDcFeaturePropertyKind::Boolean { .. } => crate::feature::BOOLEAN_TYPE,
         PmDcFeaturePropertyKind::References { family, .. } => match family {
@@ -102,7 +103,16 @@ pub(crate) fn property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatu
     )
 }
 
+/// Where the browser lists the supplying work plane relative to the Mirror.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SupplierPlacement {
+    Before,
+    After,
+    Unplaced,
+}
+
 pub(crate) struct Fixture {
+    pub(crate) supplier_placement: SupplierPlacement,
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) planes: Vec<PmDcWorkPlane>,
@@ -211,6 +221,7 @@ impl Fixture {
         let class =
             ClassId::try_from("a326c2b6d211263660002cab01f31bb0".to_owned()).expect("mirror class");
         Self {
+            supplier_placement: SupplierPlacement::Before,
             properties,
             transforms,
             planes,
@@ -249,6 +260,46 @@ impl Fixture {
             segment(),
             103,
         );
+        self
+    }
+
+    /// Place the supplying work plane in the browser as `placement` says.
+    pub(crate) fn with_supplier_placement(mut self, placement: SupplierPlacement) -> Self {
+        self.supplier_placement = placement;
+        self
+    }
+
+    /// Record ordinal of the supplying work plane that `with_supplying_plane`
+    /// adds.
+    pub(crate) const SUPPLIER: u32 = 108;
+
+    /// Add a work plane that gives the slot-12 plane with different in-plane
+    /// axes, and a plane-reference record owned by the slot-12 plane that
+    /// targets it.
+    pub(crate) fn with_supplying_plane(mut self) -> Self {
+        let mut supplier = (*self.planes[0]).clone();
+        supplier.u_axis = [FiniteReal::ZERO, FiniteReal::ZERO, FiniteReal::ONE];
+        supplier.v_axis = [
+            FiniteReal::ZERO,
+            FiniteReal::new(-1.0).expect("finite"),
+            FiniteReal::ZERO,
+        ];
+        self.planes.push(Located::new(
+            supplier,
+            RecordTypeId::from_bytes(WORK_PLANE_TYPE),
+            segment(),
+            Self::SUPPLIER,
+        ));
+        self.properties.push(property(
+            109,
+            PmDcFeaturePropertyKind::Mirror {
+                definition: Property::PlaneReference {
+                    owner: reference(104),
+                    target: reference(Self::SUPPLIER + 1),
+                    role: 4,
+                },
+            },
+        ));
         self
     }
 
@@ -665,6 +716,32 @@ impl Fixture {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         source: PmDcPatternFeature,
     ) -> Result<crate::feature::FeatureProjection, cadmpeg_core::CodecError> {
+        let (inventory, design, sketch) = self.history_inputs(source);
+        crate::feature::project(
+            ctx,
+            &inventory,
+            &design,
+            &sketch,
+            &[],
+            &crate::feature::ProjectedSketches {
+                sketches: &[],
+                entities: &[],
+                profile_bodies: &[],
+                result_model: None,
+            },
+        )
+    }
+
+    /// The records that history projection reads for a Mirror in this
+    /// fixture.
+    pub(crate) fn history_inputs(
+        &self,
+        source: PmDcPatternFeature,
+    ) -> (
+        crate::feature::FeatureInventory,
+        crate::design::DesignInventory,
+        crate::sketch::SketchInventory,
+    ) {
         use crate::design::scope::{BrepSegmentName, BrepSegmentRole, PmDcModelRootPayload};
 
         let seeds = source
@@ -674,7 +751,19 @@ impl Fixture {
             .filter_map(|r| r.record_ordinal())
             .collect::<Vec<_>>();
         let mut participants = seeds.iter().map(|ordinal| ordinal + 1).collect::<Vec<_>>();
+        let supplier = self
+            .planes
+            .iter()
+            .map(|plane| plane.identity.record_ordinal)
+            .filter(|&ordinal| ordinal == Self::SUPPLIER)
+            .map(|ordinal| ordinal + 1);
+        if self.supplier_placement == SupplierPlacement::Before {
+            participants.extend(supplier.clone());
+        }
         participants.push(source.identity.record_ordinal + 1);
+        if self.supplier_placement == SupplierPlacement::After {
+            participants.extend(supplier);
+        }
         let mut inventory = crate::feature::FeatureInventory::default();
         inventory.features.extend(
             seeds
@@ -740,19 +829,7 @@ impl Fixture {
             text_members: Vec::new(),
             issues: Vec::new(),
         };
-        crate::feature::project(
-            ctx,
-            &inventory,
-            &design,
-            &sketch,
-            &[],
-            &crate::feature::ProjectedSketches {
-                sketches: &[],
-                entities: &[],
-                profile_bodies: &[],
-                result_model: None,
-            },
-        )
+        (inventory, design, sketch)
     }
 }
 
@@ -852,6 +929,13 @@ pub(crate) fn replacement_form() -> (Fixture, PmDcPatternFeature) {
         105,
     );
     (fixture, source)
+}
+
+/// A replacement form whose slot-12 plane is supplied by a work plane that
+/// precedes the Mirror in the browser.
+pub(crate) fn supplied_form() -> (Fixture, PmDcPatternFeature) {
+    let (fixture, source) = replacement_form();
+    (fixture.with_supplying_plane(), source)
 }
 
 pub(crate) fn replacement_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeature)> {
