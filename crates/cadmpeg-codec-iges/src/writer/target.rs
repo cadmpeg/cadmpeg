@@ -121,6 +121,7 @@ fn synthesized_body(
         input.limits,
     ));
     let mut regenerated_native = synthesis.regenerated_native;
+    regenerated_native.retain(|id| !written_native.contains(id));
     let withdrawn =
         unclaim_dangling_records(input.ir, &mut regenerated_native, &mut written_native);
     let mut body = super::body(
