@@ -1058,9 +1058,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which edges does a constant-radius `Fillet` group select when its transition inserts a blend without a cylinder or torus row, a blend with no replaced edge or with two, two groups with one radius, or more replaced edges than the group has distinct members? Can a rounded edge keep its slot?
 
-**Known.** The specification states the edges from the blend faces of the transition when every new carrier is a cylinder or torus blend. A sphere, spline, or variable blend has no spine row. A tangent chain rounds more edges than the group has members. A historical partial selection can name an edge that the transition keeps.
+**Known.** The specification states the edges from the blend faces of the transition when every new carrier is a cylinder or torus blend. A sphere, spline, or variable blend has no spine row. A tangent chain rounds more edges than the group has members. A historical partial selection can name an edge that the transition keeps. The covering rule takes every other shared edge that the transition deletes as consumed by the blend. In a control whose fillet passes a parallel edge 1.5 mm from the rounded corner between planes, the supports share both edges, the rounded edge covers the extent, and the consumed edge covers half of it.
 
-**Need.** Controls that fillet one edge of a tangent chain, a corner of three rounded edges, and an edge between curved faces, and controls that show whether a selected edge can keep its slot.
+**Need.** Controls that fillet one edge of a tangent chain, a corner of three rounded edges, and an edge between curved faces, controls that show whether a selected edge can keep its slot, and controls whose blend consumes a parallel edge between curved supports or along the whole blend.
 
 **Conflict.** None.
 
