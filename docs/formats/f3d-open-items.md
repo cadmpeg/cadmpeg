@@ -1839,4 +1839,4 @@ when the operation transition carries no candidate for the group members?
 
 **Conflict.** None.
 
-**Note.** With a proven face, the start plane in the Extrude's component frame requires the transform between the two occurrences. When the other component is placed more than once relative to the Extrude's component, the plane is not unique.
+**Note.** A `Combine` shows the same pattern for bodies: its scope lies in one component's history, while the persistent tags that its body-recipe references name lie only on faces of another component's BREP blob. Its target and tools stay native for the same reason. With a proven face, the start plane in the Extrude's component frame requires the transform between the two occurrences. When the other component is placed more than once relative to the Extrude's component, the plane is not unique.
