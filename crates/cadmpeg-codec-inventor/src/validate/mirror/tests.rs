@@ -188,6 +188,7 @@ fn validator_uses_all_mirror_operand_and_suffix_gates() {
                 &fixture.label,
                 &feature,
                 &result,
+                false,
                 seed
             ));
         }
@@ -201,9 +202,14 @@ fn validator_uses_all_mirror_operand_and_suffix_gates() {
         .expect("projection");
     for (name, changed, source) in crate::test_support::mirror::refusal_cases() {
         assert!(
-            !changed
-                .index()
-                .matches_projection(&source, &changed.label, &feature, &result, seed),
+            !changed.index().matches_projection(
+                &source,
+                &changed.label,
+                &feature,
+                &result,
+                false,
+                seed
+            ),
             "{name}"
         );
     }
@@ -229,6 +235,7 @@ fn validator_rejects_body_mirror_boolean_controls_against_a_body_projection() {
             &fixture.label,
             &feature,
             &result,
+            false,
             seed
         ));
         for (name, changed, source) in body_boolean_refusal_cases()
@@ -241,6 +248,7 @@ fn validator_rejects_body_mirror_boolean_controls_against_a_body_projection() {
                     &changed.label,
                     &feature,
                     &result,
+                    false,
                     seed
                 ),
                 "{name}"
@@ -296,7 +304,7 @@ fn validator_checks_each_auxiliary_payload_length_against_the_versioned_header()
         let index = fixture
             .index()
             .with_record_lengths([(token, 111, selection), (token, 112, options)].into_iter());
-        assert!(index.matches_projection(&source, &fixture.label, &feature, &result, seed));
+        assert!(index.matches_projection(&source, &fixture.label, &feature, &result, false, seed));
         for (bad_selection, bad_options) in [
             (selection - 1, options),
             (selection + 1, options),
@@ -307,12 +315,19 @@ fn validator_checks_each_auxiliary_payload_length_against_the_versioned_header()
             let index = fixture.index().with_record_lengths(
                 [(token, 111, bad_selection), (token, 112, bad_options)].into_iter(),
             );
-            assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, seed));
+            assert!(!index.matches_projection(
+                &source,
+                &fixture.label,
+                &feature,
+                &result,
+                false,
+                seed
+            ));
         }
         let index = fixture
             .index()
             .with_record_lengths([(token, 111, selection)].into_iter());
-        assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, seed));
+        assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, false, seed));
     }
 }
 
@@ -342,7 +357,7 @@ fn validator_checks_the_body_copy_form_and_instance_map_lengths() {
         ]
         .into_iter(),
     );
-    assert!(index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    assert!(index.matches_projection(&source, &fixture.label, &feature, &result, false, |_| None));
     for length in [0, 77, 79, 82] {
         let index = fixture.index().with_record_lengths(
             [
@@ -353,12 +368,19 @@ fn validator_checks_the_body_copy_form_and_instance_map_lengths() {
             ]
             .into_iter(),
         );
-        assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+        assert!(!index.matches_projection(
+            &source,
+            &fixture.label,
+            &feature,
+            &result,
+            false,
+            |_| None
+        ));
     }
     let index = fixture
         .index()
         .with_record_lengths([(token, 111, 30), (token, 112, 31)].into_iter());
-    assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, false, |_| None));
     for length in [0, 65, 67, 80] {
         let index = fixture.index().with_record_lengths(
             [
@@ -369,12 +391,19 @@ fn validator_checks_the_body_copy_form_and_instance_map_lengths() {
             ]
             .into_iter(),
         );
-        assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+        assert!(!index.matches_projection(
+            &source,
+            &fixture.label,
+            &feature,
+            &result,
+            false,
+            |_| None
+        ));
     }
     let index = fixture
         .index()
         .with_record_lengths([(token, 111, 30), (token, 112, 31), (token, 113, 78)].into_iter());
-    assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    assert!(!index.matches_projection(&source, &fixture.label, &feature, &result, false, |_| None));
     let mut changed = feature.clone();
     let mut definition = changed.evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
@@ -390,6 +419,7 @@ fn validator_checks_the_body_copy_form_and_instance_map_lengths() {
         &fixture.label,
         &changed,
         &result,
+        false,
         |_| None
     ));
 }
@@ -410,9 +440,14 @@ fn validator_rejects_each_unresolved_body_copy_operand() {
         .expect("projection");
     for (name, changed, source) in body_copy_refusal_cases() {
         assert!(
-            !changed
-                .index()
-                .matches_projection(&source, &changed.label, &feature, &result, |_| None),
+            !changed.index().matches_projection(
+                &source,
+                &changed.label,
+                &feature,
+                &result,
+                false,
+                |_| None
+            ),
             "{name}"
         );
     }
@@ -441,6 +476,7 @@ fn validator_admits_each_measured_body_copy_outline() {
             &fixture.label,
             &feature,
             &result,
+            false,
             |_| None
         ));
     }
@@ -460,14 +496,24 @@ fn validator_checks_the_replacement_form_and_each_neighbouring_refusal() {
         .project(&ctx, &source, &fixture.label, |_| None, |_| {})
         .expect("replacement")
         .expect("projection");
-    assert!(fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, |_| None));
+    assert!(fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        |_| None
+    ));
     for (name, changed, source) in replacement_refusal_cases() {
         assert!(
-            !changed
-                .index()
-                .matches_projection(&source, &changed.label, &feature, &result, |_| None),
+            !changed.index().matches_projection(
+                &source,
+                &changed.label,
+                &feature,
+                &result,
+                false,
+                |_| None
+            ),
             "{name}"
         );
     }
@@ -526,19 +572,26 @@ fn validator_checks_the_plane_reference_length_against_the_versioned_header() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let (fixture, source) = supplied_form();
-    let (feature, result) = fixture
+    let (mut feature, result) = fixture
         .index()
         .project(&ctx, &source, &fixture.label, |_| None, |_| {})
         .expect("mirror")
         .expect("projection");
+    // History drops the reference where the work plane is a dependency.
+    let mut definition = feature.evaluation.definition().clone();
+    crate::feature::mirror::without_supplied_plane_reference(&mut definition);
+    feature.evaluation.set_definition(definition);
     let header = u64::try_from(crate::layout::pm_dc_content_header::LEN).expect("header");
     let nodes = HashSet::new();
     let admitted = |length: Option<u64>| {
         let records = supplied_records(&fixture, length);
-        fixture
+        let index = fixture
             .index()
-            .with_record_lengths(checked_lengths(&records, &nodes))
-            .matches_projection(&source, &fixture.label, &feature, &result, |_| None)
+            .with_record_lengths(checked_lengths(&records, &nodes));
+        let supplied = index.supplying_plane("generated", 103).is_some();
+        index.matches_projection(&source, &fixture.label, &feature, &result, supplied, |_| {
+            None
+        })
     };
     assert!(admitted(Some(header + 18)));
     assert!(!admitted(Some(header + 17)));
@@ -696,5 +749,56 @@ fn validator_admits_a_work_plane_dependency_after_the_seeds_and_no_other_order()
                 set_dependencies(mirror, ids);
             });
         }
+    }
+}
+
+#[test]
+fn validator_derives_the_plane_reference_from_the_plane_dependency() {
+    use crate::test_support::mirror::SupplierPlacement;
+
+    let cleared = |feature: &mut Feature| {
+        let mut definition = feature.evaluation.definition().clone();
+        crate::feature::mirror::without_supplied_plane_reference(&mut definition);
+        feature.evaluation.set_definition(definition);
+    };
+    // A supplier that precedes the Mirror is a dependency, so the reference is
+    // dropped; the unchanged projection keeps it and is refused.
+    let (fixture, source) = crate::test_support::mirror::supplied_form();
+    assert_eq!(admission(&fixture, &source, |_, _| {}), Some(true));
+    assert_ne!(
+        admission(&fixture, &source, |mirror, _| {
+            let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+                plane_reference, ..
+            }) = mirror.evaluation.definition()
+            else {
+                panic!("mirror shape")
+            };
+            assert!(plane_reference.is_none());
+            let mut definition = mirror.evaluation.definition().clone();
+            if let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+                plane_reference,
+                ..
+            }) = &mut definition
+            {
+                *plane_reference = Some(cadmpeg_ir::features::FaceSelection::Native(
+                    fixture.planes[0].id(),
+                ));
+            }
+            mirror.evaluation.set_definition(definition);
+        }),
+        Some(true)
+    );
+    // A later or unplaced supplier is no dependency, so the reference stays
+    // and clearing it is refused.
+    for placement in [SupplierPlacement::After, SupplierPlacement::Unplaced] {
+        let (fixture, source) = crate::test_support::mirror::replacement_form();
+        let fixture = fixture
+            .with_supplying_plane()
+            .with_supplier_placement(placement);
+        assert_eq!(admission(&fixture, &source, |_, _| {}), Some(true));
+        assert_ne!(
+            admission(&fixture, &source, |mirror, _| cleared(mirror)),
+            Some(true)
+        );
     }
 }

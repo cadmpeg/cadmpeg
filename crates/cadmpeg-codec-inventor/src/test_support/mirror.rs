@@ -103,7 +103,16 @@ pub(crate) fn property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatu
     )
 }
 
+/// Where the browser lists the supplying work plane relative to the Mirror.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SupplierPlacement {
+    Before,
+    After,
+    Unplaced,
+}
+
 pub(crate) struct Fixture {
+    pub(crate) supplier_placement: SupplierPlacement,
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) planes: Vec<PmDcWorkPlane>,
@@ -212,6 +221,7 @@ impl Fixture {
         let class =
             ClassId::try_from("a326c2b6d211263660002cab01f31bb0".to_owned()).expect("mirror class");
         Self {
+            supplier_placement: SupplierPlacement::Before,
             properties,
             transforms,
             planes,
@@ -250,6 +260,12 @@ impl Fixture {
             segment(),
             103,
         );
+        self
+    }
+
+    /// Place the supplying work plane in the browser as `placement` says.
+    pub(crate) fn with_supplier_placement(mut self, placement: SupplierPlacement) -> Self {
+        self.supplier_placement = placement;
         self
     }
 
@@ -735,14 +751,19 @@ impl Fixture {
             .filter_map(|r| r.record_ordinal())
             .collect::<Vec<_>>();
         let mut participants = seeds.iter().map(|ordinal| ordinal + 1).collect::<Vec<_>>();
-        participants.extend(
-            self.planes
-                .iter()
-                .map(|plane| plane.identity.record_ordinal)
-                .filter(|&ordinal| ordinal == Self::SUPPLIER)
-                .map(|ordinal| ordinal + 1),
-        );
+        let supplier = self
+            .planes
+            .iter()
+            .map(|plane| plane.identity.record_ordinal)
+            .filter(|&ordinal| ordinal == Self::SUPPLIER)
+            .map(|ordinal| ordinal + 1);
+        if self.supplier_placement == SupplierPlacement::Before {
+            participants.extend(supplier.clone());
+        }
         participants.push(source.identity.record_ordinal + 1);
+        if self.supplier_placement == SupplierPlacement::After {
+            participants.extend(supplier);
+        }
         let mut inventory = crate::feature::FeatureInventory::default();
         inventory.features.extend(
             seeds

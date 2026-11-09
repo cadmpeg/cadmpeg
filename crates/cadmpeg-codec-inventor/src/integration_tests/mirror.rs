@@ -271,3 +271,34 @@ fn mirror_plane_without_a_proving_reference_has_no_plane_dependency() {
         })
     ));
 }
+
+#[test]
+fn mirror_plane_supplied_by_an_unplaced_or_later_work_plane_stays_native() {
+    use crate::test_support::mirror::SupplierPlacement;
+
+    for placement in [SupplierPlacement::After, SupplierPlacement::Unplaced] {
+        let (fixture, source) = crate::test_support::mirror::replacement_form();
+        let fixture = fixture
+            .with_supplying_plane()
+            .with_supplier_placement(placement);
+        let native = source.id();
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let projected = fixture.project_history(&ctx, source).expect("history");
+        let feature = projected
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()))
+            .expect("mirror");
+        assert!(feature.dependencies.is_empty());
+        assert!(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+                plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(_)),
+                ..
+            })
+        ));
+        assert!(projected.mirror_losses.is_empty());
+    }
+}

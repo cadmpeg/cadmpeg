@@ -482,12 +482,9 @@ impl<'a> MirrorIndex<'a> {
             origin[1] * 10.0,
             origin[2] * 10.0,
         ))?;
-        // A plane supplied by a work plane is the stored plane; any other
-        // supplier stays a native reference to the stored plane record.
-        let plane_reference = match self.supplying_plane(token, plane.identity.record_ordinal) {
-            Some(_) => None,
-            None => Some(cadmpeg_ir::features::FaceSelection::Native(plane.id())),
-        };
+        // History drops this reference where the supplying work plane becomes
+        // a dependency of the Mirror (`without_supplied_plane_reference`).
+        let plane_reference = Some(cadmpeg_ir::features::FaceSelection::Native(plane.id()));
         let collection = self.property(token, slot(if bodies_mode { 10 } else { 9 })?)?;
         let PmDcFeaturePropertyKind::References {
             family: PmDcFeatureReferenceFamily::ObjectCollection,
@@ -653,17 +650,24 @@ impl<'a> MirrorIndex<'a> {
             })
     }
 
+    /// Whether `feature` and `result` are the projection of `source`;
+    /// `plane_supplied` is whether the supplying work
+    /// plane is a dependency of the Mirror.
     pub(crate) fn matches_projection(
         &self,
         source: &PmDcPatternFeature,
         label: &PmDcFeatureLabel,
         feature: &Feature,
         result: &FeatureResultTopology,
+        plane_supplied: bool,
         seed_feature: impl FnMut(u32) -> Option<FeatureId>,
     ) -> bool {
-        let Some(resolved) = self.resolve(source, label, seed_feature) else {
+        let Some(mut resolved) = self.resolve(source, label, seed_feature) else {
             return false;
         };
+        if plane_supplied {
+            without_supplied_plane_reference(&mut resolved.definition);
+        }
         let Ok(feature_id) = history_feature_id(&source.identity) else {
             return false;
         };
@@ -692,6 +696,17 @@ impl<'a> MirrorIndex<'a> {
             Some(resolved.result_native),
         );
         result == &expected
+    }
+}
+
+/// Drop the native plane reference of a Mirror whose slot-12 plane is the
+/// supplying work plane, which the Mirror consumes as a dependency.
+pub(crate) fn without_supplied_plane_reference(definition: &mut FeatureDefinition) {
+    if let FeatureDefinition::Operation(FeatureOperation::MirrorShape {
+        plane_reference, ..
+    }) = definition
+    {
+        *plane_reference = None;
     }
 }
 

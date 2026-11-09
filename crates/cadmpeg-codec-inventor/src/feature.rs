@@ -2917,10 +2917,12 @@ fn apply_history(
                 .unwrap_or_default(),
         };
         let mut consumed = consumed;
+        let mut supplier = None;
         if let (true, Some(token), Some(pattern)) =
             (item.neutral, token, patterns.get(&item.record).copied())
         {
-            consumed.extend(mirror::supplying_plane(&mirror_planes, token, pattern));
+            supplier = mirror::supplying_plane(&mirror_planes, token, pattern);
+            consumed.extend(supplier);
         }
         for ordinal in consumed {
             let Some(dependency) = ids.get(&ordinal) else {
@@ -2933,6 +2935,11 @@ fn apply_history(
                 continue;
             }
             item.feature.dependencies.insert(dependency.clone());
+            if supplier == Some(ordinal) {
+                item.feature
+                    .evaluation
+                    .edit(|definition, _| mirror::without_supplied_plane_reference(definition));
+            }
         }
     }
     Ok(())

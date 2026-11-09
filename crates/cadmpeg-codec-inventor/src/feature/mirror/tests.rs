@@ -334,19 +334,30 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
         .project(&ctx, &source, &fixture.label, seed, |_| {})
         .expect("mirror")
         .expect("projection");
-    assert!(fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
     result.native_ref = Some(source.id());
-    assert!(!fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(!fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
     result.native_ref = Some(fixture.properties[2].id());
     assert!(!fixture.index().matches_projection(
         &source,
         &fixture.label,
         &feature,
         &result,
+        false,
         |_| seed(4)
     ));
     feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
@@ -359,9 +370,14 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
             .expect("reflection"),
         }),
     );
-    assert!(!fixture
-        .index()
-        .matches_projection(&source, &fixture.label, &feature, &result, seed));
+    assert!(!fixture.index().matches_projection(
+        &source,
+        &fixture.label,
+        &feature,
+        &result,
+        false,
+        seed
+    ));
 }
 
 #[test]
@@ -386,6 +402,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &feature,
         &changed_result,
+        false,
         seed
     ));
     let mut changed_feature = feature.clone();
@@ -397,6 +414,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &changed_feature,
         &changed_result,
+        false,
         seed
     ));
     let mut changed_feature = feature.clone();
@@ -406,6 +424,7 @@ fn native_validation_requires_canonical_feature_and_result_ids() {
         &fixture.label,
         &changed_feature,
         &result,
+        false,
         seed
     ));
 }
@@ -788,6 +807,7 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
             &fixture.label,
             &feature,
             &result,
+            false,
             |_| seed_feature_id(&history, 20, &parent)
         ));
         let losses = native_losses(std::slice::from_ref(&source), &[], &[]);
@@ -817,14 +837,14 @@ fn mirror_plane_reference(
 }
 
 #[test]
-fn a_plane_supplied_by_a_work_plane_has_no_face_reference() {
-    let (fixture, source) = crate::test_support::mirror::replacement_form();
+fn a_plane_supplied_by_a_work_plane_keeps_the_native_reference_until_history() {
+    let (plain, source) = crate::test_support::mirror::replacement_form();
     let native = Some(cadmpeg_ir::features::FaceSelection::Native(
-        fixture.planes[0].id(),
+        plain.planes[0].id(),
     ));
-    assert_eq!(mirror_plane_reference(&fixture, &source), native);
+    assert_eq!(mirror_plane_reference(&plain, &source), native);
     let (fixture, source) = supplied_form();
-    assert_eq!(mirror_plane_reference(&fixture, &source), None);
+    assert_eq!(mirror_plane_reference(&fixture, &source), native);
     assert_eq!(
         fixture.index().supplying_plane("generated", 103),
         Some(Fixture::SUPPLIER)

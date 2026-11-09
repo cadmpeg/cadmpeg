@@ -219,23 +219,30 @@ fn admits(
         .as_ref()?;
     let result = results.get(&feature.id)?.as_ref()?;
     let mut dependencies = feature.dependencies.iter();
-    let matched = index.matches_projection(source, label, feature, result, |ordinal| {
-        let (identity, native, flags) = records.get(&(token, ordinal))?.as_ref()?;
-        let id = crate::feature::mirror::seed_feature_id(
-            history,
-            source.identity.record_ordinal,
-            identity,
-        )?;
-        let seed = features.get(&id)?.as_ref()?;
-        let before = history.placement(ordinal)?;
-        if !matches_history(seed, before, *flags)
-            || dependencies.next() != Some(&id)
-            || seed.native_ref.as_deref() != Some(native.as_str())
-        {
-            return None;
-        }
-        Some(id)
-    });
+    let matched = index.matches_projection(
+        source,
+        label,
+        feature,
+        result,
+        plane_dependency.is_some(),
+        |ordinal| {
+            let (identity, native, flags) = records.get(&(token, ordinal))?.as_ref()?;
+            let id = crate::feature::mirror::seed_feature_id(
+                history,
+                source.identity.record_ordinal,
+                identity,
+            )?;
+            let seed = features.get(&id)?.as_ref()?;
+            let before = history.placement(ordinal)?;
+            if !matches_history(seed, before, *flags)
+                || dependencies.next() != Some(&id)
+                || seed.native_ref.as_deref() != Some(native.as_str())
+            {
+                return None;
+            }
+            Some(id)
+        },
+    );
     Some(
         matched
             && dependencies.next() == plane_dependency.as_ref()
