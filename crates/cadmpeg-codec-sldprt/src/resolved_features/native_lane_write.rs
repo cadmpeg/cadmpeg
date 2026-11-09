@@ -255,15 +255,16 @@ pub(crate) fn regenerate(
                     records,
                 });
             } else {
+                let mut bytes = Vec::new();
                 let Some(id) = name.object_id else {
-                    omitted.push(Omission {
-                        arena: "feature_input_names",
-                        id: name.id.clone(),
-                        reason: "object name has no typed object identity".into(),
+                    super::write_generate::append_object_name_string(&mut bytes, &name.value)?;
+                    events.push(Event {
+                        sequence: name.sequence,
+                        bytes,
+                        records: vec![("feature_input_names".into(), name.id.clone())],
                     });
                     continue;
                 };
-                let mut bytes = Vec::new();
                 let current_name = if ir.scope.design && id.value().is_some() {
                     source
                         .feature_histories
@@ -639,6 +640,7 @@ fn marker_bytes(marker: &crate::records::SketchInputEntity) -> Option<Vec<u8>> {
 }
 
 mod coverage;
+pub(crate) mod held;
 mod sketches;
 
 #[cfg(test)]

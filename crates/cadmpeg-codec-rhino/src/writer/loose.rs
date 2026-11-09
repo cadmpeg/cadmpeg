@@ -114,7 +114,27 @@ pub(super) fn write(
         )));
     }
     if !points.is_empty() {
-        let (kind, class, payload) = if points.len() == 1 {
+        let distinct_point_color = points.len() == 1
+            && ir.model.faces.is_empty()
+            && ir.model.edges.is_empty()
+            && point_targets[0].as_ref().is_some_and(|(_, target)| {
+                matches!(target, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
+                    && body.color.is_some()
+                    && document
+                        .effective_display_color(target)
+                        .is_some_and(|color| Some(color) != body.color)
+            });
+        if distinct_point_color {
+            for id in &free {
+                if let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == **id) {
+                    losses.push(RhinoLossCode::WriterPointCloudIdentityReduced.note(format!(
+                        "body {} free vertex {} and point {} are written as a point cloud to retain their separate colors",
+                        body.id, vertex.id, vertex.point
+                    )));
+                }
+            }
+        }
+        let (kind, class, payload) = if points.len() == 1 && !distinct_point_color {
             let point = points[0];
             let mut payload = vec![0x10];
             payload.extend(point.x.to_le_bytes());
@@ -137,10 +157,16 @@ pub(super) fn write(
             };
             for binding in &document.model.appearance_bindings {
                 let target = binding.target.typed_record_target(&document.model);
-                if point_targets.iter().flatten().any(|(_, selected)| {
-                    matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
-                        && target.as_ref().unwrap_or(&binding.target) == selected
-                }) {
+                let carried_material = points.len() == 1
+                    && materials
+                        .appearance_index(binding.appearance.as_str())
+                        .is_some();
+                if !carried_material
+                    && point_targets.iter().flatten().any(|(_, selected)| {
+                        matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
+                            && target.as_ref().unwrap_or(&binding.target) == selected
+                    })
+                {
                     let detail = if colors.is_some() && binding.visible.is_some() {
                         "is reduced to a point-cloud color; its material link and visibility are omitted"
                     } else if colors.is_some() {
@@ -160,7 +186,7 @@ pub(super) fn write(
                 point_cloud_payload(&points, colors.as_deref())?,
             )
         };
-        let individual = if points.len() == 1 {
+        let individual = if points.len() == 1 && !distinct_point_color {
             point_targets[0].as_ref()
         } else {
             None
@@ -185,13 +211,14 @@ pub(super) fn write(
                 body.id
             )));
         }
-        ctx.charge_entities(1, "write Rhino object record")?;
         let name = display
             .and_then(|value| value.name)
             .or(body.name.as_deref());
-        let strings = super::object_user_strings(document, &identity, name.unwrap_or_default());
+        let mut records = vec![identity.as_str()];
+        records.extend(individual.map(|(target, _)| target.as_str()));
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
-            &super::framed_object_record_full(
+            &super::framed_object_record_with_userdata(
                 kind,
                 class,
                 &payload,
@@ -199,13 +226,20 @@ pub(super) fn write(
                 Some(object_attributes_for_target(
                     document,
                     &identity,
-                    individual.map_or(identity.as_str(), |(target, _)| target),
+                    individual
+                        .or_else(|| {
+                            (points.len() == 1)
+                                .then(|| point_targets[0].as_ref())
+                                .flatten()
+                        })
+                        .map_or(identity.as_str(), |(target, _)| target),
                     name,
                     display.and_then(|value| value.color).or(body.color),
                     display.and_then(|value| value.visible).or(body.visible),
                     materials,
                 )?),
-                super::attribute_userdata_chunk(&strings)?,
+                super::object_userdata(document, &records, name)?,
+                &[],
             )?,
             "retain Rhino Brep records",
         )?;

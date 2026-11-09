@@ -110,7 +110,7 @@ fn transformed(
         PcurveGeometry::Nurbs { nurbs } => {
             let poles = nurbs.control_points();
             let axis = super::geometry::nurbs::axis(
-                nurbs.knots(),
+                nurbs.knots().as_slice(),
                 nurbs.degree(),
                 poles.len(),
                 nurbs.periodic(),

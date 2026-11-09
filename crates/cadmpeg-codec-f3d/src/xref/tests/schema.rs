@@ -3,7 +3,7 @@ use super::{f3d_with_redirections_json, redirections_json, Cursor, DecodeOptions
 use cadmpeg_ir::codec::Codec;
 
 #[test]
-fn unsupported_redirections_schema_preserves_error_kind() {
+fn unsupported_redirections_schema_gives_up_its_entry() {
     let mut table: serde_json::Value =
         serde_json::from_str(&redirections_json("part.f3d", &[])).unwrap();
     table["schema-version"] = serde_json::json!(1);
@@ -23,16 +23,23 @@ fn unsupported_redirections_schema_preserves_error_kind() {
             depth,
             ..DecodeOptions::default()
         };
-        let error = F3dCodec
+        let decoded = F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_redirections_json("assembly-design", &bytes)),
                 &options,
             )
-            .err()
-            .unwrap();
-        assert!(
-            matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::NotImplemented(message))
-            if message.contains("unsupported schema-version 1"))
-        );
+            .expect("an unsupported Redirections schema gives up its entry");
+        let unreadable = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect::<Vec<_>>();
+        assert_eq!(unreadable.len(), 1);
+        assert!(unreadable[0].message.contains("zip.entry"));
+        assert!(unreadable[0]
+            .message
+            .contains("unsupported schema-version 1"));
+        assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
     }
 }

@@ -7170,7 +7170,7 @@ fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecErr
             .checked_sub(endpoint_extra)
             .filter(|value| *value > 0)
             .ok_or_else(|| {
-                CodecError::Malformed("F3D NURBS endpoint multiplicity is invalid".into())
+                CodecError::NotImplemented("F3D NURBS endpoint multiplicity is not storable".into())
             })?;
         native_f64(bytes, value);
         native_i64(

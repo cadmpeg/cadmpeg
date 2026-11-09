@@ -1060,6 +1060,7 @@ pub fn single_value_paths(documents: &[Value]) -> BTreeMap<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::single_value_paths;
+
     use super::{apply_reduced, apply_storage, ReducedProbe};
     use cadmpeg_ir::codec::write::ReducedStorage;
     use serde_json::json;

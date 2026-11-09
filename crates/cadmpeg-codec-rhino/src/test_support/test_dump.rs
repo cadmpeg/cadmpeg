@@ -1119,7 +1119,6 @@ pub(crate) fn set_identity(
         layer: None,
         effective_color: color,
         effective_visible: visible,
-        visible_explicit: false,
         object_mode: 0,
         object_frame: None,
         source: settings::SourceRange {

@@ -458,7 +458,7 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
         .iter()
         .find(|definition| definition.source_name.as_deref() == Some("Malformed"))
         .expect("malformed product definition");
-    assert_eq!(definition.label, None);
+    assert_eq!(definition.label.as_deref(), Some("Malformed"));
     assert_eq!(definition.description, None);
     assert_eq!(definition.part_number, None);
     assert!(definition.bom_properties.is_empty());

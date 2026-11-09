@@ -174,7 +174,11 @@ pub(super) fn auxiliary(
     target.model.assets.retain(|asset| {
         canvas_asset.as_ref() == Some(&asset.id) || decal_asset.as_ref() == Some(&asset.id)
     });
-    target.model.tessellations.clear();
+    let authored = super::super::generate::mesh::authored_tessellations(target, native);
+    target
+        .model
+        .tessellations
+        .retain(|tessellation| authored.contains(&tessellation.id));
     for face in &mut target.model.faces {
         if matches!(
             face.loops,

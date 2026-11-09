@@ -357,6 +357,29 @@ pub(crate) fn synthesize(
         return Ok(());
     }
     native.feature_input_lanes.retain(|lane| lane.id != LANE);
+    // Configurations other than the active one inherit an extrusion's scalars
+    // from the active feature-input lane, so a multi-configuration document
+    // carries that lane for each classless extrusion.
+    let inherited = ir.model.configurations.len() > 1;
+    for feature in native
+        .feature_histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| {
+            inherited && feature.input_class.is_none() && feature.source_value().is_some()
+        })
+    {
+        let extrudes = neutral_feature(ir, feature).is_some_and(|neutral| {
+            matches!(
+                neutral.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. })
+                    if extrusion_family(*op).is_some()
+            )
+        });
+        if extrudes {
+            feature.input_class = Some("moExtrusion_c".into());
+        }
+    }
     let mut scalar_ids = ScalarIdentities::new(native, None);
     let mut payload = Vec::new();
     for feature in native
@@ -371,14 +394,7 @@ pub(crate) fn synthesize(
             CodecError::malformed("authored feature has no native object identity")
         })?;
         append_named_object(&mut payload, class, &feature.name, object)?;
-        let neutral = ir.model.features.iter().find(|neutral| {
-            neutral.native_ref.as_deref() == Some(feature.id.as_str())
-                || (neutral.native_ref.is_none()
-                    && feature.id
-                        == crate::history::write::features::generated_feature_record_id(
-                            &neutral.id,
-                        ))
-        });
+        let neutral = neutral_feature(ir, feature);
         if matches!(
             class,
             "moExtrusion_c" | "moICE_c" | "moCut_c" | "moExtruRefSurface_c"
@@ -454,6 +470,18 @@ pub(crate) fn synthesize(
             )?);
     }
     Ok(())
+}
+
+fn neutral_feature<'a>(
+    ir: &'a CadIr,
+    feature: &crate::records::Feature,
+) -> Option<&'a cadmpeg_ir::features::Feature> {
+    ir.model.features.iter().find(|neutral| {
+        neutral.native_ref.as_deref() == Some(feature.id.as_str())
+            || (neutral.native_ref.is_none()
+                && feature.id
+                    == crate::history::write::features::generated_feature_record_id(&neutral.id))
+    })
 }
 
 fn extrusion_class(family: u16, class: Option<&str>) -> Option<&'static str> {

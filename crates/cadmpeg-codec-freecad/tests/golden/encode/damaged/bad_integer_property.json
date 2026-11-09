@@ -153,7 +153,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.properties`: fcstd:native:property#0:Bad",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#0:Bad, fcstd:native:property#0:Good",
         "severity": "info"
       }
     ],
@@ -227,7 +227,7 @@
             "properties": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:property#0:Good": "regenerated"
+                "fcstd:native:property#0:Good": "dropped"
               }
             },
             "shape_payloads": {

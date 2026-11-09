@@ -147,7 +147,12 @@ pub(crate) fn plan(
                     reason = Some(error.to_string());
                     None
                 }
-                Err(error) => return Err(error),
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                // Reading the retained source only selects the write path.
+                Err(error) => {
+                    reason = Some(error.to_string());
+                    None
+                }
             };
             match patch {
                 Some(Ok(Ok(body))) => return Ok(body),
@@ -158,7 +163,8 @@ pub(crate) fn plan(
                         ..
                     }),
                 )) => reason = Some(error.to_string()),
-                Some(Err(error)) => return Err(error),
+                Some(Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
+                Some(Err(error)) => reason = Some(error.to_string()),
                 None => {}
             }
         } else {

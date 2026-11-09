@@ -95,7 +95,7 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
                     .map_err(|_| CodecError::malformed("test property XML is not UTF-8"))
             }
             PropertyTrees::Typed => {
-                crate::writer::xml::native(property, &std::collections::HashSet::new())?
+                crate::writer::xml::native(property, &std::collections::HashSet::new())
                     .map(Cow::Owned)
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(

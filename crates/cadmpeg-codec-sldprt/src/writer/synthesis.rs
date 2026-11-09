@@ -126,6 +126,15 @@ fn cascade_validation_errors(
         };
         let entity = finding.entity.clone().unwrap_or_default();
         match finding.check {
+            Check::ReferentialIntegrity if entity.starts_with(APPEARANCE_BINDING_OWNER) => {
+                for binding in dangling_appearance_bindings(projected, &entity)? {
+                    for dropped in drop_model_record(projected, &binding)? {
+                        losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                            "record {dropped} dropped; it needs a record the document does not hold"
+                        )));
+                    }
+                }
+            }
             Check::ReferentialIntegrity => {
                 for dropped in drop_model_record(projected, &entity)? {
                     losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
@@ -160,6 +169,93 @@ fn cascade_validation_errors(
     }
 }
 
+/// The sketches of held source lanes, set aside while synthesis generates
+/// lanes for the other sketches.
+struct HeldSketches {
+    sketches: Vec<cadmpeg_ir::sketches::Sketch>,
+    entities: Vec<cadmpeg_ir::sketches::SketchEntity>,
+    constraints: Vec<cadmpeg_ir::sketches::SketchConstraint>,
+}
+
+impl HeldSketches {
+    fn take(
+        projected: &mut CadIr,
+        ids: &std::collections::HashSet<cadmpeg_ir::sketches::SketchId>,
+    ) -> Self {
+        let model = &mut projected.model;
+        let (sketches, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut model.sketches)
+            .into_iter()
+            .partition(|sketch| ids.contains(&sketch.id));
+        model.sketches = kept;
+        let (entities, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut model.sketch_entities)
+            .into_iter()
+            .partition(|entity| ids.contains(&entity.sketch));
+        model.sketch_entities = kept;
+        let (constraints, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut model.sketch_constraints)
+            .into_iter()
+            .partition(|constraint| ids.contains(&constraint.sketch));
+        model.sketch_constraints = kept;
+        Self {
+            sketches,
+            entities,
+            constraints,
+        }
+    }
+
+    fn restore(self, projected: &mut CadIr) {
+        projected.model.sketches.extend(self.sketches);
+        projected.model.sketch_entities.extend(self.entities);
+        projected.model.sketch_constraints.extend(self.constraints);
+        projected.model.finalize();
+    }
+}
+
+/// The validation owner prefix of an appearance binding's reference finding.
+const APPEARANCE_BINDING_OWNER: &str = "appearance-binding:";
+
+/// Bindings of the finding's appearance whose appearance or target the
+/// document does not hold.
+fn dangling_appearance_bindings(
+    projected: &CadIr,
+    owner: &str,
+) -> Result<Vec<String>, CodecError> {
+    let appearance = &owner[APPEARANCE_BINDING_OWNER.len()..];
+    let model = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
+    let held = model
+        .as_object()
+        .into_iter()
+        .flat_map(|arenas| arenas.values())
+        .filter_map(serde_json::Value::as_array)
+        .flatten()
+        .filter_map(|row| row.get("id")?.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let mut dangling = Vec::new();
+    for binding in projected
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| binding.appearance.as_str() == appearance)
+    {
+        let target = serde_json::to_value(&binding.target).map_err(CodecError::malformed)?;
+        let unresolved = target
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(key, _)| key.as_str() != "kind")
+            .filter_map(|(_, value)| value.as_str())
+            .any(|id| !held.contains(id));
+        if !held.contains(appearance) || unresolved {
+            dangling.push(binding.id.as_str().to_owned());
+        }
+    }
+    if dangling.is_empty() {
+        return Err(CodecError::malformed(format_args!(
+            "SLDPRT cascade finds no dangling binding of {appearance}"
+        )));
+    }
+    Ok(dangling)
+}
+
 /// Drop one model record by id through JSON, keeping admission order.
 /// Dropping a feature also drops the features it parents: regeneration and
 /// tree links stay valid at every step because model admission validates
@@ -168,6 +264,7 @@ fn drop_model_record(
     projected: &mut CadIr,
     id: &str,
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
+    projected.model.finalize();
     let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     let mut dropped = std::collections::BTreeSet::from([id.to_owned()]);
     if let Some(model) = document.as_object() {
@@ -225,6 +322,7 @@ fn drop_model_record(
 
 /// Drop every later repeat of one model identity, keeping the first row.
 fn drop_duplicate_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> {
+    projected.model.finalize();
     let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     let mut dropped = false;
     if let Some(model) = document.as_object_mut() {
@@ -608,21 +706,45 @@ pub(super) fn plan(
             .as_ref()
             .is_none_or(|body| supported.contains(body))
     });
+    projected.model.finalize();
+    cascade_validation_errors(&mut projected, &mut losses)?;
     crate::history::write::configurations::ensure_default_configuration(
         &mut projected,
         &supported,
         &mut losses,
     )?;
     geometry::reduce_feature_references(input.ir, &mut projected, &mut losses)?;
+    let held = match retained_native.as_ref().filter(|_| projected.scope.design) {
+        Some(source) => crate::resolved_features::native_lane_write::held::held_lanes(
+            &slot_context,
+            input.ir,
+            source,
+        )?,
+        None => std::collections::BTreeSet::new(),
+    };
+    let held_sketch_ids = input
+        .ir
+        .model
+        .sketches
+        .iter()
+        .filter(|sketch| {
+            sketch
+                .native_ref
+                .as_ref()
+                .is_some_and(|lane| held.contains(lane))
+        })
+        .map(|sketch| sketch.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let held_sketches = HeldSketches::take(&mut projected, &held_sketch_ids);
     let mut prepared_native = design::prepare(
         &slot_context,
         &mut projected,
         &mut losses,
         input.fidelity.is_none(),
     )?;
+    held_sketches.restore(&mut projected);
     if projected.scope.model
         && !projected.scope.design
-        && !supported.is_empty()
         && prepared_native.as_ref().is_none_or(|native| {
             native
                 .feature_histories
@@ -637,11 +759,13 @@ pub(super) fn plan(
             &supported,
             &mut losses,
         )?;
-        super::assign_configuration_indices(&mut carrier.model.configurations)?;
-        crate::history::write::configurations::sync_neutral_configurations(
-            &carrier.model.configurations,
-            &mut prepared_native,
-        );
+        if !carrier.model.configurations.is_empty() {
+            super::assign_configuration_indices(&mut carrier.model.configurations)?;
+            crate::history::write::configurations::sync_neutral_configurations(
+                &carrier.model.configurations,
+                &mut prepared_native,
+            );
+        }
     }
     let mut native_dispositions = {
         use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
@@ -676,15 +800,19 @@ pub(super) fn plan(
             );
         }
         declared.set("sldprt", "pmi_dimensions", NativeDisposition::Regenerated);
-        if let Some(native) = retained_native.as_ref().filter(|_| input.ir.scope.model) {
+        // A source record whose map the authored database places elsewhere
+        // than its typed offsets state is not written; its content is a new
+        // record of that database.
+        if let Some(native) = retained_native.as_ref() {
+            let authored =
+                crate::pmi::write::authored_offsets(&projected, prepared_native.as_ref())
+                    .unwrap_or_default();
             for record in &native.pmi_dimensions {
-                if crate::pmi::annotation_id(record).is_ok_and(|id| {
-                    !projected
-                        .model
-                        .pmi
-                        .iter()
-                        .any(|annotation| annotation.id == id)
-                }) {
+                let held = authored.get(&record.guid).is_some_and(|(map, text)| {
+                    *map == record.offset
+                        && record.display_text_offset().is_none_or(|offset| offset == *text)
+                });
+                if !held {
                     declared.set_record(
                         "sldprt",
                         "pmi_dimensions",
@@ -698,14 +826,36 @@ pub(super) fn plan(
     };
     if let Some(source) = retained_native.as_ref() {
         let mut native = prepared_native.take().unwrap_or_default();
+        let mut regenerated = source.clone();
+        regenerated
+            .feature_input_lanes
+            .retain(|lane| !held.contains(&lane.id));
         crate::resolved_features::native_lane_write::regenerate(
             input.ir,
             &projected,
-            source,
+            &regenerated,
             &mut native,
             &mut losses,
             &mut native_dispositions,
         )?;
+        for lane in source
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| held.contains(&lane.id))
+        {
+            crate::resolved_features::native_lane_write::held::declare_written(
+                lane,
+                &mut native_dispositions,
+            );
+            native.feature_input_lanes.push(lane.clone());
+            native.nested_sketch_carriers.extend(
+                source
+                    .nested_sketch_carriers
+                    .iter()
+                    .filter(|carriers| carriers.parent == lane.id)
+                    .cloned(),
+            );
+        }
         prepared_native = Some(native);
     }
     let mut bytes = Vec::new();

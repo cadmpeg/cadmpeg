@@ -854,9 +854,21 @@ fn generated_solidworks_xml(ir: &CadIr, active: &str, sw_version: Option<&str>) 
     }
     output.push_str("><swModel swName=\"");
     push_xml_attribute_value(&mut output, model);
-    output.push_str("\" swConfigurationName=\"");
-    push_xml_attribute_value(&mut output, active);
-    output.push_str("\"/>");
+    output.push('"');
+    // The decoder binds a named active configuration to the active partition.
+    // A sole configuration without a partition identity is active by being
+    // the only one, so naming it would state a partition binding the
+    // document does not hold.
+    let unbound_sole = matches!(
+        ir.model.configurations.as_slice(),
+        [configuration] if configuration.source_index.is_none()
+    );
+    if !unbound_sole {
+        output.push_str(" swConfigurationName=\"");
+        push_xml_attribute_value(&mut output, active);
+        output.push('"');
+    }
+    output.push_str("/>");
     for configuration in &ir.model.configurations {
         output.push_str("<swConfiguration swID=\"");
         output.push_str(
