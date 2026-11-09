@@ -96,14 +96,37 @@ pub(crate) struct ModelDimension {
     pub(crate) value: Option<f64>,
 }
 
+/// The byte extent of one present `dim_array` element.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ElementSpan {
+    /// Zero-based slot index, the dimension identifier.
+    pub(crate) slot: usize,
+    /// Offset of the element's `e3` opener.
+    pub(crate) start: usize,
+    /// Offset of the element's `symbol` field.
+    pub(crate) end: usize,
+}
+
 /// Read every dimension element of the unique `dim_array` in `payload`. An
 /// array whose slots do not all read supplies no rows.
 pub(crate) fn dimensions(payload: &[u8]) -> Vec<ModelDimension> {
+    array_elements(payload)
+        .map(|elements| elements.into_iter().filter_map(|(_, row)| row).collect())
+        .unwrap_or_default()
+}
+
+/// The extent of every present element of the unique `dim_array` in
+/// `payload`, or `None` when a slot does not read.
+pub(crate) fn element_spans(payload: &[u8]) -> Option<Vec<ElementSpan>> {
+    array_elements(payload).map(|elements| elements.into_iter().map(|(span, _)| span).collect())
+}
+
+fn array_elements(payload: &[u8]) -> Option<Vec<(ElementSpan, Option<ModelDimension>)>> {
     let mut fields = find_iter(payload, DIM_ARRAY_FIELD);
     let (Some(field), None) = (fields.next(), fields.next()) else {
-        return Vec::new();
+        return None;
     };
-    slots(payload, field).unwrap_or_default()
+    slots(payload, field)
 }
 
 /// The design radius that the dimension rows state for round `feature_id`.
@@ -120,7 +143,7 @@ pub(crate) fn round_radius(dimensions: &[ModelDimension], feature_id: u32) -> Ro
 
 /// The rows of the `<count>` slots after
 /// `dim_array\0 [f1 | f3 | f4 04] f8 <count> f7 <class> fb`.
-fn slots(payload: &[u8], field: usize) -> Option<Vec<ModelDimension>> {
+fn slots(payload: &[u8], field: usize) -> Option<Vec<(ElementSpan, Option<ModelDimension>)>> {
     let mut view = View::over_retained(payload);
     view.seek(field.checked_add(DIM_ARRAY_FIELD.len())?)?;
     optional_token(&mut view)?;
@@ -129,31 +152,34 @@ fn slots(payload: &[u8], field: usize) -> Option<Vec<ModelDimension>> {
     expect(&mut view, &[CLASS_REFERENCE])?;
     compact(&mut view)?;
     expect(&mut view, &[0xfb])?;
-    let mut rows = Vec::new();
+    let mut elements = Vec::new();
     let mut layout = None;
     for slot in 0..count {
         while view.unread().first() == Some(&CLASS_REFERENCE) {
             view.skip(1)?;
             compact(&mut view)?;
         }
+        let start = view.position();
         match *view.unread().first()? {
             NULL_ELEMENT => view.skip(1)?,
             COMPOUND_OPEN => match layout {
                 None => {
-                    let (row, prototype_layout) = prototype(payload, &mut view, slot)?;
-                    rows.push(row);
+                    let (row, prototype_layout, end) = prototype(payload, &mut view, slot)?;
+                    elements.push((ElementSpan { slot, start, end }, Some(row)));
                     layout = Some(prototype_layout);
                 }
                 Some(layout) => {
                     let last = slot.checked_add(1)? == count;
                     let mut fields = later_element(payload, &mut view, slot, last)?;
-                    rows.extend(positional_fields(&mut fields, layout));
+                    let end = fields.window().len();
+                    let row = positional_fields(&mut fields, layout);
+                    elements.push((ElementSpan { slot, start, end }, row));
                 }
             },
             _ => return None,
         }
     }
-    Some(rows)
+    Some(elements)
 }
 
 /// The field form and `attr_arr` length that the prototype states for every
@@ -167,7 +193,11 @@ struct Layout {
 /// The labeled first element at `slot`, read up to its `symbol` field
 /// `e0 00 symbol\0 [f4 04] e2 e0 01 type\0 <type> e0 01 text(i_val)\0 <slot> f2`.
 /// The view ends after the `f2`.
-fn prototype(payload: &[u8], view: &mut View<'_>, slot: usize) -> Option<(ModelDimension, Layout)> {
+fn prototype(
+    payload: &[u8],
+    view: &mut View<'_>,
+    slot: usize,
+) -> Option<(ModelDimension, Layout, usize)> {
     let opener = view.position();
     let symbol = find_from(payload, SYMBOL_LABEL, opener)?;
     view.seek(symbol.checked_add(SYMBOL_LABEL.len())?)?;
@@ -181,7 +211,8 @@ fn prototype(payload: &[u8], view: &mut View<'_>, slot: usize) -> Option<(ModelD
     expect(view, &[PROTOTYPE_SYMBOL_CLOSE])?;
     let mut fields = View::over_retained(payload.get(..symbol)?);
     fields.seek(opener)?;
-    prototype_fields(&mut fields)
+    let (row, layout) = prototype_fields(&mut fields)?;
+    Some((row, layout, symbol))
 }
 
 fn prototype_fields(view: &mut View<'_>) -> Option<(ModelDimension, Layout)> {

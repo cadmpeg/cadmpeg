@@ -437,9 +437,14 @@ that gate.
   annotation-element owners. The same owner join transfers dimensional
   characteristics, values, and supported tolerance modes. Shared datum
   identities are inferred from equal labels. A uniquely bounded datum-leader
-  surface can select a datum face. A flatness placement can select the unique
-  bounded face of its attached surface. Other datum-feature and geometric-target
-  associations and tolerance modifiers remain unresolved. Failed compressed
+  surface of the prototype or of a later definition row can select a datum face,
+  and a leader attached to a dimension uses that dimension's targets. A type-2 tolerance placement with a surface
+  attachment selects the unique bounded face of that surface for every
+  tolerance segment. An annotation dimension's two attachment links select the
+  faces of their surfaces, or for two edges each edge's face that the other
+  edge does not bound; a tolerance attached to that dimension uses the same
+  faces. Other datum-feature and geometric-target associations and tolerance
+  modifiers remain unresolved. Failed compressed
   expansions retain their existing unresolved classification.
 - Count-selected curve frames retain their exact parameter bodies and literal
   topology references. When count evidence is necessary to fix a boundary, the

@@ -98,6 +98,10 @@ pub(crate) enum CreoLossCode {
     PmiDatumTargetInferred,
     /// A tolerance's surface attachment selects its unique bounded face.
     PmiToleranceTargetInferred,
+    /// A dimension's surface or edge references select its target faces.
+    PmiDimensionTargetInferred,
+    /// A surface link names a visible surface with faces and a datum surface.
+    PmiTargetNamespaceAmbiguous,
     /// A datum tag's definition or geometric target remains unresolved.
     PmiDatumTargetUnresolved,
     /// A datum-tag prototype uses a class-qualified boundary candidate.
@@ -331,6 +335,8 @@ impl CreoLossCode {
             Self::PmiFirstAttributeAssumed => "pmi.first-attribute-assumed",
             Self::PmiDatumTargetInferred => "pmi.datum-target-inferred",
             Self::PmiToleranceTargetInferred => "pmi.tolerance-target-inferred",
+            Self::PmiDimensionTargetInferred => "pmi.dimension-target-inferred",
+            Self::PmiTargetNamespaceAmbiguous => "pmi.target-namespace-ambiguous",
             Self::PmiDatumTargetUnresolved => "pmi.datum-target-unresolved",
             Self::PmiDatumTagBoundaryAssumed => "pmi.datum-tag-boundary-assumed",
             Self::PmiDatumDefinitionSlotAssumed => "pmi.datum-definition-slot-assumed",
@@ -508,6 +514,8 @@ impl CreoLossCode {
             | Self::PmiFirstAttributeAssumed
             | Self::PmiDatumTargetInferred
             | Self::PmiToleranceTargetInferred
+            | Self::PmiDimensionTargetInferred
+            | Self::PmiTargetNamespaceAmbiguous
             | Self::PmiDatumTargetUnresolved
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDatumDefinitionSlotAssumed
@@ -628,7 +636,8 @@ impl CreoLossCode {
             | Self::PmiRecordUnresolved
             | Self::PmiModifiersUnresolved
             | Self::PmiDatumLabelUnresolved
-            | Self::PmiDatumTargetUnresolved => LossTaxonomy::PmiOmitted,
+            | Self::PmiDatumTargetUnresolved
+            | Self::PmiTargetNamespaceAmbiguous => LossTaxonomy::PmiOmitted,
             Self::PmiLengthUnitAssumed
             | Self::PmiAttributeUnitAssumed
             | Self::PmiTextMagnitudeInferred
@@ -636,6 +645,7 @@ impl CreoLossCode {
             | Self::PmiFirstAttributeAssumed
             | Self::PmiDatumTargetInferred
             | Self::PmiToleranceTargetInferred
+            | Self::PmiDimensionTargetInferred
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
@@ -804,6 +814,8 @@ mod tests {
                 "pmi.first-attribute-assumed",
                 "pmi.datum-target-inferred",
                 "pmi.tolerance-target-inferred",
+                "pmi.dimension-target-inferred",
+                "pmi.target-namespace-ambiguous",
                 "pmi.datum-target-unresolved",
                 "pmi.datum-tag-boundary-assumed",
                 "pmi.datum-definition-slot-assumed",

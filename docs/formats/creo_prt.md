@@ -6790,10 +6790,80 @@ zero-based `geom_tol_array` slot. A dimension can reference several tolerances.
 A type-2 placement can contain an attachment of type `25`; its `attach_id`
 selects a surface.
 
+The `geom_tol_array` header is `f8 <count> f7 <class> fb`, and `e1` fills each
+leading empty slot. The first occupied slot stores a named prototype:
+
+```text
+e3 e0 00 dtl_named_item\0 e2 e0 00 dtl_item\0 e2 e0 0a name\0 [f1] <name>
+e0 01 tol_type\0 [f1] <tol_type> e0 01 tol_class\0 <tol_class>
+e0 01 feat_id\0 <feat_id> e0 0a value_string\0 f8 <count> <value>\0 ...
+e0 00 tol_text\0 f8 01 f7 <class> fb e3 ... e0 01 owner_id\0 <slot> ...
+e0 00 gtol_place_ptr\0 <placement>
+```
+
+`<name>` is `e1` or a NUL-terminated string, and `<feat_id>` is `f6` or a
+compact integer. A later occupied slot stores the same leading fields
+positionally:
+
+```text
+e3 [f7 <class>] e2 e2 <name> <tol_type> <tol_class> <feat_id> <values>
+f8 <lines> f7 <class> fb <text> ... <text> <placement>
+```
+
+`<values>` stores one NUL-terminated `<value>` for each frame segment. It is
+`f8 <count>` and `<count>` values, or values without a count that continue to
+the `f8` of the `tol_text` header. `<value>` is the displayed magnitude text.
+An `e8` byte can precede its UTF-8 characters. The `tol_text` array stores
+`<lines>` text elements:
+
+```text
+[f1] [f7 <class>] e3 [f7 <class>] <db_type> <text_type> <text_value>\0
+[f5] <txt_attrib> <txt_attrib2> <slot> <height> <width_factor>
+e2 <thickness> <vertical_extent_start> <vertical_extent_end>
+```
+
+The first element starts at its `[f7 <class>]` or `e3`. `<txt_attrib>` is a
+compact integer or `eb` and four bytes. All elements of a row store the same
+`<slot>`. `<slot>` is the row's zero-based `geom_tol_array` slot and equals the
+`Annot_Id` of its annotation element.
+
+A named placement is `[f1|f2|f3] [f7 <class>] e3 e0 01 type\0 [f1] <type>
+e0 01 id\0 [f1] <id> e0 01 attribute\0 [f1] <attribute> e0 02 coord\0 f8 03
+<coord> e0 00 gtol_attach_pnt\0 <attachment>`; a positional placement is
+`e3 <type> <id> <attribute> <coord> <attachment>`. `<coord>` stores three
+scalars in the frame-slot lane of §9.1. `e4`, `e5`, and `e6` repeat the
+preceding coordinate one, two, and three times.
+`<attachment>` is `e1` when the placement has no attachment. The first
+attachment of a section is named:
+`e3 e0 01 type\0 [f0] <type> e0 01 attach_id\0 [f1] <id> e0 00 att_offsets\0
+[f7 <class>] f8 <count> ...`. A later attachment stores the same fields
+positionally: `e3 [f0] [f7 <class>] <type> <id> [f7 <class>] f8 <count> ...`.
+A type-2 placement and its type-`25` attachment store the same surface
+identifier.
+
+An annotation dimension's `dim_array` element stores `p_sld_info` as
+`e3 [f7 <class>] <ref_type> <ref_id> ...`; the named form labels the two
+fields `ref_type` and `ref_id`. `ref_id` and `ref_type` equal the `AE_Id` and
+`AE_Type` of the dimension's annotation element. The `attach_ptr` chain
+follows. Each link stores the attachment fields of a tolerance placement,
+and `next_attach_ptr` stores the next link. An annotation dimension stores two
+links. Attachment type `25` selects a surface and type `1` selects an edge.
+A type-`25` `attach_id` names a `VisibGeom` surface or an `ActDatums`
+surface.
+
 The `set_datum_tag_xar` named prototype stores a datum label in
 `p_datum_tag_name` and a zero-based `gtol_datum_def_xar` slot in `dtm_def_id`.
-The definition prototype's `p_ldr.note_att` type `25` selects a surface by
-`attach_id`.
+A later tag row starts `e3 <attributes> <dtm_def_id> e3 [f7 <class>]
+<ref_type> <ref_id>`; `<attributes>` and `<dtm_def_id>` are compact integers,
+and the second compound is the positional `p_sld_info`.
+
+The `gtol_datum_def_xar` prototype labels `datum_type`, `datum_id`, `feat_id`,
+`gtol_id`, and `p_ldr`; `p_ldr` labels `ldr_attrib` and `note_att`. A later
+definition row starts `e3 <datum_type> <datum_id> <feat_id> <gtol_id>
+e3 <ldr_attrib> <note_att>`, where the three identifiers are `f6` or compact
+integers. `note_att` stores the attachment fields of a tolerance placement:
+named in its first occurrence, then `e3 [f0] [f7 <class>] <type> <attach_id>`.
+Attachment type `25` selects a surface. Type `5` selects a `dim_array` slot.
 
 ## 9. Assembly component table
 

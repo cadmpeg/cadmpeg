@@ -168,8 +168,9 @@ pub(crate) fn complete_compact_int(data: &[u8], offset: usize) -> Option<(u32, u
     }
 }
 
-/// Parent-feature identities extend the compact integer with a 21-bit form.
-pub(crate) fn parent_feature_id(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
+/// A compact integer extended with the packed 21-bit identity form
+/// `c0..df XX YY`.
+pub(crate) fn packed_compact_int(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
     match *payload.get(offset)? {
         head @ 0xc0..=0xdf => {
             let high = u32::from(*payload.get(offset + 1)?);
@@ -356,17 +357,17 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn parent_feature_integer_extends_only_its_identity_lane() {
+    fn packed_compact_integer_extends_only_its_identity_lanes() {
         assert_eq!(
-            super::parent_feature_id(&[0xc0, 0x40, 0], 0),
+            super::packed_compact_int(&[0xc0, 0x40, 0], 0),
             Some((16_384, 3))
         );
         assert_eq!(
-            super::parent_feature_id(&[0xdf, 0xff, 0xff], 0),
+            super::packed_compact_int(&[0xdf, 0xff, 0xff], 0),
             Some((2_097_151, 3))
         );
-        assert_eq!(super::parent_feature_id(&[0xc0, 0x40], 0), None);
-        assert_eq!(super::parent_feature_id(&[0xe0, 0, 0], 0), None);
+        assert_eq!(super::packed_compact_int(&[0xc0, 0x40], 0), None);
+        assert_eq!(super::packed_compact_int(&[0xe0, 0, 0], 0), None);
         assert_eq!(
             super::reference_id(&[0xc0, 0x40, 0], 0),
             Err("control byte cannot start a reference id")

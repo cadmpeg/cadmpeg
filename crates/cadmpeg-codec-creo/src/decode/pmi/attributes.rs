@@ -232,7 +232,7 @@ pub(super) fn integer(view: &mut View<'_>) -> Option<Integer> {
             (u32::from(a) << 24) | (u32::from(b) << 16) | (u32::from(c) << 8) | u32::from(d),
         ));
     }
-    let (value, end) = crate::psb::parent_feature_id(view.unread(), 0)?;
+    let (value, end) = crate::psb::packed_compact_int(view.unread(), 0)?;
     view.skip(end)?;
     Some(Integer::Value(value))
 }

@@ -29,7 +29,7 @@ const ATTACHMENT_ID_FIELD: &[u8] = b"\xe0\x01attach_id\0";
 const POSITIONAL_SLAVE_INFO: &[u8] = b"\xe3\x80\xdb";
 const POSITIONAL_TEXT_VALUE: &[u8] = b"\xe3\x3e\x12";
 
-/// A datum label and its joined definition slot.
+/// A datum label with its established definition-slot relationship.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DatumTagIdentity {
     /// Absolute offset of the label field in the source view.
@@ -83,7 +83,7 @@ pub(crate) struct DatumAttachment {
     pub(crate) id: u32,
 }
 
-/// Read bounded datum-tag rows and join their definition ids to array slots.
+/// Read bounded datum-tag rows and join the prototype definition id to its slot.
 pub(crate) fn datum_tags(
     ctx: &DecodeContext<'_>,
     section: View<'_>,
@@ -160,6 +160,10 @@ pub(crate) fn datum_tags(
     let first_attachment = first_definition_slot.and_then(|_| {
         definition_array.and_then(|field| leader_attachment(section, field, tag_array))
     });
+    let later_definitions = definition_array.and_then(|field| {
+        let slot = first_datum_slot(section, field, tag_array)?;
+        later_definition_attachments(section, field, tag_array, slot)
+    });
     let placeholder = DatumTagIdentity {
         source_offset: 0,
         definition_id: None,
@@ -191,12 +195,10 @@ pub(crate) fn datum_tags(
         });
     };
     let parsed_positional = positional_tag_rows(
-        section,
         array,
         positional_start,
         tag_array_end,
         remaining_slots,
-        definition_array,
         &mut tags[1..],
     );
     let parsed_positional = match parsed_positional {
@@ -204,6 +206,19 @@ pub(crate) fn datum_tags(
         Err(count) => count,
     };
     tags.truncate(parsed_positional + 1);
+    if let Some(definitions) = &later_definitions {
+        for tag in tags.iter_mut().skip(1) {
+            let Some(definition_id) = tag.definition_id else {
+                continue;
+            };
+            if let Some((slot, attachment)) =
+                definitions.iter().find(|(slot, _)| *slot == definition_id)
+            {
+                tag.definition_slot = Some(*slot);
+                tag.attachment = *attachment;
+            }
+        }
+    }
     let unparsed_label_slots = remaining_slots - parsed_positional;
     unresolved_populated_slots += unparsed_label_slots;
     unresolved_populated_slots += tags
@@ -360,15 +375,12 @@ fn leader_attachment(
     expect(&mut row, &[0xe3])?;
 
     let note_attachment = find_from(row, NOTE_ATTACHMENT_FIELD, row.position())?;
-    let offsets = find_from(
-        row,
-        ATTACHMENT_OFFSETS_FIELD,
-        note_attachment.checked_add(NOTE_ATTACHMENT_FIELD.len())?,
-    )?;
-    let mut note = row.child(
-        note_attachment.checked_add(NOTE_ATTACHMENT_FIELD.len())?,
-        offsets,
-    )?;
+    row.seek(note_attachment.checked_add(NOTE_ATTACHMENT_FIELD.len())?)?;
+    if !row.unread().starts_with(b"\xe3\xe0") {
+        return positional_attachment(&mut row);
+    }
+    let offsets = find_from(row, ATTACHMENT_OFFSETS_FIELD, row.position())?;
+    let mut note = row.child(row.position(), offsets)?;
     expect(&mut note, &[0xe3])?;
     expect(&mut note, TYPE_FIELD)?;
     let reference_type = compact(&mut note)?;
@@ -376,6 +388,66 @@ fn leader_attachment(
     let id = compact(&mut note)?;
     note.is_empty()
         .then_some(DatumAttachment { reference_type, id })
+}
+
+/// Read `e3 [f0] [f7 <class>] <type> <attach_id>`, the positional replay of a
+/// `note_att` attachment.
+fn positional_attachment(row: &mut View<'_>) -> Option<DatumAttachment> {
+    expect(row, &[0xe3])?;
+    if row.unread().first() == Some(&0xf0) {
+        row.skip(1)?;
+    }
+    if row.unread().first() == Some(&0xf7) {
+        row.skip(1)?;
+        compact(row)?;
+    }
+    Some(DatumAttachment {
+        reference_type: compact(row)?,
+        id: compact(row)?,
+    })
+}
+
+/// The slots and leader references of the positional definition rows after
+/// the prototype at `prototype_slot`.
+///
+/// A row starts `e3 01 f6 f6 f6 e3`; the `p_ldr` compound continues with
+/// `<ldr_attrib>` and the `note_att` attachment. The rows fill the slots after
+/// the prototype in order only when their count equals the number of those
+/// slots.
+fn later_definition_attachments(
+    section: View<'_>,
+    datum_array: usize,
+    tag_array: usize,
+    prototype_slot: u32,
+) -> Option<Vec<(u32, Option<DatumAttachment>)>> {
+    let (array, header, leading_nulls) =
+        array_at(section, datum_array, GTOL_DATUM_ARRAY, tag_array)?;
+    let later_slots = header.slots.checked_sub(leading_nulls)?.checked_sub(1)?;
+    let row_start = first_row_end(array, array.position(), header.class_id)?;
+    let lane = array.child(row_start, tag_array)?;
+    let mut rows = Vec::new();
+    for offset in find_iter(lane.window(), &[0xe3]) {
+        let Some(mut row) = array.child(row_start.checked_add(offset)?, tag_array) else {
+            continue;
+        };
+        let row_prefix = (|| {
+            expect(&mut row, &[0xe3])?;
+            (compact(&mut row)? == 1).then_some(())?;
+            for _ in 0..3 {
+                matches!(nullable_compact(&mut row)?, NullableCompact::Null).then_some(())?;
+            }
+            expect(&mut row, &[0xe3])
+        })();
+        if row_prefix.is_some() {
+            let leader = compact(&mut row).and_then(|_| positional_attachment(&mut row));
+            rows.push(leader);
+        }
+    }
+    (rows.len() == later_slots).then_some(())?;
+    rows.into_iter()
+        .zip(1_u32..)
+        .map(|(attachment, ordinal)| Some((prototype_slot.checked_add(ordinal)?, attachment)))
+        .collect()
 }
 
 fn array_header(view: &mut View<'_>) -> Option<ArrayHeader> {
@@ -403,12 +475,10 @@ fn leading_null_slots(view: &mut View<'_>, slots: usize) -> Option<usize> {
 }
 
 fn positional_tag_rows(
-    section: View<'_>,
     array: View<'_>,
     start: usize,
     end: usize,
     expected_rows: usize,
-    definition_array: Option<usize>,
     output: &mut [DatumTagIdentity],
 ) -> Result<usize, usize> {
     let Some(bounded) = array.child(start, end) else {
@@ -444,13 +514,10 @@ fn positional_tag_rows(
             PositionalDefinitionId::Known(value) => Some(value),
             PositionalDefinitionId::Unresolved => None,
         };
-        let definition_slot = definition_id.and_then(|id| {
-            definition_array.and_then(|field| datum_slot_for_id(section, field, array.end(), id))
-        });
         *output_row = DatumTagIdentity {
             source_offset,
             definition_id,
-            definition_slot,
+            definition_slot: None,
             identification,
             attachment: None,
         };
@@ -459,29 +526,39 @@ fn positional_tag_rows(
     Ok(row_count)
 }
 
+/// Read `e3 <attributes> <dtm_def_id>` immediately before the positional
+/// `p_sld_info` opener at `leader`. Each compact integer has one or two bytes
+/// below the `e0` control range; the value is known only when exactly one
+/// split reads.
 fn positional_definition_id(array: View<'_>, leader: usize) -> PositionalDefinitionId {
-    let Some(value_offset) = leader.checked_sub(1) else {
-        return PositionalDefinitionId::Unresolved;
-    };
-    let Some(type_offset) = value_offset.checked_sub(1) else {
-        return PositionalDefinitionId::Unresolved;
-    };
-    let Some(mut type_view) = array.child(type_offset, value_offset) else {
-        return PositionalDefinitionId::Unresolved;
-    };
-    let Some(field_type) = type_view.u8() else {
-        return PositionalDefinitionId::Unresolved;
-    };
-    if field_type != 0x01 {
-        return PositionalDefinitionId::Unresolved;
+    let mut found = None;
+    for attribute_length in 1..=2_usize {
+        for definition_length in 1..=2_usize {
+            let Some(id) = (|| {
+                let fields = leader.checked_sub(attribute_length + definition_length)?;
+                let mut view = array.child(fields.checked_sub(1)?, leader)?;
+                expect(&mut view, &[0xe3])?;
+                view.unread()
+                    .iter()
+                    .all(|byte| *byte < 0xe0)
+                    .then_some(())?;
+                let start = view.position();
+                compact(&mut view)?;
+                (view.position() - start == attribute_length).then_some(())?;
+                let id = compact(&mut view)?;
+                view.is_empty().then_some(id)
+            })() else {
+                continue;
+            };
+            if found.replace(id).is_some() {
+                return PositionalDefinitionId::Unresolved;
+            }
+        }
     }
-    let Some(mut value) = array.child(value_offset, leader) else {
-        return PositionalDefinitionId::Unresolved;
-    };
-    match compact(&mut value) {
-        Some(id) if value.is_empty() => PositionalDefinitionId::Known(id),
-        _ => PositionalDefinitionId::Unresolved,
-    }
+    found.map_or(
+        PositionalDefinitionId::Unresolved,
+        PositionalDefinitionId::Known,
+    )
 }
 
 fn positional_tag_texts(mut row: View<'_>) -> Option<(String, usize)> {
@@ -507,70 +584,9 @@ fn positional_text(row: &mut View<'_>) -> Option<(String, usize)> {
     Some((value, field))
 }
 
-fn definition_array_is_complete(section: View<'_>, field: usize, bound: usize) -> bool {
-    let Some((array, header, leading_nulls)) = array_at(section, field, GTOL_DATUM_ARRAY, bound)
-    else {
-        return false;
-    };
-    if leading_nulls == header.slots {
-        return false;
-    }
-    let expected_rows = header.slots - leading_nulls - 1;
-    let Some(row_end) = first_row_end(array, array.position(), header.class_id) else {
-        return false;
-    };
-    let Some(positional_rows) = array.child(row_end, bound) else {
-        return false;
-    };
-    positional_definition_rows(positional_rows) == Some(expected_rows)
-}
-
-fn positional_definition_rows(rows: View<'_>) -> Option<usize> {
-    let mut matches = 0_usize;
-    let mut cursor = rows.position();
-    while let Some(offset) = find_from(rows, &[0xe3], cursor) {
-        let mut row = rows.child(offset, rows.end())?;
-        let parsed = (|| {
-            expect(&mut row, &[0xe3])?;
-            let datum_type = compact(&mut row)?;
-            let datum_id = nullable_compact(&mut row)?;
-            let feature_id = nullable_compact(&mut row)?;
-            let gtol_id = nullable_compact(&mut row)?;
-            expect(&mut row, &[0xe3])?;
-            (datum_type == 1
-                && matches!(datum_id, NullableCompact::Null)
-                && matches!(feature_id, NullableCompact::Null)
-                && matches!(gtol_id, NullableCompact::Null))
-            .then_some(())
-        })();
-        if parsed.is_some() {
-            matches = matches.checked_add(1)?;
-        }
-        cursor = offset.checked_add(1)?;
-        if cursor >= rows.end() {
-            break;
-        }
-    }
-    Some(matches)
-}
-
-fn datum_slot_for_id(
-    section: View<'_>,
-    field: usize,
-    bound: usize,
-    definition_id: u32,
-) -> Option<u32> {
-    let (_, header, _) = array_at(section, field, GTOL_DATUM_ARRAY, bound)?;
-    let slot = first_datum_slot(section, field, bound)?;
-    if definition_id < slot || usize::try_from(definition_id).ok()? >= header.slots {
-        return None;
-    }
-    definition_array_is_complete(section, field, bound).then_some(definition_id)
-}
-
 fn compact(view: &mut View<'_>) -> Option<u32> {
     let local = view.read_len();
-    let (value, end) = crate::psb::complete_compact_int(view.window(), local)?;
+    let (value, end) = crate::psb::packed_compact_int(view.window(), local)?;
     view.seek(view.start().checked_add(end)?)?;
     Some(value)
 }

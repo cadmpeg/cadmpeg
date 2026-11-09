@@ -61,8 +61,42 @@ fn positional_flatness_joins_by_owner_and_exposes_type_37_attachment() {
 }
 
 #[test]
-fn positional_perpendicularity_preserves_a_classed_attachment() {
-    let sample = section(&[PositionalSpec {
+fn positional_perpendicularity_replays_the_typed_attachment_fields() {
+    let sample = section(&[perpendicularity(AttachmentSpec::Positional {
+        reference_type: 37,
+        id: 77,
+    })]);
+    let parsed = unique(&sample, 22).expect("perpendicularity row for annotation slot 22");
+    let placement = parsed.placement.expect("placement prefix");
+
+    assert_eq!(parsed.owner_id, 22);
+    assert_eq!(parsed.tolerance_type, 22);
+    assert_eq!(parsed.value_string, b"1.5");
+    assert_eq!(placement.id, 77);
+    assert_eq!(
+        placement.attachment,
+        Some(AttachmentPrefix::Inline {
+            reference_type: 37,
+            id: 77,
+        })
+    );
+}
+
+#[test]
+fn positional_attachment_requires_the_offset_array() {
+    let sample = section(
+        &[perpendicularity(AttachmentSpec::PositionalWithoutOffsets {
+            reference_type: 37,
+            id: 77,
+        })],
+    );
+    let parsed = unique(&sample, 22).expect("perpendicularity row for annotation slot 22");
+
+    assert_eq!(parsed.placement.expect("placement prefix").attachment, None);
+}
+
+fn perpendicularity(attachment: AttachmentSpec) -> PositionalSpec {
+    PositionalSpec {
         owner: 22,
         tolerance_type: 22,
         tolerance_class: 3,
@@ -72,19 +106,8 @@ fn positional_perpendicularity_preserves_a_classed_attachment() {
         row_class: None,
         placement_type: 2,
         placement_id: 77,
-        attachment: AttachmentSpec::Classed {
-            class_id: 37,
-            id: 77,
-        },
-    }]);
-    let parsed = unique(&sample, 22).expect("perpendicularity row for annotation slot 22");
-    let placement = parsed.placement.expect("placement prefix");
-
-    assert_eq!(parsed.owner_id, 22);
-    assert_eq!(parsed.tolerance_type, 22);
-    assert_eq!(parsed.value_string, b"1.5");
-    assert_eq!(placement.id, 77);
-    assert_eq!(placement.attachment, Some(AttachmentPrefix::Other));
+        attachment,
+    }
 }
 
 #[test]
@@ -112,22 +135,8 @@ fn malformed_e3_compound_does_not_hide_a_later_typed_row() {
 }
 
 #[test]
-fn named_prefix_survives_when_the_positional_tail_has_no_drf_id_frame() {
-    let sample = section(&[PositionalSpec {
-        owner: 20,
-        tolerance_type: 2,
-        tolerance_class: 1,
-        value: b"0.2",
-        text: b"0.2",
-        text_type: 35,
-        row_class: Some(3),
-        placement_type: 2,
-        placement_id: 106,
-        attachment: AttachmentSpec::Inline {
-            reference_type: 37,
-            id: 106,
-        },
-    }]);
+fn positional_rows_join_when_the_prototype_has_no_drf_id_frame() {
+    let sample = section(&[flatness()]);
     let mut bytes = sample.bytes.clone();
     let framed_drf_id = b"\xe3\xe0\x01drf_id\0\x03";
     let start = bytes
@@ -139,12 +148,37 @@ fn named_prefix_survives_when_the_positional_tail_has_no_drf_id_frame() {
     let parsed = prefixes(&sample, &[17, 20]).expect("named tolerance prefix");
 
     assert_eq!(parsed[0].map(|prefix| prefix.owner_id), Some(17));
-    assert_eq!(parsed[1], None);
+    assert_eq!(parsed[1].map(|prefix| prefix.owner_id), Some(20));
 }
 
 #[test]
-fn drfs_data_f4_07_header_keeps_the_typed_positional_tail() {
-    let sample = section(&[PositionalSpec {
+fn empty_item_names_frame_named_and_positional_rows() {
+    let sample = section(&[flatness()]);
+    let mut bytes = sample.bytes.clone();
+    let named_name = b"\xe0\x0aname\0\xf1\xe1";
+    let start = bytes
+        .windows(named_name.len())
+        .position(|window| window == named_name)
+        .expect("named item name");
+    bytes[start + named_name.len() - 1] = 0;
+    let positional_name = b"\xe2\xe2\xe1\x02";
+    let start = bytes
+        .windows(positional_name.len())
+        .position(|window| window == positional_name)
+        .expect("positional item name");
+    bytes[start + 2] = 0;
+    let sample = Sample { bytes, ..sample };
+    let parsed = prefixes(&sample, &[17, 20]).expect("named tolerance prefix");
+
+    assert_eq!(parsed[0].map(|prefix| prefix.owner_id), Some(17));
+    assert_eq!(
+        parsed[1].map(|prefix| prefix.value_string),
+        Some(b"0.2".as_slice())
+    );
+}
+
+fn flatness() -> PositionalSpec {
+    PositionalSpec {
         owner: 20,
         tolerance_type: 2,
         tolerance_class: 1,
@@ -158,19 +192,7 @@ fn drfs_data_f4_07_header_keeps_the_typed_positional_tail() {
             reference_type: 37,
             id: 106,
         },
-    }]);
-    let mut bytes = sample.bytes.clone();
-    let marker = [0xf4, 0x08];
-    let start = bytes
-        .windows(marker.len())
-        .position(|window| window == marker)
-        .expect("prototype drfs_data framing");
-    bytes[start + 1] = 0x07;
-    let sample = Sample { bytes, ..sample };
-    let parsed = unique(&sample, 20).expect("typed row after f4/07 drfs_data header");
-
-    assert_eq!(parsed.owner_id, 20);
-    assert_eq!(parsed.value_string, b"0.2");
+    }
 }
 
 #[test]
@@ -273,6 +295,17 @@ fn direct_positional_parser_returns_workbook_values_after_validating_text_gramma
     assert_eq!(parsed.placement.map(|placement| placement.id), Some(570));
 }
 
+#[test]
+fn positional_value_string_can_carry_the_named_array_wrapper() {
+    let sample = section(&[PositionalSpec {
+        value: b"\xf8\x01\xe8\xe2\x8c\x800.35",
+        ..flatness()
+    }]);
+    let parsed = unique(&sample, 20).expect("typed row with a wrapped value string");
+
+    assert_eq!(parsed.value_string, b"\xe8\xe2\x8c\x800.35");
+}
+
 #[derive(Clone, Copy)]
 struct PositionalSpec {
     owner: u8,
@@ -291,8 +324,11 @@ struct PositionalSpec {
 enum AttachmentSpec {
     Null,
     Inline { reference_type: u8, id: u8 },
-    Classed { class_id: u8, id: u8 },
+    Positional { reference_type: u8, id: u8 },
+    PositionalWithoutOffsets { reference_type: u8, id: u8 },
 }
+
+const ATT_OFFSETS: &[u8] = &[0xf8, 2, 0xf7, 59, 0xfb];
 
 struct Sample {
     bytes: Vec<u8>,
@@ -420,9 +456,15 @@ fn positional_row(bytes: &mut Vec<u8>, spec: PositionalSpec) -> (usize, usize) {
             bytes.push(reference_type);
             bytes.extend_from_slice(b"\xe0\x01attach_id\0");
             bytes.push(id);
+            bytes.extend_from_slice(b"\xe0\x00att_offsets\0");
+            bytes.extend_from_slice(ATT_OFFSETS);
         }
-        AttachmentSpec::Classed { class_id, id } => {
-            bytes.extend_from_slice(&[0xe3, class_id, id]);
+        AttachmentSpec::Positional { reference_type, id } => {
+            bytes.extend_from_slice(&[0xe3, reference_type, id]);
+            bytes.extend_from_slice(ATT_OFFSETS);
+        }
+        AttachmentSpec::PositionalWithoutOffsets { reference_type, id } => {
+            bytes.extend_from_slice(&[0xe3, reference_type, id, 0xe1]);
         }
     }
     (row_offset, coordinate_offset)
@@ -444,4 +486,48 @@ fn compact(bytes: &mut Vec<u8>, value: u32) {
         let low = u8::try_from(value & 0xff).expect("two-byte compact low byte");
         bytes.extend_from_slice(&[0x80 | high, low]);
     }
+}
+
+/// A positional dimension element whose `p_sld_info` names owner `(3886, 219)`
+/// and whose `attach_ptr` chain holds two edge links.
+fn dimension_element(owner_references: usize, class: &[u8]) -> Vec<u8> {
+    let mut bytes = b"\xe3\xe2\xe2\xe1\x08\x05\xf6".to_vec();
+    for _ in 0..owner_references {
+        bytes.push(0xe3);
+        bytes.extend_from_slice(class);
+        bytes.extend_from_slice(b"\x80\xdb\x8f\x2e\xe1\xe1\x0a\xf6\xf6\x29\xe3\x33");
+    }
+    bytes.extend_from_slice(b"\xe3\x01\x87\xe5");
+    bytes.extend_from_slice(ATT_OFFSETS);
+    bytes.extend_from_slice(b"\xe3\xf7\x3c\x2e\x18\x18\xf7\x80\xa9\xe3\x01\x87\xe3");
+    bytes.extend_from_slice(ATT_OFFSETS);
+    bytes.extend_from_slice(b"\xe3\xf7\x3c\x2e\x18\x18");
+    bytes
+}
+
+fn attachments_of(bytes: &[u8]) -> Option<Vec<(u32, u32)>> {
+    let span = crate::feature::dimensions::ElementSpan {
+        slot: 567,
+        start: 0,
+        end: bytes.len(),
+    };
+    super::dimension_attachments(View::over_retained(bytes), span, (3886, 219))
+}
+
+#[test]
+fn dimension_attachments_follow_the_owner_reference() {
+    assert_eq!(
+        attachments_of(&dimension_element(1, b"")),
+        Some(vec![(1, 0x07e5), (1, 0x07e3)])
+    );
+    assert_eq!(
+        attachments_of(&dimension_element(1, b"\xf7\x80\x9f")),
+        Some(vec![(1, 0x07e5), (1, 0x07e3)])
+    );
+}
+
+#[test]
+fn dimension_attachments_require_one_owner_reference() {
+    assert_eq!(attachments_of(&dimension_element(0, b"")), None);
+    assert_eq!(attachments_of(&dimension_element(2, b"")), None);
 }

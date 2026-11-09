@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    dimensions, round_radius, ModelDimension, RoundDimensionRadius, ANGULAR_DIMENSION_TYPE,
+    dimensions, element_spans, round_radius, ElementSpan, ModelDimension, RoundDimensionRadius,
+    ANGULAR_DIMENSION_TYPE,
 };
 use crate::test_support::{dim_array, DimSlot};
 use cadmpeg_ir::scalar::PositiveReal;
@@ -291,4 +292,33 @@ fn rows_need_a_labeled_prototype() {
         )],
     );
     assert!(dimensions(&bytes).is_empty());
+}
+
+#[test]
+fn element_spans_end_at_each_symbol() {
+    let (bytes, starts) = dim_array(
+        b"",
+        &[
+            DimSlot::Null,
+            DimSlot::Prototype(PROTOTYPE),
+            DimSlot::Later(LATER),
+        ],
+    );
+    let prototype_symbol = starts[1] + PROTOTYPE.len();
+    let later_symbol = starts[2] + LATER.len();
+    assert_eq!(
+        element_spans(&bytes),
+        Some(vec![
+            ElementSpan {
+                slot: 1,
+                start: starts[1],
+                end: prototype_symbol,
+            },
+            ElementSpan {
+                slot: 2,
+                start: starts[2],
+                end: later_symbol,
+            },
+        ])
+    );
 }
