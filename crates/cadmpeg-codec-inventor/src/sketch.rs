@@ -5199,6 +5199,32 @@ mod tests {
         assert_eq!(references(&coincident).last(), references(&tangent).last());
     }
 
+    fn as_perpendicular(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
+        let mut wire = serde_json::to_value(relation).expect("relation wire");
+        wire["kind"] = serde_json::json!({
+            "form": "perpendicular",
+            "first": wire["kind"]["first"].clone(),
+            "second": wire["kind"]["second"].clone(),
+            "orientation": 0,
+        });
+        serde_json::from_value(wire).expect("perpendicular wire")
+    }
+
+    #[test]
+    fn a_perpendicular_hint_code_is_not_validated_as_a_reference() {
+        let coincident = hinted_relation(2);
+        let perpendicular = as_perpendicular(&coincident);
+        let references = crate::validate::sketch_constraint_references;
+        assert_eq!(
+            references(&coincident).len(),
+            references(&perpendicular).len() + 1
+        );
+        assert_eq!(
+            references(&coincident).last(),
+            references(&perpendicular).last()
+        );
+    }
+
     #[test]
     fn equal_relations_require_their_operand_kinds() {
         let equal = |tag| {
