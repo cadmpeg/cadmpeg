@@ -2,6 +2,7 @@
 //! History-module unit tests.
 
 mod body_bounds;
+mod body_centers;
 mod body_incidence;
 mod body_recipe;
 mod body_recipe_selections;

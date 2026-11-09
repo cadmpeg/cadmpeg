@@ -10,7 +10,7 @@ fn active_body() -> cadmpeg_ir::topology::Body {
     body
 }
 
-fn base_feature() -> cadmpeg_ir::features::Feature {
+pub(super) fn base_feature() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
         BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
     };
@@ -40,7 +40,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     }
 }
 
-fn state(
+pub(super) fn state(
     state_id: i64,
     node_index: i64,
     next_ref: Option<i64>,
@@ -68,7 +68,7 @@ fn state(
     )
 }
 
-fn scope_between(
+pub(super) fn scope_between(
     state_id: i64,
     previous_state_id: i64,
 ) -> crate::records::feature::scope::DesignParameterScope {
