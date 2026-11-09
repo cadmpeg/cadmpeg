@@ -236,16 +236,19 @@ fn exact_reference(
     };
     let measured = measurement(kind, &curves).and_then(|(value, points)| {
         let value = FiniteReal::new(value)?;
-        Some((value, points.map_or_else(Vec::new, |points| page(points))))
+        Some((value, points.map_or_else(Vec::new, page)))
     });
     Ok(measured)
 }
+
+/// A saved reference curve and the parameter range of its edge.
+pub(crate) type SavedCurve<'a> = (&'a TextCurve, [FiniteReal; 2]);
 
 /// The curve and parameter range of each saved reference edge, when every
 /// payload holds one unplaced, non-degenerate edge on a 3D curve.
 pub(crate) fn saved_curves(
     payloads: &[(crate::brep::ShapePayload, crate::brep::ParsedPolygons)],
-) -> Result<Option<Vec<(&TextCurve, [FiniteReal; 2])>>, CodecError> {
+) -> Result<Option<Vec<SavedCurve<'_>>>, CodecError> {
     let mut curves = Vec::new();
     for (payload, polygons) in payloads {
         let Some(tables) = Tables::from_shape(
@@ -297,7 +300,7 @@ pub(crate) fn saved_curves(
 /// curves, with the two reference points its page anchors place.
 pub(crate) fn measurement(
     kind: &DimensionKind,
-    curves: &[(&TextCurve, [FiniteReal; 2])],
+    curves: &[SavedCurve<'_>],
 ) -> Option<(f64, Option<[[f64; 2]; 2]>)> {
     match (kind, curves) {
         (
