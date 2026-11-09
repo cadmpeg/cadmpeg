@@ -1952,7 +1952,6 @@ fn combine_states_applied_operation(
 }
 
 /// The history state a feature's scope produces and the state it follows.
-
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
