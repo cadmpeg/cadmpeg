@@ -12,7 +12,10 @@ use cadmpeg_ir::pmi::{
     PmiTarget,
 };
 
+use cadmpeg_ir::report::loss::LossNote;
+
 use crate::brep::PersistentFaceIdentity;
+use crate::loss::SldprtLossCode;
 
 use super::{decode_rendered_utf16, short_class, suppressed, tolerance_kind, Entity};
 use crate::layout::named_object_header as named_header;
@@ -57,9 +60,11 @@ impl Archive {
         }
     }
 
-    /// Whether the archive declares displays that its framing discards.
+    /// Whether the archive declares displays that its framing discards: a
+    /// list the head, count, or item openings do not frame, or a last display
+    /// that no following non-empty list bounds.
     pub(super) fn is_unframed(&self) -> bool {
-        self.unframed
+        self.unframed || !self.unbounded.is_empty()
     }
 }
 
@@ -70,6 +75,7 @@ struct GtolDisplay {
     characteristics: Vec<String>,
     path: FeaturePath,
     faces: FaceAttachment,
+    assumed_document: bool,
     rows: Vec<Row>,
     note: Option<String>,
 }
@@ -180,7 +186,7 @@ fn gtol_display(
         .filter_map(|text| characteristic(&text.value))
         .map(str::to_owned)
         .collect();
-    let faces = face_attachment(
+    let (faces, assumed_document) = face_attachment(
         references
             .iter()
             .filter(|reference| inside(reference.offset)),
@@ -191,25 +197,32 @@ fn gtol_display(
         characteristics,
         path: display_path(paths.iter().filter(|path| inside(path.offset))),
         faces,
+        assumed_document,
         rows: frame_rows(&texts),
         note: frame_note(&texts),
     }
 }
 
-fn face_attachment<'a>(references: impl Iterator<Item = &'a IdentityReference>) -> FaceAttachment {
+/// The faces a display's references select, and whether one of them reads
+/// its first hop through a document layout that §2.3 does not state.
+fn face_attachment<'a>(
+    references: impl Iterator<Item = &'a IdentityReference>,
+) -> (FaceAttachment, bool) {
     let mut faces = Vec::new();
+    let mut assumed = false;
     for reference in references {
         let Some(face) = &reference.face else {
-            return FaceAttachment::Unresolved;
+            return (FaceAttachment::Unresolved, false);
         };
+        assumed |= reference.assumed_document;
         if !faces.contains(face) {
             faces.push(face.clone());
         }
     }
     if faces.is_empty() {
-        FaceAttachment::Absent
+        (FaceAttachment::Absent, false)
     } else {
-        FaceAttachment::Faces(faces)
+        (FaceAttachment::Faces(faces), assumed)
     }
 }
 
@@ -556,6 +569,7 @@ pub(super) fn annotations(
     root: &Entity,
     projected: &mut Vec<PmiAnnotation>,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
+    losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<PmiAnnotation>, usize), CodecError> {
     let faces = face_index(face_identities);
     let (links, systems) = {
@@ -574,13 +588,15 @@ pub(super) fn annotations(
         (links, systems)
     };
     apply_datum_systems(projected, systems)?;
-    let mut unresolved = archive.unbounded.len();
+    let mut unresolved = 0usize;
+    let mut assumed = 0usize;
     let mut presentations = Vec::new();
     for (display, semantics) in archive.gtols.iter().zip(links) {
+        let overflow = || CodecError::malformed("SWIFT display count overflows");
         if semantics.is_none() {
-            unresolved = unresolved
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("SWIFT display count overflows"))?;
+            unresolved = unresolved.checked_add(1).ok_or_else(overflow)?;
+        } else if display.path == FeaturePath::Absent && display.assumed_document {
+            assumed = assumed.checked_add(1).ok_or_else(overflow)?;
         }
         let id = PmiId::mint(format!("sldprt:model:pmi#display-{:x}", display.offset))
             .map_err(|_| CodecError::malformed("invalid SWIFT display ID"))?;
@@ -595,6 +611,11 @@ pub(super) fn annotations(
                 semantics: semantics.unwrap_or_default(),
             },
         });
+    }
+    if assumed > 0 {
+        losses.push(SldprtLossCode::PmiSwiftFaceDocumentLayoutAssumed.note(format!(
+            "{assumed} SWIFT geometric-tolerance display(s) select faces through a document written in place with one or two strings, read as the three-string layout of sldprt.md section 2.3 without its third string"
+        )));
     }
     Ok((presentations, unresolved))
 }

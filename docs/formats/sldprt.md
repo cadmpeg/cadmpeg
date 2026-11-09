@@ -1535,7 +1535,8 @@ is a u16 LE item count and that many display objects. The first list holds the
 geometric-tolerance displays: its first item declares `moDisplayGtol_c` at map
 index 8, and each later item opens with that class's tag. The u16 LE count of
 the second list ends the last geometric-tolerance display; the second list
-holds the datum-tag displays and its first item declares `moDisplayDatumTag_c`.
+holds the datum-tag displays, and the first item of a non-empty second list
+declares `moDisplayDatumTag_c`.
 
 | Offset | Field                                                         |
 | ------ | ------------------------------------------------------------- |
@@ -1798,7 +1799,7 @@ The hop a pattern or mirror hop points to is written in place inside it, and so 
 
 A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC. The u32 is the object identifier of the producing history feature, the identifier that `FACE_ID_2001` value 1 carries (§5).
 
-A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, one to three Unicode `CString` values, 17 or 18 bytes, a Unicode `CString` holding a configuration name, and 12 bytes. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
+A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, three Unicode `CString` values, 17 or 18 bytes, and a Unicode `CString` holding a configuration name; in a file whose `swVersion` is below 17000, 12 bytes follow the configuration name. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
 
 After the feature-object block, a `Fillet_c` fillet and a `Chamfer_c` chamfer write these bytes of their own, or one of the forms of open item EV-12:
 

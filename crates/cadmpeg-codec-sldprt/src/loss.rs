@@ -92,6 +92,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftPresentationUnresolved,
     /// A SWIFT presentation archive declares displays that its framing discards.
     PmiSwiftPresentationUnframed,
+    /// A SWIFT display selects faces through a one- or two-string in-place document.
+    PmiSwiftFaceDocumentLayoutAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -325,6 +327,7 @@ impl SldprtLossCode {
         Self::PmiSwiftSphericalDiameterTargetUnresolved,
         Self::PmiSwiftPresentationUnresolved,
         Self::PmiSwiftPresentationUnframed,
+        Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -440,6 +443,7 @@ impl SldprtLossCode {
             }
             Self::PmiSwiftPresentationUnresolved => "pmi.swift-presentation-unresolved",
             Self::PmiSwiftPresentationUnframed => "pmi.swift-presentation-unframed",
+            Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -592,6 +596,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
             | Self::PmiSwiftPresentationUnframed
+            | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -762,7 +767,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed
             | Self::PmiSwiftSphericalDiameterTargetUnresolved
             | Self::PmiSwiftPresentationUnresolved
-            | Self::PmiSwiftPresentationUnframed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftPresentationUnframed
+            | Self::PmiSwiftFaceDocumentLayoutAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -996,6 +1002,7 @@ mod tests {
                 "pmi.swift-spherical-diameter-target-unresolved",
                 "pmi.swift-presentation-unresolved",
                 "pmi.swift-presentation-unframed",
+                "pmi.swift-face-document-layout-assumed",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",

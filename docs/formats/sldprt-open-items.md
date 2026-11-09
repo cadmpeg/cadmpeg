@@ -800,6 +800,17 @@ resolve a seed feature?
 
 **Need.** Establish whether `IGTOL-` names the same characteristic as `GTOL-` with a display variant, so that such a display depicts its annotations.
 
+
+### DI-64. End of the last SWIFT geometric-tolerance display
+
+**Question.** Which bytes end the last geometric-tolerance display of a SWIFT presentation archive whose datum-tag list is empty?
+
+**Known.** `sldprt.md` §2.1 states that the u16 count of the second display list ends the last geometric-tolerance display, and that the first item of a non-empty second list declares `moDisplayDatumTag_c`. An archive whose second list is empty writes no `moDisplayDatumTag_c` declaration after the last geometric-tolerance display.
+
+**Need.** Bound that display, so that its note, rows, and feature or face references decode.
+
+**Note.** The decoder discards that display and reports `pmi.swift-presentation-unframed`.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
@@ -883,13 +894,15 @@ resolve a seed feature?
 
 ### EV-14. Persistent identity fields
 
-**Question.** What do the own fields of the identity-representation objects after a reference's first hop, and the reference header's selector and record identifier mean? Which field selects the count of Unicode strings and the 17- or 18-byte gap of a `moExtObject_c` object, and what are the `moExtObject_c` forms whose u16 after the two string pointers is not `2`?
+**Question.** What do the own fields of the identity-representation objects after a reference's first hop, and the reference header's selector and record identifier mean? Which field selects one, two, or three Unicode strings and the 17- or 18-byte gap of a `moExtObject_c` object, how many bytes follow its configuration name in a file whose `swVersion` is 17000 or above, and what are the `moExtObject_c` forms whose u16 after the two string pointers is not `2`?
 
-**Known.** `sldprt.md` §2.3 gives the `moFR_c` feature identifier and the `moExtObject_c` layout, and §2.1 gives the face identity of a reference's first hop. In `moFromSktEnt3IntSurfIdRep_c` the second u32 is usually `ffffffff`. In-place `moExtObject_c` objects hold one, two, or three Unicode strings after the u32, then 17 or 18 bytes before the configuration name; three-string objects occur with both gaps. Hop lists whose class index the corpus walk cannot name, and identity-representation classes not in the table of `sldprt.md` §2.3, remain unparsed.
+**Known.** `sldprt.md` §2.3 gives the `moFR_c` feature identifier and the three-string `moExtObject_c` form below `swVersion` 17000, and §2.1 gives the face identity of a reference's first hop. In `moFromSktEnt3IntSurfIdRep_c` the second u32 is usually `ffffffff`. In-place `moExtObject_c` objects hold one, two, or three Unicode strings after the u32, then 17 or 18 bytes before the configuration name; three-string objects occur with both gaps. Where a `moFR_c` object's feature identifier and time stamp follow such an object, 12 bytes separate them from the configuration name, also in files whose `swVersion` is 17000 or above. Hop lists whose class index the corpus walk cannot name, and identity-representation classes not in the table of `sldprt.md` §2.3, remain unparsed.
 
 **Need.** A reader that resolves a selected face or edge to geometry, and a writer that creates a selection, have to read and write these fields.
 
-**Conflict.** The history object reader requires three strings and skips 16 bytes after the configuration name in files whose `swVersion` is 17000 or above. Every in-place object that a feature record follows has 12 bytes there, and objects with one or two strings occur.
+**Conflict.** The history object reader requires three strings and skips 16 bytes after the configuration name in files whose `swVersion` is 17000 or above.
+
+**Note.** The SWIFT presentation reader reads a one- or two-string in-place object with its 12-byte tail and reports `pmi.swift-face-document-layout-assumed` for each display whose face selection depends on that reading.
 
 ### EV-15. Feature-object block inputs
 

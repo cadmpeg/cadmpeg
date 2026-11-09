@@ -237,7 +237,8 @@ fn presentations(image: &Image<'_>) -> (Vec<PmiAnnotation>, usize) {
     let root = root();
     let mut projected = project(&root);
     let archive = parse(&image.bytes());
-    annotations(&archive, &root, &mut projected, &[]).expect("presentation annotations")
+    annotations(&archive, &root, &mut projected, &[], &mut Vec::new())
+        .expect("presentation annotations")
 }
 
 fn only<T>(items: &[T]) -> &T {
@@ -319,7 +320,8 @@ fn a_feature_path_selects_its_outer_feature_and_admits_member_suffixes() {
     );
     let root = root();
     let (presentations, unresolved) =
-        annotations(&archive, &root, &mut project(&root), &[]).expect("presentation annotations");
+        annotations(&archive, &root, &mut project(&root), &[], &mut Vec::new())
+            .expect("presentation annotations");
     assert_eq!(unresolved, 0);
     assert_eq!(
         depicted(only(&presentations)).1,
@@ -364,8 +366,8 @@ fn feature_paths_that_disagree_leave_the_display_unlinked() {
     let archive = parse(&image.bytes());
     assert_eq!(only(&archive.gtols).path, FeaturePath::Inconsistent);
     let root = root();
-    let (_, unresolved) =
-        annotations(&archive, &root, &mut project(&root), &[]).expect("presentation annotations");
+    let (_, unresolved) = annotations(&archive, &root, &mut project(&root), &[], &mut Vec::new())
+        .expect("presentation annotations");
     assert_eq!(unresolved, 1);
 }
 
@@ -387,7 +389,7 @@ fn a_display_list_count_that_disagrees_with_its_items_yields_no_displays() {
 }
 
 #[test]
-fn the_last_display_without_a_following_list_is_unbounded() {
+fn the_last_display_without_a_following_list_is_unframed() {
     let image = Image {
         count: None,
         gtols: vec![
@@ -402,9 +404,11 @@ fn the_last_display_without_a_following_list_is_unbounded() {
     assert_eq!(archive.unbounded.len(), 1);
     let root = root();
     let (presentations, unresolved) =
-        annotations(&archive, &root, &mut project(&root), &[]).expect("presentation annotations");
+        annotations(&archive, &root, &mut project(&root), &[], &mut Vec::new())
+            .expect("presentation annotations");
     assert_eq!(presentations.len(), 1);
-    assert_eq!(unresolved, 1);
+    assert_eq!(unresolved, 0);
+    assert!(archive.is_unframed());
 }
 
 fn pmi(id: &str) -> PmiId {
@@ -537,9 +541,14 @@ fn a_display_without_a_feature_path_depicts_the_tolerances_on_its_faces_and_supp
         (face(20), persistent(44, 2, &[0, 5])),
     ];
     let archive = parse(&image.bytes());
+    let mut losses = Vec::new();
     let (presentations, unresolved) =
-        annotations(&archive, &root, &mut projected, &identities).expect("presentations");
+        annotations(&archive, &root, &mut projected, &identities, &mut losses)
+            .expect("presentations");
     assert_eq!(unresolved, 0);
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "pmi.swift-face-document-layout-assumed"));
     let [composite, flatness] = presentations.as_slice() else {
         panic!("two presentations")
     };
@@ -583,8 +592,14 @@ fn a_face_identity_without_a_current_face_leaves_the_display_unlinked() {
     let mut projected = vec![tolerance("A2", GeometricToleranceKind::Flatness, 0.254, 20)];
     let identities = [(face(20), persistent(44, 2, &[0]))];
     let archive = parse(&image.bytes());
-    let (_, unresolved) =
-        annotations(&archive, &root, &mut projected, &identities).expect("presentations");
+    let (_, unresolved) = annotations(
+        &archive,
+        &root,
+        &mut projected,
+        &identities,
+        &mut Vec::new(),
+    )
+    .expect("presentations");
     assert_eq!(unresolved, 2);
 }
 
@@ -718,8 +733,14 @@ fn composite_transfer(
         (face(20), persistent(44, 2, &[0, 5])),
     ];
     let archive = parse(&image.bytes());
-    let (presentations, _) =
-        annotations(&archive, &root, &mut projected, &identities).expect("presentations");
+    let (presentations, _) = annotations(
+        &archive,
+        &root,
+        &mut projected,
+        &identities,
+        &mut Vec::new(),
+    )
+    .expect("presentations");
     assert_eq!(
         depicted(presentations.first().expect("composite display")).1,
         ["sldprt:model:pmi#A1", "sldprt:model:pmi#A1:lower-tier"]

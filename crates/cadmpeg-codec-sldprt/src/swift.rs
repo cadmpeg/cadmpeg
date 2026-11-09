@@ -611,8 +611,13 @@ pub(crate) fn annotations(
     )?;
     projection.append_losses(losses);
     let mut projected = projection.annotations;
-    let (presentations, unresolved_displays) =
-        presentation::annotations(&presentation, &root, &mut projected, face_identities)?;
+    let (presentations, unresolved_displays) = presentation::annotations(
+        &presentation,
+        &root,
+        &mut projected,
+        face_identities,
+        losses,
+    )?;
     if presentation.is_unframed() {
         losses.push(crate::loss::SldprtLossCode::PmiSwiftPresentationUnframed.note(
             "SWIFT geometric-tolerance displays are declared but their display list is not framed",
