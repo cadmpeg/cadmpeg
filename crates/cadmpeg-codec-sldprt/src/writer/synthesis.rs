@@ -204,14 +204,14 @@ fn non_unit_sketch_axes(
     })
 }
 
-/// Whether a sketch-plane axis needs the unit normalization SolidWorks
+/// Whether a sketch-plane axis needs the unit normalization `SolidWorks`
 /// stores.
 pub(super) fn sketch_axes_need_normalization(ir: &CadIr) -> bool {
     non_unit_sketch_axes(ir).next().is_some()
 }
 
-/// SolidWorks stores sketch-plane axes as unit directions; name each sketch
-/// whose resolved axes are not of unit length.
+/// `SolidWorks` stores sketch-plane axes as unit directions; name each
+/// sketch whose resolved axes are not of unit length.
 fn report_sketch_axis_normalization(projected: &CadIr, losses: &mut Vec<LossNote>) {
     for (sketch, axis) in non_unit_sketch_axes(projected) {
         losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
