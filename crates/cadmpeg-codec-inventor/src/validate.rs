@@ -2561,7 +2561,7 @@ fn validate_features(
                     .copied()
             })
             .is_none_or(|expected| {
-                !crate::feature::body_selection::matches(
+                !crate::feature::body_selection::combine_matches(
                     expected,
                     definition,
                     &body_joins,
@@ -2570,6 +2570,11 @@ fn validate_features(
                         &data.pm_dc_feature_properties,
                     )
                     .as_deref(),
+                    &crate::feature::body_selection::produced_before(
+                        &ir.model.features,
+                        &ir.model.feature_result_topologies,
+                        feature,
+                    ),
                 )
             })
         {
