@@ -41,6 +41,7 @@ fn sweep_requires_its_own_caps_complete_spans_and_unchanged_radius() {
     assert!(sweep(&model, 17, 2.0, 8, &[(9, None)], ends).is_some());
     assert!(sweep(&model, 18, 2.0, 8, &[(9, None)], ends).is_none());
     assert!(sweep(&model, 17, 3.0, 8, &[(9, None)], ends).is_none());
+    assert!(sweep(&cylinder_model(3.0), 17, 2.0, 8, &[(9, None)], ends).is_none());
     assert!(sweep(&model, 17, 2.0, 7, &[(9, None)], ends).is_none());
     assert!(sweep(&model, 17, 2.0, 8, &[(9, None), (10, None)], ends).is_none());
     assert!(sweep(
@@ -76,6 +77,20 @@ fn sweep_requires_its_own_caps_complete_spans_and_unchanged_radius() {
     assert!(sweep(&duplicate, 17, 2.0, 8, &[(9, None)], ends).is_none());
 }
 
+fn cylinder_model(radius: f64) -> Model {
+    let mut model = model();
+    model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .expect("cylinder"),
+    ));
+    model
+}
+
 fn line_span() -> PathCurve {
     PathCurve::Line {
         start: Point3::new(0.0, 0.0, 0.0),
@@ -84,6 +99,10 @@ fn line_span() -> PathCurve {
 }
 
 fn torus_model(center: Point3) -> Model {
+    torus_model_with_minor(center, 2.0)
+}
+
+fn torus_model_with_minor(center: Point3, minor: f64) -> Model {
     let mut model = model();
     model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
@@ -91,7 +110,7 @@ fn torus_model(center: Point3) -> Model {
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             6.0,
-            2.0,
+            minor,
         )
         .expect("torus"),
     ));
@@ -148,9 +167,11 @@ fn a_span_without_a_joined_curve_keeps_only_the_radius_check() {
     let unjoined = [(9, None)];
     let torus = torus_model(Point3::new(1.0, 2.0, 3.0));
     assert!(sweep(&torus, 17, 2.0, 8, &unjoined, ends).is_some());
-    assert!(sweep(&torus, 17, 3.0, 8, &unjoined, ends).is_none());
     assert!(sweep(&model(), 17, 2.0, 8, &unjoined, ends).is_some());
-    assert!(sweep(&model(), 17, 3.0, 8, &unjoined, ends).is_none());
+    // The caps keep the section radius; only the side surface differs.
+    let wide_torus = torus_model_with_minor(Point3::new(1.0, 2.0, 3.0), 2.5);
+    assert!(sweep(&wide_torus, 17, 2.0, 8, &unjoined, ends).is_none());
+    assert!(sweep(&cylinder_model(2.5), 17, 2.0, 8, &unjoined, ends).is_none());
     // A joined span on the same faces applies the curve checks.
     let line = [(9, Some(line_span()))];
     assert!(sweep(&torus, 17, 2.0, 8, &line, ends).is_none());
