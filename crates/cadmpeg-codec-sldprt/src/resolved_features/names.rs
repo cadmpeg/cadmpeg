@@ -98,13 +98,17 @@ const NAMED_OBJECT_HEADER_LEN: usize = 12;
 /// A named-object header follows a name string unless a class declaration or
 /// another name record begins inside the header's bytes.
 fn named_object_header_follows(payload: &[u8], end: usize) -> bool {
-    (end..end.saturating_add(NAMED_OBJECT_HEADER_LEN)).all(|start| {
-        let declares_class = payload.get(start..start.saturating_add(CLASS_MARKER.len()))
-            == Some(CLASS_MARKER)
+    let bytes_at = |start: usize, from: usize, to: usize| {
+        payload.get(start.checked_add(from)?..start.checked_add(to)?)
+    };
+    let Some(stop) = end.checked_add(NAMED_OBJECT_HEADER_LEN) else {
+        return false;
+    };
+    (end..stop).all(|start| {
+        let declares_class = bytes_at(start, 0, CLASS_MARKER.len()) == Some(CLASS_MARKER)
             && class_name_at(payload, start).is_some();
         let names_object = View::u16_le_at(payload, start).is_some_and(is_class_token)
-            && payload.get(start.saturating_add(2)..start.saturating_add(NAME_MARKER.len()))
-                == Some(&NAME_MARKER[2..]);
+            && bytes_at(start, 2, NAME_MARKER.len()) == Some(&NAME_MARKER[2..]);
         !declares_class && !names_object
     })
 }
