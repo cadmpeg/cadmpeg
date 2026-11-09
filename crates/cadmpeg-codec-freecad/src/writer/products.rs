@@ -90,7 +90,7 @@ fn external(document: &ExternalDocument, owner: &str, losses: &mut Vec<LossNote>
     }
 }
 
-/// A link stores its scale in `ScaleVector`; FreeCAD restores a uniform
+/// A link stores its scale in `ScaleVector`; `FreeCAD` restores a uniform
 /// scale from `Scale`.
 fn set_scale(object: &mut Object, scale: [f64; 3]) {
     object.set(
