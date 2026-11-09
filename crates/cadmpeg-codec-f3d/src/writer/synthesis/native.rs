@@ -203,6 +203,78 @@ fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
     Ok(())
 }
 
+/// W2: a carried line or arc takes the geometry of the neutral entity it
+/// projects to, inverting the decoder's planar projection (spec §3.1), so an
+/// edit of the entity reaches the written record.
+fn regenerate_planar_curve(
+    record: &mut crate::records::sketch_geometry::SketchCurveIdentity,
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+) {
+    use crate::records::sketch_geometry::SketchCurveGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    let point = |u: f64, v: f64| cadmpeg_ir::features::FinitePoint3::new(Point3::new(u, v, 0.0));
+    match (&mut record.geometry, entity.geometry.definition()) {
+        (
+            Some(SketchCurveGeometry::Line {
+                start, end, direction, ..
+            }),
+            SketchGeometryDefinition::Line { start: from, end: to },
+        ) => {
+            let (Some(a), Some(b), Some(d)) = (
+                point(from.u, from.v),
+                point(to.u, to.v),
+                {
+                    let length = Vector3::new(to.u - from.u, to.v - from.v, 0.0).norm();
+                    cadmpeg_ir::units::UnitVector3::new(Vector3::new(
+                        (to.u - from.u) / length,
+                        (to.v - from.v) / length,
+                        0.0,
+                    ))
+                },
+            ) else {
+                return;
+            };
+            *start = a;
+            *end = b;
+            *direction = d;
+        }
+        (
+            Some(SketchCurveGeometry::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            }),
+            SketchGeometryDefinition::Arc {
+                center: at,
+                radius: length,
+                start_angle: from,
+                end_angle: to,
+            },
+        ) => {
+            let orientation = if normal.as_raw().z < 0.0 { -1.0 } else { 1.0 };
+            let reference = reference_direction.as_raw();
+            let phase = reference.y.atan2(reference.x);
+            let (Some(c), Ok(r), Some(s), Some(e)) = (
+                point(at.u, at.v),
+                cadmpeg_ir::scalar::PositiveLength::try_from(*length),
+                cadmpeg_ir::scalar::Angle::new((from.get() - phase) * orientation),
+                cadmpeg_ir::scalar::Angle::new((to.get() - phase) * orientation),
+            ) else {
+                return;
+            };
+            *center = c;
+            *radius = r;
+            *start_angle = s;
+            *end_angle = e;
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn reconcile(
     target: &mut CadIr,
     mut original: F3dNative,
@@ -564,6 +636,7 @@ pub(super) fn reconcile(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
         );
         if !was_nurbs && !is_nurbs {
+            regenerate_planar_curve(record, entity);
             return true;
         }
         if projected.next().is_some()
