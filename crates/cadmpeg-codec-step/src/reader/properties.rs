@@ -338,6 +338,7 @@ mod tests {
             ("Title", AttributeValue::String("Bracket".into())),
             ("Revision", AttributeValue::Integer(3)),
             ("Mass", AttributeValue::float(1.5).expect("finite mass")),
+            ("Hidden", AttributeValue::Boolean(false)),
         ] {
             ir.model.attributes.push(SourceAttribute {
                 id: format!("test:model:attribute#{name}")
@@ -363,6 +364,7 @@ mod tests {
         assert!(text.contains("VALUE_REPRESENTATION_ITEM"));
         assert!(text.contains("COUNT_MEASURE(3)"));
         assert!(text.contains("NUMERIC_MEASURE"));
+        assert!(text.contains("BOOLEAN_REPRESENTATION_ITEM('Hidden',.F.)"));
 
         let decoded = crate::StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -371,6 +373,7 @@ mod tests {
             ("Title", AttributeValue::String("Bracket".into())),
             ("Revision", AttributeValue::Integer(3)),
             ("Mass", AttributeValue::float(1.5).expect("finite mass")),
+            ("Hidden", AttributeValue::Boolean(false)),
         ] {
             assert!(
                 decoded.ir().model.attributes.iter().any(|attribute| {
@@ -381,6 +384,47 @@ mod tests {
                 "missing document attribute {name}"
             );
         }
+    }
+
+    #[test]
+    fn a_document_attribute_with_several_values_round_trips_as_a_named_row() {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let values = vec![
+            Some(AttributeValue::Integer(42)),
+            Some(AttributeValue::Integer(2026)),
+            Some(AttributeValue::String("rev".into())),
+        ];
+        ir.model.attributes.push(SourceAttribute {
+            id: "test:model:attribute#Record"
+                .try_into()
+                .expect("attribute id"),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "Record".into(),
+            values: values.clone(),
+        });
+        let mut bytes = Vec::new();
+        crate::export::write_step(
+            &ir,
+            &mut bytes,
+            crate::StepSchema::Ap242Edition3,
+            &crate::StepWriteOptions::default(),
+        )
+        .expect("write the row attribute");
+        assert!(std::str::from_utf8(&bytes)
+            .expect("utf-8")
+            .contains("ROW_REPRESENTATION_ITEM('Record',"));
+        let decoded = crate::StepCodec::default()
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode the row attribute");
+        assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+            attribute.target == AttributeTarget::Document
+                && attribute.name == "Record"
+                && attribute.values == values
+        }));
     }
 
     #[test]
@@ -395,7 +439,7 @@ mod tests {
             native_ref: None,
             target: AttributeTarget::Document,
             name: "Flag".into(),
-            values: vec![Some(AttributeValue::Boolean(true))],
+            values: vec![Some(AttributeValue::Reference("Other".into()))],
         });
         let mut bytes = Vec::new();
         let report = crate::export::write_step(

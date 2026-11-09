@@ -88,6 +88,39 @@ fn a_vector_row_normalizes_the_whole_array() {
 }
 
 #[test]
+fn a_field_row_normalizes_the_whole_field_below_it() {
+    use crate::cross_closure::ReducedProbe;
+    use cadmpeg_ir::codec::write::ReducedStorage;
+    use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
+
+    let pointer = "/model/occurrences/0/transform/0/1";
+    let row = ReducedProbe {
+        path: "model.occurrences[].transform",
+        storage: ReducedStorage::Normalized {
+            loss: "fcstd/product.placement-not-rigid",
+        },
+        normalize: Some(|_| json!([[1.0, 0.0, 0.0, 5.0]])),
+    };
+    let note = LossNote::new(
+        LossKind::namespaced(
+            cadmpeg_ir::loss_namespace!("fcstd"),
+            "product.placement-not-rigid",
+            LossTaxonomy::MetadataNotTransferred,
+        ),
+        "occurrence#1 placement reduced",
+    );
+    let mut candidate = json!({"model":{"occurrences":[{"transform":[[1.0, 1.0, 0.0, 5.0]]}]}});
+    normalize_edit(&mut candidate, pointer, &row, "occurrence#1", &[note])
+        .expect("declared loss permits normalization");
+    assert_eq!(
+        candidate.pointer("/model/occurrences/0/transform"),
+        Some(&json!([[1.0, 0.0, 0.0, 5.0]]))
+    );
+    let mut candidate = json!({"model":{"occurrences":[{"name":"x"}]}});
+    assert!(normalize_edit(&mut candidate, "/model/occurrences/0/name", &row, "o", &[]).is_err());
+}
+
+#[test]
 fn dropped_native_list_member_does_not_make_the_owner_missing() {
     use crate::comparison::{unpaired_after_allowances, Allowances};
     let before = json!({
@@ -153,6 +186,22 @@ fn record_order_is_an_ordinal_and_is_not_edited() {
         [
             ("/states/0/order".to_owned(), json!(1)),
             ("/visible".to_owned(), json!(false)),
+        ]
+    );
+}
+
+#[test]
+fn projected_keys_are_not_edited_at_any_depth() {
+    let joint = json!({
+        "id": "j",
+        "operands": {"connector": {"operand": {"object": "o"}, "detached": false}},
+        "states": [{"properties": {"settings": "s"}, "attributes": {"settings": "s"}}],
+    });
+    assert_eq!(
+        scalar_edits(&joint, "assembly_joints"),
+        [
+            ("/operands/connector/detached".to_owned(), json!(true)),
+            ("/states/0/attributes/settings".to_owned(), json!("sx")),
         ]
     );
 }

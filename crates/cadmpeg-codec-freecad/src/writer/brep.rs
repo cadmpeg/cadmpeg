@@ -12,6 +12,7 @@ use std::fmt::Write as _;
 
 use super::geometry;
 use crate::loss::FreecadLossCode;
+mod body_kind;
 mod native_text;
 mod reachable;
 use reachable::Reach;
@@ -51,6 +52,8 @@ enum RootKind<'a> {
 /// This plan holds identities/kinds only, never a previous geometry value.
 pub(super) struct RootKinds<'a> {
     rows: Vec<(&'a str, RootKind<'a>)>,
+    /// Bodies whose source root use has a Location, sorted.
+    located: Vec<&'a str>,
     current: &'a crate::topology_transfer::CurrentTopologyBindings,
 }
 
@@ -104,10 +107,14 @@ impl<'a> RootKinds<'a> {
             ir.model.bodies.len(),
             "FreeCAD current root kinds",
         )?;
+        let mut located = Vec::new();
         for body in &ir.model.bodies {
             let Some(native) = current.native_for_record(body.id.as_str()) else {
                 continue;
             };
+            if current.source_located(native) {
+                located.push(body.id.as_str());
+            }
             let Some(kind) = current.source_kind(native) else {
                 continue;
             };
@@ -171,7 +178,16 @@ impl<'a> RootKinds<'a> {
             }
         }
         rows.sort_unstable_by(|a, b| a.0.cmp(b.0));
-        Ok(Self { rows, current })
+        located.sort_unstable();
+        Ok(Self {
+            rows,
+            located,
+            current,
+        })
+    }
+
+    fn located(&self, body: &str) -> bool {
+        self.located.binary_search(&body).is_ok()
     }
 
     fn get(&self, body: &str) -> Option<RootKind<'a>> {
@@ -1245,6 +1261,7 @@ fn serialize_geometry_inner(
         }
     }
     let mut roots = Vec::new();
+    let readings = body_kind::Topology::new(ir);
     for body in bodies {
         let placement = root_override.or(body.transform).unwrap_or_default();
         let placement = if location_supported(placement) {
@@ -1586,7 +1603,23 @@ fn serialize_geometry_inner(
             }
             _ => root,
         };
-        let location = register_location(placement, &mut locations);
+        if let Some(reading) = readings.reading(body, root, &shapes) {
+            if reading != body.kind {
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "body {} of kind {:?} re-reads as {:?}: FreeCAD derives a body's kind from its shapes",
+                        body.id, body.kind, reading
+                    )),
+                );
+            }
+        }
+        // A source root Location, identity or not, keeps the root placed so
+        // its topology keeps its located identity.
+        let location = if root_kinds.located(body.id.as_str()) {
+            register_explicit_location(placement, &mut locations)
+        } else {
+            register_location(placement, &mut locations)
+        };
         topology.record(body.id.as_str(), root)?;
         roots.push((root, location));
     }
@@ -1987,6 +2020,14 @@ fn register_location(
     if transform == cadmpeg_ir::transform::Transform::identity() {
         return 0;
     }
+    register_explicit_location(transform, locations)
+}
+
+/// A Location row for `transform`, identity included.
+fn register_explicit_location(
+    transform: cadmpeg_ir::transform::Transform,
+    locations: &mut Vec<String>,
+) -> usize {
     let row = format!(
         "1\n{}",
         transform

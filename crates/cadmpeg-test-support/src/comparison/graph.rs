@@ -13,6 +13,20 @@ pub(super) struct Record {
     pub(super) value: Value,
 }
 
+/// The records whose ordinals rank together: a parameter ranks within its
+/// owner and an occurrence within its parent; other records rank across
+/// their arena.
+fn ordinal_scope(arena: &str, fields: &serde_json::Map<String, Value>) -> Option<String> {
+    match arena {
+        "model/parameters" => fields
+            .get("owner")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        "model/occurrences" => fields.get("parent").map(Value::to_string),
+        _ => None,
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct Document {
     pub(super) records: Vec<Record>,
@@ -34,7 +48,7 @@ pub(crate) fn normalize_feature_self_reference(value: &mut serde_json::Map<Strin
                 .and_then(|value| value.get_mut("native"))
             {
                 if native.as_str() == native_ref.as_deref() && native_ref.is_some() {
-                    *native = Value::Null;
+                    *native = serde_json::json!({"self_reference": true});
                 }
             }
         }
@@ -80,6 +94,7 @@ impl Document {
                 return Err(format!("duplicate record identity {}", record.id));
             }
         }
+        unreferenced_nested_identities(&mut records);
         Ok(Self { records, ids })
     }
 
@@ -88,15 +103,10 @@ impl Document {
         for index in selected {
             let record = &self.records[*index];
             if let Some(ordinal) = record.value.get("ordinal").and_then(Value::as_u64) {
-                let owner = (record.arena == "model/parameters")
-                    .then(|| {
-                        record
-                            .value
-                            .get("owner")
-                            .and_then(Value::as_str)
-                            .map(str::to_owned)
-                    })
-                    .flatten();
+                let owner = record
+                    .value
+                    .as_object()
+                    .and_then(|fields| ordinal_scope(&record.arena, fields));
                 groups
                     .entry((record.arena.clone(), owner))
                     .or_default()
@@ -268,14 +278,7 @@ fn append(
             let ordinal = ordinal
                 .as_u64()
                 .ok_or_else(|| format!("{arena} has a non-integer ordinal"))?;
-            let owner = (arena == "model/parameters")
-                .then(|| {
-                    value
-                        .get("owner")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                })
-                .flatten();
+            let owner = ordinal_scope(arena, &value);
             groups
                 .entry(owner)
                 .or_default()
@@ -494,13 +497,20 @@ fn counts(
         .collect()
 }
 
+/// Refined colours of both documents. Each `individual` pair `(left, right)`
+/// receives a colour of its own, shared by the two sides, before refinement.
 pub(super) fn colours(
     before: &Document,
     after: &Document,
     include_incoming: bool,
+    individual: &[(usize, usize)],
 ) -> (Vec<String>, Vec<String>) {
-    let left_zero = initial(before);
-    let right_zero = initial(after);
+    let mut left_zero = initial(before);
+    let mut right_zero = initial(after);
+    for (rank, &(left, right)) in individual.iter().enumerate() {
+        left_zero[left] = hash(&serde_json::json!([left_zero[left], rank]));
+        right_zero[right] = hash(&serde_json::json!([right_zero[right], rank]));
+    }
     let mut left = left_zero.clone();
     let mut right = right_zero.clone();
     let mut previous = counts(before, after, &left, &right);
@@ -517,5 +527,56 @@ pub(super) fn colours(
             return (left, right);
         }
         previous = next;
+    }
+}
+
+/// Value an unreferenced nested identity compares as.
+const NESTED_IDENTITY: &str = "nested-identity";
+
+/// A writer chooses identities (#209 principle). A nested object's `id` that
+/// nothing else in the document names is an identity with no referent, so
+/// both sides compare it as one placeholder; a nested identity some value
+/// names keeps its text, and the references to it stay comparable.
+fn unreferenced_nested_identities(records: &mut [Record]) {
+    fn count(value: &Value, counts: &mut BTreeMap<String, usize>) {
+        match value {
+            Value::String(text) => *counts.entry(text.clone()).or_default() += 1,
+            Value::Array(values) => values.iter().for_each(|value| count(value, counts)),
+            Value::Object(fields) => {
+                for (key, value) in fields {
+                    *counts.entry(key.clone()).or_default() += 1;
+                    count(value, counts);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn blank(value: &mut Value, counts: &BTreeMap<String, usize>, nested: bool) {
+        match value {
+            Value::Array(values) => values
+                .iter_mut()
+                .for_each(|value| blank(value, counts, true)),
+            Value::Object(fields) => {
+                if nested {
+                    if let Some(Value::String(id)) = fields.get_mut("id") {
+                        if counts.get(id.as_str()) == Some(&1) {
+                            NESTED_IDENTITY.clone_into(id);
+                        }
+                    }
+                }
+                for value in fields.values_mut() {
+                    blank(value, counts, true);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut counts = BTreeMap::new();
+    for record in records.iter() {
+        *counts.entry(record.id.clone()).or_default() += 1;
+        count(&record.value, &mut counts);
+    }
+    for record in records.iter_mut() {
+        blank(&mut record.value, &counts, false);
     }
 }

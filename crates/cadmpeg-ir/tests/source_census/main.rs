@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+mod call_graph;
 mod constructor_scan;
 mod decoder_literals;
 mod reader_routes;

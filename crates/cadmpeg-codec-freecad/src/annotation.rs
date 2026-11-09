@@ -166,9 +166,14 @@ pub(crate) fn transfer_neutral(
             }
             references.insert(role.to_owned(), selections);
         }
+        // A view property of an object that is also a drawing view has its
+        // home on the drawing record.
+        let drawing_view = drawing_ids.contains_key(record.object.as_str());
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
-            if !schema.owns_dedicated(name) {
+            let drawing_owned =
+                drawing_view && crate::drawing::DRAWING_PROPERTY_NAMES.contains(&name.as_str());
+            if !schema.owns_dedicated(name) && !drawing_owned {
                 parameters.insert(name.to_owned(), value.to_owned());
             }
         }
@@ -805,6 +810,7 @@ pub(crate) fn enrich_dimensions(
                     native_type: label.unwrap_or(selected).to_owned(),
                 }
             }));
+            consumed(&mut annotation.parameters, "Type");
         }
         let mut arbitrary_tolerances = false;
         for name in ["Arbitrary", "ArbitraryTolerances"] {
@@ -815,8 +821,11 @@ pub(crate) fn enrich_dimensions(
                     Some("false" | "0") => false,
                     _ => return Err(CodecError::malformed("invalid dimension arbitrary flag")),
                 };
-                if name == "Arbitrary" && enabled {
-                    annotation.text_override.clone_from(&annotation.format);
+                if name == "Arbitrary" {
+                    if enabled {
+                        annotation.text_override.clone_from(&annotation.format);
+                    }
+                    consumed(&mut annotation.parameters, name);
                 }
                 if name == "ArbitraryTolerances" {
                     arbitrary_tolerances = enabled;
@@ -832,15 +841,16 @@ pub(crate) fn enrich_dimensions(
             if let Some(value) = value {
                 let value = FiniteReal::new(value)
                     .ok_or_else(|| CodecError::malformed("dimension tolerance must be finite"))?;
-                if value.get() != 0.0 {
-                    if arbitrary_tolerances {
-                        losses.push(
-                            FreecadLossCode::DrawingDimensionToleranceNotTransferred
-                                .note(format!("{}: {name}", annotation.id)),
-                        );
-                    } else {
+                if value.get() != 0.0 && arbitrary_tolerances {
+                    losses.push(
+                        FreecadLossCode::DrawingDimensionToleranceNotTransferred
+                            .note(format!("{}: {name}", annotation.id)),
+                    );
+                } else {
+                    if value.get() != 0.0 {
                         *slot = Some(value);
                     }
+                    consumed(&mut annotation.parameters, name);
                 }
             }
         }
@@ -856,6 +866,11 @@ pub(crate) fn enrich_dimensions(
         }
     }
     Ok(())
+}
+
+/// Remove a parameter whose fact a typed annotation field holds.
+fn consumed(parameters: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>, name: &str) {
+    parameters.retain(|key, _| key.as_str() != name);
 }
 
 #[cfg(test)]
@@ -1372,7 +1387,7 @@ pub(crate) mod tests {
             cadmpeg_ir::drawings::DrawingKind::Dimension
         );
         assert!(neutral_dimension.relationships.contains_key("BaseView"));
-        assert!(neutral_dimension.relationships.contains_key("References2D"));
+        assert!(!neutral_dimension.relationships.contains_key("References2D"));
         assert_eq!(result.ir().model.semantic_annotations.len(), 2);
         let semantic_dimension = result
             .ir()

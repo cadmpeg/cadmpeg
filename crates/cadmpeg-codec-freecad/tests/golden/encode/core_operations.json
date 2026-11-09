@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 125297,
-      "payload_sha256": "291a0bc1dcbd9fa16d016fa53e29a56f6ad41fcbcff4776a2899c535ceac2401"
+      "payload_len": 125337,
+      "payload_sha256": "3d4c4505c7cba15356825f9b3780d8890d75b7adf87590053c70163963fe1edf"
     },
     {
       "name": "StringHasher.Table.txt",
@@ -332,8 +332,8 @@
     },
     {
       "name": "GuiDocument.xml",
-      "payload_len": 1262,
-      "payload_sha256": "21b50de2e7327968148098d1da4401de1646dc6a2eb92dadd5ea9d319123290c"
+      "payload_len": 1290,
+      "payload_sha256": "f0ca3974be75f14e6634631b3e5a133c24c8269b8a8b6d0d1fc794447fa9f3c9"
     }
   ],
   "report": {
@@ -511,6 +511,46 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "surface fcstd:model:surface#Loft:Shape:Loft.Shape.brp:1 is written through construction fcstd:model:surface#Loft:Shape:Loft.Shape.brp:1:construction; its solved carrier is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "surface fcstd:model:surface#LoftSectionA:Shape:LoftSectionA.Shape.brp:1 is written through construction fcstd:model:surface#LoftSectionA:Shape:LoftSectionA.Shape.brp:1:construction; its solved carrier is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "surface fcstd:model:surface#LoftSectionB:Shape:LoftSectionB.Shape.brp:1 is written through construction fcstd:model:surface#LoftSectionB:Shape:LoftSectionB.Shape.brp:1:construction; its solved carrier is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "surface fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:1 is written through construction fcstd:model:surface#Sweep:Shape:Sweep.Shape.brp:1:construction; its solved carrier is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.procedural-reduced",
+          "kind": "procedural_reduced",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "procedural curve record fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:construction is omitted from FCStd synthesis",
         "severity": "warning"
       },
@@ -611,7 +651,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 11 native record(s) from `fcstd.applications`: fcstd:native:application#Draft, fcstd:native:application#Hole, fcstd:native:application#HoleProfile, fcstd:native:application#LinearPattern, fcstd:native:application#Mirror, fcstd:native:application#PatternBase, fcstd:native:application#Revolution, fcstd:native:application#RevolutionProfile, fcstd:native:application#Sweep, fcstd:native:application#SymmetricExtrusion, fcstd:native:application#Thickness",
+        "message": "the fcstd write omits 7 native record(s) from `fcstd.applications`: fcstd:native:application#HoleProfile, fcstd:native:application#Mirror, fcstd:native:application#Revolution, fcstd:native:application#RevolutionProfile, fcstd:native:application#Sweep, fcstd:native:application#SymmetricExtrusion, fcstd:native:application#Thickness",
         "severity": "info"
       },
       {
@@ -621,7 +661,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 16 native record(s) from `fcstd.properties`: fcstd:native:property#Draft:Suppressed, fcstd:native:property#Hole:Suppressed, fcstd:native:property#HoleProfile:Constraints, fcstd:native:property#HoleProfile:Geometry, fcstd:native:property#LinearPattern:Suppressed, fcstd:native:property#Mirror:Base, fcstd:native:property#Mirror:Normal, fcstd:native:property#PatternBase:Suppressed, fcstd:native:property#Revolution:Angle, fcstd:native:property#RevolutionProfile:Constraints, fcstd:native:property#RevolutionProfile:Geometry, fcstd:native:property#Sweep:Sections, fcstd:native:property#SymmetricExtrusion:Dir, fcstd:native:property#SymmetricExtrusion:InnerWireTaper, fcstd:native:property#SymmetricExtrusion:LengthFwd, fcstd:native:property#Thickness:Value",
+        "message": "the fcstd write omits 12 native record(s) from `fcstd.properties`: fcstd:native:property#HoleProfile:Constraints, fcstd:native:property#HoleProfile:Geometry, fcstd:native:property#Mirror:Base, fcstd:native:property#Mirror:Normal, fcstd:native:property#Revolution:Angle, fcstd:native:property#RevolutionProfile:Constraints, fcstd:native:property#RevolutionProfile:Geometry, fcstd:native:property#Sweep:Sections, fcstd:native:property#SymmetricExtrusion:Dir, fcstd:native:property#SymmetricExtrusion:InnerWireTaper, fcstd:native:property#SymmetricExtrusion:LengthFwd, fcstd:native:property#Thickness:Value",
         "severity": "info"
       },
       {
@@ -651,16 +691,16 @@
                 "fcstd:native:application#DatumCoordinateSystem": "regenerated",
                 "fcstd:native:application#DatumPlane": "regenerated",
                 "fcstd:native:application#DatumPoint": "regenerated",
-                "fcstd:native:application#Draft": "dropped",
+                "fcstd:native:application#Draft": "regenerated",
                 "fcstd:native:application#DraftBase": "regenerated",
                 "fcstd:native:application#DraftBody": "regenerated",
                 "fcstd:native:application#DressupBase": "regenerated",
                 "fcstd:native:application#ExtrusionProfile": "regenerated",
-                "fcstd:native:application#Hole": "dropped",
+                "fcstd:native:application#Hole": "regenerated",
                 "fcstd:native:application#HoleBase": "regenerated",
                 "fcstd:native:application#HoleBody": "regenerated",
                 "fcstd:native:application#HoleProfile": "dropped",
-                "fcstd:native:application#LinearPattern": "dropped",
+                "fcstd:native:application#LinearPattern": "regenerated",
                 "fcstd:native:application#Loft": "regenerated",
                 "fcstd:native:application#LoftSectionA": "regenerated",
                 "fcstd:native:application#LoftSectionB": "regenerated",
@@ -674,7 +714,7 @@
                 "fcstd:native:application#Origin005": "regenerated",
                 "fcstd:native:application#PartChamfer": "regenerated",
                 "fcstd:native:application#PartFillet": "regenerated",
-                "fcstd:native:application#PatternBase": "dropped",
+                "fcstd:native:application#PatternBase": "regenerated",
                 "fcstd:native:application#PatternBody": "regenerated",
                 "fcstd:native:application#Revolution": "dropped",
                 "fcstd:native:application#RevolutionProfile": "dropped",
@@ -1178,7 +1218,7 @@
                 "fcstd:native:property#Draft:Shape": "regenerated",
                 "fcstd:native:property#Draft:ShapeMaterial": "written",
                 "fcstd:native:property#Draft:SupportTransform": "regenerated",
-                "fcstd:native:property#Draft:Suppressed": "dropped",
+                "fcstd:native:property#Draft:Suppressed": "regenerated",
                 "fcstd:native:property#Draft:SuppressedShape": "regenerated",
                 "fcstd:native:property#Draft:Visibility": "regenerated",
                 "fcstd:native:property#Draft:_Body": "written",
@@ -1254,7 +1294,7 @@
                 "fcstd:native:property#Hole:Reversed": "regenerated",
                 "fcstd:native:property#Hole:Shape": "regenerated",
                 "fcstd:native:property#Hole:ShapeMaterial": "written",
-                "fcstd:native:property#Hole:Suppressed": "dropped",
+                "fcstd:native:property#Hole:Suppressed": "regenerated",
                 "fcstd:native:property#Hole:SuppressedShape": "regenerated",
                 "fcstd:native:property#Hole:Tapered": "regenerated",
                 "fcstd:native:property#Hole:TaperedAngle": "regenerated",
@@ -1354,7 +1394,7 @@
                 "fcstd:native:property#LinearPattern:SpacingPattern2": "regenerated",
                 "fcstd:native:property#LinearPattern:Spacings": "regenerated",
                 "fcstd:native:property#LinearPattern:Spacings2": "regenerated",
-                "fcstd:native:property#LinearPattern:Suppressed": "dropped",
+                "fcstd:native:property#LinearPattern:Suppressed": "regenerated",
                 "fcstd:native:property#LinearPattern:SuppressedShape": "regenerated",
                 "fcstd:native:property#LinearPattern:TransformMode": "regenerated",
                 "fcstd:native:property#LinearPattern:Visibility": "regenerated",
@@ -1499,7 +1539,7 @@
                 "fcstd:native:property#PatternBase:Refine": "regenerated",
                 "fcstd:native:property#PatternBase:Shape": "regenerated",
                 "fcstd:native:property#PatternBase:ShapeMaterial": "written",
-                "fcstd:native:property#PatternBase:Suppressed": "dropped",
+                "fcstd:native:property#PatternBase:Suppressed": "regenerated",
                 "fcstd:native:property#PatternBase:SuppressedShape": "regenerated",
                 "fcstd:native:property#PatternBase:Visibility": "regenerated",
                 "fcstd:native:property#PatternBase:Width": "regenerated",

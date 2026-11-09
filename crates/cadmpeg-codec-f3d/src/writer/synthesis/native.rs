@@ -68,6 +68,7 @@ const WRITTEN: &[&str] = &[
     "design_mesh_features",
     "design_parameter_scopes",
     "design_construction_operand_groups",
+    "design_body_recipe_operands",
     "body_native_keys",
     "body_visibilities",
     "edge_continuities",
@@ -200,6 +201,78 @@ fn register_spline_subtypes(native: &mut F3dNative) -> Result<(), CodecError> {
     .map_err(CodecError::Malformed)?;
     native.design_types.push(kind);
     Ok(())
+}
+
+/// W2: a carried line or arc takes the geometry of the neutral entity it
+/// projects to, inverting the decoder's planar projection (spec §3.1), so an
+/// edit of the entity reaches the written record.
+fn regenerate_planar_curve(
+    record: &mut crate::records::sketch_geometry::SketchCurveIdentity,
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+) {
+    use crate::records::sketch_geometry::SketchCurveGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    let point = |u: f64, v: f64| cadmpeg_ir::features::FinitePoint3::new(Point3::new(u, v, 0.0));
+    match (&mut record.geometry, entity.geometry.definition()) {
+        (
+            Some(SketchCurveGeometry::Line {
+                start, end, direction, ..
+            }),
+            SketchGeometryDefinition::Line { start: from, end: to },
+        ) => {
+            let (Some(a), Some(b), Some(d)) = (
+                point(from.u, from.v),
+                point(to.u, to.v),
+                {
+                    let length = Vector3::new(to.u - from.u, to.v - from.v, 0.0).norm();
+                    cadmpeg_ir::units::UnitVector3::new(Vector3::new(
+                        (to.u - from.u) / length,
+                        (to.v - from.v) / length,
+                        0.0,
+                    ))
+                },
+            ) else {
+                return;
+            };
+            *start = a;
+            *end = b;
+            *direction = d;
+        }
+        (
+            Some(SketchCurveGeometry::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            }),
+            SketchGeometryDefinition::Arc {
+                center: at,
+                radius: length,
+                start_angle: from,
+                end_angle: to,
+            },
+        ) => {
+            let orientation = if normal.as_raw().z < 0.0 { -1.0 } else { 1.0 };
+            let reference = reference_direction.as_raw();
+            let phase = reference.y.atan2(reference.x);
+            let r = *length;
+            let (Some(c), Some(s), Some(e)) = (
+                point(at.u, at.v),
+                cadmpeg_ir::scalar::Angle::new((from.get() - phase) * orientation),
+                cadmpeg_ir::scalar::Angle::new((to.get() - phase) * orientation),
+            ) else {
+                return;
+            };
+            *center = c;
+            *radius = r;
+            *start_angle = s;
+            *end_angle = e;
+        }
+        _ => {}
+    }
 }
 
 pub(super) fn reconcile(
@@ -563,6 +636,7 @@ pub(super) fn reconcile(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
         );
         if !was_nurbs && !is_nurbs {
+            regenerate_planar_curve(record, entity);
             return true;
         }
         if projected.next().is_some()
@@ -1280,11 +1354,17 @@ pub(super) fn coverage(
                         .iter()
                         .find(|candidate| candidate.id() == record.id())
                 }) {
-                    // A record a Design, ACT or BREP stream position
-                    // identifies takes a new position, and with it new layout
-                    // fields, in the stream synthesis lays out.
-                    let laid_out = crate::ids::native_stream(record.id())
-                        .is_some_and(|stream| stream.ends_with(".dat") || stream.ends_with(".smbh"));
+                    // A record a Design, ACT or BREP stream position or a
+                    // BREP record index identifies takes a new position, and
+                    // with it new layout fields, in the stream synthesis lays
+                    // out.
+                    let laid_out = record.id().starts_with("f3d:asm:")
+                        || crate::ids::native_stream(record.id())
+                            .and_then(|stream| std::path::Path::new(stream).extension())
+                            .is_some_and(|extension| {
+                                extension.eq_ignore_ascii_case("dat")
+                                    || extension.eq_ignore_ascii_case("smbh")
+                            });
                     let disposition = if arena.as_str() == "mesh_surface_sentinels" || laid_out
                     {
                         NativeDisposition::Regenerated
