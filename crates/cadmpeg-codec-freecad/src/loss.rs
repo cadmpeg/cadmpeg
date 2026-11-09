@@ -34,6 +34,12 @@ pub(crate) enum FreecadLossCode {
     SourceDesignPayloadUnrepresented,
     /// A whole neutral arena has no `FCStd` representation.
     ExportArenaNotTransferred,
+    /// The `FCStd` native records cannot be written; synthesis writes the
+    /// neutral content alone.
+    WriterNativeRecordsOmitted,
+    /// The document content cannot be written; synthesis writes an empty
+    /// document.
+    WriterNoExportableContent,
     /// A neutral construction has no writable `FreeCAD` operation.
     ExportFeatureNotTransferred,
     /// A neutral body has an unsupported exact carrier.
@@ -198,6 +204,8 @@ impl FreecadLossCode {
         Self::SourceModelPayloadUnrepresented,
         Self::SourceDesignPayloadUnrepresented,
         Self::ExportArenaNotTransferred,
+        Self::WriterNativeRecordsOmitted,
+        Self::WriterNoExportableContent,
         Self::ExportFeatureNotTransferred,
         Self::ExportGeometryNotTransferred,
         Self::ExportAppearanceNotTransferred,
@@ -285,6 +293,8 @@ impl FreecadLossCode {
             Self::SourceModelPayloadUnrepresented => "source.model-payload-unrepresented",
             Self::SourceDesignPayloadUnrepresented => "source.design-payload-unrepresented",
             Self::ExportArenaNotTransferred => "arena.not-transferred",
+            Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
+            Self::WriterNoExportableContent => "writer.no-exportable-content",
             Self::ExportFeatureNotTransferred => "feature.not-transferred",
             Self::ExportGeometryNotTransferred => "geometry.not-transferred",
             Self::ExportAppearanceNotTransferred => "appearance.not-transferred",
@@ -391,6 +401,8 @@ impl FreecadLossCode {
             Self::SourceModelPayloadUnrepresented
             | Self::SourceDesignPayloadUnrepresented
             | Self::ExportArenaNotTransferred
+            | Self::WriterNativeRecordsOmitted
+            | Self::WriterNoExportableContent
             | Self::ExportAppearanceNotTransferred
             | Self::ExportPresentationNotTransferred
             | Self::ExportProceduralReduced => Severity::Warning,
@@ -470,6 +482,8 @@ impl FreecadLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::ExportArenaNotTransferred => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
+            Self::WriterNoExportableContent => LossTaxonomy::NoExportableSolids,
             Self::ExportFeatureNotTransferred => LossTaxonomy::ParametricRecordOmitted,
             Self::ExportAppearanceNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::ExportPresentationNotTransferred => LossTaxonomy::MetadataNotTransferred,
@@ -599,6 +613,8 @@ mod tests {
                 "source.model-payload-unrepresented",
                 "source.design-payload-unrepresented",
                 "arena.not-transferred",
+                "writer.native-records-omitted",
+                "writer.no-exportable-content",
                 "feature.not-transferred",
                 "geometry.not-transferred",
                 "appearance.not-transferred",

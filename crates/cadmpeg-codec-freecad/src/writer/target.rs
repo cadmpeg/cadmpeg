@@ -11,9 +11,11 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, EncodeError,
+    EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) mod projection;
 
@@ -68,7 +70,7 @@ impl<'a> Resolution<'a> {
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     debug_assert!(
         super::CAPACITY_FIELDS.is_empty(),
         "FreeCAD declares no capacity rows"
@@ -95,7 +97,7 @@ pub(crate) fn plan(
     let allocation_context = DecodeContext::for_encode(&allocation_arena, &allocation_policy);
     // Synthesis visits every input record, so the caller's entity ceiling
     // applies to the input record count before any building (#217 §5.0).
-    allocation_context.charge_entities(
+    cadmpeg_core::encode::EncodeSession::from_context(&allocation_context)?.charge_entities(
         cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
         "write FCStd records",
     )?;
@@ -126,47 +128,26 @@ pub(crate) fn plan(
                 },
             );
             let patch = match matches {
-                Ok(true) => Some(allocation_context.run_part(|| {
-                    match finish(&allocation_context, &resolution) {
-                        Ok(body) => Ok(Ok(body)),
-                        Err(PatchError::Declined(reason)) => Ok(Err(reason)),
-                        Err(PatchError::Codec(error)) => Err(error),
+                Ok(true) => {
+                    match allocation_context.run_part(|| {
+                        match finish(&allocation_context, &resolution) {
+                            Ok(body) => Ok(Ok(body)),
+                            Err(PatchError::Declined(reason)) => Ok(Err(reason)),
+                            Err(PatchError::Codec(error)) => Err(error),
+                        }
+                    }) {
+                        Ok(Ok(Ok(body))) => return Ok(body),
+                        Ok(Ok(Err(declined))) => Some(declined),
+                        Ok(Err(error)) | Err(error) => Some(declined_patch(error)?),
                     }
-                })?),
+                }
                 Ok(false) => {
-                    reason =
-                        Some("the current document no longer matches its retained image".into());
-                    None
+                    Some("the current document no longer matches its retained image".into())
                 }
-                Err(
-                    error @ CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                        scope: cadmpeg_core::decode::LimitScope::Part,
-                        ..
-                    }),
-                ) => {
-                    reason = Some(error.to_string());
-                    None
-                }
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 // Reading the retained source only selects the write path.
-                Err(error) => {
-                    reason = Some(error.to_string());
-                    None
-                }
+                Err(error) => Some(declined_patch(error)?),
             };
-            match patch {
-                Some(Ok(Ok(body))) => return Ok(body),
-                Some(Ok(Err(declined))) => reason = Some(declined),
-                Some(Err(
-                    error @ CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                        scope: cadmpeg_core::decode::LimitScope::Part,
-                        ..
-                    }),
-                )) => reason = Some(error.to_string()),
-                Some(Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
-                Some(Err(error)) => reason = Some(error.to_string()),
-                None => {}
-            }
+            reason = patch;
         } else {
             reason = Some("the retained typed document layout is unavailable".into());
         }
@@ -183,7 +164,7 @@ pub(crate) fn plan(
         );
         "4"
     };
-    let mut body = super::synthesis::write(&allocation_context, input.ir, schema)?;
+    let mut body = synthesize(&allocation_context, input.ir, schema)?;
     if let Some(message) = resolved.displacement_message() {
         body.losses
             .push(crate::loss::FreecadLossCode::SourceDialectDisplaced.note(message));
@@ -193,6 +174,161 @@ pub(crate) fn plan(
             Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason });
     }
     Ok(body)
+}
+
+/// Why a patch that failed declines to synthesis, or the encode failure that
+/// ends the write.
+fn declined_patch(error: CodecError) -> Result<String, EncodeError> {
+    match error {
+        CodecError::ResourceLimit(limit)
+            if limit.scope != cadmpeg_core::decode::LimitScope::Part =>
+        {
+            Err(EncodeError::ResourceLimit(limit))
+        }
+        CodecError::Io(error) => Err(EncodeError::Io(error)),
+        error => Ok(error.to_string()),
+    }
+}
+
+/// The content failure in `error`, or the encode failure that ends the write.
+fn content_error(document: &CadIr, error: CodecError) -> Result<CodecError, EncodeError> {
+    match error {
+        CodecError::ResourceLimit(limit) => Err(EncodeError::ResourceLimit(limit)),
+        CodecError::Io(error) => Err(EncodeError::Io(error)),
+        CodecError::UnsupportedTarget(refusal) => Err(EncodeError::UnsupportedTarget(refusal)),
+        error => cadmpeg_ir::codec::write::ValidatedFinding::non_finite(document)
+            .map_or(Ok(error), |proof| Err(EncodeError::InvalidInput(proof))),
+    }
+}
+
+/// `ir` without each typed native record that does not read as its arena's
+/// record type, or `None` when every record reads; a loss names each omitted
+/// record (#217 §5.0).
+fn admit_native(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<CadIr>, EncodeError> {
+    fn reads<T: serde::de::DeserializeOwned>(
+        ctx: &DecodeContext<'_>,
+        record: &cadmpeg_ir::native::NativeRecord,
+    ) -> Result<Option<String>, EncodeError> {
+        match record.to_typed::<T>(ctx) {
+            Ok(_) => Ok(None),
+            Err(error) => error
+                .resource_limit()
+                .map_or_else(|| Ok(Some(error.to_string())), |limit| Err(limit.into())),
+        }
+    }
+    let Some(namespace) = ir.native.namespace("fcstd") else {
+        return Ok(None);
+    };
+    let mut omitted = Vec::new();
+    for (arena, records) in namespace.arenas() {
+        for record in records {
+            let failure = match arena.as_str() {
+                "objects" => reads::<crate::native::ObjectRecord>(ctx, record)?,
+                "extensions" => reads::<crate::native::ExtensionRecord>(ctx, record)?,
+                "properties" => reads::<crate::native::PropertyRecord>(ctx, record)?,
+                "entries" => reads::<crate::native::EntryRecord>(ctx, record)?,
+                "string_tables" => reads::<crate::native::StringTableRecord>(ctx, record)?,
+                "gui_properties" => reads::<crate::native::GuiPropertyRecord>(ctx, record)?,
+                "shape_payloads" => reads::<crate::brep::ShapePayloadRecord>(ctx, record)?,
+                "topology_uses" => {
+                    reads::<crate::native::source_use::SourceUseSelector>(ctx, record)?
+                }
+                "element_maps" => {
+                    reads::<crate::native::element_map::ElementMapRecord>(ctx, record)?
+                }
+                _ => None,
+            };
+            if let Some(failure) = failure {
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                        "native {arena} record {} cannot be read and is omitted: {failure}",
+                        record.id()
+                    )),
+                );
+                omitted.push((arena.clone(), record.id().to_owned()));
+            }
+        }
+    }
+    if omitted.is_empty() {
+        return Ok(None);
+    }
+    let mut admitted = ir.clone();
+    let arenas = admitted.native.namespace_mut("fcstd").arenas_mut();
+    for (arena, id) in &omitted {
+        if let Some(records) = arenas.get_mut(arena) {
+            records.retain(|record| record.id() != id);
+        }
+    }
+    Ok(Some(admitted))
+}
+
+/// Synthesize the document (#217 §5.0).
+///
+/// A document whose content the writer cannot write as it stands is written
+/// in reduced form, each reduction with a loss that names what it omits:
+/// first without its `FCStd` native records, last as an empty document. Only a
+/// non-finite written value or a caller resource limit fails the write.
+fn synthesize(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    schema: &str,
+) -> Result<ExportBody, EncodeError> {
+    let mut reductions = Vec::new();
+    let admitted = admit_native(ctx, ir, &mut reductions)?;
+    let ir = admitted.as_ref().unwrap_or(ir);
+    let error = match super::synthesis::write(ctx, ir, schema) {
+        Ok(body) => return Ok(with_reductions(body, reductions)),
+        Err(error) => content_error(ir, error)?,
+    };
+    let mut canonical = ir.clone();
+    if let Some(namespace) = canonical.native.0.remove("fcstd") {
+        let mut omitted: Vec<&str> = namespace
+            .arenas()
+            .values()
+            .flatten()
+            .map(cadmpeg_ir::native::NativeRecord::id)
+            .collect();
+        omitted.sort_unstable();
+        reductions.push(
+            crate::loss::FreecadLossCode::WriterNativeRecordsOmitted.note(format!(
+                "the FCStd native records cannot be written ({error}); omitted {} record(s): {}",
+                omitted.len(),
+                omitted.join(", ")
+            )),
+        );
+        match super::synthesis::write(ctx, &canonical, schema) {
+            Ok(body) => return Ok(with_reductions(body, reductions)),
+            Err(error) => {
+                content_error(ir, error)?;
+            }
+        }
+    }
+    reductions.push(
+        crate::loss::FreecadLossCode::WriterNoExportableContent.note(format!(
+            "the document content cannot be written ({error}); wrote an empty document"
+        )),
+    );
+    let mut body = match super::synthesis::write(ctx, &CadIr::empty(), schema) {
+        Ok(body) => body,
+        Err(error) => {
+            let error = content_error(ir, error)?;
+            debug_assert!(false, "the FCStd writer writes an empty document: {error}");
+            ExportBody::synthesized(Vec::new(), ir, ArenaCoverage::Complete)
+        }
+    };
+    body.coverage = ArenaCoverage::Declared(ArenaDispositions::uniform(ArenaDisposition::Omitted));
+    body.native_dispositions = cadmpeg_ir::codec::write::NativeDispositions::default();
+    Ok(with_reductions(body, reductions))
+}
+
+fn with_reductions(mut body: ExportBody, mut reductions: Vec<LossNote>) -> ExportBody {
+    reductions.append(&mut body.losses);
+    body.losses = reductions;
+    body
 }
 
 /// Write the resolved retained layout using source images from fidelity.
