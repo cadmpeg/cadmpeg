@@ -1923,6 +1923,15 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
 fn bind_unbound(
     histories: &mut [crate::history_records::AsmHistory],
 ) -> (EdgeSelection, super::FilletBlendBindings) {
+    bind_unbound_fillet(fillet(native(), three_mm()), histories)
+}
+
+/// The edges of the fixture feature with `definition` whose scope has no
+/// bound history, after binding from `histories`, and the bindings.
+fn bind_unbound_fillet(
+    definition: FeatureDefinition,
+    histories: &mut [crate::history_records::AsmHistory],
+) -> (EdgeSelection, super::FilletBlendBindings) {
     let mut feature = cadmpeg_ir::features::Feature {
         product_definition: None,
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
@@ -1934,10 +1943,7 @@ fn bind_unbound(
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(fillet(
-            native(),
-            three_mm(),
-        )),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(SCOPE_ID.to_owned()),
     };
     let bindings = super::bind_fillet_blend_edges(

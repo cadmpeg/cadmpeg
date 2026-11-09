@@ -2,8 +2,8 @@
 //! Blends whose supports share several edges along the blend axis.
 
 use super::{
-    bind_unbound, blends, faces, fillet, group, history_between, input, line, native, output,
-    partial, proven, scope, slots, three_mm, transition, x, y, z, SCOPE_ID,
+    bind_unbound, bind_unbound_fillet, blends, faces, fillet, group, history_between, input, line,
+    native, one_mm, output, partial, proven, scope, slots, three_mm, transition, x, y, z, SCOPE_ID,
 };
 use crate::history::fillet_blends::{
     bind_fillet_groups, consumption_conflicts, transition_blends, Blend, Found, SharedEdge,
@@ -515,7 +515,7 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_resolve
     );
     assert_eq!(
         history_notes(&bindings),
-        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve without the covering reading only in f3d:proven, and through it in 1 other histories."]
+        ["feature f3d:test:feature#42: its scope has no bound history and 2 histories hold its state pair; its edges resolve without the covering reading only in f3d:proven, and through it in 1 other history."]
     );
     assert!(bindings
         .notes
@@ -541,4 +541,23 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_resolve
         bind_unbound(&mut [covering("f3d:covering"), covering("f3d:other-covering")]);
     assert_eq!(edges, native());
     assert!(bindings.inferred_scope_histories.is_empty());
+}
+
+#[test]
+fn a_covering_transition_that_binds_no_group_does_not_rank_its_history() {
+    let mut input = two_along([0.0, 4.0], [2.0, 4.0]);
+    input.curve_axes.sort_by_key(|axis| axis.curve);
+    input.edge_samples.sort_by_key(|sample| sample.edge);
+    // The covering blend's radius matches no group, so neither history
+    // binds a group, and both keep the stated partial selection.
+    let (edges, bindings) = bind_unbound_fillet(
+        fillet(partial(&[17]), one_mm()),
+        &mut [
+            history_between("f3d:covering", input, spanned_output()),
+            history_between("f3d:unresolved", super::input(z()), super::input(z())),
+        ],
+    );
+    assert_eq!(edges, partial(&[17]));
+    assert!(bindings.inferred_scope_histories.is_empty());
+    assert!(bindings.notes.is_empty(), "{:?}", bindings.notes);
 }

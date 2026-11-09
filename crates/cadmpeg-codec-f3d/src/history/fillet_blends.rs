@@ -547,8 +547,8 @@ fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
 /// blend whose supports share several edges along its axis gives the one
 /// whose span covers the blend's axial extent, with a note that states the
 /// status of every shared edge; a stated slot keeps this note, because the
-/// edges that the blend consumes stay assumed. Returns whether a blend of the
-/// transition takes the covering reading.
+/// edges that the blend consumes stay assumed. Returns whether a group binds
+/// from a transition in which a blend takes the covering reading.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -575,6 +575,7 @@ pub(super) fn bind_fillet_groups(
     let covering = blends
         .iter()
         .any(|blend| matches!(blend.found, Found::Covering { .. }));
+    let mut rebound = false;
     let radii = fillet_groups
         .iter()
         .map(|group| match group.radius {
@@ -583,14 +584,14 @@ pub(super) fn bind_fillet_groups(
         })
         .collect::<Vec<_>>();
     let Some(edges) = group_edges(&radii, &blends) else {
-        return covering;
+        return false;
     };
     if !fillet_groups
         .iter()
         .zip(&edges)
         .all(|(group, slots)| agrees(&group.edges, feature_id, previous_state_id, slots))
     {
-        return covering;
+        return false;
     }
     let found = blends
         .iter()
@@ -650,9 +651,10 @@ pub(super) fn bind_fillet_groups(
         ) {
             fillet_group.edges = historical;
             notes.append(&mut inferred);
+            rebound = true;
         }
     }
-    covering
+    covering && rebound
 }
 
 /// The notes of an edge that a blend reading infers from `candidates`, in
@@ -894,9 +896,10 @@ pub(crate) fn bind_fillet_blend_edges(
                     candidates.len(),
                 ),
                 _ => format!(
-                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve without the covering reading only in {history_id}, and through it in {covering_only} other histories.",
+                    "feature {}: its scope has no bound history and {} histories hold its state pair; its edges resolve without the covering reading only in {history_id}, and through it in {covering_only} other {}.",
                     feature_id.as_str(),
                     candidates.len(),
+                    if covering_only == 1 { "history" } else { "histories" },
                 ),
             }));
             if let Some(history) = histories.get(*history) {
