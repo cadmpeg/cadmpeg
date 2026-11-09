@@ -22,6 +22,7 @@ use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::container::ContainerScan;
+use crate::records::FeatureHistory;
 
 const EPS_SWIFT_RENDERED_NOMINAL_E7: f64 = 1.0e-7;
 const EPS_SWIFT_RENDERED_NOMINAL_E6: f64 = 1.0e-6;
@@ -543,6 +544,13 @@ struct RenderedDimension {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct SphericalDiameterDisplay {
     multiplicity: Option<u32>,
+    value: Option<PositiveReal>,
+    decimal_places: Option<u32>,
+}
+
+struct SphericalDiameterTargetPair {
+    owner_targets: Vec<PmiTarget>,
+    peer_targets: Vec<PmiTarget>,
 }
 
 struct ScannedRoot {
@@ -580,6 +588,7 @@ pub(crate) fn annotations(
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
     face_identities: &[(FaceId, crate::brep::PersistentFaceIdentity)],
+    histories: &[FeatureHistory],
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
     let Some(ScannedRoot {
@@ -592,12 +601,13 @@ pub(crate) fn annotations(
     else {
         return Ok(Vec::new());
     };
-    let projection = project_with_topology(
+    let projection = project_with_spherical_diameter_displays(
         ctx,
         &root,
         topology,
         &rendered_dimensions,
         &spherical_diameter_displays,
+        histories,
     )?;
     projection.append_losses(losses);
     let mut projected = projection.annotations;
@@ -681,7 +691,7 @@ pub(crate) fn unsupported_annotation_classes(
         );
         return Ok(classes);
     }
-    Ok(project_with_topology(ctx, &root, None, &rendered_dimensions, &[])?.unsupported)
+    Ok(project_with_topology(ctx, &root, None, &rendered_dimensions)?.unsupported)
 }
 
 fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
@@ -1011,7 +1021,7 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
-    project_with_topology(&ctx, root, None, &[], &[])
+    project_with_topology(&ctx, root, None, &[])
         .expect("test projection fits policy")
         .annotations
 }
@@ -1026,7 +1036,7 @@ fn enrich_implicit_nominals(
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
-    *annotations = project_with_topology(&ctx, root, None, rendered, &[])
+    *annotations = project_with_topology(&ctx, root, None, rendered)
         .expect("test projection fits policy")
         .annotations;
 }
@@ -1039,6 +1049,7 @@ struct AnnotationProjection {
     walk_work_limit: usize,
     unresolved_implicit_nominals: usize,
     unresolved_position_targets: usize,
+    inferred_spherical_diameter_targets: usize,
     unresolved_spherical_diameter_targets: usize,
 }
 
@@ -1062,12 +1073,21 @@ impl AnnotationProjection {
                 )),
             );
         }
+        if self.inferred_spherical_diameter_targets > 0 {
+            losses.push(
+                crate::loss::SldprtLossCode::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed.note(
+                    format!(
+                        "Added a second sphere target to {} SWIFT annotation(s) under the unique count-text and equal-radius assumption.",
+                        self.inferred_spherical_diameter_targets
+                    ),
+                ),
+            );
+        }
         if self.unresolved_spherical_diameter_targets > 0 {
             losses.push(
                 crate::loss::SldprtLossCode::PmiSwiftSphericalDiameterTargetUnresolved.note(
                     format!(
-                    "{} counted SWIFT spherical-diameter display(s) have unresolved annotation \
-                     associations.",
+                    "{} counted SWIFT spherical-diameter display(s) have unresolved target sets.",
                     self.unresolved_spherical_diameter_targets
                 ),
                 ),
@@ -1144,31 +1164,48 @@ fn project_with_topology(
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    spherical_diameter_displays: &[SphericalDiameterDisplay],
 ) -> Result<AnnotationProjection, CodecError> {
-    let index = feature_index(root);
-    project_with_index(
-        ctx,
-        root,
-        topology,
-        rendered,
-        &index,
-        spherical_diameter_displays,
-    )
+    project_with_spherical_diameter_displays(ctx, root, topology, rendered, &[], &[])
 }
 
-fn project_with_index(
+fn project_with_spherical_diameter_displays(
     ctx: &DecodeContext<'_>,
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    index: &FeatureIndex<'_>,
     spherical_diameter_displays: &[SphericalDiameterDisplay],
+    histories: &[FeatureHistory],
 ) -> Result<AnnotationProjection, CodecError> {
-    let unresolved_spherical_diameter_targets = spherical_diameter_displays
-        .iter()
-        .filter(|display| display.multiplicity.is_some_and(|count| count > 1))
-        .count();
+    let feature_index = feature_index(root);
+    project_with_feature_index_and_displays(
+        ctx,
+        root,
+        topology,
+        rendered,
+        &feature_index,
+        spherical_diameter_displays,
+        histories,
+    )
+}
+
+fn project_with_feature_index_and_displays(
+    ctx: &DecodeContext<'_>,
+    root: &Entity,
+    topology: Option<&TopologyIdentityIndex>,
+    rendered: &[RenderedDimension],
+    feature_index: &FeatureIndex<'_>,
+    spherical_diameter_displays: &[SphericalDiameterDisplay],
+    histories: &[FeatureHistory],
+) -> Result<AnnotationProjection, CodecError> {
+    let (inferred_spherical_targets, mut unresolved_spherical_diameter_targets) =
+        infer_spherical_diameter_targets(
+            ctx,
+            root,
+            feature_index,
+            topology,
+            spherical_diameter_displays,
+            histories,
+        )?;
     if root.annotations.references.len() != root.annotations.entities.len() {
         return Ok(AnnotationProjection {
             unresolved_spherical_diameter_targets,
@@ -1200,6 +1237,7 @@ fn project_with_index(
     let mut unsupported = BTreeMap::new();
     let mut unresolved_implicit_nominals = 0usize;
     let mut unresolved_position_targets = 0usize;
+    let mut inferred_spherical_diameter_targets = 0usize;
     for (reference, entity) in root
         .annotations
         .references
@@ -1213,7 +1251,9 @@ fn project_with_index(
             AnnotationDisposition::Suppressed
         } else if pmi_id(&reference.id).is_none() {
             AnnotationDisposition::Unsupported
-        } else if let Some(annotation) = project_datum(ctx, reference, entity, index, topology)? {
+        } else if let Some(annotation) =
+            project_datum(ctx, reference, entity, feature_index, topology)?
+        {
             projected.push(annotation);
             AnnotationDisposition::Projected
         } else {
@@ -1221,7 +1261,7 @@ fn project_with_index(
         };
         record_projection(&mut unsupported, reference, entity, disposition)?;
     }
-    let counterbores = Counterbores::new(root, index);
+    let counterbores = Counterbores::new(root, feature_index);
     let mut datum_systems = BTreeMap::<_, PmiId>::new();
     for (reference, entity) in root
         .annotations
@@ -1253,10 +1293,10 @@ fn project_with_index(
         let mut unresolved_position_target = false;
         let disposition = if let Some(tolerance) = project_tolerance(entity, &datum_ids)? {
             let target_selection = if short_class(&entity.class) == "GdtPosition" {
-                position_targets(ctx, entity, index, topology)?
+                position_targets(ctx, entity, feature_index, topology)?
                     .map(|selection| (selection.targets, selection.unresolved))
             } else {
-                targets(ctx, entity, index, topology)?.map(|targets| (targets, false))
+                targets(ctx, entity, feature_index, topology)?.map(|targets| (targets, false))
             };
             let Some((targets, unresolved)) = target_selection else {
                 record_projection(
@@ -1311,23 +1351,36 @@ fn project_with_index(
             });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
                 if let Some(lower_tier) =
-                    project_lower_profile_tier(ctx, reference, entity, index, topology)?
+                    project_lower_profile_tier(ctx, reference, entity, feature_index, topology)?
                 {
                     projected.push(lower_tier);
                 }
             }
             AnnotationDisposition::Projected
-        } else if let Some(annotation) = project_dimension(
+        } else if let Some((annotation, inferred_spherical_target)) = project_dimension(
             ctx,
             DimensionSource {
                 counterbores: &counterbores,
                 reference,
                 entity,
             },
-            index,
+            feature_index,
             topology,
             rendered,
+            inferred_spherical_targets.get(reference.id.as_str()),
         )? {
+            if inferred_spherical_target {
+                inferred_spherical_diameter_targets = inferred_spherical_diameter_targets
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        CodecError::malformed("SWIFT inferred sphere target count overflows")
+                    })?;
+                unresolved_spherical_diameter_targets = unresolved_spherical_diameter_targets
+                    .checked_sub(1)
+                    .ok_or_else(|| {
+                        CodecError::malformed("SWIFT unresolved sphere target count underflows")
+                    })?;
+            }
             if unresolved_implicit_diameter(entity, &annotation) {
                 unresolved_implicit_nominals =
                     unresolved_implicit_nominals.checked_add(1).ok_or_else(|| {
@@ -1347,10 +1400,11 @@ fn project_with_index(
     Ok(AnnotationProjection {
         annotations: projected,
         unsupported,
-        walk_caps: index.caps(),
-        walk_work_limit: index.work_limit,
+        walk_caps: feature_index.caps(),
+        walk_work_limit: feature_index.work_limit,
         unresolved_implicit_nominals,
         unresolved_position_targets,
+        inferred_spherical_diameter_targets,
         unresolved_spherical_diameter_targets,
     })
 }
@@ -1545,13 +1599,257 @@ struct DimensionSource<'a> {
     entity: &'a Entity,
 }
 
+fn infer_spherical_diameter_targets(
+    ctx: &DecodeContext<'_>,
+    root: &Entity,
+    feature_index: &FeatureIndex<'_>,
+    topology: Option<&TopologyIdentityIndex>,
+    displays: &[SphericalDiameterDisplay],
+    histories: &[FeatureHistory],
+) -> Result<(BTreeMap<String, SphericalDiameterTargetPair>, usize), CodecError> {
+    let unresolved_display_count = displays
+        .iter()
+        .filter(|display| display.multiplicity.is_some_and(|count| count > 1))
+        .count();
+    let mut inferred = BTreeMap::new();
+    let [raw_display] = displays else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    if unresolved_display_count == 0 || raw_display.multiplicity != Some(2) {
+        return Ok((inferred, unresolved_display_count));
+    }
+    let history_displays = history_spherical_diameter_displays(histories);
+    let [display] = history_displays.as_slice() else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    if display.multiplicity != Some(2) {
+        return Ok((inferred, unresolved_display_count));
+    }
+    let Some(display_value) = display.value else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(decimal_places) = display.decimal_places else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    match (raw_display.value, raw_display.decimal_places) {
+        (None, None) => {}
+        (Some(raw_value), Some(raw_places))
+            if raw_places == decimal_places
+                && approximately_equal(raw_value.get(), display_value.get()) => {}
+        _ => return Ok((inferred, unresolved_display_count)),
+    }
+    let Some(topology) = topology else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    if root.features.references.len() != root.features.entities.len()
+        || root.annotations.references.len() != root.annotations.entities.len()
+        || has_duplicate_reference_ids(&root.features.references)
+        || has_duplicate_reference_ids(&root.annotations.references)
+    {
+        return Ok((inferred, unresolved_display_count));
+    }
+
+    let mut direct_dimensions = Vec::new();
+    let mut ambiguous_sphere_dimensions = false;
+    for (annotation_reference, annotation) in root
+        .annotations
+        .references
+        .iter()
+        .zip(&root.annotations.entities)
+    {
+        if !reference_matches_entity(annotation_reference, annotation)
+            || short_class(&annotation.class) != "GdtDiameter"
+            || suppressed(annotation)
+        {
+            continue;
+        }
+        let declared_sphere_owner = annotation
+            .features
+            .references
+            .iter()
+            .any(|owner_reference| {
+                let class = owner_reference
+                    .class
+                    .split_once(',')
+                    .map_or(owner_reference.class.as_str(), |(class, _)| class);
+                short_class(class) == "GdtSphere"
+            });
+        let mut sphere_owners =
+            annotation
+                .features
+                .references
+                .iter()
+                .filter_map(|owner_reference| {
+                    let owner = feature_index.get(&owner_reference.id).copied()?;
+                    (short_class(&owner.class) == "GdtSphere").then_some((owner_reference, owner))
+                });
+        let Some((owner_reference, owner)) = sphere_owners.next() else {
+            if declared_sphere_owner {
+                ambiguous_sphere_dimensions = true;
+            }
+            continue;
+        };
+        if sphere_owners.next().is_some() {
+            ambiguous_sphere_dimensions = true;
+            continue;
+        }
+        if annotation.features.references.len() != 1
+            || !reference_matches_entity(owner_reference, owner)
+            || suppressed(owner)
+        {
+            ambiguous_sphere_dimensions = true;
+            continue;
+        }
+        direct_dimensions.push((annotation_reference, annotation, owner_reference, owner));
+    }
+    if ambiguous_sphere_dimensions {
+        return Ok((inferred, unresolved_display_count));
+    }
+    let [(annotation_reference, annotation, owner_reference, owner)] = direct_dimensions.as_slice()
+    else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(owner_radius) = nominal_radius(owner, "NomSphere") else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(sphere_diameter) = PositiveReal::new(owner_radius.get() * 2.0) else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(source_nominal) = annotation
+        .doubles
+        .get("Nominal")
+        .copied()
+        .and_then(FiniteReal::new)
+    else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let has_explicit_nominal = source_nominal.get() != 0.0
+        || annotation
+            .integers
+            .get("Dimension")
+            .is_some_and(|dimension| *dimension != 0);
+    let semantic_diameter = if has_explicit_nominal {
+        PositiveReal::new(source_nominal.get())
+    } else {
+        let counterbores = Counterbores::new(root, feature_index);
+        implicit_dimension_nominal(ctx, &counterbores, annotation, feature_index, &[])?
+            .and_then(|nominal| PositiveReal::new(nominal.get()))
+    };
+    let Some(semantic_diameter) = semantic_diameter else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    if !approximately_equal(semantic_diameter.get(), sphere_diameter.get())
+        || !display_value_normalizes_to(display_value, decimal_places, semantic_diameter)
+    {
+        return Ok((inferred, unresolved_display_count));
+    }
+
+    let matching_spheres = root
+        .features
+        .references
+        .iter()
+        .zip(&root.features.entities)
+        .filter(|(reference, feature)| {
+            short_class(&feature.class) == "GdtSphere"
+                && reference_matches_entity(reference, feature)
+                && !suppressed(feature)
+                && nominal_radius(feature, "NomSphere")
+                    .is_some_and(|radius| approximately_equal(radius.get(), owner_radius.get()))
+        })
+        .collect::<Vec<_>>();
+    if matching_spheres.len() != 2 {
+        return Ok((inferred, unresolved_display_count));
+    }
+    let matching_ids = matching_spheres
+        .iter()
+        .map(|(reference, _)| reference.id.as_str())
+        .collect::<BTreeSet<_>>();
+    if matching_ids.len() != 2 || !matching_ids.contains(owner_reference.id.as_str()) {
+        return Ok((inferred, unresolved_display_count));
+    }
+    let Some((peer_reference, peer)) = matching_spheres
+        .iter()
+        .find(|(reference, _)| reference.id != owner_reference.id)
+    else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(owner_targets) = resolved_sphere_face_targets(
+        ctx,
+        owner_reference,
+        feature_index.get(&owner_reference.id).copied(),
+        feature_index,
+        topology,
+    )?
+    else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(peer_targets) =
+        resolved_sphere_face_targets(ctx, peer_reference, Some(peer), feature_index, topology)?
+    else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(owner_target_keys) = concrete_face_target_keys(&owner_targets) else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    let Some(peer_target_keys) = concrete_face_target_keys(&peer_targets) else {
+        return Ok((inferred, unresolved_display_count));
+    };
+    if !owner_target_keys.is_disjoint(&peer_target_keys) {
+        return Ok((inferred, unresolved_display_count));
+    }
+    inferred.insert(
+        annotation_reference.id.clone(),
+        SphericalDiameterTargetPair {
+            owner_targets,
+            peer_targets,
+        },
+    );
+    Ok((inferred, unresolved_display_count))
+}
+
+fn has_duplicate_reference_ids(references: &[Reference]) -> bool {
+    let mut ids = BTreeSet::new();
+    references
+        .iter()
+        .any(|reference| !ids.insert(reference.id.as_str()))
+}
+
+fn resolved_sphere_face_targets(
+    ctx: &DecodeContext<'_>,
+    reference: &Reference,
+    feature: Option<&Entity>,
+    feature_index: &FeatureIndex<'_>,
+    topology: &TopologyIdentityIndex,
+) -> Result<Option<Vec<PmiTarget>>, CodecError> {
+    let Some(feature) = feature else {
+        return Ok(None);
+    };
+    if !reference_matches_entity(reference, feature)
+        || short_class(&feature.class) != "GdtSphere"
+        || suppressed(feature)
+    {
+        return Ok(None);
+    }
+    let mut entity = Entity::default();
+    entity.features.references.push(reference.clone());
+    let Some(targets) = targets(ctx, &entity, feature_index, Some(topology))? else {
+        return Ok(None);
+    };
+    if concrete_face_target_keys(&targets).is_some() {
+        Ok(Some(targets))
+    } else {
+        Ok(None)
+    }
+}
+
 fn project_dimension(
     ctx: &DecodeContext<'_>,
     source: DimensionSource<'_>,
     feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-) -> Result<Option<PmiAnnotation>, CodecError> {
+    inferred_spherical_target_pair: Option<&SphericalDiameterTargetPair>,
+) -> Result<Option<(PmiAnnotation, bool)>, CodecError> {
     let DimensionSource {
         counterbores,
         reference,
@@ -1595,9 +1893,13 @@ fn project_dimension(
     let Some(id) = pmi_id(&reference.id) else {
         return Ok(None);
     };
-    let Some(targets) = targets(ctx, entity, feature_index, topology)? else {
+    let Some(mut targets) = targets(ctx, entity, feature_index, topology)? else {
         return Ok(None);
     };
+    let inferred_spherical_target = (dimension == DimensionKind::SphericalDiameter)
+        .then_some(inferred_spherical_target_pair)
+        .flatten()
+        .is_some_and(|pair| append_inferred_spherical_targets(&mut targets, pair));
     let Ok(dimension) = cadmpeg_ir::pmi::PmiDimension::new(
         dimension,
         nominal.map(|value| PmiValue::from_parts(value, quantity)),
@@ -1605,13 +1907,60 @@ fn project_dimension(
     ) else {
         return Ok(None);
     };
-    Ok(Some(PmiAnnotation {
-        id,
-        name: object_name(entity),
-        visible: None,
-        targets,
-        definition: PmiDefinition::Dimension(dimension),
-    }))
+    Ok(Some((
+        PmiAnnotation {
+            id,
+            name: object_name(entity),
+            visible: None,
+            targets,
+            definition: PmiDefinition::Dimension(dimension),
+        },
+        inferred_spherical_target,
+    )))
+}
+
+fn append_inferred_spherical_targets(
+    targets: &mut Vec<PmiTarget>,
+    pair: &SphericalDiameterTargetPair,
+) -> bool {
+    let Some(actual_owner_targets) = concrete_face_target_keys(targets) else {
+        return false;
+    };
+    let Some(expected_owner_targets) = concrete_face_target_keys(&pair.owner_targets) else {
+        return false;
+    };
+    let Some(peer_targets) = concrete_face_target_keys(&pair.peer_targets) else {
+        return false;
+    };
+    if actual_owner_targets != expected_owner_targets
+        || !actual_owner_targets.is_disjoint(&peer_targets)
+    {
+        return false;
+    }
+    let mut seen = targets
+        .iter()
+        .map(PmiTargetKey::from_target)
+        .collect::<BTreeSet<_>>();
+    let old_len = targets.len();
+    for target in &pair.peer_targets {
+        push_target_once(targets, &mut seen, target.clone());
+    }
+    targets.len() > old_len
+}
+
+fn concrete_face_target_keys(targets: &[PmiTarget]) -> Option<BTreeSet<PmiTargetKey>> {
+    if targets.is_empty() {
+        return None;
+    }
+    let mut keys = BTreeSet::new();
+    for target in targets {
+        if !matches!(target, PmiTarget::Face { .. })
+            || !keys.insert(PmiTargetKey::from_target(target))
+        {
+            return None;
+        }
+    }
+    Some(keys)
 }
 
 fn implicit_dimension_nominal(
@@ -2491,6 +2840,22 @@ fn rendered_projections(payload: &[u8]) -> (Vec<RenderedDimension>, Vec<Spherica
     (dimensions, spherical_diameters)
 }
 
+fn history_spherical_diameter_displays(
+    histories: &[FeatureHistory],
+) -> Vec<SphericalDiameterDisplay> {
+    histories
+        .iter()
+        .flat_map(|history| {
+            history
+                .features
+                .iter()
+                .filter(|feature| !feature.suppressed)
+        })
+        .flat_map(|feature| feature.parameters.values())
+        .flat_map(|text| spherical_diameter_display_literals(text))
+        .collect()
+}
+
 fn spherical_diameter_display_literals(text: &str) -> Vec<SphericalDiameterDisplay> {
     const TOKENS: &[&str] = &["<MOD-SPHDIA>", "&lt;MOD-SPHDIA&gt;"];
     let mut displays = Vec::new();
@@ -2503,18 +2868,70 @@ fn spherical_diameter_display_literals(text: &str) -> Vec<SphericalDiameterDispl
             let Some(token_end) = token_start.checked_add(token.len()) else {
                 break;
             };
+            let Some(tail) = text.get(token_end..) else {
+                break;
+            };
+            let literal = tail.trim_start();
+            let literal_end = literal
+                .bytes()
+                .position(|byte| !byte.is_ascii_digit() && byte != b'.')
+                .unwrap_or(literal.len());
+            let value_text = literal.get(..literal_end).unwrap_or_default();
+            let parsed = parse_spherical_diameter_nominal(value_text);
+            let (value, decimal_places) =
+                parsed.map_or((None, None), |(value, places)| (Some(value), Some(places)));
             let multiplicity = text.get(..token_start).and_then(rendered_multiplicity);
-            displays.push(SphericalDiameterDisplay { multiplicity });
+            displays.push(SphericalDiameterDisplay {
+                multiplicity,
+                value,
+                decimal_places,
+            });
             start = token_end;
         }
     }
     displays
 }
 
+fn parse_spherical_diameter_nominal(text: &str) -> Option<(PositiveReal, u32)> {
+    let (whole, fractional) = text.split_once('.')?;
+    if whole.is_empty()
+        || fractional.is_empty()
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || !fractional.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    Some((
+        PositiveReal::new(text.parse::<f64>().ok()?)?,
+        u32::try_from(fractional.len()).ok()?,
+    ))
+}
+
 fn rendered_multiplicity(prefix: &str) -> Option<u32> {
     let token = prefix.split_whitespace().last()?.strip_suffix('X')?;
     let count = token.parse::<u32>().ok()?;
     (count > 0).then_some(count)
+}
+
+fn display_value_normalizes_to(
+    value: PositiveReal,
+    decimal_places: u32,
+    semantic_value_mm: PositiveReal,
+) -> bool {
+    let Ok(decimal_places) = i32::try_from(decimal_places) else {
+        return false;
+    };
+    let precision = 10.0_f64.powi(decimal_places);
+    if !precision.is_finite()
+        || !approximately_equal(value.get() * precision, (value.get() * precision).round())
+    {
+        return false;
+    }
+    let matches = SWIFT_RENDERED_LENGTH_SCALES_MM
+        .iter()
+        .filter(|scale| approximately_equal(value.get() * **scale, semantic_value_mm.get()))
+        .count();
+    matches == 1
 }
 
 fn decode_rendered_utf16(

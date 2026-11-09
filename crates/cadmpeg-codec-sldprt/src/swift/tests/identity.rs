@@ -228,7 +228,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
             face: FaceId::mint("sldprt:brep:face#42").expect("identity grammar"),
         }),
     );
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], &[])
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[])
         .expect("test projection fits policy")
         .annotations;
     let first = projected.first().expect("projected datum");
@@ -253,7 +253,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .entity
         .strings
         .insert("CadIdentifier".into(), "125:99".into());
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], &[])
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[])
         .expect("test projection fits policy")
         .annotations;
     let first = projected.first().expect("projected datum");
@@ -685,7 +685,7 @@ fn position_missing_compound_hole_reference_preserves_aspect_and_loss() {
         .references
         .push(reference("A90", "GdtPosition"));
     root.annotations.entities.push(position);
-    let projection = project_with_topology(&ctx, &root, None, &[], &[])
+    let projection = project_with_topology(&ctx, &root, None, &[])
         .expect("missing compound-hole feature stays a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
@@ -739,7 +739,7 @@ fn position_compound_hole_rejects_non_face_topology_targets() {
         .references
         .push(reference("A95", "GdtPosition"));
     root.annotations.entities.push(position);
-    let projection = project_with_topology(&ctx, &root, Some(&topology), &[], &[])
+    let projection = project_with_topology(&ctx, &root, Some(&topology), &[])
         .expect("non-face topology target stays a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
@@ -792,7 +792,7 @@ fn position_compound_hole_reference_class_mismatch_preserves_the_reference() {
         .references
         .push(reference("A94", "GdtPosition"));
     root.annotations.entities.push(position);
-    let projection = project_with_topology(&ctx, &root, Some(&topology), &[], &[])
+    let projection = project_with_topology(&ctx, &root, Some(&topology), &[])
         .expect("mismatched compound reference stays a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
@@ -847,7 +847,7 @@ fn position_pattern_mismatched_subfeature_reference_preserves_pattern_aspect() {
         .references
         .push(reference("A92", "GdtPosition"));
     root.annotations.entities.push(position);
-    let projection = project_with_topology(&ctx, &root, Some(&topology), &[], &[])
+    let projection = project_with_topology(&ctx, &root, Some(&topology), &[])
         .expect("mismatched pattern child reference stays a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
@@ -900,7 +900,7 @@ fn position_pattern_reference_class_mismatch_preserves_pattern_aspect() {
         .references
         .push(reference("A91", "GdtPosition"));
     root.annotations.entities.push(position);
-    let projection = project_with_topology(&ctx, &root, None, &[], &[])
+    let projection = project_with_topology(&ctx, &root, None, &[])
         .expect("mismatched pattern reference stays a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
@@ -995,7 +995,7 @@ fn malformed_position_pattern_class_edges_preserve_pattern_aspect() {
             .references
             .push(reference(&format!("A{index}"), "GdtPosition"));
         root.annotations.entities.push(position);
-        let projection = project_with_topology(&ctx, &root, None, &[], &[])
+        let projection = project_with_topology(&ctx, &root, None, &[])
             .expect("malformed pattern classes stay a projection result");
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
@@ -1065,7 +1065,7 @@ fn duplicate_position_pattern_subfeature_names_preserve_pattern_aspect() {
         .references
         .push(reference("A89", "GdtPosition"));
     root.annotations.entities.push(position);
-    let projection = project_with_topology(&ctx, &root, None, &[], &[])
+    let projection = project_with_topology(&ctx, &root, None, &[])
         .expect("duplicate pattern relation names stay a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
@@ -1401,7 +1401,7 @@ fn malformed_position_compound_hole_ownership_retains_semantic_pmi() {
             .references
             .push(reference("A99", "GdtPosition"));
         root.annotations.entities.push(position);
-        let projection = project_with_topology(&ctx, &root, None, &[], &[])
+        let projection = project_with_topology(&ctx, &root, None, &[])
             .expect("malformed target ownership stays a projection result");
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
@@ -1478,7 +1478,7 @@ fn position_compound_hole_without_applied_cylinder_retains_semantic_pmi() {
             .references
             .push(reference("A98", "GdtPosition"));
         root.annotations.entities.push(position);
-        let projection = project_with_topology(&ctx, &root, Some(&topology), &[], &[])
+        let projection = project_with_topology(&ctx, &root, Some(&topology), &[])
             .expect("plane-only or cone-only target selection stays a projection result");
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
@@ -1546,9 +1546,16 @@ fn compound_hole_applied_and_cad_reference_caps_retain_position_and_record_the_c
                 .collect(),
             work_limit,
         );
-        let projection =
-            crate::swift::project_with_index(&ctx, &root, None, &[], &projection_index, &[])
-                .expect("relation cap preserves the position annotation");
+        let projection = crate::swift::project_with_feature_index_and_displays(
+            &ctx,
+            &root,
+            None,
+            &[],
+            &projection_index,
+            &[],
+            &[],
+        )
+        .expect("relation cap preserves the position annotation");
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
@@ -1651,8 +1658,16 @@ fn compound_hole_applied_child_scan_cap_retains_position_and_records_the_cap() {
         11,
     );
 
-    let projection = crate::swift::project_with_index(&ctx, &root, None, &[], &feature_index, &[])
-        .expect("applied-child work cap is a projection result");
+    let projection = crate::swift::project_with_feature_index_and_displays(
+        &ctx,
+        &root,
+        None,
+        &[],
+        &feature_index,
+        &[],
+        &[],
+    )
+    .expect("applied-child work cap is a projection result");
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
@@ -1727,8 +1742,16 @@ fn multi_compound_pattern_global_cap_keeps_existing_unsupported_behavior() {
         15,
     );
 
-    let projection = crate::swift::project_with_index(&ctx, &root, None, &[], &feature_index, &[])
-        .expect("global pattern work cap is a projection result");
+    let projection = crate::swift::project_with_feature_index_and_displays(
+        &ctx,
+        &root,
+        None,
+        &[],
+        &feature_index,
+        &[],
+        &[],
+    )
+    .expect("global pattern work cap is a projection result");
     assert!(projection.annotations.is_empty());
     assert_eq!(projection.unsupported.get("GdtPosition"), Some(&1));
     assert_eq!(projection.walk_caps.work, 1);

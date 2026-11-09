@@ -587,7 +587,7 @@ fn unresolved_spherical_diameter_nominal_is_reported() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("empty test root fits policy");
     let projection =
-        project_with_topology(&ctx, &root, None, &[], &[]).expect("spherical PMI projection");
+        project_with_topology(&ctx, &root, None, &[]).expect("spherical PMI projection");
     assert_dimension_kind(
         &projection.annotations,
         "A30",

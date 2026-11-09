@@ -255,11 +255,31 @@ fn ftc_06_positions_target_typed_cylinders_only() {
 }
 
 #[test]
-fn ftc_06_diameter8_reports_unresolved_counted_target_association() {
+fn ftc_06_diameter8_targets_both_counted_spheres() {
     let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code.local_code() == "pmi.swift-spherical-diameter-target-unresolved"
-    }));
+    let spherical_target_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                .local_code()
+                .starts_with("pmi.swift-spherical-diameter-")
+        })
+        .map(|loss| (loss.code.local_code().to_owned(), loss.message.clone()))
+        .collect::<Vec<_>>();
+    assert!(
+        spherical_target_losses
+            .iter()
+            .any(|(code, _)| code == "pmi.swift-spherical-diameter-count-text-equal-radius-assumed"),
+        "expected the count-text inference loss; got {spherical_target_losses:?}"
+    );
+    assert!(
+        spherical_target_losses
+            .iter()
+            .all(|(code, _)| code != "pmi.swift-spherical-diameter-target-unresolved"),
+        "unexpected unresolved sphere target loss: {spherical_target_losses:?}"
+    );
     let ir = result.ir();
     let annotation = ir
         .model
@@ -267,7 +287,6 @@ fn ftc_06_diameter8_reports_unresolved_counted_target_association() {
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("Diameter8"))
         .expect("Diameter8 PMI");
-    assert_eq!(annotation.targets.len(), 1);
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("Diameter8 dimension")
     };
@@ -279,6 +298,36 @@ fn ftc_06_diameter8_reports_unresolved_counted_target_association() {
     };
     assert!((lower.value.get() + 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
     assert!((upper.value.get() - 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+
+    for x in [-114.3, 114.3] {
+        assert!(
+            annotation.targets.iter().any(|target| {
+                let PmiTarget::Face { face: face_id } = target else {
+                    return false;
+                };
+                let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+                    return false;
+                };
+                let Some(surface) = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == face.surface)
+                else {
+                    return false;
+                };
+                let Some(SolvedSurfaceGeometry::Sphere(sphere)) = surface.geometry.solved() else {
+                    return false;
+                };
+                let center = sphere.center().get();
+                (sphere.radius().get() - 15.875).abs() < VALUE_TOLERANCE
+                    && (center.x - x).abs() < VALUE_TOLERANCE
+                    && (center.y - 63.5).abs() < VALUE_TOLERANCE
+                    && (center.z + 107.95).abs() < VALUE_TOLERANCE
+            }),
+            "Diameter8 must target the sphere centered at ({x}, 63.5, -107.95)"
+        );
+    }
 }
 
 #[test]

@@ -194,8 +194,16 @@ fn swift_rendered_annotation_limit_error(
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    crate::swift::annotations(&ctx, &scan, &mut annotations, None, &[], &mut Vec::new())
-        .expect_err("SWIFT annotations must refuse")
+    crate::swift::annotations(
+        &ctx,
+        &scan,
+        &mut annotations,
+        None,
+        &[],
+        &[],
+        &mut Vec::new(),
+    )
+    .expect_err("SWIFT annotations must refuse")
 }
 
 #[test]
@@ -534,7 +542,7 @@ fn assert_malformed_swift_projection(annotation: Entity, reason: &str) {
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let expected = format!("SWIFT annotation A42 ({class}): {reason}");
     assert!(
-        matches!(crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &mut Vec::new()),
+        matches!(crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &[], &mut Vec::new()),
         Err(CodecError::Malformed(message)) if message == expected)
     );
     assert!(
@@ -603,9 +611,16 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         let scan = crate::test_support::container::scan(&source);
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
-        let projected =
-            crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &mut Vec::new())
-                .unwrap();
+        let projected = crate::swift::annotations(
+            &ctx,
+            &scan,
+            &mut provenance,
+            None,
+            &[],
+            &[],
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert_eq!(projected.len(), 1);
         let annotation = projected.first().unwrap();
         assert_eq!(annotation.id, pmi_id("A42").unwrap());
@@ -630,6 +645,7 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
             &mut provenance,
             None,
             &[],
+            &[],
             &mut Vec::new()
         )
         .unwrap()
@@ -646,11 +662,17 @@ fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
     let scan = crate::test_support::container::scan(&source);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
-    assert!(
-        crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &mut Vec::new())
-            .unwrap()
-            .is_empty()
-    );
+    assert!(crate::swift::annotations(
+        &ctx,
+        &scan,
+        &mut provenance,
+        None,
+        &[],
+        &[],
+        &mut Vec::new()
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(
         crate::swift::unsupported_annotation_classes(&ctx, &scan).unwrap(),
         BTreeMap::from([("GdtWidth".into(), 1)])
