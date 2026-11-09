@@ -129,7 +129,8 @@ pub(crate) fn topology_rules() -> Vec<ReducedProbe> {
 }
 
 /// OCCT restores a radial order only for an edge with two uses: the two
-/// uses link to each other and any other use links to itself.
+/// uses link to each other and any other use links to itself. A coedge in
+/// no loop is no use.
 fn radial_rings(value: &Value) -> Value {
     let mut coedges = value.clone();
     let Some(rows) = coedges.as_array_mut() else {
@@ -137,6 +138,9 @@ fn radial_rings(value: &Value) -> Value {
     };
     let mut rings = std::collections::BTreeMap::<String, Vec<usize>>::new();
     for (index, row) in rows.iter().enumerate() {
+        if row.get("owner_loop").is_none_or(Value::is_null) {
+            continue;
+        }
         if let Some(edge) = row.get("edge").and_then(Value::as_str) {
             rings.entry(edge.to_owned()).or_default().push(index);
         }
