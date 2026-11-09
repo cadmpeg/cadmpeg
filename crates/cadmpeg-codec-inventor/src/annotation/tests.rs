@@ -1256,6 +1256,19 @@ fn member_tolerance_feature_faces_target_the_owner() {
 }
 
 #[test]
+fn member_tolerance_feature_reached_from_its_own_label_targets_its_faces() {
+    let mut fixture = feature_fixture(&FeatureRecord::new(&[ATTACHMENT_AT, MEMBER_AT], None));
+    fixture.put(
+        MEMBER_AT,
+        TOLERANCE_FEATURE,
+        FeatureRecord::new(&[], Some(COLLECTION_AT)).bytes(),
+    );
+    let (targets, outcome) = run_features(&fixture, &[MEMBER_AT]);
+    assert_eq!(targets, [face_target()]);
+    assert_eq!(outcome.malformed, 0);
+}
+
+#[test]
 fn top_tolerance_feature_without_attachments_gives_no_target() {
     let fixture = feature_fixture(&FeatureRecord::new(&[], Some(COLLECTION_AT)));
     let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);

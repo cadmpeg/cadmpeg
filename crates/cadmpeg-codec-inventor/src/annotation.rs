@@ -37,9 +37,9 @@ use names::{edge_name, generated_name, BodyNames, EntityKind, NameFamily, EDGE_N
 use records::{
     datum_feature, edge_selector, face_selector, frame_row, geometry_link, naming_table, owner,
     relation, relation_intent_offset, tolerance_feature, tolerance_owner, trailing_reference,
-    value, Measure, Record, Segment, Selector, Value, DATUM_FEATURE, DATUM_OWNER, EDGE_ITEM,
-    EDGE_SELECTOR, FACE_RELATION, FACE_SELECTOR, FEATURE_FACE_SELECTOR, FRAME_OWNER, FRAME_ROW,
-    GEOMETRY, GEOMETRY_LINK, INTENT, NAMING_TABLE, PAIR_RELATION, SIZE_RELATION,
+    value, Measure, Record, Segment, Selector, ToleranceFeature, Value, DATUM_FEATURE, DATUM_OWNER,
+    EDGE_ITEM, EDGE_SELECTOR, FACE_RELATION, FACE_SELECTOR, FEATURE_FACE_SELECTOR, FRAME_OWNER,
+    FRAME_ROW, GEOMETRY, GEOMETRY_LINK, INTENT, NAMING_TABLE, PAIR_RELATION, SIZE_RELATION,
     TOLERANCE_DEVIATION, TOLERANCE_FEATURE, TOLERANCE_SYMMETRIC, WORK_AXIS,
 };
 
@@ -248,6 +248,11 @@ struct Scope<'s, 'a, 'm> {
     /// The tolerance feature whose label lists each annotation owner, or
     /// `None` when the labels of two tolerance features list the owner.
     features: &'s HashMap<u32, Option<u32>>,
+    /// Each tolerance feature of the segment, or `None` when it fails its
+    /// grammar.
+    tolerance_features: &'s HashMap<u32, Option<ToleranceFeature>>,
+    /// The ordinals that a tolerance feature lists as members.
+    members: &'s HashSet<u32>,
     names: &'s BodyNames<'m>,
 }
 
@@ -407,12 +412,30 @@ fn project_segment(
                 .or_insert(Some(label.owner));
         }
     }
+    let tolerance_features: HashMap<u32, Option<ToleranceFeature>> = segment
+        .records
+        .iter()
+        .filter(|(_, record)| record.type_id == TOLERANCE_FEATURE)
+        .map(|(ordinal, record)| {
+            (
+                *ordinal,
+                tolerance_feature(ctx, segment, record.payload).ok(),
+            )
+        })
+        .collect();
+    let members: HashSet<u32> = tolerance_features
+        .values()
+        .flatten()
+        .flat_map(|parsed| parsed.members.iter().copied())
+        .collect();
     let scope = Scope {
         segment,
         joins: &joins,
         parameters,
         selections,
         features: &features,
+        tolerance_features: &tolerance_features,
+        members: &members,
         names,
     };
     let names_by_owner = labels
@@ -426,7 +449,6 @@ fn project_segment(
         };
         if record.type_id == FRAME_OWNER {
             annotations.extend(frame(
-                ctx,
                 &scope,
                 &datum_ids,
                 (record.payload, label.owner),
@@ -625,7 +647,6 @@ fn name_entity<'m>(
 /// The targets of a frame or datum owner: those of its intent, or else the
 /// faces of the tolerance feature that lists it.
 fn owner_targets(
-    ctx: &DecodeContext<'_>,
     scope: &Scope<'_, '_, '_>,
     owner: u32,
     intents: &[u32],
@@ -635,7 +656,7 @@ fn owner_targets(
     let found = targets(scope, intents, &mut intent_outcome);
     if found.is_empty() {
         match scope.features.get(&owner) {
-            Some(Some(feature)) => return feature_faces(ctx, scope, *feature, 0, outcome),
+            Some(Some(feature)) => return feature_faces(scope, *feature, 0, outcome),
             Some(None) => outcome.unresolved_targets += 1,
             None => {}
         }
@@ -646,17 +667,16 @@ fn owner_targets(
 
 /// The faces of a tolerance feature and of its member tolerance features.
 fn feature_faces(
-    ctx: &DecodeContext<'_>,
     scope: &Scope<'_, '_, '_>,
     feature: u32,
     depth: usize,
     outcome: &mut Outcome,
 ) -> Vec<PmiTarget> {
-    let segment = scope.segment;
-    let Some(parsed) = segment
-        .record(feature, TOLERANCE_FEATURE)
-        .and_then(|payload| tolerance_feature(ctx, segment, payload).ok())
-        .filter(|parsed| (parsed.attachments == 0) == (depth > 0))
+    let Some(parsed) = scope
+        .tolerance_features
+        .get(&feature)
+        .and_then(Option::as_ref)
+        .filter(|parsed| (parsed.attachments == 0) == scope.members.contains(&feature))
     else {
         outcome.malformed += 1;
         return Vec::new();
@@ -682,8 +702,8 @@ fn feature_faces(
         }
     }
     if depth == 0 {
-        for member in parsed.members {
-            for face in feature_faces(ctx, scope, member, depth + 1, outcome) {
+        for member in &parsed.members {
+            for face in feature_faces(scope, *member, depth + 1, outcome) {
                 if !faces.contains(&face) {
                     faces.push(face);
                 }
@@ -818,7 +838,7 @@ fn datums(
             continue;
         }
         let id = annotation_id(segment, owner)?;
-        let targets = owner_targets(ctx, scope, owner, intent.as_slice(), outcome);
+        let targets = owner_targets(scope, owner, intent.as_slice(), outcome);
         ids.insert(feature, id.clone());
         annotations.push(PmiAnnotation {
             id,
@@ -851,7 +871,6 @@ fn characteristic(code: u32) -> Option<GeometricToleranceKind> {
 
 /// A geometric tolerance and its datum system from a frame owner.
 fn frame(
-    ctx: &DecodeContext<'_>,
     scope: &Scope<'_, '_, '_>,
     datum_ids: &HashMap<u32, PmiId>,
     (payload, owner_ordinal): (View<'_>, u32),
@@ -939,7 +958,7 @@ fn frame(
         id: annotation_id(segment, owner_ordinal)?,
         name: name.map(str::to_owned),
         visible: None,
-        targets: owner_targets(ctx, scope, owner_ordinal, intent.as_slice(), outcome),
+        targets: owner_targets(scope, owner_ordinal, intent.as_slice(), outcome),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: kind,
             magnitude,

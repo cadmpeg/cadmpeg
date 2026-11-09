@@ -1483,6 +1483,8 @@ key u32
 flag u8                    0 or 1
 ```
 
+The `topology` and `naming_form` words of this edge selector each equal the `source_index` of the record that the body reference selects.
+
 A naming table of type `4220e9ccd111c5710008a7ba32a3dc09` contains:
 
 ```text
