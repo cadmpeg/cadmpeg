@@ -9,7 +9,7 @@
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
 use cadmpeg_core::convert::f32_from_f64;
-use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::references::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
@@ -19,13 +19,11 @@ use std::io::{Cursor, Write};
 
 use crate::records::{bodies::DesignBodyBinding, references::DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{NativeUnknownRecord, SourceFidelity, StreamName};
@@ -91,6 +89,90 @@ fn lp_ascii_printable(bytes: &[u8], at: usize) -> Result<Option<(String, usize)>
     Ok(Some((text.to_owned(), end)))
 }
 
+/// Schema-document entry of a written Protein asset. A reader collects every
+/// `Schemas/*Schema.xml` entry (spec §3.2).
+const PROTEIN_SCHEMA_ENTRY: &str = "Schemas/InstanceSchema.xml";
+
+/// One member a written Protein record stores.
+enum ProteinMember {
+    Color([f64; 4]),
+    Float(f64),
+}
+
+/// The member that carries a schema's base colour (spec §3.2).
+fn schema_base_color_property(schema: &str) -> &'static str {
+    match schema {
+        "GenericSchema" => "generic_diffuse",
+        "MetalSchema" => "metal_color",
+        "MetallicPaintSchema" => "metallicpaint_base_color",
+        "PlasticVinylSchema" => "plasticvinyl_color",
+        "PrismLayeredSchema" => "layered_diffuse",
+        "PrismMetalSchema" => "metal_f0",
+        "PrismOpaqueSchema" => "opaque_albedo",
+        "PrismTransparentSchema" => "transparent_color",
+        // `PrismCommonSchema` supplies the common fallback used by derived
+        // families that do not define one primary constant-colour member.
+        _ => "surface_albedo",
+    }
+}
+
+/// The schema member that stores a neutral scalar property: the inverse of
+/// [`neutral_property_name`].
+fn schema_property_id<'a>(schema: &str, property: &'a str) -> &'a str {
+    match (schema, property) {
+        ("GenericSchema", "reflectivity_at_0deg") => "generic_reflectivity_at_0deg",
+        ("GenericSchema", "refraction_index") => "generic_refraction_index",
+        ("PrismTransparentSchema", "refraction_index") => "transparent_refraction_index",
+        _ => property,
+    }
+}
+
+/// The members a written record stores, keyed and therefore ordered by schema
+/// identifier: the schema's base-colour carrier and every neutral scalar.
+fn protein_members(
+    schema: &str,
+    appearance: &Appearance,
+) -> Result<BTreeMap<String, ProteinMember>, CodecError> {
+    let mut members = BTreeMap::new();
+    if is_physical_schema(schema) {
+        return Ok(members);
+    }
+    let color = appearance.base_color.ok_or_else(|| {
+        CodecError::Malformed("visual source-less Protein appearance lacks base_color".into())
+    })?;
+    members.insert(
+        schema_base_color_property(schema).to_owned(),
+        ProteinMember::Color([color.r(), color.g(), color.b(), color.a()].map(f64::from)),
+    );
+    for (property, value) in &appearance.properties {
+        members
+            .entry(schema_property_id(schema, property.as_str()).to_owned())
+            .or_insert(ProteinMember::Float(value.get()));
+    }
+    Ok(members)
+}
+
+/// XML attribute text of `value`.
+fn xml_attribute(value: &str) -> String {
+    let mut text = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '&' => text.push_str("&amp;"),
+            '<' => text.push_str("&lt;"),
+            '>' => text.push_str("&gt;"),
+            '"' => text.push_str("&quot;"),
+            _ => text.push(character),
+        }
+    }
+    text
+}
+
+/// Serialize an appearance as a Protein asset packaged the way native assets
+/// are (spec §3.2): a schema document that declares every member the record
+/// stores, the `InstanceProperties` record laid out by that schema (members in
+/// identifier order, as the schema-driven reader consumes them), and the
+/// definition catalog. The schema document is format state, so a reader
+/// decodes the record without a writer-specific layout (#209 §5.5).
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
     if !appearance.textures.is_empty() {
         return Err(CodecError::NotImplemented(
@@ -115,49 +197,25 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     ] {
         push_lp(&mut logical, value)?;
     }
-    let value_block = logical.len();
-    match schema {
-        "GenericSchema" => {
-            zero_fill_to(&mut logical, value_block + 209);
-            write_color(&mut logical, value_block + 112, appearance.base_color)?;
-            if let Some(value) = appearance.properties.get("reflectivity_at_0deg") {
-                logical[value_block + 171..value_block + 175].copy_from_slice(b"\x0c\x00\x00\x00");
-                logical[value_block + 175..value_block + 183]
-                    .copy_from_slice(&value.get().to_le_bytes());
+    let mut document = format!(
+        "<?xml version=\"1.0\"?>\n<Schema>\n  <UID val=\"{}\"/>\n",
+        xml_attribute(schema)
+    );
+    for (id, member) in protein_members(schema, appearance)? {
+        match member {
+            ProteinMember::Color(rgba) => {
+                document.push_str(&format!("  <Color id=\"{}\"/>\n", xml_attribute(&id)));
+                for value in rgba {
+                    logical.extend_from_slice(&value.to_le_bytes());
+                }
             }
-            if let Some(value) = appearance.properties.get("refraction_index") {
-                logical[value_block + 197..value_block + 201].copy_from_slice(b"\x0c\x00\x00\x00");
-                logical[value_block + 201..value_block + 209]
-                    .copy_from_slice(&value.get().to_le_bytes());
+            ProteinMember::Float(value) => {
+                document.push_str(&format!("  <Float id=\"{}\"/>\n", xml_attribute(&id)));
+                logical.extend_from_slice(&value.to_le_bytes());
             }
-        }
-        "PrismOpaqueSchema" | "PrismMetalSchema" => {
-            zero_fill_to(&mut logical, value_block + 96);
-            write_color(&mut logical, value_block + 8, appearance.base_color)?;
-            if let Some(value) = appearance.properties.get("surface_roughness") {
-                logical[value_block + 64..value_block + 68].copy_from_slice(b"\x0e\x20\x00\x00");
-                logical[value_block + 68..value_block + 76]
-                    .copy_from_slice(&value.get().to_le_bytes());
-            }
-        }
-        "PrismTransparentSchema" => {
-            zero_fill_to(&mut logical, value_block + 177);
-            write_color(&mut logical, value_block + 121, appearance.base_color)?;
-            if let Some(value) = appearance.properties.get("refraction_index") {
-                logical[value_block + 169..value_block + 177]
-                    .copy_from_slice(&value.get().to_le_bytes());
-            }
-        }
-        "PhysMatSchema"
-        | "StructuralMetalSchema"
-        | "StructuralPlasticSchema"
-        | "ThermalSolidSchema" => zero_fill_to(&mut logical, value_block + 8),
-        _ => {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less Protein schema {schema} is unsupported"
-            )));
         }
     }
+    document.push_str("</Schema>\n");
     let instance = page_logical(&logical)?;
     let mut catalog = RECORD_MARKER.to_vec();
     push_lp(&mut catalog, schema)?;
@@ -177,16 +235,16 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     let catalog = page_logical(&catalog)?;
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("AssetData/InstanceProperties.bin", options)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create Protein instance: {error}"))
+    for (entry, data) in [
+        ("AssetData/InstanceProperties.bin", instance.as_slice()),
+        ("AssetData/DefinitionIteratorProperties.bin", catalog.as_slice()),
+        (PROTEIN_SCHEMA_ENTRY, document.as_bytes()),
+    ] {
+        zip.start_file(entry, options).map_err(|error| {
+            CodecError::malformed(format_args!("cannot create Protein entry {entry}: {error}"))
         })?;
-    zip.write_all(&instance)?;
-    zip.start_file("AssetData/DefinitionIteratorProperties.bin", options)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create Protein catalog: {error}"))
-        })?;
-    zip.write_all(&catalog)?;
+        zip.write_all(data)?;
+    }
     Ok(zip
         .finish()
         .map_err(|error| {
@@ -200,20 +258,6 @@ fn push_lp(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
         .map_err(|_| CodecError::Malformed("Protein string exceeds u32::MAX".into()))?;
     out.extend_from_slice(&length.to_le_bytes());
     out.extend_from_slice(value.as_bytes());
-    Ok(())
-}
-
-fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<(), CodecError> {
-    let color = color.ok_or_else(|| {
-        CodecError::Malformed("visual source-less Protein appearance lacks base_color".into())
-    })?;
-    for (ordinal, value) in [color.r(), color.g(), color.b(), color.a()]
-        .into_iter()
-        .enumerate()
-    {
-        let at = offset + ordinal * 8;
-        out[at..at + 8].copy_from_slice(&f64::from(value).to_le_bytes());
-    }
     Ok(())
 }
 
@@ -342,19 +386,19 @@ fn patch_instance_colors(
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
     let frames = cadmpeg_protein::framing::record_frames(bytes)?;
-    let schema_driven = cadmpeg_protein::has_schemas(protein);
-    let decoded = if schema_driven {
-        let outcome = cadmpeg_protein::decode_frames_for_edit(protein, &frames)?;
-        notes.extend(outcome.rejected.iter().map(|rejected| {
-            format!(
-                "Protein record {} rejected: {}",
-                rejected.ordinal, rejected.detail
-            )
-        }));
-        outcome.records
-    } else {
-        Vec::new()
-    };
+    if !cadmpeg_protein::has_schemas(protein) {
+        return Err(CodecError::NotImplemented(
+            "a Protein asset without schemas has no member layout to patch".into(),
+        ));
+    }
+    let outcome = cadmpeg_protein::decode_frames_for_edit(protein, &frames)?;
+    notes.extend(outcome.rejected.iter().map(|rejected| {
+        format!(
+            "Protein record {} rejected: {}",
+            rejected.ordinal, rejected.detail
+        )
+    }));
+    let decoded = outcome.records;
     for frame in frames {
         let record = frame.bytes();
         let mut position = RECORD_MARKER.len();
@@ -376,26 +420,20 @@ fn patch_instance_colors(
         let Some(edit) = edits.get(&guid) else {
             continue;
         };
-        let decoded_record = if schema_driven {
-            Some(
-                decoded
-                    .iter()
-                    .find(|decoded| {
-                        decoded.logical_offset == frame.logical_offset()
-                            && decoded.schema == schema
-                            && decoded.guid == guid
-                    })
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "Protein appearance {guid} has no decoded schema record"
-                        ))
-                    })?,
-            )
-        } else {
-            None
-        };
+        let decoded_record = decoded
+            .iter()
+            .find(|decoded| {
+                decoded.logical_offset == frame.logical_offset()
+                    && decoded.schema == schema
+                    && decoded.guid == guid
+            })
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "Protein appearance {guid} has no decoded schema record"
+                ))
+            })?;
         if let Some(color) = edit.color {
-            let relative = if let Some(decoded_record) = decoded_record {
+            let relative = {
                 let property_id =
                     appearance_base_color_property_id(decoded_record).ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -417,25 +455,6 @@ fn patch_instance_colors(
                         ))
                     })?;
                 property.value_offset
-            } else {
-                match schema.as_str() {
-                    "GenericSchema" => {
-                        position
-                            + 112
-                            + generic_connection_delta(record, position).ok_or_else(|| {
-                                CodecError::Malformed(
-                                    "Protein GenericSchema connection list is malformed".into(),
-                                )
-                            })?
-                    }
-                    "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
-                    "PrismTransparentSchema" => position + 121,
-                    _ => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "Protein schema {schema} has no writable color carrier"
-                        )));
-                    }
-                }
             };
             for (ordinal, value) in [color.r(), color.g(), color.b(), color.a()]
                 .into_iter()
@@ -449,70 +468,22 @@ fn patch_instance_colors(
             }
         }
         for (name, value) in &edit.properties {
-            let relative = if let Some(decoded_record) = decoded_record {
-                let property_id = match (schema.as_str(), name.as_str()) {
-                    ("GenericSchema", "reflectivity_at_0deg") => "generic_reflectivity_at_0deg",
-                    ("GenericSchema", "refraction_index") => "generic_refraction_index",
-                    ("PrismOpaqueSchema", "surface_roughness") => "surface_roughness",
-                    ("PrismTransparentSchema", "refraction_index") => {
-                        "transparent_refraction_index"
-                    }
-                    _ => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "Protein schema {schema} property {name} has no writable carrier"
-                        )));
-                    }
-                };
-                decoded_record
-                    .properties
-                    .get(property_id)
-                    .filter(|property| {
-                        property
-                            .value()
-                            .and_then(cadmpeg_protein::property::PropertyValue::float_value)
-                            .is_some()
-                    })
-                    .map(|property| property.value_offset)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "Protein appearance {guid} has no {property_id} scalar carrier"
-                        ))
-                    })?
-            } else {
-                match (schema.as_str(), name.as_str()) {
-                    ("GenericSchema", "reflectivity_at_0deg") => {
-                        position
-                            + 175
-                            + generic_connection_delta(record, position).ok_or_else(|| {
-                                CodecError::Malformed(
-                                    "Protein GenericSchema connection list is malformed".into(),
-                                )
-                            })?
-                    }
-                    ("GenericSchema", "refraction_index") => {
-                        position
-                            + 201
-                            + generic_connection_delta(record, position).ok_or_else(|| {
-                                CodecError::Malformed(
-                                    "Protein GenericSchema connection list is malformed".into(),
-                                )
-                            })?
-                    }
-                    ("PrismOpaqueSchema", "surface_roughness") => {
-                        find_from(record, b"\x0e\x20\x00\x00", position)
-                            .map(|marker| marker + 4)
-                            .ok_or_else(|| {
-                                CodecError::Malformed("Protein roughness carrier is absent".into())
-                            })?
-                    }
-                    ("PrismTransparentSchema", "refraction_index") => position + 169,
-                    _ => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "Protein schema {schema} property {name} has no writable carrier"
-                        )));
-                    }
-                }
-            };
+            let property_id = schema_property_id(&schema, name);
+            let relative = decoded_record
+                .properties
+                .get(property_id)
+                .filter(|property| {
+                    property
+                        .value()
+                        .and_then(cadmpeg_protein::property::PropertyValue::float_value)
+                        .is_some()
+                })
+                .map(|property| property.value_offset)
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "Protein appearance {guid} has no {property_id} scalar carrier"
+                    ))
+                })?;
             patch_logical_f64(bytes, frame.logical_offset() + relative, *value)?;
         }
         patched.insert(guid);
@@ -652,7 +623,6 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 cadmpeg_protein::SchemaCatalog::load(ctx, protein, stage, &entry.name)?;
             let appearances = if let Some(mut schema_catalog) = schema_catalog {
                 let mut records = Vec::new();
-                let mut accepted_frames = Vec::new();
                 for (ordinal, frame) in record_frames.iter().enumerate() {
                     let range = frame.source_range();
                     let start = instance
@@ -684,28 +654,19 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     })?;
                     if let Some(record) = record {
                         records.push(record);
-                        accepted_frames.push(frame);
                     }
                 }
-                let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
+                let (decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
                 untyped_distance_properties = untyped_distance_properties
                     .checked_add(untyped_count)
                     .ok_or_else(|| {
                         CodecError::Malformed("untyped material distance count overflows".into())
                     })?;
-                let decoded_ids = decoded
-                    .iter()
-                    .map(|appearance| appearance.id.as_str())
-                    .collect::<std::collections::HashSet<_>>();
-                let mut fixed = Vec::new();
-                for frame in accepted_frames {
-                    fixed.extend(decode_fixed_logical_records(std::slice::from_ref(frame))?);
-                }
-                fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
-                decoded.append(&mut fixed);
                 decoded
             } else {
-                decode_fixed_logical_records(&record_frames)?
+                return Err(CodecError::malformed(
+                    "Protein asset packages no schema for its instance records",
+                ));
             };
             Ok(Some((appearances, catalog)))
         })?;
@@ -984,21 +945,8 @@ fn appearance_base_color_property_id(
         return Some("common_Tint_color");
     }
 
-    let id = match record.schema.as_str() {
-        "GenericSchema" => "generic_diffuse",
-        "MetalSchema" => "metal_color",
-        "MetallicPaintSchema" => "metallicpaint_base_color",
-        "PlasticVinylSchema" => "plasticvinyl_color",
-        "PrismLayeredSchema" => "layered_diffuse",
-        "PrismMetalSchema" => "metal_f0",
-        "PrismOpaqueSchema" => "opaque_albedo",
-        "PrismTransparentSchema" => "transparent_color",
-        // `PrismCommonSchema` supplies the common fallback used by derived
-        // families that do not define one primary constant-colour member.
-        _ if record.properties.contains_key("surface_albedo") => "surface_albedo",
-        _ => return None,
-    };
-    Some(id)
+    let id = schema_base_color_property(record.schema.as_str());
+    (id != "surface_albedo" || record.properties.contains_key(id)).then_some(id)
 }
 
 fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<Color> {
@@ -2154,156 +2102,6 @@ fn nested_entry<'a>(
     Ok(None)
 }
 
-/// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
-/// Protein assets package schemas and use the schema-driven path instead.
-fn decode_fixed_logical_records(
-    frames: &[cadmpeg_protein::framing::RecordFrame],
-) -> Result<Vec<Appearance>, CodecError> {
-    let mut appearances = Vec::new();
-    for frame in frames {
-        if let Some(appearance) = decode_fixed_record(frame.bytes())? {
-            appearances.push(appearance);
-        }
-    }
-    Ok(appearances)
-}
-
-/// Decode one record of a fixed source-less layout.
-///
-/// The schema set here is exactly the set [`encode_protein`] emits, and the
-/// offsets are that encoder's own layout rather than a property order stated by
-/// the format. A record carrying any other schema declines: its member offsets
-/// follow from the schema packaged beside it, which the schema-driven path
-/// reads. That covers the `interior_model` subtypes with no fixed layout here,
-/// `PrismLayeredSchema` and `PrismWoodSchema`, whose colour offset must not be
-/// assumed from the opaque, metal, or transparent layouts.
-fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> {
-    let mut position = RECORD_MARKER.len();
-    let Some(schema) = take_lp_utf8(record, &mut position) else {
-        return Ok(None);
-    };
-    let Some(guid) = take_lp_utf8(record, &mut position) else {
-        return Ok(None);
-    };
-    let Some(base) = take_lp_utf8(record, &mut position) else {
-        return Ok(None);
-    };
-    let Some(asset_lib_id) = take_lp_utf8(record, &mut position) else {
-        return Ok(None);
-    };
-    let color = match schema.as_str() {
-        "GenericSchema" => {
-            let Some(delta) = generic_connection_delta(record, position) else {
-                return Ok(None);
-            };
-            fixed_rgba(record, position + 112 + delta)
-        }
-        "PrismOpaqueSchema" | "PrismMetalSchema" => fixed_rgba(record, position + 8),
-        "PrismTransparentSchema" => fixed_rgba(record, position + 121),
-        "PhysMatSchema"
-        | "StructuralMetalSchema"
-        | "StructuralPlasticSchema"
-        | "ThermalSolidSchema" => None,
-        _ => return Ok(None),
-    };
-    let mut properties = BTreeMap::new();
-    if schema == "GenericSchema" {
-        let Some(delta) = generic_connection_delta(record, position) else {
-            return Ok(None);
-        };
-        fixed_tagged_scalar(
-            &mut properties,
-            "reflectivity_at_0deg",
-            record,
-            position + 171 + delta,
-        );
-        fixed_tagged_scalar(
-            &mut properties,
-            "refraction_index",
-            record,
-            position + 197 + delta,
-        );
-    } else if matches!(schema.as_str(), "PrismOpaqueSchema" | "PrismMetalSchema") {
-        if let Some(marker) = find_from(record, b"\x0e\x20\x00\x00", position) {
-            fixed_scalar(&mut properties, "surface_roughness", record, marker + 4);
-        }
-    } else if schema == "PrismTransparentSchema" {
-        fixed_scalar(&mut properties, "refraction_index", record, position + 169);
-    }
-    let properties = cadmpeg_core::text::named_entries(
-        format_args!("f3d:design:appearance#{guid}"),
-        properties,
-    )?;
-    Ok(Some(Appearance {
-        native_ref: None,
-        id: crate::ids::appearance_id(appearance_key(&guid)?),
-        name: Some(base),
-        asset_guid: Some(guid.clone()),
-        library_id: library_id(&asset_lib_id),
-        visual_guid: (!matches!(
-            schema.as_str(),
-            "PhysMatSchema"
-                | "StructuralMetalSchema"
-                | "StructuralPlasticSchema"
-                | "ThermalSolidSchema"
-        ))
-        .then_some(guid),
-        physical_token: None,
-        schema: Some(schema),
-        category: None,
-        base_color: color,
-        properties,
-        textures: Vec::new(),
-    }))
-}
-
-fn fixed_scalar(out: &mut BTreeMap<String, FiniteReal>, name: &str, bytes: &[u8], offset: usize) {
-    if let Some(value) = View::f64_le_at(bytes, offset).and_then(FiniteReal::new) {
-        out.insert(name.to_owned(), value);
-    }
-}
-
-fn fixed_tagged_scalar(
-    out: &mut BTreeMap<String, FiniteReal>,
-    name: &str,
-    bytes: &[u8],
-    offset: usize,
-) {
-    if bytes.get(offset..offset + 4) == Some(b"\x0c\x00\x00\x00") {
-        fixed_scalar(out, name, bytes, offset + 4);
-    }
-}
-
-fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
-    let mut values = [0.0; 4];
-    for (ordinal, value) in values.iter_mut().enumerate() {
-        let at = offset + ordinal * 8;
-        *value = View::f64_le_at(bytes, at)?;
-    }
-    decoded_color(values)
-}
-
-fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> {
-    let slot = value_block.checked_add(102)?;
-    match record.get(slot) {
-        Some(0) => Some(0),
-        Some(1) if slot + 6 <= record.len() => {
-            let count = index_from_u32(View::u32_le_at(record, slot + 2)?);
-            if count > 8 {
-                return None;
-            }
-            let mut position = slot + 6;
-            for _ in 0..count {
-                let length = index_from_u32(View::u32_le_at(record, position)?);
-                position += 4;
-                record.get(position..position + length)?;
-                position += length;
-            }
-            position.checked_sub(slot + 1)
-        }
-        _ => None,
-    }
-}
 
 #[cfg(test)]
 mod tests;

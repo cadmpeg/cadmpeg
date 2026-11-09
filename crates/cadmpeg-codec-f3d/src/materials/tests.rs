@@ -671,18 +671,6 @@ fn visual_preset_fallback_requires_one_record() {
 }
 
 #[test]
-fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
-    let mut record = vec![0; 120];
-    record[102] = 2;
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
-
-    record[102] = 1;
-    record[104..108].copy_from_slice(&1u32.to_le_bytes());
-    record[108..112].copy_from_slice(&16u32.to_le_bytes());
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
-}
-
-#[test]
 fn decoded_color_requires_finite_normalized_channels() {
     assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
     for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
@@ -1889,6 +1877,12 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
     zip.start_file("AssetData/InstanceProperties.bin", options)
         .unwrap();
     zip.write_all(&instance).unwrap();
+    zip.start_file("Schemas/InstanceSchema.xml", options)
+        .unwrap();
+    zip.write_all(
+        crate::test_support::protein_test::generated_protein_schema("GenericSchema").as_bytes(),
+    )
+    .unwrap();
     let protein = zip.finish().unwrap().into_inner();
 
     let edits = std::collections::BTreeMap::from([(

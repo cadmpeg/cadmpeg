@@ -9,54 +9,73 @@ use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
 };
 
-pub(crate) fn generated_instance_properties_for(guid: &str) -> Vec<u8> {
-    let mut logical = RECORD_MARKER.to_vec();
-    lp_ascii(&mut logical, "GenericSchema");
-    lp_ascii(&mut logical, guid);
-    lp_ascii(&mut logical, "Prism-001");
-    lp_ascii(&mut logical, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-    let value_block = logical.len();
-    logical.resize(value_block + 209, 0);
-    for (ordinal, value) in [0.1f64, 0.2, 0.3, 1.0].into_iter().enumerate() {
-        let offset = value_block + 112 + ordinal * 8;
-        logical[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    logical[value_block + 171..value_block + 175].copy_from_slice(b"\x0c\x00\x00\x00");
-    logical[value_block + 175..value_block + 183].copy_from_slice(&0.25f64.to_le_bytes());
-    logical[value_block + 197..value_block + 201].copy_from_slice(b"\x0c\x00\x00\x00");
-    logical[value_block + 201..value_block + 209].copy_from_slice(&1.5f64.to_le_bytes());
-
-    paged_instance_properties(&logical)
+/// One member of a synthetic schema-driven Protein record.
+enum Member {
+    Color([f64; 4]),
+    Float(f64),
 }
 
-pub(crate) fn generated_prism_instance_properties(schema: &str, guid: &str) -> Vec<u8> {
+/// The members a synthetic record of `schema` stores, in schema identifier
+/// order, as the schema-driven reader consumes them.
+fn generated_members(schema: &str) -> Vec<(&'static str, Member)> {
+    let color = Member::Color([0.1, 0.2, 0.3, 1.0]);
+    match schema {
+        "GenericSchema" => vec![
+            ("generic_diffuse", color),
+            ("generic_reflectivity_at_0deg", Member::Float(0.25)),
+            ("generic_refraction_index", Member::Float(1.5)),
+        ],
+        "PrismOpaqueSchema" => vec![
+            ("opaque_albedo", color),
+            ("surface_roughness", Member::Float(0.25)),
+        ],
+        "PrismTransparentSchema" => vec![
+            ("transparent_color", color),
+            ("transparent_refraction_index", Member::Float(1.5)),
+        ],
+        _ => panic!("unsupported generated Protein schema"),
+    }
+}
+
+/// The schema document that declares the members of a synthetic record.
+pub(crate) fn generated_protein_schema(schema: &str) -> String {
+    let mut document = format!("<?xml version=\"1.0\"?>\n<Schema>\n  <UID val=\"{schema}\"/>\n");
+    for (id, member) in generated_members(schema) {
+        let tag = match member {
+            Member::Color(_) => "Color",
+            Member::Float(_) => "Float",
+        };
+        document.push_str(&format!("  <{tag} id=\"{id}\"/>\n"));
+    }
+    document.push_str("</Schema>\n");
+    document
+}
+
+fn generated_record(schema: &str, guid: &str) -> Vec<u8> {
     let mut logical = RECORD_MARKER.to_vec();
     lp_ascii(&mut logical, schema);
     lp_ascii(&mut logical, guid);
     lp_ascii(&mut logical, "Prism-001");
     lp_ascii(&mut logical, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-    let position = logical.len();
-    match schema {
-        "PrismOpaqueSchema" => {
-            logical.resize(position + 96, 0);
-            for (ordinal, value) in [0.1f64, 0.2, 0.3, 1.0].into_iter().enumerate() {
-                let offset = position + 8 + ordinal * 8;
-                logical[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    for (_, member) in generated_members(schema) {
+        match member {
+            Member::Color(rgba) => {
+                for value in rgba {
+                    logical.extend_from_slice(&value.to_le_bytes());
+                }
             }
-            logical[position + 64..position + 68].copy_from_slice(b"\x0e\x20\x00\x00");
-            logical[position + 68..position + 76].copy_from_slice(&0.25f64.to_le_bytes());
+            Member::Float(value) => logical.extend_from_slice(&value.to_le_bytes()),
         }
-        "PrismTransparentSchema" => {
-            logical.resize(position + 177, 0);
-            for (ordinal, value) in [0.1f64, 0.2, 0.3, 1.0].into_iter().enumerate() {
-                let offset = position + 121 + ordinal * 8;
-                logical[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-            }
-            logical[position + 169..position + 177].copy_from_slice(&1.5f64.to_le_bytes());
-        }
-        _ => panic!("unsupported generated Prism schema"),
     }
     paged_instance_properties(&logical)
+}
+
+pub(crate) fn generated_instance_properties_for(guid: &str) -> Vec<u8> {
+    generated_record("GenericSchema", guid)
+}
+
+pub(crate) fn generated_prism_instance_properties(schema: &str, guid: &str) -> Vec<u8> {
+    generated_record(schema, guid)
 }
 
 fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
