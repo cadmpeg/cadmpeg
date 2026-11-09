@@ -789,10 +789,8 @@ fn probe_table(
     // The strip, position and normal descriptors are the mesh itself; the
     // channels hold the auxiliary descriptors that follow them.
     let mut channels = Vec::with_capacity(TABLE_DESCRIPTORS.len() - CORE_DESCRIPTORS);
-    for (&(data, end, item_size_field, _), &(_, kind, flags)) in ranges
-        .iter()
-        .zip(&TABLE_DESCRIPTORS)
-        .skip(CORE_DESCRIPTORS)
+    for (&(data, end, item_size_field, _), &(_, kind, flags)) in
+        ranges.iter().zip(&TABLE_DESCRIPTORS).skip(CORE_DESCRIPTORS)
     {
         let Ok(channel) = TessellationChannel::new(
             cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
