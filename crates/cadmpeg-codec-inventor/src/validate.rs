@@ -2578,6 +2578,11 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
+                        &crate::feature::body_selection::ProducerRecords {
+                            features: &data.pm_dc_features,
+                            labels: &data.pm_dc_feature_labels,
+                            properties: &data.pm_dc_feature_properties,
+                        },
                     ),
                 )
             })
@@ -2605,7 +2610,21 @@ fn validate_features(
                 },
             );
             if expected.ok().is_none_or(|expected| {
-                !crate::feature::body_selection::matches(expected, definition, &body_joins, None)
+                !crate::feature::body_selection::split_matches(
+                    expected,
+                    definition,
+                    &body_joins,
+                    &crate::feature::body_selection::produced_before(
+                        &ir.model.features,
+                        &ir.model.feature_result_topologies,
+                        feature,
+                        &crate::feature::body_selection::ProducerRecords {
+                            features: &data.pm_dc_features,
+                            labels: &data.pm_dc_feature_labels,
+                            properties: &data.pm_dc_feature_properties,
+                        },
+                    ),
+                )
             }) {
                 findings.push(finding(
                     Check::NativeLinks,
@@ -4032,7 +4051,8 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
             parameter,
             ..
         } => references.extend([first.index(), second.index(), parameter.index()]),
-        PmDcSketchConstraintKind::Radius { entity, .. } => {
+        PmDcSketchConstraintKind::Radius { entity, .. }
+        | PmDcSketchConstraintKind::CircleParameter { entity, .. } => {
             references.push(entity.index());
         }
         PmDcSketchConstraintKind::Diameter {
