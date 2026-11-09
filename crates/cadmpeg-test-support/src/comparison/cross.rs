@@ -33,6 +33,17 @@ pub(super) fn shapes_agree(left: &Value, right: &Value) -> Result<(), String> {
     walk_shape(left, right, &mut path)
 }
 
+/// The `left` items to compare in step with `right`. A null item is a
+/// reference to a record that need not reappear, which a writer either
+/// replaces in place or omits from the list.
+pub(super) fn aligned<'v>(left: &'v [Value], right: &[Value]) -> Option<Vec<&'v Value>> {
+    if left.len() == right.len() {
+        return Some(left.iter().collect());
+    }
+    let kept: Vec<&Value> = left.iter().filter(|item| !item.is_null()).collect();
+    (kept.len() == right.len()).then_some(kept)
+}
+
 /// Walks two colour shapes in step; `right`-only object entries are ignored.
 fn walk_shape(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
     match (left, right) {
@@ -55,7 +66,7 @@ fn walk_shape(left: &Value, right: &Value, path: &mut String) -> Result<(), Stri
             }
         }
         (Value::Array(left_items), Value::Array(right_items)) => {
-            if left_items.len() != right_items.len() {
+            let Some(left_items) = aligned(left_items, right_items) else {
                 return Err(disagreement(
                     path,
                     &format!(
@@ -64,8 +75,8 @@ fn walk_shape(left: &Value, right: &Value, path: &mut String) -> Result<(), Stri
                         right_items.len()
                     ),
                 ));
-            }
-            for (index, (left_child, right_child)) in left_items.iter().zip(right_items).enumerate()
+            };
+            for (index, (left_child, right_child)) in left_items.into_iter().zip(right_items).enumerate()
             {
                 let restore = path.len();
                 path.push('[');
@@ -175,7 +186,7 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
             Ok(())
         }
         (Value::Array(left_items), Value::Array(right_items)) => {
-            if left_items.len() != right_items.len() {
+            let Some(left_items) = aligned(left_items, right_items) else {
                 return Err(disagreement(
                     path,
                     &format!(
@@ -184,8 +195,8 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
                         right_items.len()
                     ),
                 ));
-            }
-            for (index, (left_child, right_child)) in left_items.iter().zip(right_items).enumerate()
+            };
+            for (index, (left_child, right_child)) in left_items.into_iter().zip(right_items).enumerate()
             {
                 let restore = path.len();
                 path.push('[');

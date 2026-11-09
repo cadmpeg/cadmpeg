@@ -96,40 +96,54 @@ fn references_agree_with_pairs(
                     references_agree_with_pairs(value, other, before, after, pairs, owners)
                 })
         }),
-        (Value::Array(source), Value::Array(target)) => source
-            .iter()
-            .zip(target)
-            .all(|(a, b)| references_agree_with_pairs(a, b, before, after, pairs, owners)),
+        (Value::Array(source), Value::Array(target)) => {
+            let aligned = super::cross::aligned(source, target)
+                .unwrap_or_else(|| source.iter().collect());
+            aligned
+                .into_iter()
+                .zip(target)
+                .all(|(a, b)| references_agree_with_pairs(a, b, before, after, pairs, owners))
+        }
         _ => true,
     }
 }
 
-fn incoming_references(document: &Document) -> Vec<Vec<(usize, Vec<String>)>> {
+/// A reference into a record: its owner, its path, and its path with the
+/// array indices counted over the non-null items only.
+type Incoming = (usize, Vec<String>, Vec<String>);
+
+fn incoming_references(document: &Document) -> Vec<Vec<Incoming>> {
     fn visit(
         value: &Value,
         owner: usize,
-        path: &mut Vec<String>,
+        paths: &mut (Vec<String>, Vec<String>),
         ids: &BTreeMap<String, usize>,
-        incoming: &mut [Vec<(usize, Vec<String>)>],
+        incoming: &mut [Vec<Incoming>],
     ) {
         match value {
             Value::String(id) => {
                 if let Some(index) = ids.get(id) {
-                    incoming[*index].push((owner, path.clone()));
+                    incoming[*index].push((owner, paths.0.clone(), paths.1.clone()));
                 }
             }
             Value::Object(fields) => {
                 for (key, child) in fields {
-                    path.push(key.clone());
-                    visit(child, owner, path, ids, incoming);
-                    path.pop();
+                    paths.0.push(key.clone());
+                    paths.1.push(key.clone());
+                    visit(child, owner, paths, ids, incoming);
+                    paths.0.pop();
+                    paths.1.pop();
                 }
             }
             Value::Array(items) => {
+                let mut compact = 0_usize;
                 for (index, child) in items.iter().enumerate() {
-                    path.push(index.to_string());
-                    visit(child, owner, path, ids, incoming);
-                    path.pop();
+                    paths.0.push(index.to_string());
+                    paths.1.push(compact.to_string());
+                    visit(child, owner, paths, ids, incoming);
+                    paths.0.pop();
+                    paths.1.pop();
+                    compact += usize::from(!child.is_null());
                 }
             }
             _ => {}
@@ -140,7 +154,7 @@ fn incoming_references(document: &Document) -> Vec<Vec<(usize, Vec<String>)>> {
         visit(
             &record.value,
             owner,
-            &mut Vec::new(),
+            &mut (Vec::new(), Vec::new()),
             &document.ids,
             &mut incoming,
         );
@@ -148,18 +162,21 @@ fn incoming_references(document: &Document) -> Vec<Vec<(usize, Vec<String>)>> {
     incoming
 }
 
+/// Whether every paired owner of `left` holds `right` where it holds `left`.
+/// A `left` path may count the indices of its arrays over all items or over
+/// the non-null items, since a writer replaces or omits a nulled reference.
 fn incoming_agrees_with_pairs(
     left: usize,
     right: usize,
-    source: &[Vec<(usize, Vec<String>)>],
-    target: &[Vec<(usize, Vec<String>)>],
+    source: &[Vec<Incoming>],
+    target: &[Vec<Incoming>],
     pairs: &BTreeMap<usize, usize>,
 ) -> bool {
-    source[left].iter().all(|(owner, path)| {
+    source[left].iter().all(|(owner, path, compact)| {
         pairs.get(owner).is_none_or(|paired| {
-            target[right]
-                .iter()
-                .any(|(candidate, target_path)| candidate == paired && target_path == path)
+            target[right].iter().any(|(candidate, target_path, _)| {
+                candidate == paired && (target_path == path || target_path == compact)
+            })
         })
     })
 }
