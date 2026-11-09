@@ -146,8 +146,14 @@ fn coerced(
         _ => None,
     };
     if let Some(content) = empty {
+        // An empty stored list keeps its own spelling and status.
+        let stored = if crate::attributes::semantic_text(source).as_deref() == Some("[]") {
+            xml::native_named(source, names, available)
+        } else {
+            None
+        };
         return Some((
-            xml::property(&source.name, &source.type_name, content),
+            stored.unwrap_or_else(|| xml::property(&source.name, &source.type_name, content)),
             "[]".to_owned(),
         ));
     }
@@ -276,11 +282,13 @@ pub(super) fn dimension_references(
     use cadmpeg_ir::references::ReferenceTarget;
     for role in ["References2D", "References3D", "Source3d"] {
         let Some(selections) = annotation.references.get(role) else {
-            if annotation
-                .parameters
-                .get(role)
-                .is_some_and(|value| value == "[]")
-            {
+            // A list text that does not parse is restored as the empty list.
+            if annotation.parameters.get(role).is_some_and(|value| {
+                !matches!(
+                    serde_json::from_str::<Vec<serde_json::Value>>(value),
+                    Ok(list) if !list.is_empty()
+                )
+            }) {
                 let empty = object.properties.get(role).and_then(|xml| {
                     let document = roxmltree::Document::parse(xml).ok()?;
                     if document.root_element().attribute("type") != Some("App::PropertyLinkSubList")
