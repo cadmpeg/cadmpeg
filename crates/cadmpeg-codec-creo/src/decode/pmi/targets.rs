@@ -137,13 +137,25 @@ fn surface_tolerance_target(
             ),
             _ => (None, None),
         },
-        SurfaceFaces::Ambiguous => (
-            None,
-            Some(ambiguous_link_note(
-                &format!("Geometric tolerance {owner_type}:{owner}"),
-                id,
-            )),
-        ),
+        SurfaceFaces::Ambiguous(faces) => {
+            let link = format!("Geometric tolerance {owner_type}:{owner}");
+            match faces.as_slice() {
+                [face] => (
+                    Some(ToleranceTarget::Surface(PmiTarget::Face {
+                        face: face.clone(),
+                    })),
+                    Some(ambiguous_link_note(
+                        &link,
+                        id,
+                        "its target uses the unique VisibGeom face by assumption",
+                    )),
+                ),
+                _ => (
+                    None,
+                    Some(ambiguous_link_note(&link, id, "its target was withheld")),
+                ),
+            }
+        }
         SurfaceFaces::Unresolved => (None, None),
     }
 }
@@ -227,8 +239,8 @@ fn resolve_dimension(
                     }
                 }
             }
-            SurfaceFaces::Ambiguous => {
-                notes.push(ambiguous_link_note(link, *id));
+            SurfaceFaces::Ambiguous(_) => {
+                notes.push(ambiguous_link_note(link, *id, "its target was withheld"));
                 resolved = false;
             }
             SurfaceFaces::Unresolved => resolved = false,
@@ -271,8 +283,9 @@ fn resolve_edge_dimension(attachments: &[(u32, u32)], ir: &CadIr) -> Option<Dime
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SurfaceFaces {
     Faces(Vec<FaceId>),
-    /// The identifier names a visible surface with faces and a datum surface.
-    Ambiguous,
+    /// The identifier names a visible surface with these faces and a datum
+    /// surface.
+    Ambiguous(Vec<FaceId>),
     Unresolved,
 }
 
@@ -297,7 +310,7 @@ fn surface_faces(ir: &CadIr, id: u32) -> SurfaceFaces {
     let faces = faces_on(&|surface| *surface == visible);
     if !faces.is_empty() {
         if ir.model.surfaces.iter().any(|surface| surface.id == datum) {
-            return SurfaceFaces::Ambiguous;
+            return SurfaceFaces::Ambiguous(faces);
         }
         return SurfaceFaces::Faces(faces);
     }
@@ -316,9 +329,9 @@ fn surface_faces(ir: &CadIr, id: u32) -> SurfaceFaces {
 }
 
 /// The loss note for a link whose surface identifier names both sections.
-fn ambiguous_link_note(link: &str, id: u32) -> LossNote {
+fn ambiguous_link_note(link: &str, id: u32, outcome: &str) -> LossNote {
     CreoLossCode::PmiTargetNamespaceAmbiguous.note(format!(
-        "{link} surface link {id} names a VisibGeom surface with faces and an ActDatums surface; its target was withheld."
+        "{link} surface link {id} names a VisibGeom surface with faces and an ActDatums surface; {outcome}."
     ))
 }
 

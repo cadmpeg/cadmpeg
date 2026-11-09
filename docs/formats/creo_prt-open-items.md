@@ -1598,10 +1598,12 @@ the surface's unique bounded face and records the inference. `creo_prt.md`
 uses the faces of two surface links, the visible faces on the carrier of an
 `ActDatums` cylinder link, or for two distinct edge links each
 edge's face that the other edge does not bound, and a type-1 tolerance uses
-the targets of its dimension; it records both inferences. A link whose
-identifier names a `VisibGeom` surface with faces and also an `ActDatums`
-surface selects no target, as in the plane-lookup rule of `creo_prt.md` §6;
-the decoder records each such link with `pmi.target-namespace-ambiguous`. Attachments of type
+the targets of its dimension; it records both inferences. A dimension link
+whose identifier names a `VisibGeom` surface with faces and also an
+`ActDatums` surface selects no target, as in the plane-lookup rule of
+`creo_prt.md` §6. A tolerance link with such an identifier uses the unique
+`VisibGeom` face. The decoder records each such link with
+`pmi.target-namespace-ambiguous`. Attachments of type
 `16`, tolerance attachments of type `1`, a dimension whose two links name one
 edge, and placements of type `5` remain unresolved.
 

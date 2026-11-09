@@ -223,9 +223,24 @@ fn a_tolerance_surface_link_selects_the_unique_visible_face() {
 }
 
 #[test]
-fn a_tolerance_link_that_names_both_sections_charges_the_ambiguity_loss() {
+fn a_tolerance_link_that_names_both_sections_keeps_the_visible_face_and_charges_the_loss() {
     let (target, note) =
         super::surface_tolerance_target(&tolerance_surface_ir(true), 7, (3900, 219));
+    assert!(matches!(
+        target,
+        Some(super::ToleranceTarget::Surface(selected)) if selected == face("7")
+    ));
+    assert_eq!(
+        note.expect("ambiguity note").code,
+        crate::loss::CreoLossCode::PmiTargetNamespaceAmbiguous.kind()
+    );
+}
+
+#[test]
+fn a_tolerance_link_that_names_both_sections_without_a_unique_face_is_withheld() {
+    let mut ir = tolerance_surface_ir(true);
+    visible_face(&mut ir, "8", "creo:visibgeom:surface#7");
+    let (target, note) = super::surface_tolerance_target(&ir, 7, (3900, 219));
     assert!(target.is_none());
     assert_eq!(
         note.expect("ambiguity note").code,
