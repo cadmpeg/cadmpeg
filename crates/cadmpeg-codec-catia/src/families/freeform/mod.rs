@@ -5119,6 +5119,135 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn consolidated_sphere_support_lowers_radius_scaled_jets() {
+        let bytes = crate::test_support::test_a5_bound::a5_sphere_bound_sixth_turn_stream();
+        let sphere = crate::families::b2::records::b2_spheres_from_records(
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+        )
+        .next()
+        .expect("sphere carrier");
+        let sixth = std::f64::consts::FRAC_PI_3;
+        let points = [
+            Point3::new(6.0, 2.0, 3.0),
+            Point3::new(1.0 + 5.0 * sixth.cos(), 2.0 + 5.0 * sixth.sin(), 3.0),
+        ];
+        let mut ir = CadIr::empty();
+        for (index, position) in points.into_iter().enumerate() {
+            ir.model.points.push(Point::new(
+                PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
+                None,
+            ));
+            ir.model.vertices.push(Vertex {
+                id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
+                    .expect("identity grammar"),
+                point: PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
+                tolerance: None,
+            });
+        }
+        let curve_id = CurveId::mint("catia:test:curve#standard-sphere-curve".to_string())
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            parameter_range: None,
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId::mint("catia:test:edge#standard-sphere-edge".to_string())
+                .expect("identity grammar"),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
+            start: VertexId::mint("catia:test:vertex#vertex%230".to_string())
+                .expect("identity grammar"),
+            end: VertexId::mint("catia:test:vertex#vertex%231".to_string())
+                .expect("identity grammar"),
+            tolerance: None,
+        });
+        let support_ids = [
+            SurfaceId::mint("catia:test:surface#standard-sphere%230".to_string())
+                .expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#standard-sphere%231".to_string())
+                .expect("identity grammar"),
+        ];
+        for support_id in &support_ids {
+            ir.model.surfaces.push(Surface {
+                id: support_id.clone(),
+                geometry: crate::families::b2::records::b2_sphere_geometry(&sphere),
+                source_object: None,
+            });
+        }
+        let _attached = ir.model.add_procedural_curve(
+            &curve_id,
+            ProceduralCurve::new(
+                ProceduralCurveId::mint(
+                    "catia:test:proceduralcurve#standard-sphere-intersection".to_string(),
+                )
+                .expect("identity grammar"),
+                ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext::try_new(
+                        std::array::from_fn(|side| IntcurveSupportSide {
+                            surface: Some(support_ids[side].clone()),
+                            pcurve: None,
+                        }),
+                        [0.0, 1.0],
+                        std::array::from_fn(|_| Vec::new()),
+                    )
+                    .expect("valid IntcurveSupportContext fixture"),
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+            ),
+        );
+
+        let attached = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
+        .expect("valid source object identity");
+        assert_eq!(attached.standard_edges, 1);
+        let context = match ir.model.procedural_curves[0].definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => context,
+            ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
+            _ => panic!("sphere support keeps a surface construction"),
+        };
+        let [_, end] = context.parameter_range().endpoints();
+        let mut lowered = 0;
+        for side in context.sides() {
+            let Some(pcurve) = side.pcurve.as_ref() else {
+                continue;
+            };
+            assert!(side
+                .surface
+                .as_ref()
+                .is_some_and(|id| id.as_str().starts_with("catia:consolidated:sphere#")));
+            let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                end,
+            )
+            .expect("lowered pcurve end");
+            assert!((uv.u - sixth).abs() < 1e-6 && uv.v.abs() < 1e-6, "{uv:?}");
+            lowered += 1;
+        }
+        assert!(lowered > 0);
+    }
+
     /// A plane whose chart origin and axes differ from the stored chart used by
     /// a consolidated side, together with definition sites on it. The stored
     /// chart is the target chart turned by `angle` about the site origin and

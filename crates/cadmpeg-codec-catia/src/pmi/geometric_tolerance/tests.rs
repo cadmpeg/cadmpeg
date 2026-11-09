@@ -113,6 +113,7 @@ enum FixtureCase {
     AmbiguousTargets,
     MultipleTargets,
     UnsupportedLastDatum,
+    KeylessMain,
 }
 
 #[derive(Clone, Copy)]
@@ -156,7 +157,7 @@ fn field_pair(names: [&str; 2], options: Options) -> Vec<u8> {
 fn scalar_declaration(
     names: [&str; 2],
     values: &[u32],
-    stored_key: u32,
+    stored_key: Option<u32>,
     options: Options,
 ) -> Vec<u8> {
     let mut bytes = field_pair(names, options);
@@ -175,9 +176,14 @@ fn scalar_declaration(
         0,
         0x82,
         0x82,
-        0x80,
     ]);
-    bytes.extend(stored_key.to_le_bytes());
+    match stored_key {
+        Some(stored_key) => {
+            bytes.push(0x80);
+            bytes.extend(stored_key.to_le_bytes());
+        }
+        None => bytes.push(0x81),
+    }
     bytes
 }
 
@@ -268,14 +274,7 @@ fn primitive(
     } else {
         entity.push(0x37);
     }
-    entity.extend([
-        0x81,
-        if value.is_some() {
-            options.trailer
-        } else {
-            0x92
-        },
-    ]);
+    entity.extend([0x81, options.trailer]);
     let mut object = vec![0x14, 1, 0x91];
     object.extend(reference(owner, options.wide));
     object.extend(frame(0x0a, vec![0xfe]));
@@ -287,17 +286,19 @@ fn fixture(options: Options) -> Vec<u8> {
     let mut declarations = scalar_declaration(
         ["TolBloc", "CATTPSToleranceData"],
         &[options.subtype, 0, 0, 1, 9],
-        key(id(if matches!(options.case, FixtureCase::WrongMainKey) {
-            3
-        } else {
-            2
-        })),
+        (!matches!(options.case, FixtureCase::KeylessMain)).then(|| {
+            key(id(if matches!(options.case, FixtureCase::WrongMainKey) {
+                3
+            } else {
+                2
+            }))
+        }),
         options,
     );
     let mut secondary_declaration = scalar_declaration(
         ["TolWiDRF", "CATTPSToleranceWiDRFData"],
         &[0, options.secondary, 0, 0],
-        key(id(
+        Some(key(id(
             if matches!(options.case, FixtureCase::UnrelatedSecondaryKey) {
                 11
             } else if matches!(options.case, FixtureCase::SecondaryFrameKey) {
@@ -305,7 +306,7 @@ fn fixture(options: Options) -> Vec<u8> {
             } else {
                 12
             },
-        )),
+        ))),
         options,
     );
     if matches!(options.case, FixtureCase::MalformedSecondaryKey) {
@@ -397,7 +398,7 @@ fn fixture(options: Options) -> Vec<u8> {
             scalar_declaration(
                 ["FrameBloc", "CATTPSFrameData"],
                 &transitions,
-                key(id(10)),
+                Some(key(id(10))),
                 options,
             ),
             options,
@@ -1024,12 +1025,36 @@ fn admitted_8193_trailer_and_unsupported_trailer_are_distinct() {
 #[test]
 fn every_admitted_magnitude_trailer_transfers_the_tolerance() {
     for trailer in [0x92, 0x93, 0x9b, 0xdb] {
-        let (_, stats) = decode(&fixture(Options {
+        let (ir, stats) = decode(&fixture(Options {
             trailer,
             ..Options::default()
         }));
         assert_eq!(stats.main_tolerances, 1, "trailer 81 {trailer:02x}");
+        assert!(
+            ir.model.pmi.iter().any(|p| matches!(
+                p.definition,
+                PmiDefinition::GeometricTolerance {
+                    datum_system: Some(_),
+                    ..
+                }
+            )),
+            "trailer 81 {trailer:02x} keeps the datum labels"
+        );
     }
+}
+
+#[test]
+fn keyless_main_declaration_transfers_the_tolerance() {
+    let (ir, stats) = decode(&fixture(Options {
+        case: FixtureCase::KeylessMain,
+        ..Options::default()
+    }));
+    assert_eq!(stats.main_tolerances, 1);
+    assert!(ir.model.pmi.iter().any(|p| matches!(
+        &p.definition,
+        PmiDefinition::GeometricTolerance { magnitude, .. }
+            if (magnitude.get().value.get() - 0.762).abs() < VALUE_TOLERANCE
+    )));
 }
 
 #[test]
@@ -1149,14 +1174,14 @@ fn declaration_fixture_with_decoy(
     raw.extend(scalar_declaration(
         names,
         &[99, 0, 0, 0, 0],
-        key(2),
+        Some(key(2)),
         Options::default(),
     ));
     raw.extend(fake_tail);
     raw.extend(scalar_declaration(
         names,
         &[6, 0, 0, 1, 9],
-        key(2),
+        Some(key(2)),
         Options::default(),
     ));
     raw.extend(field_pair(
