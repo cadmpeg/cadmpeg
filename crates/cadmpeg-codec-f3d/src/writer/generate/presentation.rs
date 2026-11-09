@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use sha2::{Digest, Sha256};
 
@@ -94,7 +93,7 @@ impl GeneratedDesignRegistry {
         target: &CadIr,
         bindings: DesignBindingsValidated<'_>,
         attributes: &AttributeIndex<'_>,
-    ) -> Result<Self, CodecError> {
+    ) -> Result<Self, crate::writer::WriteError> {
         let native = bindings.native();
         let visibility_by_body = native
             .body_visibilities
@@ -116,17 +115,21 @@ impl GeneratedDesignRegistry {
             let asm_body_key = match metadata {
                 Some(metadata) => metadata.asm_body_key(),
                 None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
-                    |_| CodecError::Malformed("source-less ASM body key is negative".into()),
+                    |_| {
+                        crate::writer::WriteError::Unwritable(
+                            "source-less ASM body key is negative".into(),
+                        )
+                    },
                 )?,
             };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
             if body_map.insert(asm_body_key, entity_suffix).is_some() {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "multiple source-less F3D bodies use ASM body key {asm_body_key}"
                 )));
             }
             if !suffixes.insert(entity_suffix) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "multiple source-less F3D bodies use Design entity {entity_suffix}"
                 )));
             }
@@ -172,7 +175,9 @@ impl GeneratedDesignRegistry {
                     .unwrap_or(0)
                     .checked_add(1)
                     .ok_or_else(|| {
-                        CodecError::InvalidInput("F3D Design record index space is full".into())
+                        crate::writer::WriteError::Unwritable(
+                            "F3D Design record index space is full".into(),
+                        )
                     })?
             };
 
@@ -180,7 +185,7 @@ impl GeneratedDesignRegistry {
             .map(|entries| {
                 let record_index =
                     allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
-                Ok::<_, CodecError>((entries, record_index))
+                Ok::<_, crate::writer::WriteError>((entries, record_index))
             })
             .transpose()?;
         pending.sort_by_key(|(entity_suffix, _, _)| *entity_suffix);
@@ -237,7 +242,7 @@ impl GeneratedDesignRegistry {
                     DESIGN_MODULE_BODY,
                     vec![u64::from(record_index)],
                 )?;
-                Ok::<_, CodecError>(GeneratedBodyMap {
+                Ok::<_, crate::writer::WriteError>(GeneratedBodyMap {
                     entries,
                     record_index,
                     class_tag: dynamic_class_tag(type_index)?,
@@ -257,7 +262,7 @@ impl GeneratedDesignRegistry {
                         .map(|node| u64::from(node.record_index))
                         .collect(),
                 )?;
-                Ok::<_, CodecError>(GeneratedBrowserNodes {
+                Ok::<_, crate::writer::WriteError>(GeneratedBrowserNodes {
                     nodes: browser_nodes,
                     class_tag: dynamic_class_tag(type_index)?,
                 })
@@ -272,17 +277,20 @@ impl GeneratedDesignRegistry {
     }
 }
 
-fn allocate_record_index(used: &mut BTreeSet<u32>, next: &mut u32) -> Result<u32, CodecError> {
+fn allocate_record_index(
+    used: &mut BTreeSet<u32>,
+    next: &mut u32,
+) -> Result<u32, crate::writer::WriteError> {
     while used.contains(next) {
         *next = next.checked_add(1).ok_or_else(|| {
-            CodecError::InvalidInput("F3D Design record index space is full".into())
+            crate::writer::WriteError::Unwritable("F3D Design record index space is full".into())
         })?;
     }
     let allocated = *next;
     used.insert(allocated);
-    *next = next
-        .checked_add(1)
-        .ok_or_else(|| CodecError::InvalidInput("F3D Design record index space is full".into()))?;
+    *next = next.checked_add(1).ok_or_else(|| {
+        crate::writer::WriteError::Unwritable("F3D Design record index space is full".into())
+    })?;
     Ok(allocated)
 }
 
@@ -293,7 +301,7 @@ fn register_generated_type(
     version: u32,
     module: &str,
     mut entity_ids: Vec<u64>,
-) -> Result<usize, CodecError> {
+) -> Result<usize, crate::writer::WriteError> {
     let matches = types
         .iter()
         .enumerate()
@@ -311,12 +319,12 @@ fn register_generated_type(
                 type_guid: type_guid
                     .to_owned()
                     .try_into()
-                    .map_err(CodecError::Malformed)?,
+                    .map_err(crate::writer::WriteError::Unwritable)?,
                 base_type_guid: Some(
                     base_type_guid
                         .to_owned()
                         .try_into()
-                        .map_err(CodecError::Malformed)?,
+                        .map_err(crate::writer::WriteError::Unwritable)?,
                 ),
                 version,
                 module: module.to_owned(),
@@ -326,7 +334,7 @@ fn register_generated_type(
         }
         [ordinal] => *ordinal,
         _ => {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "F3D Design type registry repeats built-in type {type_guid}"
             )))
         }
@@ -339,7 +347,7 @@ fn register_generated_type(
             .as_ref()
             .is_none_or(|base| !base.as_str().eq_ignore_ascii_case(base_type_guid))
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::writer::WriteError::Unwritable(format!(
             "F3D Design type {type_guid} conflicts with its built-in registration"
         )));
     }
@@ -351,18 +359,19 @@ fn register_generated_type(
 
 pub(super) fn dynamic_class_tag(
     type_ordinal: usize,
-) -> Result<crate::records::references::DesignClassTag, CodecError> {
+) -> Result<crate::records::references::DesignClassTag, crate::writer::WriteError> {
     let tag = u32::try_from(type_ordinal)
         .ok()
         .and_then(|ordinal| ordinal.checked_add(256))
         .filter(|tag| *tag <= 999)
         .ok_or_else(|| {
-            CodecError::InvalidInput(
+            crate::writer::WriteError::Unwritable(
                 "source-less F3D Design type registry exceeds three-digit class tags".into(),
             )
         })?;
-    crate::records::references::DesignClassTag::try_from(tag.to_string())
-        .map_err(|error| CodecError::malformed(format_args!("generated Design type: {error}")))
+    crate::records::references::DesignClassTag::try_from(tag.to_string()).map_err(|error| {
+        crate::writer::WriteError::Unwritable(format!("generated Design type: {error}"))
+    })
 }
 
 /// Build an RFC 9562 version-8 UUID from a domain-separated stable identity.

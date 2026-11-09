@@ -1265,6 +1265,14 @@ impl Model {
             .insert(child.clone(), parent.clone());
         Ok(())
     }
+
+    /// Drop the regeneration parent of `child`; whether it had one.
+    pub(crate) fn remove_feature_regeneration_parent(
+        &mut self,
+        child: &crate::features::FeatureId,
+    ) -> bool {
+        self.feature_regeneration_parents.0.remove(child).is_some()
+    }
 }
 
 /// Failure to attach a procedural construction to its sole carrier.

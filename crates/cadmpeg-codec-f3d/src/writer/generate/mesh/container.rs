@@ -2,8 +2,6 @@
 //! Author `.paramesh` mesh-geometry containers by the rules of
 //! [spec §1.1.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#112-mesh-geometry-containers).
 
-use cadmpeg_core::CodecError;
-
 use crate::paramesh::{
     CHANNEL_GROUP, CHANNEL_ROLE, CHANNEL_STREAMS, CHUNK_NAME_TABLE, CHUNK_STREAM,
     FEATURE_EDGE_STREAM, GROUP_GUID, GROUP_KEY, LZMA_PROPERTIES, MAGIC, PROPERTY_KEY,
@@ -120,7 +118,7 @@ fn bytes_field(out: &mut Vec<u8>, field: u64, value: &[u8]) {
 }
 
 /// `MessagePack` string: fixstr or str8 (spec §1.1.2 name tables).
-fn message_pack_string(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+fn message_pack_string(out: &mut Vec<u8>, value: &str) -> Result<(), crate::writer::WriteError> {
     let length = value.len();
     if let Ok(short) = u8::try_from(length) {
         if short < 32 {
@@ -131,7 +129,7 @@ fn message_pack_string(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError>
         out.extend_from_slice(value.as_bytes());
         return Ok(());
     }
-    Err(CodecError::InvalidInput(
+    Err(crate::writer::WriteError::Unwritable(
         "paramesh stream name exceeds 255 bytes".into(),
     ))
 }
@@ -175,7 +173,10 @@ pub(super) fn terminal_delta_values(words: &[u8]) -> Option<Vec<u32>> {
         words.push(view.u32_le()?);
     }
     let (terminal, deltas) = words.split_last()?;
-    let total: i64 = deltas.iter().map(|word| i64::from(word.cast_signed())).sum();
+    let total: i64 = deltas
+        .iter()
+        .map(|word| i64::from(word.cast_signed()))
+        .sum();
     let mut current = i64::from(*terminal).checked_sub(total)?;
     let mut values = Vec::with_capacity(words.len());
     for word in deltas {
@@ -206,21 +207,33 @@ struct Streams {
 }
 
 impl Streams {
-    fn push(&mut self, name: &str, layout: Layout, data: &[u8]) -> Result<(), CodecError> {
-        let id = u32::try_from(self.names.len())
-            .map_err(|_| CodecError::InvalidInput("paramesh stream count exceeds u32".into()))?;
+    fn push(
+        &mut self,
+        name: &str,
+        layout: Layout,
+        data: &[u8],
+    ) -> Result<(), crate::writer::WriteError> {
+        let id = u32::try_from(self.names.len()).map_err(|_| {
+            crate::writer::WriteError::Unwritable("paramesh stream count exceeds u32".into())
+        })?;
         self.names.push((name.to_owned(), id));
         let descriptor = layout.descriptor();
         let mut body = Vec::new();
         body.extend_from_slice(
             &u16::try_from(descriptor.len())
-                .map_err(|_| CodecError::malformed("paramesh descriptor exceeds u16"))?
+                .map_err(|_| {
+                    crate::writer::WriteError::Unwritable("paramesh descriptor exceeds u16".into())
+                })?
                 .to_le_bytes(),
         );
         body.extend_from_slice(descriptor);
         body.extend_from_slice(
             &u32::try_from(data.len())
-                .map_err(|_| CodecError::InvalidInput("paramesh stream exceeds u32 bytes".into()))?
+                .map_err(|_| {
+                    crate::writer::WriteError::Unwritable(
+                        "paramesh stream exceeds u32 bytes".into(),
+                    )
+                })?
                 .to_le_bytes(),
         );
         body.extend_from_slice(&[LZMA_PROPERTIES, RAW_STREAM_MODE]);
@@ -235,7 +248,9 @@ impl Streams {
 
 /// Serialize one container. `None` when the triangle corners cannot be
 /// stored (spec §1.1.2: the implicit first corner must be determined).
-pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, CodecError> {
+pub(super) fn encode(
+    container: &Container<'_>,
+) -> Result<Option<Vec<u8>>, crate::writer::WriteError> {
     let Some(corners) = corner_stream(container.triangles, container.vertices.len()) else {
         return Ok(None);
     };
@@ -246,7 +261,11 @@ pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, Codec
     let mut registry = Vec::new();
     let mut property = Vec::new();
     bytes_field(&mut property, PROPERTY_KEY, b"fusion_uuid");
-    bytes_field(&mut property, PROPERTY_TEXT, container.fusion_uuid.as_bytes());
+    bytes_field(
+        &mut property,
+        PROPERTY_TEXT,
+        container.fusion_uuid.as_bytes(),
+    );
     bytes_field(&mut registry, REGISTRY_PROPERTY, &property);
     let group_count = container
         .channels
@@ -279,7 +298,7 @@ pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, Codec
     streams.push("t", Layout::TerminalDelta, &corners)?;
     for (ordinal, channel) in container.channels.iter().enumerate() {
         let Some(layout) = Layout::for_element(channel.element_code) else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "paramesh element code {} has no stream layout",
                 channel.element_code
             )));
@@ -297,7 +316,9 @@ pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, Codec
             let index_name = format!("c{ordinal}i");
             bytes_field(&mut stream_entry, STREAM_INDEX, index_name.as_bytes());
             let words = terminal_delta(&channel.positions).ok_or_else(|| {
-                CodecError::NotImplemented("paramesh corner positions leave the i32 range".into())
+                crate::writer::WriteError::Unsupported(
+                    "paramesh corner positions leave the i32 range".into(),
+                )
             })?;
             streams.push(&index_name, Layout::TerminalDelta, &words)?;
         }
@@ -323,7 +344,9 @@ pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, Codec
     if !container.feature_edges.is_empty() {
         let endpoints: Vec<u32> = container.feature_edges.iter().flatten().copied().collect();
         let words = terminal_delta(&endpoints).ok_or_else(|| {
-            CodecError::NotImplemented("paramesh feature edges leave the i32 range".into())
+            crate::writer::WriteError::Unsupported(
+                "paramesh feature edges leave the i32 range".into(),
+            )
         })?;
         streams.push("e", Layout::TerminalDelta, &words)?;
         let mut declaration = Vec::new();
@@ -344,7 +367,9 @@ pub(super) fn encode(container: &Container<'_>) -> Result<Option<Vec<u8>>, Codec
         names.extend_from_slice(
             &u16::try_from(count)
                 .map_err(|_| {
-                    CodecError::InvalidInput("paramesh stream count exceeds u16".into())
+                    crate::writer::WriteError::Unwritable(
+                        "paramesh stream count exceeds u16".into(),
+                    )
                 })?
                 .to_be_bytes(),
         );

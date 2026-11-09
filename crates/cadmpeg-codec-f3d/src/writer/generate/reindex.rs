@@ -3,7 +3,6 @@
 
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 
 use super::native_bytes::{
@@ -30,7 +29,7 @@ pub(super) fn preserve_indices(
     topology: &super::index::NativeGenerationIndex<'_>,
     limits: &cadmpeg_core::decode::ResourceLimits,
     starts: &Starts,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if topology.edge_ownerships.is_empty()
         && topology.face_native_keys.is_empty()
         && !model

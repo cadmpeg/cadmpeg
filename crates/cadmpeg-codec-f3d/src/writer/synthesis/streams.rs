@@ -3,7 +3,6 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::native::F3dNative;
@@ -36,7 +35,7 @@ fn scopes(native: &F3dNative) -> BTreeSet<String> {
     result
 }
 
-pub(super) fn validate(native: &F3dNative) -> Result<(), CodecError> {
+pub(super) fn validate(native: &F3dNative) -> Result<(), crate::writer::WriteError> {
     use crate::writer::generate::preconditions::{
         validate_source_less_design_ownership, validate_source_less_sketch_graph,
     };
@@ -65,7 +64,7 @@ pub(super) fn validate(native: &F3dNative) -> Result<(), CodecError> {
             .sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
         for record in &local.design_types {
             if record.module.len() == 36 && crate::bytes::is_guid_prefix(&record.module) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::writer::WriteError::Unwritable(format!(
                     "Design type module name is GUID-shaped: {}",
                     record.module,
                 )));

@@ -324,7 +324,8 @@ mod tests {
                 assert!(super::super::field_u32(field, limit).is_ok());
                 super::super::field_u32(field, limit + 1).unwrap_err()
             };
-            let error: cadmpeg_ir::codec::write::EncodeError = error.into();
+            let error: cadmpeg_ir::codec::write::EncodeError =
+                error.try_into().expect("an encode failure");
             assert!(
                 matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
                 field: actual, limit, value

@@ -155,7 +155,7 @@ impl F3dCodec {
         limits: cadmpeg_core::decode::ResourceLimits,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
-    ) -> Result<PreservedWritePath, CodecError> {
+    ) -> Result<PreservedWritePath, writer::WriteError> {
         let current = decode::document_local_sha256(ir)?;
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy {
@@ -203,7 +203,7 @@ impl F3dCodec {
             result?;
             return Ok(PreservedWritePath::Patched);
         }
-        writer.write_all(data)?;
+        writer.write_all(data).map_err(CodecError::from)?;
         Ok(PreservedWritePath::VerbatimReplay)
     }
 }
@@ -294,15 +294,7 @@ impl EncoderBackend for F3dCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(|error| match error {
-            cadmpeg_core::CodecError::UnsupportedTarget(r) => EncodeError::UnsupportedTarget(r),
-            cadmpeg_core::CodecError::ResourceLimit(l) => EncodeError::ResourceLimit(l),
-            cadmpeg_core::CodecError::Io(e) => EncodeError::from(e),
-            error => {
-                debug_assert!(false, "unmapped F3D encode error: {error}");
-                panic!("unmapped F3D encode error: {error}");
-            }
-        })
+        writer::target::plan(input, &target)
     }
 }
 

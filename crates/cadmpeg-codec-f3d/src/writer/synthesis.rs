@@ -2,7 +2,9 @@
 //! Synthesis admission and reported reductions. Retained bytes never enter here.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{ArenaDispositions, NativeDispositions};
+use cadmpeg_ir::codec::write::{
+    ArenaDispositions, EncodeError, NativeDispositions, ValidatedFinding,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -26,12 +28,159 @@ pub(super) struct Synthesized {
     pub(super) native_dispositions: NativeDispositions,
 }
 
-/// Author an archive from the document, reducing unsupported records locally.
+/// Which writer failures a reduction step absorbs.
+#[derive(Clone, Copy)]
+pub(super) enum Reduction {
+    /// Only an encoder limitation.
+    Limitations,
+    /// Any content the writer cannot write; each omitted record is named.
+    Content,
+}
+
+impl Reduction {
+    pub(super) fn reduces(self, error: &crate::writer::WriteError) -> bool {
+        use crate::writer::WriteError;
+        match self {
+            Self::Limitations => declines(error),
+            Self::Content => matches!(
+                error,
+                WriteError::Unsupported(_)
+                    | WriteError::Unwritable(_)
+                    | WriteError::Codec(
+                        CodecError::NotImplemented(_)
+                            | CodecError::Malformed(_)
+                            | CodecError::InvalidInput(_)
+                            | CodecError::Truncated { .. }
+                    )
+            ),
+        }
+    }
+}
+
+/// Author an archive from the document (#217 §5.0).
+///
+/// A document whose content the writer cannot write as it stands is written
+/// in reduced form, each reduction with a loss that names what it omits:
+/// first without its F3D native records, then without each body or face the
+/// writer cannot write, and last as an empty geometry carrier. Only a
+/// non-finite written value, a caller resource limit, or a target refusal
+/// fails the write.
 pub(super) fn write(
     target: &CadIr,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<Synthesized, CodecError> {
-    let mut prepared = target.clone();
+) -> Result<Synthesized, EncodeError> {
+    face_key_capacity(target)?;
+    let error = match write_document(target, target.clone(), limits, Reduction::Limitations) {
+        Ok(synthesized) => return Ok(synthesized),
+        Err(error) => content_error(target, error)?,
+    };
+    let mut canonical = target.clone();
+    let mut reductions = Vec::new();
+    if let Some(namespace) = canonical.native.0.remove("f3d") {
+        let mut omitted: Vec<&str> = namespace
+            .arenas()
+            .values()
+            .flatten()
+            .map(cadmpeg_ir::native::NativeRecord::id)
+            .collect();
+        omitted.sort_unstable();
+        reductions.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+            "the F3D native records cannot be written ({error}); omitted {} record(s): {}",
+            omitted.len(),
+            omitted.join(", ")
+        )));
+        match write_document(target, canonical.clone(), limits, Reduction::Limitations) {
+            Ok(synthesized) => return Ok(reduced(synthesized, reductions)),
+            Err(error) => {
+                content_error(target, error)?;
+            }
+        }
+    }
+    let error = match write_document(target, canonical, limits, Reduction::Content) {
+        Ok(synthesized) => return Ok(reduced(synthesized, reductions)),
+        Err(error) => content_error(target, error)?,
+    };
+    reductions.push(F3dLossCode::WriterNoExportableSolids.note(format!(
+        "unsupported writer content remains after reduction: {error}; wrote an empty geometry carrier"
+    )));
+    match write_document(target, CadIr::empty(), limits, Reduction::Content) {
+        Ok(synthesized) => Ok(reduced(synthesized, reductions)),
+        Err(error) => {
+            let error = content_error(target, error)?;
+            debug_assert!(false, "the F3D writer writes an empty document: {error}");
+            Ok(Synthesized {
+                bytes: Vec::new(),
+                coverage: super::generate::coverage(
+                    false,
+                    &CadIr::empty(),
+                    &crate::native::F3dNative::default(),
+                ),
+                losses: reductions,
+                native_dispositions: NativeDispositions::for_namespace(
+                    "f3d",
+                    crate::native::F3D_ARENA_NAMES,
+                    cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+                ),
+            })
+        }
+    }
+}
+
+/// Each written face's native key fits its stored field.
+fn face_key_capacity(target: &CadIr) -> Result<(), EncodeError> {
+    let records = target
+        .native
+        .namespace("f3d")
+        .and_then(|namespace| namespace.arenas().get("face_native_keys"))
+        .into_iter()
+        .flatten();
+    for record in records {
+        let written = target
+            .model
+            .faces
+            .iter()
+            .any(|face| face.native_ref.as_deref() == Some(record.id()));
+        let key = record.field("asm_face_key").and_then(|key| key.as_u64());
+        if let (true, Some(key)) = (written, key) {
+            super::capacity::asm_face_key(key)?;
+        }
+    }
+    Ok(())
+}
+
+fn reduced(mut synthesized: Synthesized, mut reductions: Vec<LossNote>) -> Synthesized {
+    reductions.append(&mut synthesized.losses);
+    synthesized.losses = reductions;
+    synthesized
+}
+
+/// The content failure in `error`, or the encode failure that ends the write.
+fn content_error(
+    document: &CadIr,
+    error: crate::writer::WriteError,
+) -> Result<crate::writer::WriteError, EncodeError> {
+    use crate::writer::WriteError;
+    match error {
+        WriteError::Codec(CodecError::ResourceLimit(limit)) => {
+            Err(EncodeError::ResourceLimit(limit))
+        }
+        WriteError::Codec(CodecError::Io(error)) => Err(EncodeError::Io(error)),
+        WriteError::Codec(CodecError::UnsupportedTarget(refusal)) => {
+            Err(EncodeError::UnsupportedTarget(refusal))
+        }
+        error => ValidatedFinding::non_finite(document)
+            .map_or(Ok(error), |proof| Err(EncodeError::InvalidInput(proof))),
+    }
+}
+
+/// Author an archive from `prepared`, reducing unsupported records locally.
+/// Arena and native coverage are stated against `target`.
+fn write_document(
+    target: &CadIr,
+    mut prepared: CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+    reduction: Reduction,
+) -> Result<Synthesized, crate::writer::WriteError> {
     let mut losses = Vec::new();
     topology::repair_body_regions(&mut prepared, &mut losses, limits)?;
     topology::omit_ambiguous_points(&mut prepared, &mut losses)?;
@@ -50,7 +199,7 @@ pub(super) fn write(
             written_recipes = generated.written_recipes;
             generated.coverage
         }
-        Err(error) if declines(&error) => {
+        Err(error) if reduction.reduces(&error) => {
             prepare::solved_carriers(&mut prepared, &mut losses)?;
             prepare::unreferenced_composite_curves(&mut prepared, &mut losses, limits)?;
             prepare::pcurves(&mut prepared, &mut losses)?;
@@ -62,8 +211,8 @@ pub(super) fn write(
                     written_recipes = generated.written_recipes;
                     generated.coverage
                 }
-                Err(error) if declines(&error) => {
-                    prepared = topology::admit_bodies(&prepared, &mut losses, limits)?;
+                Err(error) if reduction.reduces(&error) => {
+                    prepared = topology::admit_bodies(&prepared, &mut losses, limits, reduction)?;
                     native::repair_keys(&mut prepared, limits)?;
                     bytes.clear();
                     match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
@@ -73,7 +222,7 @@ pub(super) fn write(
                             written_recipes = generated.written_recipes;
                             generated.coverage
                         }
-                        Err(error) if declines(&error) => {
+                        Err(error) if reduction.reduces(&error) => {
                             // §5.0: a limitation the reductions cannot
                             // localize is still not a refusal. Shed the
                             // native design the generator cannot express
@@ -88,7 +237,7 @@ pub(super) fn write(
                                     written_recipes = generated.written_recipes;
                                     generated.coverage
                                 }
-                                Err(error) if declines(&error) => {
+                                Err(error) if reduction.reduces(&error) => {
                                     losses.push(F3dLossCode::WriterNoExportableSolids.note(format!(
                                         "unsupported writer content remains after shedding design: {error}; wrote an empty geometry carrier"
                                     )));
@@ -108,7 +257,7 @@ pub(super) fn write(
                                         // carrier is unwritable. Report it and
                                         // return the empty dispositions; only a
                                         // §5.0 precondition still refuses.
-                                        Err(error) if declines(&error) => {
+                                        Err(error) if reduction.reduces(&error) => {
                                             bytes.clear();
                                             losses.push(
                                                 F3dLossCode::WriterNoExportableSolids.note(format!(
@@ -196,6 +345,10 @@ pub(super) fn write(
 /// Internal encoder limitations are reductions. Invalid records and capacity
 /// limits remain preconditions. Native/neutral disagreement is an edit, so it
 /// selects neutral regeneration rather than an invalid-document refusal.
-pub(super) fn declines(error: &CodecError) -> bool {
-    matches!(error, CodecError::NotImplemented(_))
+pub(super) fn declines(error: &crate::writer::WriteError) -> bool {
+    matches!(
+        error,
+        crate::writer::WriteError::Unsupported(_)
+            | crate::writer::WriteError::Codec(CodecError::NotImplemented(_))
+    )
 }

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object attribute user strings authored from neutral string attributes.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::document::CadIr;
 
@@ -58,7 +57,7 @@ pub(super) fn object_user_strings(
 fn anonymous_chunk(
     fields: &[u8],
     children: &[std::ops::Range<usize>],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let mut body = 1_i32.to_le_bytes().to_vec();
     body.extend(0_i32.to_le_bytes());
     body.extend(fields);
@@ -67,7 +66,7 @@ fn anonymous_chunk(
         .map(|range| range.start + 8..range.end + 8)
         .collect::<Vec<_>>();
     let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
+        .map_err(|error| crate::writer::WriteError::Omit(error.to_string()))?;
     let mut direct = Vec::new();
     for range in &ranges {
         direct.extend_from_slice(&body[range]);
@@ -75,9 +74,9 @@ fn anonymous_chunk(
     crc_chunk_with_direct(TCODE_ANONYMOUS_CHUNK, &body, &direct)
 }
 
-fn user_string_list(strings: &[(String, String)]) -> Result<Vec<u8>, CodecError> {
+fn user_string_list(strings: &[(String, String)]) -> Result<Vec<u8>, crate::writer::WriteError> {
     let count = i32::try_from(strings.len())
-        .map_err(|_| CodecError::malformed("user string count exceeds i32"))?;
+        .map_err(|_| crate::writer::WriteError::Omit("user string count exceeds i32".into()))?;
     let mut fields = count.to_le_bytes().to_vec();
     let mut entries = Vec::new();
     for (key, value) in strings {
@@ -110,7 +109,7 @@ fn user_string_list(strings: &[(String, String)]) -> Result<Vec<u8>, CodecError>
     wrapper.extend(payload);
     let children = [1..1 + header_len, 1 + header_len..wrapper.len()];
     let ranges = crate::chunks::direct_checksum_ranges(&(0..wrapper.len()), &children)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
+        .map_err(|error| crate::writer::WriteError::Omit(error.to_string()))?;
     let mut hasher = crc32fast::Hasher::new();
     for range in &ranges {
         hasher.update(&wrapper[range]);
@@ -123,7 +122,7 @@ fn user_string_list(strings: &[(String, String)]) -> Result<Vec<u8>, CodecError>
 /// The attributes userdata chunk that carries `strings`, absent when empty.
 pub(super) fn attributes_userdata(
     strings: &[(String, String)],
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<Vec<u8>>, crate::writer::WriteError> {
     if strings.is_empty() {
         return Ok(None);
     }

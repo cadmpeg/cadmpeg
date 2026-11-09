@@ -21,6 +21,24 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Writes `ir` inheriting its target and asserts that the write succeeds with
+/// a loss that names `record`: content the writer cannot write is written from
+/// the canonical side (#217 §5.0).
+pub(crate) fn assert_written_naming(ir: &CadIr, fidelity: &SourceFidelity, record: &str) {
+    let report = SldprtCodec
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect("content the writer cannot write does not refuse the write");
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(record)),
+        "no loss names {record}: {:?}",
+        report.losses
+    );
+}
+
 /// Supply an authored native envelope for semantic fixture assertions.
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,

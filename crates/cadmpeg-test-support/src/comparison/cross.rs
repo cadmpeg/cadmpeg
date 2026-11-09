@@ -33,15 +33,42 @@ pub(super) fn shapes_agree(left: &Value, right: &Value) -> Result<(), String> {
     walk_shape(left, right, &mut path)
 }
 
-/// The `left` items to compare in step with `right`. A null item is a
-/// reference to a record that need not reappear, which a writer either
+/// The `left` items to compare in step with `right`. A nulled item holds
+/// references to records that need not reappear, which a writer either
 /// replaces in place or omits from the list.
 pub(super) fn aligned<'v>(left: &'v [Value], right: &[Value]) -> Option<Vec<&'v Value>> {
     if left.len() == right.len() {
         return Some(left.iter().collect());
     }
-    let kept: Vec<&Value> = left.iter().filter(|item| !item.is_null()).collect();
+    let kept: Vec<&Value> = left.iter().filter(|item| !nulled(item)).collect();
     (kept.len() == right.len()).then_some(kept)
+}
+
+/// Whether a value states nothing the other side must hold: a null, or a
+/// list of nulled items, which a writer may omit with the list.
+fn absent(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Array(items) => !items.is_empty() && items.iter().all(nulled),
+        _ => false,
+    }
+}
+
+/// Whether a list item stands for a record that need not reappear: a null
+/// reference, or an object that holds one, such as a shell member or a
+/// pcurve use of a dropped record.
+pub(super) fn nulled(item: &Value) -> bool {
+    match item {
+        Value::Null => true,
+        // A colour shape spells an object as `{"object": [[key, value], ...]}`.
+        Value::Object(fields) => match (fields.len(), fields.get("object")) {
+            (1, Some(Value::Array(entries))) => entries
+                .iter()
+                .any(|entry| entry.get(1).is_some_and(Value::is_null)),
+            _ => fields.values().any(Value::is_null),
+        },
+        _ => false,
+    }
 }
 
 /// Walks two colour shapes in step; `right`-only object entries are ignored.
@@ -130,7 +157,7 @@ fn entries_agree(left: &[Value], right: &[Value], path: &mut String) -> Result<(
     let mut used = vec![false; right.len()];
     for left_entry in left {
         let (left_key, left_value) = entry_parts(left_entry)?;
-        if left_value.is_null() {
+        if absent(left_value) {
             continue;
         }
         let mut matched = None;
@@ -171,7 +198,7 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
     match (left, right) {
         (Value::Null, _) => Ok(()),
         (Value::Object(left_map), Value::Object(right_map)) => {
-            for (key, left_child) in left_map.iter().filter(|(_, child)| !child.is_null()) {
+            for (key, left_child) in left_map.iter().filter(|(_, child)| !absent(child)) {
                 let Some(right_child) = right_map.get(key) else {
                     return Err(disagreement(
                         path,

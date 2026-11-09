@@ -2,7 +2,7 @@
 //! Value representations and the value bytes they point to (spec §9.6,
 //! §9.7).
 
-use cadmpeg_core::CodecError;
+use super::Unstatable;
 
 use super::{encode, unsupported, Crate};
 use crate::text::syntax::{Dictionary, DictionaryValue, ListOp, Reference, Value};
@@ -137,13 +137,13 @@ impl Crate {
         value: &Value,
         type_name: &str,
         array: bool,
-    ) -> Result<u64, CodecError> {
+    ) -> Result<u64, Unstatable> {
         let typed = typed(value, type_name, array)
-            .map_err(|error| CodecError::malformed(format_args!("{type_name} value: {error}")))?;
+            .map_err(|error| Unstatable(format!("{type_name} value: {error}")))?;
         self.typed(&typed, type_name)
     }
 
-    fn typed(&mut self, typed: &Typed, type_name: &str) -> Result<u64, CodecError> {
+    fn typed(&mut self, typed: &Typed, type_name: &str) -> Result<u64, Unstatable> {
         let ty = crate_type(type_name)
             .ok_or_else(|| unsupported(&format!("the value type {type_name}")))?;
         let kind = value_kind(ty).ok_or_else(|| unsupported(type_name))?;
@@ -221,7 +221,7 @@ impl Crate {
         lane: &Lane,
         at: usize,
         component: Component,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), Unstatable> {
         match (lane, component) {
             (Lane::Indices(indices), _) => {
                 self.out.extend_from_slice(&indices[at].to_le_bytes());
@@ -318,7 +318,7 @@ impl Crate {
     }
 
     /// The dictionary record of `dictionary`, after the values it boxes.
-    fn dictionary_record(&mut self, dictionary: &Dictionary) -> Result<Vec<u8>, CodecError> {
+    fn dictionary_record(&mut self, dictionary: &Dictionary) -> Result<Vec<u8>, Unstatable> {
         let mut entries = Vec::new();
         for entry in &dictionary.entries {
             let value = match &entry.value {
@@ -343,7 +343,7 @@ impl Crate {
         Ok(record)
     }
 
-    pub(super) fn dictionary(&mut self, dictionary: &Dictionary) -> Result<u64, CodecError> {
+    pub(super) fn dictionary(&mut self, dictionary: &Dictionary) -> Result<u64, Unstatable> {
         if dictionary.entries.is_empty() {
             return Ok(rep(ty::DICTIONARY, 0, false, true));
         }
@@ -359,7 +359,7 @@ impl Crate {
         &mut self,
         ty: u8,
         parts: &[(Option<ListOp>, Vec<ListItem<'_>>)],
-    ) -> Result<u64, CodecError> {
+    ) -> Result<u64, Unstatable> {
         const EXPLICIT: u8 = 1;
         const EXPLICIT_ITEMS: u8 = 1 << 1;
         const ADDED: u8 = 1 << 2;
@@ -414,7 +414,7 @@ impl Crate {
         Ok(rep(ty, start, false, false))
     }
 
-    fn list_item(&mut self, item: &ListItem<'_>, out: &mut Vec<u8>) -> Result<(), CodecError> {
+    fn list_item(&mut self, item: &ListItem<'_>, out: &mut Vec<u8>) -> Result<(), Unstatable> {
         match item {
             ListItem::Token(name) => out.extend_from_slice(&self.token(name).to_le_bytes()),
             ListItem::String(name) => out.extend_from_slice(&self.string(name).to_le_bytes()),
@@ -491,7 +491,7 @@ fn exact_integer(value: f64) -> Option<i32> {
 
 /// The compressed array data (spec §9.7) of a scalar array of `component`
 /// with `lane` elements, or `None` when no compressed form holds it.
-fn compressed(lane: &Lane, component: Component) -> Result<Option<Vec<u8>>, CodecError> {
+fn compressed(lane: &Lane, component: Component) -> Result<Option<Vec<u8>>, Unstatable> {
     let range = || unsupported("an integer outside its type");
     let mut out = cadmpeg_core::decode::u64_from_index(lane.len())
         .to_le_bytes()

@@ -9,8 +9,7 @@
 
 use super::{
     append_curve_entity, curve_reference_span, finite, flatten_curve, number, reference_marker,
-    same_point, CadIr, CodecError, CurveEntityRequest, Entity, EntityStatus, Placement,
-    RevolutionSweep, Sense,
+    same_point, CadIr, CurveEntityRequest, Entity, EntityStatus, Placement, RevolutionSweep, Sense,
 };
 use cadmpeg_ir::geometry::{Curve, ProceduralSurface, ProceduralSurfaceDefinition};
 use cadmpeg_ir::math::Vector3;
@@ -165,12 +164,14 @@ pub(super) fn entities(
     angular_interval: cadmpeg_ir::topology::IncreasingParameterInterval,
     base_index: usize,
     version: crate::IgesVersion,
-) -> Result<Vec<Entity>, CodecError> {
+) -> Result<Vec<Entity>, crate::writer::WriteError> {
     let mut entities = Vec::new();
     let mut indices = Vec::with_capacity(2);
     for curve in [placed.axis, placed.generatrix] {
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
+            crate::writer::WriteError::Unwritable(
+                "IGES curve carrier has no solved geometry".into(),
+            )
         })?)?;
         let span = curve
             .parameter_range
@@ -189,11 +190,9 @@ pub(super) fn entities(
                 reference_offset: base_index,
             },
         )?;
-        indices.push(
-            base_index
-                .checked_add(local)
-                .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?,
-        );
+        indices.push(base_index.checked_add(local).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("IGES entity index overflows".into())
+        })?);
     }
     let start_angle = angular_interval.lower();
     let terminate_angle = RevolutionSweep::classify(angular_interval)?.terminate_angle(start_angle);

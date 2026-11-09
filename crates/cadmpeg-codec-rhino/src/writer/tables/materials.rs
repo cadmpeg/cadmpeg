@@ -3,8 +3,7 @@
 
 use super::{
     anonymous, anonymous_with_children, class_wrapper, class_wrapper_with_direct, color, component,
-    crc_chunk_with_direct, records, unit_color_channel, utf16, wire_index, CadIr, CodecError, Map,
-    Value,
+    crc_chunk_with_direct, records, unit_color_channel, utf16, wire_index, CadIr, Map, Value,
 };
 use crate::writer::WriteError;
 use cadmpeg_ir::appearance::Appearance;
@@ -61,10 +60,13 @@ const COLOR_FIELDS: [&str; 6] = [
     "transparent",
 ];
 
-fn material_color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], CodecError> {
+fn material_color(
+    fields: Option<&Map<String, Value>>,
+    name: &str,
+) -> Result<[u8; 4], crate::writer::WriteError> {
     match color(fields, name) {
         Ok(color) => Ok(color),
-        Err(CodecError::Malformed(_) | CodecError::InvalidInput(_)) => Ok([0, 0, 0, 0]),
+        Err(crate::writer::WriteError::Omit(_)) => Ok([0, 0, 0, 0]),
         Err(error) => Err(error),
     }
 }
@@ -243,7 +245,7 @@ fn encode_material(
             .and_then(Value::as_bool)
             .unwrap_or(false),
     ));
-    Ok(crc_chunk_with_direct(
+    crc_chunk_with_direct(
         0x2000_8040,
         &class_wrapper_with_direct(
             MATERIAL_CLASS,
@@ -256,7 +258,7 @@ fn encode_material(
             &[],
         )?,
         &[],
-    )?)
+    )
 }
 
 fn legacy_material_minor(fields: Option<&Map<String, Value>>) -> Option<i32> {
@@ -442,11 +444,11 @@ fn encode_legacy_material(
     )?;
     let mut payload = vec![0x20];
     payload.extend(inner);
-    Ok(crc_chunk_with_direct(
+    crc_chunk_with_direct(
         0x2000_8040,
         &class_wrapper_with_direct(MATERIAL_CLASS, &payload, &[0x20])?,
         &[],
-    )?)
+    )
 }
 
 pub(in crate::writer) fn bound_appearance<'a>(
@@ -732,11 +734,13 @@ fn texture_minor(texture: &ParsedTexture) -> i32 {
     }
 }
 
-fn encode_sha1(digest: &[u8; 20]) -> Result<Vec<u8>, CodecError> {
+fn encode_sha1(digest: &[u8; 20]) -> Result<Vec<u8>, crate::writer::WriteError> {
     anonymous(1, 0, digest)
 }
 
-fn encode_file_reference(reference: &ParsedFileReference) -> Result<Vec<u8>, CodecError> {
+fn encode_file_reference(
+    reference: &ParsedFileReference,
+) -> Result<Vec<u8>, crate::writer::WriteError> {
     let name_hash = encode_sha1(&reference.name_sha1)?;
     let content_hash = encode_sha1(&reference.content_sha1)?;
     let mut hash_body = reference.referenced_byte_count.to_le_bytes().to_vec();
@@ -762,7 +766,7 @@ fn encode_file_reference(reference: &ParsedFileReference) -> Result<Vec<u8>, Cod
     anonymous_with_children(1, i32::from(minor), &body, &[child])
 }
 
-fn encode_texture(texture: &ParsedTexture) -> Result<Vec<u8>, CodecError> {
+fn encode_texture(texture: &ParsedTexture) -> Result<Vec<u8>, crate::writer::WriteError> {
     let mut fields = texture.id.to_vec();
     fields.extend(texture.mapping_channel_id.to_le_bytes());
     fields.extend(utf16(&texture.legacy_file_path)?);
@@ -827,7 +831,7 @@ fn texture_array(textures: &[Value], identity: &str) -> Result<Vec<u8>, WriteErr
         )?);
         children.push(start..body.len());
     }
-    Ok(anonymous_with_children(1, 0, &body, &children)?)
+    anonymous_with_children(1, 0, &body, &children)
 }
 
 #[cfg(test)]

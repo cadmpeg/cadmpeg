@@ -108,63 +108,96 @@ fn references_agree_with_pairs(
     }
 }
 
-/// A reference into a record: its owner, its path, and its path with the
-/// array indices counted over the non-null items only.
-type Incoming = (usize, Vec<String>, Vec<String>);
+/// A reference into a record from one of its owners.
+#[derive(Clone)]
+struct Incoming {
+    owner: usize,
+    /// The path to the reference, counting list indices over every item.
+    path: Vec<String>,
+    /// The path, counting list indices over the items that are not nulled.
+    compact: Vec<String>,
+    /// The item count of the innermost list that holds the reference, over
+    /// every item and over the items that are not nulled.
+    lengths: Option<(usize, usize)>,
+}
+
+impl Incoming {
+    /// Whether `other`, a reference from the partner of this owner, sits
+    /// where this one does. A writer replaces a nulled item in place, which
+    /// keeps the list length, or omits it, which shortens the list.
+    fn matches(&self, other: &Self) -> bool {
+        match (self.lengths, other.lengths) {
+            (Some((every, _)), Some((target, _))) if target == every => other.path == self.path,
+            (Some((_, kept)), Some((target, _))) if target == kept => other.path == self.compact,
+            _ => other.path == self.path,
+        }
+    }
+}
 
 fn incoming_references(document: &Document) -> Vec<Vec<Incoming>> {
-    fn visit(
-        value: &Value,
+    struct Walk<'a> {
         owner: usize,
-        paths: &mut (Vec<String>, Vec<String>),
-        ids: &BTreeMap<String, usize>,
-        incoming: &mut [Vec<Incoming>],
-    ) {
+        path: Vec<String>,
+        compact: Vec<String>,
+        lengths: Option<(usize, usize)>,
+        ids: &'a BTreeMap<String, usize>,
+    }
+    fn visit(value: &Value, walk: &mut Walk<'_>, incoming: &mut [Vec<Incoming>]) {
         match value {
             Value::String(id) => {
-                if let Some(index) = ids.get(id) {
-                    incoming[*index].push((owner, paths.0.clone(), paths.1.clone()));
+                if let Some(index) = walk.ids.get(id) {
+                    incoming[*index].push(Incoming {
+                        owner: walk.owner,
+                        path: walk.path.clone(),
+                        compact: walk.compact.clone(),
+                        lengths: walk.lengths,
+                    });
                 }
             }
             Value::Object(fields) => {
                 for (key, child) in fields {
-                    paths.0.push(key.clone());
-                    paths.1.push(key.clone());
-                    visit(child, owner, paths, ids, incoming);
-                    paths.0.pop();
-                    paths.1.pop();
+                    walk.path.push(key.clone());
+                    walk.compact.push(key.clone());
+                    visit(child, walk, incoming);
+                    walk.path.pop();
+                    walk.compact.pop();
                 }
             }
             Value::Array(items) => {
+                let kept = items
+                    .iter()
+                    .filter(|item| !super::cross::nulled(item))
+                    .count();
+                let outer = walk.lengths.replace((items.len(), kept));
                 let mut compact = 0_usize;
                 for (index, child) in items.iter().enumerate() {
-                    paths.0.push(index.to_string());
-                    paths.1.push(compact.to_string());
-                    visit(child, owner, paths, ids, incoming);
-                    paths.0.pop();
-                    paths.1.pop();
-                    compact += usize::from(!child.is_null());
+                    walk.path.push(index.to_string());
+                    walk.compact.push(compact.to_string());
+                    visit(child, walk, incoming);
+                    walk.path.pop();
+                    walk.compact.pop();
+                    compact += usize::from(!super::cross::nulled(child));
                 }
+                walk.lengths = outer;
             }
             _ => {}
         }
     }
     let mut incoming = vec![Vec::new(); document.records.len()];
     for (owner, record) in document.records.iter().enumerate() {
-        visit(
-            &record.value,
+        let mut walk = Walk {
             owner,
-            &mut (Vec::new(), Vec::new()),
-            &document.ids,
-            &mut incoming,
-        );
+            path: Vec::new(),
+            compact: Vec::new(),
+            lengths: None,
+            ids: &document.ids,
+        };
+        visit(&record.value, &mut walk, &mut incoming);
     }
     incoming
 }
 
 /// Whether every paired owner of `left` holds `right` where it holds `left`.
-/// A `left` path may count the indices of its arrays over all items or over
-/// the non-null items, since a writer replaces or omits a nulled reference.
 fn incoming_agrees_with_pairs(
     left: usize,
     right: usize,
@@ -172,11 +205,11 @@ fn incoming_agrees_with_pairs(
     target: &[Vec<Incoming>],
     pairs: &BTreeMap<usize, usize>,
 ) -> bool {
-    source[left].iter().all(|(owner, path, compact)| {
-        pairs.get(owner).is_none_or(|paired| {
-            target[right].iter().any(|(candidate, target_path, _)| {
-                candidate == paired && (target_path == path || target_path == compact)
-            })
+    source[left].iter().all(|reference| {
+        pairs.get(&reference.owner).is_none_or(|paired| {
+            target[right]
+                .iter()
+                .any(|other| other.owner == *paired && reference.matches(other))
         })
     })
 }

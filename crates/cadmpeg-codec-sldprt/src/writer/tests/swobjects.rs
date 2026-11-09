@@ -1127,10 +1127,11 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
     let Err(error) = crate::writer::MetadataRecord::project(&attribute, 1.0e300, |_| Ok(())) else {
         panic!("an overflowing origin has no source-unit value");
     };
-    assert_eq!(
-        error.to_string(),
-        "malformed container: invalid default reference plane"
-    );
+    assert!(matches!(
+        error,
+        crate::writer::write_error::WriteError::Unwritable(reason)
+            if reason == "invalid default reference plane"
+    ));
 }
 
 /// The retained `SWObjects` section `payload` after the patch writer states
@@ -1173,10 +1174,12 @@ fn assert_patch_refusal(
     payload: &[u8],
     expected: &str,
 ) {
-    let Err(error) = patched_retained_metadata(name, values, payload.to_vec()) else {
-        panic!("{name} is refused");
+    let Err(crate::writer::write_error::WriteError::Unwritable(reason)) =
+        patched_retained_metadata(name, values, payload.to_vec())
+    else {
+        panic!("{name} is refused as unwritable content");
     };
-    assert_eq!(error.to_string(), expected);
+    assert_eq!(reason, expected);
 }
 
 #[test]
@@ -1189,7 +1192,8 @@ fn retained_unit_name_reports_its_byte_capacity() {
         b"moLengthUserUnits_c\xff\xfe\xff\x02I\x00".to_vec(),
     )
     .unwrap_err()
-    .into();
+    .try_into()
+    .expect("an encode failure");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 255, value: 256
@@ -1207,7 +1211,7 @@ fn a_retained_unit_name_is_refused_for_its_token_before_its_length() {
             "u".repeat(200),
         )],
         b"moLengthUserUnitsXc\xff\xfe\xff\x02I\x00",
-        "malformed container: retained SLDPRT metadata token does not match its provenance",
+        "retained SLDPRT metadata token does not match its provenance",
     );
 }
 
@@ -1219,7 +1223,7 @@ fn a_retained_unit_name_is_refused_for_its_marker_before_its_emptiness() {
         "source_linear_unit_name",
         vec![cadmpeg_ir::attributes::AttributeValue::String(String::new())],
         b"moLengthUserUnits_c\x00\x00\x00\x02I\x00",
-        "malformed container: retained SLDPRT unit-name marker does not match its provenance",
+        "retained SLDPRT unit-name marker does not match its provenance",
     );
 }
 
@@ -1233,7 +1237,7 @@ fn a_retained_unit_name_is_refused_for_its_truncation_before_its_length() {
             "u".repeat(200),
         )],
         b"moLengthUserUnits_c\xff\xfe\xff",
-        "malformed container: truncated retained SLDPRT unit name",
+        "truncated retained SLDPRT unit name",
     );
 }
 
@@ -1248,7 +1252,7 @@ fn a_retained_part_record_is_refused_for_its_token_before_its_identity() {
             cadmpeg_ir::attributes::AttributeValue::Integer(1),
         ],
         &[b"moPartXc".as_slice(), &[0; 16]].concat(),
-        "malformed container: retained SLDPRT metadata token does not match its provenance",
+        "retained SLDPRT metadata token does not match its provenance",
     );
 }
 
@@ -1264,6 +1268,6 @@ fn a_retained_configuration_is_refused_for_its_token_before_its_state_count() {
             cadmpeg_ir::attributes::AttributeValue::Integer(0),
         ],
         &[b"moConfigurationMgrXc".as_slice(), &[0; 125]].concat(),
-        "malformed container: retained SLDPRT metadata token does not match its provenance",
+        "retained SLDPRT metadata token does not match its provenance",
     );
 }

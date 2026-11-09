@@ -4,8 +4,10 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::write::{
     target::{ResolvedTarget, ResolvedWrite},
-    ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption, EncodeError, EncodeInput,
+    ExportBody, WritePath,
 };
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
@@ -13,7 +15,7 @@ use crate::loss::IgesLossCode;
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, super::WriteError> {
+) -> Result<ExportBody, EncodeError> {
     debug_assert!(
         super::capacity::CAPACITY_FIELDS.len() == 2,
         "IGES card layout declares payload and sequence rows"
@@ -45,7 +47,7 @@ pub(crate) fn plan(
 fn replay_or_synthesize(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
-) -> Result<ExportBody, super::WriteError> {
+) -> Result<ExportBody, EncodeError> {
     let replay_failure = match replay_bytes(input) {
         Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
         Replay::Declined(reason) => reason,
@@ -74,7 +76,89 @@ fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
     body
 }
 
+/// Synthesize the document (#217 §5.0).
+///
+/// A document whose content the writer cannot write as it stands is written
+/// in reduced form, each reduction with a loss that names what it omits:
+/// first without its IGES native records, last as an empty file. Only a
+/// non-finite written value, a caller resource limit, a target refusal or a
+/// stored-field capacity fails the write.
 fn synthesized_body(
+    input: EncodeInput<'_>,
+    version: crate::IgesVersion,
+    cause: SynthesisCause,
+) -> Result<ExportBody, EncodeError> {
+    let error = match synthesized_document(input, version, cause.clone()) {
+        Ok(body) => return Ok(body),
+        Err(error) => content_failure(input.ir, error)?,
+    };
+    let mut reductions = Vec::new();
+    let mut canonical = input.ir.clone();
+    if let Some(namespace) = canonical.native.0.remove("iges") {
+        let mut omitted: Vec<&str> = namespace
+            .arenas()
+            .values()
+            .flatten()
+            .map(cadmpeg_ir::native::NativeRecord::id)
+            .collect();
+        omitted.sort_unstable();
+        reductions.push(IgesLossCode::WriterArenaOmitted.note(format!(
+            "the IGES native records cannot be written ({error}); omitted {} record(s): {}",
+            omitted.len(),
+            omitted.join(", ")
+        )));
+        let reduced = EncodeInput {
+            ir: &canonical,
+            ..input
+        };
+        match synthesized_document(reduced, version, cause.clone()) {
+            Ok(body) => return Ok(with_reductions(body, reductions)),
+            Err(error) => {
+                content_failure(input.ir, error)?;
+            }
+        }
+    }
+    reductions.push(IgesLossCode::NoExportableSolids.note(format!(
+        "the document content cannot be written ({error}); wrote an empty file"
+    )));
+    let empty = CadIr::empty();
+    let reduced = EncodeInput {
+        ir: &empty,
+        ..input
+    };
+    let mut body = match synthesized_document(reduced, version, cause) {
+        Ok(body) => body,
+        Err(error) => {
+            let error = content_failure(input.ir, error)?;
+            debug_assert!(false, "the IGES writer writes an empty document: {error}");
+            ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete)
+        }
+    };
+    body.coverage = ArenaCoverage::Declared(ArenaDispositions::uniform(ArenaDisposition::Omitted));
+    body.native_dispositions = cadmpeg_ir::codec::write::NativeDispositions::default();
+    Ok(with_reductions(body, reductions))
+}
+
+fn with_reductions(mut body: ExportBody, mut reductions: Vec<LossNote>) -> ExportBody {
+    reductions.append(&mut body.losses);
+    body.losses = reductions;
+    body
+}
+
+/// The content the writer cannot write, or the encode failure that ends the
+/// write.
+fn content_failure(document: &CadIr, error: super::WriteError) -> Result<String, EncodeError> {
+    let reason = match EncodeError::try_from(error) {
+        Ok(error) => return Err(error),
+        Err(content) => content.to_string(),
+    };
+    match cadmpeg_ir::codec::write::ValidatedFinding::non_finite(document) {
+        Some(finding) => Err(EncodeError::InvalidInput(finding)),
+        None => Ok(reason),
+    }
+}
+
+fn synthesized_document(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
     cause: SynthesisCause,
@@ -299,6 +383,7 @@ fn exact_physical_records(
     exact
 }
 
+#[derive(Clone)]
 enum SynthesisCause {
     Fresh,
     Displaced(String),
@@ -364,6 +449,7 @@ enum Replay {
     Declined(DeclineReason),
 }
 
+#[derive(Clone)]
 enum DeclineReason {
     SourceImageUnavailable,
     Rejected(String),

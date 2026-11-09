@@ -3,7 +3,6 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
     SphereSurface, TorusSurface,
@@ -358,7 +357,7 @@ fn retain_faces(ir: &mut CadIr, body: &BodyId, kept: &HashSet<FaceId>) {
 pub(super) fn flatten_composite_curves(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::topology::EdgeCarrier;
@@ -571,7 +570,7 @@ pub(super) fn reduce_feature_references(
     original: &CadIr,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let mut removed = HashSet::new();
     macro_rules! removed_arena { ($($arena:ident),* $(,)?) => { $(
         let retained = ir.model.$arena.iter().map(|record| record.id.as_str()).collect::<HashSet<_>>();

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
-use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
+use cadmpeg_ir::codec::write::{
+    target::ResolvedWrite, EncodeError, EncodeInput, ExportBody, WritePath,
+};
 use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
@@ -19,7 +21,7 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, super::write_error::WriteError> {
+) -> Result<ExportBody, EncodeError> {
     if !resolved.preserves_source() || input.fidelity.is_none() {
         let cause = if resolved.preserves_source() && input.fidelity.is_none() {
             super::synthesis::SynthesisCause::SourceImageUnavailable
@@ -103,12 +105,10 @@ pub(crate) fn plan(
     let attempt = write(input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,
-        Err(
-            error @ super::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(
-                limit,
-            )),
-        ) if caller_ceiling(limit, input.limits) => {
-            return Err(error);
+        Err(super::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(
+            limit,
+        ))) if caller_ceiling(limit, input.limits) => {
+            return Err(EncodeError::ResourceLimit(limit));
         }
         Err(error) => {
             return super::synthesis::plan(

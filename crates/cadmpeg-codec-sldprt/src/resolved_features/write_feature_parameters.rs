@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Author operation scalar lanes from the current canonical parameter caches.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, ParameterValue};
 use cadmpeg_ir::CadIr;
 use std::collections::HashSet;
@@ -391,7 +390,9 @@ pub(crate) fn synthesize(
             continue;
         };
         let object = feature.source_value().ok_or_else(|| {
-            CodecError::malformed("authored feature has no native object identity")
+            crate::writer::write_error::WriteError::Unwritable(
+                "authored feature has no native object identity".into(),
+            )
         })?;
         append_named_object(&mut payload, class, &feature.name, object)?;
         let neutral = neutral_feature(ir, feature);

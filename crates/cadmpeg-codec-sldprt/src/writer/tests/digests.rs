@@ -70,8 +70,9 @@ fn metadata_digest_preserves_recursion_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) =
-        crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap_err()
+    let crate::writer::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(
+        limit,
+    )) = crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap_err()
     else {
         panic!("metadata digest must preserve refusal");
     };

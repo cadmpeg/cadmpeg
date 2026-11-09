@@ -25,6 +25,7 @@ use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_core::target::TargetCatalog;
 
 pub mod approximation;
+mod cadir_admission;
 mod carried;
 mod coverage;
 pub mod edge_recovery;
@@ -550,46 +551,65 @@ impl EncoderBackend for CadirEncoder {
             limits: input.limits,
         };
         let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-        let session = EncodeSession::from_context(&ctx)?;
+        let mut losses = Vec::new();
+        let mut notes = Vec::new();
+        let admitted = cadir_admission::admit(input.ir, &mut losses);
+        let document = admitted.as_ref().unwrap_or(input.ir);
+        let mut coverage = cadir_admission::coverage(input.ir, admitted.as_ref());
+        let mut native_dispositions = NativeDispositions::written(document);
         let mut bytes = Vec::new();
-        match crate::hash::finite_json::write_cadir_json(&session, &mut bytes, input.ir) {
-            Err(crate::hash::finite_json::CanonicalJsonError::Resource(limit)) => {
-                return Err(limit.into());
-            }
-            Err(error @ crate::hash::finite_json::CanonicalJsonError::NonFinite { .. }) => {
-                if let Some(finding) = ValidatedFinding::non_finite(input.ir) {
-                    return Err(EncodeError::InvalidInput(finding));
+        // Content the serialization still refuses is written from the
+        // canonical side (#217 §5.0): first without the native records, whose
+        // omission the wrapper charges, last as an empty document.
+        if let Err(error) = serialize_cadir(&ctx, document, &mut bytes)? {
+            let mut neutral = document.clone();
+            neutral.native = crate::native::Native::default();
+            native_dispositions = NativeDispositions::default();
+            notes.push(format!(
+                "the CADIR serialization refuses the document ({error}); wrote it without its native records"
+            ));
+            if let Err(error) = serialize_cadir(&ctx, &neutral, &mut bytes)? {
+                losses.push(loss::ExportLossCode::OutputEmpty.note(format!(
+                    "the CADIR serialization refuses the document ({error}); wrote an empty document"
+                )));
+                coverage =
+                    ArenaCoverage::Declared(ArenaDispositions::uniform(ArenaDisposition::Omitted));
+                if let Err(error) = serialize_cadir(&ctx, &CadIr::empty(), &mut bytes)? {
+                    debug_assert!(false, "an empty CADIR document serializes: {error}");
+                    bytes.clear();
                 }
-                debug_assert!(
-                    false,
-                    "CADIR non-finite serialization without validation finding: {error}"
-                );
-                return Err(session.finish().err().map_or_else(
-                    || {
-                        // The serializer reported a non-finite value but validation
-                        // found no finding; the input contract is violated.
-                        panic!("CADIR non-finite serialization without validation finding: {error}")
-                    },
-                    Into::into,
-                ));
             }
-            Err(error @ crate::hash::finite_json::CanonicalJsonError::Serialize(_)) => {
-                debug_assert!(false, "CADIR serialization invariant: {error}");
-                return Err(session.finish().err().map_or_else(
-                    || panic!("CADIR serialization invariant: {error}"),
-                    Into::into,
-                ));
-            }
-            Ok(()) => {}
         }
-        session.finish()?;
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
-        // replay or patch, so this encoder has one path and states it. The
-        // serialization carries every arena.
-        let mut body = ExportBody::synthesized(bytes, input.ir, ArenaCoverage::Complete);
-        body.native_dispositions = NativeDispositions::written(input.ir);
+        // replay or patch, so this encoder has one path and states it.
+        let mut body = ExportBody::synthesized(bytes, input.ir, coverage);
+        body.native_dispositions = native_dispositions;
+        body.losses = losses;
+        body.notes = notes;
         Ok(body)
+    }
+}
+
+/// Serialize `ir` into `bytes`. The inner error is content the serialization
+/// refuses; a non-finite value and a caller resource limit end the write.
+fn serialize_cadir(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    bytes: &mut Vec<u8>,
+) -> Result<Result<(), crate::hash::finite_json::CanonicalJsonError>, EncodeError> {
+    use crate::hash::finite_json::CanonicalJsonError;
+    bytes.clear();
+    let session = EncodeSession::from_context(ctx)?;
+    let written = crate::hash::finite_json::write_cadir_json(&session, &mut *bytes, ir);
+    session.finish()?;
+    match written {
+        Err(CanonicalJsonError::Resource(limit)) => Err(limit.into()),
+        Err(error @ CanonicalJsonError::NonFinite { .. }) => ValidatedFinding::non_finite(ir)
+            .map_or(Ok(Err(error)), |finding| {
+                Err(EncodeError::InvalidInput(finding))
+            }),
+        written => Ok(written),
     }
 }
 

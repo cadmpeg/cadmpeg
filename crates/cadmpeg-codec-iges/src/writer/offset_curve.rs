@@ -2,9 +2,9 @@
 //! Write exact curve offsets.
 
 use super::{
-    curve_reference_span, finite, is_support_curve, number, reference_marker, CodecError,
-    CurveEntityEmitter, CurveGeometry, CurveId, CurveSpan, Entity, EntityStatus, Sense,
-    SolvedCurveGeometry, Vector3, TAU,
+    curve_reference_span, finite, is_support_curve, number, reference_marker, CurveEntityEmitter,
+    CurveGeometry, CurveId, CurveSpan, Entity, EntityStatus, Sense, SolvedCurveGeometry, Vector3,
+    TAU,
 };
 
 impl CurveEntityEmitter<'_> {
@@ -14,7 +14,7 @@ impl CurveEntityEmitter<'_> {
         geometry: &CurveGeometry,
         span: Option<&CurveSpan>,
         status: EntityStatus,
-    ) -> Result<Option<usize>, CodecError> {
+    ) -> Result<Option<usize>, crate::writer::WriteError> {
         if let Some(index) = self.append_linear_line_offset(curve_id, geometry, span, status)? {
             return Ok(Some(index));
         }
@@ -30,7 +30,7 @@ impl CurveEntityEmitter<'_> {
         geometry: &CurveGeometry,
         span: Option<&CurveSpan>,
         status: EntityStatus,
-    ) -> Result<Option<usize>, CodecError> {
+    ) -> Result<Option<usize>, crate::writer::WriteError> {
         use cadmpeg_ir::geometry::{
             nurbs::{NurbsCurve, NurbsPoles3},
             CurveOffsetDistanceLaw, CurveOffsetLawBasis, CurveOffsetRange, OffsetSide,
@@ -265,7 +265,7 @@ impl CurveEntityEmitter<'_> {
         geometry: &CurveGeometry,
         span: Option<&CurveSpan>,
         status: EntityStatus,
-    ) -> Result<Option<usize>, CodecError> {
+    ) -> Result<Option<usize>, crate::writer::WriteError> {
         use cadmpeg_ir::geometry::{
             nurbs::{NurbsCurve, NurbsPoles3},
             CurveOffsetDistanceLaw, CurveOffsetLawBasis, CurveOffsetRange, OffsetSide,
@@ -460,7 +460,7 @@ impl CurveEntityEmitter<'_> {
         geometry: &CurveGeometry,
         span: Option<&CurveSpan>,
         status: EntityStatus,
-    ) -> Result<Option<usize>, CodecError> {
+    ) -> Result<Option<usize>, crate::writer::WriteError> {
         use cadmpeg_ir::geometry::{CurveOffsetRange, OffsetSide, ProceduralCurveDefinition};
         let Some(procedural) = self
             .ir
@@ -560,7 +560,9 @@ impl CurveEntityEmitter<'_> {
         };
         let pointer = source_index
             .checked_add(self.reference_offset)
-            .ok_or_else(|| CodecError::malformed("IGES offset source index overflows"))?;
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("IGES offset source index overflows".into())
+            })?;
         let index = self.entities.len();
         let mut entity = Entity {
             structure: None,

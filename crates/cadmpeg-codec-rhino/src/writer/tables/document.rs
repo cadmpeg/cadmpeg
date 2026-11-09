@@ -246,7 +246,7 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, WriteEr
             0x2000_8024
         }
     };
-    Ok(crc_chunk(typecode, &payload)?)
+    crc_chunk(typecode, &payload)
 }
 
 pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, WriteError> {
@@ -889,17 +889,14 @@ pub(in crate::writer) fn settings(
                     body.extend(integer(Some(&fields), "current_color_source", 0).to_le_bytes());
                     output.records.push(crc_chunk(0x2000_803a, &body)?);
                 }
-                Err(
-                    cadmpeg_core::CodecError::Malformed(reason)
-                    | cadmpeg_core::CodecError::InvalidInput(reason),
-                ) => {
+                Err(crate::writer::WriteError::Omit(reason)) => {
                     losses.push(RhinoLossCode::WriterSettingColorReduced.note(format!(
                         "document setting {} current_color is omitted: {reason}",
                         setting.id()
                     )));
                     reference_changed = true;
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => return Err(error),
             }
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {
