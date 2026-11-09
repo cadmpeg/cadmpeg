@@ -171,7 +171,7 @@ const WORK_POINT_TYPE: [u8; 16] = [
 ];
 /// Work-plane value that precedes the explicit plane frame in its extended form.
 const WORK_PLANE_FRAME_MARKER: u32 = 0x203;
-const WORK_AXIS_TYPE: [u8; 16] = [
+pub(crate) const WORK_AXIS_TYPE: [u8; 16] = [
     0x89, 0x6c, 0xf0, 0x8e, 0xd1, 0x11, 0x3c, 0x04, 0x60, 0x00, 0x7c, 0xb8, 0x01, 0xf3, 0x1b, 0xb0,
 ];
 /// Revolve extent value of a full revolution.

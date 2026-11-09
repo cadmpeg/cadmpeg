@@ -655,6 +655,7 @@ fn decode_container<'a>(
                 rse: &container.rse,
                 labels: &feature_inventory.labels,
                 parameters: &design_inventory.parameters,
+                properties: &feature_inventory.properties,
             },
             &mut ir.model,
         )?);

@@ -156,6 +156,18 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
         .flat_map(|(pmi, _)| pmi.targets.iter().map(|target| format!("{target:?}")))
         .collect();
     assert_eq!(diameter_targets.len(), 7);
+    // Workbook row 10: the two position frames attach to two location
+    // dimensions between plane pairs; the STEP twin gives each two faces and
+    // no tolerance.
+    let locations: Vec<_> = dimensions
+        .iter()
+        .filter(|(_, dimension)| *dimension.kind() == DimensionKind::Location)
+        .collect();
+    assert_eq!(locations.len(), 2);
+    for (pmi, dimension) in locations {
+        assert!(dimension.tolerance().is_none(), "{}", pmi.id.as_str());
+        assert_eq!(pmi.targets.len(), 2, "{}", pmi.id.as_str());
+    }
 }
 
 #[test]
@@ -177,8 +189,36 @@ fn nist_ctc_01_transfers_feature_control_frames_and_datums() {
             _ => None,
         })
         .collect();
+    let labels: std::collections::HashMap<_, _> = pmi
+        .iter()
+        .filter_map(|annotation| match &annotation.definition {
+            PmiDefinition::Datum { identification } => {
+                Some((annotation.id.clone(), identification.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
     datums.sort_unstable();
     assert_eq!(datums, ["A", "B", "C"]);
+    // The workbook frames name their datums in the order A, B, C.
+    for annotation in pmi {
+        if let PmiDefinition::DatumSystem { references } = &annotation.definition {
+            let order: Vec<_> = references
+                .as_slice()
+                .iter()
+                .map(|reference| labels.get(&reference.datum).copied())
+                .collect();
+            let expected: Vec<_> = ["A", "B", "C"]
+                .into_iter()
+                .take(order.len())
+                .map(Some)
+                .collect();
+            assert_eq!(order, expected, "{}", annotation.id.as_str());
+        }
+    }
+    // Workbook rows 3 through 12: seven size dimensions, one angular and two
+    // location dimensions, six frames, three datums, and five datum systems.
+    assert_eq!(pmi.len(), 24);
     let datum_count = |system: &cadmpeg_ir::ids::PmiId| {
         pmi.iter()
             .find(|annotation| annotation.id == *system)
