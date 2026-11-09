@@ -308,6 +308,9 @@ fn edges_with_ranges_off_their_vertices(document: &Value) -> BTreeSet<String> {
 }
 
 fn open_solids(document: &Value) -> BTreeSet<String> {
+    fn text<'v>(row: &'v Value, key: &str) -> Option<&'v str> {
+        row.get(key).and_then(Value::as_str)
+    }
     let rows = |arena: &str| {
         document
             .get("model")
@@ -315,9 +318,6 @@ fn open_solids(document: &Value) -> BTreeSet<String> {
             .and_then(Value::as_array)
             .map_or(&[][..], Vec::as_slice)
     };
-    fn text<'v>(row: &'v Value, key: &str) -> Option<&'v str> {
-        row.get(key).and_then(Value::as_str)
-    }
     let owner = |arena: &str, key: &str| -> BTreeMap<&str, &str> {
         rows(arena)
             .iter()

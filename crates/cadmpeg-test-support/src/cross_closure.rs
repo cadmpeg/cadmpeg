@@ -697,9 +697,11 @@ pub fn cross_compare(
     let allowances = Allowances::removed(permitted.clone());
     let mut degraded = BTreeSet::new();
     let agreed = loop {
+        // A reference to an unheld record is no need (§5.2), so it agrees
+        // with whichever record the writer wrote in its place.
         let kept: BTreeSet<String> = rows
             .keys()
-            .filter(|id| !degraded.contains(*id))
+            .filter(|id| !degraded.contains(*id) && !unheld.contains(*id))
             .cloned()
             .collect();
         let compared = without_rows(&null_dangling(&adjusted, &kept), &degraded);

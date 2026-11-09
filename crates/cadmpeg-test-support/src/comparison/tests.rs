@@ -660,3 +660,14 @@ fn an_unreferenced_nested_identity_is_a_writer_choice() {
         &named("operand#written", "operand#other")
     ));
 }
+
+#[test]
+fn twins_after_a_nulled_list_item_pair_by_their_place_in_the_list() {
+    let before = json!({"model":{
+        "loops":[{"id":"l","coedges":[null, "c1", "c2"]}],
+        "coedges":[{"id":"c1","loop":"l"},{"id":"c2","loop":"l"}]}});
+    let after = json!({"model":{
+        "loops":[{"id":"m","coedges":["k0", "k1", "k2"]}],
+        "coedges":[{"id":"k0","loop":"m"},{"id":"k1","loop":"m"},{"id":"k2","loop":"m"}]}});
+    assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
+}
