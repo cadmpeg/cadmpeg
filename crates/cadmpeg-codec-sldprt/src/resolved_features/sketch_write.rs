@@ -237,10 +237,7 @@ pub(super) fn sketch_brep(
                     geometry: generated.curve,
                     source_object: None,
                 });
-                cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(curve_id),
-                    Some(generated.param_range),
-                )
+                cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(generated.param_range))
             };
             ir.model.edges.push(Edge {
                 native_ref: None,

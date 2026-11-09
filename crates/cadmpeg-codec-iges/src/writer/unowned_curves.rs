@@ -152,7 +152,9 @@ impl UnownedCurveOutput<'_, '_> {
             },
         );
         match written {
-            Ok(_) => {}
+            Ok(_) => self
+                .losses
+                .extend(super::edge_carriers::placement_applied_loss(curve)),
             Err(CodecError::InvalidInput(reason)) => {
                 self.entities.truncate(before);
                 self.losses.push(

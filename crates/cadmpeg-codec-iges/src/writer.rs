@@ -151,6 +151,7 @@ mod attributes;
 mod copious_curve;
 mod degrade;
 mod display;
+mod edge_carriers;
 mod entity_order;
 mod feature_order;
 mod levels;
@@ -160,10 +161,13 @@ mod null_entities;
 mod offset_curve;
 mod offset_surface;
 mod pcurve_admission;
+mod placed_revolution;
 mod placement_entities;
 mod polynomial_curve;
 mod ruled_surface;
+mod subset_surfaces;
 pub(crate) mod target;
+mod tolerances;
 mod transformed_surface;
 mod units;
 mod unowned_curves;
@@ -647,7 +651,8 @@ fn synthesize_with_admission(
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     });
-    let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
+    let (subsets, subset_losses) = subset_surfaces::lower(lowered.as_ref());
+    let (poles, pole_losses) = admission::pole_edges(subsets.as_ref())?;
     let (opened, open_losses) = admission::open_incomplete_solids(poles.as_ref());
     let (pcurves, pcurve_losses) = pcurve_admission::admit(opened.as_ref());
     let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
@@ -665,6 +670,13 @@ fn synthesize_with_admission(
         }
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
+    graph.losses.extend(subset_losses);
+    graph.losses.extend(tolerances::losses(
+        ir,
+        ir.tolerances
+            .linear
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
+    ));
     graph.losses.extend(pole_losses);
     graph.losses.extend(open_losses);
     graph.losses.extend(pcurve_losses);
@@ -717,10 +729,10 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
-    native_records::attach_unowned_dependents(&mut graph.entities)?;
     graph
         .losses
         .extend(placement_entities::materialize(&mut graph.entities));
+    native_records::attach_unowned_dependents(&mut graph.entities)?;
     entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
     feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
@@ -2490,7 +2502,8 @@ fn brep_entities(
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
             CodecError::InvalidInput("IGES curve carrier has no solved geometry".into())
         })?)?;
-        let span = edge_span(ir, edge, &geometry)?;
+        let span =
+            edge_carriers::origin_anchored_span(curve, &geometry, edge_span(ir, edge, &geometry)?);
         let index = append_curve_entity(
             &mut entities,
             ir,
@@ -2504,6 +2517,7 @@ fn brep_entities(
                 reference_offset: 0,
             },
         )?;
+        losses.extend(edge_carriers::placement_applied_loss(curve));
         edge_curve_indices.insert(edge.id.as_str().to_owned(), index);
         mark_curve_descendants(ir, curve_id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
@@ -5224,7 +5238,22 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     if let Some(entity) = copious_curve::parameter_curve(ir, &pcurve, &curve, range) {
         return Ok(entity);
     }
-    encode_nurbs(&curve, range, "PCURVE")
+    let Some(source) = edge_carriers::parameter_image_curve(ir, &curve, range) else {
+        return encode_nurbs(&curve, range, "PCURVE");
+    };
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone()));
+    let mut entity =
+        match copious_curve::regenerate(ir, &source.id, &geometry, None, Sense::Forward) {
+            Some(entity) => entity,
+            None => {
+                let mut entity = encode_nurbs(&curve, range, "PCURVE")?;
+                native_records::numeric::retain_nurbs(ir, &source.id, &mut entity);
+                entity
+            }
+        };
+    entity.status = EntityStatus::ParameterCurve;
+    entity.source_targets.push(source.id.to_string());
+    Ok(entity)
 }
 
 fn reference_marker(index: usize) -> String {
@@ -6849,6 +6878,15 @@ fn revolution_surface_entities(
             "IGES semantic writer only encodes procedural Revolution surfaces as Type 120".into(),
         ));
     };
+    if let Some(placed) = placed_revolution::source(ir, procedural) {
+        return placed_revolution::entities(
+            ir,
+            &placed,
+            definition_payload.angular_interval(),
+            base_index,
+            version,
+        );
+    }
     let directrix = definition_payload.directrix();
     let axis_origin = definition_payload.axis_origin();
     let axis_direction = definition_payload.axis_direction();
@@ -7986,6 +8024,20 @@ fn mark_native_construction_curves<'ir>(
         let Some(procedural) = native_surface_construction(ir, &surface.geometry) else {
             continue;
         };
+        if let Some(placed) = placed_revolution::source(ir, procedural) {
+            let ProceduralSurfaceDefinition::Revolution(revolution) = procedural.definition()
+            else {
+                continue;
+            };
+            for curve in [
+                &placed.axis.id,
+                &placed.generatrix.id,
+                revolution.directrix(),
+            ] {
+                mark_curve_descendants(ir, curve, consumed, &mut BTreeSet::new())?;
+            }
+            continue;
+        }
         let directrix = match procedural.definition() {
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
                 definition_payload.directrix()

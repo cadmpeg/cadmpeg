@@ -417,7 +417,9 @@ fn edge_parameter_range(
         (end.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
     };
     let tolerance = period * EPS_GEOMETRY_READ_GEOMETRY;
-    let sweep = if closed && (sweep <= tolerance || period - sweep <= tolerance) {
+    // An edge has extent, so ends that coincide on a closed carrier go once
+    // around it, whether they are one vertex or two.
+    let sweep = if sweep <= tolerance || (closed && period - sweep <= tolerance) {
         period
     } else {
         sweep

@@ -506,25 +506,12 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let ordinal = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 5)
-            .and_then(|value| {
-                decode_text(
-                    exchange,
-                    value,
-                    &mut losses,
-                    id,
-                    "assembly occurrence reference designator",
-                    StepLossCode::MetadataStringInvalid,
-                )
-            })
-            .and_then(|text| text.strip_prefix("cadmpeg:ordinal=")?.parse::<u32>().ok());
         usages.insert(
             id,
             Usage {
                 parent_definition,
                 child_definition,
                 name: name.filter(|name| !name.is_empty()),
-                ordinal,
             },
         );
     }
@@ -714,13 +701,7 @@ pub(super) fn decode(
                 output_truncated_at = Some(format!("NAUO #{usage_id}"));
                 break 'expansion;
             }
-            let next_ordinal = child_ordinals.entry(parent.clone()).or_default();
-            let ordinal = usage.ordinal.unwrap_or(*next_ordinal);
-            if usage.ordinal.is_none() || ordinal >= *next_ordinal {
-                *next_ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                    CodecError::malformed("STEP child occurrence ordinal exceeds u32")
-                })?;
-            }
+            let ordinal = child_ordinals.entry(parent.clone()).or_default();
             let transform = placements.get(&usage_id).copied();
             if transform.is_none()
                 && attempted_placements.contains(&usage_id)
@@ -752,7 +733,7 @@ pub(super) fn decode(
                 parent: OccurrenceParent::Occurrence {
                     occurrence: parent.clone(),
                 },
-                ordinal,
+                ordinal: *ordinal,
                 transform,
                 linked_prototype: None,
 
@@ -770,6 +751,9 @@ pub(super) fn decode(
                 .entry(usage_id)
                 .or_default()
                 .push(id.clone());
+            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::malformed("STEP child occurrence ordinal exceeds u32")
+            })?;
             if expand {
                 pending_occurrences.push_back((usage.child_definition, id, path_links.len()));
                 path_links.push(PathLink {
@@ -1063,7 +1047,6 @@ struct Usage {
     parent_definition: u64,
     child_definition: u64,
     name: Option<String>,
-    ordinal: Option<u32>,
 }
 
 fn shape_bindings(
