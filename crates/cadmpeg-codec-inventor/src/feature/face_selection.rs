@@ -32,6 +32,12 @@ pub(super) const SELECTOR_TYPE: [u8; 16] = [
     0x2c, 0x81, 0xaa, 0x03, 0xd2, 0x11, 0xff, 0x26, 0x00, 0x08, 0x1f, 0xbb, 0x32, 0xa3, 0xdc, 0x09,
 ];
 
+/// Type of a direct face selector record.
+pub(super) const DIRECT_SELECTOR_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d55);
+
+/// The largest generator array that a direct face selector stores.
+const DIRECT_GENERATOR_LIMIT: usize = 4;
+
 /// Type of the surface-body wrapper that a selector names.
 pub(super) const BODY_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d47);
 
@@ -43,9 +49,17 @@ const CONTEXT_TYPE: [u8; 16] = [
 /// Qualifier of the matching attribute that identifies a selected face.
 const FACE_QUALIFIER: i64 = 1;
 
+/// The second stored `state` word of a face naming selector. A Thicken
+/// operand joins it through the feature tag of the owner under the rule of
+/// `project`; other operands refuse it.
+pub(crate) const NAMING_STATE_MODIFIED: i32 = 2;
+
 #[derive(Debug)]
 pub(super) struct FaceSelector {
     pub(super) source: u32,
+    /// The stored `state` word: 0 or 2 for the naming form, -1 for the
+    /// direct form.
+    state: i32,
     generators: Vec<u32>,
     key: u32,
     /// The `topology` and `naming_form` words, which are equal.
@@ -53,6 +67,15 @@ pub(super) struct FaceSelector {
     body: PmDcReference,
     item: PmDcReference,
     context: PmDcReference,
+    /// The selector has the direct form.
+    direct: bool,
+}
+
+/// The record form of a face selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::feature) enum SelectorForm {
+    Naming,
+    Direct,
 }
 
 /// A face revision that a selector selects.
@@ -60,6 +83,10 @@ pub(super) struct FaceSelector {
 pub(in crate::feature) struct SelectedFace {
     /// Entity index of the matched face revision.
     pub(super) owner: i64,
+    /// Entity indexes of every matched owner, ascending.
+    pub(super) owners: Vec<i64>,
+    /// Length of the generator array of the selector.
+    pub(super) generators: usize,
     /// Record ordinal of the face item that lists the selector.
     pub(super) item: u32,
     /// The pair has more than one matching attribute on the owner.
@@ -70,8 +97,16 @@ pub(in crate::feature) struct SelectedFace {
     /// The pair has several matched owners with identical surface geometry
     /// and sense, and `owner` is the one with the lowest entity index.
     pub(super) identical_owners: bool,
+    /// The selector form. A face selection of Move Face, Shell, Thread, and
+    /// Thicken does not join the direct form.
+    pub(super) form: SelectorForm,
     /// Surface class of the owner.
     pub(super) surface: Surface,
+    /// The stored `state` word of the selector.
+    pub(super) state: i32,
+    /// Source indexes that the `NMx_Brep_Feature_tag` and
+    /// `NMx_tweak_reblend_tag` attributes of the owner name, ascending.
+    pub(super) feature_sources: Vec<u32>,
 }
 
 /// Surface class of a selected face revision.
@@ -110,7 +145,8 @@ pub(super) fn parse(
 ) -> Result<Option<FaceSelector>, CodecError> {
     let mut cursor = Cursor::new(payload);
     let header = state_content_header(&mut cursor, version)?;
-    if cursor.i32("face selector state")? != 0
+    let state = cursor.i32("face selector state")?;
+    if !matches!(state, 0 | NAMING_STATE_MODIFIED)
         || cursor.u8("face selector enabled")? != 1
         || cursor.u8("face selector form")? != 5
     {
@@ -161,12 +197,76 @@ pub(super) fn parse(
     names.copy_from_slice(generators.values());
     Ok(Some(FaceSelector {
         source: header.source_index,
+        state,
         generators: names,
         key,
         body_source,
         body,
         item,
         context,
+        direct: false,
+    }))
+}
+
+/// Parses a direct face selector, or `None` for another selector form. The
+/// direct form has the field order of the direct edge selector and ends with a
+/// face-item reference, a context reference, and the key.
+pub(super) fn parse_direct(
+    ctx: &DecodeContext<'_>,
+    payload: View<'_>,
+    version: u8,
+) -> Result<Option<FaceSelector>, CodecError> {
+    let mut cursor = Cursor::new(payload);
+    let header = state_content_header(&mut cursor, version)?;
+    if cursor.i32("direct face selector state")? != -1
+        || cursor.u8("direct face selector enabled")? != 1
+        || cursor.u8("direct face selector form")? != 5
+    {
+        return Ok(None);
+    }
+    let body = cursor.reference("direct face selector body")?;
+    let body_source = cursor.u32("direct face selector topology")?;
+    if (super::edge_selection::selector_has_qualifier(version)
+        && cursor.u32("direct face selector qualifier")? != 0)
+        || cursor.u32("direct face selector naming form")? != body_source
+    {
+        return Ok(None);
+    }
+    let generators = u32_list_with_context(ctx, &mut cursor, 8, "direct face selector generators")?;
+    let secondary = u32_list_with_context(ctx, &mut cursor, 8, "direct face selector secondary")?;
+    let mut distinct = HashSet::new();
+    if !(1..=DIRECT_GENERATOR_LIMIT).contains(&generators.values().len())
+        || generators.values().contains(&0)
+        || secondary.values().contains(&0)
+        || !generators
+            .values()
+            .iter()
+            .chain(secondary.values())
+            .all(|value| distinct.insert(*value))
+        || cursor.u8("direct face selector suffix form")? != 0
+    {
+        return Ok(None);
+    }
+    let item = cursor.reference("direct face selector item")?;
+    let context = cursor.reference("direct face selector context")?;
+    let key = cursor.u32("direct face selector key")?;
+    cursor.finish("direct face selector")?;
+    let mut names = ctx.alloc_filled(
+        generators.values().len(),
+        0,
+        "retain Inventor face selector generators",
+    )?;
+    names.copy_from_slice(generators.values());
+    Ok(Some(FaceSelector {
+        source: header.source_index,
+        state: -1,
+        generators: names,
+        key,
+        body_source,
+        body,
+        item,
+        context,
+        direct: true,
     }))
 }
 
@@ -297,6 +397,7 @@ pub(super) fn selected(
     );
     let mut matches = HashMap::<(u32, u32), HashMap<(i64, i64), usize>>::new();
     let mut generated = HashMap::<i64, HashMap<&str, HashSet<u32>>>::new();
+    let mut tagged = HashMap::<i64, HashSet<u32>>::new();
     for record in records {
         if let Some((source, key, owner, qualifier)) = matched_qualified(record, schema) {
             *matches
@@ -306,6 +407,9 @@ pub(super) fn selected(
                 .or_default() += 1;
         }
         let fields = values(record);
+        if let Some((owner, sources)) = feature_tag_sources(record, &fields, schema) {
+            tagged.entry(owner).or_default().extend(sources);
+        }
         if let (Some((owner, sources)), Some(family)) = (
             source_names(record, &fields, schema),
             generated_family(record, &fields),
@@ -391,11 +495,27 @@ pub(super) fn selected(
             selector.source,
             SelectedFace {
                 owner: ids[0],
+                owners: ids.clone(),
+                generators: selector.generators.len(),
                 item,
                 repeated_attribute,
                 unshared_family,
                 identical_owners,
+                form: if selector.direct {
+                    SelectorForm::Direct
+                } else {
+                    SelectorForm::Naming
+                },
                 surface: classify_surface(first, &by_index),
+                state: selector.state,
+                feature_sources: tagged
+                    .get(&ids[0])
+                    .map(|sources| {
+                        let mut sources = sources.iter().copied().collect::<Vec<_>>();
+                        sources.sort_unstable();
+                        sources
+                    })
+                    .unwrap_or_default(),
             },
         ));
     }
@@ -405,6 +525,39 @@ pub(super) fn selected(
         .collect()
 }
 
+/// The owner and the feature source indexes of an `NMx_Brep_Feature_tag` or
+/// `NMx_tweak_reblend_tag` attribute in a schema-38, schema-40, or schema-42
+/// carrier. After the five common fields the attribute stores the schema, a
+/// positive pair count, and that many `(feature_source_index, name_value)`
+/// pairs of integers.
+fn feature_tag_sources(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64, Vec<u32>)> {
+    if !super::edge_selection::legacy_schema(schema) {
+        return None;
+    }
+    let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(count), values @ ..] =
+        fields
+    else {
+        return None;
+    };
+    if !matches!(
+        super::edge_selection::legacy_family(record)?,
+        "NMx_Brep_Feature_tag" | "NMx_tweak_reblend_tag"
+    ) || *stored_schema != i64::from(schema)
+    {
+        return None;
+    }
+    let count = usize::try_from(*count).ok().filter(|count| *count > 0)?;
+    let pairs = values.get(..count.checked_mul(2)?)?;
+    pairs
+        .chunks_exact(2)
+        .map(|pair| match pair {
+            [Token::Long(source), Token::Long(_)] => u32::try_from(*source).ok(),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(|sources| (*owner, sources))
+}
+
 fn state_id(source: &PmDcFeature) -> Result<FeatureInputTopologyId, CodecError> {
     Ok(FeatureInputTopologyId::compose(
         &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-input"),
@@ -412,7 +565,10 @@ fn state_id(source: &PmDcFeature) -> Result<FeatureInputTopologyId, CodecError> 
     ))
 }
 
-fn face_id(token: &str, source: u32) -> Result<HistoricalFaceId, CodecError> {
+pub(in crate::feature) fn face_id(
+    token: &str,
+    source: u32,
+) -> Result<HistoricalFaceId, CodecError> {
     HistoricalFaceId::mint(format!("inventor:input-face#{token}-{source}"))
         .map_err(CodecError::malformed)
 }
@@ -668,7 +824,8 @@ pub(crate) fn project(
                 .edge_inputs
                 .faces
                 .get(&(token.to_owned(), selector))
-                .filter(|face| face.item == item);
+                .filter(|face| face.item == item && face.form == SelectorForm::Naming)
+                .filter(|face| state_admitted(kind, face, source.header.source_index));
             match selected {
                 Some(face) => {
                     conflict |= !owners.insert(face.owner);
@@ -721,6 +878,23 @@ pub(crate) fn project(
         });
     }
     Ok(states)
+}
+
+/// Whether the selector state of a joined face admits the feature kind. A
+/// state-0 selector joins every kind. A state-2 selector joins a Thicken
+/// operand when its one matched owner, without a repeated attribute, carries a
+/// feature tag with the Thicken's own `source_index`.
+fn state_admitted(kind: Kind, face: &SelectedFace, own_source: u32) -> bool {
+    match face.state {
+        0 => true,
+        NAMING_STATE_MODIFIED => {
+            kind == Kind::Thicken
+                && face.owners.len() == 1
+                && !face.repeated_attribute
+                && face.feature_sources.contains(&own_source)
+        }
+        _ => false,
+    }
 }
 
 /// Whether a historical face selection of a feature re-derives from its

@@ -589,11 +589,16 @@ fn fixture(
 fn selected_face(owner: i64, item: u32, surface: Surface) -> SelectedFace {
     SelectedFace {
         owner,
+        owners: vec![owner],
+        generators: 1,
         item,
         repeated_attribute: false,
         unshared_family: false,
         identical_owners: false,
+        form: SelectorForm::Naming,
         surface,
+        state: 0,
+        feature_sources: Vec::new(),
     }
 }
 
@@ -651,6 +656,40 @@ fn every_joined_face_operand_replaces_the_native_collection_in_one_input_state()
     );
     assert!(check(&inventory, &feature, &states));
     assert!(native_losses(std::slice::from_ref(&feature)).is_empty());
+}
+
+#[test]
+fn a_direct_face_selector_joins_no_face_selecting_feature() {
+    let ctx = context();
+    // Move Face keeps no joined face and no partial state for a direct selector.
+    for direct in [[true, true], [true, false], [false, true]] {
+        let (mut inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+        for (selector, direct) in [41, 43].into_iter().zip(direct) {
+            inventory
+                .edge_inputs
+                .faces
+                .get_mut(&(TOKEN.to_owned(), selector))
+                .expect("selected")
+                .form = if direct {
+                SelectorForm::Direct
+            } else {
+                SelectorForm::Naming
+            };
+        }
+        let states =
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+        let joined = states.first().map_or(0, |state| state.faces.len());
+        assert_eq!(joined, 2 - direct.iter().filter(|direct| **direct).count());
+    }
+    // A Thicken face list that names a direct selector does not join.
+    let (mut inventory, mut feature) = thicken_fixture(&ctx);
+    for face in inventory.edge_inputs.faces.values_mut() {
+        face.form = SelectorForm::Direct;
+    }
+    let before = feature.clone();
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert!(states.is_empty());
+    assert_eq!(feature, before);
 }
 
 #[test]
@@ -1486,4 +1525,341 @@ fn assumption_losses_state_identical_owners_for_every_face_selecting_kind() {
     let notes = assumption_losses(std::slice::from_ref(&feature), &inventory);
     assert_eq!(notes.len(), 2);
     assert!(notes[1].message.contains("identical surface geometry"));
+}
+
+/// Fields of a synthetic direct face selector.
+struct Direct {
+    state: u32,
+    form: u8,
+    topology: u32,
+    qualifier: u32,
+    naming: u32,
+    generators: Vec<u32>,
+    secondary: Vec<u32>,
+    suffix: u8,
+}
+
+impl Direct {
+    fn new() -> Self {
+        Self {
+            state: u32::MAX,
+            form: 5,
+            topology: 2,
+            qualifier: 0,
+            naming: 2,
+            generators: vec![31, 37],
+            secondary: vec![3],
+            suffix: 0,
+        }
+    }
+
+    fn bytes(&self, version: u8) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        for word in [0_u32, 0] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        if version >= 28 {
+            bytes.extend_from_slice(&0_u32.to_le_bytes());
+        }
+        for word in [0x8000_0003_u32, SELECTOR_SOURCE, self.state] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[1, self.form]);
+        for word in [0x8000_000a_u32, self.topology] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        if !(19..=21).contains(&version) {
+            bytes.extend_from_slice(&self.qualifier.to_le_bytes());
+        }
+        bytes.extend_from_slice(&self.naming.to_le_bytes());
+        for values in [&self.generators, &self.secondary] {
+            bytes.extend_from_slice(&8_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(
+                &u32::try_from(values.len())
+                    .expect("small list")
+                    .to_le_bytes(),
+            );
+            if !values.is_empty() {
+                bytes.extend_from_slice(&[8, 0, 0, 0]);
+            }
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.push(self.suffix);
+        for word in [0x8000_0008_u32, 0x8000_0004, SELECTOR_KEY] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes
+    }
+}
+
+fn parse_direct_bytes(bytes: &[u8], version: u8) -> Result<Option<FaceSelector>, CodecError> {
+    parse_direct(&context(), View::over_retained(bytes), version)
+}
+
+#[test]
+fn a_direct_face_selector_has_the_type_and_field_order_of_the_direct_edge_selector() {
+    assert_eq!(
+        DIRECT_SELECTOR_TYPE,
+        [
+            0x55, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63,
+            0xdc, 0x09
+        ]
+    );
+    assert_ne!(DIRECT_SELECTOR_TYPE, SELECTOR_TYPE);
+    for version in [19, 20, 21, 23, 29] {
+        let bytes = Direct::new().bytes(version);
+        let selector = parse_direct_bytes(&bytes, version)
+            .expect("framed")
+            .expect("direct selector");
+        assert_eq!(selector.source, SELECTOR_SOURCE);
+        assert_eq!(selector.key, SELECTOR_KEY);
+        assert_eq!(selector.generators, [31, 37]);
+        assert_eq!(selector.item.record_ordinal(), Some(7));
+        assert_eq!(selector.body.record_ordinal(), Some(9));
+        assert_eq!(selector.context.record_ordinal(), Some(3));
+        let context_of = |ordinal| match ordinal {
+            9 => Some(BODY_TYPE),
+            7 => Some(crate::feature::FACE_ITEM_TYPE),
+            3 => Some(CONTEXT_TYPE),
+            _ => None,
+        };
+        assert!(links(&selector, context_of, |ordinal| (ordinal == 9).then_some(2)));
+        // An edge item in the item slot is no face item.
+        let edge_item = |ordinal| match ordinal {
+            7 => Some(crate::feature::EDGE_ITEM_TYPE),
+            other => context_of(other),
+        };
+        assert!(!links(&selector, edge_item, |ordinal| (ordinal == 9).then_some(2)));
+        for count in 1..=4_u32 {
+            let mut fields = Direct::new();
+            fields.generators = (1..=count).map(|value| value * 10).collect();
+            let parsed = parse_direct_bytes(&fields.bytes(version), version).expect("framed");
+            assert_eq!(
+                parsed.expect("generators").generators.len(),
+                usize::try_from(count).expect("count")
+            );
+        }
+        let mut empty = Direct::new();
+        empty.secondary.clear();
+        assert!(parse_direct_bytes(&empty.bytes(version), version)
+            .expect("framed")
+            .is_some());
+    }
+}
+
+#[test]
+fn a_direct_face_selector_that_differs_in_any_control_stays_unparsed() {
+    type Edit = fn(&mut Direct);
+    let edits: [(&str, Edit); 11] = [
+        ("state is zero", |f| f.state = 0),
+        ("form", |f| f.form = 4),
+        ("topology and naming words differ", |f| f.naming = 3),
+        ("qualifier", |f| f.qualifier = 1),
+        ("no generator", |f| f.generators.clear()),
+        ("five generators", |f| f.generators = vec![1, 2, 3, 4, 5]),
+        ("zero generator", |f| f.generators = vec![31, 0]),
+        ("repeated generator", |f| f.generators = vec![31, 31]),
+        ("zero secondary name", |f| f.secondary = vec![0]),
+        ("secondary name equals a generator", |f| {
+            f.secondary = vec![31];
+        }),
+        ("suffix", |f| f.suffix = 1),
+    ];
+    for version in [19, 23, 29] {
+        for (label, edit) in edits {
+            let mut fields = Direct::new();
+            edit(&mut fields);
+            // A qualifier word exists only outside versions 19 to 21.
+            if label == "qualifier" && (19..=21).contains(&version) {
+                continue;
+            }
+            assert!(
+                parse_direct_bytes(&fields.bytes(version), version)
+                    .expect("framed refusal")
+                    .is_none(),
+                "{label} in version {version}"
+            );
+        }
+        let bytes = Direct::new().bytes(version);
+        assert!(parse_direct_bytes(&bytes[..bytes.len() - 1], version).is_err());
+        let mut extra = bytes.clone();
+        extra.push(0);
+        assert!(parse_direct_bytes(&extra, version).is_err());
+    }
+}
+
+/// A feature-tag attribute of a schema-38, schema-40, or schema-42 carrier.
+fn feature_tag(
+    index: usize,
+    owner: i64,
+    schema: u32,
+    family: &str,
+    pairs: &[(i64, i64)],
+) -> Record {
+    let mut tokens = common(owner);
+    tokens.push(Token::Long(i64::from(schema)));
+    tokens.push(Token::Long(i64::try_from(pairs.len()).expect("small")));
+    for (source, name) in pairs {
+        tokens.extend([Token::Long(*source), Token::Long(*name)]);
+    }
+    record(
+        index,
+        &format!("{family}-NMx_Brep_tag-NamingMatching-attrib"),
+        tokens,
+    )
+}
+
+fn state_two_selector() -> FaceSelector {
+    let mut fields = Fields::new();
+    fields.state = 2;
+    parse_bytes(&fields.bytes(23), 23)
+        .expect("framed")
+        .expect("state-2 face selector")
+}
+
+#[test]
+fn a_face_selector_stores_state_zero_or_two_and_no_other_state() {
+    for version in [19, 23, 29] {
+        for (state, expected) in [(0_u32, Some(0)), (2, Some(2)), (1, None), (3, None)] {
+            let mut fields = Fields::new();
+            fields.state = state;
+            let parsed = parse_bytes(&fields.bytes(version), version).expect("framed");
+            assert_eq!(parsed.map(|selector| selector.state), expected, "{state}");
+        }
+    }
+}
+
+#[test]
+fn the_feature_tags_of_the_owner_state_their_source_indexes() {
+    for schema in [38, 40, 42] {
+        for family in ["NMx_Brep_Feature_tag", "NMx_tweak_reblend_tag"] {
+            let mut records = archive(schema);
+            records.push(feature_tag(12, 1, schema, family, &[(17, -1), (19, -1)]));
+            records.push(feature_tag(
+                13,
+                1,
+                schema,
+                "NMx_tweak_reblend_tag",
+                &[(5, -1)],
+            ));
+            let face = selected(&records, &[state_two_selector()], schema)
+                .remove(&SELECTOR_SOURCE)
+                .expect("selected face");
+            assert_eq!(face.state, 2);
+            assert_eq!(face.feature_sources, [5, 17, 19], "{family}");
+        }
+    }
+    // Another family, another owner, a wrong schema, and a short pair vector
+    // state no source.
+    let schema = 42;
+    let mut records = archive(schema);
+    records.push(feature_tag(
+        12,
+        1,
+        schema,
+        "NMx_Import_Brep_tag",
+        &[(17, -1)],
+    ));
+    records.push(feature_tag(
+        13,
+        2,
+        schema,
+        "NMx_Brep_Feature_tag",
+        &[(17, -1)],
+    ));
+    records.push(feature_tag(14, 1, 40, "NMx_Brep_Feature_tag", &[(17, -1)]));
+    let mut short = feature_tag(15, 1, schema, "NMx_Brep_Feature_tag", &[(17, -1)]);
+    short.tokens = short.tokens[..short.tokens.len() - 1].into();
+    records.push(short);
+    let face = selected(&records, &[state_two_selector()], schema)
+        .remove(&SELECTOR_SOURCE)
+        .expect("selected face");
+    assert!(face.feature_sources.is_empty());
+    // A schema-44 carrier stores no legacy feature tag.
+    let mut records = archive(44);
+    records.push(feature_tag(12, 1, 44, "NMx_Brep_Feature_tag", &[(17, -1)]));
+    let face = selected(&records, &[state_two_selector()], 44)
+        .remove(&SELECTOR_SOURCE)
+        .expect("selected face");
+    assert!(face.feature_sources.is_empty());
+}
+
+#[test]
+fn a_state_two_selector_joins_a_thicken_operand_only_through_its_own_feature_tag() {
+    let ctx = context();
+    // The test feature has source index 0.
+    let own = 0;
+    let admit = |edit: &dyn Fn(&mut SelectedFace)| {
+        let (mut inventory, mut feature) = thicken_fixture(&ctx);
+        for face in inventory.edge_inputs.faces.values_mut() {
+            face.state = 2;
+            face.feature_sources = vec![own];
+            edit(face);
+        }
+        !project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    };
+    assert!(admit(&|_| {}));
+    // The tag of another feature, no tag, several owners, a repeated
+    // attribute, and a state other than 0 and 2 leave the list native.
+    assert!(!admit(&|face| face.feature_sources = vec![own + 1]));
+    assert!(!admit(&|face| face.feature_sources.clear()));
+    assert!(!admit(&|face| face.owners.push(face.owner + 10)));
+    assert!(!admit(&|face| face.repeated_attribute = true));
+    assert!(!admit(&|face| face.state = 1));
+    // One state-2 operand among state-0 operands joins, and one refused
+    // operand refuses the whole list.
+    let (mut inventory, mut feature) = thicken_fixture(&ctx);
+    let face = inventory
+        .edge_inputs
+        .faces
+        .get_mut(&(TOKEN.to_owned(), 41))
+        .expect("face");
+    face.state = 2;
+    face.feature_sources = vec![own];
+    assert!(
+        !project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    let (mut inventory, mut feature) = thicken_fixture(&ctx);
+    inventory
+        .edge_inputs
+        .faces
+        .get_mut(&(TOKEN.to_owned(), 41))
+        .expect("face")
+        .state = 2;
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+}
+
+#[test]
+fn a_state_two_selector_joins_no_other_feature_kind() {
+    let face = |state| SelectedFace {
+        state,
+        feature_sources: vec![4],
+        ..selected_face(5, 6, Surface::Other)
+    };
+    for kind in [
+        Kind::MoveFace,
+        Kind::Shell,
+        Kind::Thread,
+        Kind::Thicken,
+        Kind::ThickenOffset,
+    ] {
+        assert!(state_admitted(kind, &face(0), 4), "{kind:?}");
+        assert_eq!(state_admitted(kind, &face(2), 4), kind == Kind::Thicken);
+        assert!(!state_admitted(kind, &face(2), 5), "{kind:?}");
+        assert!(!state_admitted(kind, &face(-1), 4), "{kind:?}");
+    }
 }

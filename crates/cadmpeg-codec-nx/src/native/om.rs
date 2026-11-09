@@ -2601,7 +2601,7 @@ pub(super) struct ExternalReference {
     /// Zero-based string-table ordinal within the stream.
     ordinal: u32,
     /// Exact serialized child-part name or path.
-    path: String,
+    pub(super) path: String,
     /// Directory entry containing the external-reference stream.
     source_entry: String,
     /// Absolute file offset of the first path byte.

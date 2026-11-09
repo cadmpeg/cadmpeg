@@ -403,6 +403,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-creo`     | `src/decode/sketch/equations_coordinate.rs`        | `MAX_SIGNED_BRANCHES`                     | `4096`                                                  | 4    | Sign branches (`2^n`) of a distance component. A larger component is skipped and reports `section.sign-branches-capped`; source metadata resolves every definition with the loss sink in both build modes.                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/container.rs`                                 | `MAX_UNCOMP`                              | `512 * 1024 * 1024`                                     | 2    | Declared uncompressed size of a block-marker candidate. Excess rejects the candidate and the marker walk continues.                                                                                                                                                          |
 | `cadmpeg-codec-sldprt`   | `src/swift.rs`                                     | `MAX_DEPTH`                               | `32`                                                    | 2    | SWIFT entity nesting depth. A feature walk that meets a feature only past it leaves the targets or nominal it feeds unresolved and reports `pmi.swift-feature-walk-capped`.                                                                                                  |
+| `cadmpeg-codec-sldprt` | `src/swift/presentation.rs` | `MAX_PATH_FEATURES` | `8` | 1 | Largest feature count of a SWIFT presentation feature path. A larger count does not frame a path. |
+| `cadmpeg-codec-sldprt` | `src/swift/presentation/faces.rs` | `MAX_REFERENCE_HOPS` | `64` | 1 | Largest hop count of a presentation-archive identity reference header. A larger count does not frame a header. |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
 | `cadmpeg-codec-sldprt` | `src/metadata/configuration_manager.rs` | `MAX_FILETIME` | `157_469_184_000_000_000` | 1 | Reader's window for the configuration-manager FILETIME scalar, the end of 2099 UTC. A later value does not frame the record. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7fff` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
@@ -543,16 +545,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 328.
+Production `MAX_*` constants: 330.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 40    |
+| 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 76    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 166   |
 | N    | Not a decode bound         | 46    |
-|      | Total                      | 328   |
+|      | Total                      | 330   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -561,7 +563,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-protein` 3, `cadmpeg` 3, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 34,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 36,
 `cadmpeg-codec-catia` 75, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 

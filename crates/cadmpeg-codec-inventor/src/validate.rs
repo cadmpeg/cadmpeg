@@ -2287,6 +2287,11 @@ fn validate_features(
                         raw_feature,
                         groups,
                         *flip_direction,
+                    ) && crate::feature::chamfer::oriented::valid(
+                        feature,
+                        raw_feature,
+                        &expected,
+                        &ir.model.feature_input_topologies,
                     )
                 }),
                 _ => false,
@@ -3930,8 +3935,12 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
     for (key, _) in header.scalar_map.entries() {
         references.push(key.index());
     }
-    // A tangent solver hint stores an unqualified code, not a reference, as its value.
-    let hint_codes = matches!(constraint.kind, PmDcSketchConstraintKind::Tangent { .. });
+    // A tangent or perpendicular solver hint stores an unqualified code, not a
+    // reference, as its value.
+    let hint_codes = matches!(
+        constraint.kind,
+        PmDcSketchConstraintKind::Tangent { .. } | PmDcSketchConstraintKind::Perpendicular { .. }
+    );
     for (key, value) in header.reference_map.entries() {
         references.push(key.index());
         if !hint_codes {
