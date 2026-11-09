@@ -6766,8 +6766,7 @@ identities. Each row has an `AE_Id`, `AE_Type`, `Annot_Id`, and `Annot_Type`.
 `Annot_Type` 32 identifies a geometric tolerance. The `AE_Id` and `AE_Type`
 pair selects neutral attributes with matching `ref_id` and `ref_type`.
 `PTC_GTOL_TYPE` states the tolerance characteristic and
-`PTC_GTOL_PRIMARY_TOL` states its magnitude. An empty `unit` field selects
-the model length unit.
+`PTC_GTOL_PRIMARY_TOL` states its magnitude in the model length unit.
 `PTC_GTOL_1_DTM_PRIM_STRING`, `PTC_GTOL_1_DTM_SEC_STRING`, and
 `PTC_GTOL_1_DTM_TERT_STRING` state the primary, secondary, and tertiary
 datum-reference labels of the first tolerance segment. The corresponding
@@ -6781,8 +6780,8 @@ the displayed second-segment magnitude and its tolerance-zone symbols.
 stores absolute bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
 `+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
 `Plus-Minus` stores deviation magnitudes in `PTC_DIM_LOWER_TOL_VALUE` and
-`PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values with
-an empty `unit` field use the model length unit. Angular numeric values use radians; the
+`PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values use
+the model length unit. Angular numeric values use radians; the
 `PTC_DIM_ANGULARDIM_UNIT` field selects the display unit.
 
 A geometric tolerance's type-1 `gtol_place_ptr.id` selects a zero-based
@@ -6797,7 +6796,7 @@ leading empty slot. The first occupied slot stores a named prototype:
 ```text
 e3 e0 00 dtl_named_item\0 e2 e0 00 dtl_item\0 e2 e0 0a name\0 [f1] <name>
 e0 01 tol_type\0 [f1] <tol_type> e0 01 tol_class\0 <tol_class>
-e0 01 feat_id\0 <feat_id> e0 0a value_string\0 f8 01 <value>\0
+e0 01 feat_id\0 <feat_id> e0 0a value_string\0 f8 <count> <value>\0 ...
 e0 00 tol_text\0 f8 01 f7 <class> fb e3 ... e0 01 owner_id\0 <slot> ...
 e0 00 gtol_place_ptr\0 <placement>
 ```
@@ -6807,16 +6806,26 @@ compact integer. A later occupied slot stores the same leading fields
 positionally:
 
 ```text
-e3 [f7 <class>] e2 e2 <name> <tol_type> <tol_class> <feat_id> [f8 01] <value>\0
-f8 01 f7 <class> fb e3 f7 <class> <db_type> <text_type> <text_value>\0
-[f5] <txt_attrib> <txt_attrib2> <slot> <height> <width_factor>
-e2 <thickness> <vertical_extent_start> <vertical_extent_end> <placement>
+e3 [f7 <class>] e2 e2 <name> <tol_type> <tol_class> <feat_id> <values>
+f8 <lines> f7 <class> fb <text> ... <text> <placement>
 ```
 
-`<value>` is the displayed magnitude text. An `e8` byte can precede its UTF-8
-characters. `<txt_attrib>` is a compact integer or `eb` and four bytes. `<slot>`
-is the row's zero-based `geom_tol_array` slot and equals the `Annot_Id` of its
-annotation element.
+`<values>` stores one NUL-terminated `<value>` for each frame segment. It is
+`f8 <count>` and `<count>` values, or values without a count that continue to
+the `f8` of the `tol_text` header. `<value>` is the displayed magnitude text.
+An `e8` byte can precede its UTF-8 characters. The `tol_text` array stores
+`<lines>` text elements:
+
+```text
+[f1] [f7 <class>] e3 [f7 <class>] <db_type> <text_type> <text_value>\0
+[f5] <txt_attrib> <txt_attrib2> <slot> <height> <width_factor>
+e2 <thickness> <vertical_extent_start> <vertical_extent_end>
+```
+
+The first element starts at its `[f7 <class>]` or `e3`. `<txt_attrib>` is a
+compact integer or `eb` and four bytes. All elements of a row store the same
+`<slot>`. `<slot>` is the row's zero-based `geom_tol_array` slot and equals the
+`Annot_Id` of its annotation element.
 
 A named placement is `[f1|f2|f3] [f7 <class>] e3 e0 01 type\0 [f1] <type>
 e0 01 id\0 [f1] <id> e0 01 attribute\0 [f1] <attribute> e0 02 coord\0 f8 03

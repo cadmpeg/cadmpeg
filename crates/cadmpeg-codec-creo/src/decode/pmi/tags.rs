@@ -12,7 +12,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
-use crate::feature::pmi_datums::{datum_tags, DatumTagOutcome};
+use crate::feature::pmi_datums::{datum_tags, DatumTagIdentity, DatumTagOutcome};
 use crate::loss::CreoLossCode;
 
 const SURFACE_LEADER: u32 = 0x25;
@@ -92,9 +92,8 @@ pub(in crate::decode) fn transfer(
     }
 
     let mut decoded_tags = 0usize;
-    let mut inferred_targets = 0usize;
-    let mut dimension_leaders = 0usize;
-    let mut unresolved_targets = 0usize;
+    let mut definition_slot_joins = 0usize;
+    let mut target_counts = TargetCounts::default();
     let mut unresolved_label_joins = 0usize;
     for (name, outcome) in sections {
         match outcome {
@@ -119,23 +118,10 @@ pub(in crate::decode) fn transfer(
                     )));
                 }
                 for tag in &tags {
-                    let attachment = tag
-                        .attachment
-                        .filter(|_| tag.definition_id.is_some() && tag.definition_slot.is_some());
-                    let target: Vec<PmiTarget> = match attachment {
-                        Some(attachment) if attachment.reference_type == SURFACE_LEADER => {
-                            unique_surface_face(ir, attachment.id).into_iter().collect()
-                        }
-                        Some(attachment) if attachment.reference_type == DIMENSION_LEADER => {
-                            let faces = dimension_targets
-                                .get(&attachment.id)
-                                .cloned()
-                                .unwrap_or_default();
-                            dimension_leaders += usize::from(!faces.is_empty());
-                            faces
-                        }
-                        _ => Vec::new(),
-                    };
+                    definition_slot_joins += usize::from(tag.definition_slot.is_some());
+                    let selected = datum_target(tag, ir, dimension_targets);
+                    target_counts.record(&selected);
+                    let target = selected.faces();
                     let join = datum_join(
                         label_roster_complete,
                         tag_label_counts
@@ -185,11 +171,6 @@ pub(in crate::decode) fn transfer(
                         "datum tag",
                         Exactness::Inferred,
                     )?;
-                    if target.is_empty() {
-                        unresolved_targets += 1;
-                    } else {
-                        inferred_targets += 1;
-                    }
                     decoded_tags += 1;
                 }
             }
@@ -200,22 +181,12 @@ pub(in crate::decode) fn transfer(
             "{decoded_tags} datum-tag row(s) use a class-qualified prototype boundary."
         )));
     }
-    if dimension_leaders != 0 {
-        losses.push(CreoLossCode::PmiDatumTargetInferred.note(format!(
-            "{dimension_leaders} datum leader(s) attached to a dimension use that dimension's targets."
+    if definition_slot_joins != 0 {
+        losses.push(CreoLossCode::PmiDatumDefinitionSlotAssumed.note(format!(
+            "{definition_slot_joins} datum-tag definition-slot join(s) use a candidate class-bounded row sequence."
         )));
     }
-    let surface_targets = inferred_targets - dimension_leaders;
-    if surface_targets != 0 {
-        losses.push(CreoLossCode::PmiDatumTargetInferred.note(format!(
-            "{surface_targets} datum leader(s) use uniquely bounded surfaces as datum-feature targets."
-        )));
-    }
-    if unresolved_targets != 0 {
-        losses.push(CreoLossCode::PmiDatumTargetUnresolved.note(format!(
-            "{unresolved_targets} decoded datum-tag row(s) have unresolved targets."
-        )));
-    }
+    losses.extend(target_counts.notes());
     if unresolved_label_joins != 0 {
         losses.push(CreoLossCode::PmiDatumTargetUnresolved.note(format!(
             "{unresolved_label_joins} datum-tag label join(s) are ambiguous."
@@ -223,6 +194,89 @@ pub(in crate::decode) fn transfer(
     }
     ir.model.pmi.sort_unstable_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// The target that a datum tag's definition leader selects.
+#[derive(Debug, Clone, PartialEq)]
+enum DatumTarget {
+    Unresolved,
+    /// The unique bounded face of the leader's surface.
+    Surface(PmiTarget),
+    /// The targets of the dimension in the leader's `dim_array` slot.
+    Dimension(Vec<PmiTarget>),
+}
+
+impl DatumTarget {
+    fn faces(self) -> Vec<PmiTarget> {
+        match self {
+            Self::Unresolved => Vec::new(),
+            Self::Surface(face) => vec![face],
+            Self::Dimension(faces) => faces,
+        }
+    }
+}
+
+fn datum_target(
+    tag: &DatumTagIdentity,
+    ir: &CadIr,
+    dimension_targets: &BTreeMap<u32, Vec<PmiTarget>>,
+) -> DatumTarget {
+    let Some(attachment) = tag
+        .attachment
+        .filter(|_| tag.definition_id.is_some() && tag.definition_slot.is_some())
+    else {
+        return DatumTarget::Unresolved;
+    };
+    match attachment.reference_type {
+        SURFACE_LEADER => unique_surface_face(ir, attachment.id)
+            .map_or(DatumTarget::Unresolved, DatumTarget::Surface),
+        DIMENSION_LEADER => match dimension_targets.get(&attachment.id) {
+            Some(faces) if !faces.is_empty() => DatumTarget::Dimension(faces.clone()),
+            _ => DatumTarget::Unresolved,
+        },
+        _ => DatumTarget::Unresolved,
+    }
+}
+
+/// Counts of the datum targets of one decode, by selection rule.
+#[derive(Debug, Default)]
+struct TargetCounts {
+    surface: usize,
+    dimension: usize,
+    unresolved: usize,
+}
+
+impl TargetCounts {
+    fn record(&mut self, target: &DatumTarget) {
+        match target {
+            DatumTarget::Unresolved => self.unresolved += 1,
+            DatumTarget::Surface(_) => self.surface += 1,
+            DatumTarget::Dimension(_) => self.dimension += 1,
+        }
+    }
+
+    fn notes(&self) -> Vec<LossNote> {
+        let mut notes = Vec::new();
+        if self.dimension != 0 {
+            notes.push(CreoLossCode::PmiDatumTargetInferred.note(format!(
+                "{} datum leader(s) attached to a dimension use that dimension's targets.",
+                self.dimension
+            )));
+        }
+        if self.surface != 0 {
+            notes.push(CreoLossCode::PmiDatumTargetInferred.note(format!(
+                "{} datum leader(s) use uniquely bounded surfaces as datum-feature targets.",
+                self.surface
+            )));
+        }
+        if self.unresolved != 0 {
+            notes.push(CreoLossCode::PmiDatumTargetUnresolved.note(format!(
+                "{} decoded datum-tag row(s) have unresolved targets.",
+                self.unresolved
+            )));
+        }
+        notes
+    }
 }
 
 /// The unique bounded face of visible surface `id`.

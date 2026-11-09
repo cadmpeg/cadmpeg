@@ -7,7 +7,7 @@ mod elements;
 pub(super) mod tags;
 mod targets;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -32,18 +32,8 @@ struct Tolerance<'a> {
     magnitude: Option<f64>,
     secondary: Option<&'a [u8]>,
     datums: [[Option<DatumLabel<'a>>; 3]; 2],
-    issues: BTreeSet<ToleranceIssue>,
+    duplicate: bool,
     offset: usize,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ToleranceIssue {
-    Kind,
-    Magnitude,
-    Secondary,
-    Datum(usize),
-    Conflict,
-    Unit,
 }
 
 #[derive(Clone, Copy)]
@@ -88,6 +78,22 @@ pub(super) fn transfer(
     };
     let mut tolerances = BTreeMap::<(u32, u32), Tolerance<'_>>::new();
     let mut unresolved = 0usize;
+    let unit_overrides = attributes
+        .iter()
+        .flatten()
+        .filter(|attribute| {
+            !attribute.unit.is_empty()
+                && ((matches!(attribute.value, Value::Real(_))
+                    && (attribute.name == b"PTC_GTOL_PRIMARY_TOL"
+                        || dimensions::dimension_field(attribute.name)))
+                    || attribute.name == b"PTC_GTOL_2_TOL_STRING")
+        })
+        .count();
+    if unit_overrides != 0 {
+        losses.push(CreoLossCode::PmiAttributeUnitAssumed.note(format!(
+            "{unit_overrides} PMI attribute(s) have a unit field; their values use the model length unit or stored radians by assumption."
+        )));
+    }
     for attribute in attributes.iter().flatten().copied() {
         let (Some(owner), Some(owner_type)) = (attribute.owner, attribute.owner_type) else {
             if attribute.name == b"PTC_GTOL_TYPE" {
@@ -151,7 +157,6 @@ pub(super) fn transfer(
     let mut emitted = 0usize;
     let mut text_magnitudes = 0usize;
     let mut conflicting = 0usize;
-    let mut unresolved_units = 0usize;
     let mut datum_state = DatumState::default();
     let mut inferred_targets = 0usize;
     let mut dimension_targets_used = 0usize;
@@ -160,21 +165,6 @@ pub(super) fn transfer(
             unresolved += 1;
             continue;
         }
-        conflicting += usize::from(tolerance.issues.contains(&ToleranceIssue::Conflict));
-        unresolved_units += usize::from(
-            tolerance.issues.contains(&ToleranceIssue::Unit)
-                || (scale.is_none()
-                    && (tolerance.magnitude.is_some()
-                        || tolerance.secondary.is_some_and(|text| !text.is_empty()))),
-        );
-        let Some(kind) = tolerance
-            .kind
-            .filter(|_| !tolerance.issues.contains(&ToleranceIssue::Kind))
-            .and_then(kind)
-        else {
-            unresolved += 1;
-            continue;
-        };
         let first_key = format!("{owner_type}:{owner}");
         let target = targets.get(&(owner, owner_type));
         let target_faces = target
@@ -186,37 +176,38 @@ pub(super) fn transfer(
             target,
             Some(targets::ToleranceTarget::Dimension(_))
         ));
-        let references = if tolerance.issues.contains(&ToleranceIssue::Datum(0)) {
-            unresolved += 1;
-            None
-        } else {
-            datum_system(
-                ctx,
-                ir,
-                annotations,
-                &mut datum_state,
-                &tolerance.datums[0],
-                &first_key,
-            )?
-        };
+        let references = datum_system(
+            ctx,
+            ir,
+            annotations,
+            &mut datum_state,
+            &tolerance.datums[0],
+            &first_key,
+        )?;
         let second_key = format!("{owner_type}:{owner}:segment2");
-        let second_references = if tolerance.issues.contains(&ToleranceIssue::Datum(1)) {
+        let second_references = datum_system(
+            ctx,
+            ir,
+            annotations,
+            &mut datum_state,
+            &tolerance.datums[1],
+            &second_key,
+        )?;
+        let Some(kind) = tolerance.kind.and_then(kind) else {
             unresolved += 1;
-            None
-        } else {
-            datum_system(
-                ctx,
-                ir,
-                annotations,
-                &mut datum_state,
-                &tolerance.datums[1],
-                &second_key,
-            )?
+            continue;
         };
+        if tolerance.duplicate {
+            conflicting += 1;
+        }
         if let Some(value) = tolerance
             .magnitude
-            .filter(|_| !tolerance.issues.contains(&ToleranceIssue::Magnitude))
-            .and_then(|value| PmiValue::new(value * scale?.get(), PmiQuantity::Length))
+            .and_then(|value| {
+                PmiValue::new(
+                    value * scale.map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    PmiQuantity::Length,
+                )
+            })
             .and_then(PmiMagnitude::new)
         {
             push_tolerance(
@@ -234,8 +225,7 @@ pub(super) fn transfer(
         } else {
             unresolved += 1;
         }
-        if tolerance.issues.contains(&ToleranceIssue::Secondary)
-            || tolerance.secondary.is_some_and(|text| !text.is_empty())
+        if tolerance.secondary.is_some_and(|text| !text.is_empty())
             || tolerance.datums[1]
                 .iter()
                 .flatten()
@@ -243,9 +233,13 @@ pub(super) fn transfer(
         {
             if let Some(secondary) = tolerance
                 .secondary
-                .filter(|_| !tolerance.issues.contains(&ToleranceIssue::Secondary))
                 .and_then(text_magnitude)
-                .and_then(|value| PmiValue::new(value * scale?.get(), PmiQuantity::Length))
+                .and_then(|value| {
+                    PmiValue::new(
+                        value * scale.map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get),
+                        PmiQuantity::Length,
+                    )
+                })
                 .and_then(PmiMagnitude::new)
             {
                 push_tolerance(
@@ -268,18 +262,11 @@ pub(super) fn transfer(
     }
     ir.model.pmi.sort_unstable_by(|a, b| a.id.cmp(&b.id));
     if unresolved != 0 {
-        losses.push(CreoLossCode::PmiRecordUnresolved.note(format!(
-            "{unresolved} geometric-tolerance value(s) or annotation-element joins are unresolved."
-        )));
+        losses.push(CreoLossCode::PmiRecordUnresolved.note(format!("{unresolved} geometric-tolerance attribute owner(s) have an unresolved or ambiguous type, value, or annotation-element join.")));
     }
     if conflicting != 0 {
-        losses.push(CreoLossCode::PmiAttributeConflict.note(format!(
-            "{conflicting} geometric tolerance(s) have conflicting attributes; affected values were withheld."
-        )));
-    }
-    if unresolved_units != 0 {
-        losses.push(CreoLossCode::PmiUnitUnresolved.note(format!(
-            "{unresolved_units} geometric tolerance(s) have unresolved units; affected values were withheld."
+        losses.push(CreoLossCode::PmiFirstAttributeAssumed.note(format!(
+            "{conflicting} geometric tolerance(s) use the first value of conflicting attributes."
         )));
     }
     if emitted != 0 {
@@ -289,6 +276,12 @@ pub(super) fn transfer(
         losses.push(CreoLossCode::PmiModifiersUnresolved.note(format!(
             "{emitted} geometric tolerance(s) retain unresolved modifiers and zone constraints."
         )));
+        if scale.is_none() {
+            losses.push(
+                CreoLossCode::PmiLengthUnitAssumed
+                    .note("Geometric-tolerance values use the default millimetre unit."),
+            );
+        }
     }
     if inferred_targets != 0 {
         losses.push(CreoLossCode::PmiToleranceTargetInferred.note(format!(
@@ -334,39 +327,22 @@ fn add_attribute<'a>(tolerance: &mut Tolerance<'a>, attribute: Attribute<'a>) {
     match (attribute.name, attribute.value) {
         (b"PTC_GTOL_TYPE", Value::Text(value)) => {
             if let Some(previous) = tolerance.kind {
-                if previous != value {
-                    tolerance.issues.insert(ToleranceIssue::Kind);
-                    tolerance.issues.insert(ToleranceIssue::Conflict);
-                }
+                tolerance.duplicate |= previous != value;
             } else {
                 tolerance.kind = Some(value);
                 tolerance.offset = attribute.offset;
             }
         }
         (b"PTC_GTOL_PRIMARY_TOL", Value::Real(Some(value))) => {
-            if !attribute.unit.is_empty() {
-                tolerance.issues.insert(ToleranceIssue::Magnitude);
-                tolerance.issues.insert(ToleranceIssue::Unit);
-            }
             if let Some(previous) = tolerance.magnitude {
-                if previous.to_bits() != value.to_bits() {
-                    tolerance.issues.insert(ToleranceIssue::Magnitude);
-                    tolerance.issues.insert(ToleranceIssue::Conflict);
-                }
+                tolerance.duplicate |= previous.to_bits() != value.to_bits();
             } else {
                 tolerance.magnitude = Some(value);
             }
         }
         (b"PTC_GTOL_2_TOL_STRING", Value::Text(value)) => {
-            if !attribute.unit.is_empty() && !value.is_empty() {
-                tolerance.issues.insert(ToleranceIssue::Secondary);
-                tolerance.issues.insert(ToleranceIssue::Unit);
-            }
             if let Some(previous) = tolerance.secondary {
-                if previous != value {
-                    tolerance.issues.insert(ToleranceIssue::Secondary);
-                    tolerance.issues.insert(ToleranceIssue::Conflict);
-                }
+                tolerance.duplicate |= previous != value;
             } else {
                 tolerance.secondary = Some(value);
             }
@@ -379,31 +355,13 @@ fn add_attribute<'a>(tolerance: &mut Tolerance<'a>, attribute: Attribute<'a>) {
                 };
                 let field = &mut tolerance.datums[segment][compartment];
                 if let Some(previous) = field {
-                    if previous.text != value {
-                        tolerance.issues.insert(ToleranceIssue::Datum(segment));
-                        tolerance.issues.insert(ToleranceIssue::Conflict);
-                    }
+                    tolerance.duplicate |= previous.text != value;
                 } else {
                     *field = Some(label);
                 }
             }
         }
-        (name, _) => match name {
-            b"PTC_GTOL_TYPE" => {
-                tolerance.issues.insert(ToleranceIssue::Kind);
-            }
-            b"PTC_GTOL_PRIMARY_TOL" => {
-                tolerance.issues.insert(ToleranceIssue::Magnitude);
-            }
-            b"PTC_GTOL_2_TOL_STRING" => {
-                tolerance.issues.insert(ToleranceIssue::Secondary);
-            }
-            _ => {
-                if let Some((segment, _)) = datum_field(name) {
-                    tolerance.issues.insert(ToleranceIssue::Datum(segment));
-                }
-            }
-        },
+        _ => {}
     }
 }
 

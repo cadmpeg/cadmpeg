@@ -1521,7 +1521,9 @@ before the next row. A named row can carry `prim_dtm_string`,
 
 **Need.** Establish the production that ends a row after its attachment.
 Consume the datum fields of each row to transfer its datum and target
-references.
+references. Establish the rule that omits the `value_string` count: the
+observed rows without a count follow a row with the same count. Establish the
+named-prototype `tol_text` form with more than one element.
 
 **Note.** Boundary tests gave these results:
 
@@ -1626,22 +1628,12 @@ target semantics of the unresolved attachment and placement types.
 PMI numeric value?
 
 **Known.** Neutral attribute rows carry a unit field. PMI attributes with an
-empty unit field use the principal model length unit for length values. A
-nonempty unit field has an unresolved effect on numeric values.
+empty unit field use the principal model length unit for length values. For a
+nonempty unit field, the decoder uses the model length unit or stored radians
+and records that assumption.
 
 **Need.** Compare nonempty PMI unit fields with independently measured values
 to establish their conversion and precedence over the model unit.
-
-**Note.** Unit tests gave these results:
-
-1. An empty unit field uses the principal model length unit for length values: supported by the specimen dimensions.
-2. A nonempty unit field on a length tolerance with the principal unit present withholds the magnitude: tested.
-3. A nonempty unit field on a length tolerance without the principal unit withholds the magnitude: tested.
-4. A conflicting duplicate magnitude with an empty unit withholds the magnitude: tested.
-5. A conflicting duplicate magnitude still emits the secondary tolerance when its inputs are valid: tested.
-6. An ambiguous nominal withholds the nominal but keeps an independently valid symmetric tolerance: tested.
-7. Angular numeric values use radians and `PTC_DIM_ANGULARDIM_UNIT` selects the display unit: spec-defined.
-8. A nonempty unit field on a dimension nominal withholds the nominal value: tested by the ambiguity path.
 
 ## 6. Assembly component table
 

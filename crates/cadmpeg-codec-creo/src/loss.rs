@@ -80,18 +80,20 @@ pub(crate) enum CreoLossCode {
     PmiTableIncomplete,
     /// A PMI type, value, or owner join is unresolved.
     PmiRecordUnresolved,
-    /// Conflicting PMI attributes were withheld.
-    PmiAttributeConflict,
-    /// PMI values with unresolved units were withheld.
-    PmiUnitUnresolved,
     /// PMI modifiers or geometric-tolerance zone constraints remain unresolved.
     PmiModifiersUnresolved,
+    /// A PMI length value uses the default millimetre assumption.
+    PmiLengthUnitAssumed,
+    /// A PMI attribute uses the model length unit or stored radians.
+    PmiAttributeUnitAssumed,
     /// A composite tolerance segment uses its formatted magnitude.
     PmiTextMagnitudeInferred,
     /// Datum references with the same label use an inferred shared identity.
     PmiDatumIdentityInferred,
     /// A datum-reference label could not be decoded.
     PmiDatumLabelUnresolved,
+    /// Conflicting same-owner attributes use the first stored value.
+    PmiFirstAttributeAssumed,
     /// A datum-tag leader is interpreted as the target of a datum feature.
     PmiDatumTargetInferred,
     /// A tolerance's surface attachment selects its unique bounded face.
@@ -102,8 +104,12 @@ pub(crate) enum CreoLossCode {
     PmiDatumTargetUnresolved,
     /// A datum-tag prototype uses a class-qualified boundary candidate.
     PmiDatumTagBoundaryAssumed,
+    /// Datum-tag identities use a candidate datum-definition row boundary.
+    PmiDatumDefinitionSlotAssumed,
     /// A dimension kind or its quantity is inferred.
     PmiDimensionKindInferred,
+    /// An angular dimension uses the default stored-radian assumption.
+    PmiAngularUnitAssumed,
     /// Primitive triangle-strip records carry disagreeing position representations.
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
@@ -318,18 +324,21 @@ impl CreoLossCode {
             Self::PmiAssociationsUnresolved => "pmi.associations-unresolved",
             Self::PmiTableIncomplete => "pmi.table-incomplete",
             Self::PmiRecordUnresolved => "pmi.record-unresolved",
-            Self::PmiAttributeConflict => "pmi.attribute-conflict",
-            Self::PmiUnitUnresolved => "pmi.unit-unresolved",
             Self::PmiModifiersUnresolved => "pmi.modifiers-unresolved",
+            Self::PmiLengthUnitAssumed => "pmi.length-unit-assumed",
+            Self::PmiAttributeUnitAssumed => "pmi.attribute-unit-assumed",
             Self::PmiTextMagnitudeInferred => "pmi.text-magnitude-inferred",
             Self::PmiDatumIdentityInferred => "pmi.datum-identity-inferred",
             Self::PmiDatumLabelUnresolved => "pmi.datum-label-unresolved",
+            Self::PmiFirstAttributeAssumed => "pmi.first-attribute-assumed",
             Self::PmiDatumTargetInferred => "pmi.datum-target-inferred",
             Self::PmiToleranceTargetInferred => "pmi.tolerance-target-inferred",
             Self::PmiDimensionTargetInferred => "pmi.dimension-target-inferred",
             Self::PmiDatumTargetUnresolved => "pmi.datum-target-unresolved",
             Self::PmiDatumTagBoundaryAssumed => "pmi.datum-tag-boundary-assumed",
+            Self::PmiDatumDefinitionSlotAssumed => "pmi.datum-definition-slot-assumed",
             Self::PmiDimensionKindInferred => "pmi.dimension-kind-inferred",
+            Self::PmiAngularUnitAssumed => "pmi.angular-unit-assumed",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
             Self::BrepCompactFrameComponentUnresolved => {
@@ -493,18 +502,21 @@ impl CreoLossCode {
             Self::PmiAssociationsUnresolved
             | Self::PmiTableIncomplete
             | Self::PmiRecordUnresolved
-            | Self::PmiAttributeConflict
-            | Self::PmiUnitUnresolved
             | Self::PmiModifiersUnresolved
+            | Self::PmiLengthUnitAssumed
+            | Self::PmiAttributeUnitAssumed
             | Self::PmiTextMagnitudeInferred
             | Self::PmiDatumIdentityInferred
             | Self::PmiDatumLabelUnresolved
+            | Self::PmiFirstAttributeAssumed
             | Self::PmiDatumTargetInferred
             | Self::PmiToleranceTargetInferred
             | Self::PmiDimensionTargetInferred
             | Self::PmiDatumTargetUnresolved
             | Self::PmiDatumTagBoundaryAssumed
+            | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
+            | Self::PmiAngularUnitAssumed
             | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
@@ -618,18 +630,21 @@ impl CreoLossCode {
             Self::PmiAssociationsUnresolved
             | Self::PmiTableIncomplete
             | Self::PmiRecordUnresolved
-            | Self::PmiAttributeConflict
-            | Self::PmiUnitUnresolved
             | Self::PmiModifiersUnresolved
             | Self::PmiDatumLabelUnresolved
             | Self::PmiDatumTargetUnresolved => LossTaxonomy::PmiOmitted,
-            Self::PmiTextMagnitudeInferred
+            Self::PmiLengthUnitAssumed
+            | Self::PmiAttributeUnitAssumed
+            | Self::PmiTextMagnitudeInferred
             | Self::PmiDatumIdentityInferred
+            | Self::PmiFirstAttributeAssumed
             | Self::PmiDatumTargetInferred
             | Self::PmiToleranceTargetInferred
             | Self::PmiDimensionTargetInferred
             | Self::PmiDatumTagBoundaryAssumed
-            | Self::PmiDimensionKindInferred => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiDatumDefinitionSlotAssumed
+            | Self::PmiDimensionKindInferred
+            | Self::PmiAngularUnitAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
@@ -785,18 +800,21 @@ mod tests {
                 "pmi.associations-unresolved",
                 "pmi.table-incomplete",
                 "pmi.record-unresolved",
-                "pmi.attribute-conflict",
-                "pmi.unit-unresolved",
                 "pmi.modifiers-unresolved",
+                "pmi.length-unit-assumed",
+                "pmi.attribute-unit-assumed",
                 "pmi.text-magnitude-inferred",
                 "pmi.datum-identity-inferred",
                 "pmi.datum-label-unresolved",
+                "pmi.first-attribute-assumed",
                 "pmi.datum-target-inferred",
                 "pmi.tolerance-target-inferred",
                 "pmi.dimension-target-inferred",
                 "pmi.datum-target-unresolved",
                 "pmi.datum-tag-boundary-assumed",
+                "pmi.datum-definition-slot-assumed",
                 "pmi.dimension-kind-inferred",
+                "pmi.angular-unit-assumed",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.brep-compact-frame-component-unresolved",

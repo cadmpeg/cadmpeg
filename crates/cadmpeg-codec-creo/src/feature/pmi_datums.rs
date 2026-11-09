@@ -160,9 +160,10 @@ pub(crate) fn datum_tags(
     let first_attachment = first_definition_slot.and_then(|_| {
         definition_array.and_then(|field| leader_attachment(section, field, tag_array))
     });
-    let later_definitions = first_definition_slot
-        .zip(definition_array)
-        .and_then(|(slot, field)| later_definition_attachments(section, field, tag_array, slot));
+    let later_definitions = definition_array.and_then(|field| {
+        let slot = first_datum_slot(section, field, tag_array)?;
+        later_definition_attachments(section, field, tag_array, slot)
+    });
     let placeholder = DatumTagIdentity {
         source_offset: 0,
         definition_id: None,
@@ -409,9 +410,10 @@ fn positional_attachment(row: &mut View<'_>) -> Option<DatumAttachment> {
 /// The slots and leader references of the positional definition rows after
 /// the prototype at `prototype_slot`.
 ///
-/// A row is `e3 <datum_type> <datum_id> <feat_id> <gtol_id> e3 <ldr_attrib>`
-/// and the `note_att` attachment. The rows fill the slots after the prototype
-/// in order only when their count equals the number of those slots.
+/// A row starts `e3 01 f6 f6 f6 e3`; the `p_ldr` compound continues with
+/// `<ldr_attrib>` and the `note_att` attachment. The rows fill the slots after
+/// the prototype in order only when their count equals the number of those
+/// slots.
 fn later_definition_attachments(
     section: View<'_>,
     datum_array: usize,
@@ -428,24 +430,23 @@ fn later_definition_attachments(
         let Some(mut row) = array.child(row_start.checked_add(offset)?, tag_array) else {
             continue;
         };
-        let leader = (|| {
+        let row_prefix = (|| {
             expect(&mut row, &[0xe3])?;
-            compact(&mut row)?;
+            (compact(&mut row)? == 1).then_some(())?;
             for _ in 0..3 {
-                nullable_compact(&mut row)?;
+                matches!(nullable_compact(&mut row)?, NullableCompact::Null).then_some(())?;
             }
-            expect(&mut row, &[0xe3])?;
-            compact(&mut row)?;
-            positional_attachment(&mut row)
+            expect(&mut row, &[0xe3])
         })();
-        if let Some(attachment) = leader {
-            rows.push(attachment);
+        if row_prefix.is_some() {
+            let leader = compact(&mut row).and_then(|_| positional_attachment(&mut row));
+            rows.push(leader);
         }
     }
     (rows.len() == later_slots).then_some(())?;
     rows.into_iter()
         .zip(1_u32..)
-        .map(|(attachment, ordinal)| Some((prototype_slot.checked_add(ordinal)?, Some(attachment))))
+        .map(|(attachment, ordinal)| Some((prototype_slot.checked_add(ordinal)?, attachment)))
         .collect()
 }
 
