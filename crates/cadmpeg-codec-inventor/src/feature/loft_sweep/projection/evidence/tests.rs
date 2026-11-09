@@ -143,6 +143,20 @@ fn an_arc_joined_span_requires_a_torus_about_the_arc() {
 }
 
 #[test]
+fn a_span_without_a_joined_curve_keeps_only_the_radius_check() {
+    let ends = [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)];
+    let unjoined = [(9, None)];
+    let torus = torus_model(Point3::new(1.0, 2.0, 3.0));
+    assert!(sweep(&torus, 17, 2.0, 8, &unjoined, ends).is_some());
+    assert!(sweep(&torus, 17, 3.0, 8, &unjoined, ends).is_none());
+    assert!(sweep(&model(), 17, 2.0, 8, &unjoined, ends).is_some());
+    assert!(sweep(&model(), 17, 3.0, 8, &unjoined, ends).is_none());
+    // A joined span on the same faces applies the curve checks.
+    let line = [(9, Some(line_span()))];
+    assert!(sweep(&torus, 17, 2.0, 8, &line, ends).is_none());
+}
+
+#[test]
 fn loft_result_requires_two_positional_sections_without_support_or_guidance() {
     let base = loft_payload();
     let admitted = |value| {
