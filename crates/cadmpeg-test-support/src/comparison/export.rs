@@ -200,6 +200,27 @@ fn regenerated_report_records(before: &Value, export_report: &Value) -> BTreeSet
                     == Some("regenerated")
                 {
                     regenerated.insert(id.to_owned());
+                    // A regenerated SolidWorks lane regenerates the nested
+                    // sketch carriers the comparison reads out of it.
+                    for carrier in row
+                        .get("nested_sketch_carriers")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                    {
+                        for field in ["points", "curves"] {
+                            for child in carrier
+                                .get(field)
+                                .and_then(Value::as_array)
+                                .into_iter()
+                                .flatten()
+                            {
+                                if let Some(id) = child.get("id").and_then(Value::as_str) {
+                                    regenerated.insert(id.to_owned());
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

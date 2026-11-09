@@ -296,3 +296,71 @@ fn a_techdraw_annotation_position_lies_on_the_page() {
         original
     );
 }
+
+#[test]
+fn a_dimension_value_its_saved_geometry_contradicts_is_omitted() {
+    let document = decode("techdraw-dimensions.FCStd");
+    let index = document["model"]["semantic_annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|annotation| annotation.get("value").is_some())
+        .expect("measured dimension");
+    let id = document["model"]["semantic_annotations"][index]["id"]
+        .as_str()
+        .unwrap();
+    let measured = document["model"]["semantic_annotations"][index]["value"]
+        .as_f64()
+        .unwrap();
+    let (losses, output) = write_edit(
+        &document,
+        &format!("/model/semantic_annotations/{index}/value"),
+        json!(measured + 1.0),
+    );
+    assert!(charged(&losses, "fcstd/annotation.value-derived", id));
+    assert_eq!(
+        record(&output, &document, "semantic_annotations", index).get("value"),
+        None
+    );
+    let (losses, _) = write_edit(
+        &document,
+        &format!("/model/semantic_annotations/{index}/value"),
+        json!(measured),
+    );
+    assert!(!charged(&losses, "fcstd/annotation.value-derived", id));
+}
+
+#[test]
+fn a_two_use_edge_links_its_uses_to_each_other() {
+    let document = decode("core_design_product.FCStd");
+    let coedges = document["model"]["coedges"].as_array().unwrap();
+    let index = coedges
+        .iter()
+        .position(|coedge| coedge["radial_next"] != coedge["id"])
+        .expect("a two-use edge");
+    let id = coedges[index]["id"].as_str().unwrap();
+    let (losses, output) = write_edit(
+        &document,
+        &format!("/model/coedges/{index}/radial_next"),
+        json!(id),
+    );
+    assert!(charged(
+        &losses,
+        "fcstd/topology.radial-order-not-stored",
+        id
+    ));
+    let stored = output["model"]["coedges"].as_array().unwrap();
+    assert_eq!(stored.len(), coedges.len());
+    for coedge in stored {
+        let uses: Vec<&Value> = stored
+            .iter()
+            .filter(|other| other["edge"] == coedge["edge"])
+            .collect();
+        let expected = match uses.as_slice() {
+            [first, second] if first["id"] == coedge["id"] => &second["id"],
+            [first, _] => &first["id"],
+            _ => &coedge["id"],
+        };
+        assert_eq!(&coedge["radial_next"], expected);
+    }
+}

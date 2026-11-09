@@ -9,6 +9,7 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::codec::write::approximation;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeError, ValidatedFinding};
 use cadmpeg_ir::declared_measures::{DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
@@ -69,7 +70,7 @@ pub(crate) fn write_step(
     w: &mut impl Write,
     schema: StepSchema,
     opts: &StepWriteOptions,
-) -> Result<ExportReport, cadmpeg_ir::codec::write::EncodeError> {
+) -> Result<ExportReport, EncodeError> {
     let plan = crate::StepCodec {
         options: opts.clone(),
     }
@@ -100,7 +101,7 @@ pub(crate) fn write_step_outcome(
     schema: StepSchema,
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
-) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
+) -> Result<StepWriteOutcome, EncodeError> {
     let mut b = Builder::new(ctx, ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
@@ -110,7 +111,20 @@ pub(crate) fn write_step_outcome(
     let mut emitter_anchors = b.emitter.take_anchors();
     let outcome = b.finish_outcome();
     let file_name_fields = b.file_name_fields.clone();
-    let lines = b.emitter.into_lines()?;
+    let lines = match b.emitter.into_lines() {
+        Ok(lines) => lines,
+        Err(refusal) => {
+            if let Some(proof) = ValidatedFinding::non_finite(ir) {
+                return Err(EncodeError::InvalidInput(proof));
+            }
+            debug_assert!(
+                false,
+                "STEP writer computes finite reals from a finite document, computed {}",
+                refusal.value
+            );
+            refusal.lines
+        }
+    };
     let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
     write_header(
         w,

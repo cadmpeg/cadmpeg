@@ -561,7 +561,7 @@ pub fn edit_findings(
                 let outcome = redecode(&bytes).and_then(|after| {
                     let propagated = propagated_native(&expected, namespace, record);
                     Allowances::export(&expected, &report_json).and_then(|mut allowances| {
-                        allowances.permit_removed(propagated);
+                        allowances.permit_propagated(propagated);
                         crate::comparison::agree(&expected, &after.ir, &allowances, Mode::Same)
                     })
                 });
@@ -688,7 +688,19 @@ fn normalize_edit(
     {
         return Err(format!("normalizes without a {loss} loss naming {id}"));
     }
-    *value = normalized;
+    if !normalized.is_null() {
+        *value = normalized;
+        return Ok(());
+    }
+    // A rule that normalizes to null states an absent value.
+    let (parent, key) = pointer
+        .rsplit_once('/')
+        .ok_or("normalized value is absent")?;
+    expected
+        .pointer_mut(parent)
+        .and_then(Value::as_object_mut)
+        .ok_or("normalized value is absent")?
+        .remove(&key.replace("~1", "/").replace("~0", "~"));
     Ok(())
 }
 

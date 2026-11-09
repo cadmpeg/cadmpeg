@@ -351,8 +351,8 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
     assert!(geometry.ir().model.parameters.is_empty());
     assert_eq!(geometry.ir().model.attributes, full.ir().model.attributes);
     // #209 §1.1: Geometry requests model only and the fragment delivers
-    // no model class; Full decode reports requested model and design as
-    // delivered.
+    // no model class; Full decode delivers model and charges the design
+    // class, whose part the fragment does not hold.
     assert_eq!(geometry.report().losses.len(), 1);
     assert_eq!(
         geometry.report().losses[0].code.local_code(),
@@ -360,14 +360,13 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
     );
     assert!(geometry.report().losses[0].message.contains("model"));
     assert!(!geometry.report().losses[0].message.contains("design"));
-    assert!(
-        full.report()
-            .losses
-            .iter()
-            .all(|loss| loss.code.local_code() != "depth.not-delivered"),
-        "{:?}",
-        full.report().losses
+    assert_eq!(full.report().losses.len(), 1);
+    assert_eq!(
+        full.report().losses[0].code.local_code(),
+        "depth.not-delivered"
     );
+    assert!(full.report().losses[0].message.contains("design"));
+    assert!(!full.report().losses[0].message.contains("model"));
     // The Application object has no neutral home, so its properties stay
     // native-only: no attribute names them.
     assert!(full.ir().model.attributes.is_empty());

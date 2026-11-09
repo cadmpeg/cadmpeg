@@ -72,11 +72,15 @@ impl Allowances {
         &self.absent_fields
     }
 
-    /// Allow additional record identities to be unpaired in `before`. Used by
-    /// edit closure when a writer propagates model edits into native carrier
-    /// records that the expected JSON does not reflect.
-    pub fn permit_removed(&mut self, ids: impl IntoIterator<Item = String>) {
-        self.removed.extend(ids);
+    /// Allow native records whose content a writer derives from an edited
+    /// model record (edit closure). The expected JSON holds their stale
+    /// content: each may be unpaired, and one `after` holds by id pairs by
+    /// that id as a regenerated record does.
+    pub fn permit_propagated(&mut self, ids: impl IntoIterator<Item = String>) {
+        for id in ids {
+            self.regenerated.insert(id.clone());
+            self.removed.insert(id);
+        }
     }
 }
 
@@ -502,6 +506,11 @@ fn cross_additions_pruned(
     }
 }
 
+/// The content a regenerated record compares with: its identity alone.
+fn regenerated_marker(id: &str) -> Value {
+    serde_json::json!({ "regenerated": format!("regenerated record {id}") })
+}
+
 fn agree_pairing(
     mut before: Document,
     mut after: Document,
@@ -510,6 +519,24 @@ fn agree_pairing(
     cross: bool,
     include_incoming: bool,
 ) -> Result<(), String> {
+    // A regenerated record that both documents hold by id pairs by that id,
+    // whatever its stale content, so the records that reference it pair by
+    // their own content.
+    for record in &mut before.records {
+        if regenerated.contains(&record.id)
+            && after
+                .records
+                .iter()
+                .any(|candidate| candidate.id == record.id && candidate.arena == record.arena)
+        {
+            record.value = regenerated_marker(&record.id);
+        }
+    }
+    for record in &mut after.records {
+        if regenerated.contains(&record.id) {
+            record.value = regenerated_marker(&record.id);
+        }
+    }
     let mut pairs = pair(&before, &after, cross, include_incoming);
     // Regenerated records may not pair when expected native is stale; map by id.
     for (index, record) in before.records.iter().enumerate() {
