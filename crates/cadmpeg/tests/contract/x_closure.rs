@@ -308,6 +308,15 @@ fn step_observe() -> StepObserved {
         cadmpeg_test_support::carried::UnheldClass::MultiRegionSolid,
         cadmpeg_test_support::carried::UnheldClass::DistinctProductNames,
         cadmpeg_test_support::carried::UnheldClass::MultiPcurveCoedge,
+        cadmpeg_test_support::carried::UnheldClass::ConstructionBesideSolvedCurve,
+        cadmpeg_test_support::carried::UnheldClass::RangeOffVertices,
+        cadmpeg_test_support::carried::UnheldClass::PcurveOnSeveralSurfaces,
+        cadmpeg_test_support::carried::UnheldClass::PcurveOffItsEdge,
+        cadmpeg_test_support::carried::UnheldClass::OpenRing,
+        cadmpeg_test_support::carried::UnheldClass::CurvelessEdgePcurve,
+        cadmpeg_test_support::carried::UnheldClass::DocumentIdentityReference,
+        cadmpeg_test_support::carried::UnheldClass::ColourlessAppearance,
+        cadmpeg_test_support::carried::UnheldClass::UnplacedPresentation,
     ]);
     StepObserved {
         carried,
