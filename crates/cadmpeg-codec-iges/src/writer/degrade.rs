@@ -21,7 +21,7 @@ pub(super) fn graph(
     ir: &CadIr,
     version: crate::IgesVersion,
     reason: &str,
-) -> Result<SynthesisGraph, CodecError> {
+) -> Result<SynthesisGraph, crate::writer::WriteError> {
     let mut result = SynthesisGraph {
         entities: Vec::new(),
         presentations: BTreeMap::new(),
@@ -125,7 +125,7 @@ fn admit(
     ir: &CadIr,
     version: crate::IgesVersion,
     identity: &str,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if has_dangling_body_region(ir) {
         for body in &ir.model.bodies {
             if body
@@ -145,7 +145,12 @@ fn admit(
     }
     match synthesis_graph(ctx, ir, version) {
         Ok(graph) => append(result, graph),
-        Err(CodecError::InvalidInput(reason) | CodecError::Malformed(reason)) => {
+        Err(
+            crate::writer::WriteError::Unwritable(reason)
+            | crate::writer::WriteError::Codec(
+                CodecError::InvalidInput(reason) | CodecError::Malformed(reason),
+            ),
+        ) => {
             // Type 508 can carry the model-space edge boundary without UV
             // images. Prefer that degradation to discarding an entire body.
             if ir.model.bodies.len() == 1 && !ir.model.pcurves.is_empty() {
@@ -160,7 +165,12 @@ fn admit(
                         }
                         return append(result, graph);
                     }
-                    Err(CodecError::InvalidInput(_) | CodecError::Malformed(_)) => {}
+                    Err(
+                        crate::writer::WriteError::Unwritable(_)
+                        | crate::writer::WriteError::Codec(
+                            CodecError::InvalidInput(_) | CodecError::Malformed(_),
+                        ),
+                    ) => {}
                     Err(error) => return Err(error),
                 }
             }
@@ -251,7 +261,7 @@ fn admit(
 }
 
 /// Remove the redundant UV representation without changing the 3D boundary.
-fn without_pcurves(ir: &CadIr) -> Result<CadIr, CodecError> {
+fn without_pcurves(ir: &CadIr) -> Result<CadIr, crate::writer::WriteError> {
     let mut document = ir.clone();
     document.model.pcurves.clear();
     for coedge in &mut document.model.coedges {
@@ -266,7 +276,7 @@ fn without_pcurves(ir: &CadIr) -> Result<CadIr, CodecError> {
                     vertex.pcurves.clear();
                 }
                 *ring = cadmpeg_ir::topology::LoopRing::new(ring.coedges().to_vec(), vertices)
-                    .map_err(CodecError::malformed)?;
+                    .map_err(|error| crate::writer::WriteError::Unwritable(error.to_string()))?;
             }
         }
     }
@@ -278,23 +288,23 @@ fn face_document(
     ir: &CadIr,
     ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
-) -> Result<CadIr, CodecError> {
+) -> Result<CadIr, crate::writer::WriteError> {
     let mut part = ir.clone();
     let shell = ir
         .model
         .shells
         .iter()
         .find(|shell| shell.id == face.shell)
-        .ok_or_else(|| CodecError::malformed("IGES sheet face has no shell"))?;
+        .ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("IGES sheet face has no shell".into())
+        })?;
     part.model.bodies[0].regions = vec![shell.region.clone()];
     part.model
         .regions
         .retain(|region| region.id == shell.region);
-    let region = part
-        .model
-        .regions
-        .first_mut()
-        .ok_or_else(|| CodecError::malformed("IGES sheet shell has no region"))?;
+    let region = part.model.regions.first_mut().ok_or_else(|| {
+        crate::writer::WriteError::Unwritable("IGES sheet shell has no region".into())
+    })?;
     region.shells = vec![shell.id.clone()];
     part.model.shells = vec![cadmpeg_ir::topology::Shell::with_face(
         shell.id.clone(),
@@ -322,8 +332,8 @@ fn face_document(
         let mut visited = BTreeSet::new();
         while !retained.contains(&coedge.radial_next) {
             if !visited.insert(coedge.radial_next.clone()) {
-                return Err(CodecError::malformed(
-                    "IGES sheet has an unclosed radial ring",
+                return Err(crate::writer::WriteError::Unwritable(
+                    "IGES sheet has an unclosed radial ring".into(),
                 ));
             }
             coedge.radial_next = ir
@@ -331,7 +341,11 @@ fn face_document(
                 .coedges
                 .iter()
                 .find(|candidate| candidate.id == coedge.radial_next)
-                .ok_or_else(|| CodecError::malformed("IGES sheet radial ring names no coedge"))?
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(
+                        "IGES sheet radial ring names no coedge".into(),
+                    )
+                })?
                 .radial_next
                 .clone();
         }
@@ -339,39 +353,46 @@ fn face_document(
     scoped(&part, ctx, ir.model.bodies[0].id.as_str()).map(|(document, _)| document)
 }
 
-fn append(target: &mut SynthesisGraph, mut source: SynthesisGraph) -> Result<(), CodecError> {
+fn append(
+    target: &mut SynthesisGraph,
+    mut source: SynthesisGraph,
+) -> Result<(), crate::writer::WriteError> {
     let offset = target.entities.len();
     for entity in &mut source.entities {
         if let Some(index) = &mut entity.structure {
-            *index = index
-                .checked_add(offset)
-                .ok_or_else(|| CodecError::malformed("IGES Structure index overflows"))?;
+            *index = index.checked_add(offset).ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("IGES Structure index overflows".into())
+            })?;
         }
         for index in entity
             .property_links
             .iter_mut()
             .chain(entity.association_links.iter_mut())
         {
-            *index = index
-                .checked_add(offset)
-                .ok_or_else(|| CodecError::malformed("IGES property index overflows"))?;
+            *index = index.checked_add(offset).ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("IGES property index overflows".into())
+            })?;
         }
         if let Some(super::DirectoryLineFont::Definition(index)) = &mut entity.line_font {
-            *index = index
-                .checked_add(offset)
-                .ok_or_else(|| CodecError::malformed("IGES line font index overflows"))?;
+            *index = index.checked_add(offset).ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("IGES line font index overflows".into())
+            })?;
         }
         entity.parameter_body = super::map_parameter_references(&entity.parameter_body, |index| {
             index
                 .checked_add(offset)
                 .map(reference_marker)
-                .ok_or_else(|| CodecError::malformed("IGES graph entity index overflows"))
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(
+                        "IGES graph entity index overflows".into(),
+                    )
+                })
         })?;
     }
     for (index, presentation) in source.presentations {
-        let index = index
-            .checked_add(offset)
-            .ok_or_else(|| CodecError::malformed("IGES graph presentation index overflows"))?;
+        let index = index.checked_add(offset).ok_or_else(|| {
+            crate::writer::WriteError::Unwritable("IGES graph presentation index overflows".into())
+        })?;
         target.presentations.insert(index, presentation);
     }
     target.entities.extend(source.entities);
@@ -386,7 +407,7 @@ fn scoped(
     ir: &CadIr,
     ctx: &DecodeContext<'_>,
     seed: &str,
-) -> Result<(CadIr, BTreeSet<String>), CodecError> {
+) -> Result<(CadIr, BTreeSet<String>), crate::writer::WriteError> {
     let mut identities = BTreeSet::from([seed.to_owned()]);
     loop {
         let mut references = BTreeSet::new();

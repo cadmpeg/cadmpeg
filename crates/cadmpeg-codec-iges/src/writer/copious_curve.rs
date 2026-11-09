@@ -323,7 +323,7 @@ pub(super) fn append_withheld_parameter_curves(
     ir: &CadIr,
     version: crate::IgesVersion,
     graph: &mut super::SynthesisGraph,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let ownership = super::ownership::SourceOwnership::build(ir);
     for curve in &ir.model.curves {
         let withheld = withheld_parameter_curve_loss(&curve.id);
@@ -342,7 +342,7 @@ pub(super) fn append_withheld_parameter_curves(
         });
         if !used && ownership.writes_standalone(curve.id.as_str()) {
             let geometry = super::flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                cadmpeg_core::CodecError::InvalidInput(
+                crate::writer::WriteError::Unwritable(
                     "IGES curve carrier has no solved geometry".into(),
                 )
             })?)?;
@@ -365,7 +365,12 @@ pub(super) fn append_withheld_parameter_curves(
                 },
             ) {
                 Ok(_) => {}
-                Err(cadmpeg_core::CodecError::InvalidInput(reason)) => {
+                Err(
+                    crate::writer::WriteError::Unwritable(reason)
+                    | crate::writer::WriteError::Codec(cadmpeg_core::CodecError::InvalidInput(
+                        reason,
+                    )),
+                ) => {
                     graph.entities.truncate(before);
                     graph.losses.push(
                         super::IgesLossCode::WriterEntityOmitted
