@@ -221,21 +221,31 @@ pub(super) fn sketch_brep(
                     .colon(profile_index)
                     .colon(use_index),
             );
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve_id.clone(),
-                geometry: generated.curve,
-                source_object: None,
-            });
-            ir.model.edges.push(Edge {
-                native_ref: None,
-                id: edge_id.clone(),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+            // A sketch line is stated by its end vertices; its edge carries
+            // no curve.
+            let line = matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            );
+            let carrier = if line {
+                cadmpeg_ir::topology::EdgeCarrier::new(None, None)
+            } else {
+                ir.model.curves.push(Curve {
+                    native_ref: None,
+                    parameter_range: None,
+                    id: curve_id.clone(),
+                    geometry: generated.curve,
+                    source_object: None,
+                });
+                cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(curve_id),
                     Some(generated.param_range),
                 )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            };
+            ir.model.edges.push(Edge {
+                native_ref: None,
+                id: edge_id.clone(),
+                carrier: carrier.map_err(cadmpeg_core::CodecError::malformed)?,
                 start: start_vertex,
                 end: end_vertex,
                 tolerance: None,

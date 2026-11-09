@@ -479,6 +479,7 @@ pub fn edit_findings(
     };
     let request = same_request(encoder, first);
     let mut findings = Vec::new();
+    let identities = record_identities(&document);
     for (arena, index) in edit_targets(&document, namespace) {
         if !covered.insert(arena.clone()) {
             continue;
@@ -487,6 +488,15 @@ pub fn edit_findings(
         for (pointer, value) in scalar_edits(record, &arena) {
             let mut edited = document.clone();
             let at = format!("/model/{arena}/{index}{pointer}");
+            // A string that names a record of the document is a reference,
+            // not a scalar leaf; reference integrity belongs to validation.
+            if document
+                .pointer(&at)
+                .and_then(Value::as_str)
+                .is_some_and(|text| identities.contains(text))
+            {
+                continue;
+            }
             let Some(slot) = edited.pointer_mut(&at) else {
                 continue;
             };
@@ -514,7 +524,7 @@ pub fn edit_findings(
                 };
                 let mut expected = expected.clone();
                 let path = collapsed_pointer(&at);
-                if let Some(row) = reduced.iter().find(|row| row.path == path) {
+                if let Some(row) = reduced.iter().find(|row| row_covers(row.path, &path)) {
                     if !encoder.reduced_fields().iter().any(|declared| {
                         declared.path == row.path && declared.storage == row.storage
                     }) {
@@ -567,8 +577,45 @@ pub fn edit_findings(
     findings
 }
 
+/// The identity of every record of a document, neutral and native.
+fn record_identities(document: &Value) -> BTreeSet<String> {
+    let model = document
+        .get("model")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|arenas| arenas.values());
+    let native = document
+        .get("native")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|namespaces| namespaces.values())
+        .filter_map(Value::as_object)
+        .flat_map(|arenas| arenas.values());
+    model
+        .chain(native)
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter_map(|row| row.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The suffix of a row that normalizes an object-valued vector as a whole.
+const OBJECT_ROW: &str = ".{}";
+
+/// Whether a reduced row covers an edited path. A row ending in
+/// [`OBJECT_ROW`] covers every member of the object its path names.
+fn row_covers(row: &str, path: &str) -> bool {
+    row == path
+        || row.strip_suffix(OBJECT_ROW).is_some_and(|object| {
+            path.rsplit_once('.')
+                .is_some_and(|(parent, _)| parent == object)
+        })
+}
+
 /// Applies a normalization row to the edited value. A row whose path ends in
-/// `[]` normalizes a vector as a whole, so it receives the containing array.
+/// `[]` or [`OBJECT_ROW`] normalizes a vector as a whole, so it receives the
+/// containing array or object.
 fn normalize_edit(
     expected: &mut Value,
     pointer: &str,
@@ -582,13 +629,25 @@ fn normalize_edit(
     let normalize = row
         .normalize
         .ok_or("normalization has no comparison rule")?;
-    let pointer = if row.path.ends_with("[]") {
+    let pointer = if row.path.ends_with("[]") || row.path.ends_with(OBJECT_ROW) {
         pointer
             .rsplit_once('/')
             .map_or(pointer, |(parent, _)| parent)
     } else {
         pointer
     };
+    // An edit to a default value serializes as an absent key; the
+    // normalization then lands on that key of the containing record.
+    if expected.pointer(pointer).is_none() {
+        let (parent, key) = pointer
+            .rsplit_once('/')
+            .ok_or("normalized value is absent")?;
+        let record = expected
+            .pointer_mut(parent)
+            .and_then(Value::as_object_mut)
+            .ok_or("normalized value is absent")?;
+        record.insert(key.replace("~1", "/").replace("~0", "~"), Value::Null);
+    }
     let value = expected
         .pointer_mut(pointer)
         .ok_or("normalized value is absent")?;

@@ -197,33 +197,6 @@
               "addressing": {
                 "domain": "vertex"
               },
-              "data": "AwAAAA==",
-              "flags": 2,
-              "item_size": 4,
-              "kind": 8
-            },
-            {
-              "addressing": {
-                "domain": "vertex"
-              },
-              "data": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA",
-              "flags": 2,
-              "item_size": 12,
-              "kind": 100
-            },
-            {
-              "addressing": {
-                "domain": "vertex"
-              },
-              "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-              "flags": 2,
-              "item_size": 12,
-              "kind": 100
-            },
-            {
-              "addressing": {
-                "domain": "vertex"
-              },
               "data": "AAAAAAAAAAAAAAAAAAAAAA==",
               "flags": 2,
               "item_size": 4,

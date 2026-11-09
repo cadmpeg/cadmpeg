@@ -661,6 +661,18 @@ struct ProbedTable {
 
 /// The `(item_size, kind, flags)` of the six descriptors of a display-list
 /// table, in order (`sldprt.md` §8).
+/// Leading table descriptors the mesh states: strip lengths, positions and
+/// normals.
+const CORE_DESCRIPTORS: usize = 3;
+
+/// The shortest decimal value that rounds to a stored position `f32`.
+fn shortest_decimal(value: f32) -> f64 {
+    value.to_string().parse().unwrap_or(f64::from(value))
+}
+
+/// The `(item_size, kind)` pair of each auxiliary descriptor, in table order.
+pub(crate) const AUXILIARY_DESCRIPTORS: [(u32, u32); 3] = [(4, 8), (4, 8), (1, 8)];
+
 const TABLE_DESCRIPTORS: [(usize, u32, u32); 6] = [
     (4, 8, 2),
     (12, 100, 2),
@@ -728,7 +740,7 @@ fn probe_table(
                 let p = data + i * 12;
                 let read = |at| {
                     View::f32_le_at(bytes, at)
-                        .map(f64::from)
+                        .map(shortest_decimal)
                         .filter(|value| value.is_finite())
                 };
                 let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
@@ -774,9 +786,13 @@ fn probe_table(
         cadmpeg_core::decode::u64_from_index(channel_bytes),
         "copy display-list channel bytes",
     )?;
-    let mut channels = Vec::with_capacity(TABLE_DESCRIPTORS.len());
-    for (&(data, end, item_size_field, _), &(_, kind, flags)) in
-        ranges.iter().zip(&TABLE_DESCRIPTORS)
+    // The strip, position and normal descriptors are the mesh itself; the
+    // channels hold the auxiliary descriptors that follow them.
+    let mut channels = Vec::with_capacity(TABLE_DESCRIPTORS.len() - CORE_DESCRIPTORS);
+    for (&(data, end, item_size_field, _), &(_, kind, flags)) in ranges
+        .iter()
+        .zip(&TABLE_DESCRIPTORS)
+        .skip(CORE_DESCRIPTORS)
     {
         let Ok(channel) = TessellationChannel::new(
             cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
@@ -1146,9 +1162,10 @@ fn known_extended_form(
     if EXTENDED_FORM_WORDS[index] != word {
         return None;
     }
-    let normals = face.mesh.channels.get(2)?.data();
-    let first = normals.get(..12)?;
-    let constant = normals.chunks_exact(12).all(|normal| normal == first);
+    let normals = face.mesh.mesh.vertex_normals();
+    let bits = |normal: &Vector3| [normal.x, normal.y, normal.z].map(f64::to_bits);
+    let first = bits(normals.first()?);
+    let constant = normals.iter().all(|normal| bits(normal) == first);
     if (flag_a == 1) != constant {
         return None;
     }
