@@ -265,7 +265,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A sketch geometry group has type GUID"
 size = 75
-note = "Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow."
+note = "Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes or none, and the owning sketch container reference follow."
 
 [[record.field]]
 name = "indexed_header"
@@ -361,6 +361,77 @@ offset = 71
 type = "u32"
 source = "spec"
 anchor = "A u32 member count `N` at offset 71"
+
+# --- §3.1 Sketch geometry group tails ---------------------------------------
+
+[[record]]
+name = "sketch_geometry_group_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`90 + 11N` bytes with the zero bytes"
+size = 15
+note = "Offsets are relative to the end of the member reference run of a 90 + 11N byte sketch geometry group. The tail ends the frame."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "`00` when the four zero bytes are present"
+
+[[record.field]]
+name = "owner_marker"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "a same-segment marked reference to the owning sketch container"
+value = 1
+
+[[record.field]]
+name = "owner_record_index"
+offset = 5
+type = "u64"
+source = "spec"
+anchor = "a same-segment marked reference to the owning sketch container"
+
+[[record.field]]
+name = "owner_flags"
+offset = 13
+type = "bytes[2]"
+source = "spec"
+anchor = "a same-segment marked reference to the owning sketch container"
+
+[[record]]
+name = "sketch_geometry_group_short_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`86 + 11N` bytes without them"
+size = 11
+note = "Offsets are relative to the end of the member reference run of an 86 + 11N byte sketch geometry group. The tail ends the frame."
+
+[[record.field]]
+name = "owner_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`01` when the four zero bytes are absent"
+value = 1
+
+[[record.field]]
+name = "owner_record_index"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a same-segment marked reference to the owning sketch container"
+
+[[record.field]]
+name = "owner_flags"
+offset = 9
+type = "bytes[2]"
+source = "spec"
+anchor = "a same-segment marked reference to the owning sketch container"
 
 [[record]]
 name = "design_decal_scope_prefix"

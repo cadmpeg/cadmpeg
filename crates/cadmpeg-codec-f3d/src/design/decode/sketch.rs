@@ -3544,7 +3544,10 @@ struct ParsedSketchGeometryGroup {
 }
 
 fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGroup> {
-    use crate::layout::sketch_geometry_group_prefix as group;
+    use crate::layout::{
+        sketch_geometry_group_prefix as group, sketch_geometry_group_short_tail as short_tail,
+        sketch_geometry_group_tail as long_tail,
+    };
     let field = |offset, len| {
         let mut view = View::over_retained(payload);
         view.skip(offset)?;
@@ -3588,10 +3591,16 @@ fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGro
     }
     let mut tail = View::over_retained(payload);
     tail.skip(cursor)?;
-    if tail.take(4)? != [0; 4] {
-        return None;
+    if tail.u8()? != short_tail::OWNER_MARKER_VALUE {
+        let mut zero_run = View::over_retained(payload);
+        zero_run.skip(cursor)?;
+        if zero_run.take(long_tail::OWNER_MARKER - long_tail::ZERO_RUN)?
+            != [0; long_tail::OWNER_MARKER - long_tail::ZERO_RUN]
+        {
+            return None;
+        }
+        cursor = cursor.checked_add(long_tail::OWNER_MARKER)?;
     }
-    cursor = cursor.checked_add(4)?;
     let sketch = take_same_segment_sketch_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(ParsedSketchGeometryGroup {
         ordinal,
