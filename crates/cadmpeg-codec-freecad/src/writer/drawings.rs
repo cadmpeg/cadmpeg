@@ -54,8 +54,18 @@ pub(super) fn parameters(
                     })
                 }
                 "LockPosition" => match value.as_str() {
-                    "true" => Some(xml::scalar(name.as_str(), "App::PropertyBool", "Bool", true)),
-                    "false" => Some(xml::scalar(name.as_str(), "App::PropertyBool", "Bool", false)),
+                    "true" => Some(xml::scalar(
+                        name.as_str(),
+                        "App::PropertyBool",
+                        "Bool",
+                        true,
+                    )),
+                    "false" => Some(xml::scalar(
+                        name.as_str(),
+                        "App::PropertyBool",
+                        "Bool",
+                        false,
+                    )),
                     _ => None,
                 },
                 _ => None,
@@ -140,7 +150,9 @@ fn coerced(
     (names, available): (&HashMap<String, String>, &std::collections::HashSet<String>),
 ) -> Option<(String, String)> {
     let empty = match source.type_name.as_str() {
-        "App::PropertyExpressionEngine" => Some("<ExpressionEngine count=\"0\"></ExpressionEngine>"),
+        "App::PropertyExpressionEngine" => {
+            Some("<ExpressionEngine count=\"0\"></ExpressionEngine>")
+        }
         "App::PropertyLinkSubList" => Some("<LinkSubList count=\"0\"></LinkSubList>"),
         "App::PropertyLinkList" => Some("<LinkList count=\"0\"></LinkList>"),
         _ => None,
@@ -256,10 +268,12 @@ pub(super) fn dimension_kind(
     // A kind outside FreeCAD's dimension types has no Type to state.
     if let DimensionKind::Other { native_type } = kind {
         object.properties.shift_remove("Type");
-        losses.push(FreecadLossCode::DrawingDimensionKindNotTransferred.note(format!(
-            "annotation {} dimension kind {native_type:?} has no FreeCAD dimension type",
-            annotation.id
-        )));
+        losses.push(
+            FreecadLossCode::DrawingDimensionKindNotTransferred.note(format!(
+                "annotation {} dimension kind {native_type:?} has no FreeCAD dimension type",
+                annotation.id
+            )),
+        );
         return;
     }
     let content = if let Some(number) = number {
@@ -1067,7 +1081,8 @@ mod tests {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.message.contains("ScaleType") && loss.message.contains("stored as \"0\"")));
+            .any(|loss| loss.message.contains("ScaleType")
+                && loss.message.contains("stored as \"0\"")));
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
         let output = crate::FcstdCodec
@@ -1226,4 +1241,51 @@ mod tests {
         assert!(!list.children().any(|node| node.has_tag_name("Link")));
         assert!(losses.is_empty());
     }
+}
+
+/// The `SavedGeometry` properties whose measurement disagrees with the value
+/// of their dimension. The re-decode measures the value on that geometry, so
+/// each such property is omitted and its dimension named by a loss.
+pub(super) fn contradicted_measurements(
+    ir: &CadIr,
+    properties: &[crate::native::PropertyRecord],
+    retained: &HashMap<String, Vec<u8>>,
+    losses: &mut Vec<LossNote>,
+) -> std::collections::HashSet<String> {
+    let mut contradicted = std::collections::HashSet::new();
+    for annotation in &ir.model.semantic_annotations {
+        let (Some(value), Some(kind)) = (annotation.value, annotation.dimension_kind.as_ref())
+        else {
+            continue;
+        };
+        let Some(saved) = properties.iter().find(|property| {
+            property.owner == annotation.object && property.name == "SavedGeometry"
+        }) else {
+            continue;
+        };
+        let payloads = saved
+            .side_entries()
+            .iter()
+            .map(|name| {
+                let bytes = retained.get(name)?;
+                crate::brep::parse_reference_payload(
+                    name,
+                    cadmpeg_core::decode::View::over_retained(bytes),
+                )
+                .ok()
+            })
+            .collect::<Option<Vec<_>>>();
+        let measured = payloads.and_then(|payloads| {
+            let curves = crate::drawing_content::dimension::saved_curves(&payloads).ok()??;
+            crate::drawing_content::dimension::measurement(kind, &curves)
+        });
+        if measured.is_none_or(|(measured, _)| measured != value.get()) {
+            contradicted.insert(saved.id.clone());
+            losses.push(FreecadLossCode::AnnotationValueDerived.note(format!(
+                "annotation {} value is measured on its saved reference geometry, which disagrees and is omitted",
+                annotation.id
+            )));
+        }
+    }
+    contradicted
 }

@@ -13,6 +13,7 @@ use std::fmt::Write as _;
 use super::geometry;
 use crate::loss::FreecadLossCode;
 mod body_kind;
+mod native_binary;
 mod native_text;
 mod reachable;
 use reachable::Reach;
@@ -272,7 +273,12 @@ pub(super) fn native_with_uses(
             }
         }
     }
-    let text = native_text::text(payload, polygons.0, polygons.1, root)?;
+    let bytes = match &payload.payload {
+        crate::brep::ShapePayload::Binary { .. } => {
+            native_binary::bytes(payload, polygons.0, polygons.1, root)?
+        }
+        _ => native_text::text(payload, polygons.0, polygons.1, root)?.into_bytes(),
+    };
     let count = tables.tshapes.len();
     let uses = current
         .payload_records(&payload.id)
@@ -284,10 +290,7 @@ pub(super) fn native_with_uses(
             })
         })
         .collect();
-    Some(SerializedShape {
-        bytes: text.into_bytes(),
-        uses,
-    })
+    Some(SerializedShape { bytes, uses })
 }
 
 pub(super) fn serialize_with_uses(
@@ -901,6 +904,12 @@ fn serialize_geometry_inner(
                         .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
                 });
             if let Some(row) = super::pcurves::serialize(&pcurve.geometry, domain, *chart) {
+                if rechartered(&pcurve.geometry, *chart) {
+                    losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "pcurve {} is stored in the OCCT parameters of surface {} and re-reads as a placed pcurve",
+                        pcurve.id, face.surface
+                    )));
+                }
                 let index =
                     if let Some(index) = shared_pcurves.get(&(pcurve.id.as_str(), row.clone())) {
                         *index
@@ -996,6 +1005,40 @@ fn serialize_geometry_inner(
                         cadmpeg_ir::geometry::SolvedCurveGeometry::Degenerate(_)
                     )
                 });
+        let ring: Vec<&cadmpeg_ir::topology::Coedge> = ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+            .collect();
+        if ring
+            .iter()
+            .enumerate()
+            .any(|(index, coedge)| coedge.radial_next != stored_radial_next(&ring, index).id)
+        {
+            losses.push(FreecadLossCode::TopologyRadialOrderNotStored.note(format!(
+                "the radial order of coedges {} around edge {} is stored as OCCT reads it",
+                ring.iter()
+                    .map(|coedge| coedge.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                edge.id
+            )));
+        }
+        if let Some(curve) = edge.curve().filter(|_| degenerate) {
+            let uses: Vec<&str> = ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+                .map(|coedge| coedge.id.as_str())
+                .collect();
+            losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "degenerate edge {} and its coedges {} are stored with no curve; curve {curve} is omitted",
+                edge.id,
+                uses.join(", ")
+            )));
+        }
         let mut representation = if degenerate {
             String::new()
         } else if let Some(polygon) = polygon_representations.get(edge.id.as_str()) {
@@ -1016,8 +1059,16 @@ fn serialize_geometry_inner(
                             Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { .. })
                         )
                     }) {
-                        composite_line_range(ir, edge, curve)
-                            .filter(|derived| range.is_none_or(|stored| stored == *derived))
+                        let derived = composite_line_range(ir, edge, curve)
+                            .filter(|derived| range.is_none_or(|stored| stored == *derived));
+                        if range.is_none() && derived.is_some() {
+                            losses
+                                .push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                                "edge {} is stored with the parameter range of its composite curve",
+                                edge.id
+                            )));
+                        }
+                        derived
                     } else {
                         range
                     };
@@ -1135,7 +1186,9 @@ fn serialize_geometry_inner(
                     representation.push(' ');
                     representation.push_str(&range[1].to_string());
                 }
-                [(first, range, _, _), (second, other_range, _, _)] if range == other_range => {
+                [(first, range, Sense::Forward, _), (second, other_range, Sense::Reversed, _)]
+                    if range == other_range =>
+                {
                     representation.push_str(" 3 ");
                     representation.push_str(&first.to_string());
                     representation.push(' ');
@@ -1158,10 +1211,23 @@ fn serialize_geometry_inner(
                         .expect("write to string");
                     }
                     for (_, _, _, pcurve) in rows.into_iter().skip(1) {
+                        let owners: Vec<&str> = ir
+                            .model
+                            .coedges
+                            .iter()
+                            .filter(|coedge| {
+                                coedge
+                                    .pcurves
+                                    .iter()
+                                    .any(|usage| usage.pcurve.as_str() == pcurve)
+                            })
+                            .map(|coedge| coedge.id.as_str())
+                            .collect();
                         losses.push(
                             crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                                 format!(
-                                    "pcurve {pcurve} on edge {} cannot share surface {surface}",
+                                    "pcurve {pcurve} of coedges {} on edge {} cannot share surface {surface}",
+                                    owners.join(", "),
                                     edge.id
                                 ),
                             ),
@@ -1188,6 +1254,12 @@ fn serialize_geometry_inner(
         .iter()
         .filter(|wire| loops.contains(wire.id.as_str()))
     {
+        if wire.coedges().is_empty() {
+            losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "vertex loop {} is written as an empty OCCT wire and is omitted",
+                wire.id
+            )));
+        }
         let mut children = Vec::new();
         let mut complete = true;
         for coedge in wire.coedges() {
@@ -1301,6 +1373,7 @@ fn serialize_geometry_inner(
             };
             let mut shells = Vec::new();
             let mut degraded = false;
+            let mut split = false;
             for shell_id in &region.shells {
                 let mut shell_degraded = false;
                 let Some(shell) = ir.model.shells.iter().find(|value| value.id == *shell_id) else {
@@ -1318,28 +1391,11 @@ fn serialize_geometry_inner(
                         losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                             format!("face {face_id} in body {} has no OCCT representation and is omitted", body.id),
                         ));
-                        let wires: Vec<&str> = ir
-                            .model
-                            .loops
-                            .iter()
-                            .filter(|wire| wire.face == *face_id)
-                            .map(|wire| wire.id.as_str())
-                            .collect();
-                        let uses: Vec<&str> = ir
-                            .model
-                            .coedges
-                            .iter()
-                            .filter(|coedge| wires.contains(&coedge.owner_loop.as_str()))
-                            .map(|coedge| coedge.id.as_str())
-                            .collect();
-                        if !wires.is_empty() {
-                            losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
-                                format!(
-                                    "the loops {} and coedges {} of omitted face {face_id} are omitted",
-                                    wires.join(", "),
-                                    uses.join(", ")
-                                ),
-                            ));
+                        if let Some(boundary) = omitted_boundary(ir, face_id, &indices) {
+                            losses.push(
+                                crate::loss::FreecadLossCode::ExportGeometryNotTransferred
+                                    .note(boundary),
+                            );
                         }
                         continue;
                     };
@@ -1385,9 +1441,12 @@ fn serialize_geometry_inner(
                 }
                 if shell_degraded {
                     degraded = true;
-                    losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
-                        format!("shell {} is written with its encodable members only", shell.id),
-                    ));
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "shell {} is written with its encodable members only",
+                            shell.id
+                        )),
+                    );
                     let mut retained_edges = HashSet::new();
                     let mut retained_vertices = std::collections::BTreeSet::new();
                     let mut represented_vertices = HashSet::new();
@@ -1488,6 +1547,34 @@ fn serialize_geometry_inner(
                         continue;
                     }
                 }
+                // An OCCT shell holds faces only: its wire edges follow it
+                // as a wire and its free vertices as region members.
+                let (faces, members): (Vec<_>, Vec<_>) = children
+                    .into_iter()
+                    .partition(|(child, _)| shapes[*child].kind == "Fa");
+                let mut beside = Vec::new();
+                let children = if !faces.is_empty() && !members.is_empty() && !shell_degraded {
+                    split = true;
+                    losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "shell {} is written as a shell of its faces beside its wire edges and free vertices",
+                        shell.id
+                    )));
+                    let (edges, vertices): (Vec<_>, Vec<_>) = members
+                        .into_iter()
+                        .partition(|(child, _)| shapes[*child].kind == "Ed");
+                    if !edges.is_empty() {
+                        beside.push((shapes.len(), Sense::Forward));
+                        shapes.push(Shape {
+                            kind: "Wi",
+                            geometry: String::new(),
+                            children: edges,
+                        });
+                    }
+                    beside.extend(vertices);
+                    faces
+                } else {
+                    faces.into_iter().chain(members).collect()
+                };
                 let index = shapes.len();
                 topology.record(shell.id.as_str(), index)?;
                 shapes.push(Shape {
@@ -1500,6 +1587,7 @@ fn serialize_geometry_inner(
                     children,
                 });
                 shells.push((index, Sense::Forward));
+                shells.extend(beside);
             }
             if shells.is_empty() && degraded {
                 continue;
@@ -1516,6 +1604,7 @@ fn serialize_geometry_inner(
             topology.record(region.id.as_str(), index)?;
             shapes.push(Shape {
                 kind: if !degraded
+                    && !split
                     && (body.kind == BodyKind::Solid
                         || (body.kind == BodyKind::General
                             && region.shells.iter().all(|id| {
@@ -2088,9 +2177,170 @@ fn location_supported(transform: cadmpeg_ir::transform::Transform) -> bool {
             .all(|(a, b)| dot(a, b).abs() <= LOCATION_SIMILARITY_TOLERANCE * scale)
 }
 
+/// The radial successor OCCT restores for use `index` of an edge's `ring`:
+/// the two uses of an edge link to each other, and any other use links to
+/// itself.
+fn stored_radial_next<'a>(
+    ring: &[&'a cadmpeg_ir::topology::Coedge],
+    index: usize,
+) -> &'a cadmpeg_ir::topology::Coedge {
+    match ring {
+        [first, second] => {
+            if index == 0 {
+                second
+            } else {
+                first
+            }
+        }
+        _ => ring[index],
+    }
+}
+
+/// Whether `geometry` written through `chart` re-reads as a placed pcurve:
+/// the reader keeps a non-identity chart as a placement, except an
+/// axis-aligned isometry of a line or conic, which it folds into the curve.
+fn rechartered(
+    geometry: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+    chart: cadmpeg_ir::transform::Transform2,
+) -> bool {
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    let rows = chart.affine_rows();
+    let identity = rows == cadmpeg_ir::transform::Transform2::identity().affine_rows();
+    let isometric = rows[0][0].abs() == 1.0 && rows[1][1].abs() == 1.0;
+    let foldable = matches!(
+        geometry,
+        PcurveGeometry::Line(_)
+            | PcurveGeometry::Circle(_)
+            | PcurveGeometry::Ellipse(_)
+            | PcurveGeometry::Parabola(_)
+            | PcurveGeometry::Hyperbola(_)
+    );
+    !identity && !matches!(geometry, PcurveGeometry::Transformed(_)) && !(isometric && foldable)
+}
+
+/// The loss text naming the boundary records of the omitted face `face`:
+/// its loops, coedges and pcurves, and the edges and curves that no written
+/// face uses.
+fn omitted_boundary(
+    ir: &CadIr,
+    face: &cadmpeg_ir::ids::FaceId,
+    written: &HashMap<&str, usize>,
+) -> Option<String> {
+    let model = &ir.model;
+    let wires: Vec<&str> = model
+        .loops
+        .iter()
+        .filter(|wire| wire.face == *face)
+        .map(|wire| wire.id.as_str())
+        .collect();
+    if wires.is_empty() {
+        return None;
+    }
+    let uses: Vec<&cadmpeg_ir::topology::Coedge> = model
+        .coedges
+        .iter()
+        .filter(|coedge| wires.contains(&coedge.owner_loop.as_str()))
+        .collect();
+    let pcurves: Vec<&str> = uses
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter().map(|usage| usage.pcurve.as_str()))
+        .collect();
+    let owner_written = |coedge: &cadmpeg_ir::topology::Coedge| {
+        model
+            .loops
+            .iter()
+            .find(|wire| wire.id == coedge.owner_loop)
+            .is_some_and(|wire| written.contains_key(wire.face.as_str()))
+    };
+    let mut edges: Vec<&cadmpeg_ir::topology::Edge> = uses
+        .iter()
+        .filter_map(|coedge| model.edges.iter().find(|edge| edge.id == coedge.edge))
+        .filter(|edge| {
+            !model
+                .coedges
+                .iter()
+                .any(|coedge| coedge.edge == edge.id && owner_written(coedge))
+        })
+        .collect();
+    edges.dedup_by(|left, right| left.id == right.id);
+    let curves: Vec<&str> = edges
+        .iter()
+        .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
+        .collect();
+    let surface = model
+        .faces
+        .iter()
+        .find(|row| row.id == *face)
+        .map(|row| &row.surface)
+        .filter(|surface| {
+            !model
+                .faces
+                .iter()
+                .any(|row| row.surface == **surface && written.contains_key(row.id.as_str()))
+        })
+        .map_or_else(String::new, |surface| {
+            format!(" on omitted surface {surface}")
+        });
+    let join = |ids: Vec<&str>| ids.join(", ");
+    Some(format!(
+        "the loops {}, coedges {}, pcurves {}, edges {} and curves {} of omitted face {face}{surface} are omitted",
+        join(wires),
+        join(uses.iter().map(|coedge| coedge.id.as_str()).collect()),
+        join(pcurves),
+        join(edges.iter().map(|edge| edge.id.as_str()).collect()),
+        join(curves),
+    ))
+}
+
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
+    #[test]
+    fn a_binary_payload_re_emits_its_tables() {
+        use cadmpeg_ir::codec::write::Encoder;
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        let path = format!(
+            "{}/../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let options = DecodeOptions {
+            depth: Encoder::request(&crate::FcstdCodec),
+            ..DecodeOptions::default()
+        };
+        let decoded = crate::FcstdCodec
+            .decode(
+                &mut std::io::Cursor::new(std::fs::read(path).expect("fixture bytes")),
+                &options,
+            )
+            .expect("fixture decodes");
+        let namespace = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("native records");
+        let payloads = namespace
+            .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+            .expect("payloads");
+        let polygons3d = namespace
+            .arena_as::<crate::brep::Polygon3dRecord>("polygons3d")
+            .expect("3D polygons");
+        let indexed = namespace
+            .arena_as::<crate::brep::PolygonOnTriangulationRecord>("polygons_on_triangulations")
+            .expect("indexed polygons");
+        let payload = payloads
+            .iter()
+            .find(|payload| matches!(payload.payload, crate::brep::ShapePayload::Binary { .. }))
+            .expect("binary payload");
+        let written = native_binary::bytes(payload, &polygons3d, &indexed, None)
+            .expect("binary tables restate");
+        let (reread, _) = crate::brep::parse_reference_payload(
+            "Shape.bin",
+            cadmpeg_core::decode::View::over_retained(&written),
+        )
+        .expect("restated tables re-read");
+        assert_eq!(reread, payload.payload);
+    }
 
     #[test]
     fn independent_face_selects_its_triangulation() {
