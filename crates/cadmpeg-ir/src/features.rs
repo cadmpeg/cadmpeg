@@ -3679,6 +3679,17 @@ pub enum FeatureOperation {
         /// Side retained by the trim.
         keep: BodyTrimSide,
     },
+    /// Removes one side of selected bodies at a datum plane. The selected
+    /// bodies keep their identity and retain the side named by `keep`.
+    TrimBodiesAtPlane {
+        /// Bodies trimmed by the operation.
+        targets: BodySelection,
+        /// Earlier datum-plane feature supplying the trimming plane.
+        plane: FeatureId,
+        /// Side retained: `Forward` keeps the side that the plane normal
+        /// points into, `Reverse` keeps the opposite side.
+        keep: BodyTrimSide,
+    },
     /// Partitions selected bodies with surface faces or a datum plane while
     /// retaining every resulting side.
     SplitBody {
@@ -4118,7 +4129,7 @@ impl FeatureOperation {
             Self::FaceBlend { .. } => Some("face blend"),
             Self::Shell { .. } => Some("shell"),
             Self::SewBodies { .. } => Some("sew bodies"),
-            Self::TrimBodies { .. } => Some("trim bodies"),
+            Self::TrimBodies { .. } | Self::TrimBodiesAtPlane { .. } => Some("trim bodies"),
             Self::Extrude { .. } => Some("extrude"),
             Self::Revolve { .. } => Some("revolve"),
             Self::Sweep { .. } => Some("sweep"),
