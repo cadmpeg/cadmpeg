@@ -112,7 +112,11 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, cadmpeg_core::decode
             write_path: path,
             notes,
         }),
-        Err(CodecError::ResourceLimit(limit)) if caller_ceiling(limit, input.limits) => Err(limit),
+        Err(crate::writer::WriteError::Codec(CodecError::ResourceLimit(limit)))
+            if caller_ceiling(limit, input.limits) =>
+        {
+            Err(limit)
+        }
         Err(error) => Ok(Preservation::PatchDeclined {
             reason: error.to_string(),
         }),

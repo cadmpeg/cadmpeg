@@ -38,15 +38,20 @@ pub(super) enum Reduction {
 }
 
 impl Reduction {
-    pub(super) fn reduces(self, error: &CodecError) -> bool {
+    pub(super) fn reduces(self, error: &crate::writer::WriteError) -> bool {
+        use crate::writer::WriteError;
         match self {
             Self::Limitations => declines(error),
             Self::Content => matches!(
                 error,
-                CodecError::NotImplemented(_)
-                    | CodecError::Malformed(_)
-                    | CodecError::InvalidInput(_)
-                    | CodecError::Truncated { .. }
+                WriteError::Unsupported(_)
+                    | WriteError::Unwritable(_)
+                    | WriteError::Codec(
+                        CodecError::NotImplemented(_)
+                            | CodecError::Malformed(_)
+                            | CodecError::InvalidInput(_)
+                            | CodecError::Truncated { .. }
+                    )
             ),
         }
     }
@@ -150,11 +155,19 @@ fn reduced(mut synthesized: Synthesized, mut reductions: Vec<LossNote>) -> Synth
 }
 
 /// The content failure in `error`, or the encode failure that ends the write.
-fn content_error(document: &CadIr, error: CodecError) -> Result<CodecError, EncodeError> {
+fn content_error(
+    document: &CadIr,
+    error: crate::writer::WriteError,
+) -> Result<crate::writer::WriteError, EncodeError> {
+    use crate::writer::WriteError;
     match error {
-        CodecError::ResourceLimit(limit) => Err(EncodeError::ResourceLimit(limit)),
-        CodecError::Io(error) => Err(EncodeError::Io(error)),
-        CodecError::UnsupportedTarget(refusal) => Err(EncodeError::UnsupportedTarget(refusal)),
+        WriteError::Codec(CodecError::ResourceLimit(limit)) => {
+            Err(EncodeError::ResourceLimit(limit))
+        }
+        WriteError::Codec(CodecError::Io(error)) => Err(EncodeError::Io(error)),
+        WriteError::Codec(CodecError::UnsupportedTarget(refusal)) => {
+            Err(EncodeError::UnsupportedTarget(refusal))
+        }
         error => ValidatedFinding::non_finite(document)
             .map_or(Ok(error), |proof| Err(EncodeError::InvalidInput(proof))),
     }
@@ -167,7 +180,7 @@ fn write_document(
     mut prepared: CadIr,
     limits: cadmpeg_core::decode::ResourceLimits,
     reduction: Reduction,
-) -> Result<Synthesized, CodecError> {
+) -> Result<Synthesized, crate::writer::WriteError> {
     let mut losses = Vec::new();
     topology::repair_body_regions(&mut prepared, &mut losses, limits)?;
     topology::omit_ambiguous_points(&mut prepared, &mut losses)?;
@@ -332,6 +345,10 @@ fn write_document(
 /// Internal encoder limitations are reductions. Invalid records and capacity
 /// limits remain preconditions. Native/neutral disagreement is an edit, so it
 /// selects neutral regeneration rather than an invalid-document refusal.
-pub(super) fn declines(error: &CodecError) -> bool {
-    matches!(error, CodecError::NotImplemented(_))
+pub(super) fn declines(error: &crate::writer::WriteError) -> bool {
+    matches!(
+        error,
+        crate::writer::WriteError::Unsupported(_)
+            | crate::writer::WriteError::Codec(CodecError::NotImplemented(_))
+    )
 }

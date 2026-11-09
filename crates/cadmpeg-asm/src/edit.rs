@@ -139,10 +139,10 @@ pub enum PcurveEdit<'a> {
 
 impl AsmEditSet {
     /// Frame the solved record partition and apply edits through one context.
-    pub fn apply<T>(
+    pub fn apply<T, E: From<CodecError>>(
         bytes: &mut [u8],
-        edit: impl FnOnce(&mut [u8], &Self) -> Result<T, CodecError>,
-    ) -> Result<T, CodecError> {
+        edit: impl FnOnce(&mut [u8], &Self) -> Result<T, E>,
+    ) -> Result<T, E> {
         let edits = Self::frame(bytes)?;
         edit(bytes, &edits)
     }

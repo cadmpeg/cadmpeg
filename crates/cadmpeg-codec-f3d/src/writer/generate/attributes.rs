@@ -11,7 +11,6 @@ use crate::records::{
         SKETCH_LINK_SENSE_UNCONSTRAINED,
     },
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face};
@@ -355,16 +354,18 @@ pub(super) fn source_less_body_key(
     index: &AttributeIndex<'_>,
     body: &Body,
     body_ordinal: usize,
-) -> Result<i64, CodecError> {
+) -> Result<i64, crate::writer::WriteError> {
     if let Some(key) = index.body_keys.get(body.id.as_str()) {
         return key.asm_body_key.map_or(Ok(-1), |key| {
-            i64::try_from(key)
-                .map_err(|_| CodecError::InvalidInput("F3D ASM body key exceeds i64::MAX".into()))
+            i64::try_from(key).map_err(|_| {
+                crate::writer::WriteError::Unwritable("F3D ASM body key exceeds i64::MAX".into())
+            })
         });
     }
     let key = cadmpeg_core::decode::u64_from_index(body_ordinal) + 1;
-    i64::try_from(key)
-        .map_err(|_| CodecError::InvalidInput("F3D ASM body key exceeds i64::MAX".into()))
+    i64::try_from(key).map_err(|_| {
+        crate::writer::WriteError::Unwritable("F3D ASM body key exceeds i64::MAX".into())
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -378,7 +379,7 @@ fn color_attribute_ref(
     ordinal: usize,
     owner: ColorOwner,
     attribute_start: i64,
-) -> Result<i64, CodecError> {
+) -> Result<i64, crate::writer::WriteError> {
     let preceding = match owner {
         ColorOwner::Body => model.bodies[..ordinal]
             .iter()
@@ -453,7 +454,7 @@ pub(super) fn timestamp_attribute_ref(
     index: &AttributeIndex<'_>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     timestamp_attribute_ordinal(index, entity)
         .map(|ordinal| {
             native_record_index(
@@ -499,7 +500,7 @@ fn body_persistent_attribute_ref(
     index: &AttributeIndex<'_>,
     body: &Body,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     if body_persistent_links(index, body).is_empty() {
         return Ok(None);
     }
@@ -516,7 +517,7 @@ fn body_name_attribute_ref(
     target: &CadIr,
     body: &Body,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     if body.name.is_none() {
         return Ok(None);
     }
@@ -543,7 +544,7 @@ pub(super) fn owner_attribute_ref(
     owner: AttributeOwner<'_>,
     ordinal: usize,
     attribute_start: i64,
-) -> Result<i64, CodecError> {
+) -> Result<i64, crate::writer::WriteError> {
     let (has_color, color_owner) = match owner {
         AttributeOwner::Body(body) => (body.color.is_some(), ColorOwner::Body),
         AttributeOwner::Face(face) => (face.color.is_some(), ColorOwner::Face),
@@ -584,7 +585,7 @@ pub(super) fn extra_attribute_ref(
     index: &AttributeIndex<'_>,
     entity: &AttributeTarget,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     index
         .extra_owner_attributes
         .iter()
@@ -605,7 +606,7 @@ fn face_persistent_attribute_ref(
     index: &AttributeIndex<'_>,
     face: &Face,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     if face_persistent_tags(index, face).is_empty() {
         return Ok(None);
     }
@@ -624,7 +625,7 @@ fn face_name_attribute_ref(
     target: &CadIr,
     face: &Face,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     if face.name.is_none() {
         return Ok(None);
     }
@@ -654,7 +655,7 @@ pub(super) fn edge_persistent_attribute_ref(
     edge: &Edge,
     _edge_ordinal: usize,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     if edge_persistent_tags(index, edge).is_empty() {
         return Ok(None);
     }
@@ -709,7 +710,7 @@ fn coedge_sketch_attribute_ref(
     index: &AttributeIndex<'_>,
     coedge: &Coedge,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Option<i64>, crate::writer::WriteError> {
     if sketch_link(index, coedge).is_none() {
         return Ok(None);
     }
@@ -732,7 +733,7 @@ pub(super) fn sketch_link_attribute_ref(
     coedge: &Coedge,
     _coedge_ordinal: usize,
     attribute_start: i64,
-) -> Result<i64, CodecError> {
+) -> Result<i64, crate::writer::WriteError> {
     if let Some(reference) = coedge_sketch_attribute_ref(target, index, coedge, attribute_start)? {
         return Ok(reference);
     }
@@ -755,7 +756,7 @@ fn attribute_before_timestamp(
     entity: &AttributeTarget,
     owner_ordinal: usize,
     attribute_start: i64,
-) -> Result<i64, CodecError> {
+) -> Result<i64, crate::writer::WriteError> {
     match entity {
         AttributeTarget::Body(id) => {
             let body = target
@@ -763,7 +764,9 @@ fn attribute_before_timestamp(
                 .bodies
                 .get(owner_ordinal)
                 .filter(|body| body.id == *id)
-                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D body {id}")))?;
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(format!("missing F3D body {id}"))
+                })?;
             if let Some(reference) =
                 body_persistent_attribute_ref(target, index, body, attribute_start)?
             {
@@ -789,7 +792,9 @@ fn attribute_before_timestamp(
                 .faces
                 .get(owner_ordinal)
                 .filter(|face| face.id == *id)
-                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D face {id}")))?;
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(format!("missing F3D face {id}"))
+                })?;
             if let Some(reference) =
                 face_persistent_attribute_ref(target, index, face, attribute_start)?
             {
@@ -815,7 +820,9 @@ fn attribute_before_timestamp(
                 .edges
                 .get(owner_ordinal)
                 .filter(|edge| edge.id == *id)
-                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D edge {id}")))?;
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(format!("missing F3D edge {id}"))
+                })?;
             Ok(
                 edge_persistent_attribute_ref(target, index, edge, owner_ordinal, attribute_start)?
                     .unwrap_or(-1),
@@ -827,7 +834,9 @@ fn attribute_before_timestamp(
                 .coedges
                 .get(owner_ordinal)
                 .filter(|coedge| coedge.id == *id)
-                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D coedge {id}")))?;
+                .ok_or_else(|| {
+                    crate::writer::WriteError::Unwritable(format!("missing F3D coedge {id}"))
+                })?;
             Ok(coedge_sketch_attribute_ref(target, index, coedge, attribute_start)?.unwrap_or(-1))
         }
         AttributeTarget::Vertex(id) => {
@@ -839,12 +848,12 @@ fn attribute_before_timestamp(
             {
                 Ok(-1)
             } else {
-                Err(CodecError::malformed(format_args!(
+                Err(crate::writer::WriteError::Unwritable(format!(
                     "missing F3D vertex {id}"
                 )))
             }
         }
-        _ => Err(CodecError::NotImplemented(
+        _ => Err(crate::writer::WriteError::Unsupported(
             "source-less F3D timestamp has an unsupported attribute target".into(),
         )),
     }
@@ -1040,7 +1049,7 @@ fn native_compact_custom(
     records: &mut Vec<u8>,
     next: i64,
     attribute: &cadmpeg_ir::attributes::SourceAttribute,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     use cadmpeg_ir::attributes::AttributeValue;
     let mut parts = attribute.name.split('-').peekable();
     while let Some(part) = parts.next() {
@@ -1069,7 +1078,7 @@ fn native_compact_custom(
                 }
             }
             _ => {
-                return Err(CodecError::NotImplemented(
+                return Err(crate::writer::WriteError::Unsupported(
                     "unsupported compact F3D attribute value".into(),
                 ))
             }
@@ -1085,7 +1094,7 @@ fn native_persistent_design_attribute(
     next: i64,
     previous: i64,
     owner: i64,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, previous, owner);
@@ -1096,8 +1105,9 @@ fn native_persistent_design_attribute(
     native_string(records, "generic_tag_attrib_def ");
     native_i64(
         records,
-        i64::try_from(links.len())
-            .map_err(|_| CodecError::InvalidInput("too many persistent body IDs".into()))?,
+        i64::try_from(links.len()).map_err(|_| {
+            crate::writer::WriteError::Unwritable("too many persistent body IDs".into())
+        })?,
     );
     for link in links {
         native_i64(records, kind);
@@ -1115,7 +1125,7 @@ fn native_persistent_subentity_attribute(
     next: i64,
     previous: i64,
     owner: i64,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, previous, owner);
@@ -1126,8 +1136,9 @@ fn native_persistent_subentity_attribute(
     native_string(records, "generic_tag_attrib_def ");
     native_i64(
         records,
-        i64::try_from(tags.len())
-            .map_err(|_| CodecError::InvalidInput("too many persistent subentity tags".into()))?,
+        i64::try_from(tags.len()).map_err(|_| {
+            crate::writer::WriteError::Unwritable("too many persistent subentity tags".into())
+        })?,
     );
     for tag in tags {
         native_i64(records, tag.selector);
@@ -1136,7 +1147,9 @@ fn native_persistent_subentity_attribute(
         native_i64(
             records,
             i64::try_from(tag.design_references.len()).map_err(|_| {
-                CodecError::InvalidInput("too many persistent subentity references".into())
+                crate::writer::WriteError::Unwritable(
+                    "too many persistent subentity references".into(),
+                )
             })?,
         );
         for reference in &tag.design_references {
@@ -1152,7 +1165,7 @@ fn native_sketch_link_attribute(
     link: &SketchCurveLink,
     next: i64,
     owner: i64,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, -1, owner);
@@ -1182,7 +1195,7 @@ pub(super) fn encode_source_less_attributes(
     attribute_start: i64,
     owners: AttributeOwnerStarts,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let model = &target.model;
     let (faces, coedges) = match owners.surface {
         Some(surface) => (
@@ -1210,7 +1223,7 @@ pub(super) fn encode_source_less_attributes(
                     || creation_timestamp(index, &AttributeTarget::Coedge(coedge.id.clone()))
                         .is_some()
             }) {
-                return Err(CodecError::NotImplemented(
+                return Err(crate::writer::WriteError::Unsupported(
                     "source-less F3D attribute target has no native owner section".into(),
                 ));
             }
@@ -1221,7 +1234,7 @@ pub(super) fn encode_source_less_attributes(
         if index.creation_timestamps[..ordinal].iter().any(|before| {
             before.target == timestamp.target && before.target_coedge == timestamp.target_coedge
         }) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::writer::WriteError::Unwritable(format!(
                 "multiple F3D creation timestamps target the same entity: {}",
                 timestamp.id
             )));
@@ -1237,7 +1250,7 @@ pub(super) fn encode_source_less_attributes(
         )
         .is_none()
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(crate::writer::WriteError::Unsupported(format!(
                 "F3D creation timestamp has an unsupported or missing target: {}",
                 timestamp.id
             )));
@@ -1603,7 +1616,7 @@ fn native_name_attribute(
     next: i64,
     previous: i64,
     owner: i64,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     native_subident(records, "string_attrib")?;
     native_subident(records, "name_attrib")?;
     native_subident(records, "gen")?;
@@ -1663,9 +1676,9 @@ fn native_color_attribute(
     next: i64,
     owner: i64,
     retained: Option<[f64; 4]>,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     if color.a() != 1.0 {
-        return Err(CodecError::NotImplemented(
+        return Err(crate::writer::WriteError::Unsupported(
             "source-less F3D direct color requires opaque RGB channels".into(),
         ));
     }

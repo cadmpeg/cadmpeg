@@ -155,7 +155,7 @@ impl F3dCodec {
         limits: cadmpeg_core::decode::ResourceLimits,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
-    ) -> Result<PreservedWritePath, CodecError> {
+    ) -> Result<PreservedWritePath, writer::WriteError> {
         let current = decode::document_local_sha256(ir)?;
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy {
@@ -203,7 +203,7 @@ impl F3dCodec {
             result?;
             return Ok(PreservedWritePath::Patched);
         }
-        writer.write_all(data)?;
+        writer.write_all(data).map_err(CodecError::from)?;
         Ok(PreservedWritePath::VerbatimReplay)
     }
 }

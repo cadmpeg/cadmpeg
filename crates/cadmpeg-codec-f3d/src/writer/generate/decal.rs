@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Author an unresolved Decal target and its embedded image.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{AssetContent, AssetId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
@@ -271,7 +270,7 @@ pub(super) struct EncodedDecal<'a> {
     pub(super) feature: FeatureId,
     pub(super) asset: AssetId,
 }
-fn header(out: &mut Vec<u8>, tag: &str, index: u32) -> Result<(), CodecError> {
+fn header(out: &mut Vec<u8>, tag: &str, index: u32) -> Result<(), crate::writer::WriteError> {
     native_lp_ascii(out, tag)?;
     out.extend_from_slice(&index.to_le_bytes());
     Ok(())
@@ -285,14 +284,14 @@ fn reference(out: &mut Vec<u8>, index: u32) {
 pub(super) fn encode<'a>(
     decal: Decal<'a>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<EncodedDecal<'a>, CodecError> {
+) -> Result<EncodedDecal<'a>, crate::writer::WriteError> {
     let scope = decal.scope.record_index;
     let group = decal.group.record_index;
     let member = decal.operand.record_index();
     let asset = decal.image.asset.record_index();
-    let name_index = asset
-        .checked_add(1)
-        .ok_or_else(|| CodecError::InvalidInput("Decal name index overflows".into()))?;
+    let name_index = asset.checked_add(1).ok_or_else(|| {
+        crate::writer::WriteError::Unwritable("Decal name index overflows".into())
+    })?;
     let mut out = Vec::new();
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
@@ -312,7 +311,9 @@ pub(super) fn encode<'a>(
                     .any(|entity| *entity == u64::from(index))
             })
             .map(|ty| ty.class_tag.as_str())
-            .ok_or_else(|| CodecError::Malformed("missing Decal type registration".into()))
+            .ok_or_else(|| {
+                crate::writer::WriteError::Unwritable("missing Decal type registration".into())
+            })
     };
     ctx.charge_entities(9, "F3D Decal records")?;
     mark(&mut primary, asset, out.len());
@@ -412,7 +413,7 @@ pub(super) fn encode<'a>(
         browser_nodes: None,
     };
     let meta = encode_design_metastream(&registry, &primary, &secondary)?
-        .ok_or_else(|| CodecError::Malformed("missing Decal metadata".into()))?;
+        .ok_or_else(|| crate::writer::WriteError::Unwritable("missing Decal metadata".into()))?;
     Ok(EncodedDecal {
         bulk: out,
         meta,
