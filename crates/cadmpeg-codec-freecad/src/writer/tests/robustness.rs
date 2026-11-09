@@ -156,6 +156,9 @@ fn reduced_rows_hold_their_normalizations() {
             "model.bodies[].color.g",
             "model.bodies[].color.b",
             "model.bodies[].color.a",
+            "model.appearances[].base_color.r",
+            "model.appearances[].base_color.g",
+            "model.appearances[].base_color.b",
             "model.product_definitions[].label",
             "model.product_definitions[].source_name",
             "model.occurrences[].linked_prototype",
@@ -188,7 +191,12 @@ fn reduced_rows_hold_their_normalizations() {
             ),
             ReducedStorage::U8Channel => assert!(matches!(
                 row.path,
-                "model.bodies[].color.r" | "model.bodies[].color.g" | "model.bodies[].color.b"
+                "model.bodies[].color.r"
+                    | "model.bodies[].color.g"
+                    | "model.bodies[].color.b"
+                    | "model.appearances[].base_color.r"
+                    | "model.appearances[].base_color.g"
+                    | "model.appearances[].base_color.b"
             )),
             ReducedStorage::Decimal(2) => assert_eq!(row.path, "model.bodies[].color.a"),
             other => panic!("unexpected storage {other:?} for {}", row.path),

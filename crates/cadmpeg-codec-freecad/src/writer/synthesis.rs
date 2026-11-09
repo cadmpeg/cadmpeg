@@ -950,7 +950,13 @@ pub(super) fn write(
                     text = override_text;
                 }
             }
-            if current.as_deref() != Some(text) {
+            if annotation.kind == SemanticAnnotationKind::Dimension
+                && text.is_empty()
+                && annotation.format.is_none()
+            {
+                // An absent format specification restores no format.
+                object.properties.shift_remove(property);
+            } else if current.as_deref() != Some(text) {
                 object.set_text(property, text);
             }
             continue;

@@ -85,6 +85,18 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
         storage: cadmpeg_ir::codec::write::ReducedStorage::Decimal(2),
     },
     cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearances[].base_color.r",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearances[].base_color.g",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearances[].base_color.b",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
         path: "model.product_definitions[].label",
         storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
             loss: "fcstd/product.label-not-transferred",
