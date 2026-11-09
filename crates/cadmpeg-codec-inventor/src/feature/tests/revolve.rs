@@ -720,6 +720,49 @@ fn a_fixed_angle_requires_positive_travel_and_a_proven_direction() {
 }
 
 #[test]
+fn a_fixed_angle_of_one_full_turn_needs_no_direction() {
+    let with_control = |control: u16, angle: f64| {
+        generated_revolve_with(1, |_, properties, parameters, _| {
+            parameters[0].value = Some(ParameterValue::Angle(Angle::new(angle).expect("angle")));
+            let record = properties
+                .iter_mut()
+                .find(|p| p.identity.record_ordinal == 9)
+                .expect("control");
+            *record = test_property(
+                9,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::Auxiliary,
+                    type_value: 3,
+                    value: control,
+                },
+            );
+        })
+    };
+    for control in [0, 1] {
+        let (feature, _) = with_control(control, std::f64::consts::TAU)
+            .expect("candidate")
+            .expect("full turn");
+        assert!(
+            matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Revolve {
+                construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
+                    axis,
+                    extent: cadmpeg_ir::features::RevolveExtent::OneSided {
+                        termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
+                    }, ..
+                }, ..
+            }) if angle.get() == std::f64::consts::TAU && axis.direction.get() == Vector3::new(0.0, 1.0, 0.0)),
+            "control {control}"
+        );
+    }
+    // A direction value other than 0 and 1, and an angle short of one turn,
+    // keep the direction unresolved.
+    assert!(with_control(2, std::f64::consts::TAU).is_none());
+    for angle in [std::f64::consts::TAU - 1.0e-6, std::f64::consts::PI] {
+        assert!(with_control(1, angle).is_none(), "{angle}");
+    }
+}
+
+#[test]
 fn a_full_turn_does_not_consume_the_stored_angle_value() {
     for value in [0.0, -1.0, 1.25, std::f64::consts::TAU + 1.0] {
         let (feature, _) = generated_revolve_with(REVOLVE_EXTENT_FULL, |_, _, parameters, _| {

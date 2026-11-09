@@ -86,6 +86,7 @@ fn join<'a>(
         .get(&(token.to_owned(), face_source))
         .filter(|face| {
             face.item == face_item
+                && face.state != face_selection::NAMING_STATE_MODIFIED
                 && face.generators <= SUPPORT_GENERATOR_LIMIT
                 && !face.repeated_attribute
                 && !face.unshared_family

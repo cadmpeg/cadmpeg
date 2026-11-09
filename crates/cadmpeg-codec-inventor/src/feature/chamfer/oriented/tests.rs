@@ -132,6 +132,8 @@ fn fixture() -> (FeatureInventory, Feature) {
             form: face_selection::SelectorForm::Direct,
             item: 6,
             surface: Surface::Plane,
+            state: -1,
+            feature_sources: Vec::new(),
         },
     );
     (inventory, feature)
@@ -231,7 +233,16 @@ fn the_support_face_may_be_either_face_of_the_edge() {
 #[test]
 fn every_missing_proof_of_the_support_side_keeps_the_native_group() {
     type Edit = fn(&mut FeatureInventory, &mut Feature);
-    let edits: [(&str, Edit); 16] = [
+    let edits: [(&str, Edit); 17] = [
+        ("face selector stores state 2", |inventory, _| {
+            let key = (token(inventory), FACE_SOURCE);
+            inventory
+                .edge_inputs
+                .faces
+                .get_mut(&key)
+                .expect("selected")
+                .state = 2;
+        }),
         ("both faces of the edge own the selector", |inventory, _| {
             let key = (token(inventory), FACE_SOURCE);
             inventory

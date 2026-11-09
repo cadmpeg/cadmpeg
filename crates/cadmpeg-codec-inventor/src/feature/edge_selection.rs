@@ -112,7 +112,7 @@ fn generated_candidate(record: &Record) -> bool {
 
 /// The leading class of an `NMx` naming attribute in a schema-38, 40, or 42
 /// carrier, for an active record or an `End-of-ASM-History-Section` snapshot.
-fn legacy_family(record: &Record) -> Option<&str> {
+pub(super) fn legacy_family(record: &Record) -> Option<&str> {
     if record.name == "End-of-ASM-History-Section" {
         match record.tokens.first()? {
             Token::SubIdent(family) => Some(family.as_str()),

@@ -326,6 +326,11 @@ pub(crate) fn operands<'a>(
     let travel = match extent_value {
         REVOLVE_EXTENT_FULL => std::f64::consts::TAU,
         1 if control == 0 => angle_value.get(),
+        // A full turn about the axis covers the same swept region in either
+        // rotation direction.
+        1 if (angle_value.get() - std::f64::consts::TAU).abs() <= EPS_FULL_TURN_ANGLE => {
+            std::f64::consts::TAU
+        }
         1 => return Err(NativeReason::Direction(control)),
         other => return Err(NativeReason::Extent(other)),
     };
@@ -339,6 +344,10 @@ pub(crate) fn operands<'a>(
         unresolved_control,
     })
 }
+
+/// Largest difference, in radians, of a stored fixed angle from one turn at
+/// which the angle states a full turn.
+const EPS_FULL_TURN_ANGLE: f64 = 1.0e-12;
 
 /// Distance from the axis, in sketch units, at or below which a profile
 /// point lies on the axis.
