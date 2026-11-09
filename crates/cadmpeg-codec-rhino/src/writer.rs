@@ -3163,11 +3163,16 @@ fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeE
 
 /// The archive size once its 20-byte end mark follows `position`.
 fn archive_final_size(position: u64) -> u64 {
-    debug_assert!(
-        position <= u64::MAX - 20,
-        "an in-memory archive length fits u64"
-    );
-    position.saturating_add(20)
+    match position.checked_add(20) {
+        Some(size) => size,
+        None => {
+            debug_assert!(
+                false,
+                "an in-memory archive length leaves room for its end mark"
+            );
+            position
+        }
+    }
 }
 
 /// Converts a list of arena positions into the native indexes they store as.
