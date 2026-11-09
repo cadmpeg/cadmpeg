@@ -159,6 +159,8 @@ loss_codes! {
     WriterToleranceNotRepresented => "writer.tolerance-not-represented",
     /// A placed curve was written with its placement applied.
     WriterPlacementApplied => "writer.placement-applied",
+    /// An attribute's record target reads back as the typed target of that record.
+    WriterAttributeTargetRestated => "writer.attribute-target-restated",
     /// No writable geometric entity remains in the document.
     NoExportableSolids => "export.no-exportable-solids",
 }
@@ -228,6 +230,7 @@ impl IgesLossCode {
             | Self::WriterBodyVisibilityNotRepresented
             | Self::WriterToleranceNotRepresented
             | Self::WriterPlacementApplied => Severity::Warning,
+            Self::WriterAttributeTargetRestated => Severity::Info,
         }
     }
 
@@ -236,7 +239,9 @@ impl IgesLossCode {
         match self {
             Self::NeutralProjectionUnavailable => LossTaxonomy::MetadataNotTransferred,
             Self::WriterArenaOmitted => LossTaxonomy::PassthroughRecordOmitted,
-            Self::WriterAttributeOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterAttributeOmitted | Self::WriterAttributeTargetRestated => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::DesignParametricRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEntityOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPcurveReparameterized | Self::WriterPcurveConverted => {
